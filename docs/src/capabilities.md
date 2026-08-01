@@ -43,6 +43,7 @@ findings and report. A partial scan is not a clean scan.
 | Audit a host | `keyhog scan-system` | Eligible local mounted filesystems and discovered Git histories under one space ceiling. |
 | Reuse a warm scanner on Unix | Start `keyhog daemon start`, then scan one file or bounded stdin | Eligible single-file or stdin requests only. Directories, Git, remote, cloud, verification, baselines, presets, and most policy overrides remain in process. |
 | Monitor local directories | `keyhog watch <path>...` | A foreground filesystem-event loop with an in-process scanner. |
+| Inspect a native executable or firmware image | `keyhog scan --binary app.bin` | Printable strings and native object sections. Complete values that satisfy a named detector's explicit credential shape remain findings. Short prefix fragments and generic assignment-shaped strings stay suppressed without source context. |
 
 Read [Your first scan](./first-scan.md) for a local repository,
 [CI secret scanning](./workflows/ci.md) for direct CI jobs, and

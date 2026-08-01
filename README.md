@@ -214,6 +214,11 @@ status for each inventory partition.
 | S3, GCS, or Azure Blob inventories | `--s3-bucket BUCKET`, `--gcs-bucket BUCKET`, or `--azure-container-url URL` |
 | A bounded stream from another tool | `producer | keyhog scan --stdin` |
 
+Native binary extraction reports complete credentials that satisfy a named
+detector's explicit shape contract. It suppresses short prefix fragments and
+generic assignment-shaped strings from compiled data sections because those
+bytes do not retain source context.
+
 Endpoint fetching is bounded and SSRF-screened. It is not a crawler. Private
 cloud endpoints and credential forwarding require their explicit trust flags.
 Provider tokens belong in the documented environment variables, not process

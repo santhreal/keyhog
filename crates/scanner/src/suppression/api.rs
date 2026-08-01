@@ -89,6 +89,23 @@ pub(crate) fn suppress_known_example_credential_stage(
     credential: &str,
     ctx: KnownExampleSuppressionCtx<'_>,
 ) -> Option<crate::adjudicate::StageId> {
+    // Generic assignment and entropy candidates do not carry detector-owned
+    // credential-shape proof. Printable binary data therefore remains noise
+    // for this path, matching the named-detector precision gate below.
+    if ctx
+        .source_type
+        .is_some_and(is_uncontextualized_binary_source)
+    {
+        crate::adjudicate::record_example_suppression(
+            "pipeline",
+            ctx.path,
+            credential,
+            "native_binary_strings",
+        );
+        return Some(crate::adjudicate::StageId::ShapeGate(
+            "native_binary_strings",
+        ));
+    }
     suppression_stage_inner(
         credential,
         ctx.path,
@@ -114,6 +131,7 @@ pub(crate) struct NamedDetectorSuppressionCtx<'a> {
     weak_anchor: bool,
     structural_password_slot: bool,
     allow_canonical_hex_key_material: bool,
+    allow_validated_binary_credential: bool,
 }
 
 impl<'a> NamedDetectorSuppressionCtx<'a> {
@@ -135,6 +153,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
             weak_anchor,
             structural_password_slot,
             false,
+            false,
         )
     }
 
@@ -147,6 +166,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
         weak_anchor: bool,
         structural_password_slot: bool,
         allow_canonical_hex_key_material: bool,
+        allow_validated_binary_credential: bool,
     ) -> Self {
         Self {
             path,
@@ -157,6 +177,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
             weak_anchor,
             structural_password_slot,
             allow_canonical_hex_key_material,
+            allow_validated_binary_credential,
         }
     }
 }
@@ -420,11 +441,13 @@ pub(crate) fn suppress_named_detector_finding_stage(
     }
     // Native binary extraction (`filesystem:binary-strings`,
     // `filesystem/archive-binary`, and the raw strings/section analyzers):
-    // the content is printable bytes or a compiled data section without
-    // credential context. Short-prefix detectors and entropy fallback generate
-    // noise on ordinary compiled code. Ghidra decompiled output is excluded
-    // because it retains source context that can support a real finding.
-    if source_type.is_some_and(is_uncontextualized_binary_source) {
+    // printable bytes or compiled data without source context are normally
+    // noisy. A strong named detector with a validated credential shape is
+    // direct evidence and remains scannable. Ghidra output is excluded because
+    // it retains source context.
+    if source_type.is_some_and(is_uncontextualized_binary_source)
+        && !ctx.allow_validated_binary_credential
+    {
         crate::adjudicate::record_example_suppression(
             "pipeline",
             path,

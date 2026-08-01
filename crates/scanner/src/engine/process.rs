@@ -173,6 +173,12 @@ impl CompiledScanner {
         let allow_canonical_hex_key_material = allow_decoded_hex_key_material
             || (credential.bytes().all(|byte| byte.is_ascii_hexdigit())
                 && key_material_policy.allows_canonical_hex_len(credential.len()));
+        // Raw binary sections lack source context, but a strong named detector
+        // with an explicit credential-shape contract has already validated the
+        // complete captured value. Keep that evidence while weak and generic
+        // detectors remain covered by the binary-string noise gate.
+        let allow_validated_binary_credential =
+            !is_generic && !weak_anchor && detector_plan.credential_shape.is_some();
         let named_suppression_ctx =
             crate::suppression::NamedDetectorSuppressionCtx::with_weak_anchor_and_key_material_policy(
                 chunk.metadata.path.as_deref(),
@@ -183,6 +189,7 @@ impl CompiledScanner {
                 weak_anchor,
                 structural_password_slot,
                 allow_canonical_hex_key_material,
+                allow_validated_binary_credential,
             );
         let match_ctx = crate::adjudicate::MatchCtx::for_named_detector(named_suppression_ctx);
         if crate::adjudicate::record_suppression(

@@ -55,6 +55,8 @@ pub mod regression_bigram_bloom_filter;
 pub mod regression_bigram_bloom_no_false_negative_proptest;
 #[path = "regression_billing_vendor_token_recall.rs"]
 pub mod regression_billing_vendor_token_recall;
+#[path = "regression_binary_source_credential_recall.rs"]
+pub mod regression_binary_source_credential_recall;
 #[path = "regression_caesar_decoder.rs"]
 pub mod regression_caesar_decoder;
 #[path = "regression_caesar_shift_all.rs"]
