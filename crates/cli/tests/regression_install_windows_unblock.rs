@@ -78,27 +78,28 @@ fn powershell_upgrade_path_backs_up_before_overwrite() {
 fn powershell_finalize_restores_or_removes_after_failed_health_check() {
     let script = include_str!("../../../install.ps1");
     let finalize_install = ps_function(script, "Finalize-Install");
+    let restore_install = ps_function(script, "Restore-PreviousInstallOrRemove");
 
     assert_in_order(
         finalize_install,
         &[
             "if (-not (Invoke-AutorouteCalibration -BinPath $BinPath))",
-            "Move-Item -Force $Script:InstallBackup $BinPath",
-            "Rolled back to your previous working keyhog",
-            "Remove-Item -Force $BinPath -ErrorAction SilentlyContinue",
-            "Removed the uncalibrated binary; no working keyhog was overwritten.",
+            "Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote \"Removed the uncalibrated binary; no working keyhog was overwritten.\"",
+            "return $false",
+            "if ($Script:InstallBackup) { Remove-Item -Force $Script:InstallBackup",
+            "return $true",
+            "Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote \"Removed the non-runnable download; no working keyhog was overwritten.\"",
         ],
     );
     assert_in_order(
-        finalize_install,
+        restore_install,
         &[
-            "if ($Script:InstallBackup) { Remove-Item -Force $Script:InstallBackup",
-            "return $true",
             "if ($Script:InstallBackup -and (Test-Path $Script:InstallBackup))",
             "Move-Item -Force $Script:InstallBackup $BinPath",
             "Rolled back to your previous working keyhog",
+            "} else {",
             "Remove-Item -Force $BinPath -ErrorAction SilentlyContinue",
-            "Removed the non-runnable download; no working keyhog was overwritten.",
+            "Warn $RemovedNote",
         ],
     );
 }
@@ -239,7 +240,7 @@ fn powershell_default_install_resolves_concrete_latest_before_download() {
             "Resolve-TagFromLatestRedirect",
             "$Script:LatestReleaseAlias = $true",
             "return",
-            "checking recent releases",
+            "checking recent stable releases",
             "Resolve-TagFromApi",
             "$Script:LatestReleaseAlias = $true",
         ],

@@ -32,72 +32,63 @@ fn feature_list<'a>(features: &'a toml::value::Table, name: &str) -> Vec<&'a str
         .collect()
 }
 
-fn nearby_default_import_comment(manifest: &str) -> String {
+fn nearby_default_comment(manifest: &str) -> String {
     let lines = manifest.lines().collect::<Vec<_>>();
-    let default_import_line = lines
+    let default_line = lines
         .iter()
-        .position(|line| line.contains("\"keyhog-scanner/default\""))
-        .expect("CLI default imports scanner default");
-    let start = default_import_line.saturating_sub(6);
-    lines[start..=default_import_line]
-        .join("\n")
-        .to_ascii_lowercase()
+        .position(|line| line.trim_start().starts_with("default ="))
+        .expect("CLI manifest declares default features");
+    let start = default_line.saturating_sub(6);
+    lines[start..=default_line].join("\n").to_ascii_lowercase()
 }
 
+/// A bare crates.io install must not acquire native accelerator build prerequisites.
 #[test]
-fn cli_default_scanner_feature_comment_matches_manifest_contract() {
+fn cli_default_is_the_portable_source_and_verification_surface() {
     let cli_toml = read(&manifest_dir().join("Cargo.toml"));
-    let scanner_toml = read(&manifest_dir().join("../scanner/Cargo.toml"));
-    let cli_manifest: toml::Value = toml::from_str(&cli_toml).expect("cli Cargo.toml parses");
-    let scanner_manifest: toml::Value =
-        toml::from_str(&scanner_toml).expect("scanner Cargo.toml parses");
-
+    let cli_manifest: toml::Value = toml::from_str(&cli_toml).expect("CLI Cargo.toml parses");
     let cli_default = feature_list(features(&cli_manifest), "default");
-    let scanner_default = feature_list(features(&scanner_manifest), "default");
-    assert!(
-        cli_default.contains(&"keyhog-scanner/default"),
-        "this gate covers the CLI default importing the scanner default feature set"
-    );
-    assert!(
-        cli_default.contains(&"simd"),
-        "the CLI default must activate its own simd cfg whenever scanner/default enables Hyperscan"
-    );
-    assert!(
-        scanner_default.contains(&"gpu") && scanner_default.contains(&"simd"),
-        "scanner default currently includes accelerator features; update this gate if that contract changes"
-    );
 
-    let scanner_default_comment = nearby_default_import_comment(&cli_toml);
-    assert!(
-        scanner_default_comment.contains("gpu")
-            && (scanner_default_comment.contains("hyperscan")
-                || scanner_default_comment.contains("simd")),
-        "`keyhog-scanner/default` nearby comments must say it imports accelerator features too: {scanner_default_comment}"
+    assert_eq!(
+        cli_default,
+        vec!["portable"],
+        "`cargo install keyhog` must use the no-system-library portable profile"
     );
-    assert!(
-        !scanner_default_comment.contains("ml, entropy, decode-through, multiline"),
-        "`keyhog-scanner/default` comment must not list only data features while scanner/default also includes gpu/simd"
-    );
+    let default_comment = nearby_default_comment(&cli_toml);
+    for required in ["portable", "hyperscan", "gpu", "clean rust host"] {
+        assert!(
+            default_comment.contains(required),
+            "CLI default comment must explain {required:?}: {default_comment}"
+        );
+    }
 }
 
 /// Keeps native GPU releases independent from the optional Hyperscan system library.
 #[test]
 fn scanner_gpu_feature_does_not_pull_hyperscan_transitively() {
+    let cli_toml = read(&manifest_dir().join("Cargo.toml"));
     let scanner_toml = read(&manifest_dir().join("../scanner/Cargo.toml"));
+    let cli_manifest: toml::Value = toml::from_str(&cli_toml).expect("CLI Cargo.toml parses");
     let scanner_manifest: toml::Value =
         toml::from_str(&scanner_toml).expect("scanner Cargo.toml parses");
+    let cli_features = features(&cli_manifest);
     let scanner_features = features(&scanner_manifest);
     let gpu = feature_list(scanner_features, "gpu");
-    let defaults = feature_list(scanner_features, "default");
+    let scanner_defaults = feature_list(scanner_features, "default");
 
+    assert_eq!(
+        feature_list(cli_features, "gpu"),
+        vec!["keyhog-scanner/gpu"],
+        "CLI GPU opt-in must not acquire the scanner default feature bundle"
+    );
     assert!(gpu.contains(&"ml"), "GPU must retain its ML parity gate");
     assert!(
         !gpu.contains(&"simd") && !gpu.contains(&"dep:hyperscan"),
         "native Metal/WGPU builds must not acquire Hyperscan through `gpu`"
     );
     assert!(
-        defaults.contains(&"gpu") && defaults.contains(&"simd"),
-        "the default desktop build must still enable both independent accelerators"
+        scanner_defaults.contains(&"gpu") && scanner_defaults.contains(&"simd"),
+        "the scanner library's explicit default bundle still contains both accelerators"
     );
 }
 
@@ -109,9 +100,10 @@ fn workspace_build_profile_comments_match_cli_feature_contract() {
     let cli_features = features(&cli_manifest);
 
     let default_features = feature_list(cli_features, "default");
-    assert!(
-        default_features.contains(&"keyhog-scanner/default"),
-        "root build-profile comments cover the workspace CLI default feature contract"
+    assert_eq!(
+        default_features,
+        vec!["portable"],
+        "the workspace CLI default must remain installable without system accelerator libraries"
     );
 
     let full_features = feature_list(cli_features, "full");
@@ -149,11 +141,11 @@ fn workspace_build_profile_comments_match_cli_feature_contract() {
             && portable_features.contains(&"gcs")
             && portable_features.contains(&"s3")
             && portable_features.contains(&"docker")
+            && portable_features.contains(&"binary")
             && portable_features.contains(&"keyhog-scanner/ml")
             && portable_features.contains(&"keyhog-scanner/entropy")
             && portable_features.contains(&"keyhog-scanner/decode")
             && portable_features.contains(&"keyhog-scanner/multiline")
-            && !portable_features.contains(&"binary")
             && !portable_features
                 .iter()
                 .any(|feature| *feature == "keyhog-scanner/gpu"
@@ -183,16 +175,11 @@ fn workspace_build_profile_comments_match_cli_feature_contract() {
             "workspace build-profile comments still contain stale feature claim {stale_claim:?}: {build_profile_comments}"
         );
     }
-    assert!(
-        !build_profile_comments
-            .lines()
-            .any(|line| line.contains("cargo build --release -f gpu")),
-        "workspace build-profile comments must not present `-F gpu` as its own build profile: {build_profile_comments}"
-    );
 
     for required_claim in [
-        "cli default: scanner full desktop stack",
-        "gpu + hyperscan/simd + simdsieve",
+        "cli default: portable source/verification surface",
+        "without hyperscan/gpu/cuda/ghidra",
+        "opt-in gpu routes",
         "source/decompiler surface without accelerator/system-library features",
         "bare filesystem/stdin scanner surface",
         "portable source-backend build without hyperscan/gpu/cuda/ghidra",

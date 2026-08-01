@@ -20,8 +20,7 @@
 //! `Instant::now()` is taken on the hot path.
 
 use std::cell::Cell;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
 /// Leaf timing points. The ONLY spans measured directly; the hierarchy in
 /// [`dump`] derives parent totals by summing these.
@@ -75,19 +74,6 @@ const NAMES: [&str; N] = [
     "decode",
 ];
 
-/// One zeroed counter per leaf, sized off `N` so the array can never drift from
-/// the enum's variant count (the old hand-listed 13-element literal had to be
-/// hand-edited in lockstep with `P`: three copies to keep in sync).
-const ZEROS: [AtomicU64; N] = [const { AtomicU64::new(0) }; N];
-
-static NS: [AtomicU64; N] = ZEROS;
-static CALLS: [AtomicU64; N] = ZEROS;
-/// Subset of [`NS`] accumulated while inside a decode sub-chunk rescan, so the
-/// dump can report how much of each leaf is decode-recursion-driven.
-static NS_DECODE: [AtomicU64; N] = ZEROS;
-static ROOT_BYTES: AtomicU64 = AtomicU64::new(0);
-static ROOT_FILES: AtomicU64 = AtomicU64::new(0);
-static PROFILE_ENABLED: AtomicBool = AtomicBool::new(false);
 static PERF_TRACE_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// Enable or disable the scanner profile collector for this process.
@@ -95,7 +81,7 @@ static PERF_TRACE_ENABLED: AtomicBool = AtomicBool::new(false);
 /// The profiler is process-wide because the underlying counters aggregate work
 /// across rayon workers and decode rescans. Call this before compiling/scanning.
 pub fn set_profile_enabled(enabled: bool) {
-    PROFILE_ENABLED.store(enabled, Relaxed);
+    keyhog_profile::set_enabled(enabled);
 }
 
 /// Enable or disable low-level phase timing traces for this process.
@@ -107,7 +93,7 @@ pub fn set_perf_trace_enabled(enabled: bool) {
 }
 
 pub(crate) fn enabled() -> bool {
-    PROFILE_ENABLED.load(Relaxed)
+    keyhog_profile::enabled()
 }
 
 pub(crate) fn perf_trace_enabled() -> bool {
@@ -124,7 +110,13 @@ thread_local! {
 /// the previous value so the caller can restore it (decode recursion nests).
 #[cfg(feature = "decode")]
 pub(crate) fn set_in_decode(on: bool) -> bool {
-    IN_DECODE.with(|c| c.replace(on))
+    let previous = IN_DECODE.with(|cell| cell.replace(on));
+    keyhog_profile::set_attribution(if on {
+        keyhog_profile::Attribution::Decoded
+    } else {
+        keyhog_profile::Attribution::Root
+    });
+    previous
 }
 
 /// True while this worker thread is rescanning a DECODED sub-chunk (base64/hex/
@@ -143,67 +135,90 @@ pub(crate) fn in_decode() -> bool {
     IN_DECODE.with(Cell::get)
 }
 
-/// RAII timing guard. Inert (no `Instant`) when profiling is disabled.
-pub(crate) struct Guard {
-    p: usize,
-    start: Option<Instant>,
+pub(crate) type Guard = keyhog_profile::Span;
+
+fn stage(point: P) -> keyhog_profile::Stage {
+    use keyhog_profile::Stage;
+    match point {
+        P::Preprocess => Stage::Preprocess,
+        P::Phase1Triggers => Stage::Phase1Triggers,
+        P::BackendDispatch => Stage::BackendDispatch,
+        P::Hot => Stage::HotPatterns,
+        P::Confirmed => Stage::ConfirmedPatterns,
+        P::Phase2Prefilter => Stage::Phase2Prefilter,
+        P::Phase2KeywordAc => Stage::Phase2KeywordAc,
+        P::Phase2SharedAc => Stage::Phase2SharedAc,
+        P::Phase2AnchoredVerify => Stage::Phase2AnchoredVerify,
+        P::Phase2WholeChunk => Stage::Phase2WholeChunk,
+        P::Generic => Stage::GenericDetection,
+        P::Entropy => Stage::Entropy,
+        P::Ml => Stage::MachineLearning,
+        P::Decode => Stage::Decode,
+    }
 }
 
-/// Open a leaf span; records elapsed wall time into `p` on drop. Bind to a
-/// `_guard` (not `_`) so it lives to the end of the enclosing scope.
+fn point_index(stage: keyhog_profile::Stage) -> Option<usize> {
+    use keyhog_profile::Stage;
+    Some(match stage {
+        Stage::Preprocess => P::Preprocess as usize,
+        Stage::Phase1Triggers => P::Phase1Triggers as usize,
+        Stage::BackendDispatch => P::BackendDispatch as usize,
+        Stage::HotPatterns => P::Hot as usize,
+        Stage::ConfirmedPatterns => P::Confirmed as usize,
+        Stage::Phase2Prefilter => P::Phase2Prefilter as usize,
+        Stage::Phase2KeywordAc => P::Phase2KeywordAc as usize,
+        Stage::Phase2SharedAc => P::Phase2SharedAc as usize,
+        Stage::Phase2AnchoredVerify => P::Phase2AnchoredVerify as usize,
+        Stage::Phase2WholeChunk => P::Phase2WholeChunk as usize,
+        Stage::GenericDetection => P::Generic as usize,
+        Stage::Entropy => P::Entropy as usize,
+        Stage::MachineLearning => P::Ml as usize,
+        Stage::Decode => P::Decode as usize,
+        Stage::SourceAcquire
+        | Stage::SourceWalk
+        | Stage::SourceRead
+        | Stage::Suppression
+        | Stage::LiveVerification
+        | Stage::Reporting => return None,
+    })
+}
+
+/// Open a leaf span; records elapsed wall time into `point` on drop.
 #[inline]
 #[must_use]
-pub(crate) fn span(p: P) -> Guard {
-    Guard {
-        p: p as usize,
-        start: if enabled() {
-            Some(Instant::now())
-        } else {
-            None
-        },
-    }
-}
-
-impl Drop for Guard {
-    #[inline]
-    fn drop(&mut self) {
-        if let Some(start) = self.start {
-            let ns = start.elapsed().as_nanos() as u64;
-            NS[self.p].fetch_add(ns, Relaxed);
-            CALLS[self.p].fetch_add(1, Relaxed);
-            if IN_DECODE.with(Cell::get) {
-                NS_DECODE[self.p].fetch_add(ns, Relaxed);
-            }
-        }
-    }
+pub(crate) fn span(point: P) -> Guard {
+    keyhog_profile::span(stage(point))
 }
 
 /// Record the input size of a top-level scan (for the throughput line).
 pub(crate) fn add_bytes(bytes: u64) {
-    if enabled() {
-        ROOT_BYTES.fetch_add(bytes, Relaxed);
-    }
+    keyhog_profile::add_input_bytes(bytes);
 }
 
 /// Record a top-level file/chunk count.
 pub(crate) fn add_files(files: u64) {
-    if enabled() {
-        ROOT_FILES.fetch_add(files, Relaxed);
-    }
+    keyhog_profile::add_input_units(files);
 }
 
 fn read_reset() -> ([u64; N], [u64; N], [u64; N], u64, u64) {
-    let ns = std::array::from_fn(|i| NS[i].swap(0, Relaxed));
-    let calls = std::array::from_fn(|i| CALLS[i].swap(0, Relaxed));
-    let ns_decode = std::array::from_fn(|i| NS_DECODE[i].swap(0, Relaxed));
-    let bytes = ROOT_BYTES.swap(0, Relaxed);
-    let files = ROOT_FILES.swap(0, Relaxed);
+    let mut ns = [0; N];
+    let mut calls = [0; N];
+    let mut ns_decode = [0; N];
+    for measurement in keyhog_profile::take_stage_measurements() {
+        let Some(index) = point_index(measurement.stage) else {
+            continue;
+        };
+        ns[index] = measurement.elapsed_ns;
+        calls[index] = measurement.calls;
+        ns_decode[index] = measurement.attributed_ns;
+    }
+    let (bytes, files) = keyhog_profile::take_input_totals();
     (ns, calls, ns_decode, bytes, files)
 }
 
 /// Discard all accumulated counters without printing (warm-up between runs).
 pub fn reset() {
-    let _ = read_reset(); // LAW10: intentionally discards the swapped-out profiling counters (reset side-effect, warm-up between runs); telemetry-only, recall-irrelevant
+    keyhog_profile::reset();
     crate::engine::scan_inner_profile::scan_inner_profile_reset();
     crate::engine::scan_postprocess::decode_profile_reset();
     crate::decode::extract_profile_reset();

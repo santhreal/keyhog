@@ -37,6 +37,15 @@ pub(crate) fn entropy_match_suppression_stage(
         }
         None => {}
     }
+    if crate::context::is_public_pem_block_at(&preprocessed.text, entropy_match.offset) {
+        crate::adjudicate::record_example_suppression(
+            "pipeline",
+            chunk.metadata.path.as_deref(),
+            &entropy_match.value,
+            "public_pem_material",
+        );
+        return Some(EntropyShapeStage::SuppressionStage("public_pem_material"));
+    }
     let randomness =
         crate::suppression::token_randomness::TokenRandomness::for_candidate(&entropy_match.value);
     // Proximity context is too loose to release canonical shapes; require the

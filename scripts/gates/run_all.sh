@@ -103,27 +103,27 @@ run() {
 }
 
 run "Gate #1 self-test: both idiom classes catch real fallbacks, ignore benign code" \
-  python3 scripts/gates/no_silent_fallbacks.py --self-test
+  python3 -B scripts/gates/no_silent_fallbacks.py --self-test
 run "Gate #1: no silent fallbacks (scanner/sources/core/cli/verifier)" \
-  python3 scripts/gates/no_silent_fallbacks.py
+  python3 -B scripts/gates/no_silent_fallbacks.py
 run "Gate #1b self-test: Law 10 semantic classifier catches unsafe waivers" \
-  python3 scripts/gates/law10_semantics.py --self-test
+  python3 -B scripts/gates/law10_semantics.py --self-test
 run "Gate #1b: Law 10 annotations prove conservation or loud surfacing" \
-  python3 scripts/gates/law10_semantics.py
+  python3 -B scripts/gates/law10_semantics.py
 run "Gate #1c self-test: stale internal planning refs are detected" \
-  python3 scripts/gates/no_stale_internal_refs.py --self-test
+  python3 -B scripts/gates/no_stale_internal_refs.py --self-test
 run "Gate #1c: no stale internal planning refs outside absence contracts" \
-  python3 scripts/gates/no_stale_internal_refs.py
+  python3 -B scripts/gates/no_stale_internal_refs.py
 run "Gate #1d self-test: stale deferral markers are detected" \
-  python3 scripts/gates/no_deferral_markers.py --self-test
+  python3 -B scripts/gates/no_deferral_markers.py --self-test
 run "Gate #1d: no stale deferral markers in shipped surfaces" \
-  python3 scripts/gates/no_deferral_markers.py
+  python3 -B scripts/gates/no_deferral_markers.py
 run "Gate #1e self-test: stale and duplicate documentation is detected" \
-  python3 scripts/gates/docs_truth.py --self-test
+  python3 -B scripts/gates/docs_truth.py --self-test
 run "Gate #1e: canonical mdBook documentation is complete and source-true" \
-  python3 scripts/gates/docs_truth.py
+  python3 -B scripts/gates/docs_truth.py
 run "GitHub Action documentation contract: manifests and references agree" \
-  python3 scripts/gates/action_docs_contract.py
+  python3 -B scripts/gates/action_docs_contract.py
 run "GitHub Action documentation tests: interface drift fails closed" \
   python3 -B -m unittest scripts.tests.test_action_docs_contract -v
 run "Workflow documentation boundaries: Action, direct CI, and mass scanning stay distinct" \
@@ -139,13 +139,13 @@ run "Repository star viewer tests: recording and rendering stay truthful" \
 run "README benchmark matrix: snapshot, reports, and generated panels agree" \
   make -C benchmarks readme-matrix-check
 run "Gate #1i self-test: dangling doc version pins are detected" \
-  python3 scripts/gates/doc_version_pins.py --self-test
+  python3 -B scripts/gates/doc_version_pins.py --self-test
 run "Gate #1i: documented action/install pins resolve to v0 or the current version" \
-  python3 scripts/gates/doc_version_pins.py
+  python3 -B scripts/gates/doc_version_pins.py
 run "Release documentation bump tests: measured benchmark provenance stays immutable" \
   python3 -B -m unittest scripts.tests.test_bump_doc_versions -v
-run "Automatic release tests: green pushes bump, changelog, and publish coherently" \
-  python3 -B -m unittest scripts.tests.test_prepare_release scripts.tests.test_auto_release scripts.tests.test_release_workflows -v
+run "Automatic release tests: green pushes bump, changelog, retry, and publish coherently" \
+  python3 -B -m unittest scripts.tests.test_prepare_release scripts.tests.test_auto_release scripts.tests.test_release_workflows scripts.tests.test_publish_retry -v
 run "Documentation truth tests: measured versions remain bound to evidence" \
   python3 -B -m unittest scripts.tests.test_docs_truth -v
 run "Crate changelog gate: every publishable crate has release notes" \
@@ -157,31 +157,31 @@ run "Crate changelog tests: missing and empty release sections fail closed" \
 run "Package license gate: publishable crate roots use canonical bytes" \
   python3 -B scripts/gates/package_licenses.py
 run "Gate #1f self-test: mutable GitHub Action refs are detected" \
-  python3 scripts/gates/github_actions_pinned.py --self-test
+  python3 -B scripts/gates/github_actions_pinned.py --self-test
 run "Gate #1f: GitHub Actions are commit-pinned" \
-  python3 scripts/gates/github_actions_pinned.py
+  python3 -B scripts/gates/github_actions_pinned.py
 run "Gate #1g self-test: CI-orphan scanner regression detection" \
-  python3 scripts/gates/recall_locks_wired.py --self-test
+  python3 -B scripts/gates/recall_locks_wired.py --self-test
 run "Gate #1g: every scanner regression_*.rs is CI-wired (all_tests or --test)" \
-  python3 scripts/gates/recall_locks_wired.py
+  python3 -B scripts/gates/recall_locks_wired.py
 run "Gate #1h self-test: CI-orphan test detection (verifier + core)" \
-  python3 scripts/gates/tests_wired.py --self-test
+  python3 -B scripts/gates/tests_wired.py --self-test
 run "Gate #1h: every enforced-crate tests/*.rs is CI-wired (all_tests or --test)" \
-  python3 scripts/gates/tests_wired.py
+  python3 -B scripts/gates/tests_wired.py
 run "Gate #4: surface coverage (every subcommand spawned)" \
-  python3 scripts/gates/surface_coverage.py
+  python3 -B scripts/gates/surface_coverage.py
 run "Gate #5: exact complexity ratchet (growth, slack, and metric drift)" \
-  python3 scripts/gates/complexity_budget.py
+  python3 -B scripts/gates/complexity_budget.py
 run "VYRE pin consistency: 5 crates lockstep, registry pins, no vendor build-path" \
-  python3 scripts/gates/vyre_pin_consistency.py
+  python3 -B scripts/gates/vyre_pin_consistency.py
 run "Organization unit tests: exact complexity ratchet and owner/reference checks" \
-  python3 -m unittest scripts.tests.test_complexity_budget scripts.tests.test_org_audit -v
+  python3 -B -m unittest scripts.tests.test_complexity_budget scripts.tests.test_org_audit -v
 run "tests_wired unit tests: CI-orphan model (path/mod/--test/all-targets/pkg)" \
-  python3 -m unittest scripts.tests.test_tests_wired -v
+  python3 -B -m unittest scripts.tests.test_tests_wired -v
 run "Automatic release workflow tests: successful main CI is the only publisher" \
   python3 -B -m unittest scripts.tests.test_release_workflows -v
 run "Org audit: stale claims / LOC-cap bloat / evidence wiring" \
-  python3 scripts/org_audit.py
+  python3 -B scripts/org_audit.py
 run "Install static analysis: shell + PowerShell parser/linter coverage" \
   bash scripts/gates/install_static_analysis.sh
 run "Docs CLI-claim gate: no hallucinated flags in docs/site" \
@@ -225,7 +225,7 @@ if [ "$GATES_SOURCE_ONLY" = "1" ]; then
   skip "GATES_SOURCE_ONLY=1 (differential bench gate not run)."
 elif [ -d benchmarks/results ] && \
    find benchmarks/results -name '*.json' -print -quit 2>/dev/null | grep -q .; then
-  ( cd benchmarks && python3 -m bench gate \
+  ( cd benchmarks && python3 -B -m bench gate \
       --corpus mirror --results results \
       --baseline baselines/mirror-keyhog-baseline.json --epsilon 0.005 ) || rc=1
 else
@@ -254,7 +254,7 @@ if [ "$GATES_SOURCE_ONLY" = "1" ]; then
 elif [ ! -f ml/parity_check.py ]; then
   skip "ml/parity_check.py absent. ML feature-parity gate not applicable in this tree."
 elif [ -n "${KEYHOG_DUMP_FEATURES:-}" ] && [ -x "${KEYHOG_DUMP_FEATURES:-}" ]; then
-  ( cd ml && python3 parity_check.py ) || rc=1
+  ( cd ml && python3 -B parity_check.py ) || rc=1
 else
   skip "KEYHOG_DUMP_FEATURES (prebuilt dump_features binary) not set, build it (\`cargo build -p keyhog-scanner --example dump_features\`) and export its path to enable the ML parity gate without a cargo build from this entrypoint."
 fi

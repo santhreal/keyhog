@@ -307,6 +307,8 @@ pub mod regression_private_key_caesar_decode_suppression;
 pub mod regression_private_key_decode_child_resolution;
 #[path = "regression_private_key_variant_matrix.rs"]
 pub mod regression_private_key_variant_matrix;
+#[path = "regression_public_pem_false_positives.rs"]
+pub mod regression_public_pem_false_positives;
 #[path = "regression_putty_private_key.rs"]
 pub mod regression_putty_private_key;
 #[path = "regression_quoted_printable.rs"]

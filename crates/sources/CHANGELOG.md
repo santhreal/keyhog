@@ -2,8 +2,9 @@
 
 ## 0.5.49 - 2026-07-30
 
-- A single resumable local or SSH command now refreshes benchmark evidence without invalidating candidate freshness, rebinds the exact canonical run-set after scoring, prepares every changelog and version surface, runs pre-tag gates with isolated full and ci-lean binary contracts, preserves exact Git path bytes, verifies the configured OpenPGP fingerprint before any tag push, and watches GitHub Pages, release assets, containers, and the five-crate crates.io publication chain.
+- A single resumable local or SSH command now refreshes benchmark evidence without invalidating candidate freshness, rebinds the exact canonical run-set after scoring, prepares every changelog and version surface, runs pre-tag gates with isolated full and ci-lean binary contracts, preserves exact Git path bytes, verifies the configured OpenPGP fingerprint before any tag push, and watches GitHub Pages, release assets, containers, and the six-crate crates.io publication chain.
 - Serialize every source scan against counter-asserting test scopes from the first scan onward, preventing in-flight scans from polluting process-global skip counts.
+- Docker save scans now prefer `manifest.json` layers over an embedded OCI index, ignore symbolic and hard link layer entries safely, preserve nested archive member labels and binary source provenance, and route large native binaries through printable-string extraction instead of lossy text windows.
 
 ## 0.5.48 - 2026-07-28
 

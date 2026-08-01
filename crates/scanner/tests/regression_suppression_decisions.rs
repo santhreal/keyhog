@@ -214,6 +214,58 @@ fn binary_strings_source_suppresses_named_finding() {
     );
 }
 
+/// Docker must retain raw ELF section provenance so random compiled bytes do not become named credential findings.
+#[test]
+fn docker_elf_section_source_suppresses_named_finding() {
+    assert!(
+        named_detector_suppressed(
+            OPENAI_SHAPED,
+            None,
+            CodeContext::Unknown,
+            Some("docker/binary:elf:.rodata"),
+            "openai-api-key",
+        ),
+        "a prefix match inside a Docker ELF section must suppress"
+    );
+}
+
+/// All portable raw-section analyzers need the same suppression contract across executable formats.
+#[test]
+fn portable_binary_section_sources_suppress_named_findings() {
+    for source in [
+        "binary:strings",
+        "binary:elf:.data",
+        "binary:pe:.rdata",
+        "binary:macho:__cstring",
+    ] {
+        assert!(
+            named_detector_suppressed(
+                OPENAI_SHAPED,
+                None,
+                CodeContext::Unknown,
+                Some(source),
+                "openai-api-key",
+            ),
+            "raw binary source {source} must suppress"
+        );
+    }
+}
+
+/// Ghidra decompiled source retains assignment context, so the raw-section gate must not hide a plausible credential.
+#[test]
+fn ghidra_decompiled_source_keeps_named_finding() {
+    assert!(
+        !named_detector_suppressed(
+            OPENAI_SHAPED,
+            None,
+            CodeContext::Unknown,
+            Some("docker/binary:ghidra:decompiled"),
+            "openai-api-key",
+        ),
+        "decompiled source context must remain scannable"
+    );
+}
+
 /// Negative twin: the identical value/detector on an ordinary filesystem source
 /// (no binary-strings marker) is NOT suppressed by the binary gate.
 #[test]

@@ -212,6 +212,17 @@ pub(crate) fn entropy_fallback_example_suppression_stage(
     degenerate_run_min_length: usize,
     canonical_lift: bool,
 ) -> Option<EntropyShapeStage> {
+    // Raw native sections and strings carry randomness but no credential
+    // context. This source invariant outranks canonical-shape lifts.
+    if source.is_some_and(crate::suppression::api::is_uncontextualized_binary_source) {
+        crate::adjudicate::record_example_suppression(
+            "pipeline",
+            path,
+            value,
+            "native_binary_strings",
+        );
+        return Some(EntropyShapeStage::SuppressionStage("native_binary_strings"));
+    }
     if !canonical_lift {
         let isolated_bare_token = keyword == crate::entropy::ISOLATED_BARE_ENTROPY_LABEL;
         let example_ctx = crate::suppression::api::KnownExampleSuppressionCtx::with_entropy(

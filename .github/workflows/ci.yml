@@ -594,7 +594,7 @@ jobs:
           components: rustfmt
       # Scope fmt to keyhog's own crates so fmt remains tied to this workspace's
       # public build surface and does not pick up generated or fixture trees.
-      - run: cargo fmt -p keyhog-core -p keyhog-scanner -p keyhog -p keyhog-verifier -p keyhog-sources -- --check
+      - run: cargo fmt -p keyhog-core -p keyhog-profile -p keyhog-scanner -p keyhog -p keyhog-verifier -p keyhog-sources -- --check
 
   build:
     name: Build Release

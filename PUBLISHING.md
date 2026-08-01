@@ -27,7 +27,7 @@ After CI succeeds, `.github/workflows/release.yml` performs this transaction:
 5. Update `Cargo.toml`, `Cargo.lock`, all changelogs, and operator-facing version pins.
 6. Commit the generated files as `release: vX.Y.Z` and create a lightweight `vX.Y.Z` tag.
 7. Push the commit and tag with the workflow token.
-8. Run `scripts/publish.sh`, which publishes the five crates in dependency order.
+8. Run `scripts/publish.sh`, which publishes the six crates in dependency order.
 
 The workflow does not create signed tags, signatures, attestations, SBOMs, release assets, or a GitHub Release.
 

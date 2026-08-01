@@ -3209,6 +3209,7 @@ fn composite_action_shell_blocks_do_not_inline_untrusted_expressions() {
     );
 }
 
+/// Published Action installs must use the lean local-tree feature set on clean runners.
 #[test]
 fn composite_action_version_output_is_validated_before_github_output() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
@@ -3233,7 +3234,7 @@ fn composite_action_version_output_is_validated_before_github_output() {
     );
     assert!(
         manifest.contains("v=\"${normalized_tag#v}\"")
-            && manifest.contains("cargo install --locked --version \"=$version\"")
+            && manifest.contains("cargo install --locked --version \"=$version\" --root \"$install_root\" --no-default-features --features ci keyhog")
             && manifest.contains("ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}"),
         "an explicit version must normalize one optional v prefix before selecting the exact crates.io package"
     );
@@ -3389,10 +3390,10 @@ fn composite_action_floating_major_ref_resolves_exact_published_crate() {
     );
 }
 
-/// Regression: portable source refs must reject default/auto at the resolver
-/// boundary rather than failing indirectly in autoroute calibration.
+/// Source refs require CPU, while published refs reject accelerators omitted by
+/// the lean crates.io installation before calibration or scanning begins.
 #[test]
-fn composite_action_version_resolver_enforces_source_cpu_boundary() {
+fn composite_action_version_resolver_enforces_compiled_backend_boundaries() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -3434,7 +3435,7 @@ fn composite_action_version_resolver_enforces_source_cpu_boundary() {
     assert!(fs::read_to_string(source_output)
         .expect("source output")
         .contains("release_required=false"));
-    for backend in ["", "auto"] {
+    for backend in ["", "auto", "cpu"] {
         let dir = TempDir::new().expect("release boundary tempdir");
         let output_path = dir.path().join("output");
         let release = run_manifest_bash_step(
@@ -3449,6 +3450,25 @@ fn composite_action_version_resolver_enforces_source_cpu_boundary() {
         assert!(fs::read_to_string(output_path)
             .expect("release output")
             .contains("release_required=true"));
+    }
+    for backend in ["simd", "gpu-cuda", "gpu-wgpu"] {
+        let dir = TempDir::new().expect("release accelerator boundary tempdir");
+        let output_path = dir.path().join("output");
+        let release = run_manifest_bash_step(
+            "Resolve KeyHog version",
+            &[
+                ("ACTION_VERSION", "0.5.48"),
+                ("ACTION_BACKEND", backend),
+                ("GITHUB_OUTPUT", output_path.to_str().expect("output")),
+            ],
+        );
+        assert_eq!(
+            release.status.code(),
+            Some(2),
+            "release backend {backend:?}"
+        );
+        assert!(combined_output(&release).contains("Published Action refs use the lean CI build"));
+        assert!(!output_path.exists() || fs::read(&output_path).expect("output").is_empty());
     }
     for manifest_path in [
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../action.yml"),

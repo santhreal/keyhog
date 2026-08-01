@@ -29,7 +29,7 @@ everything else is data, tooling, docs, or eval harness.
 
 | Dir | Role |
 |-----|------|
-| `crates/` | Rust workspace: runtime code only (five crates; see [below](#the-crates-and-their-layering)). |
+| `crates/` | Rust workspace: runtime code only (six crates; see [below](#the-crates-and-their-layering)). |
 | `detectors/` | Embedded detector TOMLs (data, not code). One file = one secret type; drop a file to add a detector without rewriting detection logic. The generated catalog owns the current count. See the [detector reference](./detectors.md). |
 | `rules/` | Tier-B data (e.g. `aws-canary-accounts.toml`); same drop-in model as `detectors/`. |
 | `ml/` | Python pipeline for embedded `weights.bin`: harvest → blend → train → gate (`retrain_loop.sh`). Trains; `crates/scanner` serves. |
@@ -49,32 +49,37 @@ public repository.
 
 ## The crates and their layering
 
-Dependencies point one way: `core` is the foundation and depends on no other
-KeyHog crate; `cli` sits on top and wires the rest together. This DAG is enforced
-by Cargo and must stay acyclic (domain logic never imports CLI/transport/UI).
+Dependencies point one way: `core` and `profile` are foundations and depend on
+no other KeyHog crate; `cli` sits on top and wires the rest together. This DAG
+is enforced by Cargo and must stay acyclic (domain logic never imports
+CLI/transport/UI).
 
 ```text
                           cli
             orchestration · transport · process exits
-             ┌─────────────┼──────────────┐
-             ▼             ▼              ▼
-          scanner        sources       verifier
-          detection       inputs       live checks
-             │             │  ╲           │
-             │             │   ╲ optional │
+             ┌─────────────┼──────────────┬──────────┐
+             ▼             ▼              ▼          ▼
+          scanner        sources       verifier   profile
+          detection       inputs       live checks  timing · run state
+             │  ╲          │  ╲           │          ▲
+             │   ╲         │   ╲ optional │          │
+             │    └────────┼────┼─────────┼──────────┘
              └─────────────┼────▼─────────┘
                            ▼
                           core
         types · detector registry · reports · dedup · caches
 ```
 
-`scanner` and `verifier` depend on `core`. `sources` depends on `core` and,
-for network-enabled source features, reuses `verifier` for shared SSRF and
-request-signing policy. `cli` selects features and composes all four libraries.
+`scanner` and `verifier` depend on `core`. `scanner` also records fixed stages
+through `profile`. `sources` depends on `core` and, for network-enabled source
+features, reuses `verifier` for shared SSRF and request-signing policy. `cli`
+selects features, composes all five libraries, and owns the operator-run profile
+session.
 
 | Crate | Owns | Start reading at |
 |-------|------|------------------|
 | **`core`** | Embedded detector loading, detector specs, the `Finding`/`Credential` types, reporters, dedup, allowlists, the Merkle incremental-scan cache, and confidence-calibration data. | `crates/core/src/lib.rs`, `spec.rs`, `finding.rs`, `report/` |
+| **`profile`** | Allocation-free fixed-stage timing, causal run identity, state transitions, process resource sampling, and portable JSON and text profile records. | `crates/profile/src/lib.rs` |
 | **`scanner`** | The detection engine: hardware probing and backend dispatch, prefilters, compile, scan, decode-through, entropy, ML confidence, multiline handling, and suppression. Persisted CLI route selection is intentionally not owned here. | `crates/scanner/src/compiled_scanner/` (construction and lifecycle), `engine/mod.rs` (execution flow), `adjudicate/`, `pipeline/`, `lib.rs` |
 | **`sources`** | Where bytes come from: filesystem, Git (staged/diff/history), stdin, Docker, S3, GCS, Azure Blob, GitHub, GitLab, Bitbucket, web, HAR, strings, and optional binary/decompiler inputs. | `crates/sources/src/lib.rs` |
 | **`verifier`** | Turning a *candidate* into a *verified-live* credential: per-detector verify endpoints, SSRF/bogon guards, OOB, rate limiting. | `crates/verifier/src/lib.rs`, `verify/`, `ssrf.rs` |

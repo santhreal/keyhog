@@ -1,52 +1,103 @@
 <p align="center">
-  <img src="docs/assets/keyhog-banner.svg" alt="keyhog - secret scanner - 923 detectors - gpu" width="560" />
+  <img src="docs/assets/keyhog-banner.svg" alt="KeyHog GPU-accelerated open-source secret scanner for code, Git history, cloud, containers, browser assets, and CI" width="960" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/santhreal/keyhog/releases/latest"><img src="https://img.shields.io/github/v/release/santhreal/keyhog?style=flat-square&color=ffd60a&label=release&labelColor=0a0a0a" alt="latest release" /></a>&nbsp;
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-9aa0b4?style=flat-square&labelColor=0a0a0a" alt="MIT OR Apache-2.0" /></a>&nbsp;
+  <a href="https://crates.io/crates/keyhog"><img src="https://img.shields.io/crates/v/keyhog?style=flat-square&color=ffd60a&label=crates.io&labelColor=0a0a0a" alt="KeyHog on crates.io" /></a>&nbsp;
+  <a href="https://santhreal.github.io/keyhog/"><img src="https://img.shields.io/badge/docs-KeyHog-ffd60a?style=flat-square&labelColor=0a0a0a" alt="KeyHog documentation" /></a>&nbsp;
   <a href="https://github.com/santhreal/keyhog/actions"><img src="https://img.shields.io/github/actions/workflow/status/santhreal/keyhog/ci.yml?style=flat-square&label=CI&labelColor=0a0a0a" alt="CI" /></a>&nbsp;
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-9aa0b4?style=flat-square&labelColor=0a0a0a" alt="MIT OR Apache-2.0" /></a>&nbsp;
   <a href="./metrics/stars.svg"><img src="https://img.shields.io/github/stars/santhreal/keyhog?style=flat-square&color=ffd60a&label=stars&labelColor=0a0a0a" alt="GitHub stars and repository-owned star history" /></a>
 </p>
 
 <p align="center">
-  <sub>Part of <a href="https://santh.dev">Santh</a> &nbsp;·&nbsp; <a href="https://santh.dev/blog/keyhog/">blog</a> &nbsp;·&nbsp; <a href="https://x.com/SanthProject">@SanthProject</a></sub>
+  <strong><a href="https://santh.dev/keyhog/">Website</a></strong> ·
+  <strong><a href="https://santhreal.github.io/keyhog/">Documentation</a></strong> ·
+  <strong><a href="https://santh.dev/blog/keyhog/">Architecture</a></strong> ·
+  <strong><a href="https://github.com/santhreal/vyre">Vyre GPU engine</a></strong>
 </p>
 
----
-# KeyHog: Rust secret scanner
+# KeyHog: GPU-accelerated secret scanner for code, cloud, and CI
 
+**KeyHog is an open-source secret scanner in Rust that finds and verifies leaked
+API keys, tokens, passwords, and credentials across source code, Git history,
+containers, cloud storage, browser assets, collaboration content, and running
+systems.**
 
-**keyhog** scans source trees, git history, Docker images, GitHub/GitLab/Bitbucket
-repository collections, S3/GCS/Azure Blob buckets, and running systems for leaked credentials. **923 embedded detectors**,
-decode-through (base64/hex/url/protobuf), confidence scoring, and SARIF output
-without hand-written runtime configuration. After verified-install calibration,
-`keyhog scan .` works with the canonical defaults; a source-built multi-backend
-binary first runs `keyhog calibrate-autoroute`.
+Most secret scanners stop at CPU regex matches in a repository checkout.
+KeyHog combines **923 service-specific detectors**, decode-through for concealed
+credentials, context-aware confidence and suppression, live provider
+verification, and first-class **CUDA, Metal, and WGPU execution through
+[Vyre](https://github.com/santhreal/vyre)**. Calibration measures every eligible
+pure-Rust CPU, Hyperscan/SIMD, and GPU backend. Automatic routing then uses the
+fastest parity-proven route for the exact host and workload class.
 
-The binary banner is `v0.5.49 · secret scanner · 923 detectors`; its
-compiled progress line reports `923 detectors (5822 patterns)` together with
-the operator-visible route (for example, `backend=simd-regex | gpu=none`).
-
-<p align="center">
-  <img src="demo/keyhog-scan.gif" alt="keyhog scan: boxed findings with severity, confidence, file:line, and remediation, then a results summary and an honest coverage-gap line" width="860" />
-</p>
-
-## Get started
-
-### Install and run your first scan
-
-Install the latest published crate:
+| GPU is a real backend | Scan the actual attack surface | Separate signal from noise | Act on the result |
+|---|---|---|---|
+| CUDA, native Metal, and WGPU are measured peers, not a silent fallback chain. | Scan Git history, Docker layers, archives, cloud buckets, source maps, WASM, HAR captures, hosted Git collections, and whole systems. | Decode base64, hex, URL, protobuf, multiline, and structured configuration before applying confidence, example suppression, and baselines. | Verify eligible credentials with provider APIs, emit SARIF or structured envelopes, and preserve exact coverage and exit semantics. |
 
 ```sh
 cargo install --locked keyhog
 keyhog scan .
 ```
 
+<p align="center">
+  <img src="demo/keyhog-scan.gif" alt="KeyHog scan showing severity, confidence, file and line, remediation, results, and coverage status" width="900" />
+</p>
+
+## A secret scanner built around the GPU
+
+KeyHog does not hand a few regular expressions to a generic compute shader.
+Its GPU path is built on [Vyre](https://github.com/santhreal/vyre), a Rust GPU
+compute substrate developed alongside KeyHog. Detector triggers compile into
+immutable GPU-resident tables. Bounded source batches produce complete match
+positions for the same confirmation, suppression, confidence, and reporting
+pipeline used by CPU and Hyperscan routes.
+
+- **Three physical GPU peers.** CUDA, native Metal, and portable WGPU are
+  acquired, measured, and reported independently.
+- **Exact result parity.** Calibration rejects a candidate whose finding
+  identity differs from the reference route. A faster wrong answer never enters
+  the routing table.
+- **Persistent route evidence.** KeyHog records the binary, detector corpus,
+  configuration, workload class, host, accelerator, driver, and measured timing
+  evidence. Normal scans do not benchmark in the hot path.
+- **Resident execution.** Daemon workers keep compiled detector and accelerator
+  state warm for repeated file, archive, history, remote, and cloud batches.
+- **No hidden CPU escape hatch.** An explicitly selected accelerator that cannot
+  initialize or dispatch fails visibly instead of returning CPU findings under
+  a GPU label.
+
+The default crates.io install uses the portable pure-Rust CPU route so it works
+on a clean Rust host. Enable the three GPU peers without acquiring Hyperscan:
+
+```sh
+cargo install --locked keyhog --no-default-features --features portable,gpu
+```
+
+Run the production backend diagnostic, then inspect the measured route:
+
+```sh
+keyhog backend --self-test
+keyhog calibrate-autoroute --policy all
+keyhog backend --autoroute --json
+```
+
+The [backend guide](https://santhreal.github.io/keyhog/backends.html) documents
+the resident tables, bounded dispatch model, parity contract, and reproducible
+crossover evidence.
+
+## Get started
+
+### Install and run your first scan
+
+The two commands above install the latest crates.io release and scan the current
+tree with the portable pure-Rust route.
+
 Pin a CI environment to one exact release with
 `cargo install --locked --version '=0.5.49' keyhog`. KeyHog requires Rust 1.89
 or newer. See the [installation guide](https://santhreal.github.io/keyhog/install.html)
-for portable and source-build profiles.
+for GPU, Hyperscan, CI, portable, and source-build profiles.
 
 KeyHog exits `0` when the scan is clean and `1` when it reports findings above
 your severity floor. Exit `1` means the scanner worked. Review each finding's
@@ -97,6 +148,25 @@ for GitLab, CircleCI, Jenkins, Buildkite, and generic shell jobs. Use the
 [mass-scanning guide](https://santhreal.github.io/keyhog/guides/mass-scanning.html)
 for repository organizations, hosted Git groups, cloud buckets, and partitioned
 inventories.
+
+## Scan surfaces other tools treat as separate products
+
+KeyHog scans bytes at the boundary where they can leak, not only tracked source
+files. Use one report per boundary so CI retains exact coverage and failure
+state.
+
+| Exposure surface | Example |
+|---|---|
+| Final package artifact | Run `npm pack`, then scan the produced `.tgz` with `keyhog scan package.tgz`. Archive expansion checks generated files, source maps, fixtures, and metadata that are absent from the expected source tree. |
+| Deployed browser application | `keyhog scan --url https://app.example.com/assets/app.js` follows bounded JavaScript, source-map, WASM, and response decoding without turning the scanner into an unbounded crawler. |
+| GitHub issues, pull requests, discussions, wikis, and gists | `keyhog scan --github-collaboration owner/repo --github-issues --github-pull-requests --github-discussions --github-wiki --github-gists` scans collaboration content outside the checkout. |
+| AI agent and MCP configuration | `keyhog scan ~/.config ~/.claude ~/.codex` applies the same detector, decode, confidence, and reporting pipeline to local tool configuration. |
+| Container image layers | `keyhog scan --docker-image registry.example.com/team/app:v1` scans the image content that will run, including files introduced during the build. |
+| Cloud object inventories | `keyhog scan --s3-bucket BUCKET`, `--gcs-bucket BUCKET`, or `--azure-container-url URL` preserves provider pagination, object, and byte-limit coverage in the terminal report. |
+| Entire development host | `sudo keyhog scan-system --space 50G` discovers mounted filesystems and reachable Git history under a hard storage budget. |
+
+These routes share one detection and reporting contract. A source-specific
+failure cannot silently turn into a narrower local scan.
 
 ## Choose the right workflow
 
@@ -183,9 +253,12 @@ keyhog backend --autoroute --json
 | `--fast`, default, `--deep`, or `--precision` | Selecting an explicit detection-cost and recall policy. | These presets are mutually exclusive and change coverage. They are not interchangeable speed knobs. |
 
 Inspect the resolved policy with `keyhog config --effective`. Use `--profile`
-to measure scanner phases before changing reader, batch, or channel-depth
-controls. Keep advanced pipeline controls unset unless a reproducible
-measurement on the target worker shows an improvement.
+to measure hierarchical scanner stages and the complete operator run before you
+change reader, batch, or channel-depth controls. The report records source,
+backend, cache, workload, thread, input, state-transition, CPU-time, and peak
+memory identity without source content or credential values. Keep advanced
+pipeline controls unset unless a reproducible measurement on the target worker
+shows an improvement.
 
 For a recurring full repository scan:
 
@@ -801,7 +874,7 @@ lists every command, flag, generated default, and exit status. Use
   permanent test fixture under
   [`tests/contracts/`](./crates/scanner/tests/contracts/).
 - **Release behavior?** Every successful `main` CI run increments the patch
-  version, generates changelogs, and publishes all five crates to crates.io.
+  version, generates changelogs, and publishes all six crates to crates.io.
   Add an optional fragment under [`changes/`](./changes/) for a precise note.
   The [release guide](https://santhreal.github.io/keyhog/releasing.html) covers
   the automatic transaction and failed-upload recovery.

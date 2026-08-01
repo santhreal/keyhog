@@ -97,19 +97,23 @@ fn is_symlink(path: &Path) -> bool {
         .map_or(false, |is_link| is_link)
 }
 
-/// True when `path` begins with a UTF-16 byte-order mark (`FF FE` LE / `FE FF`
-/// BE). Used to keep large UTF-16 files off the raw-byte windowed/mmap path,
-/// which would NUL-interleave their ASCII secrets and mis-count their lines
-/// (see the call site in `process_entry`). The probe is a no-follow-safe
-/// 2-byte prefix read.
+/// True when a large file needs the whole-file decoder instead of lossy UTF-8
+/// windows. UTF-16 requires whole-file transcoding for exact lines. A binary
+/// prefix requires printable-string extraction so random compiled bytes do not
+/// enter the scanner as ordinary text.
 ///
-/// LAW10: a failed or short prefix probe returns `false` (not a skip); the
-/// windowed path still runs and any unreadable file is surfaced and recorded
-/// there as a counted skip, so this classifier never yields a silent false-clean.
-fn file_starts_with_utf16_bom(path: &Path) -> bool {
-    let mut bom = [0u8; 2];
-    matches!(read::read_file_prefix_safe(path, &mut bom), Ok(2))
-        && (bom == [0xFF, 0xFE] || bom == [0xFE, 0xFF])
+/// LAW10: recall-preserving; a failed prefix probe falls through to the full
+/// windowed scan, whose read failures are loud-counted/surfaced.
+fn large_file_requires_whole_file_decode(path: &Path) -> bool {
+    const SNIFF_BYTES: usize = 512;
+    let mut prefix = [0u8; SNIFF_BYTES];
+    let Ok(read) = read::read_file_prefix_safe(path, &mut prefix) else {
+        return false;
+    };
+    let prefix = &prefix[..read];
+    prefix.starts_with(&[0xFF, 0xFE])
+        || prefix.starts_with(&[0xFE, 0xFF])
+        || read::looks_binary_prefix(prefix)
 }
 
 pub(super) fn record_binary_without_printable_strings(path: &str) {
@@ -714,24 +718,12 @@ pub(super) fn process_entry(
         return;
     }
 
-    // A file that begins with a UTF-16 BOM (`FF FE`/`FE FF`) must NOT take the
-    // raw-byte windowed/mmap path below: that path decodes each window with
-    // `from_utf8_lossy`, which leaves a UTF-16 ASCII secret NUL-interleaved
-    // (`g\0h\0p\0…`) so no detector matches it, and counts `\n` on raw UTF-16
-    // bytes so line attribution drifts. The cross-window stitch invariant
-    // (`base_offset + data.len()` gapless; see engine::boundary) is raw-byte
-    // based, so windows cannot be transcoded in place without breaking it.
-    // `file_starts_with_utf16_bom` short-circuits those files out of the windowed
-    // branch (the `&&` only pays the probe syscall when the file is large enough
-    // to reach it), letting them fall through to the single-chunk
-    // `read_file_mmap` path below, which runs `decode_text_file` over the whole
-    // mapping (correct UTF-16 decode + exact line/col), is bounded by the same
-    // 2 GiB mmap sanity cap (an over-cap or TOCTOU-grown file is a loud counted
-    // skip), and routes a non-UTF-16 buffer that merely starts with the BOM bytes
-    // to printable-string scanning. LAW10: routes UTF-16 to the single-chunk
-    // decode so its ASCII secrets are scanned, not dropped -- the prior raw-byte
-    // windowed path silently lost them (false clean); recall is preserved.
-    if file_size > window_size as u64 && !file_starts_with_utf16_bom(&path) {
+    // Large UTF-16 and binary files must not take the raw-byte windowed path.
+    // UTF-16 would remain NUL-interleaved and lose secrets. Binary data would
+    // be decoded lossily and generate findings from compiled bytes. Route both
+    // through the bounded whole-file mmap decoder, which transcodes UTF-16 and
+    // extracts printable binary strings with explicit source provenance.
+    if file_size > window_size as u64 && !large_file_requires_whole_file_decode(&path) {
         let display = display_path(&path);
         let mut consumer_stopped = false;
         let windowed_mmap_outcome = read::for_each_file_windowed_mmap(

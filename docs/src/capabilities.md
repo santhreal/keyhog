@@ -73,7 +73,7 @@ contract, not a recommendation for routine routing.
 | Route | Select it with | Use case and boundary |
 |---|---|---|
 | Calibrated automatic routing | Run `keyhog calibrate-autoroute`, then `keyhog scan .` | Chooses the fastest parity-checked eligible backend for the exact host, binary, detector policy, and workload class. A normal scan does not benchmark. |
-| Portable CPU-only build | Install with `--no-default-features --features portable` | Use on a host without Hyperscan/Vectorscan and GPU drivers, or in a minimal container. A scalar-only build has no routing choice and needs no autoroute cache. |
+| Portable CPU-only build | Install with `cargo install --locked keyhog` | This is the default on every host. It includes local, remote, container, and native binary sources without Hyperscan, GPU, or Ghidra build prerequisites. A scalar-only build has no routing choice and needs no autoroute cache. |
 | Explicit pure-Rust CPU | `--backend cpu` | Diagnose the portable path or compare it in a benchmark. `--no-gpu` is not equivalent because Hyperscan may remain eligible. |
 | Hyperscan or Vectorscan | Let calibrated `auto` select it, or diagnose with `--backend simd` | Accelerated CPU trigger matching followed by the shared extraction and policy pipeline. It requires a compatible build and runtime. |
 | CUDA, native Metal, or WGPU | Let calibrated `auto` select an eligible peer | GPU region-presence matching followed by the same confirmation pipeline. GPU availability does not mean the GPU is fastest for every workload. |
@@ -192,8 +192,8 @@ that does it.
 | `backend` | inspect hardware, routing heuristics, and autoroute evidence |
 | `bloom-diagnostic` | measure the production Bloom rejection gate and prove enabled-versus-bypassed finding parity |
 | `doctor` | health-check the install: host, PATH, corpus, scan and GPU self-test |
-| `update` | verified download and self-replace to the latest release, with rollback |
-| `repair` | reinstall a known-good binary, then verify |
+| `update` | maintain an older GitHub binary-asset install; crates.io installs update with `cargo install --locked --force keyhog` |
+| `repair` | maintain an older GitHub binary-asset install; reinstall the current crates.io version with Cargo for new installs |
 | `uninstall` | remove the binary (dry run unless `--yes`) |
 | `completion` | emit shell completions (bash, zsh, fish, powershell, elvish) |
 

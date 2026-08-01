@@ -51,6 +51,44 @@ pub(super) fn resolve_scan_exit(outcome: ScanOutcome) -> u8 {
     }
 }
 
+struct OperatorProfile {
+    session: Option<keyhog_profile::Session>,
+}
+
+impl OperatorProfile {
+    fn start(enabled: bool, identity: keyhog_profile::RunIdentity) -> Result<Self> {
+        let session = enabled
+            .then(|| keyhog_profile::Session::start(identity))
+            .transpose()
+            .map_err(anyhow::Error::new)?;
+        Ok(Self { session })
+    }
+
+    fn transition(&mut self, state: keyhog_profile::RunState) {
+        if let Some(session) = self.session.as_mut() {
+            session.transition(state);
+        }
+    }
+
+    fn identity_mut(&mut self) -> Option<&mut keyhog_profile::RunIdentity> {
+        self.session
+            .as_mut()
+            .map(keyhog_profile::Session::identity_mut)
+    }
+
+    fn finish(&mut self, state: keyhog_profile::RunState) {
+        if let Some(session) = self.session.take() {
+            eprint!("{}", session.finish(state).render_text());
+        }
+    }
+}
+
+impl Drop for OperatorProfile {
+    fn drop(&mut self) {
+        self.finish(keyhog_profile::RunState::Failed);
+    }
+}
+
 impl ScanOrchestrator {
     pub async fn run(mut self) -> Result<std::process::ExitCode> {
         crate::reset_scan_runtime_state();
@@ -304,28 +342,81 @@ impl ScanOrchestrator {
             return Ok(std::process::ExitCode::SUCCESS);
         }
 
-        let allowlist =
-            load_allowlist(self.args.path.as_deref(), &self.effective_config.allowlist)?;
-        let incremental_cache_path = self.incremental_cache_path()?;
-        let merkle = self.build_merkle_index(incremental_cache_path.as_deref());
+        let config_digest =
+            crate::orchestrator_config::autoroute_config_digest(&self.effective_config);
+        let mut profile_identity = keyhog_profile::RunIdentity::new(
+            env!("CARGO_PKG_VERSION"),
+            self.detector_corpus_digest.clone(),
+            format!("{config_digest:016x}"),
+            "pending",
+            "runtime-batches",
+            backend_policy,
+        );
+        profile_identity.backend_selected =
+            Some(self.effective_config.backend_override.map_or_else(
+                || "autoroute-per-workload".to_owned(),
+                |backend| backend.label().to_owned(),
+            ));
+        profile_identity.scanner_threads = rayon::current_num_threads();
+        profile_identity.reader_threads = self.effective_config.reader_threads;
+        let mut operator_profile =
+            OperatorProfile::start(self.effective_config.scanner.profile, profile_identity)?;
+        operator_profile.transition(keyhog_profile::RunState::Acquiring);
 
-        let sources = crate::sources::build_sources(
-            &self.args,
-            &self.effective_config,
-            allowlist.ignored_paths.as_ref().to_vec(),
-            merkle.clone(),
-        )?;
+        let (allowlist, incremental_cache_path, merkle, sources) = {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceAcquire);
+            let allowlist =
+                load_allowlist(self.args.path.as_deref(), &self.effective_config.allowlist)?;
+            let incremental_cache_path = self.incremental_cache_path()?;
+            let merkle = self.build_merkle_index(incremental_cache_path.as_deref());
+            let sources = crate::sources::build_sources(
+                &self.args,
+                &self.effective_config,
+                allowlist.ignored_paths.as_ref().to_vec(),
+                merkle.clone(),
+            )?;
+            (allowlist, incremental_cache_path, merkle, sources)
+        };
         if sources.is_empty() {
             anyhow::bail!(
                 "no input source specified. Use --path, --stdin, --git, --git-diff, --git-history, --github-org, --gitlab-group, --bitbucket-workspace, --s3-bucket, --gcs-bucket, --azure-container-url, or --docker-image"
             );
         }
+        if let Some(identity) = operator_profile.identity_mut() {
+            identity.source_kind = sources
+                .iter()
+                .map(|source| source.name())
+                .collect::<Vec<_>>()
+                .join("+");
+            identity.cache_state = if !self.effective_config.incremental {
+                keyhog_profile::CacheState::Disabled
+            } else if incremental_cache_path
+                .as_deref()
+                .is_some_and(std::path::Path::exists)
+            {
+                keyhog_profile::CacheState::Warm
+            } else {
+                keyhog_profile::CacheState::Cold
+            };
+        }
 
-        let all_matches =
-            self.scan_sources(sources, show_progress, merkle, incremental_cache_path)?;
-        let filtered = self.filter_and_resolve(all_matches, &allowlist)?;
-        let findings_pre_rules = self.finalize(filtered).await?;
+        operator_profile.transition(keyhog_profile::RunState::Scanning);
+        let all_matches = {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::BackendDispatch);
+            self.scan_sources(sources, show_progress, merkle, incremental_cache_path)?
+        };
+        let filtered = {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::Suppression);
+            self.filter_and_resolve(all_matches, &allowlist)?
+        };
+        operator_profile.transition(keyhog_profile::RunState::Verifying);
+        let findings_pre_rules = {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::LiveVerification);
+            self.finalize(filtered).await?
+        };
+        operator_profile.transition(keyhog_profile::RunState::Reporting);
 
+        let _suppression_span = keyhog_profile::span(keyhog_profile::Stage::Suppression);
         let rule_suppressor = load_rule_suppressor(self.args.path.as_deref())?;
         let pre_rule_count = findings_pre_rules.len();
         let hide_client_safe = self.effective_config.report.hide_client_safe;
@@ -343,6 +434,7 @@ impl ScanOrchestrator {
                 true
             })
             .collect();
+        drop(_suppression_span);
 
         // KH-GAP-096: if a requested source failed ENTIRELY, produced zero
         // chunks AND errored (e.g. --git-history / --git-diff on a non-repo or
@@ -434,8 +526,10 @@ impl ScanOrchestrator {
                 .iter()
                 .any(|f| matches!(f.verification, VerificationResult::Live));
             if has_live {
+                operator_profile.finish(keyhog_profile::RunState::Completed);
                 return Ok(std::process::ExitCode::from(EXIT_LIVE_CREDENTIALS));
             }
+            operator_profile.finish(keyhog_profile::RunState::Completed);
             return Ok(std::process::ExitCode::SUCCESS);
         }
 
@@ -531,11 +625,14 @@ impl ScanOrchestrator {
                 super::reporting::reporting_ticker(done, started, report_finding_count)
             })
         });
-        let report_result = crate::reporting::report_findings_with_metadata(
-            &report_findings,
-            &self.args,
-            &report_metadata,
-        );
+        let report_result = {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
+            crate::reporting::report_findings_with_metadata(
+                &report_findings,
+                &self.args,
+                &report_metadata,
+            )
+        };
         if let Some(guard) = reporting_progress {
             guard.stop();
         }
@@ -580,6 +677,13 @@ impl ScanOrchestrator {
                  reporting \"clean\": some requested bytes were not scanned."
             );
         }
+        operator_profile.finish(
+            if scanner_panicked || incremental_cache_failed || source_coverage_incomplete {
+                keyhog_profile::RunState::Failed
+            } else {
+                keyhog_profile::RunState::Completed
+            },
+        );
         Ok(std::process::ExitCode::from(exit))
     }
 }

@@ -36,6 +36,13 @@ class DocumentationSiteMetadataTests(unittest.TestCase):
         self.assertIn('<meta property="og:title" content="Scan CI &amp; Git - KeyHog">', updated)
         self.assertIn(f'"url":"{canonical}"', updated)
         self.assertIn('"codeRepository":"https://github.com/santhreal/keyhog"', updated)
+        self.assertIn('"keywords":["secret scanner","secret scanning"', updated)
+        self.assertIn('"runtimePlatform":["Linux","macOS","Windows"]', updated)
+        self.assertIn(
+            '<meta property="og:image" content="https://santh.dev/og-keyhog-v0-5-34.png">',
+            updated,
+        )
+        self.assertIn('<meta name="twitter:card" content="summary_large_image">', updated)
 
     def test_metadata_generation_is_idempotent(self) -> None:
         """Repeated docs builds must replace generated metadata instead of duplicating it."""

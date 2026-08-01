@@ -670,8 +670,10 @@ fn scan_mount(
     // scan-system is paranoid by default - walks files even if listed in
     // `.gitignore` / `.keyhogignore`. An attacker stashing a leaked key
     // would gitignore it; respecting gitignore here would let that hide.
-    let source =
-        FilesystemSource::new(root.to_path_buf()).with_respect_gitignore(args.respect_gitignore);
+    let discovery_budget = space_cap.saturating_sub(bytes_scanned.load(Ordering::Relaxed));
+    let source = FilesystemSource::new(root.to_path_buf())
+        .with_respect_gitignore(args.respect_gitignore)
+        .with_discovery_byte_limit(discovery_budget);
     let mut stopped_by_space_cap = false;
     crate::orchestrator::scan_streaming_source(
         scan_runtime,
@@ -691,7 +693,7 @@ fn scan_mount(
             Ok(())
         },
     )?;
-    Ok(stopped_by_space_cap)
+    Ok(stopped_by_space_cap || source.discovery_limit_reached())
 }
 
 fn scan_git_history(

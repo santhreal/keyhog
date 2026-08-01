@@ -553,7 +553,7 @@ pub struct ScanArgs {
     #[arg(long)]
     pub stream: bool,
 
-    /// Emit the scanner-owned hierarchical profile report to stderr at scan end.
+    /// Emit hierarchical stage timings, run identity, state transitions, and process resource usage to stderr at scan end.
     #[arg(long)]
     pub profile: bool,
 

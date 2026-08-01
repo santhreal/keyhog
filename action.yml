@@ -43,9 +43,8 @@ inputs:
     default: ''
   backend:
     description: |
-      Scan backend: auto | cpu | simd | gpu-cuda | gpu-wgpu. Published exact
-      and floating release refs build the crates.io package with calibrated auto.
-      Portable branch and commit source refs require explicit cpu.
+      Scan backend for a checked-out tree. Published refs use the lean CI build
+      and accept auto or cpu. Portable branch and commit source refs require cpu.
     default: ''
   preset:
     description: 'Scan preset: default | fast | deep | precision.'
@@ -242,6 +241,15 @@ runs:
             exit 2
           fi
         fi
+        if [[ "$release_required" == "true" ]]; then
+          case "${ACTION_BACKEND:-}" in
+            "" | auto | cpu) ;;
+            *)
+              echo "::error title=KeyHog::Published Action refs use the lean CI build. Choose backend: auto or backend: cpu. Run accelerator diagnostics on a self-hosted CLI installation."
+              exit 2
+              ;;
+          esac
+        fi
         if [[ "$release_required" == "false" && "${ACTION_BACKEND:-}" != "cpu" ]]; then
           echo "::error title=KeyHog::Portable branch and commit source refs require backend: cpu. Use an exact or floating published release ref for calibrated backend:auto."
           exit 2
@@ -288,7 +296,7 @@ runs:
           *) bin_name="keyhog" ;;
         esac
         if [[ "$release_required" == "true" ]]; then
-          cargo install --locked --version "=$version" --root "$install_root" keyhog
+          cargo install --locked --version "=$version" --root "$install_root" --no-default-features --features ci keyhog
           published_binary="$install_root/bin/$bin_name"
         else
           if [[ ! -f "$ACTION_SOURCE_ROOT/Cargo.toml" || ! -f "$ACTION_SOURCE_ROOT/scripts/release-version.sh" ]]; then

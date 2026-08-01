@@ -5,6 +5,7 @@ release-check:
 		scripts.tests.test_prepare_release \
 		scripts.tests.test_auto_release \
 		scripts.tests.test_bump_doc_versions \
+		scripts.tests.test_publish_retry \
 		scripts.tests.test_release_workflows
 
 # Keep generated README evidence, operator contracts, and mdBook links coherent.

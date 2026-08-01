@@ -146,49 +146,52 @@ pub(super) fn manifest_config_chunks(
 ) -> Result<Vec<Chunk>, SourceError> {
     let entries = load_manifest_entries(root_path, limits)?;
     let mut chunks = Vec::new();
-    for (idx, entry) in entries.into_iter().enumerate() {
-        let config = entry.config;
-        let config_path = resolve_manifest_member_path(root_path, "config", &config)?;
-        if !config_path.is_file() {
-            return Err(SourceError::Other(format!(
-                "docker manifest references missing config '{}'",
-                config
-            )));
+    if entries.is_empty() {
+        chunks.extend(oci::config_chunks(root_path, image, limits)?);
+    } else {
+        for (idx, entry) in entries.into_iter().enumerate() {
+            let config = entry.config;
+            let config_path = resolve_manifest_member_path(root_path, "config", &config)?;
+            if !config_path.is_file() {
+                return Err(SourceError::Other(format!(
+                    "docker manifest references missing config '{}'",
+                    config
+                )));
+            }
+            let bytes = read_capped_file(
+                &config_path,
+                "docker image config",
+                limits.docker_image_config_bytes,
+            )?;
+            let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+                SourceError::Other(format!(
+                    "invalid docker image config '{}' referenced by manifest entry {idx}: {error}",
+                    config
+                ))
+            })?;
+            let data = serde_json::to_string_pretty(&value).map_err(|error| {
+                SourceError::Other(format!(
+                    "failed to serialize docker image config '{}' for scanning: {error}",
+                    config
+                ))
+            })?;
+            chunks.push(Chunk {
+                metadata: ChunkMetadata {
+                    base_offset: 0,
+                    base_line: 0,
+                    source_type: "docker".into(),
+                    path: Some(format!("{image}:manifest[{idx}]:{config}").into()),
+                    commit: None,
+                    author: None,
+                    date: None,
+                    mtime_ns: None,
+                    size_bytes: Some(data.len() as u64),
+                    decoded_span: None,
+                },
+                data: data.into(),
+            });
         }
-        let bytes = read_capped_file(
-            &config_path,
-            "docker image config",
-            limits.docker_image_config_bytes,
-        )?;
-        let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
-            SourceError::Other(format!(
-                "invalid docker image config '{}' referenced by manifest entry {idx}: {error}",
-                config
-            ))
-        })?;
-        let data = serde_json::to_string_pretty(&value).map_err(|error| {
-            SourceError::Other(format!(
-                "failed to serialize docker image config '{}' for scanning: {error}",
-                config
-            ))
-        })?;
-        chunks.push(Chunk {
-            metadata: ChunkMetadata {
-                base_offset: 0,
-                base_line: 0,
-                source_type: "docker".into(),
-                path: Some(format!("{image}:manifest[{idx}]:{config}").into()),
-                commit: None,
-                author: None,
-                date: None,
-                mtime_ns: None,
-                size_bytes: Some(data.len() as u64),
-                decoded_span: None,
-            },
-            data: data.into(),
-        });
     }
-    chunks.extend(oci::config_chunks(root_path, image, limits)?);
     if chunks.is_empty() {
         chunks.extend(find_fallback_config_chunks(root_path, image, limits)?);
     }
@@ -295,19 +298,22 @@ pub(super) fn manifest_layer_archives(
 ) -> Result<Vec<PathBuf>, SourceError> {
     let entries = load_manifest_entries(root_path, limits)?;
     let mut layers = Vec::new();
-    for entry in entries {
-        for layer in entry.layers {
-            let layer_path = resolve_manifest_member_path(root_path, "layer", &layer)?;
-            if !layer_path.is_file() {
-                return Err(SourceError::Other(format!(
-                    "docker manifest references missing layer '{}'",
-                    layer
-                )));
+    if entries.is_empty() {
+        layers.extend(oci::layer_archives(root_path, limits)?);
+    } else {
+        for entry in entries {
+            for layer in entry.layers {
+                let layer_path = resolve_manifest_member_path(root_path, "layer", &layer)?;
+                if !layer_path.is_file() {
+                    return Err(SourceError::Other(format!(
+                        "docker manifest references missing layer '{}'",
+                        layer
+                    )));
+                }
+                layers.push(layer_path);
             }
-            layers.push(layer_path);
         }
     }
-    layers.extend(oci::layer_archives(root_path, limits)?);
     layers.sort();
     layers.dedup();
     Ok(layers)

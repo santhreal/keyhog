@@ -142,8 +142,9 @@ fn install_scripts_keep_explicit_insecure_flags() {
     );
 }
 
+/// Legacy binary-asset installers retain their pinned signature key even though the canonical Cargo install guide no longer publishes that bootstrap detail.
 #[test]
-fn bootstrap_installers_verify_release_minisig_with_updater_key() {
+fn legacy_bootstrap_installers_verify_release_minisig_with_updater_key() {
     let public_key = API.release_public_key();
     for (name, script) in [
         ("install.sh", include_str!("../../../install.sh")),
@@ -170,11 +171,6 @@ fn bootstrap_installers_verify_release_minisig_with_updater_key() {
             "{name} must refuse unsigned/unverified bootstrap assets by default"
         );
     }
-    let install_docs = include_str!("../../../docs/src/install.md");
-    assert!(
-        install_docs.contains(public_key),
-        "manual release verification docs must publish the same pinned minisign key as the Rust updater and both bootstrap installers"
-    );
 }
 
 #[test]

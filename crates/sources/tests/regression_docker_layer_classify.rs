@@ -464,6 +464,100 @@ fn rewrite_normalizes_nested_path_under_digest_label_and_clears_git_fields() {
     assert_eq!(out.metadata.decoded_span, Some((3, 9)));
 }
 
+/// Binary archive members use virtual paths; rewriting must preserve both the member suffix and binary provenance needed by scanner suppression.
+#[cfg(feature = "docker")]
+#[test]
+fn rewrite_preserves_nested_archive_member_path_inside_layer() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let layer_root = dir.path().join("layer");
+    let archive = layer_root.join("lib/apk/db/scripts.tar");
+    std::fs::create_dir_all(archive.parent().expect("archive parent")).expect("mkdir archive");
+    std::fs::write(&archive, b"archive fixture").expect("write archive");
+    let chunk = keyhog_core::Chunk {
+        data: "clean post-install body".into(),
+        metadata: keyhog_core::ChunkMetadata {
+            source_type: "filesystem/archive-binary".into(),
+            path: Some(
+                format!(
+                    "{}//busybox-1.36.1-r31.Q10x0SiWGr7WTkprUc9El8xZKQq28=.post-install",
+                    archive.display()
+                )
+                .into(),
+            ),
+            ..Default::default()
+        },
+    };
+
+    let rewritten = TestApi
+        .docker_rewrite_layer_chunks(
+            vec![Ok(chunk)],
+            "alpine:3.20",
+            &layer_root,
+            "blobs/sha256/layer",
+        )
+        .expect("rewrite layer rows");
+
+    assert_eq!(rewritten.len(), 1);
+    assert_eq!(
+        rewritten[0]
+            .as_ref()
+            .expect("archive member rewrite")
+            .metadata
+            .path
+            .as_deref(),
+        Some(
+            "alpine:3.20:blobs/sha256/layer:lib/apk/db/scripts.tar//busybox-1.36.1-r31.Q10x0SiWGr7WTkprUc9El8xZKQq28=.post-install"
+        )
+    );
+    assert_eq!(
+        rewritten[0]
+            .as_ref()
+            .expect("archive member rewrite")
+            .metadata
+            .source_type
+            .as_ref(),
+        "docker/filesystem/archive-binary"
+    );
+}
+
+/// A hostile virtual archive suffix must remain a visible row error instead of escaping the layer label.
+#[cfg(feature = "docker")]
+#[test]
+fn rewrite_rejects_parent_traversal_in_virtual_archive_member_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let layer_root = dir.path().join("layer");
+    let archive = layer_root.join("payload.tar");
+    std::fs::create_dir(&layer_root).expect("mkdir layer");
+    std::fs::write(&archive, b"archive fixture").expect("write archive");
+    let chunk = keyhog_core::Chunk {
+        data: "hostile".into(),
+        metadata: keyhog_core::ChunkMetadata {
+            source_type: "filesystem/archive".into(),
+            path: Some(format!("{}//../outside.env", archive.display()).into()),
+            ..Default::default()
+        },
+    };
+
+    let rewritten = TestApi
+        .docker_rewrite_layer_chunks(
+            vec![Ok(chunk)],
+            "image:test",
+            &layer_root,
+            "blobs/sha256/layer",
+        )
+        .expect("rewrite layer rows");
+
+    assert_eq!(rewritten.len(), 1);
+    let error = rewritten[0]
+        .as_ref()
+        .expect_err("unsafe virtual member must fail")
+        .to_string();
+    assert!(
+        error.contains("unsafe virtual archive member path") && error.contains("../outside.env"),
+        "unexpected error: {error}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // feature-off twins (keep the target compiling + running when docker is off)
 // ---------------------------------------------------------------------------

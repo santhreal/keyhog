@@ -42,6 +42,67 @@ pub(crate) fn is_false_positive_match_context_with_path(
         || is_cors_header_bytes(current_line_bytes)
         || is_http_cache_header_bytes(current_line_bytes)
         || has_disclaimer_comment_bytes(current_line_bytes)
+        || is_public_pem_block_at(text, match_start)
+}
+
+/// Return true when `match_start` is inside a PEM block that contains only
+/// public material. Private-key labels are deliberately absent.
+pub(crate) fn is_public_pem_block_at(text: &str, match_start: usize) -> bool {
+    const BEGIN: &[u8] = b"-----BEGIN ";
+    const END: &[u8] = b"-----END ";
+    const TRAILER: &[u8] = b"-----";
+
+    let bytes = text.as_bytes();
+    let match_start = match_start.min(bytes.len());
+    let Some(begin) = memchr::memmem::rfind(&bytes[..match_start], BEGIN) else {
+        return false;
+    };
+    let header_tail = &bytes[begin..];
+    let header_end =
+        memchr::memchr(b'\n', header_tail).map_or(header_tail.len(), |newline| newline);
+    let header = trim_optional_carriage_return(&header_tail[..header_end]);
+    let Some(label) = pem_label(header, BEGIN, TRAILER) else {
+        return false;
+    };
+    if !matches!(
+        label,
+        b"CERTIFICATE"
+            | b"TRUSTED CERTIFICATE"
+            | b"X509 CERTIFICATE"
+            | b"PUBLIC KEY"
+            | b"RSA PUBLIC KEY"
+            | b"SSH2 PUBLIC KEY"
+    ) {
+        return false;
+    }
+
+    let body_before_match = &bytes[begin + header_end..match_start];
+    if memchr::memmem::find(body_before_match, END).is_some() {
+        return false;
+    }
+    let after_match = &bytes[match_start..];
+    let Some(end_offset) = memchr::memmem::find(after_match, END) else {
+        return false;
+    };
+    if memchr::memmem::find(&after_match[..end_offset], BEGIN).is_some() {
+        return false;
+    }
+    let end_tail = &after_match[end_offset..];
+    let end_line_end = memchr::memchr(b'\n', end_tail).map_or(end_tail.len(), |newline| newline);
+    let end_header = trim_optional_carriage_return(&end_tail[..end_line_end]);
+    pem_label(end_header, END, TRAILER).is_some_and(|end_label| end_label == label)
+}
+
+fn pem_label<'a>(header: &'a [u8], prefix: &[u8], trailer: &[u8]) -> Option<&'a [u8]> {
+    header.strip_prefix(prefix)?.strip_suffix(trailer)
+}
+
+fn trim_optional_carriage_return(line: &[u8]) -> &[u8] {
+    if line.ends_with(b"\r") {
+        &line[..line.len() - 1]
+    } else {
+        line
+    }
 }
 
 /// Detect trailing/leading comment disclaimers like `// not a real key`,

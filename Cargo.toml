@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/core",
+    "crates/profile",
     "crates/scanner",
     "crates/verifier",
     "crates/sources",
@@ -14,17 +15,18 @@ version = "0.5.49"
 edition = "2021"
 rust-version = "1.89"
 license = "MIT OR Apache-2.0"
-description = "keyhog detects leaked credentials in source trees, git history, archives, and remote sources"
+description = "GPU-accelerated secret scanner for code, Git history, cloud, containers, browser assets, and live credential verification"
 readme = "README.md"
 repository = "https://github.com/santhreal/keyhog"
 homepage = "https://santh.dev/keyhog/"
 documentation = "https://docs.rs/keyhog"
-keywords = ["secret-scanner", "security", "credentials", "api-keys", "git"]
-categories = ["command-line-utilities", "development-tools"]
+keywords = ["secret-scanner", "security", "credentials", "gpu", "devsecops"]
+categories = ["command-line-utilities", "development-tools", "filesystem"]
 authors = ["Santh Project <contact@santh.dev>"]
 
 [workspace.dependencies]
 keyhog-core = { version = "=0.5.49", path = "crates/core" }
+keyhog-profile = { version = "=0.5.49", path = "crates/profile" }
 keyhog-scanner = { version = "=0.5.49", path = "crates/scanner", default-features = false }
 keyhog-verifier = { version = "=0.5.49", path = "crates/verifier" }
 # default-features = false so consumers opt into source backends per profile.
@@ -41,6 +43,7 @@ serde_json = "=1.0.150"
 semver = "=1.0.28"
 serde_yaml = "=0.9.34"
 toml = "=1.1.2"
+sysinfo = { version = "=0.36.1", default-features = false, features = ["system"] }
 
 # Async
 tokio = { version = "=1.52.3", features = ["full"] }
@@ -186,11 +189,12 @@ zeroize = { version = "=1.8.2", features = ["derive"] }
 status = "alpha"
 
 # Build Profiles
-# cargo build --release                          -> CLI default: scanner full desktop stack
-#                                                   (GPU + Hyperscan/SIMD + simdsieve +
-#                                                   ML/entropy/decode/multiline), source
-#                                                   backends, verification, and mimalloc
+# cargo build --release                          -> CLI default: portable source/verification surface
+#                                                   without Hyperscan/GPU/CUDA/Ghidra
+#                                                   build dependencies (native TLS remains)
 # `--fast` is a runtime CLI flag (not Cargo `-F fast`; the `fast` feature is unused).
+# cargo build --release -F gpu                   -> opt-in GPU routes: CUDA, Metal, and WGPU
+# cargo build --release -F simd                  -> opt-in Hyperscan/SIMD (system library required)
 # cargo build --release -F binary                -> add Ghidra decompiler + printable string extraction
 # cargo build --release -F full                  -> source/decompiler surface without accelerator/system-library features (native TLS remains)
 # cargo build --release --no-default-features    -> bare filesystem/stdin scanner surface
@@ -199,7 +203,7 @@ status = "alpha"
 # cargo build --release --no-default-features -F ci-lean -> default source/verification surface without GPU dispatch
 #
 # Features are additive on the selected base:
-#   cargo build --release -F binary              -> default build plus Ghidra
+#   cargo build --release -F gpu                 -> portable default plus GPU routes
 #   cargo build --release --no-default-features -F full,gpu,simd -> full source/decompiler surface plus accelerator paths
 
 # ── Release profile: max-perf single-binary deploys ────────────────────

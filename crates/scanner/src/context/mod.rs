@@ -13,8 +13,10 @@ mod placeholder;
 pub(crate) use documentation::documentation_line_flags;
 #[cfg(test)]
 pub(crate) use false_positive::parse_disclaimer_phrases;
-pub(crate) use false_positive::{has_disclaimer_comment_bytes, is_integrity_hash_bytes};
-pub(crate) use false_positive::{is_false_positive_context, is_false_positive_match_context};
+pub(crate) use false_positive::{
+    has_disclaimer_comment_bytes, is_false_positive_context, is_false_positive_match_context,
+    is_integrity_hash_bytes, is_public_pem_block_at,
+};
 pub use inference::infer_context;
 pub(crate) use inference::infer_context_with_documentation;
 #[cfg(test)]

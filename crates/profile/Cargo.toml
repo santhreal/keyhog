@@ -1,0 +1,26 @@
+[package]
+name = "keyhog-profile"
+description = "Low-overhead causal profiling and run-state records for KeyHog"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository = "https://github.com/santhreal/keyhog"
+homepage = "https://santh.dev/keyhog/"
+documentation = "https://docs.rs/keyhog-profile"
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "span_overhead"
+harness = false

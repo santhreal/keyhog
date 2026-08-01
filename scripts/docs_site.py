@@ -12,8 +12,8 @@ from urllib.parse import quote
 
 SITE_ROOT = "https://santhreal.github.io/keyhog/"
 DESCRIPTION = (
-    "Use KeyHog to scan repositories, Git history, CI, hosted Git collections, "
-    "cloud object inventories, archives, and local systems for leaked credentials."
+    "Use KeyHog to scan code, Git history, cloud, containers, browser assets, "
+    "and CI for secrets with CPU, Hyperscan, CUDA, Metal, and WGPU backends."
 )
 _START = "<!-- KEYHOG:SEO:BEGIN -->"
 _END = "<!-- KEYHOG:SEO:END -->"
@@ -46,12 +46,22 @@ def metadata_block(title: str, canonical: str) -> str:
             "@type": "TechArticle",
             "headline": title,
             "description": DESCRIPTION,
+            "keywords": [
+                "secret scanner",
+                "secret scanning",
+                "secrets detection",
+                "GPU secret scanner",
+                "credential scanner",
+                "DevSecOps",
+            ],
             "url": canonical,
             "isPartOf": {
                 "@type": "SoftwareSourceCode",
                 "name": "KeyHog",
                 "codeRepository": "https://github.com/santhreal/keyhog",
                 "programmingLanguage": "Rust",
+                "runtimePlatform": ["Linux", "macOS", "Windows"],
+                "license": "https://spdx.org/licenses/Apache-2.0.html",
             },
         },
         ensure_ascii=True,
@@ -66,10 +76,13 @@ def metadata_block(title: str, canonical: str) -> str:
             '<meta property="og:site_name" content="KeyHog documentation">',
             f'<meta property="og:title" content="{escaped_title}">',
             f'<meta property="og:description" content="{escaped_description}">',
+            '<meta property="og:image" content="https://santh.dev/og-keyhog-v0-5-34.png">',
+            '<meta property="og:image:alt" content="KeyHog GPU-accelerated secret scanner">',
             f'<meta property="og:url" content="{escaped_canonical}">',
-            '<meta name="twitter:card" content="summary">',
+            '<meta name="twitter:card" content="summary_large_image">',
             f'<meta name="twitter:title" content="{escaped_title}">',
             f'<meta name="twitter:description" content="{escaped_description}">',
+            '<meta name="twitter:image" content="https://santh.dev/og-keyhog-v0-5-34.png">',
             f'<script type="application/ld+json">{structured}</script>',
             _END,
         )

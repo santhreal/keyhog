@@ -20,7 +20,7 @@ PY
     echo "error: missing workspace.package.version in Cargo.toml" >&2
     exit 2
 fi
-CRATES=(keyhog-core keyhog-verifier keyhog-sources keyhog-scanner keyhog)
+CRATES=(keyhog-core keyhog-profile keyhog-verifier keyhog-sources keyhog-scanner keyhog)
 
 crate_visible() {
     python3 -B - "$1" "$VERSION" <<'PY'
@@ -60,14 +60,43 @@ wait_until_visible() {
     done
 }
 
-for crate in "${CRATES[@]}"; do
+publish_crate() {
+    local crate="$1"
+    local attempt
+    local delay=2
+
     if crate_visible "$crate"; then
         echo "==> $crate $VERSION already published"
-        continue
+        return 0
     fi
-    echo "==> publishing $crate $VERSION"
-    cargo publish --locked --no-verify --registry crates-io -p "$crate"
-    wait_until_visible "$crate"
+
+    for attempt in 1 2 3; do
+        echo "==> publishing $crate $VERSION (attempt $attempt/3)"
+        if cargo publish --locked --no-verify --registry crates-io -p "$crate"; then
+            wait_until_visible "$crate"
+            return
+        fi
+
+        # The upload can succeed even when the client loses the response.
+        # Visibility makes a rerun idempotent without parsing Cargo's prose.
+        if crate_visible "$crate"; then
+            echo "==> $crate $VERSION became visible after the failed upload response"
+            return 0
+        fi
+        if (( attempt < 3 )); then
+            echo "warning: $crate $VERSION upload failed; retrying in ${delay}s" >&2
+            sleep "$delay"
+            delay=$((delay * 2))
+        fi
+    done
+
+    echo "error: failed to publish $crate $VERSION after 3 attempts" >&2
+    echo "error: rerun this release workflow; already-visible crates will be skipped" >&2
+    return 1
+}
+
+for crate in "${CRATES[@]}"; do
+    publish_crate "$crate"
 done
 
 echo "Published KeyHog $VERSION to crates.io."

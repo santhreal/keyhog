@@ -174,7 +174,14 @@ fn rewrite_chunk(
     })?;
     let relative_path = layer_relative_path(source_path, normalized_root)?;
 
-    chunk.metadata.source_type = "docker".into();
+    if chunk.metadata.source_type.starts_with("binary:")
+        || chunk.metadata.source_type.contains("binary-strings")
+        || chunk.metadata.source_type.contains("archive-binary")
+    {
+        chunk.metadata.source_type = format!("docker/{}", chunk.metadata.source_type).into();
+    } else {
+        chunk.metadata.source_type = "docker".into();
+    }
     chunk.metadata.path = Some(format!("{image}:{layer_name}:{relative_path}").into());
     chunk.metadata.commit = None;
     chunk.metadata.author = None;
@@ -187,7 +194,14 @@ fn rewrite_chunk(
 /// passed in, so this per-chunk hot path pays only the one unavoidable
 /// canonicalize of the chunk's own path.
 fn layer_relative_path(path: &str, normalized_root: &Path) -> Result<String, SourceError> {
-    let raw_path = Path::new(path);
+    let (filesystem_path, virtual_member) = match path.split_once("//") {
+        Some((filesystem_path, virtual_member)) => {
+            validate_virtual_member_path(virtual_member)?;
+            (filesystem_path, Some(virtual_member))
+        }
+        None => (path, None),
+    };
+    let raw_path = Path::new(filesystem_path);
     let candidate = if raw_path.is_absolute() {
         raw_path.to_path_buf()
     } else {
@@ -208,6 +222,29 @@ fn layer_relative_path(path: &str, normalized_root: &Path) -> Result<String, Sou
                 normalized_root.display()
             ))
         })?
-        .to_path_buf();
-    Ok(relative.to_string_lossy().replace('\\', "/"))
+        .to_string_lossy()
+        .replace('\\', "/");
+    Ok(match virtual_member {
+        Some(member) => format!("{relative}//{}", member.replace('\\', "/")),
+        None => relative,
+    })
+}
+
+fn validate_virtual_member_path(member: &str) -> Result<(), SourceError> {
+    let valid = !member.is_empty()
+        && member.split("//").all(|nested_member| {
+            let path = Path::new(nested_member);
+            !nested_member.is_empty()
+                && !path.is_absolute()
+                && path
+                    .components()
+                    .all(|component| matches!(component, std::path::Component::Normal(_)))
+        });
+    if valid {
+        Ok(())
+    } else {
+        Err(SourceError::Other(format!(
+            "docker layer chunk has unsafe virtual archive member path '{member}'"
+        )))
+    }
 }

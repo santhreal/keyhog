@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Bound scan-system metadata discovery by the remaining --space budget so small host-scan ceilings stop promptly and report partial coverage instead of traversing the entire filesystem first."
+crates = ["cli", "sources"]

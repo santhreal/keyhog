@@ -76,6 +76,14 @@ impl<'a> KnownExampleSuppressionCtx<'a> {
         self
     }
 }
+pub(crate) fn is_uncontextualized_binary_source(source: &str) -> bool {
+    source.contains("binary-strings")
+        || source.contains("archive-binary")
+        || source.contains("binary:strings")
+        || source.contains("binary:elf:")
+        || source.contains("binary:pe:")
+        || source.contains("binary:macho:")
+}
 
 pub(crate) fn suppress_known_example_credential_stage(
     credential: &str,
@@ -410,18 +418,13 @@ pub(crate) fn suppress_named_detector_finding_stage(
         );
         return shape_stage("vendored_minified_path");
     }
-    // Native-binary string extraction (`filesystem:binary-strings`,
-    // `filesystem/archive-binary`): the file is an ELF / Mach-O / PE /
-    // wasm / archived binary whose printable strings were extracted as
-    // a fallback. Short-prefix detectors (openai `sk-`, stabilityai
-    // `sk-`, helicone `sk-`/`pk-`/`eu-`, clickup `pk_`, AKIA / ASIA,
-    // K00M, AIza, dn_, …) generate noise on random compiled-code byte
-    // sequences that happen to start with the prefix. A real credential
-    // embedded in a native binary is best caught via the optional
-    // `binary` feature (Ghidra-based extraction with context), not via
-    // brute-force strings. Skip every named-detector finding here so
-    // we don't ship FPs from compiled apps' rodata.
-    if source_type.is_some_and(|s| s.contains("binary-strings") || s.contains("archive-binary")) {
+    // Native binary extraction (`filesystem:binary-strings`,
+    // `filesystem/archive-binary`, and the raw strings/section analyzers):
+    // the content is printable bytes or a compiled data section without
+    // credential context. Short-prefix detectors and entropy fallback generate
+    // noise on ordinary compiled code. Ghidra decompiled output is excluded
+    // because it retains source context that can support a real finding.
+    if source_type.is_some_and(is_uncontextualized_binary_source) {
         crate::adjudicate::record_example_suppression(
             "pipeline",
             path,

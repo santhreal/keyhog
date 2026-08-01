@@ -704,3 +704,38 @@ fn entropy_example_suppression_uses_detector_owned_repeat_limit() {
         Some(EntropyShapeStage::SuppressionStage("repetitive_run")),
     );
 }
+/// Entropy fallback must reject random native-section bytes even when a canonical shape lift would otherwise release them.
+#[cfg(feature = "entropy")]
+#[test]
+fn entropy_native_binary_source_outranks_canonical_lift() {
+    assert_eq!(
+        crate::adjudicate::entropy_fallback_example_suppression_stage(
+            "Q7vNM3xK8cP4mZ2rT9wL6sHd",
+            "token",
+            4.5,
+            Some("image:latest:lib/libcrypto.so"),
+            Some("docker/binary:elf:.rodata"),
+            5,
+            true,
+        ),
+        Some(EntropyShapeStage::SuppressionStage("native_binary_strings")),
+    );
+}
+
+/// Decompiled Ghidra output retains source context and must not inherit the raw-section entropy suppression.
+#[cfg(feature = "entropy")]
+#[test]
+fn entropy_ghidra_decompiled_source_is_not_raw_binary() {
+    assert_ne!(
+        crate::adjudicate::entropy_fallback_example_suppression_stage(
+            "Q7vNM3xK8cP4mZ2rT9wL6sHd",
+            "token",
+            4.5,
+            Some("image:latest:lib/libcrypto.so"),
+            Some("docker/binary:ghidra:decompiled"),
+            5,
+            true,
+        ),
+        Some(EntropyShapeStage::SuppressionStage("native_binary_strings")),
+    );
+}

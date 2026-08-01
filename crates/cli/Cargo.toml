@@ -29,27 +29,11 @@ name = "keyhog"
 path = "src/main.rs"
 
 [features]
-# Default = full desktop experience: scanner defaults, source backends,
-# verification, and the allocator. The scanner default intentionally includes
-# GPU, Hyperscan/SIMD, simdsieve, ML, entropy, decode-through, and multiline.
-# Use `portable`, `ci-lean`, or `ci` for builds that strip accelerator and
-# optional system-backend dependencies; network sources still use native TLS.
-# `binary` (Ghidra) remains opt-in.
-default = [
-    "keyhog-scanner/default",  # scanner full desktop stack, including GPU + Hyperscan/SIMD
-    "simd",                    # activate CLI Hyperscan surfaces alongside scanner/default
-    "git",                      # Git source backends
-    "web",                      # URL scanning (JS/sourcemap/WASM)
-    "github",                   # GitHub org scanning
-    "gitlab",                   # GitLab group scanning
-    "bitbucket",                # Bitbucket workspace scanning
-    "azure",                    # Azure Blob container scanning
-    "gcs",                      # Google Cloud Storage bucket scanning
-    "s3",                       # S3 bucket scanning
-    "docker",                   # Docker image scanning
-    "verify",                   # Live credential verification
-    "mimalloc",                 # thread-caching global allocator (scan parallelism)
-]
+# The default crates.io install is the portable source and verification surface.
+# It has no native Hyperscan, GPU-driver, CUDA-toolkit, or Ghidra build
+# prerequisite, so `cargo install keyhog` works on a clean Rust host. Add `gpu`
+# for CUDA, Metal, and WGPU, or `simd` after installing Hyperscan/Vectorscan.
+default = ["portable"]
 # Thread-caching global allocator for the CLI binary. The scan hot path runs
 # one Rayon worker per core, each allocating regex DFA-cache scratch and
 # per-match Strings; glibc's arena lock serialises those allocations (visible
@@ -75,11 +59,12 @@ ci-lean = [
     "docker",
     "verify",
 ]
-# Portable release builds: every keyhog-scanner data feature, with no
-# Hyperscan / Ghidra / CUDA build dependencies. Network sources still use the
-# native TLS stack and therefore retain the documented platform prerequisites.
-# Workflows pass just `--features portable` instead of enumerating each
-# `keyhog-scanner/...` feature per release.
+# Portable release builds: every keyhog-scanner data feature and source backend,
+# with no Hyperscan, GPU-driver, CUDA-toolkit, or Ghidra build prerequisite.
+# Binary string and object scanning is built in; Ghidra enrichment remains an
+# optional runtime tool. Network sources retain their documented platform
+# prerequisites. Workflows pass `--features portable` instead of enumerating
+# each `keyhog-scanner/...` feature per release.
 portable = [
     "keyhog-scanner/ml",
     "keyhog-scanner/entropy",
@@ -94,6 +79,7 @@ portable = [
     "gcs",
     "s3",
     "docker",
+    "binary",
     "verify",
     "mimalloc",
 ]
@@ -148,6 +134,7 @@ static-hyperscan = ["simd", "keyhog-scanner/static-hyperscan"]
 [dependencies]
 keyhog-core = { workspace = true }
 keyhog-scanner = { workspace = true, default-features = false }
+keyhog-profile = { workspace = true }
 keyhog-verifier = { workspace = true, optional = true }
 keyhog-sources = { workspace = true, default-features = false }
 clap = { workspace = true }

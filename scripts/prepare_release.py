@@ -22,6 +22,7 @@ CRATE_CHANGELOGS = {
     "cli": Path("crates/cli/CHANGELOG.md"),
     "core": Path("crates/core/CHANGELOG.md"),
     "scanner": Path("crates/scanner/CHANGELOG.md"),
+    "profile": Path("crates/profile/CHANGELOG.md"),
     "sources": Path("crates/sources/CHANGELOG.md"),
     "verifier": Path("crates/verifier/CHANGELOG.md"),
 }
@@ -173,16 +174,23 @@ def bump_manifest(text: str, current: str, next_version: str) -> str:
     updated, pin_count = re.subn(
         rf'={re.escape(current)}"', f'={next_version}"', workspace
     )
-    if workspace_count != 1 or pin_count != 4:
+    if workspace_count != 1 or pin_count != 5:
         raise PrepareError(
-            "Cargo.toml must contain one workspace version and four exact internal pins"
+            "Cargo.toml must contain one workspace version and five exact internal pins"
         )
     return updated
 
 
 def bump_lockfile(text: str, current: str, next_version: str) -> str:
-    """Update exactly the five KeyHog workspace packages in Cargo.lock."""
-    workspace = {"keyhog", "keyhog-core", "keyhog-scanner", "keyhog-sources", "keyhog-verifier"}
+    """Update exactly the six KeyHog workspace packages in Cargo.lock."""
+    workspace = {
+        "keyhog",
+        "keyhog-core",
+        "keyhog-profile",
+        "keyhog-scanner",
+        "keyhog-sources",
+        "keyhog-verifier",
+    }
     lines = text.splitlines(keepends=True)
     package: str | None = None
     updated: set[str] = set()

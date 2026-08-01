@@ -183,7 +183,7 @@ even when `fail-on-findings` is `false`.
 | `analysis-category` | `keyhog` | Stable identity for one report and Code Scanning partition. |
 | `fail-on-findings` | `'true'` | Set to `'false'` to make ordinary findings advisory. |
 | `baseline` | empty | Path to a committed KeyHog baseline. |
-| `backend` | empty | Release refs use calibrated `auto` when empty. `cpu` selects the portable route. Other values are `simd`, `gpu-cuda`, and `gpu-wgpu`. |
+| `backend` | empty | Published refs install the lean `ci` feature and accept empty/`auto` or `cpu`. Branch and commit source refs require `cpu`. Run `simd` or GPU diagnostics with a separately installed self-hosted CLI binary. |
 | `preset` | `default` | Detection policy: `default`, `fast`, `deep`, or `precision`. |
 | `lockdown` | `'false'` | Enables Linux memory-locking protections when exactly `'true'`. |
 

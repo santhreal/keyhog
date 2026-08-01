@@ -6,7 +6,7 @@ use keyhog_core::MerkleIndex;
 use keyhog_core::{Chunk, Source, SourceError};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 mod extract;
@@ -250,9 +250,11 @@ fn archive_symlink_error(path: &Path) -> SourceError {
 fn collect_walk_archive_symlink_errors(
     root: &Path,
     respect_default_excludes: bool,
+    discovery_byte_limit: Option<u64>,
 ) -> Vec<SourceError> {
     let mut errors = Vec::new();
     let mut stack = Vec::new();
+    let mut discovery_charge = 0_u64;
 
     match std::fs::symlink_metadata(root) {
         Ok(metadata) => {
@@ -373,6 +375,20 @@ fn collect_walk_archive_symlink_errors(
                 }
             };
             let file_type = metadata.file_type();
+            let charge = if file_type.is_file() {
+                metadata.len().max(1)
+            } else {
+                1
+            };
+            if let Some(limit) = discovery_byte_limit {
+                let Some(total) = discovery_charge.checked_add(charge) else {
+                    return errors;
+                };
+                if total > limit {
+                    return errors;
+                }
+                discovery_charge = total;
+            }
             if file_type.is_symlink() {
                 let path_is_expandable = is_expandable_path(&path);
                 let target = match resolved_link_target_for_classification(&path) {
@@ -572,6 +588,10 @@ pub struct FilesystemSource {
     /// Explicit filesystem reader thread count. `None` keeps the source-derived
     /// default tied to the configured scan worker pool.
     reader_threads: Option<NonZeroUsize>,
+    /// Optional metadata-discovery budget used by bounded whole-tree scans.
+    discovery_byte_limit: Option<u64>,
+    /// Set when discovery admits the first file beyond the configured budget.
+    discovery_limit_reached: Arc<AtomicBool>,
 }
 
 impl FilesystemSource {
@@ -592,6 +612,8 @@ impl FilesystemSource {
             window_overlap: reader::DEFAULT_WINDOW_OVERLAP,
             respect_default_excludes: true,
             reader_threads: None,
+            discovery_byte_limit: None,
+            discovery_limit_reached: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -681,6 +703,23 @@ impl FilesystemSource {
         self.reader_threads = Some(threads);
         self
     }
+
+    /// Bound recursive file discovery by cumulative metadata size.
+    ///
+    /// The first file that crosses the limit is still admitted so the caller's
+    /// chunk-level budget can refuse it and report partial coverage. Explicit
+    /// include paths are unaffected.
+    #[must_use]
+    pub fn with_discovery_byte_limit(mut self, bytes: u64) -> Self {
+        self.discovery_byte_limit = Some(bytes);
+        self
+    }
+
+    /// Return whether recursive discovery stopped at its byte limit.
+    #[must_use]
+    pub fn discovery_limit_reached(&self) -> bool {
+        self.discovery_limit_reached.load(Ordering::Relaxed)
+    }
 }
 
 impl Source for FilesystemSource {
@@ -694,6 +733,7 @@ impl Source for FilesystemSource {
         // instead of polluting the process-global skip counters. No-op in
         // production (the gate is never armed). See `skip::gate_scan`.
         let scan_lease = crate::acquire_scan_read_lease();
+        self.discovery_limit_reached.store(false, Ordering::Relaxed);
         let max_size = self.max_file_size;
         let mut config = walker_config(
             self.max_file_size,
@@ -737,12 +777,27 @@ impl Source for FilesystemSource {
         // below. Per-entry errors are counted and emitted as SourceError rows,
         // so one unreadable sibling cannot turn a partial scan into a clean
         // result.
-        fn sorted_entries(walker: CodeWalker) -> (Vec<codewalk::FileEntry>, Vec<SourceError>) {
+        fn sorted_entries(
+            walker: CodeWalker,
+            discovery_budget: &mut Option<u64>,
+            discovery_limit_reached: &AtomicBool,
+        ) -> (Vec<codewalk::FileEntry>, Vec<SourceError>) {
             let mut source_errors = Vec::new();
-            let mut entries: Vec<_> = walker
-                .walk_iter()
-                .filter_map(|result| match result {
-                    Ok(entry) => Some(entry),
+            let mut entries = Vec::new();
+            for result in walker.walk_iter() {
+                match result {
+                    Ok(entry) => {
+                        if let Some(remaining) = discovery_budget {
+                            let charge = entry.size.max(1);
+                            if charge > *remaining {
+                                discovery_limit_reached.store(true, Ordering::Relaxed);
+                                entries.push(entry);
+                                break;
+                            }
+                            *remaining -= charge;
+                        }
+                        entries.push(entry);
+                    }
                     Err(error) => {
                         // An unreadable entry is an UNKNOWN, not a clean file. Count
                         // and emit it so a partial tree cannot read as clean.
@@ -754,15 +809,15 @@ impl Source for FilesystemSource {
                         source_errors.push(SourceError::Other(format!(
                             "failed to inspect filesystem entry: {error}; entry was not scanned"
                         )));
-                        None
                     }
-                })
-                .collect();
+                }
+            }
             entries.sort_by(|left, right| left.path.cmp(&right.path));
             (entries, source_errors)
         }
 
         let mut source_errors: Vec<SourceError> = Vec::new();
+        let mut discovery_budget = self.discovery_byte_limit;
         let entries: Box<dyn Iterator<Item = codewalk::FileEntry> + Send> = if !self
             .include_paths
             .is_empty()
@@ -856,9 +911,16 @@ impl Source for FilesystemSource {
             for path in allowed {
                 if path.is_dir() {
                     let sub_walker = CodeWalker::new(&path, config.clone());
-                    let (sub_entries, sub_errors) = sorted_entries(sub_walker);
+                    let (sub_entries, sub_errors) = sorted_entries(
+                        sub_walker,
+                        &mut discovery_budget,
+                        &self.discovery_limit_reached,
+                    );
                     include_entries.extend(sub_entries);
                     source_errors.extend(sub_errors);
+                    if self.discovery_limit_reached.load(Ordering::Relaxed) {
+                        break;
+                    }
                 } else if path.is_file() {
                     match std::fs::metadata(&path) {
                         Ok(meta) => include_entries.push(codewalk::FileEntry {
@@ -920,8 +982,10 @@ impl Source for FilesystemSource {
             source_errors.extend(collect_walk_archive_symlink_errors(
                 &self.root,
                 self.respect_default_excludes,
+                self.discovery_byte_limit,
             ));
-            let (walk_entries, walk_errors) = sorted_entries(walker);
+            let (walk_entries, walk_errors) =
+                sorted_entries(walker, &mut discovery_budget, &self.discovery_limit_reached);
             source_errors.extend(walk_errors);
             Box::new(walk_entries.into_iter())
         };

@@ -10,7 +10,7 @@ Push your change to `main`. The `CI` workflow must finish successfully. The auto
 2. generates the root and crate changelogs;
 3. updates `Cargo.toml`, `Cargo.lock`, all changelogs, and operator-facing version pins;
 4. commits the generated files and creates a lightweight version tag; and
-5. publishes all five crates to crates.io in dependency order.
+5. publishes all six crates to crates.io in dependency order.
 
 For example, a successful push at `1.2.3` produces `1.2.4`.
 

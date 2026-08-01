@@ -55,8 +55,8 @@ fn is_testing_surface_line(t: &str) -> bool {
         || (t.starts_with("pub use ") && t.contains("testing_facade"))
 }
 
-/// The five workspace member crates, in dependency order.
-const CRATES: [&str; 5] = ["core", "scanner", "sources", "cli", "verifier"];
+/// The six workspace member crates, in dependency order.
+const CRATES: [&str; 6] = ["core", "profile", "scanner", "sources", "cli", "verifier"];
 
 /// TARGET: a crate's `lib.rs` should expose at most this many top-level
 /// `pub use` re-export lines. A single curated aggregation point (one
@@ -138,6 +138,12 @@ fn org_core_has_single_reexport_point() {
     assert_single_reexport_point("core");
 }
 
+/// The profiling foundation must retain one direct public API surface.
+#[test]
+fn org_profile_has_single_reexport_point() {
+    assert_single_reexport_point("profile");
+}
+
 #[test]
 fn org_scanner_has_single_reexport_point() {
     assert_single_reexport_point("scanner");
@@ -165,7 +171,7 @@ fn org_total_reexport_lines_within_budget() {
     let root = repo_root();
     let counts = count_reexports(&root);
     let total: usize = counts.values().sum();
-    // 5 crates × 1 curated aggregation point ≈ at most 5 lines fleet-wide,
+    // 6 crates × 1 curated aggregation point ≈ at most 6 lines fleet-wide,
     // generously bounded to 2× the per-crate target to allow one extra
     // hand-picked re-export per crate.
     let budget = CRATES.len() * MAX_REEXPORT_LINES;

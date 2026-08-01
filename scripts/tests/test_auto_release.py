@@ -21,12 +21,14 @@ class AutomaticReleaseTests(unittest.TestCase):
             'a = { version = "=0.5.49" }\n'
             'b = { version = "=0.5.49" }\n'
             'c = { version = "=0.5.49" }\n'
-            'd = { version = "=0.5.49" }\n',
+            'd = { version = "=0.5.49" }\n'
+            'e = { version = "=0.5.49" }\n',
             encoding="utf-8",
         )
         packages = (
             "keyhog",
             "keyhog-core",
+            "keyhog-profile",
             "keyhog-scanner",
             "keyhog-sources",
             "keyhog-verifier",
@@ -80,7 +82,7 @@ class AutomaticReleaseTests(unittest.TestCase):
             )
 
             self.assertEqual(version, "0.5.50")
-            self.assertEqual(len(changed), 8)
+            self.assertEqual(len(changed), 9)
             self.assertTrue((root / "changes/.gitkeep").exists())
             self.assertIn(
                 "## [0.5.50] - 2026-08-01\n\n### Changed\n\n"

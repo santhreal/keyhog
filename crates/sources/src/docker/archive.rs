@@ -244,6 +244,11 @@ fn extract_docker_archive_entries<R: Read>(
             continue;
         }
 
+        let file_type = entry.header().entry_type();
+        if !file_type.is_file() && !file_type.is_dir() {
+            continue;
+        }
+
         let unpacked_inside_destination = entry.unpack_in(destination).map_err(SourceError::Io)?;
         if !unpacked_inside_destination {
             return Err(SourceError::Other(format!(
@@ -259,15 +264,8 @@ fn extract_docker_archive_entries<R: Read>(
 
 fn validate_docker_archive_entry(
     path: &Path,
-    file_type: tar::EntryType,
+    _file_type: tar::EntryType,
 ) -> Result<(), SourceError> {
-    if file_type.is_symlink() || file_type.is_hard_link() {
-        return Err(SourceError::Other(format!(
-            "docker archive contains forbidden link '{}'",
-            path.display()
-        )));
-    }
-
     if path.is_absolute()
         || path.components().any(|component| {
             matches!(

@@ -91,31 +91,51 @@ class ReleaseTransformationTests(unittest.TestCase):
 
     def test_manifest_requires_every_internal_pin(self) -> None:
         """A release cannot mix workspace package versions across crates.io artifacts."""
-        manifest = 'version = "0.5.48"\na = "=0.5.48"\nb = "=0.5.48"\nc = "=0.5.48"\nd = "=0.5.48"\n'
+        manifest = (
+            'version = "0.5.48"\n'
+            'a = "=0.5.48"\nb = "=0.5.48"\nc = "=0.5.48"\n'
+            'd = "=0.5.48"\ne = "=0.5.48"\n'
+        )
         self.assertEqual(
             release.bump_manifest(manifest, "0.5.48", "0.5.49"),
-            'version = "0.5.49"\na = "=0.5.49"\nb = "=0.5.49"\nc = "=0.5.49"\nd = "=0.5.49"\n',
+            'version = "0.5.49"\n'
+            'a = "=0.5.49"\nb = "=0.5.49"\nc = "=0.5.49"\n'
+            'd = "=0.5.49"\ne = "=0.5.49"\n',
         )
-        with self.assertRaisesRegex(release.PrepareError, "four exact internal pins"):
-            release.bump_manifest(manifest.replace('d = "=0.5.48"\n', ""), "0.5.48", "0.5.49")
+        with self.assertRaisesRegex(release.PrepareError, "five exact internal pins"):
+            release.bump_manifest(manifest.replace('e = "=0.5.48"\n', ""), "0.5.48", "0.5.49")
 
-    def test_lockfile_updates_exactly_five_workspace_packages(self) -> None:
+    def test_lockfile_updates_exactly_six_workspace_packages(self) -> None:
         """Dependency packages sharing the old version must remain byte-for-byte unchanged."""
-        packages = ["keyhog", "keyhog-core", "keyhog-scanner", "keyhog-sources", "keyhog-verifier", "peer"]
+        packages = [
+            "keyhog",
+            "keyhog-core",
+            "keyhog-profile",
+            "keyhog-scanner",
+            "keyhog-sources",
+            "keyhog-verifier",
+            "peer",
+        ]
         source = "".join(
             f'[[package]]\nname = "{name}"\nversion = "0.5.48"\n' for name in packages
         )
 
         updated = release.bump_lockfile(source, "0.5.48", "0.5.49")
 
-        self.assertEqual(updated.count('version = "0.5.49"'), 5)
+        self.assertEqual(updated.count('version = "0.5.49"'), 6)
         self.assertIn('name = "peer"\nversion = "0.5.48"', updated)
 
     def test_missing_workspace_lock_entry_fails_before_writes(self) -> None:
         """A stale lockfile must block release preparation instead of publishing split versions."""
         source = "".join(
             f'[[package]]\nname = "{name}"\nversion = "0.5.48"\n'
-            for name in ("keyhog", "keyhog-core", "keyhog-scanner", "keyhog-sources")
+            for name in (
+                "keyhog",
+                "keyhog-core",
+                "keyhog-profile",
+                "keyhog-scanner",
+                "keyhog-sources",
+            )
         )
         with self.assertRaisesRegex(release.PrepareError, "keyhog-verifier"):
             release.bump_lockfile(source, "0.5.48", "0.5.49")
@@ -147,7 +167,7 @@ class ReleaseTransformationTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            completed[-1].crates, ("scanner", "sources", "verifier")
+            completed[-1].crates, ("profile", "scanner", "sources", "verifier")
         )
         self.assertTrue(completed[-1].synthetic)
 
@@ -159,6 +179,7 @@ class ReleaseTransformationTests(unittest.TestCase):
             ("workspace", root / "Cargo.toml"),
             ("keyhog", root / "crates/cli/Cargo.toml"),
             ("keyhog-core", root / "crates/core/Cargo.toml"),
+            ("keyhog-profile", root / "crates/profile/Cargo.toml"),
             ("keyhog-scanner", root / "crates/scanner/Cargo.toml"),
             ("keyhog-sources", root / "crates/sources/Cargo.toml"),
             ("keyhog-verifier", root / "crates/verifier/Cargo.toml"),
@@ -188,11 +209,13 @@ class ReleaseTransformationTests(unittest.TestCase):
                 'b = { version = "=0.5.48" }\n'
                 'c = { version = "=0.5.48" }\n'
                 'd = { version = "=0.5.48" }\n'
+                'e = { version = "=0.5.48" }\n'
             )
             (root / "Cargo.toml").write_text(manifest)
             packages = (
                 "keyhog",
                 "keyhog-core",
+                "keyhog-profile",
                 "keyhog-scanner",
                 "keyhog-sources",
                 "keyhog-verifier",
@@ -218,7 +241,7 @@ class ReleaseTransformationTests(unittest.TestCase):
             fragment.write_text(
                 'category = "Changed"\n'
                 'summary = "Publish one coherent release transaction."\n'
-                'crates = ["cli", "core", "scanner", "sources", "verifier"]\n'
+                'crates = ["cli", "core", "profile", "scanner", "sources", "verifier"]\n'
             )
             versioned = (
                 root / "README.md",
@@ -233,7 +256,7 @@ class ReleaseTransformationTests(unittest.TestCase):
 
             preview = release.prepare(root, "0.5.49", "2026-07-28", False)
 
-            self.assertEqual(len(preview), 12)
+            self.assertEqual(len(preview), 13)
             self.assertEqual((root / "Cargo.toml").read_text(), manifest)
             self.assertTrue(fragment.exists())
             for path in versioned:
@@ -245,7 +268,7 @@ class ReleaseTransformationTests(unittest.TestCase):
             self.assertFalse(fragment.exists())
             self.assertIn('version = "0.5.49"', (root / "Cargo.toml").read_text())
             self.assertEqual(
-                (root / "Cargo.lock").read_text().count('version = "0.5.49"'), 5
+                (root / "Cargo.lock").read_text().count('version = "0.5.49"'), 6
             )
             self.assertIn(
                 "## [0.5.49] - 2026-07-28\n\n### Changed\n\n"

@@ -6,8 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Added
 
-- A single resumable local or SSH command now refreshes benchmark evidence without invalidating candidate freshness, rebinds the exact canonical run-set after scoring, prepares every changelog and version surface, runs pre-tag gates with isolated full and ci-lean binary contracts, preserves exact Git path bytes, verifies the configured OpenPGP fingerprint before any tag push, and watches GitHub Pages, release assets, containers, and the five-crate crates.io publication chain.
+- A single resumable local or SSH command now refreshes benchmark evidence without invalidating candidate freshness, rebinds the exact canonical run-set after scoring, prepares every changelog and version surface, runs pre-tag gates with isolated full and ci-lean binary contracts, preserves exact Git path bytes, verifies the configured OpenPGP fingerprint before any tag push, and watches GitHub Pages, release assets, containers, and the six-crate crates.io publication chain.
 - Unix mass daemons now accept bounded directory, Git, archive, binary, remote, hosted Git, and cloud streams through `scan --daemon=mass`; local filesystem payloads remain daemon-local, credential-bound sources use protected chunk framing, each batch is capped at 8 MiB and 1,024 chunks, source gaps fail closed, the client validates an exact total/GPU execution receipt before reporting, and `daemon start --mass-gpu-primary` rejects CPU-majority completion.
+- `keyhog-profile` now owns a portable causal profiling schema for fixed micro stages, macro run states, source and backend identity, input totals, CPU time, resident and virtual memory, and observed process threads. `keyhog scan --profile` emits this operator-run record alongside the existing detailed scanner breakdown without recording source content or credentials.
 
 ### Changed
 
@@ -17,6 +18,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Fixed
 
 - Release preparation now updates standalone GitHub Action guide version pins, its regression suite rejects any canonical current-version document omitted from the release transaction, and the README states the native Metal macOS and portable CPU Windows artifact contracts exactly.
+- The default portable Cargo installation now includes native binary string and object scanning without requiring Ghidra. Optional Ghidra enrichment remains a runtime integration.
 - Aggregate release prevention gates now receive the immutable current-version candidate explicitly, so an older default Cargo release binary cannot invalidate backend parity.
 - Release orchestration now prepares the final workspace version before measuring its executable, and pre-tag resumes refresh version-bound evidence while signed-tag resumes preserve immutable evidence.
 - Benchmark freshness now handles the unavoidable Git-stamp change created by committing measured evidence, while rejecting non-ancestor results and every intervening source, manifest, configuration, fixture, rename, or other non-evidence path.
@@ -28,6 +30,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Portable source builds now retain coalesced triggered windowing and performance-trace support without SIMD or GPU features, so branch and commit refs compile before Action scans. A dedicated oversized-window suite covers exact offsets, overlap deduplication, multiple findings, and hostile near-matches under the portable feature profile.
 - Crossover route selection now keeps deterministic candidate order when paired 95% evidence cannot distinguish near-tied GPU peers, so a point-median fluctuation cannot redirect all held-out release evidence to an unproven peer.
 - Release tag signing now uses a dedicated protected keyring and owner-only passphrase file locally, with the same encrypted key available to a manual `release-signing` GitHub Actions workflow. Both paths verify the full enrolled fingerprint, exact prepared commit, canonical tag, and immutable existing-ref boundary without exposing a passphrase to command arguments or logs.
+- Docker image scans now prefer Docker save manifests over embedded OCI indexes, ignore layer link entries without aborting extraction, preserve nested archive paths and binary provenance, and classify large native binaries before windowed text scanning.
+- Entropy and named detectors now suppress candidates inside matched public certificate and public-key PEM blocks while retaining private-key findings and credentials outside those blocks.
 
 
 ## [0.5.48] - 2026-07-27

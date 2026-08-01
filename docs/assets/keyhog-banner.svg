@@ -1,30 +1,86 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 320" width="720" height="320" role="img" aria-label="keyhog - secret scanner - 923 detectors - gpu">
-  <!-- Self-contained banner: an opaque dark card plus inline fill colors, so
-       it renders identically on GitHub's light AND dark README themes. No
-       style block, no media queries: GitHub sanitizes SVGs served through
-       image tags and strips style, and a raw angle bracket inside one once
-       broke XML parsing outright. The ASCII hog is plain text elements with
-       an inline fill, so nothing here depends on CSS surviving. -->
-  <rect x="0" y="0" width="720" height="320" rx="16" fill="#0d1017"/>
-  <g text-anchor="middle">
-    <text fill="#8b92a6" x="360" y="32" font-family="'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11" letter-spacing="3">github.com  /  santhreal  /  keyhog</text>
-    <g font-family="'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', 'DejaVu Sans Mono', 'Liberation Mono', Menlo, Consolas, monospace" fill="#ffd60a" font-size="22" xml:space="preserve">
-      <text x="360" y="70">⠀⣠⣶⣿⣿⣿⣿⣶⣄⠀</text>
-      <text x="360" y="96">⠀⣿⣿⠉⠛⠛⠉⣿⣿⠀</text>
-      <text x="360" y="122">⠀⢿⣿⣶⣿⣿⣶⣿⡿⠀</text>
-      <text x="360" y="148">⠀⠀⠙⣿⣦⣴⣿⠋⠀⠀</text>
-      <text x="360" y="174">⠀⠀⠀⢸⣿⣿⡇⠀⠀⠀</text>
-      <text x="360" y="200">⠀⠀⠀⣼⣿⣿⣧⠀⠀⠀</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 500" width="1200" height="500" role="img" aria-label="KeyHog, GPU-accelerated secret scanner powered by Vyre">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07090d"/>
+      <stop offset="0.58" stop-color="#10141d"/>
+      <stop offset="1" stop-color="#080a0f"/>
+    </linearGradient>
+    <radialGradient id="flare" cx="78%" cy="48%" r="46%">
+      <stop offset="0" stop-color="#ffd60a" stop-opacity="0.22"/>
+      <stop offset="0.45" stop-color="#ffd60a" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#ffd60a" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse">
+      <path d="M36 0H0V36" fill="none" stroke="#ffffff" stroke-opacity="0.035" stroke-width="1"/>
+    </pattern>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="scan" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffd60a" stop-opacity="0"/>
+      <stop offset="0.45" stop-color="#ffd60a" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#fff3a0" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="500" rx="24" fill="url(#bg)"/>
+  <rect width="1200" height="500" rx="24" fill="url(#grid)"/>
+  <rect width="1200" height="500" rx="24" fill="url(#flare)"/>
+  <path d="M0 404 C210 354 382 454 592 397 S946 335 1200 392" fill="none" stroke="#ffd60a" stroke-opacity="0.09" stroke-width="2"/>
+  <path d="M0 430 C232 381 403 478 617 420 S967 363 1200 416" fill="none" stroke="#ffffff" stroke-opacity="0.05" stroke-width="1"/>
+
+  <g transform="translate(72 82)">
+    <text x="0" y="24" fill="#ffd60a" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700" letter-spacing="5">OPEN SOURCE · RUST · MIT OR APACHE-2.0</text>
+    <text x="-5" y="146" fill="#ffffff" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="112" font-weight="850" letter-spacing="-6">KEYHOG</text>
+    <rect x="0" y="178" width="520" height="4" rx="2" fill="#ffd60a"/>
+    <text x="0" y="226" fill="#f4f6fb" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="27" font-weight="700" letter-spacing="0.8">GPU-ACCELERATED SECRET SCANNING</text>
+    <text x="0" y="267" fill="#9ca5b7" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="19">Code · Git · Cloud · Containers · Browser assets · CI</text>
+
+    <g transform="translate(0 308)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="700">
+      <rect width="158" height="42" rx="8" fill="#ffd60a"/>
+      <text x="79" y="26" text-anchor="middle" fill="#080a0f">923 DETECTORS</text>
+      <rect x="170" width="112" height="42" rx="8" fill="#1a202c" stroke="#3e4655"/>
+      <text x="226" y="26" text-anchor="middle" fill="#ffffff">CUDA</text>
+      <rect x="294" width="112" height="42" rx="8" fill="#1a202c" stroke="#3e4655"/>
+      <text x="350" y="26" text-anchor="middle" fill="#ffffff">METAL</text>
+      <rect x="418" width="112" height="42" rx="8" fill="#1a202c" stroke="#3e4655"/>
+      <text x="474" y="26" text-anchor="middle" fill="#ffffff">WGPU</text>
     </g>
-    <!-- 'keyhog' as JetBrains Mono Medium paths so the wordmark renders identically everywhere. -->
-    <g fill="#ffffff" transform="translate(259.20,254)">
-      <g transform="translate(0.000,0) scale(0.056000,-0.056000)"><path d="M93 0V730H192V326H293L441 550H553L380 287L562 0H448L294 241H192V0Z"/></g>
-      <g transform="translate(33.600,0) scale(0.056000,-0.056000)"><path d="M300 -10Q201 -10 140.5 49.0Q80 108 80 210V340Q80 442 140.5 501.0Q201 560 300 560Q366 560 415.5 533.5Q465 507 492.5 459.5Q520 412 520 349V250H177V202Q177 142 210.0 108.0Q243 74 300 74Q348 74 379.0 92.0Q410 110 416 142H515Q505 72 446.0 31.0Q387 -10 300 -10ZM177 349V323H423V349Q423 412 391.0 446.0Q359 480 300 480Q241 480 209.0 446.0Q177 412 177 349Z"/></g>
-      <g transform="translate(67.200,0) scale(0.056000,-0.056000)"><path d="M175 -180 255 33 50 550H155L279 225Q287 204 295.0 180.0Q303 156 306 138Q309 156 316.0 180.0Q323 204 331 225L446 550H551L278 -180Z"/></g>
-      <g transform="translate(100.800,0) scale(0.056000,-0.056000)"><path d="M88 0V730H187V550L186 445H187Q194 499 232.5 529.5Q271 560 334 560Q416 560 465.0 508.0Q514 456 514 368V0H415V353Q415 412 385.0 444.0Q355 476 303 476Q249 476 218.0 442.5Q187 409 187 349V0Z"/></g>
-      <g transform="translate(134.400,0) scale(0.056000,-0.056000)"><path d="M300 -8Q199 -8 139.5 50.0Q80 108 80 212V338Q80 442 139.5 500.0Q199 558 300 558Q401 558 460.5 500.0Q520 442 520 338V212Q520 108 460.5 50.0Q401 -8 300 -8ZM300 79Q356 79 388.5 110.5Q421 142 421 203V347Q421 408 388.5 439.5Q356 471 300 471Q244 471 211.5 439.5Q179 408 179 347V203Q179 142 211.5 110.5Q244 79 300 79Z"/></g>
-      <g transform="translate(168.000,0) scale(0.056000,-0.056000)"><path d="M159 -180V-92H314Q359 -92 386.0 -66.5Q413 -41 413 3V49L415 144H414Q404 93 365.5 65.0Q327 37 267 37Q182 37 133.0 91.5Q84 146 84 241V354Q84 449 133.0 504.5Q182 560 267 560Q325 560 363.5 532.0Q402 504 413 455H414V550H511V2Q511 -82 458.0 -131.0Q405 -180 314 -180ZM298 120Q351 120 382.0 153.0Q413 186 413 246V349Q413 408 382.0 441.0Q351 474 298 474Q243 474 213.0 442.5Q183 411 183 357V237Q183 183 213.0 151.5Q243 120 298 120Z"/></g>
+  </g>
+
+  <g transform="translate(715 55)">
+    <g fill="none" stroke-linecap="round">
+      <path d="M36 82H2M58 48V2M394 72h60M420 108h54M52 330H0M398 350h64M410 312h34" stroke="#ffd60a" stroke-opacity="0.5" stroke-width="3"/>
+      <path d="M36 82h65l31 35M58 48h86l22 34M394 72h-62l-28 34M420 108h-65l-26 30M52 330h66l31-37M398 350h-70l-30-35M410 312h-54l-26-23" stroke="#ffd60a" stroke-opacity="0.32" stroke-width="2"/>
+      <circle cx="2" cy="82" r="5" fill="#ffd60a" stroke="none"/>
+      <circle cx="58" cy="2" r="5" fill="#ffd60a" stroke="none"/>
+      <circle cx="454" cy="72" r="5" fill="#ffd60a" stroke="none"/>
+      <circle cx="474" cy="108" r="5" fill="#ffd60a" stroke="none"/>
+      <circle cx="0" cy="330" r="5" fill="#ffd60a" stroke="none"/>
+      <circle cx="462" cy="350" r="5" fill="#ffd60a" stroke="none"/>
     </g>
-    <text fill="#8b92a6" x="360" y="294" font-family="'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="13" letter-spacing="2">v0.5.49  ·  secret scanner  ·  923 detectors  ·  gpu</text>
+
+    <path d="M93 114 L61 47 L156 82 C187 61 231 52 268 58 C306 53 348 62 379 83 L469 49 L440 119 C466 156 472 205 456 249 C441 290 409 320 372 341 C346 356 319 371 289 385 C270 394 251 394 232 385 C202 371 175 356 149 341 C111 319 80 290 65 248 C49 204 57 153 93 114Z" fill="#101620" stroke="#ffd60a" stroke-width="5"/>
+    <path d="M116 122L91 78L161 102M414 123L438 80L369 103" fill="#ffd60a" fill-opacity="0.12" stroke="#ffd60a" stroke-width="3"/>
+    <path d="M123 157 C167 115 215 103 265 106 C316 103 364 116 407 157 L382 251 C357 300 312 329 265 351 C218 329 173 300 148 251Z" fill="#171e2a" stroke="#4a5363" stroke-width="2"/>
+    <path d="M152 169 C187 143 220 133 265 135 C309 133 343 143 378 169" fill="none" stroke="#ffd60a" stroke-opacity="0.38" stroke-width="3"/>
+
+    <g filter="url(#glow)">
+      <path d="M170 202L224 214L193 235Z" fill="#ffd60a"/>
+      <path d="M360 202L306 214L337 235Z" fill="#ffd60a"/>
+    </g>
+    <path d="M201 268 C219 251 240 245 265 246 C289 245 311 251 329 268 L318 315 C298 330 283 337 265 345 C247 337 231 330 211 315Z" fill="#080a0f" stroke="#ffd60a" stroke-width="3"/>
+    <ellipse cx="239" cy="292" rx="10" ry="7" fill="#ffd60a"/>
+    <ellipse cx="291" cy="292" rx="10" ry="7" fill="#ffd60a"/>
+    <path d="M229 320 Q265 337 301 320" fill="none" stroke="#747f91" stroke-width="3"/>
+
+    <g fill="none" stroke="#ffd60a" stroke-opacity="0.24" stroke-width="2">
+      <path d="M159 147L187 176L167 197M371 147L343 176L363 197"/>
+      <path d="M133 245L181 254L199 278M397 245L349 254L331 278"/>
+      <path d="M171 321L214 307M359 321L316 307"/>
+    </g>
+    <rect x="38" y="227" width="454" height="3" fill="url(#scan)" filter="url(#glow)"/>
+    <text x="265" y="426" text-anchor="middle" fill="#8f99aa" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" letter-spacing="3">POWERED BY VYRE</text>
   </g>
 </svg>

@@ -183,8 +183,11 @@ security mode and may be required by `[lockdown] require = true`; that config
 key does not enable it. Lockdown refuses fast and other
 completeness-reducing switches, and the scan remains in process.
 
-`--profile` is not a named configuration profile. It emits the scanner's
-performance profile to standard error. It does not select the fast, deep, or
+`--profile` is not a named configuration profile. It emits hierarchical scanner
+timings and one causal operator-run record to standard error. The record names
+the source, workload, backend, cache, thread configuration, input totals, run
+states, CPU time, memory, and observed process threads. It never includes source
+content or credential values. The flag does not select the fast, deep, or
 precision preset.
 
 ## Policy tables

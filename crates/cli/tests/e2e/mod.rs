@@ -69,6 +69,7 @@ pub mod scan_max_commits_limits_git_history;
 pub mod scan_max_file_size_skips_oversized;
 pub mod scan_output_writes_file;
 pub mod scan_planted_aws_exit_one;
+pub mod scan_profile_report;
 pub mod scan_sarif_has_runs;
 pub mod scan_severity_critical_filter;
 pub mod scan_stdin_finds_secret;
