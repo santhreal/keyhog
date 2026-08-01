@@ -40,9 +40,9 @@ backend, and report-publication errors.
 
 The default `sarif` report is uploaded to Code Scanning and retained as a
 workflow artifact. Set `upload-sarif: 'false'` when the job cannot grant
-`security-events: write`; the artifact remains enabled. Fork pull requests have
-a restricted token, so only their Code Scanning upload failure is advisory.
-Findings and operational failures still fail the job.
+`security-events: write`; the artifact remains enabled. Fork PRs can
+lack `security-events: write`, so only their Code Scanning upload failure is
+advisory. Findings and operational failures still fail the job.
 
 The Action accepts one checked-out path. Use the KeyHog CLI directly for Git
 history, reachable blobs, hosted Git organizations, cloud buckets, and report
@@ -56,7 +56,7 @@ formats that the Action does not expose.
 | `severity` | `high` | Minimum reported tier: `info`, `client-safe`, `low`, `medium`, `high`, or `critical`. |
 | `format` | `sarif` | Action report format: `text`, `json`, `sarif`, or `jsonl`. |
 | `verify` | `'false'` | Enables provider verification only when exactly `'true'`. |
-| `version` | empty | Scanner release selected by the Action ref. A value pins a final release at `v0.5.49` or newer. |
+| `version` | empty | Scanner release selected by the Action ref. A value pins one canonical final `vX.Y.Z` release. |
 | `upload-sarif` | `'true'` | Uploads Code Scanning results when `format` is `sarif`. The artifact is retained independently. |
 | `analysis-category` | `keyhog` | Stable identity for one report and Code Scanning partition. |
 | `fail-on-findings` | `'true'` | Set to `'false'` to make ordinary findings advisory. Verified-live credentials and operational errors still fail. |
@@ -161,10 +161,10 @@ commits so GitHub updates the same Code Scanning partition.
 
 `santhreal/keyhog@v0` follows the latest published `v0` Action. Use
 `santhreal/keyhog@v0.5.49` when Action code must stay fixed. The optional
-`version: v0.5.49` input pins only the scanner asset, so it is not a substitute
+`version: v0.5.49` input pins only the scanner crate, so it is not a substitute
 for pinning the Action ref.
 
-Release refs require signed and checksummed runtime assets. Missing or invalid
-assets fail closed. A reviewed branch or commit ref builds the portable source
-profile and requires `backend: cpu`; it never replaces a missing release asset
-with an unrequested source build.
+Release refs install the exact published crate from crates.io. A missing crate
+fails the job. A reviewed branch or commit ref builds the portable source
+profile and requires `backend: cpu`; it does not replace a missing published
+version with the checked-out source.

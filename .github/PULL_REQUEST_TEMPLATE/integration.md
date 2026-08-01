@@ -52,15 +52,14 @@ a baseline locally and include it:
 
 Then the action gates only on findings ABSENT from the baseline.
 
-**Trust.** keyhog is MIT/Apache-2.0 dual-licensed with an audited release
-pipeline (minisign-signed binaries,
-SBOM artifact). No telemetry or "phone home"; the only network
-calls are when you explicitly run `keyhog scan --verify` to
-live-check a finding against the vendor's API.
+**Trust.** keyhog is MIT/Apache-2.0 dual-licensed. Published versions come
+from successful `main` CI runs and are installed from crates.io. No telemetry
+or "phone home"; the only network calls are when you explicitly run
+`keyhog scan --verify` to live-check a finding against the vendor's API.
 
 Reproduce locally:
 
-    curl -fsSL https://santh.dev/keyhog/install.sh | sh
+    cargo install --locked keyhog
     keyhog scan .
 
 Project: https://github.com/santhreal/keyhog

@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "Publish a patch release to crates.io after every successful main CI run, with automatic version and changelog updates and no signing or release-asset gates."
+crates = ["cli", "core", "scanner", "sources", "verifier"]

@@ -239,12 +239,10 @@ identity. The build script watches the tracked and non-ignored source inventory,
 so cleaning a tree after compiling dirty source forces a rebuild before the
 artifact can qualify.
 
-`scripts/prerelease.sh` runs this benchmark as a required gate. It first
-requires a clean source tree, writes evidence to a temporary artifact, and
-validates schema 8, the candidate commit, detector digests, complete feature
-set, acquired GPU identity, exact finding parity, non-degraded execution, 100
-held-out pairs, and a 95% ratio upper bound below 1.0. Historical, diagnostic,
-dirty, stale, or merely point-estimate evidence cannot pass prerelease.
+Run the crossover benchmark when you change backend performance or routing.
+Release automation does not run it. The benchmark remains the evidence for
+route comparisons: it records the candidate commit, detector digests, feature
+set, GPU identity, finding parity, held-out pairs, and confidence interval.
 Autoroute still requires calibration on the deployment host for the exact
 workload class.
 
@@ -264,13 +262,9 @@ chunks, and bytes, the non-secret reason, and the repair command.
 
 Run `keyhog backend --autoroute` to distinguish `calibration_required`, `stale`,
 `invalid`, `disabled`, and `quarantined`. Run `keyhog calibrate-autoroute` for
-the core ladder. Use installer calibration for Git, Docker, or web probes:
-
-```sh
-./install.sh --calibrate
-# Windows
-./install.ps1 -Calibrate
-```
+the core ladder. For Git, Docker, or web workloads, run the exact
+`scan --autoroute-calibrate --autoroute-gpu` repair command printed in the
+recovery receipt.
 
 Use an explicit backend only when you intentionally want a diagnostic override.
 It bypasses the invalid route state but does not repair it.

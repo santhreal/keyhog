@@ -171,21 +171,14 @@ summary = "Preserve the exact report exit status in direct CI jobs."
 crates = ["cli"]
 ```
 
-Save the file under `changes/` with a lowercase, hyphenated name. Do not edit
-the newest changelog section. The release preparer validates the fragment,
-renders root release notes, and routes the summary only to the crate
-changelogs you name.
+Save the file under `changes/` with a lowercase, hyphenated name. Fragments are
+optional. If you omit one, the automatic release uses the successful push
+commit subject. Do not edit the newest changelog section.
 
-Run a read-only release preview when you maintain a release:
-
-```sh
-NEXT_VERSION=X.Y.Z
-python3 -B scripts/release.py "$NEXT_VERSION"
-```
-
-See [Prepare and publish a release](./releasing.md) for categories, crate
-ownership, benchmark refresh, local and SSH execution, OpenPGP signing,
-resumable publication, Pages, release assets, and crates.io verification.
+Every successful `main` CI run increments the patch version, consumes the
+fragments, commits the generated changelogs, and publishes the crates.io
+packages. See [Releases](./releasing.md) for categories, crate ownership, and
+failed-upload recovery.
 
 ## License
 

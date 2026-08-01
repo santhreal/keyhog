@@ -96,23 +96,18 @@ powershell_drive_ref_gate() {
     fi
 }
 
-# The release/CI shell scripts are linted here too, they were previously
-# unchecked, so a broken `publish.sh`/`prerelease.sh` only surfaced at release
-# time. All four pass `shellcheck -x` and shfmt-parse cleanly at the gate's
-# default (info-level) severity.
+# Release and CI shell entrypoints are parsed before use.
 shellcheck_targets=(
     install.sh
     scripts/publish.sh
     scripts/audit.sh
     scripts/run_benchmark.sh
-    scripts/prerelease.sh
 )
 shfmt_parse_targets=(
     install.sh
     scripts/publish.sh
     scripts/audit.sh
     scripts/run_benchmark.sh
-    scripts/prerelease.sh
 )
 shfmt_diff_targets=(scripts/gates/install_static_analysis.sh)
 

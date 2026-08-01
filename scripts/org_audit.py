@@ -31,12 +31,8 @@ REQUIRED_ARCHITECTURE_OWNERS = (
         ".github/actions/keyhog/run-scan.sh",
     ),
     (
-        "Build, sign, attest, stage, and publish job ordering",
+        "Automatic version, changelog, and crates.io publication",
         ".github/workflows/release.yml",
-    ),
-    (
-        "Immutable release ID, source commit, exact asset digests, and signed publication receipt",
-        "scripts/publish_release_assets.py::PublicationReceipt",
     ),
     ("CLI argument dispatch and setup-error exit routing", "crates/cli/src/lib.rs::cli_main"),
     (

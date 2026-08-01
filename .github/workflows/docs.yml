@@ -36,8 +36,8 @@ on:
       - 'metrics/stars.svg'
       - 'scripts/star_history.py'
       - 'scripts/tests/test_star_history.py'
-      - 'scripts/release.py'
-      - 'scripts/tests/test_release_orchestrator.py'
+      - 'scripts/auto_release.py'
+      - 'scripts/tests/test_auto_release.py'
   pull_request:
     paths:
       - 'docs/**'
@@ -66,8 +66,8 @@ on:
       - 'metrics/stars.svg'
       - 'scripts/star_history.py'
       - 'scripts/tests/test_star_history.py'
-      - 'scripts/release.py'
-      - 'scripts/tests/test_release_orchestrator.py'
+      - 'scripts/auto_release.py'
+      - 'scripts/tests/test_auto_release.py'
   workflow_dispatch:
 
 # Don't queue parallel deploys -- the latest push wins.

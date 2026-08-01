@@ -27,7 +27,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Published version whose signed release bundle the composite must authenticate.'
+        description: 'Published crates.io version the composite must install exactly.'
         required: true
         default: '0.5.49'
         type: string
@@ -124,7 +124,7 @@ jobs:
           ACTION_SCAN_STATUS: ${{ steps.root_lockdown.outputs.scan-status }}
           ACTION_REPORT_PRESENT: ${{ steps.root_lockdown.outputs.report-present }}
           ACTION_REPORT: ${{ steps.root_lockdown.outputs.report }}
-          ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && 'authenticated-release-auto' || 'portable-source-cpu' }}
+          ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && 'published-crate-auto' || 'portable-source-cpu' }}
         run: |
           set -euo pipefail
           [[ "$ACTION_FINDINGS" == "0" ]]
@@ -137,7 +137,7 @@ jobs:
           [[ "$installed_keyhog" == "$RUNNER_TEMP"/keyhog-action-runtime.*/*/keyhog ]]
           case "$ACTION_MODE" in
             portable-source-cpu) ;;
-            authenticated-release-auto)
+            published-crate-auto)
               [[ "$(keyhog --version)" == *"$KEYHOG_ACTION_E2E_VERSION"* ]]
               ;;
             *) echo "unexpected Action proof mode: $ACTION_MODE" >&2; exit 1 ;;
@@ -169,7 +169,7 @@ jobs:
           ACTION_SCAN_STATUS: ${{ steps.nested_lockdown.outputs.scan-status }}
           ACTION_REPORT_PRESENT: ${{ steps.nested_lockdown.outputs.report-present }}
           ACTION_REPORT: ${{ steps.nested_lockdown.outputs.report }}
-          ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && 'authenticated-release-auto' || 'portable-source-cpu' }}
+          ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && 'published-crate-auto' || 'portable-source-cpu' }}
         run: |
           set -euo pipefail
           [[ "$ACTION_FINDINGS" == "0" ]]
@@ -182,7 +182,7 @@ jobs:
           [[ "$installed_keyhog" == "$RUNNER_TEMP"/keyhog-action-runtime.*/*/keyhog ]]
           case "$ACTION_MODE" in
             portable-source-cpu) ;;
-            authenticated-release-auto)
+            published-crate-auto)
               [[ "$(keyhog --version)" == *"$KEYHOG_ACTION_E2E_VERSION"* ]]
               ;;
             *) echo "unexpected Action proof mode: $ACTION_MODE" >&2; exit 1 ;;
@@ -195,8 +195,8 @@ jobs:
           literal_bins=("$RUNNER_TEMP"/keyhog-action-runtime.*/cache/**/*.bin)
           [[ "${#literal_bins[@]}" == "0" ]]
 
-  release-asset:
-    name: release asset (${{ matrix.platform }})
+  published-crate:
+    name: published crate (${{ matrix.platform }})
     strategy:
       fail-fast: false
       matrix:
@@ -244,7 +244,7 @@ jobs:
           fail-on-findings: 'true'
           analysis-category: e2e-${{ matrix.platform }}-clean
 
-      - name: Invoke root composite against authenticated release asset
+      - name: Invoke root composite against published crates.io release
         if: github.event_name == 'workflow_dispatch'
         id: clean_release
         uses: ./
@@ -331,7 +331,7 @@ jobs:
           test -s "downloaded-clean/keyhog-results-e2e-${EXPECTED_PLATFORM}-clean.sarif"
 
       # Regression: hosted runners cannot satisfy CLI memory-locking guarantees;
-      # source CPU and authenticated release auto must both reject with guidance.
+      # source CPU and published crate auto must both reject with guidance.
       - name: Reject unsupported hosted CPU lockdown from branch/SHA source
         if: github.event_name != 'workflow_dispatch' && matrix.platform == 'linux-x86-64'
         id: lockdown_source
@@ -345,7 +345,7 @@ jobs:
           upload-sarif: 'false'
           analysis-category: e2e-linux-lockdown-validation
 
-      - name: Reject unsupported hosted auto lockdown from authenticated release asset
+      - name: Reject unsupported hosted auto lockdown from published crates.io release
         if: github.event_name == 'workflow_dispatch' && matrix.platform == 'linux-x86-64'
         id: lockdown_release
         continue-on-error: true
@@ -384,7 +384,7 @@ jobs:
           fail-on-findings: 'true'
           analysis-category: e2e-${{ matrix.platform }}-findings
 
-      - name: Invoke nested composite with precision finding policy from authenticated release asset
+      - name: Invoke nested composite with precision finding policy from published crates.io release
         if: github.event_name == 'workflow_dispatch'
         id: finding_release
         continue-on-error: true

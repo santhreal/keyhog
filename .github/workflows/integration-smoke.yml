@@ -1,19 +1,15 @@
 name: integration-smoke
 
-# End-to-end smoke test of the actual install paths a stranger hits.
-# Downloads install.sh / install.ps1 from raw.githubusercontent.com,
-# runs them non-interactively, then exercises the CLI surface a new
-# user touches in their first minute: scan, exit codes, SARIF, hook,
-# daemon. With no input it follows the installer's latest published stable
-# release; `version` pins any release tag that has a complete signed bundle.
-#
-# Manual only. Pre-launch sanity gate before any growth push.
+# End-to-end smoke test of the crates.io installation path.
+# It installs the latest stable package by default, then exercises the CLI
+# surface a new user touches first: scan, exit codes, SARIF, hook, and daemon.
+# The optional version input pins an exact published crate.
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag to install (vX.Y.Z or X.Y.Z); leave blank for latest stable."
+        description: "Crates.io version to install (X.Y.Z or vX.Y.Z); leave blank for latest stable."
         required: false
         default: ""
 
@@ -32,80 +28,24 @@ jobs:
           uname -a || systeminfo | head -5 || true
           echo "version input: ${{ inputs.version || 'latest stable' }}"
 
-      - name: Install verified-installer prerequisites (Unix)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            for i in 1 2 3 4 5; do
-              sudo apt-get update -qq \
-                && sudo apt-get install -y --no-install-recommends libhyperscan5 minisign \
-                && break
-              sleep $((i * 2))
-              if [ "$i" -eq 5 ]; then exit 1; fi
-            done
-          else
-            brew install minisign
-          fi
 
-      - name: Install verified-installer prerequisite (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          winget install -e --id jedisct1.minisign --silent `
-            --accept-package-agreements --accept-source-agreements `
-            --disable-interactivity
-          $wingetLinks = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links'
-          if (Test-Path $wingetLinks) {
-            $wingetLinks | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-            $env:PATH = "$wingetLinks;$env:PATH"
-          }
-          if (-not (Get-Command minisign.exe -ErrorAction SilentlyContinue)) {
-            throw 'minisign was installed but is not available on PATH'
-          }
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
+        with:
+          toolchain: '1.89.0'
 
-      - name: Install (unix)
-        if: runner.os != 'Windows'
+      - name: Install published crate
         shell: bash
         env:
           KEYHOG_SMOKE_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          curl -fsSL https://santh.dev/keyhog/install.sh -o /tmp/install.sh
-          install_args=(--yes --no-prompt)
+          install_args=(--locked)
           if [[ -n "$KEYHOG_SMOKE_VERSION" ]]; then
-            install_args+=(--version="$KEYHOG_SMOKE_VERSION")
+            version="${KEYHOG_SMOKE_VERSION#v}"
+            install_args+=(--version "=$version")
           fi
-          sh /tmp/install.sh "${install_args[@]}"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Install (windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          KEYHOG_SMOKE_VERSION: ${{ inputs.version }}
-        run: |
-          # PowerShell's -File flag requires a .ps1 extension. New-TemporaryFile
-          # returns a .tmp path, which pwsh -File refuses. Save to an explicit
-          # .ps1 path under the runner temp dir so the installer actually runs.
-          $url = "https://santh.dev/keyhog/install.ps1"
-          $tmp = Join-Path $env:RUNNER_TEMP "install.ps1"
-          Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
-          $installArgs = @('-ExecutionPolicy', 'Bypass', '-File', $tmp, '-Yes')
-          if (-not [string]::IsNullOrWhiteSpace($env:KEYHOG_SMOKE_VERSION)) {
-            $installArgs += @('-Version', $env:KEYHOG_SMOKE_VERSION)
-          }
-          & powershell @installArgs
-          if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE" }
-          # install.ps1's default Windows install dir is %LOCALAPPDATA%\keyhog\bin
-          # (param: Join-Path $env:LOCALAPPDATA 'keyhog\bin'), NOT ~/.local/bin 
-          # that was a unix-ism that left keyhog off PATH and failed the Version
-          # step with exit 127. Under -Yes the installer DOES persist that dir to
-          # the User PATH (Ensure-OnPath auto-approves the Yes-default), but that
-          # persistent User PATH is not visible to the already-running job step,
-          # so the caller still exports it to GITHUB_PATH for the next step here.
-          Add-Content -Path $env:GITHUB_PATH -Value "$env:LOCALAPPDATA\keyhog\bin"
+          cargo install "${install_args[@]}" keyhog
 
       - name: Version
         shell: bash

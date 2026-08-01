@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# THE ONE prevention-gate entrypoint. Every audit keyhog has is invoked from
-# here so a single `scripts/gates/run_all.sh` (and the one `audit-gates` CI job
-# that runs it) is the whole story, not a scatter of gates a human has to
-# remember to run. Each failure class that bit keyhog this round goes RED here,
-# not into a sentence in CLAUDE.md someone can skip.
+# Local project-check entrypoint. Release automation does not call this script;
+# the CI workflow owns the checks that must pass before a push can publish.
 #
 # Fast, always-run source/org gates (no corpus, no built binary, no network):
 #   #1 no_silent_fallbacks: new Law-10 swallow in a scan/CLI/verify crate (ratchet)
@@ -147,12 +144,8 @@ run "Gate #1i: documented action/install pins resolve to v0 or the current versi
   python3 scripts/gates/doc_version_pins.py
 run "Release documentation bump tests: measured benchmark provenance stays immutable" \
   python3 -B -m unittest scripts.tests.test_bump_doc_versions -v
-run "Release preparation tests: fragments produce one coherent version transaction" \
-  python3 -B -m unittest scripts.tests.test_prepare_release -v
-run "Unified release tests: local, SSH, staging, signing, and resume boundaries" \
-  python3 -B -m unittest scripts.tests.test_release_orchestrator -v
-run "Signed release tag tests: protected key, exact commit, and immutable ref" \
-  python3 -B -m unittest scripts.tests.test_sign_release_tag -v
+run "Automatic release tests: green pushes bump, changelog, and publish coherently" \
+  python3 -B -m unittest scripts.tests.test_prepare_release scripts.tests.test_auto_release scripts.tests.test_release_workflows -v
 run "Documentation truth tests: measured versions remain bound to evidence" \
   python3 -B -m unittest scripts.tests.test_docs_truth -v
 run "Crate changelog gate: every publishable crate has release notes" \
@@ -185,16 +178,8 @@ run "Organization unit tests: exact complexity ratchet and owner/reference check
   python3 -m unittest scripts.tests.test_complexity_budget scripts.tests.test_org_audit -v
 run "tests_wired unit tests: CI-orphan model (path/mod/--test/all-targets/pkg)" \
   python3 -m unittest scripts.tests.test_tests_wired -v
-run "Release publisher tests: draft recovery and exact-manifest atomicity" \
-  python3 -m unittest scripts.tests.test_publish_release_assets -v
-run "Published release verifier tests: exact 48-asset public completeness" \
-  python3 -B -m unittest scripts.tests.test_verify_published_release -v
-run "Release workflow tests: provenance, publication, and rollback contracts" \
+run "Automatic release workflow tests: successful main CI is the only publisher" \
   python3 -B -m unittest scripts.tests.test_release_workflows -v
-run "Release SBOM tests: complete manifests, signatures, and attestations" \
-  python3 -B -m unittest scripts.tests.test_release_sbom -v
-run "Marketplace Action verifier tests: signed assets, inputs, and exit contract" \
-  python3 -B -m unittest scripts.tests.test_verify_marketplace_action -v
 run "Org audit: stale claims / LOC-cap bloat / evidence wiring" \
   python3 scripts/org_audit.py
 run "Install static analysis: shell + PowerShell parser/linter coverage" \
@@ -276,8 +261,8 @@ fi
 echo
 
 if [ $rc -eq 0 ]; then
-  echo "ALL PREVENTION GATES GREEN."
+  echo "ALL PROJECT CHECKS GREEN."
 else
-  echo "PREVENTION GATES FAILED (rc=$rc)."
+  echo "PROJECT CHECKS FAILED (rc=$rc)."
 fi
 exit $rc

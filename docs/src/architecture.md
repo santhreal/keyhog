@@ -88,18 +88,17 @@ own feature set.
 
 ## Load-bearing boundary owner map
 
-The crate DAG is not the whole shipping boundary. The Marketplace entrypoint,
-its fail-closed runner, release publication, and each load-bearing library/CLI
-handoff have one definitional owner. Wrappers may compose these owners; they
-must not restate their policy.
+The crate DAG is not the whole shipping boundary. The Action entrypoint,
+automatic crates.io publication, and each load-bearing library or CLI handoff
+have one definitional owner. Wrappers may compose these owners; they must not
+restate their policy.
 
 | Boundary | Definitional owner |
 |---|---|
 | Marketplace metadata, documented inputs/outputs, and top-level composite steps | `action.yml` |
 | Repository-local Action metadata consumed by GitHub workflows | `.github/actions/keyhog/action.yml` |
 | Action input validation, authenticated binary acquisition, scan invocation, exit mapping, and output publication | `.github/actions/keyhog/run-scan.sh` |
-| Build, sign, attest, stage, and publish job ordering | `.github/workflows/release.yml` |
-| Immutable release ID, source commit, exact asset digests, and signed publication receipt | `scripts/publish_release_assets.py::PublicationReceipt` |
+| Automatic version, changelog, and crates.io publication | `.github/workflows/release.yml` |
 | CLI argument dispatch and setup-error exit routing | `crates/cli/src/lib.rs::cli_main` |
 | Completed-scan exit precedence | `crates/cli/src/orchestrator/run.rs::resolve_scan_exit` |
 | Curated source-crate export surface | `crates/sources/src/api.rs` |

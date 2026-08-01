@@ -425,8 +425,7 @@ pub struct ScanArgs {
     pub verify: bool,
 
     /// Disable credential verification, overriding `verify = true` in `.keyhog.toml`
-    #[cfg(feature = "verify")]
-    #[arg(long, conflicts_with = "verify")]
+    #[arg(long)]
     pub no_verify: bool,
 
     /// Enable out-of-band callback verification via an embedded interactsh

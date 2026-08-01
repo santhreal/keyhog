@@ -3,7 +3,7 @@
 use std::env;
 use std::fs;
 #[cfg(unix)]
-use std::os::unix::fs::{FileTypeExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use tempfile::TempDir;
@@ -60,22 +60,6 @@ fn github_workflow_paths() -> Vec<PathBuf> {
     }
     paths.sort();
     paths
-}
-
-fn normalize_doc_text(text: &str) -> String {
-    text.replace("<code>", " ")
-        .replace("</code>", " ")
-        .replace('`', " ")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn release_workflow() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../.github/workflows/release.yml")
-        .canonicalize()
-        .expect("release.yml exists")
 }
 
 fn keyhog_workflow() -> PathBuf {
@@ -472,11 +456,6 @@ fn run_manifest_bash_step(step_name: &str, envs: &[(&str, &str)]) -> Output {
             .find(|path| path.is_file())
             .unwrap_or_else(|| PathBuf::from(name))
     };
-    let verifier_source = resolve_tool("minisign");
-    let private_verifier = runtime.join("private-minisign");
-    if verifier_source.is_file() {
-        fs::copy(&verifier_source, &private_verifier).expect("copy private verifier");
-    }
     let mut cmd = Command::new("bash");
     cmd.arg("-c").arg(block);
     for inherited in [
@@ -494,14 +473,6 @@ fn run_manifest_bash_step(step_name: &str, envs: &[(&str, &str)]) -> Output {
     cmd.env("ACTION_RUNTIME", &runtime);
     cmd.env("ACTION_CACHE_HOME", runtime.join("cache"));
     cmd.env("ACTION_KEYHOG", resolve_tool("keyhog"));
-    cmd.env(
-        "ACTION_VERIFIER",
-        if private_verifier.is_file() {
-            private_verifier
-        } else {
-            verifier_source
-        },
-    );
     cmd.env("ACTION_RESOLVED_VERSION", "0.5.48");
     for (key, value) in envs {
         cmd.env(key, value);
@@ -522,145 +493,6 @@ fn preplant_destination(path: &Path, victim: &Path, kind: &str) {
         "regular" => fs::write(path, "preplanted-regular").expect("preplant regular"),
         _ => panic!("unknown preplant kind {kind}"),
     }
-}
-
-fn run_release_download_harness(
-    tar_entry: &str,
-    tar_kind: &str,
-    artifact_extension: &str,
-    checksum_exit: &str,
-    signature_exit: &str,
-    preplant_programs_symlink: bool,
-    action_lockdown: bool,
-    preplant_binary: Option<&str>,
-) -> (TempDir, Output) {
-    let dir = TempDir::new().expect("release download harness tempdir");
-    let fake_bin = dir.path().join("bin");
-    let runner_temp = dir.path().join("runner-temp");
-    let action_cache_home = runner_temp.join("keyhog-action-cache");
-    let cache_root = action_cache_home.join("xdg");
-    fs::create_dir(&fake_bin).expect("create fake bin");
-    fs::create_dir(&runner_temp).expect("create runner temp");
-    #[cfg(unix)]
-    if let Some(kind) = preplant_binary {
-        preplant_destination(
-            &runner_temp.join("keyhog"),
-            &dir.path().join("predictable-binary-victim"),
-            kind,
-        );
-    }
-    if preplant_programs_symlink {
-        #[cfg(unix)]
-        {
-            let keyhog_cache = cache_root.join("keyhog");
-            let redirected = dir.path().join("redirected-programs");
-            fs::create_dir_all(&keyhog_cache).expect("create keyhog cache root");
-            fs::create_dir(&redirected).expect("create symlink target");
-            std::os::unix::fs::symlink(&redirected, keyhog_cache.join("programs"))
-                .expect("preplant programs symlink");
-        }
-        #[cfg(not(unix))]
-        panic!("programs symlink harness requires Unix");
-    }
-    write_executable(
-        &fake_bin.join("curl"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-out=""
-url=""
-while [[ "$#" -gt 0 ]]; do
-  case "$1" in
-    -o) shift; out="$1" ;;
-    http*) url="$1" ;;
-  esac
-  shift || true
-done
-[[ -n "$out" && -n "$url" ]]
-printf '%s\n' "$url" >> "$FAKE_CURL_LOG"
-case "$out" in
-  *.sha256)
-    target="$(basename "${out%.sha256}")"
-    printf '%064d  %s\n' 0 "$target" > "$out"
-    ;;
-  *) printf 'payload' > "$out" ;;
-esac
-"#,
-    );
-    write_executable(
-        &fake_bin.join("sha256sum"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-if [[ "${1:-}" == "-c" ]]; then
-  exit "$FAKE_SHA_EXIT"
-fi
-exec /usr/bin/sha256sum "$@"
-"#,
-    );
-    write_executable(
-        &fake_bin.join("minisign"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-exit "$FAKE_SIGNATURE_EXIT"
-"#,
-    );
-    write_executable(
-        &fake_bin.join("tar"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-case "${1:-}" in
-  -tzf) printf '%s\n' "$FAKE_TAR_ENTRY" ;;
-  -tvzf) printf '%s rw-r--r-- 0/0 1 Jan 1 00:00 %s\n' "$FAKE_TAR_KIND" "$FAKE_TAR_ENTRY" ;;
-  -xzf)
-    destination=""
-    while [[ "$#" -gt 0 ]]; do
-      if [[ "$1" == "-C" ]]; then shift; destination="$1"; fi
-      shift || true
-    done
-    [[ -n "$destination" ]]
-    printf 'matcher' > "$destination/literal-program.$FAKE_ARTIFACT_EXTENSION"
-    ;;
-  *) exit 9 ;;
-esac
-"#,
-    );
-
-    let path = format!(
-        "{}:{}",
-        fake_bin.display(),
-        env::var("PATH").expect("PATH is set")
-    );
-    let output_path = dir.path().join("github-output.txt");
-    let curl_log = dir.path().join("curl.log");
-    let output = run_manifest_bash_step(
-        "Try downloading prebuilt binary",
-        &[
-            ("PATH", path.as_str()),
-            (
-                "RUNNER_TEMP",
-                runner_temp.to_str().expect("UTF-8 temp path"),
-            ),
-            (
-                "GITHUB_OUTPUT",
-                output_path.to_str().expect("UTF-8 output path"),
-            ),
-            ("ACTION_ASSET_NAME", "keyhog-linux-x86_64"),
-            ("ACTION_RESOLVED_VERSION", "0.5.45"),
-            ("ACTION_RELEASE_REQUIRED", "true"),
-            (
-                "ACTION_LOCKDOWN",
-                if action_lockdown { "true" } else { "false" },
-            ),
-            ("RUNNER_OS", "Linux"),
-            ("FAKE_CURL_LOG", curl_log.to_str().expect("UTF-8 curl log")),
-            ("FAKE_TAR_ENTRY", tar_entry),
-            ("FAKE_TAR_KIND", tar_kind),
-            ("FAKE_ARTIFACT_EXTENSION", artifact_extension),
-            ("FAKE_SHA_EXIT", checksum_exit),
-            ("FAKE_SIGNATURE_EXIT", signature_exit),
-            ("KEYHOG_MINISIGN_PUBLIC_KEY", "test-public-key"),
-        ],
-    );
-    (dir, output)
 }
 
 fn yaml_literal_run_blocks(yaml: &str) -> Vec<String> {
@@ -722,18 +554,6 @@ fn workflow_job<'a>(workflow: &'a serde_yaml::Mapping, name: &str) -> &'a serde_
         .and_then(|jobs| yaml_get(jobs, name))
         .and_then(serde_yaml::Value::as_mapping)
         .unwrap_or_else(|| panic!("workflow declares the {name} job"))
-}
-
-fn workflow_job_needs(job: &serde_yaml::Mapping) -> Vec<&str> {
-    match yaml_get(job, "needs") {
-        Some(serde_yaml::Value::String(need)) => vec![need],
-        Some(serde_yaml::Value::Sequence(needs)) => needs
-            .iter()
-            .map(|need| need.as_str().expect("job need is a string"))
-            .collect(),
-        Some(_) => panic!("job needs must be a string or sequence"),
-        None => Vec::new(),
-    }
 }
 
 fn workflow_job_steps(job: &serde_yaml::Mapping) -> &[serde_yaml::Value] {
@@ -922,9 +742,9 @@ fn action_e2e_triggers_for_every_source_build_input() {
 }
 
 /// Regression: hosted E2E once exercised only the root Action with forced CPU
-/// defaults, leaving the nested mirror and auto+lockdown policy path unexecuted.
+/// defaults, leaving the nested mirror and published-crate policy path unexecuted.
 #[test]
-fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
+fn hosted_action_e2e_splits_source_and_published_crate_modes() {
     let workflow = fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
     serde_yaml::from_str::<serde_yaml::Value>(&workflow)
         .expect("action-e2e workflow parses as YAML");
@@ -934,13 +754,13 @@ fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
             workflow
                 .lines()
                 .any(|line| line.trim() == format!("- runner: {runner}")),
-            "hosted release E2E matrix must name {runner} explicitly"
+            "hosted published-crate E2E matrix must name {runner} explicitly"
         );
     }
     assert_eq!(
         workflow.matches("        uses: ./\n").count(),
         3,
-        "hosted and provisioned source/release modes must invoke the root composite"
+        "hosted and provisioned source/published modes must invoke the root composite"
     );
     assert_eq!(
         workflow
@@ -954,7 +774,7 @@ fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
             .matches("version: ${{ env.KEYHOG_ACTION_E2E_VERSION }}")
             .count(),
         3,
-        "only workflow_dispatch release invocations may force the authenticated asset path"
+        "only workflow_dispatch release invocations may force the published crate path"
     );
     for step_name in [
         "Invoke root composite from branch/SHA source",
@@ -969,13 +789,13 @@ fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
         assert!(
             step.contains("if: github.event_name != 'workflow_dispatch'")
                 && !step.contains("\n          version:"),
-            "PR/main source proof must never require an unpublished release asset: {step}"
+            "PR/main source proof must never require a published crate: {step}"
         );
     }
     for step_name in [
-        "Invoke root composite against authenticated release asset",
-        "Invoke nested composite with precision finding policy from authenticated release asset",
-        "Reject unsupported hosted auto lockdown from authenticated release asset",
+        "Invoke root composite against published crates.io release",
+        "Invoke nested composite with precision finding policy from published crates.io release",
+        "Reject unsupported hosted auto lockdown from published crates.io release",
     ] {
         let step = workflow
             .split(&format!("- name: {step_name}"))
@@ -985,7 +805,7 @@ fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
         assert!(
             step.contains("if: github.event_name == 'workflow_dispatch'")
                 && step.contains("version: ${{ env.KEYHOG_ACTION_E2E_VERSION }}"),
-            "release-asset proof must be explicit and may never silently source-build: {step}"
+            "published-crate proof must be explicit and may never silently build the checkout: {step}"
         );
     }
     let clean_source = workflow
@@ -1013,7 +833,7 @@ fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
         "portable precision source smoke must select CPU explicitly"
     );
     let release_precision = workflow
-        .split("- name: Invoke nested composite with precision finding policy from authenticated release asset")
+        .split("- name: Invoke nested composite with precision finding policy from published crates.io release")
         .nth(1)
         .and_then(|tail| tail.split("\n      - name:").next())
         .expect("release precision step exists");
@@ -1021,7 +841,7 @@ fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
         release_precision.contains("preset: precision")
             && release_precision.contains("lockdown: 'false'")
             && !release_precision.contains("\n          backend:"),
-        "authenticated production binary smoke must prove default proof-backed backend:auto"
+        "published production crate smoke must prove default proof-backed backend:auto"
     );
     for (name, explicit_cpu) in [
         (
@@ -1029,7 +849,7 @@ fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
             true,
         ),
         (
-            "Reject unsupported hosted auto lockdown from authenticated release asset",
+            "Reject unsupported hosted auto lockdown from published crates.io release",
             false,
         ),
     ] {
@@ -1137,15 +957,15 @@ fn action_e2e_contract_pins_hyperscan_and_hides_unverified_reports() {
 
 /// Regression: a hosted negative lane cannot prove lockdown works. Maintain a
 /// pinned, provisioned container that executes both real composite entrypoints:
-/// source push/PR uses explicit portable CPU, while authenticated release
-/// dispatch uses proof-backed backend:auto.
+/// source push/PR uses explicit portable CPU, while published-crate dispatch
+/// uses proof-backed backend:auto.
 #[test]
 fn action_e2e_maintains_provisioned_positive_lockdown_lane() {
     let workflow = fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
     let job = workflow
         .split("  positive-lockdown:")
         .nth(1)
-        .and_then(|tail| tail.split("\n  release-asset:").next())
+        .and_then(|tail| tail.split("\n  published-crate:").next())
         .expect("positive-lockdown job exists");
     for contract in [
         "image: rust:1.89.0-bookworm@sha256:948f9b08a66e7fe01b03a98ef1c7568292e07ec2e4fe90d88c07bb14563c84ff",
@@ -1160,7 +980,7 @@ fn action_e2e_maintains_provisioned_positive_lockdown_lane() {
         "[[ \"$ACTION_REPORT_PRESENT\" == \"true\" ]]",
         "$RUNNER_TEMP/keyhog-autoroute-cache-*",
         "literal_bins=(\"$RUNNER_TEMP\"/keyhog-action-runtime.*/cache/**/*.bin)",
-        "authenticated-release-auto",
+        "published-crate-auto",
         "portable-source-cpu",
         "installed_keyhog=\"$(command -v keyhog)\"",
         "[[ \"$(keyhog --version)\" == *\"$KEYHOG_ACTION_E2E_VERSION\"* ]]",
@@ -1179,10 +999,10 @@ fn action_e2e_maintains_provisioned_positive_lockdown_lane() {
         job.matches("backend: ${{ github.event_name == 'workflow_dispatch' && 'auto' || 'cpu' }}")
             .count(),
         2,
-        "root and nested must select portable source CPU or authenticated release auto explicitly"
+        "root and nested must select portable source CPU or published crate auto explicitly"
     );
     assert_eq!(
-        job.matches("ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && 'authenticated-release-auto' || 'portable-source-cpu' }}")
+        job.matches("ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && 'published-crate-auto' || 'portable-source-cpu' }}")
             .count(),
         2,
         "each invocation must assert its selected install and routing mode"
@@ -1199,7 +1019,7 @@ fn action_e2e_maintains_provisioned_positive_lockdown_lane() {
 }
 
 /// Regression: Marketplace examples and hosted release smoke must track the
-/// workspace version so the Action never advertises or tests a stale asset.
+/// workspace version so the Action never advertises or tests a stale crate.
 #[test]
 fn action_examples_and_hosted_release_default_follow_workspace_version() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -3413,9 +3233,9 @@ fn composite_action_version_output_is_validated_before_github_output() {
     );
     assert!(
         manifest.contains("v=\"${normalized_tag#v}\"")
-            && manifest.contains("releases/download/v${version}")
-            && manifest.contains("\"$release_url/$name\""),
-        "an explicit version must normalize one optional v prefix before building the release URL"
+            && manifest.contains("cargo install --locked --version \"=$version\"")
+            && manifest.contains("ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}"),
+        "an explicit version must normalize one optional v prefix before selecting the exact crates.io package"
     );
     assert!(
         !manifest.contains("Invalid version '$v'"),
@@ -3438,7 +3258,7 @@ fn composite_action_version_output_is_validated_before_github_output() {
     );
     assert!(
         manifest.contains("ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}"),
-        "download step must receive the release-required decision through env"
+        "install step must receive the crates.io-versus-source decision through env"
     );
     assert!(
         !manifest.contains("echo \"version=$v\" >> \"$GITHUB_OUTPUT\""),
@@ -3532,7 +3352,7 @@ fn composite_action_version_resolver_accepts_only_compatible_publishable_tags() 
 }
 
 #[test]
-fn composite_action_floating_major_ref_resolves_exact_signed_release() {
+fn composite_action_floating_major_ref_resolves_exact_published_crate() {
     let dir = TempDir::new().expect("version output tempdir");
     let output_path = dir.path().join("github-output.txt");
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -3650,538 +3470,6 @@ fn composite_action_error_commands_do_not_reflect_untrusted_env_values() {
     assert!(
         manifest.contains("Invalid findings output."),
         "fail step should still explain invalid findings output"
-    );
-}
-
-/// Regression: Action release bootstrap once trusted floating package-manager
-/// state, so this locks the verifier archive hashes, exact source toolchain,
-/// portable source profile, and HTTPS-only authenticated release downloads.
-#[test]
-fn composite_action_pins_release_verifier_and_source_dependencies() {
-    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
-    assert!(
-        manifest.contains("- name: Install pinned release verifier")
-            && manifest.contains("verifier_version=\"0.11\"")
-            && manifest
-                .contains("f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0")
-            && manifest
-                .contains("e7c410ae8b8960d7087392472b040bda9b2f307c76df0384ac37f9ad103fc893")
-            && manifest
-                .contains("b9c31c2c3034f81f0e5f5d92cbcc20e67a9671b6e5455661588638848dc58031"),
-        "every supported runner must use an exact byte-authenticated minisign archive"
-    );
-    assert!(
-        manifest.contains("toolchain: '1.89.0'")
-            && manifest.contains("source_features=\"portable\"")
-            && manifest.contains(
-                "if [[ \"${RUNNER_OS:-}\" == \"macOS\" ]]; then source_features=\"portable,gpu\"; fi",
-            )
-            && manifest.contains("--no-default-features --features \"$source_features\"")
-            && !manifest.contains("apt-get")
-            && !manifest.contains("brew install")
-            && !manifest.contains("choco install"),
-        "source fallback must select native Metal only on macOS without floating toolchains or native package-manager state",
-    );
-    assert!(
-        manifest.contains("curl --proto '=https' --tlsv1.2 --fail --location"),
-        "verifier and release downloads must require HTTPS with TLS 1.2 or newer"
-    );
-    assert!(
-        manifest.contains("$asset.minisig")
-            && manifest.contains("$sidecar.minisig")
-            && manifest.contains("KEYHOG_MINISIGN_PUBLIC_KEY"),
-        "prebuilt download must authenticate the binary and GPU literal sidecar with the pinned key"
-    );
-    assert!(
-        manifest.contains("sha256sum -c \"$asset.sha256\"")
-            && manifest.contains("sha256sum -c \"$sidecar.sha256\"")
-            || manifest.contains("shasum -a 256 -c \"$asset.sha256\"")
-                && manifest.contains("shasum -a 256 -c \"$sidecar.sha256\""),
-        "prebuilt download must verify both checksums before adding keyhog to PATH"
-    );
-    assert!(
-        manifest.contains("GPU literal sidecar contains an unsafe path")
-            && manifest.contains("GPU literal sidecar contains a link entry")
-            && manifest.contains("GPU literal sidecar contains no matcher artifacts"),
-        "the Action must validate and seed the authenticated sidecar rather than compile shipped matchers"
-    );
-    assert!(
-        manifest.contains("refusing source-build fallback for a release ref"),
-        "missing required release payloads must fail closed instead of source-building silently"
-    );
-}
-
-/// Regression: a compromised or replaced minisign download must fail before
-/// extraction or PATH mutation rather than bootstrapping a forged verifier.
-#[test]
-fn composite_action_rejects_pinned_verifier_archive_hash_mismatch() {
-    let dir = TempDir::new().expect("verifier bootstrap tempdir");
-    let fake_bin = dir.path().join("bin");
-    let runner_temp = dir.path().join("runner-temp");
-    fs::create_dir(&fake_bin).expect("fake bin");
-    fs::create_dir(&runner_temp).expect("runner temp");
-    write_executable(
-        &fake_bin.join("curl"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-out=""
-while [[ "$#" -gt 0 ]]; do
-  case "$1" in
-    --output) out="$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-printf 'attacker-controlled verifier archive' > "$out"
-"#,
-    );
-    let path = format!(
-        "{}:{}",
-        fake_bin.display(),
-        env::var("PATH").expect("PATH is set")
-    );
-    let github_path = dir.path().join("github-path");
-    let output = run_manifest_bash_step(
-        "Install pinned release verifier",
-        &[
-            ("PATH", path.as_str()),
-            ("RUNNER_OS", "Linux"),
-            ("RUNNER_ARCH", "X64"),
-            (
-                "RUNNER_TEMP",
-                runner_temp.to_str().expect("UTF-8 runner temp"),
-            ),
-            (
-                "GITHUB_PATH",
-                github_path.to_str().expect("UTF-8 GITHUB_PATH"),
-            ),
-        ],
-    );
-    assert_eq!(
-        output.status.code(),
-        Some(2),
-        "wrong verifier bytes must fail closed: {}",
-        combined_output(&output)
-    );
-    assert!(
-        combined_output(&output).contains("Pinned minisign archive SHA-256 mismatch"),
-        "hash mismatch must be operator-visible: {}",
-        combined_output(&output)
-    );
-    assert!(
-        !github_path.exists()
-            || fs::read_to_string(github_path)
-                .expect("read GITHUB_PATH")
-                .is_empty(),
-        "failed verifier bootstrap must not mutate PATH"
-    );
-}
-
-/// Regression: verifier bootstrap must fail closed on redirect/download and
-/// archive extraction errors, never publishing a partial verifier to PATH.
-#[test]
-fn composite_action_verifier_redirect_and_extraction_fail_closed() {
-    for mode in ["redirect", "extract"] {
-        let dir = TempDir::new().expect("verifier bootstrap tempdir");
-        let fake_bin = dir.path().join("bin");
-        let runner_temp = dir.path().join("runner-temp");
-        fs::create_dir(&fake_bin).expect("fake bin");
-        fs::create_dir(&runner_temp).expect("runner temp");
-        write_executable(
-            &fake_bin.join("curl"),
-            r#"#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$BOOTSTRAP_FAILURE_MODE" == "redirect" ]]; then exit 22; fi
-out=""
-while [[ "$#" -gt 0 ]]; do
-  case "$1" in
-    --output) out="$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-printf 'archive-with-authenticated-test-hash' > "$out"
-"#,
-        );
-        write_executable(
-            &fake_bin.join("sha256sum"),
-            r#"#!/usr/bin/env bash
-printf 'f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0  %s\n' "$1"
-"#,
-        );
-        write_executable(&fake_bin.join("tar"), "#!/usr/bin/env bash\nexit 9\n");
-        let path = format!(
-            "{}:{}",
-            fake_bin.display(),
-            env::var("PATH").expect("PATH is set")
-        );
-        let github_path = dir.path().join("github-path");
-        let output = run_manifest_bash_step(
-            "Install pinned release verifier",
-            &[
-                ("PATH", path.as_str()),
-                ("RUNNER_OS", "Linux"),
-                ("RUNNER_ARCH", "X64"),
-                ("BOOTSTRAP_FAILURE_MODE", mode),
-                (
-                    "RUNNER_TEMP",
-                    runner_temp.to_str().expect("UTF-8 runner temp"),
-                ),
-                (
-                    "GITHUB_PATH",
-                    github_path.to_str().expect("UTF-8 GITHUB_PATH"),
-                ),
-            ],
-        );
-        assert!(
-            !output.status.success(),
-            "{mode} failure must stop verifier bootstrap"
-        );
-        assert!(
-            !runner_temp.join("minisign").exists(),
-            "{mode} failure must not install a verifier"
-        );
-        assert!(
-            !github_path.exists()
-                || fs::read_to_string(&github_path)
-                    .expect("read GITHUB_PATH")
-                    .is_empty(),
-            "{mode} failure must not mutate PATH"
-        );
-    }
-}
-
-/// Regression: authenticated release installation must fetch exactly the six
-/// required payloads and stage only the verified matcher into its isolated cache.
-#[test]
-fn composite_action_authenticated_bundle_executes_all_six_exact_downloads() {
-    let (dir, output) =
-        run_release_download_harness("literal.bin", "-", "bin", "0", "0", false, false, None);
-    assert!(
-        output.status.success(),
-        "valid authenticated bundle must install: {}",
-        combined_output(&output)
-    );
-    let urls = fs::read_to_string(dir.path().join("curl.log")).expect("read curl log");
-    let base = "https://github.com/santhreal/keyhog/releases/download/v0.5.45/";
-    let expected = [
-        "keyhog-linux-x86_64",
-        "keyhog-linux-x86_64.sha256",
-        "keyhog-linux-x86_64.minisig",
-        "keyhog-linux-x86_64.gpu-literals.tar.gz",
-        "keyhog-linux-x86_64.gpu-literals.tar.gz.sha256",
-        "keyhog-linux-x86_64.gpu-literals.tar.gz.minisig",
-    ]
-    .map(|name| format!("{base}{name}"))
-    .join("\n");
-    assert_eq!(urls, format!("{expected}\n"));
-    let runtime = private_action_runtime(&dir);
-    assert!(
-        runtime
-            .join("cache/xdg/keyhog/programs/literal-program.bin")
-            .is_file(),
-        "validated sidecar artifact must reach the invocation-private platform cache"
-    );
-}
-
-/// Regression: the historical predictable release destination could be
-/// preplanted as any filesystem type and `cp` followed symlinks into victims.
-#[cfg(unix)]
-#[test]
-fn composite_action_release_binary_ignores_all_predictable_preplants() {
-    for kind in ["symlink", "hardlink", "fifo", "regular"] {
-        let (dir, output) = run_release_download_harness(
-            "literal.bin",
-            "-",
-            "bin",
-            "0",
-            "0",
-            false,
-            false,
-            Some(kind),
-        );
-        assert!(
-            output.status.success(),
-            "{kind} preplant must not block private install: {}",
-            combined_output(&output)
-        );
-        assert_eq!(
-            fs::read_to_string(dir.path().join("predictable-binary-victim"))
-                .expect("victim contents"),
-            "victim-unchanged",
-            "{kind} preplant must not mutate victim"
-        );
-        let outputs = fs::read_to_string(dir.path().join("github-output.txt")).expect("outputs");
-        let binary = outputs
-            .lines()
-            .find_map(|line| line.strip_prefix("binary-path="))
-            .expect("private binary");
-        let metadata = fs::symlink_metadata(binary).expect("private binary metadata");
-        assert!(metadata.file_type().is_file() && !metadata.file_type().is_symlink());
-        let old = dir.path().join("runner-temp/keyhog");
-        let old_type = fs::symlink_metadata(&old)
-            .expect("old preplant")
-            .file_type();
-        match kind {
-            "symlink" => assert!(old_type.is_symlink()),
-            "fifo" => assert!(old_type.is_fifo()),
-            "hardlink" => assert_eq!(
-                fs::read_to_string(old).expect("hardlink"),
-                "victim-unchanged"
-            ),
-            "regular" => assert_eq!(
-                fs::read_to_string(old).expect("regular"),
-                "preplanted-regular"
-            ),
-            _ => unreachable!(),
-        }
-    }
-}
-
-/// Regression: lockdown once seeded persistent GPU artifacts despite claiming
-/// cache refusal, so authenticated sidecars must remain unstaged in this mode.
-#[test]
-fn composite_action_lockdown_authenticates_bundle_without_creating_disk_cache() {
-    let (dir, output) =
-        run_release_download_harness("literal.bin", "-", "bin", "0", "0", false, true, None);
-    assert!(
-        output.status.success(),
-        "lockdown must still authenticate the complete release bundle: {}",
-        combined_output(&output)
-    );
-    let runtime = private_action_runtime(&dir);
-    let outputs = fs::read_to_string(dir.path().join("github-output.txt")).expect("outputs");
-    let binary_path = outputs
-        .lines()
-        .find_map(|line| line.strip_prefix("binary-path="))
-        .expect("private binary output");
-    assert!(
-        Path::new(binary_path).is_file(),
-        "authenticated release binary must be private"
-    );
-    assert!(
-        !runtime.join("cache/xdg/keyhog").exists(),
-        "invocation-private GPU cache must remain unseeded so CLI lockdown can apply"
-    );
-    assert!(
-        combined_output(&output).contains("lockdown did not seed the isolated Action cache"),
-        "lockdown cache behavior must be operator-visible"
-    );
-}
-
-#[test]
-fn composite_action_release_bundle_proofs_fail_closed() {
-    for (checksum_exit, signature_exit, expected) in
-        [("1", "0", "checksum"), ("0", "1", "signature")]
-    {
-        let (_dir, output) = run_release_download_harness(
-            "literal.bin",
-            "-",
-            "bin",
-            checksum_exit,
-            signature_exit,
-            false,
-            false,
-            None,
-        );
-        assert!(
-            !output.status.success(),
-            "invalid {expected} must stop release installation"
-        );
-    }
-}
-
-#[test]
-fn composite_action_rejects_cross_platform_archive_traversal() {
-    for unsafe_entry in [
-        "../escape.bin",
-        r"\escape.bin",
-        "C:escape.bin",
-        "nested/.. /escape.bin",
-        "nested/.../escape.bin",
-    ] {
-        let (_dir, output) =
-            run_release_download_harness(unsafe_entry, "-", "bin", "0", "0", false, false, None);
-        let combined = combined_output(&output);
-        assert_eq!(
-            output.status.code(),
-            Some(2),
-            "unsafe entry {unsafe_entry:?} must fail closed: {combined}"
-        );
-        assert!(
-            combined.contains("unsafe path"),
-            "unsafe entry {unsafe_entry:?} must have an operator-visible reason: {combined}"
-        );
-    }
-}
-
-#[test]
-fn composite_action_rejects_links_special_entries_and_empty_matcher_sets() {
-    for (kind, extension, reason) in [
-        ("l", "bin", "link entry"),
-        ("p", "bin", "unsupported entry type"),
-        ("-", "txt", "no matcher artifacts"),
-    ] {
-        let (_dir, output) = run_release_download_harness(
-            "literal.bin",
-            kind,
-            extension,
-            "0",
-            "0",
-            false,
-            false,
-            None,
-        );
-        let combined = combined_output(&output);
-        assert_eq!(
-            output.status.code(),
-            Some(2),
-            "invalid sidecar ({reason}) must fail closed: {combined}"
-        );
-        assert!(
-            combined.contains(reason),
-            "invalid sidecar must surface {reason:?}: {combined}"
-        );
-    }
-}
-
-/// Regression: a preplanted predictable cache symlink from an earlier Action
-/// must remain untouched while this invocation stages into its private runtime.
-#[cfg(unix)]
-#[test]
-fn composite_action_resets_isolated_cache_without_following_symlinks() {
-    let (dir, output) =
-        run_release_download_harness("literal.bin", "-", "bin", "0", "0", true, false, None);
-    let combined = combined_output(&output);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "private cache must ignore a stale predictable programs symlink: {combined}"
-    );
-    assert!(
-        private_action_runtime(&dir)
-            .join("cache/xdg/keyhog/programs/literal-program.bin")
-            .is_file(),
-        "the authenticated matcher must be installed only into the private cache"
-    );
-    assert!(
-        fs::read_dir(dir.path().join("redirected-programs"))
-            .expect("read redirected target")
-            .next()
-            .is_none(),
-        "Action must not stage through the owned programs symlink"
-    );
-}
-
-/// Regression: release refs must never silently source-build after an
-/// authenticated asset failure, while branch/commit refs retain that path.
-#[test]
-fn consumer_docs_state_release_assets_fail_closed_before_source_build() {
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("repo root exists");
-    let docs = [
-        repo.join("README.md"),
-        repo.join(".github/actions/keyhog/README.md"),
-        repo.join("docs/src/workflows/ci.md"),
-    ];
-    let retired_claims = [
-        "Auto-downloads a prebuilt binary; falls back to cargo build when no release asset matches",
-        "falls back to source build if no prebuilt binary matches",
-        "Auto-built binaries with source fallback",
-        "falls back to a cargo build when no asset matches the host triple",
-    ];
-
-    for path in docs {
-        let raw = fs::read_to_string(&path).unwrap_or_else(|err| {
-            panic!("read {}: {err}", path.display());
-        });
-        let normalized = normalize_doc_text(&raw);
-        let lower = normalized.to_ascii_lowercase();
-        for claim in retired_claims {
-            assert!(
-                !lower.contains(&claim.to_ascii_lowercase()),
-                "{} still advertises the retired source-build fallback claim: {claim}",
-                path.display()
-            );
-        }
-        assert!(
-            lower.contains("release tags"),
-            "{} must describe release-tag behavior",
-            path.display()
-        );
-        assert!(
-            lower.contains("fail closed") || lower.contains("fails closed"),
-            "{} must say missing release assets fail closed",
-            path.display()
-        );
-        assert!(
-            lower.contains("branch/sha")
-                || lower.contains("branch and commit")
-                || lower.contains("branch or commit"),
-            "{} must scope source builds to branch/SHA or branch/commit Action refs",
-            path.display()
-        );
-        assert!(
-            lower.contains("build from source")
-                || lower.contains("source builds")
-                || lower.contains("build their checked-out source"),
-            "{} must still document the allowed branch/SHA source-build path",
-            path.display()
-        );
-    }
-}
-
-#[test]
-fn composite_action_required_release_download_failure_fails_closed() {
-    let dir = TempDir::new().expect("tempdir");
-    let fake_bin = dir.path().join("bin");
-    fs::create_dir(&fake_bin).expect("create fake bin");
-    write_executable(
-        &fake_bin.join("curl"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-exit 22
-"#,
-    );
-    let output_path = dir.path().join("github-output.txt");
-    let output_path_str = output_path.to_string_lossy().into_owned();
-    let runner_temp = dir.path().join("runner-temp");
-    fs::create_dir(&runner_temp).expect("create runner temp");
-    let runner_temp_str = runner_temp.to_string_lossy().into_owned();
-    let path = format!(
-        "{}:{}",
-        fake_bin.display(),
-        env::var("PATH").expect("PATH is set")
-    );
-    let output = run_manifest_bash_step(
-        "Try downloading prebuilt binary",
-        &[
-            ("PATH", path.as_str()),
-            ("GITHUB_OUTPUT", output_path_str.as_str()),
-            ("RUNNER_TEMP", runner_temp_str.as_str()),
-            ("ACTION_ASSET_NAME", "keyhog-linux-x86_64"),
-            ("ACTION_RESOLVED_VERSION", "0.5.37"),
-            ("ACTION_RELEASE_REQUIRED", "true"),
-        ],
-    );
-    let combined = combined_output(&output);
-    assert_eq!(
-        output.status.code(),
-        Some(2),
-        "required release download miss must fail closed; output={combined}"
-    );
-    assert!(
-        combined.contains("refusing source-build fallback for a release ref"),
-        "failure must explain that source-build fallback is forbidden for release refs; output={combined}"
-    );
-}
-
-#[test]
-fn composite_action_wires_resolved_asset_into_download_step() {
-    let manifest = fs::read_to_string(action_manifest()).expect("read action manifest");
-    assert!(
-        manifest.contains("ACTION_ASSET_NAME: ${{ steps.asset.outputs.name }}"),
-        "the download step must receive the platform asset selected by the preceding asset step"
     );
 }
 
@@ -4655,387 +3943,6 @@ printf 'scan\n' >> "$KEYHOG_CALL_LOG"
     assert!(!call_log.exists(), "scan must not run after config failure");
 }
 
-/// Locks out floating image/action tags advancing before the authenticated CI
-/// verdict, signed candidate smoke, immutable container, and public transition.
-#[test]
-fn release_floating_tags_advance_only_after_atomic_publication_gates() {
-    let source = fs::read_to_string(release_workflow()).expect("read release.yml");
-    let workflow: serde_yaml::Value =
-        serde_yaml::from_str(&source).expect("release.yml must parse");
-    let workflow = workflow
-        .as_mapping()
-        .expect("release workflow is a mapping");
-    let docker = workflow_job(workflow, "docker");
-    let publish = workflow_job(workflow, "publish");
-    let major = workflow_job(workflow, "major-tag");
-    let crates = workflow_job(workflow, "crates");
-
-    let mut docker_needs = workflow_job_needs(docker);
-    docker_needs.sort_unstable();
-    assert_eq!(
-        docker_needs,
-        ["ci-verdict", "smoke"],
-        "the immutable container must wait for authenticated CI and signed candidate smoke"
-    );
-    let mut publish_needs = workflow_job_needs(publish);
-    publish_needs.sort_unstable();
-    assert_eq!(
-        publish_needs,
-        ["ci-verdict", "docker", "sign", "smoke"],
-        "public release transition must explicitly wait for authenticated CI, the signed receipt, immutable container, and candidate smoke"
-    );
-    let mut major_needs = workflow_job_needs(major);
-    major_needs.sort_unstable();
-    assert_eq!(
-        major_needs,
-        ["ci-verdict", "publish"],
-        "major-tag must wait for authenticated CI and the exact public release"
-    );
-    assert_eq!(
-        workflow_job_needs(crates),
-        ["publish"],
-        "crates must not advance until the exact immutable release is public"
-    );
-
-    // Regression: prereleases and older manual reruns must never move either
-    // floating namespace, even though the immutable image is a publish prerequisite.
-    for (name, job) in [("docker", docker), ("major-tag", major)] {
-        let floating = workflow_run_step_containing(job, "is-newest-stable-tag.sh");
-        let run = yaml_get(floating, "run")
-            .and_then(serde_yaml::Value::as_str)
-            .expect("floating-tag predicate is a run step");
-        assert!(
-            run.contains("\"$KEYHOG_RELEASE_TAG\""),
-            "{name} must evaluate the exact validated release tag"
-        );
-        assert!(
-            workflow_job_steps(job)
-                .iter()
-                .filter_map(serde_yaml::Value::as_mapping)
-                .any(|step| {
-                    yaml_get(step, "if").and_then(serde_yaml::Value::as_str)
-                        == Some("steps.floating.outputs.advance == 'true'")
-                }),
-            "{name} must gate its floating mutation on the shared stable-tag predicate"
-        );
-    }
-
-    let image = workflow_job_steps(docker)
-        .iter()
-        .filter_map(serde_yaml::Value::as_mapping)
-        .find(|step| {
-            yaml_get(step, "uses")
-                .and_then(serde_yaml::Value::as_str)
-                .is_some_and(|uses| uses.starts_with("docker/build-push-action@"))
-        })
-        .expect("docker job builds the immutable image");
-    let tags = yaml_get(image, "with")
-        .and_then(serde_yaml::Value::as_mapping)
-        .and_then(|with| yaml_get(with, "tags"))
-        .and_then(serde_yaml::Value::as_str)
-        .expect("container build declares tags");
-    assert!(
-        tags.contains("steps.tag.outputs.version") && !tags.contains(":latest"),
-        "the build step must publish only the immutable version tag; latest advances separately"
-    );
-}
-
-#[test]
-fn composite_action_branch_ref_skips_release_lookup_and_builds_source() {
-    let dir = TempDir::new().expect("tempdir");
-    let fake_bin = dir.path().join("bin");
-    fs::create_dir(&fake_bin).expect("create fake bin");
-    write_executable(
-        &fake_bin.join("curl"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-touch "$CURL_CALLED"
-exit 22
-"#,
-    );
-    let curl_called = dir.path().join("curl-called");
-    let curl_called_str = curl_called.to_string_lossy().into_owned();
-    let output_path = dir.path().join("github-output.txt");
-    let output_path_str = output_path.to_string_lossy().into_owned();
-    let runner_temp = dir.path().join("runner-temp");
-    fs::create_dir(&runner_temp).expect("create runner temp");
-    let runner_temp_str = runner_temp.to_string_lossy().into_owned();
-    let path = format!(
-        "{}:{}",
-        fake_bin.display(),
-        env::var("PATH").expect("PATH is set")
-    );
-    let output = run_manifest_bash_step(
-        "Try downloading prebuilt binary",
-        &[
-            ("PATH", path.as_str()),
-            ("GITHUB_OUTPUT", output_path_str.as_str()),
-            ("RUNNER_TEMP", runner_temp_str.as_str()),
-            ("ACTION_ASSET_NAME", "keyhog-linux-x86_64"),
-            ("ACTION_RESOLVED_VERSION", "main"),
-            ("ACTION_RELEASE_REQUIRED", "false"),
-            ("CURL_CALLED", curl_called_str.as_str()),
-        ],
-    );
-    let combined = combined_output(&output);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "branch/SHA refs must continue directly to a source build; output={combined}"
-    );
-    assert!(
-        combined.contains("skipping release lookup"),
-        "branch/SHA refs must report that no release request was made; output={combined}"
-    );
-    assert!(!curl_called.exists(), "branch/SHA refs must not call curl");
-    let github_output = fs::read_to_string(&output_path).expect("read GITHUB_OUTPUT");
-    assert!(
-        github_output.contains("found=false"),
-        "branch/SHA path must advertise source build; output={github_output}"
-    );
-}
-
-#[test]
-fn composite_action_detects_unified_linux_release_asset() {
-    let dir = TempDir::new().expect("tempdir");
-    let fake_bin = dir.path().join("bin");
-    fs::create_dir(&fake_bin).expect("create fake bin");
-    write_executable(
-        &fake_bin.join("uname"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-case "${1:-}" in
-  -s) printf 'Linux\n' ;;
-  -m) printf 'x86_64\n' ;;
-  *) exit 2 ;;
-esac
-"#,
-    );
-    let output_path = dir.path().join("github-output.txt");
-    let output_path_str = output_path.to_string_lossy().into_owned();
-    let path = format!(
-        "{}:{}",
-        fake_bin.display(),
-        env::var("PATH").expect("PATH is set")
-    );
-    let output = run_manifest_bash_step(
-        "Detect platform asset name",
-        &[
-            ("PATH", path.as_str()),
-            ("GITHUB_OUTPUT", output_path_str.as_str()),
-        ],
-    );
-    let combined = combined_output(&output);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "Linux asset detection must run under bash; output={combined}"
-    );
-    let github_output = fs::read_to_string(&output_path).expect("read GITHUB_OUTPUT");
-    assert!(
-        github_output.contains("name=keyhog-linux-x86_64"),
-        "Linux runners must use the unified accelerator-capable asset; output={github_output}"
-    );
-}
-
-/// Regression: source fallback once depended on floating Linux Hyperscan
-/// packages; every runner must now build the lockfile-backed portable profile.
-#[test]
-fn composite_action_source_build_uses_portable_locked_features() {
-    let dir = TempDir::new().expect("tempdir");
-    let fake_bin = dir.path().join("bin");
-    let source_root = dir.path().join("source");
-    let runner_temp = dir.path().join("runner-temp");
-    fs::create_dir(&fake_bin).expect("create fake bin");
-    fs::create_dir(&source_root).expect("create source root");
-    fs::create_dir(&runner_temp).expect("create runner temp");
-    fs::create_dir(source_root.join("scripts")).expect("create source scripts");
-    fs::write(source_root.join("Cargo.toml"), "[workspace]\n").expect("write source manifest");
-    fs::write(
-        source_root.join("scripts/release-version.sh"),
-        "#!/usr/bin/env bash\n",
-    )
-    .expect("write release grammar marker");
-    let source_output = dir.path().join("source-output.txt");
-    let cargo_args = dir.path().join("cargo-args.txt");
-    write_executable(
-        &fake_bin.join("uname"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-printf 'Linux\n'
-"#,
-    );
-    write_executable(
-        &fake_bin.join("cargo"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "$@" > "$CARGO_ARGS_FILE"
-mkdir -p target/release
-printf 'fake-keyhog' > target/release/keyhog
-chmod +x target/release/keyhog
-"#,
-    );
-    write_executable(
-        &fake_bin.join("sha256sum"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-if (( $# != 0 )); then
-  printf '\\ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  %s\n' "$1"
-  exit 0
-fi
-cat >/dev/null
-printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  -\n'
-"#,
-    );
-    let path = format!(
-        "{}:{}",
-        fake_bin.display(),
-        env::var("PATH").expect("PATH is set")
-    );
-    let declared_source_root = dir.path().join("host-only-source");
-    let declared_source_root_str = declared_source_root.to_string_lossy().into_owned();
-    let source_root_str = source_root.to_string_lossy().into_owned();
-    let runner_temp_str = runner_temp.to_string_lossy().into_owned();
-    let source_output_str = source_output.to_string_lossy().into_owned();
-    let cargo_args_str = cargo_args.to_string_lossy().into_owned();
-    let output = run_manifest_bash_step(
-        "Build keyhog from source (fallback)",
-        &[
-            ("PATH", path.as_str()),
-            ("ACTION_SOURCE_ROOT", declared_source_root_str.as_str()),
-            ("ACTION_REPOSITORY", "santhreal/keyhog"),
-            ("GITHUB_REPOSITORY", "santhreal/keyhog"),
-            ("GITHUB_WORKSPACE", source_root_str.as_str()),
-            ("RUNNER_TEMP", runner_temp_str.as_str()),
-            ("GITHUB_OUTPUT", source_output_str.as_str()),
-            ("CARGO_ARGS_FILE", cargo_args_str.as_str()),
-        ],
-    );
-    let combined = combined_output(&output);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "Linux source-build fallback must run with fake cargo; output={combined}"
-    );
-    let args = fs::read_to_string(&cargo_args).expect("read cargo args");
-    assert!(
-        args.contains("--locked\n"),
-        "source fallback must build against the committed lockfile; args={args}"
-    );
-    assert!(
-        args.contains("--no-default-features\n--features\nportable\n"),
-        "source fallback must use one deterministic no-native-dependency feature profile; args={args}"
-    );
-    let outputs = fs::read_to_string(&source_output).expect("source outputs");
-    let binary_path = outputs
-        .lines()
-        .find_map(|line| line.strip_prefix("binary-path="))
-        .expect("source binary path");
-    assert!(
-        Path::new(binary_path).is_file() && !runner_temp.join("keyhog").exists(),
-        "source fallback must publish only into its invocation-private digest directory"
-    );
-    assert_eq!(
-        Path::new(binary_path)
-            .parent()
-            .and_then(Path::file_name)
-            .and_then(|name| name.to_str()),
-        Some(
-            "source-0.5.48-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        ),
-        "source hashing must consume bytes through stdin so Windows path escaping cannot enter the private directory name"
-    );
-}
-
-/// Git Bash can treat `target/release/keyhog` as executable when only
-/// `keyhog.exe` exists. Windows source installs must select the artifact by
-/// runner identity so PATH and provenance outputs retain the `.exe` suffix.
-#[test]
-fn composite_action_source_build_preserves_windows_exe_name() {
-    let dir = TempDir::new().expect("Windows source-build tempdir");
-    let fake_bin = dir.path().join("bin");
-    let source_root = dir.path().join("source");
-    let runner_temp = dir.path().join("runner-temp");
-    fs::create_dir(&fake_bin).expect("fake bin");
-    fs::create_dir(&source_root).expect("source root");
-    fs::create_dir(&runner_temp).expect("runner temp");
-    fs::create_dir(source_root.join("scripts")).expect("source scripts");
-    fs::write(source_root.join("Cargo.toml"), "[workspace]\n").expect("source manifest");
-    fs::write(
-        source_root.join("scripts/release-version.sh"),
-        "#!/usr/bin/env bash\n",
-    )
-    .expect("release grammar marker");
-    write_executable(
-        &fake_bin.join("cargo"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-mkdir -p target/release
-printf 'windows-keyhog' > target/release/keyhog.exe
-chmod +x target/release/keyhog.exe
-"#,
-    );
-    write_executable(
-        &fake_bin.join("sha256sum"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-if (( $# != 0 )); then
-  printf '\\ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  %s\n' "$1"
-  exit 0
-fi
-cat >/dev/null
-printf 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  -\n'
-"#,
-    );
-    let path = format!(
-        "{}:{}",
-        fake_bin.display(),
-        env::var("PATH").expect("PATH is set")
-    );
-    let output_path = dir.path().join("source-output");
-    let output = run_manifest_bash_step(
-        "Build keyhog from source (fallback)",
-        &[
-            ("PATH", &path),
-            (
-                "ACTION_SOURCE_ROOT",
-                source_root.to_str().expect("source root path"),
-            ),
-            (
-                "RUNNER_TEMP",
-                runner_temp.to_str().expect("runner temp path"),
-            ),
-            (
-                "GITHUB_OUTPUT",
-                output_path.to_str().expect("source output path"),
-            ),
-            ("RUNNER_OS", "Windows"),
-        ],
-    );
-    assert!(
-        output.status.success(),
-        "Windows source build must stage the explicit .exe artifact: {}",
-        combined_output(&output)
-    );
-    let outputs = fs::read_to_string(output_path).expect("source outputs");
-    let binary_dir = outputs
-        .lines()
-        .find_map(|line| line.strip_prefix("binary-dir="))
-        .expect("binary dir");
-    let binary_path = outputs
-        .lines()
-        .find_map(|line| line.strip_prefix("binary-path="))
-        .expect("binary path");
-    assert!(
-        binary_path.ends_with("/keyhog.exe") && Path::new(binary_path).is_file(),
-        "Windows source output must retain keyhog.exe, got {binary_path}"
-    );
-    assert!(
-        !Path::new(binary_dir).join("keyhog").exists(),
-        "Windows source output must not publish an extensionless alias"
-    );
-}
-
 /// Git Bash may omit `.exe` from `command -v` even when PATH resolves the
 /// staged Windows executable. The hosted assertion must normalize both forms
 /// while still proving the exact private executable exists.
@@ -5089,182 +3996,6 @@ installed_unix="${installed_unix%.exe}"
             combined_output(&output)
         );
     }
-}
-
-#[test]
-fn composite_action_detects_windows_release_asset() {
-    let dir = TempDir::new().expect("tempdir");
-    write_executable(
-        &dir.path().join("uname"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-case "${1:-}" in
-  -s) printf 'MINGW64_NT-10.0\n' ;;
-  -m) printf 'x86_64\n' ;;
-  *) exit 2 ;;
-esac
-"#,
-    );
-    let output_path = dir.path().join("github-output.txt");
-    let output_path_str = output_path.to_string_lossy().into_owned();
-    let path = format!(
-        "{}:{}",
-        dir.path().display(),
-        env::var("PATH").expect("PATH is set")
-    );
-    let output = run_manifest_bash_step(
-        "Detect platform asset name",
-        &[
-            ("PATH", path.as_str()),
-            ("GITHUB_OUTPUT", output_path_str.as_str()),
-        ],
-    );
-    let combined = combined_output(&output);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "Windows asset detection must run under bash; output={combined}"
-    );
-    let github_output = fs::read_to_string(&output_path).expect("read GITHUB_OUTPUT");
-    assert!(
-        github_output.contains("name=keyhog-windows-x86_64.exe"),
-        "Windows GitHub runners must use the published prebuilt asset; output={github_output}"
-    );
-}
-
-/// Regression: cross-platform release installation must retain the `.exe`
-/// identity while atomically replacing stale matcher destinations in isolation.
-#[test]
-fn composite_action_download_preserves_windows_exe_name() {
-    let dir = TempDir::new().expect("tempdir");
-    let fake_bin = dir.path().join("bin");
-    fs::create_dir(&fake_bin).expect("create fake bin");
-    write_executable(
-        &fake_bin.join("curl"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-out=""
-while [[ "$#" -gt 0 ]]; do
-  if [[ "$1" == "-o" ]]; then
-    shift
-    out="$1"
-  fi
-  shift || true
-done
-if [[ -z "$out" ]]; then
-  exit 9
-fi
-case "$out" in
-  *.gpu-literals.tar.gz)
-    payload="$(mktemp -d)"
-    printf 'gpu-program' > "$payload/literal-program.bin"
-    tar -czf "$out" -C "$payload" literal-program.bin
-    rm -rf "$payload"
-    ;;
-  *.sha256)
-    target="$(basename "${out%.sha256}")"
-    printf '%064d  %s\n' 0 "$target" > "$out"
-    ;;
-  *.minisig) printf 'fake-signature\n' > "$out" ;;
-  *) printf 'windows-binary' > "$out" ;;
-esac
-"#,
-    );
-    write_executable(
-        &fake_bin.join("sha256sum"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-if [[ "${1:-}" == "-c" ]]; then exit 0; fi
-exec /usr/bin/sha256sum "$@"
-"#,
-    );
-    write_executable(
-        &fake_bin.join("minisign"),
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-exit 0
-"#,
-    );
-    let output_path = dir.path().join("github-output.txt");
-    let output_path_str = output_path.to_string_lossy().into_owned();
-    let path = format!(
-        "{}:{}",
-        fake_bin.display(),
-        env::var("PATH").expect("PATH is set")
-    );
-    let runner_temp = dir.path().join("runner-temp");
-    let runner_temp_str = runner_temp.to_string_lossy().into_owned();
-    fs::create_dir(&runner_temp).expect("create runner temp");
-    let action_cache_home = runner_temp.join("keyhog-action-cache");
-    let cache_root = action_cache_home.join("xdg");
-    #[cfg(unix)]
-    {
-        let programs = cache_root.join("keyhog/programs");
-        fs::create_dir_all(&programs).expect("create programs cache");
-        let victim = dir.path().join("symlink-victim");
-        fs::write(&victim, "unchanged").expect("write symlink victim");
-        std::os::unix::fs::symlink(&victim, programs.join("literal-program.bin"))
-            .expect("preplant destination symlink");
-    }
-    let output = run_manifest_bash_step(
-        "Try downloading prebuilt binary",
-        &[
-            ("PATH", path.as_str()),
-            ("GITHUB_OUTPUT", output_path_str.as_str()),
-            ("RUNNER_TEMP", runner_temp_str.as_str()),
-            ("ACTION_ASSET_NAME", "keyhog-windows-x86_64.exe"),
-            ("ACTION_RESOLVED_VERSION", "0.5.37"),
-            ("ACTION_RELEASE_REQUIRED", "true"),
-            ("RUNNER_OS", "Linux"),
-            ("KEYHOG_MINISIGN_PUBLIC_KEY", "test-public-key"),
-        ],
-    );
-    let combined = combined_output(&output);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "Windows prebuilt download path must complete with local fake tools; output={combined}"
-    );
-    let github_output = fs::read_to_string(&output_path).expect("read GITHUB_OUTPUT");
-    let binary_path = github_output
-        .lines()
-        .find_map(|line| line.strip_prefix("binary-path="))
-        .expect("private Windows binary");
-    assert!(
-        binary_path.ends_with("/keyhog.exe") && Path::new(binary_path).is_file(),
-        "Windows prebuilt must retain keyhog.exe in its invocation-private digest directory"
-    );
-    assert!(
-        !runner_temp.join("keyhog.exe").exists() && !runner_temp.join("keyhog").exists(),
-        "Windows prebuilt must not publish to predictable RUNNER_TEMP paths"
-    );
-    let private_cache = private_action_runtime(&dir).join("cache/xdg");
-    assert!(
-        private_cache
-            .join("keyhog/programs/literal-program.bin")
-            .is_file(),
-        "authenticated GPU literal artifacts must be seeded into the invocation-private cache"
-    );
-    #[cfg(unix)]
-    {
-        let installed = private_cache.join("keyhog/programs/literal-program.bin");
-        assert!(
-            fs::symlink_metadata(&installed)
-                .expect("installed artifact metadata")
-                .file_type()
-                .is_file(),
-            "atomic installation must replace a pre-planted destination symlink"
-        );
-        assert_eq!(
-            fs::read_to_string(dir.path().join("symlink-victim")).expect("read symlink victim"),
-            "unchanged",
-            "artifact installation must never write through a destination symlink"
-        );
-    }
-    assert!(
-        github_output.contains("found=true"),
-        "verified Windows prebuilt download must advertise found=true; output={github_output}"
-    );
 }
 
 /// Container jobs expose a host-only `github.action_path`, so the scan step must
@@ -5457,69 +4188,6 @@ fn ci_install_from_build_proof_requires_expect_setup() {
     }
 }
 
-/// Locks out direct dispatch-input interpolation or emitting a release identity
-/// before actor, annotated tag, signer, main ancestry, and exact CI are proven.
-#[test]
-fn release_workflow_validates_manual_tag_before_shell_outputs() {
-    let workflow = fs::read_to_string(release_workflow()).expect("read release.yml");
-    let mut offenders = Vec::new();
-    for block in yaml_literal_run_blocks(&workflow) {
-        for line in block.lines() {
-            if line.contains("${{ inputs.tag }}") {
-                offenders.push(line.trim().to_string());
-            }
-        }
-    }
-    assert!(
-        offenders.is_empty(),
-        "release workflow shell blocks must receive workflow_dispatch tag through env, not direct interpolation: {offenders:#?}"
-    );
-    assert!(
-        workflow.contains("KEYHOG_MANUAL_TAG: ${{ inputs.tag }}"),
-        "manual release tag must enter shell through the named KEYHOG_MANUAL_TAG env var"
-    );
-    let verifier = workflow
-        .find("automation/scripts/verify_release_tag.py")
-        .expect("authenticated tag verifier");
-    let ci_verdict = workflow
-        .find("(.total_count == (.jobs | length))")
-        .expect("exact complete CI verdict");
-    let output = workflow
-        .find("printf 'tag=%s\\n' \"$tag\" >> \"$GITHUB_OUTPUT\"")
-        .expect("validated tag output");
-    assert!(
-        verifier < ci_verdict && ci_verdict < output,
-        "release outputs must follow signed-tag and exact-CI verification"
-    );
-    assert!(
-        workflow.contains("release source must name an exact semantic-version tag")
-            && workflow.contains("--authorized-key")
-            && workflow.contains("--authorized-fingerprint")
-            && workflow.contains("--main-ref-json")
-            && workflow.contains("--compare-json"),
-        "release boundary must fail closed on malformed SemVer, signer, or main ancestry"
-    );
-    assert!(
-        workflow.contains("printf 'tag=%s\\n' \"$tag\" >> \"$GITHUB_OUTPUT\""),
-        "release tag resolver must write a single validated output line"
-    );
-    assert!(
-        !workflow.contains("echo \"tag=$tag\" >> \"$GITHUB_OUTPUT\""),
-        "release tag resolver must not echo an unvalidated output assignment"
-    );
-    assert!(
-        workflow.contains("KEYHOG_RELEASE_TAG: ${{ needs.ci-verdict.outputs.tag }}"),
-        "validated release tag output should enter downstream shell steps through env"
-    );
-    assert!(
-        workflow.contains("git/ref/tags/$tag")
-            && workflow.contains("git/tags/$tag_object")
-            && workflow.contains("ref: ${{ needs.ci-verdict.outputs.commit }}")
-            && !workflow.contains("ref: refs/tags/${{ inputs.tag }}"),
-        "manual releases must authenticate the annotated tag then checkout only its validated commit"
-    );
-}
-
 #[test]
 fn shared_release_version_parser_accepts_prereleases_and_rejects_build_metadata() {
     let parser = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -5549,86 +4217,6 @@ fn shared_release_version_parser_accepts_prereleases_and_rejects_build_metadata(
     assert!(
         !output.status.success(),
         "release build metadata must be rejected because no asset namespace is published for it"
-    );
-}
-
-/// Locks out public release mutation before authenticated CI, every private
-/// payload, signed candidate smoke, and immutable container provenance.
-#[test]
-fn release_stages_privately_then_publishes_the_signed_immutable_receipt() {
-    let source = fs::read_to_string(release_workflow()).expect("read release.yml");
-    let workflow: serde_yaml::Value =
-        serde_yaml::from_str(&source).expect("release.yml must parse");
-    let workflow = workflow
-        .as_mapping()
-        .expect("release workflow is a mapping");
-    let build = workflow_job(workflow, "build");
-    let sign = workflow_job(workflow, "sign");
-    let smoke = workflow_job(workflow, "smoke");
-    let publish = workflow_job(workflow, "publish");
-
-    assert!(
-        workflow_job_steps(build)
-            .iter()
-            .filter_map(serde_yaml::Value::as_mapping)
-            .any(|step| {
-                yaml_get(step, "uses")
-                    .and_then(serde_yaml::Value::as_str)
-                    .is_some_and(|uses| uses.starts_with("actions/upload-artifact@"))
-                    && yaml_get(step, "name").and_then(serde_yaml::Value::as_str)
-                        == Some("Stage unsigned release bundle")
-            }),
-        "matrix jobs must stage unsigned bundles privately"
-    );
-    let mut sign_needs = workflow_job_needs(sign);
-    sign_needs.sort_unstable();
-    assert_eq!(
-        sign_needs,
-        ["build", "ci-verdict", "installers"],
-        "the sole signing job must wait for authenticated CI and every privately staged payload"
-    );
-    let mut smoke_needs = workflow_job_needs(smoke);
-    smoke_needs.sort_unstable();
-    assert_eq!(
-        smoke_needs,
-        ["ci-verdict", "sign"],
-        "candidate smoke must explicitly retain authenticated CI and signed private artifacts"
-    );
-
-    let prepare = workflow_run_step_containing(sign, "publish_release_assets.py\" prepare");
-    let prepare = yaml_get(prepare, "run")
-        .and_then(serde_yaml::Value::as_str)
-        .expect("private preparation runs shell commands");
-    assert!(
-        prepare.contains("--receipt \"$workdir/release-publication.json\"")
-            && prepare.contains("\"$workdir/release-publication.json\" </dev/null")
-            && !prepare.contains("publish_release_assets.py\" publish"),
-        "signing must produce and sign an immutable-ID receipt without making the release public"
-    );
-
-    let transition = workflow_run_step_containing(publish, "publish_release_assets.py\" publish");
-    let transition = yaml_get(transition, "run")
-        .and_then(serde_yaml::Value::as_str)
-        .expect("public transition runs shell commands");
-    assert!(
-        transition.contains("--receipt \"$GITHUB_WORKSPACE/proof/release-publication.json\""),
-        "the final job must publish only the downloaded signed immutable-ID receipt"
-    );
-
-    // Regression: publication is atomic only when both externally visible
-    // prerequisites and the exact private receipt are proven first.
-    let mut needs = workflow_job_needs(publish);
-    needs.sort_unstable();
-    assert_eq!(needs, ["ci-verdict", "docker", "sign", "smoke"]);
-    let proof = workflow_run_step_containing(publish, "minisign -Vm");
-    let proof = yaml_get(proof, "run")
-        .and_then(serde_yaml::Value::as_str)
-        .expect("publication proof runs shell commands");
-    assert!(
-        proof.contains("release-publication.json")
-            && proof.contains("KEYHOG_CONTAINER_DIGEST")
-            && proof.contains("git rev-parse HEAD"),
-        "final publication must verify the receipt signature, container digest, and source commit"
     );
 }
 
@@ -5664,25 +4252,9 @@ fn integration_smoke_defaults_to_latest_stable_without_a_version_literal() {
     );
     assert!(
         workflow.contains("if [[ -n \"$KEYHOG_SMOKE_VERSION\" ]]")
-            && workflow.contains("install_args+=(--version=\"$KEYHOG_SMOKE_VERSION\")")
-            && workflow.contains("IsNullOrWhiteSpace($env:KEYHOG_SMOKE_VERSION)"),
-        "Unix and Windows smokes must pin only when the operator supplied a version"
-    );
-}
-
-#[test]
-fn integration_smoke_can_execute_the_fail_closed_verified_installer() {
-    let workflow =
-        fs::read_to_string(integration_smoke_workflow()).expect("read integration-smoke.yml");
-    assert!(
-        workflow.contains("libhyperscan5 minisign")
-            && workflow.contains("brew install minisign"),
-        "Linux and macOS smoke lanes must install the runtime and signature verifier required by the release installer"
-    );
-    assert!(
-        workflow.contains("winget install -e --id jedisct1.minisign")
-            && workflow.contains("Get-Command minisign.exe"),
-        "Windows smoke must install minisign and prove the executable is available before running the installer"
+            && workflow.contains("version=\"${KEYHOG_SMOKE_VERSION#v}\"")
+            && workflow.contains("install_args+=(--version \"=$version\")"),
+        "the smoke must pin the exact crates.io version only when the operator supplied one"
     );
 }
 
@@ -6414,93 +4986,11 @@ fn composite_action_category_registry_rejects_symlink_and_duplicate() {
     assert!(combined_output(&duplicate).contains("Conflicting analysis-category"));
 }
 
-/// Regression: verifier bootstrap must never touch the historical predictable
-/// `$RUNNER_TEMP/minisign` destination regardless of its filesystem type.
+/// Regression: source installs must ignore every preplanted old predictable
+/// binary destination and publish only inside the invocation-private install root.
 #[cfg(unix)]
 #[test]
-fn composite_action_minisign_ignores_all_predictable_preplants() {
-    for kind in ["symlink", "hardlink", "fifo", "regular"] {
-        let dir = TempDir::new().expect("minisign preplant tempdir");
-        let runner_temp = dir.path().join("runner-temp");
-        let fake_bin = dir.path().join("bin");
-        fs::create_dir(&runner_temp).expect("runner temp");
-        fs::create_dir(&fake_bin).expect("fake bin");
-        preplant_destination(
-            &runner_temp.join("minisign"),
-            &dir.path().join("verifier-victim"),
-            kind,
-        );
-        write_executable(
-            &fake_bin.join("curl"),
-            r#"#!/usr/bin/env bash
-set -euo pipefail
-out=""
-while [[ "$#" -gt 0 ]]; do
-  if [[ "$1" == "--output" ]]; then shift; out="$1"; fi
-  shift || true
-done
-printf 'archive' > "$out"
-"#,
-        );
-        write_executable(
-            &fake_bin.join("sha256sum"),
-            r#"#!/usr/bin/env bash
-printf 'f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0  %s\n' "$1"
-"#,
-        );
-        write_executable(
-            &fake_bin.join("tar"),
-            r#"#!/usr/bin/env bash
-set -euo pipefail
-dest=""
-while [[ "$#" -gt 0 ]]; do
-  if [[ "$1" == "-C" ]]; then shift; dest="$1"; fi
-  shift || true
-done
-mkdir -p "$dest/minisign-linux/x86_64"
-cat > "$dest/minisign-linux/x86_64/minisign" <<'SH'
-#!/usr/bin/env bash
-printf 'minisign 0.11\n'
-SH
-chmod +x "$dest/minisign-linux/x86_64/minisign"
-"#,
-        );
-        let path = format!("{}:{}", fake_bin.display(), env::var("PATH").expect("PATH"));
-        let github_output = dir.path().join("verifier-output");
-        let output = run_manifest_bash_step(
-            "Install pinned release verifier",
-            &[
-                ("PATH", path.as_str()),
-                ("RUNNER_TEMP", runner_temp.to_str().expect("runner temp")),
-                ("RUNNER_OS", "Linux"),
-                ("RUNNER_ARCH", "X64"),
-                ("GITHUB_OUTPUT", github_output.to_str().expect("output")),
-            ],
-        );
-        assert!(
-            output.status.success(),
-            "{kind}: {}",
-            combined_output(&output)
-        );
-        assert_eq!(
-            fs::read_to_string(dir.path().join("verifier-victim")).expect("victim"),
-            "victim-unchanged"
-        );
-        let outputs = fs::read_to_string(github_output).expect("verifier outputs");
-        let verifier = outputs
-            .lines()
-            .find_map(|line| line.strip_prefix("path="))
-            .expect("private verifier");
-        let metadata = fs::symlink_metadata(verifier).expect("verifier metadata");
-        assert!(metadata.file_type().is_file() && !metadata.file_type().is_symlink());
-    }
-}
-
-/// Regression: source fallback must ignore every preplanted old predictable
-/// binary destination and publish only its invocation-private digest copy.
-#[cfg(unix)]
-#[test]
-fn composite_action_source_binary_ignores_all_predictable_preplants() {
+fn composite_action_source_install_ignores_all_predictable_preplants() {
     for kind in ["symlink", "hardlink", "fifo", "regular"] {
         let dir = TempDir::new().expect("source preplant tempdir");
         let runner_temp = dir.path().join("runner-temp");
@@ -6533,7 +5023,7 @@ chmod +x target/release/keyhog
         let path = format!("{}:{}", fake_bin.display(), env::var("PATH").expect("PATH"));
         let github_output = dir.path().join("source-output");
         let output = run_manifest_bash_step(
-            "Build keyhog from source (fallback)",
+            "Install keyhog",
             &[
                 ("PATH", path.as_str()),
                 ("RUNNER_TEMP", runner_temp.to_str().expect("runner temp")),
@@ -6559,4 +5049,66 @@ chmod +x target/release/keyhog
         let metadata = fs::symlink_metadata(binary).expect("source metadata");
         assert!(metadata.file_type().is_file() && !metadata.file_type().is_symlink());
     }
+}
+
+/// Regression: a tagged Action ref must install the exact published crate
+/// instead of looking for a GitHub release asset or silently building the checkout.
+#[test]
+fn composite_action_published_release_installs_exact_crates_io_version() {
+    let dir = TempDir::new().expect("published install tempdir");
+    let runner_temp = dir.path().join("runner-temp");
+    let fake_bin = dir.path().join("bin");
+    fs::create_dir(&runner_temp).expect("runner temp");
+    fs::create_dir(&fake_bin).expect("fake bin");
+    let cargo_args = dir.path().join("cargo-args");
+    write_executable(
+        &fake_bin.join("cargo"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$@" > "$CARGO_ARGS_FILE"
+root=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--root" ]]; then shift; root="$1"; break; fi
+  shift
+done
+[[ -n "$root" ]]
+mkdir -p "$root/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/keyhog"
+chmod +x "$root/bin/keyhog"
+"#,
+    );
+    let path = format!("{}:{}", fake_bin.display(), env::var("PATH").expect("PATH"));
+    let github_output = dir.path().join("published-output");
+    let output = run_manifest_bash_step(
+        "Install keyhog",
+        &[
+            ("PATH", path.as_str()),
+            ("RUNNER_TEMP", runner_temp.to_str().expect("runner temp")),
+            ("ACTION_RESOLVED_VERSION", "0.5.49"),
+            ("ACTION_RELEASE_REQUIRED", "true"),
+            ("GITHUB_OUTPUT", github_output.to_str().expect("output")),
+            ("CARGO_ARGS_FILE", cargo_args.to_str().expect("cargo args")),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "published crate install: {}",
+        combined_output(&output)
+    );
+    let args = fs::read_to_string(cargo_args).expect("cargo args");
+    assert!(
+        args.contains("install\n--locked\n--version\n=0.5.49\n") && args.ends_with("keyhog\n"),
+        "published install must select the exact locked crates.io version: {args}"
+    );
+    let outputs = fs::read_to_string(github_output).expect("published outputs");
+    let binary = outputs
+        .lines()
+        .find_map(|line| line.strip_prefix("binary-path="))
+        .expect("published binary path");
+    assert!(
+        Path::new(binary).is_file()
+            && binary.contains("keyhog-action-runtime.")
+            && binary.ends_with("/install-0.5.49/bin/keyhog"),
+        "published binary must remain private and version-scoped: {binary}"
+    );
 }

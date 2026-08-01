@@ -22,8 +22,8 @@ operation that needs it.
 |---|---|
 | `scan --url`, `--github-org`, `--github-collaboration`, `--gitlab-group`, `--bitbucket-workspace`, `--s3-bucket`, `--gcs-bucket`, or `--azure-container-url` | Reads the remote source you named. |
 | `scan --verify` | Sends credential-derived requests for detectors that have a live verification plan. Out-of-band verification can also wait for callbacks. |
-| `update` and `repair` | Reads release metadata and authenticated release assets. |
-| `install.sh` and `install.ps1` | Downloads the selected release unless you use a local-file mode. |
+| Legacy `update` and `repair` commands | Reads metadata and authenticated assets from an older GitHub binary release. |
+| Legacy `install.sh` and `install.ps1` scripts | Downloads an older binary release unless you use a local-file mode. |
 
 The detector corpus and detector-owned validators are local. Offline validators
 such as checksum or payload-shape checks do not contact the service.
@@ -87,16 +87,15 @@ Reports redact credentials by default. `--show-secrets` explicitly requests
 plaintext output and is rejected by lockdown. Treat any plaintext terminal,
 pipe, or report file as secret-bearing data.
 
-## Authenticated release replacement
+## Legacy binary replacement
 
-`keyhog update` and `keyhog repair` verify the release checksum and minisign
-signature before replacing the executable. Replacement is staged so a failed
-verification does not install the candidate.
+Older GitHub binary releases remain compatible with `keyhog update`,
+`keyhog repair`, `install.sh`, and `install.ps1`. Those paths verify the
+release checksum and minisign signature before replacing an executable.
 
-The normal `install.sh` and `install.ps1` paths perform the same release
-authentication. The installer scripts also expose an explicit `--insecure`
-escape hatch. That mode is not an authenticated install and should not be used
-for routine installation. See [Install](./install.md) for the pinned flow.
+Automatic releases publish crates.io packages only. They do not produce the
+assets consumed by these legacy commands. Update a current Cargo installation
+with `cargo install --locked --force keyhog`; see [Install](./install.md).
 
 ## Related operator references
 

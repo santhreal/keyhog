@@ -16,6 +16,7 @@ try:
 except ModuleNotFoundError:
     from bump_doc_versions import VersionBumpError, bump_markdown
 
+
 CATEGORIES = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
 CRATE_CHANGELOGS = {
     "cli": Path("crates/cli/CHANGELOG.md"),
@@ -24,22 +25,11 @@ CRATE_CHANGELOGS = {
     "sources": Path("crates/sources/CHANGELOG.md"),
     "verifier": Path("crates/verifier/CHANGELOG.md"),
 }
-VERSIONED_FILES = (
+VERSIONED_TEXT_PATHS = (
     Path("README.md"),
-    Path("action.yml"),
-    Path(".github/actions/keyhog/action.yml"),
-    Path(".github/workflows/action-e2e.yml"),
+    Path("PUBLISHING.md"),
     Path(".github/actions/keyhog/README.md"),
-    Path("docs/src/install.md"),
-    Path("docs/src/introduction.md"),
-    Path("docs/src/first-scan.md"),
-    Path("docs/src/reference/exit-codes.md"),
-    Path("docs/assets/keyhog-banner.svg"),
-    Path("docs/src/reference/oob-verification.md"),
-    Path("docs/src/verification.md"),
-    Path("docs/src/workflows/ci.md"),
-    Path("docs/src/workflows/github-action.md"),
-    Path("docs/src/workflows/precommit.md"),
+    Path(".github/workflows/action-e2e.yml"),
 )
 _VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 _FRAGMENT_RE = re.compile(r"^[a-z0-9][a-z0-9-]*\.toml$")
@@ -57,6 +47,7 @@ class Fragment:
     category: str
     summary: str
     crates: tuple[str, ...]
+    synthetic: bool = False
 
 
 def parse_version(value: str) -> tuple[int, int, int]:
@@ -107,19 +98,39 @@ def load_fragments(directory: Path) -> list[Fragment]:
                 f"{path} crates must be a unique non-empty subset of {sorted(CRATE_CHANGELOGS)}"
             )
         fragments.append(Fragment(path, category, summary, tuple(sorted(crates))))
-    if not fragments:
-        raise PrepareError(f"no release change fragments found in {directory}")
     return fragments
 
 
-def validate_crate_coverage(fragments: list[Fragment]) -> None:
-    """Require a substantive owned note for every crate in the release chain."""
+def complete_fragment_coverage(
+    fragments: list[Fragment], fallback_summary: str | None
+) -> list[Fragment]:
+    """Add one automatic note for crates not covered by authored fragments."""
     covered = {crate for fragment in fragments for crate in fragment.crates}
-    missing = sorted(set(CRATE_CHANGELOGS) - covered)
-    if missing:
+    missing = tuple(sorted(set(CRATE_CHANGELOGS) - covered))
+    if not missing:
+        return fragments
+    summary = (fallback_summary or "").strip()
+    if not summary or "\n" in summary:
         raise PrepareError(
-            f"release fragments must cover every published crate; missing {missing}"
+            "automatic release summary must be one non-empty line when fragments "
+            f"do not cover {list(missing)}"
         )
+    if summary.startswith("-"):
+        summary = summary.lstrip("-").strip()
+    if not summary:
+        raise PrepareError("automatic release summary must contain text")
+    if any(fragment.summary.casefold() == summary.casefold() for fragment in fragments):
+        summary = f"{summary} (workspace release)"
+    return [
+        *fragments,
+        Fragment(
+            Path("changes/.automatic.toml"),
+            "Changed",
+            summary,
+            missing,
+            synthetic=True,
+        ),
+    ]
 
 
 def render_section(
@@ -189,8 +200,34 @@ def bump_lockfile(text: str, current: str, next_version: str) -> str:
         )
     return "".join(lines)
 
+def bump_versioned_texts(root: Path, current: str, next_version: str) -> dict[Path, str]:
+    """Update operator-facing version pins while preserving benchmark evidence."""
+    candidates = [root / relative for relative in VERSIONED_TEXT_PATHS]
+    docs = root / "docs" / "src"
+    if docs.is_dir():
+        candidates.extend(sorted(docs.rglob("*.md")))
+    replacements: dict[Path, str] = {}
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            replacements[path] = bump_markdown(
+                path.read_text(encoding="utf-8"), current, next_version
+            )
+        except VersionBumpError as error:
+            if str(error) == f"document does not contain canonical pin {current}":
+                continue
+            raise PrepareError(f"{path.relative_to(root)}: {error}") from error
+    return replacements
 
-def prepare(root: Path, version: str, release_date: str, apply: bool) -> list[Path]:
+
+def prepare(
+    root: Path,
+    version: str,
+    release_date: str,
+    apply: bool,
+    fallback_summary: str | None = None,
+) -> list[Path]:
     """Validate and optionally apply the complete release preparation transaction."""
     parse_version(version)
     try:
@@ -206,8 +243,9 @@ def prepare(root: Path, version: str, release_date: str, apply: bool) -> list[Pa
     current = current_match.group(1)
     if parse_version(version) <= parse_version(current):
         raise PrepareError(f"release version {version} must be newer than {current}")
-    fragments = load_fragments(root / "changes")
-    validate_crate_coverage(fragments)
+    fragments = complete_fragment_coverage(
+        load_fragments(root / "changes"), fallback_summary
+    )
 
     replacements: dict[Path, str] = {}
     manifest_text = manifest.read_text(encoding="utf-8")
@@ -216,14 +254,6 @@ def prepare(root: Path, version: str, release_date: str, apply: bool) -> list[Pa
     replacements[lockfile] = bump_lockfile(
         lockfile.read_text(encoding="utf-8"), current, version
     )
-    for relative in VERSIONED_FILES:
-        path = root / relative
-        try:
-            replacements[path] = bump_markdown(
-                path.read_text(encoding="utf-8"), current, version
-            )
-        except VersionBumpError as error:
-            raise PrepareError(f"{relative}: {error}") from error
     root_changelog = root / "CHANGELOG.md"
     replacements[root_changelog] = insert_release(
         root_changelog.read_text(encoding="utf-8"),
@@ -235,6 +265,7 @@ def prepare(root: Path, version: str, release_date: str, apply: bool) -> list[Pa
             path.read_text(encoding="utf-8"),
             render_section(version, release_date, fragments, crate),
         )
+    replacements.update(bump_versioned_texts(root, current, version))
 
     changed = sorted(replacements, key=lambda path: str(path.relative_to(root)))
     if apply:
@@ -248,7 +279,8 @@ def prepare(root: Path, version: str, release_date: str, apply: bool) -> list[Pa
             for path, tmp in temporary:
                 os.replace(tmp, path)
             for fragment in fragments:
-                fragment.path.unlink()
+                if not fragment.synthetic:
+                    fragment.path.unlink()
         finally:
             for _path, tmp in temporary:
                 tmp.unlink(missing_ok=True)
@@ -263,11 +295,21 @@ def main() -> int:
     parser.add_argument("--date", default=dt.datetime.now(dt.UTC).date().isoformat())
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument(
+        "--fallback-summary",
+        help="one-line automatic note for crates not covered by change fragments",
+    )
+    parser.add_argument(
         "--apply", action="store_true", help="write validated updates and consume fragments"
     )
     args = parser.parse_args()
     try:
-        changed = prepare(args.root.resolve(), args.version, args.date, args.apply)
+        changed = prepare(
+            args.root.resolve(),
+            args.version,
+            args.date,
+            args.apply,
+            args.fallback_summary,
+        )
     except (OSError, PrepareError) as error:
         parser.error(str(error))
     mode = "prepared" if args.apply else "validated"

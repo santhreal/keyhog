@@ -178,7 +178,7 @@ even when `fail-on-findings` is `false`.
 | `severity` | `high` | Minimum reported tier: `info`, `client-safe`, `low`, `medium`, `high`, or `critical`. |
 | `format` | `sarif` | Action report format: `text`, `json`, `sarif`, or `jsonl`. |
 | `verify` | `'false'` | Enables provider verification only when exactly `'true'`. |
-| `version` | empty | Scanner release selected by the Action ref. A value pins a final release at `v0.5.49` or newer. |
+| `version` | empty | Scanner release selected by the Action ref. A value pins one canonical final `vX.Y.Z` release. |
 | `upload-sarif` | `'true'` | Uploads Code Scanning results when `format` is `sarif`. The artifact is retained independently. |
 | `analysis-category` | `keyhog` | Stable identity for one report and Code Scanning partition. |
 | `fail-on-findings` | `'true'` | Set to `'false'` to make ordinary findings advisory. |
@@ -239,13 +239,13 @@ Use an exact Action ref when workflow code must change only through review:
 - uses: santhreal/keyhog@v0.5.49
 ```
 
-The optional `version` input pins the scanner asset. It does not pin the Action
+The optional `version` input pins the scanner crate. It does not pin the Action
 implementation. Pin both when both contracts must remain fixed.
 
-Release refs require signed and checksummed runtime assets. A missing or invalid
-asset fails closed. A reviewed branch or commit ref builds the portable source
-profile with the repository's pinned Rust toolchain and requires `backend: cpu`.
-It does not silently substitute source for a missing release asset.
+Release refs install the exact scanner version from crates.io. A missing
+version fails the job. A reviewed branch or commit ref builds the portable
+source profile with the repository's pinned Rust toolchain and requires
+`backend: cpu`. It does not silently substitute source for a missing crate.
 
 ## Failure behavior
 

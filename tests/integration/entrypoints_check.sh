@@ -122,25 +122,6 @@ else
   fail=1
 fi
 
-PRE="$ROOT/scripts/prerelease.sh"
-if [ -f "$PRE" ]; then
-  if grep -qE 'SKIP bench gate|WARN README tables|KEYHOG_BIN:-|target/release/keyhog|scan --daemon=off .*2>/dev/null .*grep|scan --daemon=off .*grep' "$PRE"; then
-    echo "FAIL scripts/prerelease.sh must not skip/warn release gates open or prove installed detection with grep/suppressed stderr."
-    grep -nE 'SKIP bench gate|WARN README tables|KEYHOG_BIN:-|target/release/keyhog|scan --daemon=off .*2>/dev/null .*grep|scan --daemon=off .*grep' "$PRE" | sed 's/^/    /'
-    fail=1
-  elif grep -q 'make -C benchmarks mirror' "$PRE" \
-     && grep -q 'python3 -m bench gate' "$PRE" \
-     && grep -q 'README bench tables up to date' "$PRE" \
-     && grep -q 'installed_detection_smoke' "$PRE"; then
-    note "OK   prerelease entrypoint: bench/doc gates fail closed and install smoke parses JSON"
-  else
-    echo "FAIL scripts/prerelease.sh must require the mirror bench/doc gates and JSON-parse the installed scan report."
-    fail=1
-  fi
-else
-  echo "FAIL scripts/prerelease.sh missing - release gate cannot be audited."
-  fail=1
-fi
 
 DOG="$ROOT/scripts/dogfood-all-os.sh"
 if [ -f "$DOG" ]; then

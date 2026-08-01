@@ -5,11 +5,10 @@ turn new findings into a merge gate. The recipes below keep scanning,
 enforcement, and report retention explicit so a missing upload or unsupported
 source cannot look like a clean run.
 
-The shell recipes use an Ubuntu worker. `minisign` is required because the
-installer refuses unverified release assets. The Linux release binary
-statically links Hyperscan and does not require `libhyperscan5`; branch/commit
-Action refs build the portable profile. macOS and Windows release assets are
-also portable but still require `minisign` for installation.
+The shell recipes use an Ubuntu worker. Published Action refs install KeyHog
+from crates.io and build the full default feature set. Branch and commit Action
+refs build the portable profile from their checked-out source and require
+`backend: cpu`.
 
 | Workflow | Recommended scan | Boundary |
 |---|---|---|
@@ -90,15 +89,9 @@ baselines; do not hide one team's paths behind another team's ignore file.
 # .gitlab-ci.yml
 keyhog:
   stage: test
-  image: ubuntu:24.04
+  image: rust:1.89-bookworm
   before_script:
-    - apt-get update -qq && apt-get install -y --no-install-recommends curl minisign
-    - export TAG=v0.5.49
-    - export BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
-    - export PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
-    - curl -fSLO "$BASE/install.sh" && curl -fSLO "$BASE/install.sh.minisig"
-    - minisign -Vm install.sh -P "$PUB"
-    - KEYHOG_VERSION="$TAG" sh install.sh
+    - cargo install --locked --version '=0.5.49' keyhog
   script:
     # Exits non-zero on findings, which fails the job and gates the MR.
     - ~/.local/bin/keyhog scan . --format gitlab-sast --output gl-sast-report.json
@@ -124,21 +117,14 @@ version: 2.1
 jobs:
   keyhog:
     docker:
-      - image: cimg/base:stable
+      - image: cimg/rust:1.89
     steps:
       - checkout
       - run:
           name: Install keyhog
           command: |
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends minisign
-            TAG=v0.5.49
-            BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
-            PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
-            curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
-            minisign -Vm install.sh -P "$PUB"
-            KEYHOG_VERSION="$TAG" sh install.sh
-            echo 'export PATH="$HOME/.local/bin:$PATH"' >> $BASH_ENV
+            cargo install --locked --version '=0.5.49' keyhog
+            echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> $BASH_ENV
       - run:
           name: Scan repo
           command: keyhog scan . --format sarif --output keyhog.sarif
@@ -162,16 +148,9 @@ name: default
 
 steps:
   - name: keyhog
-    image: ubuntu:24.04
+    image: rust:1.89-bookworm
     commands:
-      - apt-get update -qq
-      - apt-get install -y --no-install-recommends curl minisign
-      - export TAG=v0.5.49
-      - export BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
-      - export PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
-      - curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
-      - minisign -Vm install.sh -P "$PUB"
-      - KEYHOG_VERSION="$TAG" sh install.sh
+      - cargo install --locked --version '=0.5.49' keyhog
       - |
         printf '{"schema_version":{"major":1,"minor":7},"scan_status":"failed","coverage_gap_summary":[],"findings":[]}\n' > keyhog.json
         scan_status=0
@@ -239,15 +218,7 @@ Use a dedicated artifact path so the report survives a finding exit:
 steps:
   - label: ":mag: keyhog secret scan"
     command: |
-      sudo apt-get update -qq
-      sudo apt-get install -y --no-install-recommends curl minisign
-      TAG=v0.5.49
-      BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
-      PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
-      curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
-      minisign -Vm install.sh -P "$PUB"
-      KEYHOG_VERSION="$TAG" sh install.sh
-      export PATH="$HOME/.local/bin:$PATH"
+      cargo install --locked --version '=0.5.49' keyhog
       keyhog scan . --severity high --format json-envelope --output keyhog.json
     artifact_paths:
       - keyhog.json
@@ -266,15 +237,7 @@ pipeline {
         stage('keyhog') {
             steps {
                 sh '''
-                    sudo apt-get update -qq
-                    sudo apt-get install -y --no-install-recommends curl minisign
-                    TAG=v0.5.49
-                    BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
-                    PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
-                    curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
-                    minisign -Vm install.sh -P "$PUB"
-                    KEYHOG_VERSION="$TAG" sh install.sh
-                    export PATH="$HOME/.local/bin:$PATH"
+                    cargo install --locked --version '=0.5.49' keyhog
                     keyhog scan . --severity high --format json-envelope --output keyhog.json
                 '''
             }
@@ -290,21 +253,16 @@ pipeline {
 
 ## Pin the scanner version
 
-Manual CI installation uses one exact release tag for the authenticated
-installer and scanner payload:
+Manual CI installation can pin one exact crates.io version:
 
 ```sh
-TAG=v0.5.49
-BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
-PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
-curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
-minisign -Vm install.sh -P "$PUB"
-KEYHOG_VERSION="$TAG" sh install.sh
+cargo install --locked --version '=0.5.49' keyhog
 ```
 
-Review the release before changing the tag. GitHub Action code and scanner asset
-pinning are separate contracts; see [Pin Action code and scanner
+Review the release before changing the version. GitHub Action code and scanner
+crate pinning are separate contracts; see [Pin Action code and scanner
 releases](./github-action.md#pin-action-code-and-scanner-releases).
+
 ## Scan commit additions on main and release, not per PR
 
 An added-line history scan is useful on `main` post-merge and on release tags,

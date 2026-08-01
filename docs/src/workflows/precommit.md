@@ -28,8 +28,8 @@ security scan did not run. Install KeyHog, fix `PATH`, or remove
 ### `pre-commit` framework
 
 This repository's hook uses `language: system`. Follow the
-[pinned verified install](../install.md#pinned-verified-install-linux--macos)
-for the KeyHog binary, then confirm that it is on `PATH`:
+[exact-version install](../install.md#pin-an-exact-version), then confirm that
+KeyHog is on `PATH`:
 
 ```sh
 keyhog --version

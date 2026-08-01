@@ -1,486 +1,106 @@
 # Install
 
-The quickest paths first. Each installs the canonical release artifact for
-your supported host; platform feature differences are explicit below.
-
-## Supported release platforms
-
-| Host | Release asset | Runtime notes |
-|------|---------------|---------------|
-| Linux x86_64 | `keyhog-linux-x86_64` | Hyperscan is statically linked; CUDA and WGPU are probed at runtime |
-| macOS x86_64 | `keyhog-macos-x86_64` | Native Metal and WGPU; no Hyperscan or Homebrew Vectorscan dependency |
-| macOS aarch64 | `keyhog-macos-aarch64` | Native Metal and WGPU; no Hyperscan or Homebrew Vectorscan dependency |
-| Windows x86_64 | `keyhog-windows-x86_64.exe` | PowerShell 5+; portable CPU build; daemon unavailable |
-
-Linux arm64 and Windows arm64 release assets are not produced. The installer
-stops with an unsupported-platform error instead of choosing a different
-binary.
-
-## Quick install
+KeyHog releases are Rust packages on crates.io. Install the latest published
+version with Cargo:
 
 ```sh
-# Linux / macOS
-curl -fsSL https://santh.dev/keyhog/install.sh | sh
-```
-
-```powershell
-# Windows PowerShell
-iwr https://santh.dev/keyhog/install.ps1 -UseBasicParsing | iex
-```
-
-These are KeyHog's canonical installer URLs. The downloaded installer verifies
-the selected release artifact before replacement. Use the signed pinned flows
-below when the installer script itself must be authenticated before execution.
-
-After installation, open a new terminal if prompted and check the binary:
-
-```sh
+cargo install --locked keyhog
 keyhog --version
 keyhog doctor
 ```
 
-`keyhog doctor` exits `0` when the installed binary is healthy and `4` when a
-health check fails. Continue with [Your first scan](./first-scan.md) to produce
-a safe synthetic finding and confirm exit `1`.
+`cargo install` builds KeyHog for your host and places the binary in Cargo's
+binary directory. This is usually `$HOME/.cargo/bin` on Linux and macOS, or
+`%USERPROFILE%\.cargo\bin` on Windows. Add that directory to `PATH` if your
+shell cannot find `keyhog`.
 
-## Pinned verified install: Linux / macOS
+## Install Rust
 
-Install the host prerequisites before downloading the signed installer. Debian
-or Ubuntu needs `curl` and `minisign`:
-`sudo apt-get update && sudo apt-get install -y --no-install-recommends curl minisign`.
-The Linux release binary statically links Hyperscan and does not need
-`libhyperscan5`. On macOS, run `brew install minisign` and use the system
-`curl`.
+KeyHog requires Rust 1.89 or newer. Install Rust with
+[rustup](https://rustup.rs/) when `cargo --version` is unavailable. Then open a
+new terminal and run the install command again.
 
-```sh
-TAG=v0.5.49
-BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
-KEYHOG_MINISIGN_PUBLIC_KEY='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
-curl -fSLO "$BASE/install.sh"
-curl -fSLO "$BASE/install.sh.minisig"
-curl -fSLO "$BASE/install.sh.sha256"
-minisign -Vm install.sh -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
-sha256sum -c install.sh.sha256
-KEYHOG_VERSION="$TAG" sh install.sh
-```
+A default build includes the scanner, repository and cloud sources, live
+verification, Hyperscan where supported, and eligible GPU backends. Your host
+may need a C compiler and the platform libraries required by those features.
 
-Drops a binary in `~/.local/bin/keyhog`. The installer detects the platform and
-existing install before downloading and tells you the chosen asset. Linux
-x86_64 has one accelerator-capable binary: Hyperscan plus VYRE's CUDA and WGPU
-drivers. CUDA/NVRTC use dynamic loading, so no build-time toolkit is required
-and the same artifact runs on GPU and CPU-only hosts. macOS assets enable
-VYRE's native Metal and WGPU drivers without requiring Homebrew Vectorscan.
-Windows uses the portable CPU build. Backend probing and persisted autoroute
-evidence, not installer variants, decide execution.
+## Pin an exact version
 
-This path authenticates the versioned installer before execution. Changing the
-repository's `main` branch cannot change a pinned install. On macOS, replace the
-checksum command with `shasum -a 256 -c install.sh.sha256`.
-
-## Interactive mode (recommended for first install)
-
-The verified command above keeps stdin attached to the terminal, so it can show
-the wizard for shell completions and optional hook setup. To repeat the
-interactive run after verification:
+Use an exact Cargo version requirement when a build or CI job must stay on one
+release:
 
 ```sh
-KEYHOG_VERSION="$TAG" sh install.sh
+cargo install --locked --version '=0.5.49' keyhog
 ```
 
-The interactive installer shows you:
+The leading equals sign prevents Cargo from selecting another compatible
+version. KeyHog publishes canonical `X.Y.Z` versions. Do not include a leading
+`v` in the Cargo version requirement.
 
-- The host it detected (OS, arch, GPU, libcuda state).
-- The binary it would install (with the GPU note).
-- Any existing keyhog install it found.
-- Whether `~/.local/bin` is on your `PATH`.
-
-Then it prompts (default in brackets):
-
-- Add `~/.local/bin` to your shell `PATH`? `[Y/n]`
-- Install shell completions for bash / zsh / fish? `[y/N]`
-- Wire keyhog as a git pre-commit hook in this dir? `[y/N]`
-
-The displayed default is authoritative: PATH setup defaults to yes, while
-completion and repository-hook setup default to no. `--yes` accepts those
-defaults without prompting. There is no shipped Claude Code / Cursor agent-hook
-prompt or `keyhog hook install --agent <name>` flag; installer variants are not
-part of the current release contract.
-
-## Pinned verified install: Windows
-
-PowerShell 5+ (ships with Windows 10/11):
-
-```powershell
-$Tag = 'v0.5.49'
-$Base = "https://github.com/santhreal/keyhog/releases/download/$Tag"
-$PublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
-iwr "$Base/install.ps1" -OutFile keyhog-install.ps1
-iwr "$Base/install.ps1.minisig" -OutFile keyhog-install.ps1.minisig
-iwr "$Base/install.ps1.sha256" -OutFile keyhog-install.ps1.sha256
-minisign -Vm keyhog-install.ps1 -x keyhog-install.ps1.minisig -P $PublicKey
-$Expected = (Get-Content keyhog-install.ps1.sha256).Split()[0].ToLowerInvariant()
-$Actual = (Get-FileHash keyhog-install.ps1 -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($Actual -ne $Expected) { throw 'installer checksum mismatch' }
-& .\keyhog-install.ps1 -Version $Tag
-```
-
-Drops the binary in `%LOCALAPPDATA%\keyhog\bin\keyhog.exe`. Detects
-your GPU for diagnostics; the Windows installer ships the portable
-no-system-library build, with no Hyperscan, WGPU, or CUDA asset in the current
-release.
-
-> **Heads up.** The Unix daemon mode is unavailable on Windows (it
-> relies on Unix-domain sockets). `keyhog scan`, `keyhog detectors`,
-> `keyhog watch`, `keyhog hook`, etc. all work the same. The `daemon`
-> subcommand and explicit `--daemon=auto|on` emit an explicit "unix-only"
-> error so nothing silently regresses. `--daemon=off` remains a valid portable
-> declaration of in-process scanning.
-
-## Installer overrides
-
-| Env var / flag                          | Effect                                                        |
-|-----------------------------------------|---------------------------------------------------------------|
-| `KEYHOG_VERSION=v0.5.49` (or `--version=v0.5.49`) | Pin a specific release tag. With no pin, the installer admits only the newest stable release with this host's complete signed bundle; it probes the latest redirect first, then checks recent releases when that proof is incomplete. |
-| `--install-dir=...`                     | Install into a different directory.            |
-| `GITHUB_TOKEN=...`                      | Optional auth for the fallback GitHub releases API lookup. The normal latest-asset path does not need it. |
-| `--yes` / `-y`                          | Accept the displayed defaults without prompting: PATH setup yes, optional completion and repository hook no. |
-| `--no-color`                            | Disable ANSI colors (e.g. for log capture).                   |
-| `--from-file=/path/to/asset`            | Offline / air-gapped install from a pre-downloaded complete host bundle. The installer verifies each present sibling `.minisig` against the pinned release key and requires sibling `.sha256` files unless `--insecure` accepts missing proof. A present but invalid signature always fails. |
-| `--calibrate`                           | Re-run the installer's visible autoroute calibration sweep against the already-installed binary, without replacing that binary. |
-| `--no-calibrate`                        | POSIX only. Complete binary verification and installation without measuring autoroute. The installer prints a warning. Explicit `--backend` routes work immediately; run `install.sh --calibrate` before relying on automatic routing. |
-| `--insecure`                            | Emergency-only: proceed when signature/checksum *proof is missing*. A present-but-wrong signature or checksum is always fatal, `--insecure` or not. |
-
-The table uses Unix spellings. The PowerShell equivalents are `-Version`,
-`-InstallDir`, `-Yes`, `-NoColor`, `-FromFile`, `-Calibrate`, and `-Insecure`;
-environment variables keep the same names. PowerShell also exposes the matching
-`-Diagnose`, `-Repair`, and `-Uninstall` modes. `--no-calibrate` is POSIX-only.
-
-### Download integrity
-
-Every downloaded asset is verified before it replaces anything: a minisign
-signature check against the pinned release public key, then a SHA-256
-checksum, for both the binary and the GPU literal sidecar (which is also
-hardened against path traversal and symlink escapes). Verification runs on the
-freshly downloaded file in a temporary location, so a binary that fails either
-check is deleted and never installed.
-
-Verification fails closed by default. If the signature or checksum cannot be
-obtained or does not verify, the install aborts rather than proceed with an
-unverified binary. Passing `--insecure` (`-Insecure` on Windows) is the only way
-to accept an unverified binary, and it is intended for emergency or local
-diagnostics, not routine installs.
-
-The binary swap itself is recoverable: the previous binary is backed up before
-the new one is moved into place and restored automatically if the new binary
-fails its post-install self-test, so a failed or interrupted install leaves a
-working binary behind.
-
-The 0.5.49 candidate publication contract is an exact 60-asset release
-manifest: ten payloads (four platform binaries, four matching GPU-literal
-sidecars, and two installers), their 20 adjacent SHA-256/minisign proofs, ten
-deterministic SPDX 2.3 JSON documents, and the SBOMs' 20 adjacent proofs. Each
-document is named `<asset>.spdx.json`, with
-`<asset>.spdx.json.sha256` and `<asset>.spdx.json.minisig`.
-
-Every binary and sidecar SBOM binds an attested
-`<asset>.dependencies.json` produced offline from its package-scoped Cargo tree:
-exact target/features, full non-dev normal/build dependency closure, enabled
-features, `Cargo.lock` hash, tag/commit, and graph digest. Sidecars are
-`GENERATED_FROM` their scanner graph. The Linux binary additionally binds a
-statically linked Hyperscan `5.4.2` BSD-3-Clause package, exact `libhs.a` and
-`libhs.pc` provenance hashes, and `STATIC_LINK`; it does not claim runtime
-`libhs`.
-
-Installer SBOMs contain no Cargo graph. `install.sh` enumerates the exact three
-Unix binaries and three GPU bundles from the release manifest with their
-SHA-256 values and conditional `OPTIONAL_DEPENDENCY_OF` relationships, plus
-`sh`, `curl`, `awk`, `sha256sum` or `shasum`, `minisign`, and POSIX file
-utilities. `install.ps1` enumerates the Windows binary and GPU bundle plus
-PowerShell 5+, `Invoke-WebRequest`, `Get-FileHash`, and `minisign`. These assets
-are not public until the 0.5.49 release succeeds.
-
-After publication, verify a downloaded document with the pinned release key:
+To update to the latest release, run:
 
 ```sh
-SBOM=keyhog-linux-x86_64.spdx.json
-PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
-sha256sum -c "$SBOM.sha256"
-minisign -Vm "$SBOM" -P "$PUB"
+cargo install --locked --force keyhog
 ```
 
-Both checks must pass. Matrix builds stage the complete set as private CI
-artifacts; new releases and published-release reruns remain private while the
-set is mutated. Only the complete signed manifest is made visible.
+Every successful `main` CI run publishes the next patch version. KeyHog does
+not publish binary release assets or installer bundles.
 
-`keyhog update` and `keyhog repair` use strict semantic-version precedence.
-Their implicit latest-release lookup ignores drafts and prereleases and skips
-any release that lacks the complete signed binary and GPU-literal bundle for
-the current host. Use `--version <SEMVER>` to request an exact published
-version; canonical bare and `v`-prefixed forms are accepted, including valid
-prereleases. KeyHog normalizes the request to one exact `v`-prefixed tag and
-rejects malformed input or a different/malformed API response before any asset
-download. Release metadata, payloads, and signatures have bounded downloads
-and connection/request deadlines; an oversized or stalled response fails
-without changing the installed binary.
+## Install a portable build
 
-The maintenance commands validate the signed sidecar's archive paths, entry
-types, expansion limits, manifest version, binary-version binding, filenames,
-and byte lengths before changing local state. Matcher files are installed under
-the scanner-owned cache path while the candidate binary is health-checked. A
-failed artifact install or candidate check restores both the previous binary
-and every replaced matcher; concurrent maintenance uses a visible cache lock.
-
-### Post-install calibration
-
-The installer does not report success immediately after copying the binary. It
-runs `keyhog doctor`, then visibly measures every candidate enabled for each
-calibrated configuration: scalar CPU and Hyperscan/SIMD where present, plus
-every eligible hardware GPU. It covers the workload classes and scan-policy
-presets it can materialize on that host. The resulting
-decisions are written to the same per-user autoroute cache normal scans read. If
-a required calibration probe fails, the install fails rather than leave
-`--backend auto` pretending to be usable. Source-specific probes that require
-an unavailable external tool, such as Git or a running Docker daemon, are named
-as unavailable; install the tool and rerun `install.sh --calibrate` or
-`install.ps1 -Calibrate` before relying on that source class.
-
-For deterministic automation on a host where timing cannot settle, pass
-`--no-calibrate`. This explicit override still verifies the signed payload,
-checksum, installed binary, and `keyhog doctor` self-test. It leaves automatic
-routing uncalibrated and says so. Use an explicit backend for diagnostic work,
-or run `install.sh --calibrate` on an idle host before relying on automatic
-routing.
-
-Calibration is identity-bound to the KeyHog binary/build, detector and routing
-rules, resolved scan configuration, host/backend capabilities, source class,
-and workload bucket. An absent, stale, malformed, or incomplete decision is
-therefore not permission to claim a convenient backend as fastest. An automatic
-scan warns, completes every byte through the scalar correctness oracle, and
-records `complete_after_recovery` plus an actionable recalibration command.
-Inspect the current state without changing it with:
+Use the portable feature set when native accelerator dependencies are not
+available:
 
 ```sh
-keyhog backend --autoroute
-keyhog backend --autoroute --json
+cargo install --locked keyhog \
+  --no-default-features \
+  --features portable
 ```
 
-Use `keyhog calibrate-autoroute` for KeyHog's self-contained filesystem/stdin
-workload sweep. Use the installer `--calibrate` mode when you also want its
-environment-backed Git, URL, and container probes. An explicit
-`--backend cpu|simd|gpu-cuda|gpu-wgpu` bypasses the autoroute decision table for that scan;
-it is a diagnostic or benchmark override, not a repair for missing evidence.
-
-### Runtime GPU controls
-
-| Control                  | Effect                                                                                                                                                                                                                                       |
-|--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `keyhog scan --no-gpu`   | Disable GPU initialization for this resolved scan configuration. Automatic routing still requires persisted calibration for that configuration; use an explicit CPU/SIMD backend only for diagnostics. |
-| `keyhog scan --require-gpu` | Hard-fail (`exit 12`) when GPU is unavailable before scanning or a selected GPU dispatch fails at runtime. This is a diagnostic/CI assertion, separate from autoroute. Autoroute itself is not a fallback hierarchy: it selects the fastest measured-correct backend from all eligible candidates. |
-| `.keyhog.toml [system].gpu = "off"` | Persist the CPU/SIMD-only policy for a repository. Use `"required"` for self-hosted GPU runners where a GPU regression must fail closed.                                                                                         |
-| `keyhog scan --backend gpu-cuda\|gpu-wgpu\|simd\|cpu` | Force a specific live scan engine regardless of autoroute. Diagnostic and benchmark override only; it does not prove autoroute correctness. A selected GPU driver that cannot complete dispatch exits `12` without substituting another driver or CPU/SIMD. |
-
-The GitHub Action calibrates the actual runner and admits only usable physical
-accelerators. On self-hosted GPU runners, `--require-gpu` or
-`[system].gpu = "required"` turns accelerator availability into an explicit
-fail-closed requirement; it does not choose GPU over a faster calibrated peer.
-
-### Daemon policy after installation
-
-Installation and calibration do not start a daemon. On Unix, manage the
-optional foreground warm scanner explicitly:
+On macOS, add native Metal and WGPU to the portable source surface:
 
 ```sh
-keyhog daemon start
-keyhog daemon status
-keyhog daemon stop
+cargo install --locked keyhog --no-default-features --features portable,gpu
 ```
 
-An omitted scan flag means `--daemon=auto` on Unix. Bare `--daemon` means
-`--daemon=on`; `--daemon=off` always runs in process. See
-[Daemon and warm scans](workflows/daemon.md) for the canonical activation,
-eligibility, retry, identity, shutdown, socket, coverage, and exit contract.
+The portable build keeps filesystem, Git, web, cloud, container, archive, and
+verification sources. It uses the scalar CPU scanner. Run explicit CPU scans
+or calibrate the available routes before using `backend = "auto"`.
 
-## Repair, diagnose, uninstall
+For a smaller checkout-only CI scanner, use the `ci` feature:
 
 ```sh
-sh install.sh --diagnose    # print host + binary state, change nothing
-sh install.sh --repair      # re-download the right asset for this host
-sh install.sh --uninstall   # remove the binary + installer-owned shell wiring
+cargo install --locked keyhog \
+  --no-default-features \
+  --features ci
 ```
 
-Use the copy of `install.sh` from the pinned flow above. If you used the quick
-installer and did not keep it, download it without executing it:
+The `ci` feature supports filesystem and standard-input scans. It omits remote
+source providers, live verification, and accelerator backends.
+
+## Build the checked-out source
+
+From the repository root:
 
 ```sh
-curl -fsSLo install.sh https://santh.dev/keyhog/install.sh
-sh install.sh --diagnose
+cargo install --locked --path crates/cli
 ```
 
-On Windows, save `install.ps1`, then use `.\install.ps1 -Diagnose`,
-`.\install.ps1 -Repair`, or `.\install.ps1 -Uninstall`.
+Use this path when you are testing an unreleased checkout. A tagged GitHub
+Action ref installs its exact crates.io version instead. A branch or commit
+Action ref builds its checked-out source with the portable feature set.
 
-### Common failures
+## Confirm the installation
 
-| Symptom | Recovery |
-|---------|----------|
-| `keyhog: command not found` after a successful install | Open a new terminal. If it still fails, add `$HOME/.local/bin` to `PATH` on Linux/macOS. Run the installer again interactively to let it add the marked PATH block. |
-| Linux reports that `libhs.so` or Hyperscan is missing | The signed Linux release statically links Hyperscan and must not need runtime `libhs`. Do not install an unbound library to mask the mismatch; verify the selected release asset and run `sh install.sh --repair`. |
-| The host or architecture is unsupported | Use one of the four release platforms above, or follow the source-build instructions. Do not install an asset for another architecture. |
-| Signature, checksum, or download verification fails | Retry on a working network. If it persists, run `sh install.sh --diagnose`, check the pinned tag, and download a complete bundle from GitHub Releases. Do not use `--insecure` to ignore a present invalid signature or checksum. |
-| `keyhog doctor` exits `4` | Run `sh install.sh --diagnose`, then `sh install.sh --repair`. The repair path keeps or restores the previous working binary if replacement fails. |
-
-`--diagnose` is the first thing to run if something looks off: it
-reports CPU arch, OS, GPU + libcuda state, the currently-installed
-binary (path + version), whether the install dir is on `PATH`, and
-the asset the installer would download for the latest release tag.
-
-`--repair` re-downloads the asset matching your current platform even if
-the existing binary still runs. The unified Linux binary probes CUDA and WGPU
-at runtime, so installing a GPU or CUDA userland does not require replacing it
-with a different artifact.
-
-`--uninstall` removes the binary, asks an installed `keyhog uninstall --yes`
-to surface/clean persisted state first when that subcommand is available,
-then removes only the shell artifacts the installer owns: its marked `PATH`
-block and the known bash/zsh/fish completion files.
-
-On Unix, the running binary can unlink itself. Windows does not allow a running
-`.exe` to delete itself, so direct `keyhog uninstall --yes` exits `2` and prints
-the exact executable path to remove after the process exits. The PowerShell
-installer performs that outer-process cleanup for the normal uninstall flow.
-
-## Direct binary download
-
-If you do not trust pipe-to-shell, download and inspect the installer first, or
-obtain the complete host bundle from the
-[releases page](https://github.com/santhreal/keyhog/releases/latest).
-
-| Platform              | Asset name                       |
-|-----------------------|----------------------------------|
-| Linux x86_64 (default)| `keyhog-linux-x86_64`            |
-| macOS x86_64 (Intel)  | `keyhog-macos-x86_64`            |
-| macOS aarch64 (Apple) | `keyhog-macos-aarch64`           |
-| Windows x86_64        | `keyhog-windows-x86_64.exe`      |
-
-Linux and Windows arm64 release assets are not produced. Use a listed platform
-for the verified installer flow.
-
-For an asset named `<asset>`, the complete host bundle is:
-
-- `<asset>`, `<asset>.sha256`, and `<asset>.minisig`;
-- `<asset>.gpu-literals.tar.gz`, its `.sha256`, and its `.minisig`.
-
-The offline installer verifies both sibling minisign signatures against the
-pinned release key, verifies both SHA-256 files, extracts the sidecar safely,
-replaces the binary atomically, checks health, and rolls back on failure:
-
-```sh
-ASSET=/absolute/path/to/keyhog-linux-x86_64
-KEYHOG_MINISIGN_PUBLIC_KEY='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
-minisign -Vm "$ASSET" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
-minisign -Vm "$ASSET.gpu-literals.tar.gz" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
-if command -v sha256sum >/dev/null 2>&1; then
-  (cd "$(dirname "$ASSET")" && sha256sum -c "$(basename "$ASSET").sha256")
-  (cd "$(dirname "$ASSET")" && sha256sum -c "$(basename "$ASSET").gpu-literals.tar.gz.sha256")
-else
-  (cd "$(dirname "$ASSET")" && shasum -a 256 -c "$(basename "$ASSET").sha256")
-  (cd "$(dirname "$ASSET")" && shasum -a 256 -c "$(basename "$ASSET").gpu-literals.tar.gz.sha256")
-fi
-sh install.sh --from-file="$ASSET"
-```
-
-Release workflows also publish GitHub build-provenance attestations for both
-payloads. With a GitHub CLI version that provides `gh attestation`, this online
-check proves that GitHub-hosted `release.yml` attested the exact bytes for the
-requested tag. It does not by itself prove the Cargo feature or profile policy.
-It complements the detached minisign signatures, which remain the installer's
-offline trust root:
-
-```sh
-TAG=v0.5.49
-gh attestation verify "$ASSET" --repo santhreal/keyhog \
-  --signer-workflow github.com/santhreal/keyhog/.github/workflows/release.yml \
-  --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
-gh attestation verify "$ASSET.gpu-literals.tar.gz" --repo santhreal/keyhog \
-  --signer-workflow github.com/santhreal/keyhog/.github/workflows/release.yml \
-  --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
-```
-
-On Windows, use
-`./keyhog-install.ps1 -FromFile C:\absolute\path\to\keyhog-windows-x86_64.exe`.
-Verify each payload's `.minisig` first and keep each `.sha256` sibling beside
-its payload. Do not install only the binary and silently omit the release-bound
-GPU literal sidecar.
-
-## Build from source
-
-You'll want this if you're contributing or running a feature
-combination the prebuilt binaries don't cover (e.g. Ghidra binary
-extraction).
-
-```sh
-git clone https://github.com/santhreal/keyhog
-cd keyhog
-cargo build --release -p keyhog
-./target/release/keyhog --version
-```
-
-The default feature set requires **Hyperscan / Vectorscan**:
-
-- Debian / Ubuntu: `sudo apt install libhyperscan-dev libssl-dev pkg-config`
-- macOS: `brew install vectorscan pkg-config`, then use the default build for
-  the Hyperscan path. Build the official release profile with
-  `--no-default-features --features portable,gpu`; it enables native Metal and
-  WGPU without requiring Vectorscan.
-- Windows: build with `--no-default-features --features portable`.
-
-The portable profile removes Hyperscan, Ghidra, CUDA, and WGPU build
-dependencies. Add `gpu` on macOS to enable native Metal and WGPU without adding
-Hyperscan. Both profiles retain network sources and verification through
-`reqwest` native TLS. A portable source build on Debian/Ubuntu still needs
-`libssl-dev` and `pkg-config`.
-
-The default Linux build includes dynamically loaded CUDA and WGPU. The macOS
-release profile enables native Metal and WGPU:
-
-```sh
-# Linux with statically linked Hyperscan and runtime GPU discovery
-cargo build --release -p keyhog
-
-# macOS release profile without Homebrew Vectorscan
-cargo build --release -p keyhog --no-default-features --features portable,gpu
-```
-
-CUDA, Metal, and WGPU are independent autoroute candidates. Scanner compilation
-censuses each executable peer without selecting one as a fallback for another.
-Calibration acquires and measures every eligible peer. An acquisition failure
-is reported and does not become a scan-time backend substitution.
-
-The official Windows binary uses `portable`. The macOS binaries add `gpu` to
-that source and verification profile. They do not require Hyperscan or
-Vectorscan. Throughput varies by host and workload; benchmark the intended scan
-class instead of applying a fixed ratio.
-
-## crates.io
-
-KeyHog consumes the published VYRE runtime crates from crates.io through exact
-workspace pins. The repository does not carry a `vendor/` source tree.
-
-## Verify the install
+Run a health check before your first scan:
 
 ```sh
 keyhog --version
-keyhog detectors | head     # smoke-test the embedded detector corpus
-keyhog scan README.md       # scan a single file; exit 0 = clean
+keyhog doctor
+keyhog scan .
 ```
 
-If `keyhog --version` reports a recent release and `keyhog detectors`
-lists hundreds of detectors, you're set. Move on to
-[Your first scan](./first-scan.md).
-
-You can also run the installer in diagnostic mode at any time to
-print a full status report:
-
-```sh
-sh install.sh --diagnose
-```
+`keyhog doctor` exits `0` when the installed binary is healthy and `4` when a
+health check fails. `keyhog scan .` exits `0` for a clean scan and `1` when it
+reports findings. Continue with [Your first scan](./first-scan.md) to exercise a
+safe synthetic finding.

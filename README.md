@@ -36,19 +36,17 @@ the operator-visible route (for example, `backend=simd-regex | gpu=none`).
 
 ### Install and run your first scan
 
-On Linux or macOS:
+Install the latest published crate:
 
 ```sh
-curl -fsSL https://santh.dev/keyhog/install.sh | sh
+cargo install --locked keyhog
 keyhog scan .
 ```
 
-On Windows PowerShell:
-
-```powershell
-iwr https://santh.dev/keyhog/install.ps1 -UseBasicParsing | iex
-keyhog scan .
-```
+Pin a CI environment to one exact release with
+`cargo install --locked --version '=0.5.49' keyhog`. KeyHog requires Rust 1.89
+or newer. See the [installation guide](https://santhreal.github.io/keyhog/install.html)
+for portable and source-build profiles.
 
 KeyHog exits `0` when the scan is clean and `1` when it reports findings above
 your severity floor. Exit `1` means the scanner worked. Review each finding's
@@ -424,38 +422,30 @@ semantics, cache lifecycle, and troubleshooting matrix live in the
 
 ---
 
-## Install, verify, and maintain KeyHog
+## Install KeyHog
 
-The stable installer endpoints select the current release for your platform:
+Install the current crates.io release:
 
 ```sh
-curl -fsSL https://santh.dev/keyhog/install.sh | sh
+cargo install keyhog --locked
 ```
 
-```powershell
-iwr https://santh.dev/keyhog/install.ps1 -UseBasicParsing | iex
+Build the repository checkout when you need an unreleased change:
+
+```sh
+cargo install --path crates/cli --locked
 ```
 
-Installers authenticate release assets before replacing a binary. Linux x86_64
-statically links Hyperscan. macOS release assets enable native Metal and WGPU
-without requiring Homebrew Vectorscan. Windows assets are portable
-no-system-library builds. The current matrix includes macOS x86_64 and arm64
-and Windows x86_64. Linux and Windows arm64 release assets are not produced.
-
-Verify and maintain the installed binary:
+Confirm the installed build:
 
 ```sh
 keyhog --version --full
 keyhog doctor
-keyhog update --check
-keyhog update
 ```
 
 Use the [install guide](https://santhreal.github.io/keyhog/install.html) for
-prerequisites, pinned installer authentication, offline installation, source
-builds, repair, uninstall, and exact platform support. The
-[release page](https://github.com/santhreal/keyhog/releases/latest) contains
-checksums, signatures, SBOMs, and platform archives.
+Rust toolchain requirements, feature profiles, and platform-specific runtime
+dependencies.
 
 
 ## What it catches
@@ -810,10 +800,11 @@ lists every command, flag, generated default, and exit status. Use
   redacted credential shape and detector id; each report becomes a
   permanent test fixture under
   [`tests/contracts/`](./crates/scanner/tests/contracts/).
-- **Preparing a release?** Add validated change fragments, then run
-  `python3 -B scripts/release.py <next-version>` locally or with `--ssh`.
-  The [release operations guide](https://santhreal.github.io/keyhog/releasing.html)
-  covers benchmark refresh, signing, Pages, release assets, and crates.io.
+- **Release behavior?** Every successful `main` CI run increments the patch
+  version, generates changelogs, and publishes all five crates to crates.io.
+  Add an optional fragment under [`changes/`](./changes/) for a precise note.
+  The [release guide](https://santhreal.github.io/keyhog/releasing.html) covers
+  the automatic transaction and failed-upload recovery.
 - **Security issue in KeyHog itself?** Don't open a public issue;
   use [GitHub private vulnerability reporting](https://github.com/santhreal/keyhog/security/advisories/new).
   If that form is unavailable, email `security@santh.dev`; PGP is not required.

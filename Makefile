@@ -1,24 +1,11 @@
-.PHONY: release release-publish release-check release-prepare docs-check docs-build
-
-VERSION ?=
-DATE ?= $(shell date -u +%Y-%m-%d)
-RELEASE_ARGS ?=
-
-release:
-	@test -n "$(VERSION)" || { echo 'usage: make release VERSION=X.Y.Z [RELEASE_ARGS="..."]' >&2; exit 2; }
-	python3 -B scripts/release.py "$(VERSION)" --date "$(DATE)" $(RELEASE_ARGS)
-
-release-publish:
-	@test -n "$(VERSION)" || { echo 'usage: make release-publish VERSION=X.Y.Z [RELEASE_ARGS="..."]' >&2; exit 2; }
-	python3 -B scripts/release.py "$(VERSION)" --date "$(DATE)" --publish $(RELEASE_ARGS)
+.PHONY: release-check docs-check docs-build
 
 release-check:
-	@test -n "$(VERSION)" || { echo 'usage: make release-check VERSION=X.Y.Z [DATE=YYYY-MM-DD]' >&2; exit 2; }
-	python3 -B -m unittest scripts.tests.test_prepare_release scripts.tests.test_bump_doc_versions scripts.tests.test_release_notes
-	python3 -B scripts/prepare_release.py --version "$(VERSION)" --date "$(DATE)"
-
-release-prepare: release-check
-	python3 -B scripts/prepare_release.py --version "$(VERSION)" --date "$(DATE)" --apply
+	python3 -B -m unittest \
+		scripts.tests.test_prepare_release \
+		scripts.tests.test_auto_release \
+		scripts.tests.test_bump_doc_versions \
+		scripts.tests.test_release_workflows
 
 # Keep generated README evidence, operator contracts, and mdBook links coherent.
 docs-check:
@@ -27,7 +14,7 @@ docs-check:
 	python3 -B scripts/gates/workflow_docs_boundaries.py
 	python3 -B -m unittest scripts.tests.test_action_docs_contract scripts.tests.test_workflow_docs_boundaries
 	python3 -B scripts/star_history.py --check
-	python3 -B -m unittest scripts.tests.test_star_history scripts.tests.test_release_orchestrator
+	python3 -B -m unittest scripts.tests.test_star_history
 	$(MAKE) -C benchmarks readme-matrix-check
 	$(MAKE) -C benchmarks readme-scaling-check
 	cd docs && mdbook test && mdbook build

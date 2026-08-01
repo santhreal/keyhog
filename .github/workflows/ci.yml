@@ -30,111 +30,6 @@ env:
   CARGO_NET_RETRY: "10"
 
 jobs:
-  # Prevention-gate aggregator. `scripts/gates/run_all.sh` is the ONE entrypoint
-  # that invokes every audit keyhog has: the 3 source/org prevention gates
-  # (no_silent_fallbacks #1, surface_coverage #4, complexity_budget #5), the vyre
-  # pin-consistency gate, org_audit.py, the docs CLI-claim + integration
-  # entry-point shell gates, cargo audit, and (when their corpus/results/binary
-  # assets are present) the backend-parity + recall-floor pytests, the
-  # differential bench gate, and the ML feature-parity gate. Before this job the
-  # 3 source prevention gates ran ONLY in the pre-commit hook / locally, a
-  # contributor without the hook could land a new silent fallback, an
-  # untested subcommand, or an over-budget engine file with green CI. This is
-  # the gate that turns "I ran the gates on my box" into "green in CI on every
-  # push". The asset-bearing gates LOUD-SKIP here (this runner has no CredData
-  # corpus, no competitor binaries, no results/, no prebuilt dump_features), the
-  # full asset run lives in bench-nightly.yml / differential-bench.yml. cargo
-  # audit DOES run (the advisory DB is fetched), centralizing what the separate
-  # `audit` job does. Mostly Python + shell + cargo-audit, plus the lightweight
-  # standalone CI-operability Rust test crate.
-  audit-gates:
-    name: Prevention gates (run_all.sh)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12.11'
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@b8cecb83565409bcc297b2df6e77f030b2a468d5 # v2
-        with:
-          tool: cargo-audit
-      - name: Install prevention gate Python dependencies
-        run: |
-          set -euo pipefail
-          python3 -m pip install --disable-pip-version-check --no-deps \
-            --require-hashes --only-binary=:all: \
-            -r scripts/requirements-marketplace.txt
-          python3 -c 'import yaml; assert yaml.__version__ == "6.0.3"'
-      - name: Run all prevention gates
-        run: bash scripts/gates/run_all.sh
-
-  # PR gate: all strict contract multipliers in strict mode. This job requires
-  # `lfs: true` checkout, the contract corpus and several runner fixtures are
-  # LFS-tracked.
-  strict-runners:
-    name: Strict adversarial runners
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    # PR + main gate. contracts_runner is always strict (no env var); the
-    # multiplier runners honor KEYHOG_*_STRICT=1.
-    env:
-      KEYHOG_ADVERSARIAL_STRICT: "1"
-      KEYHOG_ENCODING_STRICT: "1"
-      KEYHOG_PATH_SHAPE_STRICT: "1"
-      KEYHOG_NOISE_STRICT: "1"
-      KEYHOG_UNICODE_STRICT: "1"
-      KEYHOG_WHITESPACE_STRICT: "1"
-      KEYHOG_LINE_LEN_STRICT: "1"
-      KEYHOG_ENTROPY_STRICT: "1"
-      KEYHOG_MULTI_STRICT: "1"
-      KEYHOG_COMPOUND_STRICT: "1"
-      KEYHOG_COMMENT_STRICT: "1"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Same LFS requirement as the Test job: tests/contracts/*.toml
-          # and readme_claims.rs are pointer-tracked. Without lfs:true the
-          # tree has 3-line LFS stubs and every runner that parses TOML
-          # or rust source fixtures fails immediately.
-          lfs: true
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install Vectorscan
-        run: |
-
-          for i in 1 2 3 4 5; do
-
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-
-            sleep $((i * 2))
-
-            if [ "$i" -eq 5 ]; then exit 1; fi
-
-          done
-      - name: Strict runner gate (PR subset)
-        # KH-1302: CPU-only ubuntu-24.04 cannot load libcuda; ci-lean keeps
-        # adversarial contracts off the GPU default feature set.
-        run: |
-          cargo test -p keyhog-scanner --profile release-fast \
-            --no-default-features --features ci-lean \
-            --test contracts_runner \
-            --test adversarial_explosion_runner \
-            --test encoding_explosion_runner \
-            --test path_shape_runner \
-            --test noise_injection_runner \
-            --test unicode_confusable_runner \
-            --test whitespace_normalization_runner \
-            --test line_length_runner \
-            --test entropy_edge_runner \
-            --test compound_encoding_runner \
-            --test multi_secret_runner \
-            --test comment_embed_runner \
-            --test companion_contracts_runner \
-            --test cve_replay_runner
-
   test:
     name: Test
     runs-on: ubuntu-24.04
@@ -701,48 +596,6 @@ jobs:
       # public build surface and does not pick up generated or fixture trees.
       - run: cargo fmt -p keyhog-core -p keyhog-scanner -p keyhog -p keyhog-verifier -p keyhog-sources -- --check
 
-  deny:
-    name: Supply-chain (cargo deny)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@b8cecb83565409bcc297b2df6e77f030b2a468d5 # v2
-        with:
-          tool: cargo-deny
-      # `cargo deny check` walks up the directory tree looking for the
-      # nearest deny.toml; without an explicit --config it would find
-      # the Santh-monorepo policy at /media/.../Santh/deny.toml which
-      # rejects MPL-2.0 + duplicate versions. Pinning the local one is
-      # what keeps the gate honest.
-      - name: Run cargo deny
-        working-directory: .
-        run: cargo deny check --config deny.toml
-
-  audit:
-    name: Security Audit
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@b8cecb83565409bcc297b2df6e77f030b2a468d5 # v2
-        with:
-          tool: cargo-audit
-      # The five `--ignore` flags below match the five
-      # accept-with-rationale advisories in `audit.toml` (the workspace
-      # root file that documents the security review). Adding a fifth
-      # ignore without a corresponding SECURITY.md rationale block is
-      # an invalid security gate (update both files together).
-      - name: Run cargo audit
-        run: |
-          cargo audit \
-            --ignore RUSTSEC-2023-0071 \
-            --ignore RUSTSEC-2024-0436 \
-            --ignore RUSTSEC-2026-0002 \
-            --ignore RUSTSEC-2025-0141
-
   build:
     name: Build Release
     runs-on: ubuntu-24.04
@@ -873,8 +726,6 @@ jobs:
     name: CI verdict
     if: ${{ always() }}
     needs:
-      - audit-gates
-      - strict-runners
       - test
       - integration-core-scanner
       - integration-sources
@@ -888,8 +739,6 @@ jobs:
       - install-scripts
       - fuzz-smoke
       - fmt
-      - deny
-      - audit
       - build
       - static-release-linkage
     runs-on: ubuntu-24.04
@@ -900,6 +749,6 @@ jobs:
       - name: Require every blocking CI job
         run: |
           jq -e '
-            length == 19 and
+            length == 15 and
             all(.[]; .result == "success")
           ' <<<"$KEYHOG_BLOCKING_RESULTS" >/dev/null

@@ -37,7 +37,6 @@ REQUIRED_TEXT = {
         "--github-collaboration",
         "--azure-container-url",
         "gpu-metal-region-presence",
-        "macOS release assets enable native Metal and WGPU",
     ),
     "summary": (
         "[Choose a scanning workflow](./capabilities.md)",
@@ -46,7 +45,7 @@ REQUIRED_TEXT = {
         "[CI secret scanning](./workflows/ci.md)",
         "[Mass repository and cloud scanning](./guides/mass-scanning.md)",
         "[GPU-backed daemon file queues](./workflows/daemon.md)",
-        "[Prepare and publish a release](./releasing.md)",
+        "[Releases](./releasing.md)",
     ),
     "chooser": (
         "[GitHub Action](./workflows/github-action.md)",
@@ -70,12 +69,11 @@ REQUIRED_TEXT = {
         "## Emit for any pipeline or SIEM",
     ),
     "release": (
-        "## Choose an operation",
-        'scripts/release.py "$NEXT_VERSION"',
-        "--ssh USER@HOST --remote-dir /absolute/keyhog/path",
-        "--publish --resume",
-        "configured primary-key fingerprint",
-        "make -C benchmarks readme-matrix",
+        "## Release a push",
+        "successful `main` CI run",
+        "`CARGO_REGISTRY_TOKEN`",
+        "lightweight version tag",
+        "make release-check",
     ),
     "action": (
         "[CI integration guide](./ci.md)",
@@ -112,9 +110,9 @@ REQUIRED_TEXT = {
         "`gpu-cuda`, `gpu-metal`, or `gpu-wgpu`",
     ),
     "install": (
-        "| macOS aarch64 | `keyhog-macos-aarch64` | Native Metal and WGPU",
+        "cargo install --locked --version '=",
         "--no-default-features --features portable,gpu",
-        "Windows uses the portable CPU build",
+        "does not publish binary release assets or installer bundles",
     ),
 }
 

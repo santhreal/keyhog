@@ -47,11 +47,10 @@ class ReleaseFragmentTests(unittest.TestCase):
         self.assertEqual(rendered, "## 0.5.49 - 2026-07-28\n\n- Scanner repair.\n\n")
         self.assertNotIn("CLI addition", rendered)
 
-    def test_empty_fragment_directory_fails_closed(self) -> None:
-        """A daily tag must not publish an empty or placeholder GitHub release body."""
+    def test_empty_fragment_directory_is_available_to_automatic_releases(self) -> None:
+        """A green push may use its commit subject when no author wrote a fragment."""
         with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(release.PrepareError, "no release change fragments"):
-                release.load_fragments(Path(directory))
+            self.assertEqual(release.load_fragments(Path(directory)), [])
 
     def test_unknown_fields_and_crates_are_rejected(self) -> None:
         """Typos in fragment ownership must not silently disappear from crate notes."""
@@ -136,40 +135,22 @@ class ReleaseTransformationTests(unittest.TestCase):
         with self.assertRaisesRegex(release.PrepareError, "hand-maintained"):
             release.insert_release(source, "## [0.5.49]\n")
 
-    def test_release_chain_requires_owned_notes_for_every_crate(self) -> None:
-        """A synchronized five-crate publish must not create an empty crate release section."""
+    def test_automatic_summary_fills_missing_crate_coverage(self) -> None:
+        """Synchronized publishing must give every otherwise-unchanged crate a release note."""
         fragments = [
             release.Fragment(Path("one.toml"), "Fixed", "CLI repair.", ("cli",)),
             release.Fragment(Path("two.toml"), "Fixed", "Core repair.", ("core",)),
         ]
-        with self.assertRaisesRegex(release.PrepareError, "scanner.*sources.*verifier"):
-            release.validate_crate_coverage(fragments)
 
-    def test_release_transaction_owns_every_canonical_current_version_pin(self) -> None:
-        """A release must update every operator-maintained doc that names its current version."""
-        root = Path(__file__).resolve().parents[2]
-        current = tomllib.loads((root / "Cargo.toml").read_text())["workspace"]["package"][
-            "version"
-        ]
-        versioned = {root / relative for relative in release.VERSIONED_FILES}
-        canonical_docs = [
-            root / "README.md",
-            root / ".github/actions/keyhog/README.md",
-            *sorted((root / "docs/src").rglob("*.md")),
-        ]
-        unowned: list[str] = []
+        completed = release.complete_fragment_coverage(
+            fragments, "Publish the successful main push."
+        )
 
-        for path in canonical_docs:
-            try:
-                release.bump_markdown(path.read_text(), current, "999.999.999")
-            except release.VersionBumpError as error:
-                if "does not contain canonical pin" not in str(error):
-                    raise
-            else:
-                if path not in versioned:
-                    unowned.append(str(path.relative_to(root)))
+        self.assertEqual(
+            completed[-1].crates, ("scanner", "sources", "verifier")
+        )
+        self.assertTrue(completed[-1].synthetic)
 
-        self.assertEqual(unowned, [])
 
     def test_publishable_package_discovery_metadata_is_canonical(self) -> None:
         """Every crates.io package must lead users to one live homepage and repository."""
@@ -222,10 +203,6 @@ class ReleaseTransformationTests(unittest.TestCase):
                     for name in packages
                 )
             )
-            for relative in release.VERSIONED_FILES:
-                path = root / relative
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text("Install KeyHog v0.5.48.\n")
             (root / "CHANGELOG.md").write_text(
                 "# Changelog\n\n## [0.5.48] - 2026-07-27\n\n### Fixed\n\n- Old root.\n"
             )
@@ -243,12 +220,24 @@ class ReleaseTransformationTests(unittest.TestCase):
                 'summary = "Publish one coherent release transaction."\n'
                 'crates = ["cli", "core", "scanner", "sources", "verifier"]\n'
             )
+            versioned = (
+                root / "README.md",
+                root / ".github/actions/keyhog/README.md",
+                root / ".github/workflows/action-e2e.yml",
+                root / "docs/src/install.md",
+            )
+            for path in versioned:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("Install KeyHog v0.5.48 exactly.\n")
+
 
             preview = release.prepare(root, "0.5.49", "2026-07-28", False)
 
-            self.assertEqual(len(preview), 23)
+            self.assertEqual(len(preview), 12)
             self.assertEqual((root / "Cargo.toml").read_text(), manifest)
             self.assertTrue(fragment.exists())
+            for path in versioned:
+                self.assertEqual(path.read_text(), "Install KeyHog v0.5.48 exactly.\n")
 
             applied = release.prepare(root, "0.5.49", "2026-07-28", True)
 
@@ -263,15 +252,13 @@ class ReleaseTransformationTests(unittest.TestCase):
                 "- Publish one coherent release transaction.",
                 (root / "CHANGELOG.md").read_text(),
             )
+            for path in versioned:
+                self.assertEqual(path.read_text(), "Install KeyHog v0.5.49 exactly.\n")
             for relative in release.CRATE_CHANGELOGS.values():
                 self.assertIn(
                     "## 0.5.49 - 2026-07-28\n\n"
                     "- Publish one coherent release transaction.",
                     (root / relative).read_text(),
-                )
-            for relative in release.VERSIONED_FILES:
-                self.assertEqual(
-                    (root / relative).read_text(), "Install KeyHog v0.5.49.\n"
                 )
 
 

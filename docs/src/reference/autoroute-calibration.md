@@ -107,34 +107,25 @@ Before calibration:
   runtime libraries stable for the sweep. Overlapping timing intervals exit
   without publishing a generation.
 - Make every source prerequisite available. The subcommand covers the core
-  stdin and filesystem ladder. Git, Docker, and web fixtures require installer
-  calibration.
+  stdin and filesystem ladder. Git, Docker, and web fixtures use the low-level
+  `scan --autoroute-calibrate` probe on the exact source.
 
 A build with only `cpu-fallback` reports `health: direct` and does not require
 calibration.
 
 ## Calibrate core and source-specific workloads
 
-**A normal install calibrates automatically.** Plain `./install.sh` /
-`./install.ps1` runs the visible calibration phase after the binary is verified,
-and the install *fails* rather than leave you with an uncalibrated default auto
-route. You do not need to pass any flag to get calibrated.
-
-To re-run calibration later without reinstalling (after hardware changes, or to
-cover source routes that were unavailable at install time):
-
-```sh
-# Unix: full sweep, including the git / docker / web source probes
-./install.sh --calibrate
-# Windows
-./install.ps1 -Calibrate
-```
-
-The binary can also recalibrate its own core workloads in place:
+Cargo installation does not benchmark your host. Calibrate the installed
+binary before its first automatic scan:
 
 ```sh
 keyhog calibrate-autoroute
 ```
+
+Run the command again after a binary, detector, configuration, driver, or
+hardware change. The command calibrates the core stdin and filesystem workload
+ladder. A recovery receipt for a Git, Docker, or web workload prints the exact
+low-level `scan --autoroute-calibrate --autoroute-gpu` command for that source.
 
 The default command calibrates the ordinary policy and every documented preset:
 
@@ -180,23 +171,15 @@ not only the shared workload key. A missing representative prevents publication.
 The cache total can include valid decisions from prior calibration runs. The
 command also prints a cache route summary showing how many one-shot and daemon
 rows select a VYRE GPU route, plus the number of GPU candidate receipts measured.
-The command does **not**
-cover the git / docker / web source probes; those need environment orchestration
-(a repo, a running daemon, a served URL) that only the installer's
-`--calibrate` mode performs. Current installers delegate the complete core sweep
-to this command, then construct external fixtures and invoke the low-level
-`scan --autoroute-calibrate` probe mode. Older binaries without the command use
-the installers' compatibility sweep. Capability inspection must succeed before
-that choice, so broken help output cannot silently select the older matrix. The
-installers also accept the earlier unified command's migration summary
-(`calibrated N workload buckets`). The low-level scan flag records one
-caller-supplied workload but does not build or sweep external fixtures. If
-you scan those sources and receive an
-`autoroute calibration required` recovery receipt, re-run `install.sh --calibrate` /
-`install.ps1 -Calibrate` rather than the subcommand. Decisions are written,
-parity-checked, to the autoroute cache
-(`$XDG_CACHE_HOME/keyhog/autoroute.json` by default; override with
-`--autoroute-cache <path>` or `[system].autoroute_cache`).
+The command does **not** cover Git, Docker, or web source probes. Those
+workloads need a real external fixture such as a repository, running daemon, or
+served URL. The low-level `scan --autoroute-calibrate` probe measures one
+caller-supplied workload. It does not synthesize or sweep external fixtures. If
+one of these sources reports `autoroute calibration required`, run the
+`repair_command` from the recovery receipt. Decisions are written,
+parity-checked, to the autoroute cache (`$XDG_CACHE_HOME/keyhog/autoroute.json`
+by default; override with `--autoroute-cache <path>` or
+`[system].autoroute_cache`).
 
 Canonical calibration admits every eligible execution class. The low-level
 `scan --no-autoroute-gpu --autoroute-calibrate` diagnostic deliberately writes
@@ -430,8 +413,8 @@ Use the reported state to choose the repair:
   resolved configuration, and workload class.
 - For a standard preset ladder, run `keyhog calibrate-autoroute`. Add
   `--policy default`, `fast`, `deep`, or `precision` for a focused repair.
-- For Git, Docker, or web source classes, run `install.sh --calibrate` or
-  `install.ps1 -Calibrate`.
+- For Git, Docker, or web source classes, run the exact `repair_command`
+  reported for that source.
 - For `stale`, recalibrate with the new binary after an upgrade.
 - For `quarantined`, repair the named SIMD or GPU runtime first. Use
   `keyhog backend --self-test --require-gpu` for a GPU path, then recalibrate so

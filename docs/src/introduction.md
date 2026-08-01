@@ -102,39 +102,24 @@ Three things, in order of how much they matter:
 
 ## Get going
 
-Install the current release for your host:
+Install the current release from crates.io:
 
 ```sh
-# Linux x86_64 or macOS x86_64/aarch64
-curl -fsSL https://santh.dev/keyhog/install.sh | sh
-```
-
-```powershell
-# Windows x86_64, PowerShell 5+
-iwr https://santh.dev/keyhog/install.ps1 -UseBasicParsing | iex
-```
-
-Open a new terminal if the installer changed your `PATH`, then verify the
-binary before scanning:
-
-```sh
+cargo install --locked keyhog
 keyhog --version
 keyhog scan .
 ```
 
-Linux arm64 and Windows arm64 release assets are not currently produced. The
-Linux x86_64 release statically links Hyperscan and needs no
-`libhyperscan5` runtime. The [Install](./install.md) guide gives prerequisite
-commands, a pinned installer-authentication flow, offline and source-build
-paths, and recovery steps. [Your first scan](./first-scan.md) gives you a safe,
-synthetic finding
-to confirm output, redaction, and exit status before you scan a repository.
+KeyHog requires Rust 1.89 or newer. The [Install](./install.md) guide shows
+exact-version, portable, CI-only, and checked-out source builds. [Your first
+scan](./first-scan.md) gives you a safe synthetic finding to confirm output,
+redaction, and exit status before you scan a repository.
 
 ## Where things live
 
 - **Source:** [github.com/santhreal/keyhog](https://github.com/santhreal/keyhog)
 - **Issues:** [github.com/santhreal/keyhog/issues](https://github.com/santhreal/keyhog/issues)
-- **Releases:** [github.com/santhreal/keyhog/releases](https://github.com/santhreal/keyhog/releases)
+- **Published crates:** [crates.io/crates/keyhog](https://crates.io/crates/keyhog)
 - **Security:** use [GitHub private vulnerability reporting](https://github.com/santhreal/keyhog/security/advisories/new) first. If the form is unavailable, email `security@santh.dev`; PGP is not required. See the [security policy](https://github.com/santhreal/keyhog/blob/main/SECURITY.md).
 
 License: MIT OR Apache-2.0.

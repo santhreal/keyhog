@@ -72,8 +72,8 @@ contract, not a recommendation for routine routing.
 
 | Route | Select it with | Use case and boundary |
 |---|---|---|
-| Calibrated automatic routing | Verified installation, or run `keyhog calibrate-autoroute`; then `keyhog scan .` | Chooses the fastest parity-checked eligible backend for the exact host, binary, detector policy, and workload class. A normal scan does not benchmark. |
-| Portable CPU-only build | Install the Windows portable release asset, or build with `--no-default-features --features portable` | Use on Windows, on a host without Hyperscan/Vectorscan and GPU drivers, or in a minimal container. A scalar-only build has no routing choice and needs no autoroute cache. |
+| Calibrated automatic routing | Run `keyhog calibrate-autoroute`, then `keyhog scan .` | Chooses the fastest parity-checked eligible backend for the exact host, binary, detector policy, and workload class. A normal scan does not benchmark. |
+| Portable CPU-only build | Install with `--no-default-features --features portable` | Use on a host without Hyperscan/Vectorscan and GPU drivers, or in a minimal container. A scalar-only build has no routing choice and needs no autoroute cache. |
 | Explicit pure-Rust CPU | `--backend cpu` | Diagnose the portable path or compare it in a benchmark. `--no-gpu` is not equivalent because Hyperscan may remain eligible. |
 | Hyperscan or Vectorscan | Let calibrated `auto` select it, or diagnose with `--backend simd` | Accelerated CPU trigger matching followed by the shared extraction and policy pipeline. It requires a compatible build and runtime. |
 | CUDA, native Metal, or WGPU | Let calibrated `auto` select an eligible peer | GPU region-presence matching followed by the same confirmation pipeline. GPU availability does not mean the GPU is fastest for every workload. |

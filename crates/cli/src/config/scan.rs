@@ -467,7 +467,7 @@ pub(super) fn apply_top_level_scan_fields(
         }
     }
     #[cfg(not(feature = "verify"))]
-    if config.verify.is_some() {
+    if config.verify.is_some() && !args.no_verify {
         config_errors.push(
             "- verify: this key requires the `verify` feature in this keyhog build".to_string(),
         );

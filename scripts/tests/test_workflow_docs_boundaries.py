@@ -103,19 +103,19 @@ class WorkflowDocumentationBoundaryTests(unittest.TestCase):
                 self.assertEqual(len(issues), 1)
                 self.assertIn(document, issues[0])
                 self.assertIn(route, issues[0])
-    def test_release_guide_must_keep_safe_local_remote_and_resume_routes(self) -> None:
-        """Maintainers must not lose the fingerprint check or one-command recovery path."""
+    def test_release_guide_keeps_ci_trigger_and_recovery_routes(self) -> None:
+        """Maintainers must retain the only credential and failed-upload recovery path."""
         broken = dict(self.texts)
         broken["release"] = broken["release"].replace(
-            "configured primary-key fingerprint",
-            "unspecified signing key",
+            "`CARGO_REGISTRY_TOKEN`",
+            "unspecified registry credential",
         )
 
         issues = workflow_docs_boundaries.boundary_issues(broken)
 
         self.assertEqual(len(issues), 1)
         self.assertIn("release: missing canonical workflow route", issues[0])
-        self.assertIn("primary-key fingerprint", issues[0])
+        self.assertIn("CARGO_REGISTRY_TOKEN", issues[0])
 
     def test_action_guide_cannot_absorb_provider_specific_ci_recipes(self) -> None:
         """GitLab or Jenkins recipes in the Action guide would recreate two conflicting CI manuals."""
