@@ -220,8 +220,8 @@ public key with `.github/release-signing-key.asc` and the key enrolled on the
 pushes that tag, and removes the ephemeral keyring.
 
 Set `KEYHOG_RELEASE_SIGNING_FINGERPRINT` as a repository variable. Store the
-private key and passphrase as repository or `release-signing` environment
-secrets. A missing secret, mismatched key, wrong actor, wrong ref, dirty
+private key and passphrase only as `release-signing` environment secrets. The
+environment accepts deployments from `main` only. A missing secret, mismatched
 checkout, or stale version stops before tag creation.
 
 ### 5. Watch every publication lane

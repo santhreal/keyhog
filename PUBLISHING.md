@@ -63,8 +63,8 @@ the mutable actor login is not used as the authority.
    exactly `Santh <64453045+santhreal@users.noreply.github.com>`.
    `user.signingkey` names that key, `gpg.format` is `openpgp`, and the private
    half remains protected in `/credentials/keyhog-release-gnupg`. The same
-   encrypted private key and passphrase are stored as the protected repository
-   secrets `KEYHOG_RELEASE_GPG_PRIVATE_KEY` and
+   encrypted private key and passphrase are stored as the `release-signing`
+   environment secrets `KEYHOG_RELEASE_GPG_PRIVATE_KEY` and
    `KEYHOG_RELEASE_GPG_PASSPHRASE`. The exact ASCII-armored public half returned
    by `/users/santhreal/gpg_keys` is committed as
    `.github/release-signing-key.asc`. The repository Actions variable
