@@ -59,7 +59,7 @@ impl ScannerTuningConfig {
     pub(crate) const DECODE_FOCUS_DEFAULT: bool = true;
     pub(crate) const CONFIRMED_SUFFIX_GATE_DEFAULT: bool = true;
     pub(crate) const NO_CANDIDATE_GATE_DEFAULT: bool = true;
-    pub(crate) const FALLBACK_LOCALIZER_DEFAULT: bool = false;
+    pub(crate) const FALLBACK_LOCALIZER_DEFAULT: bool = true;
     pub(crate) const GPU_RECALL_FLOOR_DEFAULT: bool = false;
     pub(crate) const GPU_MOE_TIMEOUT_MS_DEFAULT: u64 = 30_000;
 

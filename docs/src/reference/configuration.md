@@ -183,12 +183,13 @@ security mode and may be required by `[lockdown] require = true`; that config
 key does not enable it. Lockdown refuses fast and other
 completeness-reducing switches, and the scan remains in process.
 
-`--profile` is not a named configuration profile. It emits hierarchical scanner
-timings and one causal operator-run record to standard error. The record names
-the source, workload, backend, cache, thread configuration, input totals, run
-states, CPU time, memory, and observed process threads. It never includes source
-content or credential values. The flag does not select the fast, deep, or
-precision preset.
+`--profile` is not a named configuration profile. It emits low-overhead fixed
+scanner-stage timings and one causal operator-run record to standard error. The
+record names the source, workload, backend, cache, thread configuration, input
+totals, run states, CPU time, memory, and observed process threads. It never
+includes source content or credential values. Use `--perf-trace` when you need
+the higher-overhead per-pattern and backend diagnostic counters. Neither flag
+selects the fast, deep, or precision preset.
 
 ## Policy tables
 
@@ -403,7 +404,7 @@ fallback_prefix_gate = false
 decode_focus = true
 confirmed_suffix_gate = true
 no_candidate_gate = true
-fallback_localizer = false
+fallback_localizer = true
 gpu_recall_floor = false
 gpu_moe_timeout_ms = 30000
 ```
@@ -414,10 +415,12 @@ printed by `keyhog config --effective`. They do not have CLI flags because
 per-run hidden recall changes would invalidate installer calibration.
 `hs_shard_target` controls Hyperscan patterns-per-shard during compile; changing
 it affects compile/cache shape and autoroute identity but not detector recall.
-`fallback_localizer` moves plain phase-two candidates to one ASCII anchor index;
-when enabled, those candidates are not rescanned by the full Hyperscan marking
-database. It is workload-dependent and therefore creates a distinct autoroute
-configuration that must be calibrated before automatic use.
+`fallback_localizer` moves plain phase-two candidates to one ASCII anchor index.
+It is enabled by default, which avoids compiling and scanning the full portable
+phase-two marking set when the anchor index can localize candidates. Autoroute
+still measures both settings because the faster route depends on the workload.
+Each setting creates a distinct autoroute configuration that must be calibrated
+before automatic use.
 `gpu_recall_floor` forces the GPU region-presence path to compute the full CPU
 trigger net during parity/debug scans and report any GPU under-fire it recovers.
 `gpu_moe_timeout_ms` bounds one GPU MoE confidence readback; on timeout KeyHog

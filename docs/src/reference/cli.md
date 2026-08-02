@@ -22,13 +22,24 @@ or coverage incomplete.
 |----------|-------|---------|-------------|
 | `<PATH>` | `PATH...` |  | Path(s) to scan. Pass several to scan multiple roots in one run (`keyhog scan a/ b/ c/`); nested or duplicate roots fold into their covering parent. Positional shorthand for `--path` (single root only) |
 | `--action-receipt` *(hidden)* | `PATH` |  | Write an internal composite-Action receipt bound to the completed report |
+| `--allow-gcs-token-forward` |  |  | Forward the ambient GCS bearer token to a custom GCS endpoint you trust. Off by default; googleapis.com endpoints do not need this. This flag is intentionally explicit because it can send a bearer token to a third-party host |
+| `--allow-private-cloud-endpoint` |  |  | Allow cloud sources (`--s3-endpoint`, GCS / Azure container URLs) to reach an endpoint whose host, literal or DNS-resolved, is private, loopback, link-local, or cloud-metadata. OFF by default: the cloud SSRF screen refuses every such endpoint. Enable ONLY for a trusted private-network deployment (self-hosted MinIO / Ceph on an internal gateway). This flag (or its `[http].allow_private_endpoint` TOML equivalent) is the ONLY way to relax the screen, no environment variable can, so an ambient toggle can never silently turn keyhog into an SSRF proxy for internal services |
+| `--allow-s3-credential-forward` |  |  | Forward ambient AWS credentials to a custom S3 endpoint you trust. Off by default; AWS-owned endpoints do not need this. This flag is intentionally explicit because it can send AWS identity material to a third-party host |
+| `--allow-script-verify` |  |  | Permit detector `script:` verification for trusted detector corpora. Off by default because scripts execute verifier-supplied code with credential-adjacent context. Prints an explicit warning when active |
 | `--autoroute-cache` | `PATH\|off` |  | Override the persistent autoroute calibration cache file. Use an absolute path, or `off` to disable persistence. Config: `[system].autoroute_cache` in `.keyhog.toml`; this flag overrides it. |
 | `--autoroute-calibrate` |  |  | Run this scan as an explicit autoroute calibration probe: benchmark parity-checked backend candidates and persist the fastest-correct decision for each workload bucket. Normal scans never benchmark on cache miss; they use persisted evidence or visibly complete through scalar correctness recovery. An explicit `--backend` is diagnostic only |
 | `--autoroute-gpu` |  |  | Allow autoroute calibration to include GPU candidates for eligible workload buckets. Normal scans still use persisted calibration only |
+| `--azure-container-url` | `URL` |  | Scan an Azure Blob Storage container URL. Include a SAS query string for private containers |
+| `--azure-prefix` | `PREFIX` |  | Optional Azure Blob prefix to limit the scan |
 | `--backend` | `BACKEND` |  | Select persisted autoroute or explicitly force one diagnostic backend. Accepted values are listed below Possible values: `auto`, `gpu-cuda`, `gpu-cuda-region-presence`, `gpu-metal`, `gpu-metal-region-presence`, `gpu-wgpu`, `gpu-wgpu-region-presence`, `simd`, `simd-regex`, `cpu`, `cpu-fallback`. |
 | `--baseline` | `PATH` |  | Suppress findings that match an existing baseline file |
 | `--batch-pipeline` |  |  | Force the coalesced batch scan pipeline instead of the fused filesystem pipeline. This is an explicit calibration/diagnostic control, not an ambient environment switch. Config: `[system].batch_pipeline`; this flag overrides it |
 | `--benchmark` |  |  | Run the built-in backend benchmark corpus and exit |
+| `--binary` |  |  | Scan binary files for hardcoded strings |
+| `--bitbucket-endpoint` | `BITBUCKET_ENDPOINT` | `https://api.bitbucket.org/2.0` | Bitbucket Cloud API endpoint root |
+| `--bitbucket-token` | `APP_PASSWORD` |  | Bitbucket app password for --bitbucket-workspace. Prefer KEYHOG_BITBUCKET_TOKEN so the token is not exposed in the process list |
+| `--bitbucket-username` | `USERNAME` |  | Bitbucket username for --bitbucket-workspace. May be supplied through KEYHOG_BITBUCKET_USERNAME |
+| `--bitbucket-workspace` | `WORKSPACE` |  | Scan all repositories in a Bitbucket Cloud workspace |
 | `--cache-dir` | `DIR` |  | Override the Hyperscan compiled-database cache directory. This is explicit CLI/TOML configuration, not an environment variable: pass an absolute path under your home directory or the per-user keyhog temp cache root. Config: `[system].cache_dir` in `.keyhog.toml`; this flag overrides it. |
 | `--calibration-cache` | `PATH` |  | Explicit per-detector Bayesian calibration cache for confidence scoring. Normal scans are hermetic and ignore any default `keyhog calibrate` cache unless this flag or `[system].calibration_cache` supplies a path. The file must already exist and parse cleanly; damaged or missing explicit caches fail before scanning so score changes are reproducible. |
 | `--config` | `PATH` |  | Load configuration from a specific file path |
@@ -41,6 +52,7 @@ or coverage incomplete.
 | `--deep` |  |  | Deep recovery mode: scans entropy candidates in source files, removes comment confidence penalties, keeps heuristic evidence alongside ML for entropy candidates, sets decode depth 10, and admits one 1 MiB chunk into decode-through. Compatible explicit knobs override this BASE |
 | `-d`, `--detectors` | `DETECTORS` | `detectors` | Detector TOML directory |
 | `--detectors-mode` | `MODE` |  | How an explicitly selected custom corpus participates in the embedded corpus. Omitted preserves the established replace behavior Possible values: `replace`, `overlay`. |
+| `--docker-image` | `IMAGE` |  | Scan a Docker image by unpacking `docker image save` |
 | `--dogfood` |  |  | Emit a structured `--dogfood` JSON trace to stderr after the scan: every credential that was matched but suppressed, with the reason, both example/test/placeholder markers (`kind: example_suppressed`) AND shape/heuristic gates such as UUID-v4, bare-hex digest, base64 blob, dashed serial, or repetitive run (`kind: shape_suppressed`, `reason` names the gate), plus bounded static-recovery expressions rejected as malformed (`kind: static_recovery_rejected`). Detail events are bounded; exact aggregate rejection counts and `detail_events_dropped` remain visible after the bound is reached. Credentials are redacted (prefix only), and recovery rejections contain no source bytes. Useful when keyhog reports zero findings and you want to know whether a match was made and silenced, recovery rejected an expression, or the candidate never reached the engine |
 | `--entropy-bpe-max-bytes-per-token` | `RATIO` |  | BPE "rare-not-random" suppression bound in bytes-per-token (default: 2.2). A surviving entropy/generic candidate whose cl100k_base bytes-per-token is above this is treated as word-like (dotted API paths, prose) and dropped. Lower = more aggressive suppression (higher precision, lower recall); a large value effectively disables the gate |
 | `--entropy-source-files` |  |  | Enable entropy scanning in source code files |
@@ -50,12 +62,48 @@ or coverage incomplete.
 | `--format` | `FORMAT` | `text` | Output format. `json` is a bare findings array for pipelines; prefer `json-envelope` for scan status, coverage gaps, and backend recoveries in one document (KH-1435 / KH-1474) Possible values: `text`, `json`, `json-envelope`, `jsonl`, `jsonl-envelope`, `sarif`, `csv`, `github-annotations`, `gitlab-sast`, `html`, `junit`. |
 | `--fused-batch` | `N` |  | Fused filesystem pipeline chunk batch size |
 | `--fused-depth` | `N` |  | Fused filesystem pipeline channel depth |
+| `--gcs-bucket` | `BUCKET` |  | Scan a Google Cloud Storage bucket via the JSON API |
+| `--gcs-endpoint` | `URL` |  | Optional GCS endpoint override for compatible APIs or tests |
+| `--gcs-prefix` | `PREFIX` |  | Optional GCS object prefix to limit the scan |
+| `--git-blobs` | `GIT_BLOBS` |  | Scan reachable git blobs from repository history (deduplicated by blob ID) |
+| `--git-diff` | `BASE_REF` |  | Scan only changed lines between two git refs (e.g., --git-diff main) |
+| `--git-diff-path` | `GIT_DIFF_PATH` |  | Path to git repository for --git-diff (defaults to current directory) |
+| `--git-history` | `PATH` |  | Scan reachable commits using added lines from each commit patch |
+| `--git-staged` |  |  | Scan exact staged index blobs, never substituted working-tree bytes |
+| `--github-collaboration` | `OWNER/REPO` |  | GitHub repository whose explicitly selected collaboration surfaces are scanned |
+| `--github-discussions` |  |  | Include discussion text and comments from --github-collaboration |
+| `--github-gists` |  |  | Include public gist revisions and comments for the repository owner |
+| `--github-issues` |  |  | Include issue text and comments from --github-collaboration |
+| `--github-org` | `ORG` |  | Scan all repositories in a GitHub organization |
+| `--github-pull-requests` |  |  | Include pull request text, issue comments, and review comments |
+| `--github-token` | `PAT` |  | GitHub personal access token for --github-org or --github-collaboration. Prefer KEYHOG_GITHUB_TOKEN so the token is not exposed in the process list |
+| `--github-wiki` |  |  | Include every readable wiki revision from --github-collaboration |
+| `--gitlab-endpoint` | `GITLAB_ENDPOINT` | `https://gitlab.com` | GitLab API endpoint root, for example https://gitlab.example.com |
+| `--gitlab-group` | `GROUP` |  | Scan all projects in a GitLab group, including subgroups |
+| `--gitlab-token` | `PAT` |  | GitLab personal access token for --gitlab-group. Prefer KEYHOG_GITLAB_TOKEN so the token is not exposed in the process list |
 | `--gpu-batch-input-limit` | `SIZE` |  | GPU batch-input buffer byte budget, e.g. "256MB" or "1GB". Overrides the VRAM-adaptive default (128 MiB–1 GiB by detected VRAM); the value is clamped into that range. Larger buffers scan more bytes per GPU dispatch on big inputs at higher VRAM cost. Config: `gpu_batch_input_limit` in `.keyhog.toml`; this flag overrides it |
 | `--hide-client-safe` |  |  | Drop every `client-safe` finding before reporting. Use this for bug-bounty / exfiltration-impact workflows where keys that are public by design (Sentry DSN, Stripe `pk_*`, Firebase web, Mapbox `pk.`, PostHog project, Google Maps browser, Mixpanel project, Algolia search, Datadog browser RUM) are noise: the vendor *expects* them to ship in client bundles and no attacker gains server-side access from finding one. Default off: client-safe findings still appear in scan output at the `CLIENT-SAFE` tier (below `LOW`) so a misconfigured "publishable" key wired into a server-only detector still surfaces. `--hide-client-safe` is the explicit opt-in to silence them. |
 | `--incremental` |  |  | Incremental scan: skip files whose content hash matches the cached `~/.cache/keyhog/merkle.idx`. After the scan completes, the index is updated with the current file contents. On CI re-runs against a monorepo where 99% of files are unchanged, this gives 10-100x speedup. Pass `--incremental-cache <path>` to override the location |
 | `--incremental-cache` | `PATH` |  | Override the merkle-index cache file location |
+| `--insecure` |  |  | Skip TLS certificate verification for every outbound HTTP request. Needed when scanning through Burp / mitmproxy / corporate-MITM CAs that present self-signed certificates. Off by default. This flag (or its TOML equivalent) is the ONLY way to disable verification: no environment variable can turn it off, so an ambient toggle can't silently expose secrets to a MITM |
+| `--limit-azure-blob-bytes` | `SIZE` |  | Maximum bytes downloaded for one Azure blob |
+| `--limit-binary-decompiled-bytes` | `SIZE` |  | Maximum Ghidra decompiled-output bytes accepted for parsing |
+| `--limit-binary-read-bytes` | `SIZE` |  | Maximum bytes read for binary strings extraction |
+| `--limit-cloud-max-objects` | `N` |  | Maximum objects listed from one S3/GCS/Azure container before truncating |
+| `--limit-docker-image-config-bytes` | `SIZE` |  | Maximum bytes accepted for Docker/OCI image config and manifest JSON |
+| `--limit-docker-tar-entry-bytes` | `SIZE` |  | Maximum bytes allowed for one Docker tar entry |
+| `--limit-docker-tar-total-bytes` | `SIZE` |  | Maximum cumulative bytes allowed while unpacking a Docker/OCI layer tar |
+| `--limit-gcs-object-bytes` | `SIZE` |  | Maximum bytes downloaded for one GCS object |
+| `--limit-git-blob-bytes` | `SIZE` |  | Maximum bytes read from one git blob |
+| `--limit-git-chunks` | `N` |  | Maximum chunk count emitted by a git blob-history scan |
+| `--limit-git-line-bytes` | `SIZE` |  | Maximum bytes buffered for one line of git stdout |
+| `--limit-git-total-bytes` | `SIZE` |  | Maximum aggregate bytes emitted by a git blob-history scan |
+| `--limit-hosted-git-pages` | `N` |  | Maximum hosted-git listing pages or GitHub collaboration API requests |
+| `--limit-s3-object-bytes` | `SIZE` |  | Maximum bytes downloaded for one S3 object |
 | `--limit-stdin-bytes` | `SIZE` |  | Maximum bytes accepted from --stdin before failing closed |
+| `--limit-web-response-bytes` | `SIZE` |  | Maximum HTTP response bytes scanned by --url |
 | `--lockdown` |  |  | Lockdown mode: maximum security at the cost of throughput. Enables every protection in `keyhog_core::apply_protections(true)` (mlock, refuse-on-coredump-leak, refuse-on-disk-cache), forces HTTPS-only verifier, refuses to write any cache to disk, and hard-aborts if any protection fails to take. Use this when keyhog is running inside EnvSeal or otherwise in a security-critical embedding |
+| `--max-commits` | `MAX_COMMITS` |  | Max git commits to traverse |
 | `--max-file-size` | `SIZE` |  | Maximum file size to scan. Files larger than this are listed in the end-of-scan "files skipped: exceeded --max-file-size" summary. Default is 100 MiB, the `FilesystemSource` ceiling. Files above the 1 MiB window size are read in overlapping ~1 MiB windows (so memory stays bounded regardless of file size), up to this cap |
 | `--min-confidence` | `FLOAT` |  | Minimum confidence score (0.0 - 1.0) to report findings (default: 0.40) |
 | `--min-secret-len` | `N` |  | Minimum credential length for entropy-discovery candidates (default: 16). Named detectors keep their own shape-specific length gates |
@@ -75,17 +123,23 @@ or coverage incomplete.
 | `--no-suppress-test-fixtures` |  |  | Opt out of the bundled test-fixture suppression list. By default keyhog suppresses well-known public demo credentials (Stripe's docs example `sk_live_4eC39...`, GitHub's docs example `ghp_aBcD...`, the keyhog test fixtures, etc.) so the report stays focused on real leaks rather than tutorial copies. Pass this flag when you intentionally want those surfaced. Useful for differential benchmarking against gitleaks / trufflehog (which do NOT suppress these), or for auditing the suppression list itself |
 | `--no-unicode-norm` |  |  | Disable Unicode normalization (not recommended) |
 | `--no-verify` |  |  | Disable credential verification, overriding `verify = true` in `.keyhog.toml` |
+| `--oob-server` | `HOST` | `oast.fun` | Interactsh server for OOB verification. Defaults to projectdiscovery's public collector at `oast.fun`. Use a self-hosted server for sensitive scans; the collector sees correlation IDs and the IPs of services that call back, never the credential itself. Only meaningful with `--verify-oob`; clap rejects the flag without it instead of silently ignoring it (the prior behavior gave false confidence that an override had been applied) |
+| `--oob-timeout` | `SECS` | `30` | Per-finding OOB wait timeout in seconds. Detector specs may set their own `timeout_secs`; this value is the global default and the upper bound. Lower = faster scans, higher = catches services with delayed webhooks (e.g., queued mail delivery). Requires `--verify-oob` |
 | `-o`, `--output` | `OUTPUT` |  | Write findings to file |
 | `-p`, `--path` | `PATH` |  | Scan a directory or file |
 | `--per-chunk-timeout-ms` | `MS` |  | Hard deadline per chunk scan in milliseconds. Default unset = no operator deadline; decode still has its internal bomb guard |
-| `--perf-trace` |  |  | Emit low-level scan/GPU phase timing traces to stderr |
+| `--perf-trace` |  |  | Emit higher-overhead per-pattern and backend diagnostic timing traces to stderr |
 | `--precision` |  |  | High-precision mode for mass scanning: minimise false positives at the cost of some recall. Disables entropy discovery and the relaxed keyword bridge, retains ML scoring for remaining candidates, raises the minimum confidence floor to 0.85, and uses decode depth 1. Explicit confidence flags may tighten but cannot lower that floor. Entropy-only knobs conflict because precision mode disables entropy |
-| `--profile` |  |  | Emit hierarchical stage timings, run identity, state transitions, and process resource usage to stderr at scan end |
+| `--profile` |  |  | Emit low-overhead fixed stage timings, run identity, state transitions, and process resource usage to stderr at scan end |
 | `--progress` |  |  | Show progress bar |
+| `--proxy` | `URL` |  | Route outbound HTTP through a proxy (`http://burp:8080`, `socks5://127.0.0.1:9050`, etc.). This flag (or its TOML equivalent) is the ONLY way to set a proxy: no environment variable is consulted, and ambient `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` is ignored, so a stray env proxy can never silently reroute secret-bearing traffic. When unset, no proxy is used. Pass `off` to make that explicit for air-gapped scans |
 | `--quiet` |  |  | Suppress the interactive stderr chrome (banner, live progress ticker, and the "Scan complete" summary). Coverage FAIL/WARN lines and fatal errors are still printed so a quiet scan can never read as clean when it was not. Findings still go to stdout / `--output`. Mutually exclusive with `--progress` |
 | `--reader-threads` | `N` |  | Dedicated filesystem reader threads. Default derives from the scan worker pool |
 | `--regex-dfa-limit` | `SIZE` |  | Per-regex lazy-DFA cache CEILING, e.g. "256KB" or "1MB" (default 1 MiB). Bounds the worst-case per-thread DFA cache for pathological/state-heavy patterns; typical detectors stay well under it, so lowering this does NOT meaningfully cut peak memory (it's a safety ceiling, not a general memory lever). Lowering can force complex regexes to slower NFA simulation; raise it only for unusually large patterns. Config: `regex_dfa_limit` in `.keyhog.toml`; this flag overrides it |
 | `--require-gpu` |  |  | Require a usable GPU stack before scanning and keep GPU execution as a hard contract; unavailable initialization or runtime dispatch exits 12 |
+| `--s3-bucket` | `BUCKET` |  | Scan a public or path-style S3 bucket via ListObjectsV2 |
+| `--s3-endpoint` | `URL` |  | Optional S3 endpoint for S3-compatible APIs |
+| `--s3-prefix` | `PREFIX` |  | Optional S3 object prefix to limit the scan |
 | `--scan-comments` |  |  | Treat credentials inside source-code comments (// … / # … / /* … */ / &lt;!-- … --&gt;) as first-class findings instead of applying the default comment-context confidence penalty. By default keyhog downgrades the confidence of credentials it sees inside a comment because the most common case is an engineer pasting an EXAMPLE token into a doc comment. The drawback is that genuine secrets pasted into a TODO ("rotate this key, Bob") or a debug-trace comment never surface. Pass `--scan-comments` for repos where comments are part of the threat surface: shared snippets directories, leak post-mortems, training corpora, and CTF-style audits. |
 | `-s`, `--severity` | `SEVERITY` |  | Min severity to report: info, client-safe, low, medium, high, critical Possible values: `info`, `client-safe`, `low`, `medium`, `high`, `critical`. |
 | `--show-secrets` |  |  | Show full credentials (default: redacted) |
@@ -93,7 +147,14 @@ or coverage incomplete.
 | `--stdin` |  |  | Scan stdin |
 | `--stream` |  |  | Emit a redacted `[stream]` preview line on stderr for every REPORTED finding (`SEVERITY SERVICE/DETECTOR PATH:LINE redacted`), so a quick human- or CI-scrapeable summary lands on stderr while the full formatted report (text/json/sarif/jsonl) goes to stdout or `--output`. The preview stream is consistent with that report and the exit code: every streamed line corresponds to a finding that survived suppression, the confidence floor / `--min-confidence`, and baseline filtering, it never previews a match the report drops |
 | `--threads` | `N` |  | Number of parallel scanning threads (default: number of CPU cores) |
+| `--timeout` | `TIMEOUT` |  | Per-request HTTP verification timeout in seconds (default: 5). This does not impose a deadline on scanning; use `--per-chunk-timeout-ms` for the scanner's optional chunk deadline |
 | `--update-baseline` | `PATH` |  | Update an existing baseline file with new findings |
+| `--url` | `URL...` |  | Scan JavaScript, source maps, or WASM binaries at URLs for secrets |
+| `--verify` |  |  | Verify discovered credentials via API calls |
+| `--verify-batch` |  |  | Conservative verify mode: serialises live verifications per service (max-concurrent-per-service = 1) on top of the `--verify-rate` cap. Use for repos with lots of legitimate findings (test fixtures, vendored examples) where bursting a provider's auth endpoint would get the scan IP rate-limited or blocked. Implies `--verify` |
+| `--verify-concurrency` | `N` |  | Maximum in-flight verification requests per service (default: 5) |
+| `--verify-oob` |  |  | Enable out-of-band callback verification via an embedded interactsh client. For webhook- and callback-shaped credentials, OOB verification proves the credential is exfil-capable: we mint a per-finding subdomain on the configured collector, embed it in the verification probe, and confirm the service actually called back. Off by default. See docs/src/reference/oob-verification.md for the threat model and self-hosting guidance |
+| `--verify-rate` | `RPS` | `5.0` | Steady-state cap for verification calls *per service*, in requests-per-second. Default 5.0. Drop this to be polite to upstream APIs when scanning a tree with hundreds of legitimate findings (test fixtures, examples); every finding produces a live verify call and most public APIs throttle aggressively. The limiter applies even with `--verify-batch` (which adds per-service serialisation on top) |
 <!-- /keyhog-generated: cli-reference command="scan" -->
 
 Hyperscan database cache location is explicit scan configuration: use
@@ -136,13 +197,24 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 |----------|-------|---------|-------------|
 | `<PATH>` | `PATH...` |  | Path(s) to scan. Pass several to scan multiple roots in one run (`keyhog scan a/ b/ c/`); nested or duplicate roots fold into their covering parent. Positional shorthand for `--path` (single root only) |
 | `--action-receipt` *(hidden)* | `PATH` |  | Write an internal composite-Action receipt bound to the completed report |
+| `--allow-gcs-token-forward` |  |  | Forward the ambient GCS bearer token to a custom GCS endpoint you trust. Off by default; googleapis.com endpoints do not need this. This flag is intentionally explicit because it can send a bearer token to a third-party host |
+| `--allow-private-cloud-endpoint` |  |  | Allow cloud sources (`--s3-endpoint`, GCS / Azure container URLs) to reach an endpoint whose host, literal or DNS-resolved, is private, loopback, link-local, or cloud-metadata. OFF by default: the cloud SSRF screen refuses every such endpoint. Enable ONLY for a trusted private-network deployment (self-hosted MinIO / Ceph on an internal gateway). This flag (or its `[http].allow_private_endpoint` TOML equivalent) is the ONLY way to relax the screen, no environment variable can, so an ambient toggle can never silently turn keyhog into an SSRF proxy for internal services |
+| `--allow-s3-credential-forward` |  |  | Forward ambient AWS credentials to a custom S3 endpoint you trust. Off by default; AWS-owned endpoints do not need this. This flag is intentionally explicit because it can send AWS identity material to a third-party host |
+| `--allow-script-verify` |  |  | Permit detector `script:` verification for trusted detector corpora. Off by default because scripts execute verifier-supplied code with credential-adjacent context. Prints an explicit warning when active |
 | `--autoroute-cache` | `PATH\|off` |  | Override the persistent autoroute calibration cache file. Use an absolute path, or `off` to disable persistence. Config: `[system].autoroute_cache` in `.keyhog.toml`; this flag overrides it. |
 | `--autoroute-calibrate` |  |  | Run this scan as an explicit autoroute calibration probe: benchmark parity-checked backend candidates and persist the fastest-correct decision for each workload bucket. Normal scans never benchmark on cache miss; they use persisted evidence or visibly complete through scalar correctness recovery. An explicit `--backend` is diagnostic only |
 | `--autoroute-gpu` |  |  | Allow autoroute calibration to include GPU candidates for eligible workload buckets. Normal scans still use persisted calibration only |
+| `--azure-container-url` | `URL` |  | Scan an Azure Blob Storage container URL. Include a SAS query string for private containers |
+| `--azure-prefix` | `PREFIX` |  | Optional Azure Blob prefix to limit the scan |
 | `--backend` | `BACKEND` |  | Select persisted autoroute or explicitly force one diagnostic backend. Accepted values are listed below Possible values: `auto`, `gpu-cuda`, `gpu-cuda-region-presence`, `gpu-metal`, `gpu-metal-region-presence`, `gpu-wgpu`, `gpu-wgpu-region-presence`, `simd`, `simd-regex`, `cpu`, `cpu-fallback`. |
 | `--baseline` | `PATH` |  | Suppress findings that match an existing baseline file |
 | `--batch-pipeline` |  |  | Force the coalesced batch scan pipeline instead of the fused filesystem pipeline. This is an explicit calibration/diagnostic control, not an ambient environment switch. Config: `[system].batch_pipeline`; this flag overrides it |
 | `--benchmark` |  |  | Run the built-in backend benchmark corpus and exit |
+| `--binary` |  |  | Scan binary files for hardcoded strings |
+| `--bitbucket-endpoint` | `BITBUCKET_ENDPOINT` | `https://api.bitbucket.org/2.0` | Bitbucket Cloud API endpoint root |
+| `--bitbucket-token` | `APP_PASSWORD` |  | Bitbucket app password for --bitbucket-workspace. Prefer KEYHOG_BITBUCKET_TOKEN so the token is not exposed in the process list |
+| `--bitbucket-username` | `USERNAME` |  | Bitbucket username for --bitbucket-workspace. May be supplied through KEYHOG_BITBUCKET_USERNAME |
+| `--bitbucket-workspace` | `WORKSPACE` |  | Scan all repositories in a Bitbucket Cloud workspace |
 | `--cache-dir` | `DIR` |  | Override the Hyperscan compiled-database cache directory. This is explicit CLI/TOML configuration, not an environment variable: pass an absolute path under your home directory or the per-user keyhog temp cache root. Config: `[system].cache_dir` in `.keyhog.toml`; this flag overrides it. |
 | `--calibration-cache` | `PATH` |  | Explicit per-detector Bayesian calibration cache for confidence scoring. Normal scans are hermetic and ignore any default `keyhog calibrate` cache unless this flag or `[system].calibration_cache` supplies a path. The file must already exist and parse cleanly; damaged or missing explicit caches fail before scanning so score changes are reproducible. |
 | `--config` | `PATH` |  | Load configuration from a specific file path |
@@ -155,6 +227,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--deep` |  |  | Deep recovery mode: scans entropy candidates in source files, removes comment confidence penalties, keeps heuristic evidence alongside ML for entropy candidates, sets decode depth 10, and admits one 1 MiB chunk into decode-through. Compatible explicit knobs override this BASE |
 | `-d`, `--detectors` | `DETECTORS` | `detectors` | Detector TOML directory |
 | `--detectors-mode` | `MODE` |  | How an explicitly selected custom corpus participates in the embedded corpus. Omitted preserves the established replace behavior Possible values: `replace`, `overlay`. |
+| `--docker-image` | `IMAGE` |  | Scan a Docker image by unpacking `docker image save` |
 | `--dogfood` |  |  | Emit a structured `--dogfood` JSON trace to stderr after the scan: every credential that was matched but suppressed, with the reason, both example/test/placeholder markers (`kind: example_suppressed`) AND shape/heuristic gates such as UUID-v4, bare-hex digest, base64 blob, dashed serial, or repetitive run (`kind: shape_suppressed`, `reason` names the gate), plus bounded static-recovery expressions rejected as malformed (`kind: static_recovery_rejected`). Detail events are bounded; exact aggregate rejection counts and `detail_events_dropped` remain visible after the bound is reached. Credentials are redacted (prefix only), and recovery rejections contain no source bytes. Useful when keyhog reports zero findings and you want to know whether a match was made and silenced, recovery rejected an expression, or the candidate never reached the engine |
 | `--effective` *(required)* |  |  | Print the resolved scan configuration and exit without scanning. Accepts the same config-affecting flags as `keyhog scan`, so operators can prove the compiled defaults, TOML config, and CLI overrides that would reach the scanner for the same scan invocation. |
 | `--entropy-bpe-max-bytes-per-token` | `RATIO` |  | BPE "rare-not-random" suppression bound in bytes-per-token (default: 2.2). A surviving entropy/generic candidate whose cl100k_base bytes-per-token is above this is treated as word-like (dotted API paths, prose) and dropped. Lower = more aggressive suppression (higher precision, lower recall); a large value effectively disables the gate |
@@ -165,12 +238,48 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--format` | `FORMAT` | `text` | Output format. `json` is a bare findings array for pipelines; prefer `json-envelope` for scan status, coverage gaps, and backend recoveries in one document (KH-1435 / KH-1474) Possible values: `text`, `json`, `json-envelope`, `jsonl`, `jsonl-envelope`, `sarif`, `csv`, `github-annotations`, `gitlab-sast`, `html`, `junit`. |
 | `--fused-batch` | `N` |  | Fused filesystem pipeline chunk batch size |
 | `--fused-depth` | `N` |  | Fused filesystem pipeline channel depth |
+| `--gcs-bucket` | `BUCKET` |  | Scan a Google Cloud Storage bucket via the JSON API |
+| `--gcs-endpoint` | `URL` |  | Optional GCS endpoint override for compatible APIs or tests |
+| `--gcs-prefix` | `PREFIX` |  | Optional GCS object prefix to limit the scan |
+| `--git-blobs` | `GIT_BLOBS` |  | Scan reachable git blobs from repository history (deduplicated by blob ID) |
+| `--git-diff` | `BASE_REF` |  | Scan only changed lines between two git refs (e.g., --git-diff main) |
+| `--git-diff-path` | `GIT_DIFF_PATH` |  | Path to git repository for --git-diff (defaults to current directory) |
+| `--git-history` | `PATH` |  | Scan reachable commits using added lines from each commit patch |
+| `--git-staged` |  |  | Scan exact staged index blobs, never substituted working-tree bytes |
+| `--github-collaboration` | `OWNER/REPO` |  | GitHub repository whose explicitly selected collaboration surfaces are scanned |
+| `--github-discussions` |  |  | Include discussion text and comments from --github-collaboration |
+| `--github-gists` |  |  | Include public gist revisions and comments for the repository owner |
+| `--github-issues` |  |  | Include issue text and comments from --github-collaboration |
+| `--github-org` | `ORG` |  | Scan all repositories in a GitHub organization |
+| `--github-pull-requests` |  |  | Include pull request text, issue comments, and review comments |
+| `--github-token` | `PAT` |  | GitHub personal access token for --github-org or --github-collaboration. Prefer KEYHOG_GITHUB_TOKEN so the token is not exposed in the process list |
+| `--github-wiki` |  |  | Include every readable wiki revision from --github-collaboration |
+| `--gitlab-endpoint` | `GITLAB_ENDPOINT` | `https://gitlab.com` | GitLab API endpoint root, for example https://gitlab.example.com |
+| `--gitlab-group` | `GROUP` |  | Scan all projects in a GitLab group, including subgroups |
+| `--gitlab-token` | `PAT` |  | GitLab personal access token for --gitlab-group. Prefer KEYHOG_GITLAB_TOKEN so the token is not exposed in the process list |
 | `--gpu-batch-input-limit` | `SIZE` |  | GPU batch-input buffer byte budget, e.g. "256MB" or "1GB". Overrides the VRAM-adaptive default (128 MiB–1 GiB by detected VRAM); the value is clamped into that range. Larger buffers scan more bytes per GPU dispatch on big inputs at higher VRAM cost. Config: `gpu_batch_input_limit` in `.keyhog.toml`; this flag overrides it |
 | `--hide-client-safe` |  |  | Drop every `client-safe` finding before reporting. Use this for bug-bounty / exfiltration-impact workflows where keys that are public by design (Sentry DSN, Stripe `pk_*`, Firebase web, Mapbox `pk.`, PostHog project, Google Maps browser, Mixpanel project, Algolia search, Datadog browser RUM) are noise: the vendor *expects* them to ship in client bundles and no attacker gains server-side access from finding one. Default off: client-safe findings still appear in scan output at the `CLIENT-SAFE` tier (below `LOW`) so a misconfigured "publishable" key wired into a server-only detector still surfaces. `--hide-client-safe` is the explicit opt-in to silence them. |
 | `--incremental` |  |  | Incremental scan: skip files whose content hash matches the cached `~/.cache/keyhog/merkle.idx`. After the scan completes, the index is updated with the current file contents. On CI re-runs against a monorepo where 99% of files are unchanged, this gives 10-100x speedup. Pass `--incremental-cache <path>` to override the location |
 | `--incremental-cache` | `PATH` |  | Override the merkle-index cache file location |
+| `--insecure` |  |  | Skip TLS certificate verification for every outbound HTTP request. Needed when scanning through Burp / mitmproxy / corporate-MITM CAs that present self-signed certificates. Off by default. This flag (or its TOML equivalent) is the ONLY way to disable verification: no environment variable can turn it off, so an ambient toggle can't silently expose secrets to a MITM |
+| `--limit-azure-blob-bytes` | `SIZE` |  | Maximum bytes downloaded for one Azure blob |
+| `--limit-binary-decompiled-bytes` | `SIZE` |  | Maximum Ghidra decompiled-output bytes accepted for parsing |
+| `--limit-binary-read-bytes` | `SIZE` |  | Maximum bytes read for binary strings extraction |
+| `--limit-cloud-max-objects` | `N` |  | Maximum objects listed from one S3/GCS/Azure container before truncating |
+| `--limit-docker-image-config-bytes` | `SIZE` |  | Maximum bytes accepted for Docker/OCI image config and manifest JSON |
+| `--limit-docker-tar-entry-bytes` | `SIZE` |  | Maximum bytes allowed for one Docker tar entry |
+| `--limit-docker-tar-total-bytes` | `SIZE` |  | Maximum cumulative bytes allowed while unpacking a Docker/OCI layer tar |
+| `--limit-gcs-object-bytes` | `SIZE` |  | Maximum bytes downloaded for one GCS object |
+| `--limit-git-blob-bytes` | `SIZE` |  | Maximum bytes read from one git blob |
+| `--limit-git-chunks` | `N` |  | Maximum chunk count emitted by a git blob-history scan |
+| `--limit-git-line-bytes` | `SIZE` |  | Maximum bytes buffered for one line of git stdout |
+| `--limit-git-total-bytes` | `SIZE` |  | Maximum aggregate bytes emitted by a git blob-history scan |
+| `--limit-hosted-git-pages` | `N` |  | Maximum hosted-git listing pages or GitHub collaboration API requests |
+| `--limit-s3-object-bytes` | `SIZE` |  | Maximum bytes downloaded for one S3 object |
 | `--limit-stdin-bytes` | `SIZE` |  | Maximum bytes accepted from --stdin before failing closed |
+| `--limit-web-response-bytes` | `SIZE` |  | Maximum HTTP response bytes scanned by --url |
 | `--lockdown` |  |  | Lockdown mode: maximum security at the cost of throughput. Enables every protection in `keyhog_core::apply_protections(true)` (mlock, refuse-on-coredump-leak, refuse-on-disk-cache), forces HTTPS-only verifier, refuses to write any cache to disk, and hard-aborts if any protection fails to take. Use this when keyhog is running inside EnvSeal or otherwise in a security-critical embedding |
+| `--max-commits` | `MAX_COMMITS` |  | Max git commits to traverse |
 | `--max-file-size` | `SIZE` |  | Maximum file size to scan. Files larger than this are listed in the end-of-scan "files skipped: exceeded --max-file-size" summary. Default is 100 MiB, the `FilesystemSource` ceiling. Files above the 1 MiB window size are read in overlapping ~1 MiB windows (so memory stays bounded regardless of file size), up to this cap |
 | `--min-confidence` | `FLOAT` |  | Minimum confidence score (0.0 - 1.0) to report findings (default: 0.40) |
 | `--min-secret-len` | `N` |  | Minimum credential length for entropy-discovery candidates (default: 16). Named detectors keep their own shape-specific length gates |
@@ -190,17 +299,23 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--no-suppress-test-fixtures` |  |  | Opt out of the bundled test-fixture suppression list. By default keyhog suppresses well-known public demo credentials (Stripe's docs example `sk_live_4eC39...`, GitHub's docs example `ghp_aBcD...`, the keyhog test fixtures, etc.) so the report stays focused on real leaks rather than tutorial copies. Pass this flag when you intentionally want those surfaced. Useful for differential benchmarking against gitleaks / trufflehog (which do NOT suppress these), or for auditing the suppression list itself |
 | `--no-unicode-norm` |  |  | Disable Unicode normalization (not recommended) |
 | `--no-verify` |  |  | Disable credential verification, overriding `verify = true` in `.keyhog.toml` |
+| `--oob-server` | `HOST` | `oast.fun` | Interactsh server for OOB verification. Defaults to projectdiscovery's public collector at `oast.fun`. Use a self-hosted server for sensitive scans; the collector sees correlation IDs and the IPs of services that call back, never the credential itself. Only meaningful with `--verify-oob`; clap rejects the flag without it instead of silently ignoring it (the prior behavior gave false confidence that an override had been applied) |
+| `--oob-timeout` | `SECS` | `30` | Per-finding OOB wait timeout in seconds. Detector specs may set their own `timeout_secs`; this value is the global default and the upper bound. Lower = faster scans, higher = catches services with delayed webhooks (e.g., queued mail delivery). Requires `--verify-oob` |
 | `-o`, `--output` | `OUTPUT` |  | Write findings to file |
 | `-p`, `--path` | `PATH` |  | Scan a directory or file |
 | `--per-chunk-timeout-ms` | `MS` |  | Hard deadline per chunk scan in milliseconds. Default unset = no operator deadline; decode still has its internal bomb guard |
-| `--perf-trace` |  |  | Emit low-level scan/GPU phase timing traces to stderr |
+| `--perf-trace` |  |  | Emit higher-overhead per-pattern and backend diagnostic timing traces to stderr |
 | `--precision` |  |  | High-precision mode for mass scanning: minimise false positives at the cost of some recall. Disables entropy discovery and the relaxed keyword bridge, retains ML scoring for remaining candidates, raises the minimum confidence floor to 0.85, and uses decode depth 1. Explicit confidence flags may tighten but cannot lower that floor. Entropy-only knobs conflict because precision mode disables entropy |
-| `--profile` |  |  | Emit hierarchical stage timings, run identity, state transitions, and process resource usage to stderr at scan end |
+| `--profile` |  |  | Emit low-overhead fixed stage timings, run identity, state transitions, and process resource usage to stderr at scan end |
 | `--progress` |  |  | Show progress bar |
+| `--proxy` | `URL` |  | Route outbound HTTP through a proxy (`http://burp:8080`, `socks5://127.0.0.1:9050`, etc.). This flag (or its TOML equivalent) is the ONLY way to set a proxy: no environment variable is consulted, and ambient `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` is ignored, so a stray env proxy can never silently reroute secret-bearing traffic. When unset, no proxy is used. Pass `off` to make that explicit for air-gapped scans |
 | `--quiet` |  |  | Suppress the interactive stderr chrome (banner, live progress ticker, and the "Scan complete" summary). Coverage FAIL/WARN lines and fatal errors are still printed so a quiet scan can never read as clean when it was not. Findings still go to stdout / `--output`. Mutually exclusive with `--progress` |
 | `--reader-threads` | `N` |  | Dedicated filesystem reader threads. Default derives from the scan worker pool |
 | `--regex-dfa-limit` | `SIZE` |  | Per-regex lazy-DFA cache CEILING, e.g. "256KB" or "1MB" (default 1 MiB). Bounds the worst-case per-thread DFA cache for pathological/state-heavy patterns; typical detectors stay well under it, so lowering this does NOT meaningfully cut peak memory (it's a safety ceiling, not a general memory lever). Lowering can force complex regexes to slower NFA simulation; raise it only for unusually large patterns. Config: `regex_dfa_limit` in `.keyhog.toml`; this flag overrides it |
 | `--require-gpu` |  |  | Require a usable GPU stack before scanning and keep GPU execution as a hard contract; unavailable initialization or runtime dispatch exits 12 |
+| `--s3-bucket` | `BUCKET` |  | Scan a public or path-style S3 bucket via ListObjectsV2 |
+| `--s3-endpoint` | `URL` |  | Optional S3 endpoint for S3-compatible APIs |
+| `--s3-prefix` | `PREFIX` |  | Optional S3 object prefix to limit the scan |
 | `--scan-comments` |  |  | Treat credentials inside source-code comments (// … / # … / /* … */ / &lt;!-- … --&gt;) as first-class findings instead of applying the default comment-context confidence penalty. By default keyhog downgrades the confidence of credentials it sees inside a comment because the most common case is an engineer pasting an EXAMPLE token into a doc comment. The drawback is that genuine secrets pasted into a TODO ("rotate this key, Bob") or a debug-trace comment never surface. Pass `--scan-comments` for repos where comments are part of the threat surface: shared snippets directories, leak post-mortems, training corpora, and CTF-style audits. |
 | `-s`, `--severity` | `SEVERITY` |  | Min severity to report: info, client-safe, low, medium, high, critical Possible values: `info`, `client-safe`, `low`, `medium`, `high`, `critical`. |
 | `--show-secrets` |  |  | Show full credentials (default: redacted) |
@@ -208,7 +323,14 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--stdin` |  |  | Scan stdin |
 | `--stream` |  |  | Emit a redacted `[stream]` preview line on stderr for every REPORTED finding (`SEVERITY SERVICE/DETECTOR PATH:LINE redacted`), so a quick human- or CI-scrapeable summary lands on stderr while the full formatted report (text/json/sarif/jsonl) goes to stdout or `--output`. The preview stream is consistent with that report and the exit code: every streamed line corresponds to a finding that survived suppression, the confidence floor / `--min-confidence`, and baseline filtering, it never previews a match the report drops |
 | `--threads` | `N` |  | Number of parallel scanning threads (default: number of CPU cores) |
+| `--timeout` | `TIMEOUT` |  | Per-request HTTP verification timeout in seconds (default: 5). This does not impose a deadline on scanning; use `--per-chunk-timeout-ms` for the scanner's optional chunk deadline |
 | `--update-baseline` | `PATH` |  | Update an existing baseline file with new findings |
+| `--url` | `URL...` |  | Scan JavaScript, source maps, or WASM binaries at URLs for secrets |
+| `--verify` |  |  | Verify discovered credentials via API calls |
+| `--verify-batch` |  |  | Conservative verify mode: serialises live verifications per service (max-concurrent-per-service = 1) on top of the `--verify-rate` cap. Use for repos with lots of legitimate findings (test fixtures, vendored examples) where bursting a provider's auth endpoint would get the scan IP rate-limited or blocked. Implies `--verify` |
+| `--verify-concurrency` | `N` |  | Maximum in-flight verification requests per service (default: 5) |
+| `--verify-oob` |  |  | Enable out-of-band callback verification via an embedded interactsh client. For webhook- and callback-shaped credentials, OOB verification proves the credential is exfil-capable: we mint a per-finding subdomain on the configured collector, embed it in the verification probe, and confirm the service actually called back. Off by default. See docs/src/reference/oob-verification.md for the threat model and self-hosting guidance |
+| `--verify-rate` | `RPS` | `5.0` | Steady-state cap for verification calls *per service*, in requests-per-second. Default 5.0. Drop this to be polite to upstream APIs when scanning a tree with hundreds of legitimate findings (test fixtures, examples); every finding produces a live verify call and most public APIs throttle aggressively. The limiter applies even with `--verify-batch` (which adds per-service serialisation on top) |
 <!-- /keyhog-generated: cli-reference command="config" -->
 
 ## `keyhog detectors`

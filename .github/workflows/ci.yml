@@ -189,10 +189,6 @@ jobs:
           done
       - name: sources all_tests
         run: cargo test -p keyhog-sources --test all_tests --profile release-fast
-      - name: sources binary backend (all_tests)
-        run: cargo test -p keyhog-sources --test all_tests --features binary --profile release-fast
-      - name: sources opt-in backends (inline unit tests)
-        run: cargo test -p keyhog-sources --lib --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast
       - name: sources opt-in backends (all standalone targets, serial)
         run: cargo test -p keyhog-sources --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast -- --test-threads=1
 

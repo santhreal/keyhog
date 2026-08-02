@@ -117,7 +117,9 @@ fn scan_cell(
     backend: ScanBackend,
 ) -> Vec<Vec<RawMatch>> {
     scanner.clear_fragment_cache();
-    let mut results = scanner.scan_coalesced_with_backend(chunks, backend);
+    let mut results = scanner
+        .scan_coalesced_with_backend(chunks, backend)
+        .expect("benchmark coalesced scan succeeds");
     canonicalize_results(&mut results);
     results
 }
@@ -176,7 +178,8 @@ fn bench_size_pattern_grid(c: &mut Criterion) {
                                 scanner.clear_fragment_cache();
                                 let started = Instant::now();
                                 let mut matches = scanner
-                                    .scan_coalesced_with_backend(black_box(&chunks), backend);
+                                    .scan_coalesced_with_backend(black_box(&chunks), backend)
+                                    .expect("benchmark coalesced scan succeeds");
                                 elapsed += started.elapsed();
                                 canonicalize_results(&mut matches);
                                 assert_eq!(

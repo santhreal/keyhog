@@ -1,8 +1,5 @@
 use super::phase2::Phase2AlwaysActiveGpuEvidence;
-use super::windowed_support::window_ranges;
-use super::windowed_support::{
-    next_window_offset, record_window_match, window_chunk, window_end_offset,
-};
+use super::windowed_support::{record_window_match, window_chunk, window_ranges};
 use super::*;
 use std::collections::{HashSet, VecDeque};
 
@@ -14,33 +11,44 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
+        use rayon::prelude::*;
+
         let chunk_text = &chunk.data;
         if reject_oversized_window_chunk(chunk, chunk_text) {
             return Ok(Vec::new());
         }
+        let line_offsets = crate::compute_line_offsets(chunk_text);
+        let ranges = window_ranges(chunk_text, MAX_SCAN_CHUNK_BYTES, WINDOW_OVERLAP_BYTES);
+        let telemetry = crate::telemetry::capture_scan_telemetry();
+        let recovery_receipts = crate::gpu::capture_recovery_receipts();
+        let window_matches: crate::error::Result<Vec<(usize, usize, Vec<RawMatch>)>> = ranges
+            .par_iter()
+            .map(|&(offset, end)| {
+                crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
+                    crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
+                        let window_len = end - offset;
+                        if crate::deadline::expired(deadline) {
+                            return Ok((offset, window_len, Vec::new()));
+                        }
+                        let window_chunk = window_chunk(chunk, offset, end);
+                        self.scan_inner(&window_chunk, backend, deadline, route)
+                            .map(|matches| (offset, window_len, matches))
+                    })
+                })
+            })
+            .collect();
+
         let mut all_matches = Vec::with_capacity(estimate_window_match_capacity(chunk_text.len()));
         let mut seen = HashSet::new();
         let mut seen_order = VecDeque::new();
-        let mut offset = 0usize;
-
-        // Compute the chunk's line-start offsets ONCE up front. Per-match line
-        // attribution then binary-searches this table (O(log L)) instead of
-        // re-counting newlines from the buffer start for every match.
-        let line_offsets = crate::compute_line_offsets(chunk_text);
-
-        while offset < chunk_text.len() {
-            if crate::deadline::expired(deadline) {
-                break;
-            }
-            let end = window_end_offset(chunk_text, offset, MAX_SCAN_CHUNK_BYTES);
-            let window_chunk = window_chunk(chunk, offset, end);
-            for mut raw_match in self.scan_inner(&window_chunk, backend, deadline, route)? {
+        for (offset, window_len, matches) in window_matches? {
+            for mut raw_match in matches {
                 if record_window_match(
                     &line_offsets,
                     chunk.metadata.base_offset,
                     chunk.metadata.base_line,
                     offset,
-                    end - offset,
+                    window_len,
                     &mut raw_match,
                     &mut seen,
                     &mut seen_order,
@@ -48,12 +56,7 @@ impl CompiledScanner {
                     all_matches.push(raw_match);
                 }
             }
-            if end >= chunk_text.len() {
-                break;
-            }
-            offset = next_window_offset(chunk_text, end, WINDOW_OVERLAP_BYTES);
         }
-
         Ok(all_matches)
     }
 

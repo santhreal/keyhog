@@ -553,11 +553,11 @@ pub struct ScanArgs {
     #[arg(long)]
     pub stream: bool,
 
-    /// Emit hierarchical stage timings, run identity, state transitions, and process resource usage to stderr at scan end.
+    /// Emit low-overhead fixed stage timings, run identity, state transitions, and process resource usage to stderr at scan end.
     #[arg(long)]
     pub profile: bool,
 
-    /// Emit low-level scan/GPU phase timing traces to stderr.
+    /// Emit higher-overhead per-pattern and backend diagnostic timing traces to stderr.
     #[arg(long)]
     pub perf_trace: bool,
 

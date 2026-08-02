@@ -405,6 +405,7 @@ impl ScanOrchestrator {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::BackendDispatch);
             self.scan_sources(sources, show_progress, merkle, incremental_cache_path)?
         };
+        operator_profile.transition(keyhog_profile::RunState::Resolving);
         let filtered = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::Suppression);
             self.filter_and_resolve(all_matches, &allowlist)?

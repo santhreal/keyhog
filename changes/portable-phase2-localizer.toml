@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "Localize plain phase-two patterns by default on portable and explicit CPU scans, avoiding full portable marking-set compilation when the shared anchor index owns candidate extraction."
+crates = ["scanner"]

@@ -28,20 +28,32 @@ fn scanner() -> CompiledScanner {
     CompiledScanner::compile(vec![detector]).expect("compile portable-window detector")
 }
 
-fn scan(data: String) -> Vec<keyhog_core::RawMatch> {
-    let chunk = Chunk {
+fn chunk(data: String) -> Chunk {
+    Chunk {
         data: data.into(),
         metadata: ChunkMetadata {
             path: Some("portable-window.txt".into()),
             source_type: "portable-window-contract".into(),
             ..ChunkMetadata::default()
         },
-    };
+    }
+}
+
+fn scan(data: String) -> Vec<keyhog_core::RawMatch> {
     scanner()
-        .scan_coalesced(&[chunk])
+        .scan_coalesced(&[chunk(data)])
         .expect("portable coalesced scan succeeds")
         .into_iter()
         .flatten()
+        .filter(|finding| finding.detector_id.as_ref() == "portable-window-contract")
+        .collect()
+}
+
+fn scan_direct(data: String) -> Vec<keyhog_core::RawMatch> {
+    scanner()
+        .scan(&chunk(data))
+        .expect("direct portable scan succeeds")
+        .into_iter()
         .filter(|finding| finding.detector_id.as_ref() == "portable-window-contract")
         .collect()
 }
@@ -103,4 +115,36 @@ fn secrets_across_windows_preserve_order_and_offsets() {
 fn oversized_near_matches_remain_silent() {
     let data = "PORTABLE_SECREX_A1B2C3D4E5F6G7H8\n".repeat((WINDOW_BYTES / 34) + 128);
     assert!(scan(data).is_empty());
+}
+
+/// Direct scans must merge parallel window results in source order while deduplicating a credential that crosses a window seam.
+#[test]
+fn direct_parallel_windows_preserve_order_offsets_and_deduplication() {
+    let first_offset = WINDOW_BYTES - 8;
+    let second_offset = 2 * WINDOW_BYTES + 173;
+    let mut data = "x".repeat(first_offset);
+    data.push_str(SECRET_A);
+    data.push_str(&"x".repeat(second_offset - first_offset - SECRET_A.len()));
+    data.push_str(SECRET_B);
+
+    let findings = scan_direct(data);
+    let actual = findings
+        .iter()
+        .map(|finding| (finding.location.offset, finding.credential.as_ref()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual,
+        [(first_offset, SECRET_A), (second_offset, SECRET_B)]
+    );
+    assert_eq!(
+        findings[0].location.file_path.as_deref(),
+        Some("portable-window.txt")
+    );
+}
+
+/// Parallel direct windows must not turn repeated cross-seam near matches into findings.
+#[test]
+fn direct_parallel_windows_keep_hostile_near_matches_silent() {
+    let data = "PORTABLE_SECREX_A1B2C3D4E5F6G7H8\n".repeat((2 * WINDOW_BYTES / 34) + 128);
+    assert!(scan_direct(data).is_empty());
 }

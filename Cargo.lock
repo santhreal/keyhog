@@ -2852,6 +2852,7 @@ name = "keyhog-profile"
 version = "0.5.49"
 dependencies = [
  "criterion",
+ "libc",
  "serde",
  "serde_json",
  "sysinfo",

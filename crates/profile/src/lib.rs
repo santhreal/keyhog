@@ -10,6 +10,7 @@ use std::cell::Cell;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(not(target_os = "linux"))]
 use sysinfo::{ProcessesToUpdate, System};
 
 /// Stable wire schema for persisted profiling records.
@@ -40,11 +41,16 @@ pub enum Stage {
     Suppression,
     LiveVerification,
     Reporting,
+    SourceQueueWait,
+    IncrementalLookup,
+    BackendSelect,
+    ResultMerge,
+    ScannerQueueWait,
 }
 
 impl Stage {
     /// Every stage in stable wire order.
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 25] = [
         Self::SourceAcquire,
         Self::SourceWalk,
         Self::SourceRead,
@@ -65,6 +71,11 @@ impl Stage {
         Self::Suppression,
         Self::LiveVerification,
         Self::Reporting,
+        Self::SourceQueueWait,
+        Self::IncrementalLookup,
+        Self::BackendSelect,
+        Self::ResultMerge,
+        Self::ScannerQueueWait,
     ];
 
     #[inline]
@@ -95,20 +106,27 @@ impl Stage {
             Self::Suppression => "suppression",
             Self::LiveVerification => "live-verification",
             Self::Reporting => "reporting",
+            Self::SourceQueueWait => "source-queue-wait",
+            Self::IncrementalLookup => "incremental-lookup",
+            Self::BackendSelect => "backend-select",
+            Self::ResultMerge => "result-merge",
+            Self::ScannerQueueWait => "scanner-queue-wait",
         }
     }
 }
 
 const STAGE_COUNT: usize = Stage::ALL.len();
-const ZERO_COUNTERS: [AtomicU64; STAGE_COUNT] = [const { AtomicU64::new(0) }; STAGE_COUNT];
+const fn zero_counters() -> [AtomicU64; STAGE_COUNT] {
+    [const { AtomicU64::new(0) }; STAGE_COUNT]
+}
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static SESSION_ACTIVE: AtomicBool = AtomicBool::new(false);
-static ELAPSED_NS: [AtomicU64; STAGE_COUNT] = ZERO_COUNTERS;
-static CALLS: [AtomicU64; STAGE_COUNT] = ZERO_COUNTERS;
-static ATTRIBUTED_NS: [AtomicU64; STAGE_COUNT] = ZERO_COUNTERS;
-static SESSION_ELAPSED_NS: [AtomicU64; STAGE_COUNT] = ZERO_COUNTERS;
-static SESSION_CALLS: [AtomicU64; STAGE_COUNT] = ZERO_COUNTERS;
-static SESSION_ATTRIBUTED_NS: [AtomicU64; STAGE_COUNT] = ZERO_COUNTERS;
+static ELAPSED_NS: [AtomicU64; STAGE_COUNT] = zero_counters();
+static CALLS: [AtomicU64; STAGE_COUNT] = zero_counters();
+static ATTRIBUTED_NS: [AtomicU64; STAGE_COUNT] = zero_counters();
+static SESSION_ELAPSED_NS: [AtomicU64; STAGE_COUNT] = zero_counters();
+static SESSION_CALLS: [AtomicU64; STAGE_COUNT] = zero_counters();
+static SESSION_ATTRIBUTED_NS: [AtomicU64; STAGE_COUNT] = zero_counters();
 static INPUT_BYTES: AtomicU64 = AtomicU64::new(0);
 static INPUT_UNITS: AtomicU64 = AtomicU64::new(0);
 static SESSION_INPUT_BYTES: AtomicU64 = AtomicU64::new(0);
@@ -316,6 +334,7 @@ pub enum RunState {
     Created,
     Acquiring,
     Scanning,
+    Resolving,
     Verifying,
     Reporting,
     Completed,
@@ -397,6 +416,55 @@ pub struct ResourceSnapshot {
     pub thread_count: Option<u64>,
 }
 
+/// One completed macro state with its wall time and boundary resource deltas.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct StateMeasurement {
+    pub state: RunState,
+    pub elapsed_ns: u64,
+    pub cpu_time_ms: Option<u64>,
+    pub aggregate_cpu_milli_percent: Option<u64>,
+    pub resident_start_bytes: Option<u64>,
+    pub resident_end_bytes: Option<u64>,
+    pub threads_start: Option<u64>,
+    pub threads_end: Option<u64>,
+}
+
+#[cfg(target_os = "linux")]
+fn process_resources() -> ResourceSnapshot {
+    fn status_value(status: &str, field: &str, scale: u64) -> Option<u64> {
+        status.lines().find_map(|line| {
+            let value = line.strip_prefix(field)?.split_whitespace().next()?;
+            value.parse::<u64>().ok()?.checked_mul(scale)
+        })
+    }
+
+    fn cpu_time_ms() -> Option<u64> {
+        let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
+        let command_end = stat.rfind(')')?;
+        let mut fields = stat.get(command_end + 2..)?.split_whitespace();
+        let user_ticks = fields.nth(11)?.parse::<u64>().ok()?;
+        let system_ticks = fields.next()?.parse::<u64>().ok()?;
+        // SAFETY: sysconf reads a process constant and receives no pointer.
+        let ticks_per_second = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+        if ticks_per_second <= 0 {
+            return None;
+        }
+        let milliseconds =
+            (u128::from(user_ticks) + u128::from(system_ticks)) * 1_000 / ticks_per_second as u128;
+        u64::try_from(milliseconds).ok()
+    }
+
+    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+    let cpu_time_ms = cpu_time_ms();
+    ResourceSnapshot {
+        cpu_time_ms,
+        resident_bytes: status_value(&status, "VmRSS:", 1024),
+        virtual_bytes: status_value(&status, "VmSize:", 1024),
+        thread_count: status_value(&status, "Threads:", 1),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
 fn process_resources() -> ResourceSnapshot {
     let Ok(pid) = sysinfo::get_current_pid() else {
         return ResourceSnapshot::default();
@@ -432,20 +500,46 @@ fn max_option(left: Option<u64>, right: Option<u64>) -> Option<u64> {
     }
 }
 
+fn cpu_percent(
+    start_cpu_ms: Option<u64>,
+    finish_cpu_ms: Option<u64>,
+    elapsed_ns: u64,
+) -> Option<f64> {
+    start_cpu_ms
+        .zip(finish_cpu_ms)
+        .filter(|(start, finish)| finish >= start)
+        .and_then(|(start, finish)| {
+            let wall_ms = elapsed_ns as f64 / 1_000_000.0;
+            (wall_ms > 0.0).then_some((finish - start) as f64 * 100.0 / wall_ms)
+        })
+}
+
+fn cpu_milli_percent(
+    start_cpu_ms: Option<u64>,
+    finish_cpu_ms: Option<u64>,
+    elapsed_ns: u64,
+) -> Option<u64> {
+    if elapsed_ns == 0 {
+        return None;
+    }
+    let (start, finish) = start_cpu_ms
+        .zip(finish_cpu_ms)
+        .filter(|(start, finish)| finish >= start)?;
+    let numerator = u128::from(finish - start) * 100_000_000_000_u128;
+    Some(u64::try_from(numerator / u128::from(elapsed_ns)).unwrap_or(u64::MAX))
+}
+
 fn resource_usage(
     start: ResourceSnapshot,
     finish: ResourceSnapshot,
     wall: Duration,
     samples: &[ResourceSample],
 ) -> ResourceUsage {
-    let aggregate_cpu_percent = start
-        .cpu_time_ms
-        .zip(finish.cpu_time_ms)
-        .filter(|(start, finish)| finish >= start)
-        .and_then(|(start, finish)| {
-            let wall_ms = wall.as_secs_f64() * 1_000.0;
-            (wall_ms > 0.0).then_some((finish - start) as f64 * 100.0 / wall_ms)
-        });
+    let aggregate_cpu_percent = cpu_percent(
+        start.cpu_time_ms,
+        finish.cpu_time_ms,
+        u64::try_from(wall.as_nanos()).unwrap_or(u64::MAX),
+    );
     let max_observed_resident_bytes = samples
         .iter()
         .filter_map(|sample| sample.snapshot.resident_bytes)
@@ -469,6 +563,42 @@ fn resource_usage(
     }
 }
 
+fn state_measurements(
+    transitions: &[StateTransition],
+    samples: &[ResourceSample],
+) -> Vec<StateMeasurement> {
+    transitions
+        .windows(2)
+        .zip(samples.windows(2))
+        .filter_map(|(transition, sample)| {
+            let elapsed_ns = transition[1]
+                .elapsed_ns
+                .checked_sub(transition[0].elapsed_ns)?;
+            let start = sample[0].snapshot;
+            let finish = sample[1].snapshot;
+            let cpu_time_ms = start
+                .cpu_time_ms
+                .zip(finish.cpu_time_ms)
+                .filter(|(start, finish)| finish >= start)
+                .map(|(start, finish)| finish - start);
+            Some(StateMeasurement {
+                state: transition[0].state,
+                elapsed_ns,
+                cpu_time_ms,
+                aggregate_cpu_milli_percent: cpu_milli_percent(
+                    start.cpu_time_ms,
+                    finish.cpu_time_ms,
+                    elapsed_ns,
+                ),
+                resident_start_bytes: start.resident_bytes,
+                resident_end_bytes: finish.resident_bytes,
+                threads_start: start.thread_count,
+                threads_end: finish.thread_count,
+            })
+        })
+        .collect()
+}
+
 /// Complete replayable profile record.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RunProfile {
@@ -480,6 +610,8 @@ pub struct RunProfile {
     pub input_units: u64,
     pub stages: Vec<StageMeasurement>,
     pub transitions: Vec<StateTransition>,
+    #[serde(default)]
+    pub states: Vec<StateMeasurement>,
     pub resource_samples: Vec<ResourceSample>,
     pub resources: ResourceUsage,
 }
@@ -496,11 +628,16 @@ impl RunProfile {
             .identity
             .reader_threads
             .map_or_else(|| "auto".to_owned(), |threads| threads.to_string());
+        let throughput_mib_s = if self.wall_time_ns == 0 {
+            0.0
+        } else {
+            self.input_bytes as f64 * 1_000_000_000.0 / self.wall_time_ns as f64 / (1024.0 * 1024.0)
+        };
         let mut output = format!(
             "KeyHog profile {}\n\
              state={} source={} workload={} backend_requested={} backend_selected={} cache={} daemon={} wall_ms={:.3}\n\
              version={} detector_digest={} config_digest={}\n\
-             input_bytes={} input_units={} scanner_threads={} reader_threads={} logical_cpus={}\n",
+             input_bytes={} input_units={} throughput_mib_s={throughput_mib_s:.3} scanner_threads={} reader_threads={} logical_cpus={}\n",
             self.identity.run_id,
             state_name(self.status),
             self.identity.source_kind,
@@ -522,14 +659,62 @@ impl RunProfile {
             reader_threads,
             self.identity.logical_cpus,
         );
-        for stage in &self.stages {
+        for state in &self.states {
             output.push_str(&format!(
-                "  {:<24} {:>10.3} ms calls={} attributed_ms={:.3}\n",
+                "macro {:<12} wall_ms={:.3}",
+                state_name(state.state),
+                state.elapsed_ns as f64 / 1_000_000.0,
+            ));
+            if let Some(cpu) = state.aggregate_cpu_milli_percent {
+                output.push_str(&format!(" cpu={:.1}%", cpu as f64 / 1_000.0));
+            } else {
+                output.push_str(" cpu=unavailable");
+            }
+            if let (Some(start), Some(finish)) =
+                (state.resident_start_bytes, state.resident_end_bytes)
+            {
+                output.push_str(&format!(" rss_bytes={start}->{finish}"));
+            }
+            if let (Some(start), Some(finish)) = (state.threads_start, state.threads_end) {
+                output.push_str(&format!(" threads={start}->{finish}"));
+            }
+            output.push('\n');
+        }
+        for stage in &self.stages {
+            let per_call_us = if stage.calls == 0 {
+                0.0
+            } else {
+                stage.elapsed_ns as f64 / stage.calls as f64 / 1_000.0
+            };
+            output.push_str(&format!(
+                "  {:<24} {:>10.3} ms calls={} per_call_us={per_call_us:.3} attributed_ms={:.3}\n",
                 stage.stage.as_str(),
                 stage.elapsed_ns as f64 / 1_000_000.0,
                 stage.calls,
                 stage.attributed_ns as f64 / 1_000_000.0,
             ));
+        }
+        if let Some(state) = self.states.iter().max_by_key(|state| state.elapsed_ns) {
+            output.push_str(&format!(
+                "bottleneck macro={} wall_ms={:.3}",
+                state_name(state.state),
+                state.elapsed_ns as f64 / 1_000_000.0,
+            ));
+        }
+        if let Some(stage) = self
+            .stages
+            .iter()
+            .filter(|stage| stage.stage != Stage::BackendDispatch)
+            .max_by_key(|stage| stage.elapsed_ns)
+        {
+            output.push_str(&format!(
+                " summed_stage={} summed_ms={:.3}",
+                stage.stage.as_str(),
+                stage.elapsed_ns as f64 / 1_000_000.0,
+            ));
+        }
+        if !self.states.is_empty() || !self.stages.is_empty() {
+            output.push('\n');
         }
         if let Some(cpu) = self.resources.aggregate_cpu_percent {
             output.push_str(&format!("resources aggregate_cpu={cpu:.1}%"));
@@ -552,6 +737,7 @@ fn state_name(state: RunState) -> &'static str {
         RunState::Created => "created",
         RunState::Acquiring => "acquiring",
         RunState::Scanning => "scanning",
+        RunState::Resolving => "resolving",
         RunState::Verifying => "verifying",
         RunState::Reporting => "reporting",
         RunState::Completed => "completed",
@@ -662,6 +848,7 @@ impl Session {
         let stages = take_session_stage_measurements();
         reset();
         let resource_samples = std::mem::take(&mut self.resource_samples);
+        let states = state_measurements(&self.transitions, &resource_samples);
         let resources = resource_usage(
             self.resources_at_start,
             finish_resources,
@@ -680,6 +867,7 @@ impl Session {
             input_units,
             stages,
             transitions: std::mem::take(&mut self.transitions),
+            states,
             resource_samples,
             resources,
         };

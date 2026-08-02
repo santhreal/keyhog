@@ -216,7 +216,18 @@ impl ScanOrchestrator {
                 // failed remote scan isn't masked by a clean local one.
                 let mut src_chunks = 0usize;
                 let mut src_errored = false;
-                for chunk_result in source.chunks() {
+                let mut chunks = {
+                    let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceWalk);
+                    source.chunks()
+                };
+                loop {
+                    let chunk_result = {
+                        let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceRead);
+                        match chunks.next() {
+                            Some(chunk_result) => chunk_result,
+                            None => break,
+                        }
+                    };
                     let super::ClassifiedSourceChunk::Scan(c) = super::classify_source_chunk(
                         chunk_result,
                         &mut src_chunks,
@@ -229,14 +240,24 @@ impl ScanOrchestrator {
                         &c,
                         source_keeps_chunk_identities_contiguous,
                     ) {
-                        if tx.send(std::mem::take(&mut batch)).is_err() {
+                        let send_result = {
+                            let _profile_span =
+                                keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
+                            tx.send(std::mem::take(&mut batch))
+                        };
+                        if send_result.is_err() {
                             break 'sources;
                         }
                         batch = Vec::with_capacity(fused_batch);
                     }
                     batch.push(c);
                     if batch.len() >= fused_batch {
-                        if tx.send(std::mem::take(&mut batch)).is_err() {
+                        let send_result = {
+                            let _profile_span =
+                                keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
+                            tx.send(std::mem::take(&mut batch))
+                        };
+                        if send_result.is_err() {
                             break 'sources;
                         }
                         batch = Vec::with_capacity(fused_batch);
@@ -249,6 +270,7 @@ impl ScanOrchestrator {
                 }
             }
             if !batch.is_empty() {
+                let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
                 let _ = tx.send(batch); // LAW10: unused-binding marker; no runtime effect, not a fallback
             }
         });
@@ -282,6 +304,8 @@ impl ScanOrchestrator {
                             let Some(path_str) = c.metadata.path.as_deref() else {
                                 return true;
                             };
+                            let _profile_span =
+                                keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
                             let unchanged = idx.record_chunk_path_at_offset_and_check_unchanged(
                                 std::path::Path::new(path_str),
                                 c.metadata.base_offset as u64,
@@ -318,6 +342,8 @@ impl ScanOrchestrator {
                 // no guesses. In explicit calibration mode it uses the measured
                 // router on the SAME fused batch shape normal scans request, so
                 // persisted decisions cover the production runtime key.
+                let backend_select_span =
+                    keyhog_profile::span(keyhog_profile::Stage::BackendSelect);
                 let selected = match &active_router {
                     ActiveBackendRouter::Explicit(backend) => {
                         Ok(super::backend::BackendSelection {
@@ -341,6 +367,7 @@ impl ScanOrchestrator {
                         router.choose_with_plan(scanner_ref, None, &batch)
                     }
                 };
+                drop(backend_select_span);
 
                 let selection = match selected {
                     Ok(selection) => selection,
@@ -420,21 +447,25 @@ impl ScanOrchestrator {
                     crate::GPU_SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
                 }
 
-                let mut per_chunk = outcome.per_chunk;
-                crate::inline_suppression::attach_inline_suppression_context(
-                    &batch,
-                    &mut per_chunk,
-                );
+                let out = {
+                    let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
+                    let mut per_chunk = outcome.per_chunk;
+                    crate::inline_suppression::attach_inline_suppression_context(
+                        &batch,
+                        &mut per_chunk,
+                    );
 
-                let mut out: Vec<RawMatch> = Vec::new();
-                let mut batch_findings = 0usize;
-                for chunk_findings in per_chunk {
-                    batch_findings += chunk_findings.len();
-                    out.extend(chunk_findings);
-                }
-                if batch_findings > 0 {
-                    crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
-                }
+                    let mut out: Vec<RawMatch> = Vec::new();
+                    let mut batch_findings = 0usize;
+                    for chunk_findings in per_chunk {
+                        batch_findings += chunk_findings.len();
+                        out.extend(chunk_findings);
+                    }
+                    if batch_findings > 0 {
+                        crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
+                    }
+                    out
+                };
                 out
             })
             .collect();

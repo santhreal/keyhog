@@ -40,9 +40,11 @@ backend, and report-publication errors.
 
 The default `sarif` report is uploaded to Code Scanning and retained as a
 workflow artifact. Set `upload-sarif: 'false'` when the job cannot grant
-`security-events: write`; the artifact remains enabled. Fork PRs can
-lack `security-events: write`, so only their Code Scanning upload failure is
-advisory. Findings and operational failures still fail the job.
+`security-events: write`; the artifact remains enabled. The Action retries one
+failed upload on trusted pushes and same-repository pull requests, then fails
+closed if both attempts fail. Fork PRs can lack `security-events: write`, so
+their upload failure is advisory. Findings and operational failures still fail
+the job.
 
 The Action accepts one checked-out path. Use the KeyHog CLI directly for Git
 history, reachable blobs, hosted Git organizations, cloud buckets, and report

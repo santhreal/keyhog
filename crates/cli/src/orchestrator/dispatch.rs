@@ -228,7 +228,14 @@ impl CoalescedScannerWorker {
         let mut last_end = std::time::Instant::now();
         let mut findings: Vec<RawMatch> = Vec::new();
 
-        for batch in rx {
+        loop {
+            let batch = {
+                let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerQueueWait);
+                match rx.recv() {
+                    Ok(batch) => batch,
+                    Err(_) => break,
+                }
+            };
             recv_dur += last_end.elapsed();
             if !batch.is_empty() {
                 scan_dur += self.scan_nonempty_batch(&batch, &mut findings)?;
@@ -255,7 +262,10 @@ impl CoalescedScannerWorker {
             crate::SCANNED_BYTES.fetch_add(scanned_bytes as u64, Ordering::Relaxed);
             return Ok(scan_start.elapsed());
         }
-        let selection = self.router.choose_with_plan(self.scanner.as_ref(), batch)?;
+        let selection = {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::BackendSelect);
+            self.router.choose_with_plan(self.scanner.as_ref(), batch)?
+        };
         let chosen_backend = selection.backend;
         let chose_gpu = is_gpu_backend(chosen_backend);
         match chosen_backend {
@@ -295,6 +305,7 @@ impl CoalescedScannerWorker {
         if let Some(recovery) = selection.autoroute_recovery.as_ref() {
             record_completed_autoroute_state_recovery(batch, chosen_backend, recovery);
         }
+        let _result_merge_span = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
         append_scanned_batch_findings(
             findings,
             batch,
@@ -302,6 +313,7 @@ impl CoalescedScannerWorker {
             scanned_count,
             chose_gpu && !outcome.recovered,
         );
+        drop(_result_merge_span);
         Ok(scan_start.elapsed())
     }
 
@@ -741,7 +753,18 @@ impl CoalescedBatchProducer {
             // rather than report "clean" off another source's data.
             let mut src_chunks = 0usize;
             let mut src_errored = false;
-            for chunk_result in source.chunks() {
+            let mut chunks = {
+                let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceWalk);
+                source.chunks()
+            };
+            loop {
+                let chunk_result = {
+                    let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceRead);
+                    match chunks.next() {
+                        Some(chunk_result) => chunk_result,
+                        None => break,
+                    }
+                };
                 let ClassifiedSourceChunk::Scan(c) =
                     classify_source_chunk(chunk_result, &mut src_chunks, &mut src_errored)
                 else {
@@ -789,6 +812,7 @@ impl CoalescedBatchProducer {
     }
 
     fn record_unchanged_chunk(&mut self, c: &Chunk) -> bool {
+        let _profile_span = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
         let Some(idx) = self.merkle.as_ref() else {
             return false;
         };
@@ -842,7 +866,11 @@ impl CoalescedBatchProducer {
         }
         let payload = std::mem::take(&mut self.batch);
         self.batch_bytes = 0;
-        if self.tx.send(payload).is_err() {
+        let send_result = {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
+            self.tx.send(payload)
+        };
+        if send_result.is_err() {
             self.pipeline_alive = false;
         }
     }

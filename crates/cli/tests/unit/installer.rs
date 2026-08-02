@@ -1,11 +1,8 @@
 use keyhog::testing::{CliTestApi as _, API};
 
-fn normalize_ws(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
+/// Legacy updater compatibility must retain every historical signed-bundle filename.
 #[test]
-fn asset_name_matches_release_convention() {
+fn legacy_asset_name_matches_historical_release_convention() {
     assert_eq!(
         API.asset_name("linux", "x86_64").as_deref(),
         Some("keyhog-linux-x86_64")
@@ -18,9 +15,8 @@ fn asset_name_matches_release_convention() {
         API.asset_name("macos", "x86_64").as_deref(),
         Some("keyhog-macos-x86_64")
     );
-    // Windows x86_64: release.yml uploads keyhog-windows-x86_64.exe, so
-    // `update`/`repair` must resolve it (previously returned None, which
-    // left both commands dead on Windows).
+    // Historical Windows bundles used this exact filename. `update` and
+    // `repair` retain it so operators can reinstall those older releases.
     assert_eq!(
         API.asset_name("windows", "x86_64").as_deref(),
         Some("keyhog-windows-x86_64.exe")
@@ -68,66 +64,34 @@ fn release_selector_rejects_duplicate_asset_names() {
     assert!(format!("{error:#}").contains("duplicate assets"));
 }
 
+/// Current releases must direct installation and rollback through crates.io, not absent binary assets.
 #[test]
-fn installer_platform_words_match_release_feature_matrix() {
+fn installer_words_match_crates_only_release_contract() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let release_yml =
         std::fs::read_to_string(root.join(".github/workflows/release.yml")).expect("release.yml");
     let readme = std::fs::read_to_string(root.join("README.md")).expect("README.md");
     let install_doc = std::fs::read_to_string(root.join("docs/src/install.md"))
         .expect("docs/src/install.md readable");
-    let install_sh = std::fs::read_to_string(root.join("install.sh")).expect("install.sh");
-    let install_ps1 = std::fs::read_to_string(root.join("install.ps1")).expect("install.ps1");
-    let maintenance_rs = std::fs::read_to_string(root.join("crates/cli/src/args/maintenance.rs"))
-        .expect("maintenance.rs");
-    let readme_words = normalize_ws(&readme);
-    let install_doc_words = normalize_ws(&install_doc);
 
     assert!(
-        release_yml.contains("asset: keyhog-macos-aarch64")
-            && release_yml.contains("features: '--no-default-features --features portable,gpu'")
-            && release_yml.contains("asset: keyhog-windows-x86_64.exe")
-            && release_yml.contains("features: '--no-default-features --features portable'")
-            && release_yml.contains("artifact_features: 'ml,entropy,decode,multiline'"),
-        "release matrix must keep native Metal macOS and portable Windows feature evidence visible"
+        release_yml.contains("bash scripts/publish.sh")
+            && release_yml.contains("CARGO_REGISTRY_TOKEN")
+            && !release_yml.contains("asset:")
+            && !release_yml.contains("upload-release-asset"),
+        "automatic releases must publish crates.io packages without claiming binary assets"
     );
-
-    for (name, text) in [
-        ("README.md", readme.as_str()),
-        ("docs/src/install.md", install_doc.as_str()),
-        ("install.sh", install_sh.as_str()),
-        ("install.ps1", install_ps1.as_str()),
-        ("maintenance.rs", maintenance_rs.as_str()),
-    ] {
-        for stale in [
-            "portable WGPU+SIMD",
-            "portable WGPU + SIMD",
-            "macOS release assets run SIMD on CPU plus the WGPU",
-            "Windows installer ships the WGPU + SIMD",
-            "WGPU + SIMD Windows build",
-            "default WGPU + SIMD build, skip GPU detection",
-            "no Hyperscan, WGPU, CUDA, or native Metal asset in the current release",
-        ] {
-            assert!(
-                !text.contains(stale),
-                "{name} must not claim portable macOS/Windows assets ship accelerators absent from release.yml: {stale}"
-            );
-        }
-    }
-
     assert!(
-        readme_words.contains(
-            "macOS release assets enable native Metal and WGPU without requiring Homebrew Vectorscan",
-        )
-            && readme_words.contains("Windows assets are portable no-system-library builds")
-            && install_doc_words.contains(
-                "macOS assets enable VYRE's native Metal and WGPU drivers without requiring Homebrew Vectorscan",
-            )
-            && install_doc_words.contains("Windows uses the portable CPU build")
-            && install_sh.contains("native Metal and WGPU macOS build")
-            && install_ps1.contains("portable no-system-library Windows build")
-            && !maintenance_rs.contains("variant"),
-        "docs, installers, and CLI help must describe the platform artifacts honestly"
+        readme.contains("cargo install --locked keyhog")
+            && install_doc.contains("cargo install --locked --force keyhog")
+            && install_doc
+                .contains("cargo install --locked --force --version '=MAJOR.MINOR.PATCH' keyhog")
+            && install_doc.contains("does\nnot publish binary release assets or installer bundles")
+            && !readme.contains("macOS release assets")
+            && !readme.contains("Windows assets")
+            && !install_doc.contains("macOS assets")
+            && !install_doc.contains("Windows assets"),
+        "README and install guide must describe crates.io install, update, and rollback truthfully"
     );
 }
 

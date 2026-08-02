@@ -2868,34 +2868,46 @@ fn composite_action_uploads_receipts_before_enforcing_findings_failure() {
     );
 }
 
+/// Trusted SARIF publication retries one transient failure and still fails closed when both attempts fail.
 #[test]
 fn composite_action_sarif_upload_fails_closed_on_trusted_runs() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
-    let upload_step = manifest
+    let primary = manifest
         .split("- name: Upload SARIF to code-scanning")
         .nth(1)
         .and_then(|rest| rest.split("    - name:").next())
-        .expect("SARIF upload step exists");
+        .expect("primary SARIF upload step exists");
+    assert!(
+        primary.contains("id: sarif-primary")
+            && primary.contains("continue-on-error: true")
+            && primary.contains(
+                "uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3"
+            ),
+        "the primary upload must be SHA-pinned and tolerated only to permit a bounded retry"
+    );
 
+    let retry = manifest
+        .split("- name: Retry trusted SARIF upload")
+        .nth(1)
+        .and_then(|rest| rest.split("    - name:").next())
+        .expect("trusted SARIF retry step exists");
     assert!(
-        upload_step.contains(
-            "uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3"
-        ),
-        "SARIF upload must use a SHA-pinned GitHub Code Scanning action"
+        retry.contains("steps.sarif-primary.outcome == 'failure'")
+            && retry.contains("github.event.pull_request.head.repo.full_name != github.repository")
+            && retry.contains("continue-on-error: true"),
+        "the retry must run only after a trusted primary failure"
     );
+
+    let enforcement = manifest
+        .split("- name: Fail when trusted SARIF uploads are unavailable")
+        .nth(1)
+        .and_then(|rest| rest.split("    - name:").next())
+        .expect("trusted SARIF enforcement step exists");
     assert!(
-        upload_step.contains(
-            "continue-on-error: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}"
-        ),
-        "SARIF upload may be advisory only for fork PR permission failures; trusted CI uploads must fail closed"
-    );
-    assert!(
-        !upload_step.contains("continue-on-error: true"),
-        "unconditional SARIF upload tolerance hides broken production Code Scanning integrations"
-    );
-    assert!(
-        upload_step.contains("category: ${{ steps.outfile.outputs.category }}"),
-        "Code Scanning must receive the same validated partition identity as the report"
+        enforcement.contains("steps.sarif-primary.outcome == 'failure'")
+            && enforcement.contains("steps.sarif-retry.outcome != 'success'")
+            && enforcement.contains("exit 1"),
+        "trusted CI must fail closed only after both upload attempts fail"
     );
 }
 
@@ -2963,22 +2975,41 @@ fn keyhog_workflow_covers_trusted_and_fork_sarif_permission_matrix() {
         .and_then(|runs| runs.get("steps"))
         .and_then(serde_yaml::Value::as_sequence)
         .expect("composite action declares steps");
-    let upload_step = action_steps
-        .iter()
-        .find_map(|step| {
-            let step = step.as_mapping()?;
-            (yaml_get(step, "name").and_then(serde_yaml::Value::as_str)
-                == Some("Upload SARIF to code-scanning"))
-            .then_some(step)
-        })
-        .expect("composite action declares a SARIF upload step");
-    let continue_on_error = yaml_get(upload_step, "continue-on-error")
-        .and_then(serde_yaml::Value::as_str)
-        .expect("SARIF upload declares its permission fallback explicitly");
+    let named_step = |name: &str| {
+        action_steps
+            .iter()
+            .find_map(|step| {
+                let step = step.as_mapping()?;
+                (yaml_get(step, "name").and_then(serde_yaml::Value::as_str) == Some(name))
+                    .then_some(step)
+            })
+            .unwrap_or_else(|| panic!("composite action declares {name}"))
+    };
+    let primary = named_step("Upload SARIF to code-scanning");
     assert_eq!(
-        continue_on_error,
-        "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}",
-        "only fork pull requests may turn a restricted-token upload failure into an advisory result"
+        yaml_get(primary, "continue-on-error").and_then(serde_yaml::Value::as_bool),
+        Some(true),
+        "the first attempt must be tolerated only so a trusted retry can run"
+    );
+    let retry_condition = yaml_get(named_step("Retry trusted SARIF upload"), "if")
+        .and_then(serde_yaml::Value::as_str)
+        .expect("trusted retry has a condition");
+    assert!(
+        retry_condition.contains("steps.sarif-primary.outcome == 'failure'")
+            && retry_condition
+                .contains("github.event.pull_request.head.repo.full_name != github.repository"),
+        "trusted retries must exclude restricted fork pull requests"
+    );
+    let enforcement_condition = yaml_get(
+        named_step("Fail when trusted SARIF uploads are unavailable"),
+        "if",
+    )
+    .and_then(serde_yaml::Value::as_str)
+    .expect("trusted enforcement has a condition");
+    assert!(
+        enforcement_condition.contains("steps.sarif-primary.outcome == 'failure'")
+            && enforcement_condition.contains("steps.sarif-retry.outcome != 'success'"),
+        "trusted jobs must fail only after both attempts fail"
     );
 
     // This local event fixture mirrors GitHub's trusted and restricted-token
@@ -3006,7 +3037,8 @@ fn keyhog_workflow_covers_trusted_and_fork_sarif_permission_matrix() {
         "the action must document the upload-disabled alternative for workflows without write permission"
     );
     assert!(
-        action_readme.contains("Fork PRs can\nlack `security-events: write`"),
+        action_readme.contains("Fork PRs can lack `security-events: write`")
+            && action_readme.contains("their upload failure is advisory"),
         "the action must document that restricted fork uploads remain advisory"
     );
 }

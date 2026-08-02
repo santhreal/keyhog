@@ -4,7 +4,7 @@ use keyhog_profile::{
     RunState, Session, Stage, PROFILE_SCHEMA,
 };
 use std::sync::{Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 static PROFILE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -82,6 +82,7 @@ fn session_round_trip_preserves_causal_profile_record() {
     add_input_bytes(65_537);
     add_input_units(7);
     session.transition(RunState::Scanning);
+    session.transition(RunState::Resolving);
     set_attribution(Attribution::Decoded);
     {
         let _span = span(Stage::Decode);
@@ -115,12 +116,40 @@ fn session_round_trip_preserves_causal_profile_record() {
             RunState::Created,
             RunState::Acquiring,
             RunState::Scanning,
+            RunState::Resolving,
             RunState::Verifying,
             RunState::Reporting,
             RunState::Completed,
         ]
     );
     assert_eq!(profile.resource_samples.len(), profile.transitions.len());
+    assert_eq!(
+        profile
+            .states
+            .iter()
+            .map(|state| state.state)
+            .collect::<Vec<_>>(),
+        vec![
+            RunState::Created,
+            RunState::Acquiring,
+            RunState::Scanning,
+            RunState::Resolving,
+            RunState::Verifying,
+            RunState::Reporting,
+        ]
+    );
+    assert!(
+        profile
+            .states
+            .iter()
+            .map(|state| state.elapsed_ns)
+            .sum::<u64>()
+            <= profile.wall_time_ns
+    );
+    assert!(profile.states.iter().all(|state| state
+        .resident_start_bytes
+        .zip(state.resident_end_bytes)
+        .is_some_and(|(start, finish)| start > 0 && finish > 0)));
     assert!(profile.resource_samples.iter().all(|sample| sample
         .snapshot
         .resident_bytes
@@ -133,6 +162,15 @@ fn session_round_trip_preserves_causal_profile_record() {
     let json = profile.to_json_pretty().expect("serialize profile");
     let decoded: RunProfile = serde_json::from_str(&json).expect("deserialize profile");
     assert_eq!(decoded, profile);
+    let mut legacy_json: serde_json::Value =
+        serde_json::from_str(&json).expect("parse profile JSON value");
+    legacy_json
+        .as_object_mut()
+        .expect("profile JSON object")
+        .remove("states");
+    let legacy: RunProfile =
+        serde_json::from_value(legacy_json).expect("deserialize additive legacy record");
+    assert!(legacy.states.is_empty());
 }
 
 /// Concurrent process-global sessions must fail explicitly, and dropping the owner must release the slot.
@@ -153,6 +191,61 @@ fn concurrent_session_is_rejected_and_drop_releases_slot() {
     assert_eq!(
         replacement.finish(RunState::Failed).status,
         RunState::Failed
+    );
+}
+
+/// Linux resource snapshots must observe real process CPU time and thread transitions without a system-wide refresh.
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_resource_snapshots_track_cpu_and_thread_changes() {
+    let _guard = isolated_profile_test();
+    let mut session = Session::start(identity("linux-process-resources"))
+        .expect("start Linux resource profile session");
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(0);
+    let (done_tx, done_rx) = std::sync::mpsc::sync_channel(0);
+    let worker = std::thread::spawn(move || {
+        ready_tx.send(()).expect("publish worker readiness");
+        done_rx.recv().expect("wait for worker completion");
+    });
+    ready_rx.recv().expect("observe live worker");
+    session.transition(RunState::Acquiring);
+
+    let started = Instant::now();
+    let mut accumulator = 0x9e37_79b9_u64;
+    while started.elapsed() < Duration::from_millis(75) {
+        accumulator = accumulator
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1);
+        std::hint::black_box(accumulator);
+    }
+    done_tx.send(()).expect("release worker");
+    worker.join().expect("join worker");
+    session.transition(RunState::Scanning);
+    let profile = session.finish(RunState::Completed);
+
+    let acquiring = profile
+        .states
+        .iter()
+        .find(|measurement| measurement.state == RunState::Acquiring)
+        .expect("acquiring state measurement");
+    assert!(
+        acquiring
+            .cpu_time_ms
+            .is_some_and(|milliseconds| milliseconds >= 40),
+        "75 ms of busy work must produce a material process CPU delta: {acquiring:?}"
+    );
+    assert!(
+        acquiring
+            .aggregate_cpu_milli_percent
+            .is_some_and(|milli_percent| milli_percent >= 40_000),
+        "CPU utilization must agree with the measured busy interval: {acquiring:?}"
+    );
+    assert!(
+        acquiring
+            .threads_start
+            .zip(acquiring.threads_end)
+            .is_some_and(|(start, finish)| start > finish),
+        "the boundary snapshots must observe the live worker and its exit: {acquiring:?}"
     );
 }
 
@@ -179,10 +272,15 @@ fn text_report_exposes_actionable_identity_and_resource_fields() {
     ));
     assert!(report.contains("version=0.5.49 detector_digest=detectors-a config_digest=config-a"));
     assert!(report.contains(
-        "input_bytes=0 input_units=0 scanner_threads=0 reader_threads=auto logical_cpus="
+        "input_bytes=0 input_units=0 throughput_mib_s=0.000 scanner_threads=0 reader_threads=auto logical_cpus="
     ));
     assert!(report.contains("reporting"));
-    assert!(report.contains("calls=1 attributed_ms=0.000"));
+    assert!(report.contains("macro created"));
+    assert!(report.contains("per_call_us="));
+    assert!(report.contains("bottleneck macro=created"));
+    assert!(report.contains("summed_stage=reporting"));
+    assert!(report.contains("calls=1 per_call_us="));
+    assert!(report.contains("attributed_ms=0.000"));
     assert!(report.contains("resources aggregate_cpu="));
     assert!(report.contains("max_observed_rss_bytes="));
 }

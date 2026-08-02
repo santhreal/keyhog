@@ -141,6 +141,16 @@ pub(crate) struct ResolvedScanConfig {
     pub(crate) verify: ResolvedVerifyPolicy,
 }
 
+impl ResolvedScanConfig {
+    /// Return the engine configuration without enabling detailed diagnostics for
+    /// the low-overhead operator profile. `--perf-trace` owns that hot-path cost.
+    pub(crate) fn engine_scanner_config(&self) -> ScannerConfig {
+        let mut config = self.scanner.clone();
+        config.profile = config.perf_trace;
+        config
+    }
+}
+
 /// Resolve the full scan configuration in one place: run the precedence merge
 /// (compiled default -> `[scan]` table -> flat `ConfigFile` fields -> CLI flags)
 /// via [`apply_config_file`], build the engine [`ScannerConfig`], and surface

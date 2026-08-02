@@ -39,7 +39,7 @@
 
     <g transform="translate(0 308)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="700">
       <rect width="158" height="42" rx="8" fill="#ffd60a"/>
-      <text x="79" y="26" text-anchor="middle" fill="#080a0f">923 DETECTORS</text>
+      <text x="79" y="26" text-anchor="middle" fill="#080a0f">923 detectors</text>
       <rect x="170" width="112" height="42" rx="8" fill="#1a202c" stroke="#3e4655"/>
       <text x="226" y="26" text-anchor="middle" fill="#ffffff">CUDA</text>
       <rect x="294" width="112" height="42" rx="8" fill="#1a202c" stroke="#3e4655"/>

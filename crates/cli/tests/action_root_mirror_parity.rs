@@ -28,9 +28,8 @@ fn repo_root() -> PathBuf {
 const SOURCE_ROOT_FROM_INNER: &str = "${{ github.action_path }}/../../..";
 const SOURCE_ROOT_AT_ROOT: &str = "${{ github.action_path }}";
 const BACKEND_INPUT_CONTRACT: &str = concat!(
-    "      Scan backend: auto | cpu | simd | gpu-cuda | gpu-wgpu. Published exact\n",
-    "      and floating release refs build the crates.io package with calibrated auto.\n",
-    "      Portable branch and commit source refs require explicit cpu."
+    "      Scan backend for a checked-out tree. Published refs use the lean CI build\n",
+    "      and accept auto or cpu. Portable branch and commit source refs require cpu."
 );
 
 /// Regression: Marketplace root and internal composite copies previously

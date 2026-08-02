@@ -8,16 +8,25 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - A single resumable local or SSH command now refreshes benchmark evidence without invalidating candidate freshness, rebinds the exact canonical run-set after scoring, prepares every changelog and version surface, runs pre-tag gates with isolated full and ci-lean binary contracts, preserves exact Git path bytes, verifies the configured OpenPGP fingerprint before any tag push, and watches GitHub Pages, release assets, containers, and the six-crate crates.io publication chain.
 - Unix mass daemons now accept bounded directory, Git, archive, binary, remote, hosted Git, and cloud streams through `scan --daemon=mass`; local filesystem payloads remain daemon-local, credential-bound sources use protected chunk framing, each batch is capped at 8 MiB and 1,024 chunks, source gaps fail closed, the client validates an exact total/GPU execution receipt before reporting, and `daemon start --mass-gpu-primary` rejects CPU-majority completion.
-- `keyhog-profile` now owns a portable causal profiling schema for fixed micro stages, macro run states, source and backend identity, input totals, CPU time, resident and virtual memory, and observed process threads. `keyhog scan --profile` emits this operator-run record alongside the existing detailed scanner breakdown without recording source content or credentials.
+- `keyhog-profile` now owns a portable causal profiling schema for fixed micro stages, macro run states, source and backend identity, input totals, CPU time, resident and virtual memory, and observed process threads. `keyhog scan --profile` emits this low-overhead operator-run record without recording source content or credentials. `--perf-trace` retains the higher-overhead per-pattern diagnostics.
 
 ### Changed
 
 - The README star viewer now uses a deterministic accessible SVG generated from repository-owned observations, records only real count transitions, handles same-day corrections and declines truthfully, writes atomically, and retries isolated metrics push races without depending on star-history.com.
 - Apple release assets now ship VYRE's native Metal and WGPU peers without requiring Homebrew Vectorscan. GPU region-presence no longer acquires Hyperscan transitively, and autoroute persists Metal as a distinct measured candidate.
+- Large single chunks on the scalar route now scan their existing recall-overlapped windows in parallel, then merge findings in source order with exact offsets and deduplication.
+- Portable and explicit CPU scans now localize plain phase-two patterns by default. This avoids compiling and scanning the full portable marking set when the shared anchor index owns candidate extraction; measured cold scans improved by 4.0 to 4.4 times across 1 KiB, 8 MiB, and 1,024-file local workloads while preserving whole-chunk finding parity.
+- Linux profiling boundaries now read process-local CPU, memory, and thread counters directly from procfs instead of refreshing the system-wide process table.
+- The production Debian container now ships the portable CPU build and omits unused Hyperscan build and runtime packages. This keeps ephemeral container scans on the fast cold-start route; the dedicated glibc integration image still exercises Hyperscan.
+- The source integration lane now runs one default aggregator and one serial all-backend target pass instead of rebuilding overlapping all-feature test and library subsets.
 
 ### Fixed
 
-- Release preparation now updates standalone GitHub Action guide version pins, its regression suite rejects any canonical current-version document omitted from the release transaction, and the README states the native Metal macOS and portable CPU Windows artifact contracts exactly.
+- Release preparation now updates standalone GitHub Action guide version pins, its regression suite rejects any canonical current-version document omitted from the release transaction, and operator docs describe crates.io packages, Cargo update and rollback, and the absence of binary asset bundles.
+- Trusted GitHub Action SARIF publication now retries one transient Code Scanning upload failure and fails closed only when both attempts fail. Restricted fork pull requests remain advisory, and the report artifact remains available.
+- Nightly benchmark dependency installation now authenticates the `pybase62` wheel, and CLI documentation coherence accepts generated possible-value suffixes without weakening exact option descriptions.
+- The generated CLI reference now includes every visible source flag for both `scan` and `config`, and the banner detector count remains coherent with the live loader.
+- Automatic releases now use the successful commit subject for crates not covered by authored change fragments, publish all six crates in dependency order, retry uploads, wait for crates.io visibility, and resume partial publication without republishing visible versions.
 - The default portable Cargo installation now includes native binary string and object scanning without requiring Ghidra. Optional Ghidra enrichment remains a runtime integration.
 - Aggregate release prevention gates now receive the immutable current-version candidate explicitly, so an older default Cargo release binary cannot invalidate backend parity.
 - Release orchestration now prepares the final workspace version before measuring its executable, and pre-tag resumes refresh version-bound evidence while signed-tag resumes preserve immutable evidence.

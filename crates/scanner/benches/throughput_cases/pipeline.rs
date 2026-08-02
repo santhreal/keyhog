@@ -15,11 +15,15 @@ fn benchmark_combined_full_pipeline(c: &mut Criterion) {
         let chunk = make_chunk(&data, Some("source.py"));
         b.iter(|| {
             // Pattern matching
-            let mut matches = scanner.scan(&chunk);
+            let mut matches = scanner.scan(&chunk).expect("benchmark root scan succeeds");
 
             // Decode-through scanning
             for decoded in keyhog_scanner::testing::decode_chunk(&chunk, 2, false, None, None) {
-                matches.extend(scanner.scan(&decoded));
+                matches.extend(
+                    scanner
+                        .scan(&decoded)
+                        .expect("benchmark decoded scan succeeds"),
+                );
             }
 
             // Entropy scanning

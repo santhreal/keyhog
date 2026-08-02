@@ -934,6 +934,8 @@ fn config_effective_prints_scanner_tuning_from_toml() {
     }
 }
 
+/// Proves removed environment switches cannot override the documented scanner
+/// defaults, including the localized phase-two route used by cold portable scans.
 #[test]
 fn config_effective_ignores_legacy_detection_tuning_env() {
     let output = Command::new(binary())
@@ -970,7 +972,7 @@ fn config_effective_ignores_legacy_detection_tuning_env() {
         "tuning_decode_focus = true",
         "tuning_confirmed_suffix_gate = true",
         "tuning_no_candidate_gate = true",
-        "tuning_fallback_localizer = false",
+        "tuning_fallback_localizer = true",
     ] {
         assert!(
             stdout.contains(required),

@@ -578,16 +578,21 @@ runs:
         fi
 
     - name: Upload SARIF to code-scanning
-      # Fork PRs get a restricted GITHUB_TOKEN without security-events:write,
-      # so codeql-action/upload-sarif 403s. Without continue-on-error the
-      # whole external contributor PR fails on this step instead of just
-      # missing the code-scanning surface. The downloadable workflow artifact
-      # below stays available either way, so reviewers can grab the SARIF.
-      # Trusted pushes/PRs are different: upload-sarif=true is an explicit
-      # production CI contract, so upload failures must fail closed instead
-      # of silently passing without Code Scanning annotations.
+      id: sarif-primary
+      # The first attempt is tolerated so trusted jobs can retry transient
+      # GitHub API failures. The enforcement step below fails closed when both
+      # trusted attempts fail. Restricted fork PR failures remain advisory.
       if: inputs.format == 'sarif' && inputs.upload-sarif == 'true' && steps.report-check.outputs.exists == 'true'
-      continue-on-error: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      continue-on-error: true
+      uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+      with:
+        sarif_file: ${{ steps.report-check.outputs.path }}
+        category: ${{ steps.outfile.outputs.category }}
+
+    - name: Retry trusted SARIF upload
+      id: sarif-retry
+      if: ${{ inputs.format == 'sarif' && inputs.upload-sarif == 'true' && steps.report-check.outputs.exists == 'true' && steps.sarif-primary.outcome == 'failure' && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) }}
+      continue-on-error: true
       uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
       with:
         sarif_file: ${{ steps.report-check.outputs.path }}
@@ -600,6 +605,13 @@ runs:
         name: keyhog-report-${{ steps.outfile.outputs.category }}-${{ github.job }}-${{ strategy.job-index || '0' }}-${{ github.run_attempt }}
         path: ${{ steps.report-check.outputs.path }}
         if-no-files-found: warn
+
+    - name: Fail when trusted SARIF uploads are unavailable
+      if: ${{ always() && inputs.format == 'sarif' && inputs.upload-sarif == 'true' && steps.report-check.outputs.exists == 'true' && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && steps.sarif-primary.outcome == 'failure' && steps.sarif-retry.outcome != 'success' }}
+      shell: bash
+      run: |
+        echo "::error title=KeyHog::Both trusted SARIF upload attempts failed. The report artifact remains available."
+        exit 1
 
     - name: Fail when findings reported
       # The runner is tolerated long enough to upload its report. Re-emit every

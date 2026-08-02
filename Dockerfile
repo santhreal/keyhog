@@ -5,28 +5,24 @@
 FROM rust:1.89-slim-bookworm AS builder
 WORKDIR /build
 
-# Build-time deps: libhyperscan-dev links the `simd` feature against libhs;
-# libssl-dev is required by reqwest's default (native-tls/openssl) TLS, used
-# by the verify/web/github/s3 backends - without it openssl-sys fails to
-# build. pkg-config locates both. ca-certificates covers cargo fetches.
+# Build-time deps: libssl-dev is required by reqwest's default
+# native-tls/OpenSSL transport used by verification and network sources.
+# pkg-config locates OpenSSL, and ca-certificates covers Cargo fetches.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libhyperscan-dev \
         pkg-config \
         ca-certificates \
         libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . .
-RUN cargo build --release -p keyhog
+RUN cargo build --locked --release -p keyhog
 
 FROM debian:bookworm-slim
-# Runtime deps: libhyperscan5 is the shared library the release binary
-# dlopens; ca-certificates is needed for verifier HTTPS; git is needed
-# for `keyhog scan --git-history` and the git Source backend.
+# Runtime deps: ca-certificates supports HTTPS verification and network
+# sources. Git supports history and repository sources.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         git \
-        libhyperscan5 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/keyhog /usr/local/bin/keyhog

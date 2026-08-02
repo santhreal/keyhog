@@ -74,13 +74,17 @@ const NAMES: [&str; N] = [
     "decode",
 ];
 
+static DETAILED_ENABLED: AtomicBool = AtomicBool::new(false);
 static PERF_TRACE_ENABLED: AtomicBool = AtomicBool::new(false);
 
-/// Enable or disable the scanner profile collector for this process.
+/// Enable or disable the scanner's detailed diagnostic profile collector.
 ///
-/// The profiler is process-wide because the underlying counters aggregate work
-/// across rayon workers and decode rescans. Call this before compiling/scanning.
+/// This library API enables fixed stages and expensive per-pattern diagnostics
+/// together. The CLI uses it only for `--perf-trace`; `--profile` starts a
+/// [`keyhog_profile::Session`] directly so production profiling does not enable
+/// per-pattern hot-path accounting.
 pub fn set_profile_enabled(enabled: bool) {
+    DETAILED_ENABLED.store(enabled, Relaxed);
     keyhog_profile::set_enabled(enabled);
 }
 
@@ -93,7 +97,7 @@ pub fn set_perf_trace_enabled(enabled: bool) {
 }
 
 pub(crate) fn enabled() -> bool {
-    keyhog_profile::enabled()
+    DETAILED_ENABLED.load(Relaxed)
 }
 
 pub(crate) fn perf_trace_enabled() -> bool {
@@ -177,6 +181,11 @@ fn point_index(stage: keyhog_profile::Stage) -> Option<usize> {
         Stage::SourceAcquire
         | Stage::SourceWalk
         | Stage::SourceRead
+        | Stage::SourceQueueWait
+        | Stage::ScannerQueueWait
+        | Stage::IncrementalLookup
+        | Stage::BackendSelect
+        | Stage::ResultMerge
         | Stage::Suppression
         | Stage::LiveVerification
         | Stage::Reporting => return None,

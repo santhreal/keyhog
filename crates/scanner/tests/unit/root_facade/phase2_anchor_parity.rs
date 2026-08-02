@@ -269,7 +269,7 @@ fn scan_paths(scanner: &CompiledScanner, chunk: &Chunk) -> PathResults {
             phase2_keyword_localizer: false,
         },
     );
-    assert!(!scanner.default_execution_route().phase2_plain_localizer);
+    assert!(scanner.default_execution_route().phase2_plain_localizer);
     assert!(scanner.default_execution_route().phase2_keyword_localizer);
     PathResults {
         localized,
@@ -392,6 +392,8 @@ fn phase2_only_diff_mirror() {
     eprintln!("phase2-only diff: {diverged} diverging chunks");
 }
 
+/// Proves the default localized route preserves every whole-chunk phase-two finding
+/// across deterministic credentials, hostile boundaries, and seeded arbitrary input.
 #[test]
 fn phase2_anchor_parity_default() {
     let _telemetry_guard = super::super::telemetry_serial::lock();

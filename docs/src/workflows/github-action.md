@@ -45,10 +45,11 @@ The default `sarif` report appears in two places:
 - **Security > Code scanning** contains the uploaded SARIF results.
 - The workflow run contains a `keyhog-report-*` artifact for later review.
 
-The Action treats a Code Scanning upload failure as fatal on trusted pushes and
-same-repository pull requests. GitHub removes `security-events: write` from fork
-pull requests, so the upload is advisory for that event. The workflow artifact
-is still retained, and findings still fail the scan.
+The Action retries one failed Code Scanning upload on trusted pushes and
+same-repository pull requests. It fails the job if both attempts fail. GitHub
+removes `security-events: write` from fork pull requests, so the upload is
+advisory for that event. The workflow artifact is still retained, and findings
+still fail the scan.
 
 ## Choose the workflow for the source
 

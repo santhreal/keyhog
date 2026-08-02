@@ -858,7 +858,7 @@ fn setup_default_scan_runtime_with_rayon_policy(
                 &error,
             )
         })?
-        .with_config(effective_config.scanner.clone())
+        .with_config(effective_config.engine_scanner_config())
         .with_tuning_config(effective_config.scanner_tuning.clone()),
     );
 
@@ -1177,7 +1177,7 @@ impl ScanOrchestrator {
                 &effective_config.scanner_tuning,
             )
             .with_context(|| format!("compiling scanner from {} detector specs", detectors.len()))?
-            .with_config(effective_config.scanner.clone())
+            .with_config(effective_config.engine_scanner_config())
             .with_tuning_config(effective_config.scanner_tuning.clone()),
         );
 

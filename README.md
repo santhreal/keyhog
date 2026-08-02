@@ -258,12 +258,13 @@ keyhog backend --autoroute --json
 | `--fast`, default, `--deep`, or `--precision` | Selecting an explicit detection-cost and recall policy. | These presets are mutually exclusive and change coverage. They are not interchangeable speed knobs. |
 
 Inspect the resolved policy with `keyhog config --effective`. Use `--profile`
-to measure hierarchical scanner stages and the complete operator run before you
-change reader, batch, or channel-depth controls. The report records source,
-backend, cache, workload, thread, input, state-transition, CPU-time, and peak
-memory identity without source content or credential values. Keep advanced
-pipeline controls unset unless a reproducible measurement on the target worker
-shows an improvement.
+to measure fixed scanner stages and the complete operator run before you change
+reader, batch, or channel-depth controls. The low-overhead report records
+source, backend, cache, workload, thread, input, state-transition, CPU-time, and
+peak memory identity without source content or credential values. Use
+`--perf-trace` only for expensive per-pattern and backend diagnostic counters.
+Keep advanced pipeline controls unset unless a reproducible measurement on the
+target worker shows an improvement.
 
 For a recurring full repository scan:
 

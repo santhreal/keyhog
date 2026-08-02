@@ -177,7 +177,10 @@ fn defaults_value_enums_and_possible_values_are_documented() {
     );
 
     let daemon = table_columns(&scan, "`--daemon`");
-    assert_eq!(&daemon[..3], ["`--daemon`", "`[auto\\|on\\|off]`", ""]);
+    assert_eq!(
+        &daemon[..3],
+        ["`--daemon`", "`[auto\\|on\\|mass\\|off]`", ""]
+    );
 
     let verify_rate = table_columns(&scan, "`--verify-rate`");
     assert_eq!(&verify_rate[..3], ["`--verify-rate`", "`RPS`", "`5.0`"]);
