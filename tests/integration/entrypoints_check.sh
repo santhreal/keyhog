@@ -69,14 +69,18 @@ if [ -f "$ACT" ] && [ -f "$SCAN" ]; then
     echo "FAIL GitHub Action entrypoint does not route through run-scan.sh to the authenticated 'keyhog scan' binary."
     fail=1
   fi
-  # SARIF upload should be advisory only for fork PRs (no
-  # security-events:write), while trusted CI must fail closed if the user asked
-  # for Code Scanning upload.
-  if grep -q "continue-on-error: \${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}" "$ACT" \
+  # Both upload attempts are advisory so a retry can run. Restricted fork PRs
+  # stop after the primary attempt, while trusted runs fail closed only when
+  # both attempts fail.
+  if grep -q "id: sarif-primary" "$ACT" \
+     && grep -q "id: sarif-retry" "$ACT" \
+     && grep -q "Fail when trusted SARIF uploads are unavailable" "$ACT" \
+     && grep -q "steps.sarif-primary.outcome == 'failure' && steps.sarif-retry.outcome != 'success'" "$ACT" \
+     && grep -q "github.event.pull_request.head.repo.full_name != github.repository" "$ACT" \
      && grep -q "upload-sarif" "$ACT"; then
-    note "OK   action.yml: SARIF upload is trusted-fail-closed and fork-PR advisory"
+    note "OK   action.yml: trusted SARIF retries fail closed and fork PRs remain advisory"
   else
-    echo "FAIL action.yml: SARIF upload must fail closed on trusted runs and be advisory only for fork PRs."
+    echo "FAIL action.yml: trusted SARIF retries must fail closed after both attempts and remain advisory for fork PRs."
     fail=1
   fi
   # Findings counting is a CI security boundary. A missing or substituted

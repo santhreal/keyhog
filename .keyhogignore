@@ -66,6 +66,16 @@ path:.github/workflows/integration-smoke.yml
 path:crates/cli/data/suppressions/test-fixtures.toml
 # Detector unit tests + examples carry sample credentials by design.
 path:crates/scanner/examples/
+# Test and benchmark fixtures intentionally contain exact positive and negative
+# credential examples. They prove detector behavior and are not live material.
+path:crates/core/tests/
+path:crates/cli/tests/
+path:crates/scanner/tests/
+path:crates/sources/tests/
+path:crates/verifier/tests/
+path:crates/scanner/benches/
+path:benchmarks/bench/tests/
+path:tests/dogfood/
 path:crates/cli/src/benchmark.rs
 path:deno/
 path:detectors/
