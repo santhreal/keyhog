@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/core",
+    "crates/profile",
     "crates/scanner",
     "crates/verifier",
     "crates/sources",
@@ -25,6 +26,7 @@ authors = ["Santh Project <contact@santh.dev>"]
 
 [workspace.dependencies]
 keyhog-core = { version = "=0.5.49", path = "crates/core" }
+keyhog-profile = { version = "=0.5.49", path = "crates/profile" }
 keyhog-scanner = { version = "=0.5.49", path = "crates/scanner", default-features = false }
 keyhog-verifier = { version = "=0.5.49", path = "crates/verifier" }
 # default-features = false so consumers opt into source backends per profile.
@@ -41,6 +43,7 @@ serde_json = "=1.0.150"
 semver = "=1.0.28"
 serde_yaml = "=0.9.34"
 toml = "=1.1.2"
+sysinfo = { version = "=0.36.1", default-features = false, features = ["system"] }
 
 # Async
 tokio = { version = "=1.52.3", features = ["full"] }
