@@ -520,8 +520,13 @@ impl UntrackedWorktreeChunks {
             return Ok(None);
         }
         if self.paths.is_none() {
-            self.paths =
-                Some(list_untracked_worktree_paths(&self.repo_arg, self.limits)?.into_iter());
+            match list_untracked_worktree_paths(&self.repo_arg, self.limits) {
+                Ok(paths) => self.paths = Some(paths.into_iter()),
+                Err(error) => {
+                    self.stopped = true;
+                    return Err(error);
+                }
+            }
         }
         let Some(paths) = self.paths.as_mut() else {
             return Err(SourceError::Other(
