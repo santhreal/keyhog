@@ -6,6 +6,7 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
+/// Proves an explicit portable backend wins over the retired backend environment variable.
 #[test]
 fn legacy_keyhog_backend_env_is_ignored_by_explicit_backend_flag() {
     let dir = TempDir::new().expect("tempdir");
@@ -19,7 +20,7 @@ fn legacy_keyhog_backend_env_is_ignored_by_explicit_backend_flag() {
             "--format",
             "json",
             "--backend",
-            "simd",
+            "cpu",
         ])
         .arg(&target)
         .env("KEYHOG_BACKEND", "not-a-real-backend")
