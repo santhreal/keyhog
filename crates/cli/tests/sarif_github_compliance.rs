@@ -41,12 +41,18 @@ fn sarif_is_github_code_scanning_compliant() {
             ".",
             "--daemon=off",
             "--backend",
-            "simd",
+            "cpu",
             "--format",
             "sarif",
         ])
         .output()
         .expect("spawn keyhog scan");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "the planted AWS key must produce a finding; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     let v: serde_json::Value =
         serde_json::from_str(stdout.trim()).expect("SARIF stdout must be valid JSON");
