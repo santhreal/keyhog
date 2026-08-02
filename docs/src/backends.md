@@ -12,6 +12,7 @@ output ordering.
 | `cpu` (`cpu-fallback`) | Pure-Rust literal and regex execution | Portable and cheap to start; useful when native accelerators are unavailable. |
 | `simd` (`simd-regex`) | Hyperscan/Vectorscan trigger matching plus the shared extraction and policy pipeline | Fast CPU throughput after compiled databases are loaded; the calibration reference for accelerated builds. |
 | `gpu-cuda` (`gpu-cuda-region-presence`) | VYRE CUDA region-presence matching feeding the shared confirmation pipeline | Measured as its own autoroute candidate. |
+| `gpu-metal` (`gpu-metal-region-presence`) | VYRE native Metal region-presence matching feeding the shared confirmation pipeline | Measured as its own autoroute candidate on macOS. |
 | `gpu-wgpu` (`gpu-wgpu-region-presence`) | VYRE WGPU region-presence matching feeding the shared confirmation pipeline | Measured as its own autoroute candidate. |
 | `auto` | Exact lookup in a persisted, parity-checked calibration table | Default. It is a selector over all eligible engines, not a fallback order. |
 
@@ -43,6 +44,7 @@ autoroute and its calibration cache:
 keyhog scan . --backend cpu
 keyhog scan . --backend simd
 keyhog scan . --backend gpu-cuda
+keyhog scan . --backend gpu-metal
 keyhog scan . --backend gpu-wgpu
 ```
 
@@ -54,8 +56,8 @@ route decision.
 An explicit backend is a hard execution contract. If it was not compiled, its
 runtime is unavailable, initialization fails, or dispatch fails, the scan
 returns an error. KeyHog does not substitute CPU, SIMD, or another GPU peer.
-`gpu-cuda` and `gpu-wgpu` are separate choices. There is no generic `gpu`
-override.
+`gpu-cuda`, `gpu-metal`, or `gpu-wgpu` are separate choices. There is no
+generic `gpu` override.
 
 ## Check SIMD and GPU availability
 
