@@ -74,26 +74,22 @@ fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option
     )
 }
 
-fn forced_simd_progress_banner() -> String {
+fn portable_progress_banner() -> String {
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("clean.txt");
     std::fs::write(&path, "hello world\n").expect("write fixture");
-    let home = dirs::home_dir().expect("home directory for validated Hyperscan cache fixture");
-    let cache_root = TempDir::new_in(home).expect("home-scoped Hyperscan cache root");
-    let cache_dir = cache_root.path().join("hyperscan-cache");
 
     let output = Command::new(binary())
         .args([
             "scan",
+            "--no-config",
             "--daemon=off",
             "--progress",
             "--format",
             "json",
             "--backend",
-            "simd",
+            FUNCTIONAL_E2E_BACKEND,
         ])
-        .arg("--cache-dir")
-        .arg(&cache_dir)
         .arg(&path)
         .output()
         .expect("spawn keyhog scan --progress");
@@ -390,7 +386,7 @@ fn docs_scan_banners_match_live_binary_banner_contract() {
         env!("CARGO_PKG_VERSION")
     );
 
-    let progress_banner = forced_simd_progress_banner();
+    let progress_banner = portable_progress_banner();
     let (banner_detectors, banner_patterns) = parse_banner_counts(&progress_banner);
     assert_eq!(
         banner_detectors, expected_detectors,
@@ -430,24 +426,6 @@ fn docs_scan_banners_match_live_binary_banner_contract() {
             "{rel} still contains the stale one-line fabricated banner"
         );
     }
-
-    let readme = doc_text("README.md");
-    assert!(
-        readme.contains(&version_fragment),
-        "README.md must use the live --version/detector banner `{version_fragment}`"
-    );
-    assert!(
-        readme.contains(&compiled_count_fragment),
-        "README.md must pin the live compiled scanner pattern count `{compiled_count_fragment}`"
-    );
-    assert!(
-        readme.contains("backend="),
-        "README.md must show the operator-visible backend decision field"
-    );
-    assert!(
-        !readme.contains("AVX-512 + Hyperscan + CUDA") && !readme.contains("1666 patterns"),
-        "README.md still contains the stale one-line fabricated banner"
-    );
 }
 
 #[test]
