@@ -56,18 +56,6 @@ fn current_cli_features() -> Vec<String> {
 
 fn current_scanner_dependency_features() -> Vec<String> {
     let mut features = Vec::new();
-    if cfg!(feature = "default") {
-        features.extend([
-            "default",
-            "decode",
-            "entropy",
-            "gpu",
-            "ml",
-            "multiline",
-            "simd",
-            "simdsieve",
-        ]);
-    }
     if cfg!(feature = "ci-lean") {
         features.extend([
             "ci-lean",
@@ -86,7 +74,7 @@ fn current_scanner_dependency_features() -> Vec<String> {
         features.extend(["decode", "entropy", "ml", "multiline"]);
     }
     if keyhog_scanner::hw_probe::gpu_backend_compiled() {
-        features.extend(["gpu", "simd"]);
+        features.push("gpu");
     }
     if keyhog_scanner::hw_probe::simd_backend_compiled() {
         features.push("simd");

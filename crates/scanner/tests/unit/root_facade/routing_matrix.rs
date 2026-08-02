@@ -26,6 +26,13 @@ use keyhog_scanner::testing::{clear_test_backend_override, set_test_backend_over
 use std::sync::Mutex;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
+const fn automatic_gpu_backend() -> ScanBackend {
+    if cfg!(target_os = "macos") {
+        ScanBackend::GpuMetal
+    } else {
+        ScanBackend::GpuWgpu
+    }
+}
 
 fn caps_with_gpu(name: &str, hyperscan: bool, simd: bool) -> HardwareCaps {
     HardwareCaps {
@@ -137,7 +144,7 @@ fn env_override_invalid_value_falls_through_to_auto() {
             // RTX 5090 + 1 GiB + 10k patterns → high-tier auto picks Gpu.
             assert_eq!(
                 select_backend(&caps, 1 << 30, 10_000),
-                ScanBackend::GpuWgpu,
+                automatic_gpu_backend(),
                 "garbage env {garbage:?} must fall through to auto-Gpu"
             );
         });
@@ -289,27 +296,27 @@ fn assert_high_tier_routing_cells() -> Vec<(u64, usize, ScanBackend, &'static st
         (
             solo,
             1,
-            ScanBackend::GpuWgpu,
+            automatic_gpu_backend(),
             "high: at solo, 1 pattern → Gpu",
         ),
         (
             solo + 1,
             0,
-            ScanBackend::GpuWgpu,
+            automatic_gpu_backend(),
             "high: just above solo → Gpu",
         ),
-        (solo * 4, 1, ScanBackend::GpuWgpu, "high: 4× solo → Gpu"),
+        (solo * 4, 1, automatic_gpu_backend(), "high: 4× solo → Gpu"),
         // Min + pattern-floor path: both conditions must hold.
         (
             min,
             pat_floor,
-            ScanBackend::GpuWgpu,
+            automatic_gpu_backend(),
             "high: at (min, pat_floor) → Gpu",
         ),
         (
             min,
             pat_floor + 1,
-            ScanBackend::GpuWgpu,
+            automatic_gpu_backend(),
             "high: at min, above pat_floor → Gpu",
         ),
         // Below min: never Gpu, falls to SimdCpu when Hyperscan present.
@@ -358,11 +365,11 @@ fn mid_tier_routing_crossover_cells() {
     let pat_floor = gpu_pattern_breakeven_for_tier(GpuTier::Mid);
     with_env(None, || {
         for (bytes, patterns, expected, label) in [
-            (solo, 0, ScanBackend::GpuWgpu, "mid: at solo cap → Gpu"),
+            (solo, 0, automatic_gpu_backend(), "mid: at solo cap → Gpu"),
             (
                 min,
                 pat_floor,
-                ScanBackend::GpuWgpu,
+                automatic_gpu_backend(),
                 "mid: at (min, pat_floor) → Gpu",
             ),
             (
@@ -395,11 +402,11 @@ fn low_tier_routing_crossover_cells() {
     let pat_floor = gpu_pattern_breakeven_for_tier(GpuTier::Low);
     with_env(None, || {
         for (bytes, patterns, expected, label) in [
-            (solo, 0, ScanBackend::GpuWgpu, "low: at solo cap → Gpu"),
+            (solo, 0, automatic_gpu_backend(), "low: at solo cap → Gpu"),
             (
                 min,
                 pat_floor,
-                ScanBackend::GpuWgpu,
+                automatic_gpu_backend(),
                 "low: at (min, pat_floor) → Gpu",
             ),
             (
@@ -582,7 +589,7 @@ fn batch_swarm_of_tiny_files_stays_simd_despite_huge_total() {
         // proving the dominance guard is what changed the decision.
         assert_eq!(
             select_backend(&caps, total, 5_000),
-            ScanBackend::GpuWgpu,
+            automatic_gpu_backend(),
             "sanity: total-only select_backend still routes the same total to GPU"
         );
     });
@@ -617,7 +624,7 @@ fn batch_large_dominated_routes_gpu() {
     with_env(None, || {
         assert_eq!(
             select_backend_for_batch(&caps, solo, 1, solo),
-            ScanBackend::GpuWgpu,
+            automatic_gpu_backend(),
             "a batch that is entirely large-file bytes must engage the GPU"
         );
     });
@@ -636,7 +643,7 @@ fn batch_dominance_boundary_is_inclusive() {
     with_env(None, || {
         assert_eq!(
             select_backend_for_batch(&caps, total, 5_000, total / 2),
-            ScanBackend::GpuWgpu,
+            automatic_gpu_backend(),
             "large bytes == half the batch is inclusive -> GPU"
         );
         assert_eq!(

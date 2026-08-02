@@ -6411,7 +6411,7 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
 }
 
 #[test]
-fn daemon_without_valid_autoroute_evidence_initializes_scalar_recovery() {
+fn daemon_without_valid_autoroute_evidence_initializes_required_recovery() {
     let router = CachedBackendRouter {
         pattern_count: 922,
         decode_workload_plan: test_decode_workload_plan(),
@@ -6424,12 +6424,18 @@ fn daemon_without_valid_autoroute_evidence_initializes_scalar_recovery() {
         recovery_announced: AtomicBool::new(false),
     };
 
+    let expected_routes = if autoroute_required() {
+        vec![ScanBackend::CpuFallback]
+    } else {
+        Vec::new()
+    };
+
     assert_eq!(
         router
             .persistent_routes()
             .expect("invalid autoroute state must not prevent daemon readiness"),
-        vec![ScanBackend::CpuFallback],
-        "daemon readiness must initialize only the scalar correctness recovery route"
+        expected_routes,
+        "daemon readiness must initialize scalar recovery exactly when autoroute is required"
     );
 }
 

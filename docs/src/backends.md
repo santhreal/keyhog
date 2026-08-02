@@ -81,8 +81,10 @@ identifiable Hyperscan/Vectorscan runtime. A CPU with AVX2 or AVX-512 alone does
 not provide that runtime. GPU candidates require scanner GPU support, a
 physical device, and a usable driver path. CUDA, native Metal, and WGPU are
 acquired and measured independently, so one available peer does not imply that
-another is available. Use explicit `--backend simd`, `gpu-cuda`, `gpu-metal`,
-or `gpu-wgpu` scans to diagnose whether that exact engine can initialize.
+another is available. Diagnose exact engines with `--backend simd`
+(`simd-regex`), `gpu-cuda` (`gpu-cuda-region-presence`), `gpu-metal`
+(`gpu-metal-region-presence`), or `gpu-wgpu`
+(`gpu-wgpu-region-presence`).
 
 ## Library backend contract
 

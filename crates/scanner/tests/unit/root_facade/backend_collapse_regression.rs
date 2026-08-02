@@ -21,6 +21,13 @@ use keyhog_scanner::testing::{clear_test_backend_override, set_test_backend_over
 use std::sync::Mutex;
 
 static POLICY_LOCK: Mutex<()> = Mutex::new(());
+const fn automatic_gpu_backend() -> ScanBackend {
+    if cfg!(target_os = "macos") {
+        ScanBackend::GpuMetal
+    } else {
+        ScanBackend::GpuWgpu
+    }
+}
 
 fn strip_line_comments(src: &str) -> String {
     src.lines()
@@ -242,7 +249,7 @@ fn routing_verdict_surfaces_gpu_selection_reason() {
             thresholds::GPU_MIN_BYTES_HIGH_TIER,
             5_000,
         );
-        assert_eq!(verdict.backend, ScanBackend::GpuWgpu);
+        assert_eq!(verdict.backend, automatic_gpu_backend());
         assert_eq!(verdict.reason, BackendRoutingReason::GpuSelected);
         assert_eq!(verdict.reason.label(), "gpu_selected");
         assert_eq!(verdict.workload_bytes, thresholds::GPU_MIN_BYTES_HIGH_TIER);
@@ -282,7 +289,7 @@ fn selection_matrix_exact_cells() {
         ));
         assert_eq!(
             select_backend(&gpu, thresholds::GPU_MIN_BYTES_HIGH_TIER, 5_000),
-            ScanBackend::GpuWgpu
+            automatic_gpu_backend()
         );
 
         // Tiny workload below every floor: GPU cannot engage -> SimdCpu.
@@ -331,7 +338,7 @@ fn batch_dominance_guard_keeps_small_file_swarm_on_cpu() {
         // The same batch DOMINATED by large-file bytes does take the GPU.
         assert_eq!(
             select_backend_for_batch(&gpu, total, 5_000, total),
-            ScanBackend::GpuWgpu,
+            automatic_gpu_backend(),
             "large-file-dominated batch must route to GPU"
         );
     });

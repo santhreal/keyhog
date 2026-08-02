@@ -531,10 +531,6 @@ fn docs_backend_aliases_are_explicit() -> bool {
             env!("CARGO_MANIFEST_DIR"),
             "/../../docs/src/reference/configuration.md"
         )),
-        include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../docs/src/reference/env.md"
-        )),
     ];
     keyhog_scanner::hw_probe::BACKEND_OVERRIDE_VALUES
         .iter()
@@ -630,119 +626,72 @@ fn output_formats_doc_states_eleven_values() {
             "the composite Action must not advertise unsupported `{v}` format"
         );
     }
+    let action_doc = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/src/workflows/github-action.md"
+    ));
+    for v in ["text", "json", "sarif", "jsonl"] {
+        assert!(
+            action_doc.contains(v),
+            "the public Action guide must advertise its supported `{v}` format"
+        );
+    }
     let ci_doc = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../docs/src/workflows/ci.md"
     ));
-    let ci_doc_single_line = ci_doc.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        ci_doc_single_line.contains("`format` input intentionally supports the four formats")
-            && ci_doc_single_line.contains("Use the installed CLI directly"),
-        "CI docs must distinguish the four-format Action wrapper from the full CLI format surface"
+        ci_doc.contains("[GitHub Action guide](./github-action.md)")
+            && ci_doc.contains("Use the CLI directly"),
+        "CI docs must direct Action users to its bounded surface and CLI users to the full surface"
     );
 }
 
-/// README↔installer verification coherence (dogfood 2026-06-22). `install.sh`
-/// and `install.ps1` gate every download on a minisign SIGNATURE against the
-/// pinned public key and FAIL CLOSED when minisign is absent: a real install ran
-/// on a host with no minisign, it downloaded the binary + `.minisig`, then
-/// refused with "minisign is not installed … Refusing to install an unverified
-/// keyhog binary" and wrote nothing. README's `## Install` section previously
-/// claimed only "Each download is SHA256-verified against the release-side
-/// checksum file", which undersells the hard requirement: most hosts ship no
-/// minisign, so the headline `curl … | sh` refuses with no forewarning, and the
-/// `.sha256` is never even reached (the signature gate fails first). Pin the
-/// corrected, coherent wording so the install-verification docs can never
-/// silently drift back to a sha256-only claim the installer never honored.
+/// The canonical install surfaces must describe the crates.io-only release
+/// contract instead of the retired signed-binary bundle.
 #[test]
-fn readme_documents_minisign_install_gate_coherently() {
+fn readme_documents_crates_io_install_coherently() {
     let readme = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md"));
-    let install_sh = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../install.sh"));
-    let install_ps1 = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../install.ps1"));
-
-    // Ground truth FIRST: both installers really do verify a minisign signature
-    // and fail closed without it. The README assertions below only make sense
-    // while this is the live behavior (so anchor on it).
-    assert!(
-        install_sh.contains("minisign -Vm")
-            && install_sh.contains("Refusing to install an unverified"),
-        "install.sh must verify the release minisign signature and fail closed; \
-         the README coherence assertions below depend on that being the real behavior."
-    );
-    assert!(
-        install_ps1.contains("minisign")
-            && install_ps1.contains("Refusing to install an unverified"),
-        "install.ps1 must verify the release minisign signature and fail closed (Windows parity)."
-    );
-
-    // Isolate the README `## Install` section (up to the next h2 heading).
-    let install_section = readme
-        .split("\n## Install\n")
-        .nth(1)
-        .expect("README must have an exact `## Install` heading")
-        .split("\n## ")
-        .next()
-        .expect("README `## Install` section must have body text");
-
-    // Coherence: because the install fails closed without minisign, the README
-    // install section MUST tell operators minisign is required and that the
-    // install fails closed (not imply sha256-only verification).
-    assert!(
-        install_section.contains("minisign"),
-        "README `## Install` must document the minisign signature requirement (the installer \
-         fails closed without minisign); it must not imply sha256-only verification."
-    );
-    assert!(
-        install_section.contains("fails closed") || install_section.contains("Refusing"),
-        "README `## Install` must state the installer FAILS CLOSED on a missing/invalid \
-         signature, matching install.sh's `Refusing to install an unverified` behavior."
-    );
-    // The `--insecure` escape hatch the README points operators to must be a real
-    // installer flag, so the documented offline/air-gapped path actually works.
-    assert!(
-        install_section.contains("--insecure"),
-        "README `## Install` must document the `--insecure` offline/air-gapped escape hatch."
-    );
-    assert!(
-        install_section.contains("libhyperscan5")
-            && install_section.contains("apt-get install")
-            && install_section.contains("brew install minisign"),
-        "README `## Install` must name Linux Hyperscan/minisign and macOS minisign prerequisites"
-    );
-    assert!(
-        install_sh.contains("--insecure") || install_sh.contains("INSECURE_INSTALL"),
-        "install.sh must implement the `--insecure` flag the README documents."
-    );
-
     let install_guide = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../docs/src/install.md"
     ));
-    let pinned = install_guide
-        .split("## Pinned verified install: Linux / macOS")
+    let install_guide_norm = normalize_surface_text(install_guide);
+    let install_section = readme
+        .split("\n## Install KeyHog\n")
         .nth(1)
-        .expect("install guide must have the pinned Linux/macOS section")
+        .expect("README must have an exact `## Install KeyHog` heading")
         .split("\n## ")
         .next()
-        .expect("pinned install section must have body text");
+        .expect("README install section must have body text");
+
     assert!(
-        pinned.contains("libhyperscan5")
-            && pinned.contains("minisign")
-            && pinned.contains("brew install minisign"),
-        "the canonical pinned install guide must name every platform verifier/runtime prerequisite"
+        install_section.contains("cargo install keyhog --locked"),
+        "README installation must use the published crates.io package"
+    );
+    assert!(
+        !install_section.contains("install.sh") && !install_section.contains("minisign"),
+        "README installation must not promise retired binary installer assets"
+    );
+    assert!(
+        install_guide_norm.contains("keyhog releases are rust packages on crates.io")
+            && install_guide_norm
+                .contains("does not publish binary release assets or installer bundles"),
+        "the install guide must state the crates.io-only release boundary"
     );
 }
 
+/// Public CI recipes must install one exact crates.io package and must not
+/// depend on retired signed-binary assets or a runtime Hyperscan package.
 #[test]
-fn public_ci_install_recipes_match_signed_static_linux_release() {
+fn public_ci_install_recipes_pin_crates_io_release() {
     let guide = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../docs/src/workflows/ci.md"
     ));
     assert!(
-        guide.contains("statically links Hyperscan")
-            && guide.contains("does not require `libhyperscan5`"),
-        "CI guidance must state that the signed Linux release has no runtime Hyperscan package"
+        guide.contains("Manual CI installation can pin one exact crates.io version"),
+        "CI guidance must state its crates.io version-pinning contract"
     );
     for heading in ["## GitLab CI", "## CircleCI", "## Drone CI", "## Buildkite"] {
         let section = guide
@@ -753,10 +702,11 @@ fn public_ci_install_recipes_match_signed_static_linux_release() {
             .next()
             .expect("CI recipe section must have body text");
         assert!(
-            section.contains("install.sh")
-                && section.contains("minisign")
+            section.contains("cargo install --locked --version '=0.5.49' keyhog")
+                && !section.contains("install.sh")
+                && !section.contains("minisign")
                 && !section.contains("libhyperscan5"),
-            "{heading} must install the signed installer verifier without adding an unused runtime library"
+            "{heading} must install the exact crates.io package without retired binary-asset prerequisites"
         );
     }
 }
