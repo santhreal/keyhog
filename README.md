@@ -833,6 +833,7 @@ configuration, environment where documented, then explicit CLI overrides.
 Unknown keys and invalid combinations fail before scanning. Run
 `keyhog config --effective` to inspect the resolved policy without exposing
 proxy credentials.
+Entries past `expires` fail allowlist load before scanning.
 
 See [configuration and precedence](https://santhreal.github.io/keyhog/reference/configuration.html)
 for every key and [environment variables](https://santhreal.github.io/keyhog/reference/env.html)

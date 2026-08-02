@@ -27,7 +27,7 @@ fn run_scan(dir: &TempDir) -> (String, String, Option<i32>) {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            "cpu",
             "--format",
             "json",
         ])
@@ -50,6 +50,7 @@ fn fixture_dir(config: &str, allowlist: &str) -> TempDir {
     dir
 }
 
+/// Locks the documented fail-closed contract to the enforced governance behavior.
 #[test]
 fn docs_state_allowlist_governance_and_expiry_fail_closed() {
     let docs = [
@@ -90,6 +91,7 @@ fn docs_state_allowlist_governance_and_expiry_fail_closed() {
     );
 }
 
+/// Prevents entries without a required reason from silently suppressing findings.
 #[test]
 fn scan_rejects_allowlist_entry_missing_required_reason() {
     let dir = fixture_dir(
@@ -117,6 +119,7 @@ fn scan_rejects_allowlist_entry_missing_required_reason() {
     );
 }
 
+/// Prevents overlong suppression approvals from bypassing the configured expiry limit.
 #[test]
 fn scan_rejects_allowlist_entry_beyond_configured_expiry_window() {
     let dir = fixture_dir(
@@ -139,6 +142,7 @@ fn scan_rejects_allowlist_entry_beyond_configured_expiry_window() {
     );
 }
 
+/// Proves the configured allowlist path suppresses findings on the portable backend.
 #[test]
 fn scan_uses_configured_allowlist_file() {
     let dir = TempDir::new().expect("tempdir");
