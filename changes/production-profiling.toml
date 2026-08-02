@@ -1,0 +1,3 @@
+category = "Added"
+summary = "Add low-overhead causal run profiling with fixed scanner stages, state transitions, process resource measurements, and explicit source and backend identity while keeping per-pattern diagnostics behind --perf-trace."
+crates = ["profile", "cli", "scanner"]
