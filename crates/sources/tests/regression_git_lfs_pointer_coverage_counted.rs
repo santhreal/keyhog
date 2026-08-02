@@ -42,6 +42,18 @@ fn canonical_pointer() -> String {
     format!("{VERSION_LINE}\noid sha256:{OID_64}\nsize 1024\n")
 }
 
+fn png_without_metadata(payload_len: usize) -> Vec<u8> {
+    let mut content = b"\x89PNG\r\n\x1a\n".to_vec();
+    content.extend_from_slice(&(payload_len as u32).to_be_bytes());
+    content.extend_from_slice(b"IDAT");
+    content.resize(content.len() + payload_len, 0x42);
+    content.extend_from_slice(&[0; 4]);
+    content.extend_from_slice(&[0, 0, 0, 0]);
+    content.extend_from_slice(b"IEND");
+    content.extend_from_slice(&[0; 4]);
+    content
+}
+
 /// Write one file into a fresh tree, drive the real filesystem scan, and return
 /// the end-of-scan counters plus the text of every emitted chunk. The caller
 /// holds `counter_guard()` and has reset the counters, so the returned snapshot
@@ -204,36 +216,32 @@ fn bin_canonical_pointer_records_git_lfs_pointer_gap() {
     assert_eq!(counts.git_lfs_pointer, 1);
 }
 
+/// Proves a valid metadata-free PNG is inspected as an image, not misreported as a binary skip.
 #[test]
-fn png_real_small_binary_asset_is_counted_binary_not_pointer() {
-    // A genuine small PNG (magic-prefixed, not a pointer) must fail the pointer
-    // probe and fall through to the normal binary skip (no false positive).
+fn png_real_small_asset_is_scanned_as_image_not_pointer() {
     let _guard = counter_guard();
     reset_skipped_over_max_size();
-    let mut content = vec![0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n'];
-    content.extend_from_slice(&[0u8; 64]);
-    let (counts, _texts) = scan_one_file("icon.png", &content);
+    let (counts, _texts) = scan_one_file("icon.png", &png_without_metadata(64));
     assert_eq!(
         counts.git_lfs_pointer, 0,
         "a real PNG must not be seen as a pointer"
     );
-    assert_eq!(counts.binary, 1, "a real PNG is a normal binary skip");
+    assert_eq!(
+        counts.binary, 0,
+        "a valid PNG has its metadata surface inspected and is not an unscanned binary"
+    );
 }
 
+/// Proves image metadata inspection remains complete for PNG assets larger than an LFS pointer.
 #[test]
-fn png_large_asset_is_not_probed_and_counts_binary() {
-    // A .png larger than one pointer is a real asset: the size gate skips the
-    // probe entirely (Law 7, no whole-content read on a large binary), and it is
-    // recorded as an ordinary binary skip.
+fn png_large_asset_is_scanned_as_image_without_pointer_probe() {
     let _guard = counter_guard();
     reset_skipped_over_max_size();
-    let mut content = vec![0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n'];
-    content.extend_from_slice(&vec![0x42u8; 4096]);
-    let (counts, _texts) = scan_one_file("photo.png", &content);
+    let (counts, _texts) = scan_one_file("photo.png", &png_without_metadata(4096));
     assert_eq!(counts.git_lfs_pointer, 0);
     assert_eq!(
-        counts.binary, 1,
-        "a large .png asset is an ordinary binary skip, not probed"
+        counts.binary, 0,
+        "a valid PNG has its metadata surface inspected and is not an unscanned binary"
     );
 }
 
