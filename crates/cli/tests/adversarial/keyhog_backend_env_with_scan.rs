@@ -14,7 +14,7 @@ fn legacy_keyhog_backend_env_is_ignored_with_explicit_backend_flag() {
             "--format",
             "json",
             "--backend",
-            "simd",
+            "cpu",
         ])
         .arg(&path)
         .output()

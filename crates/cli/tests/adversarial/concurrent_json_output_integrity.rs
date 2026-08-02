@@ -1,18 +1,18 @@
 //! Adversarial: four concurrent scans must each emit independent valid JSON arrays.
 
-use crate::support::{binary, workspace_detectors};
+use crate::support::{binary, write_temp_file};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Barrier};
 use std::thread;
 
 #[test]
 fn concurrent_json_output_integrity() {
-    let detectors = workspace_detectors();
+    let (_dir, input_path) = write_temp_file("clean.txt", "hello\n");
     let barrier = Arc::new(Barrier::new(4));
     let mut handles = Vec::new();
 
     for id in 0..4 {
-        let path = detectors.clone();
+        let path = input_path.clone();
         let b = barrier.clone();
         handles.push(thread::spawn(move || {
             b.wait();
@@ -21,7 +21,7 @@ fn concurrent_json_output_integrity() {
                     "scan",
                     "--daemon=off",
                     "--backend",
-                    "simd",
+                    "cpu",
                     "--format",
                     "json",
                 ])
@@ -34,17 +34,23 @@ fn concurrent_json_output_integrity() {
             (
                 output.status.code(),
                 String::from_utf8_lossy(&output.stdout).into_owned(),
+                String::from_utf8_lossy(&output.stderr).into_owned(),
             )
         }));
     }
 
     for handle in handles {
-        let (code, stdout) = handle.join().expect("thread");
-        assert_eq!(code, Some(0));
+        let (code, stdout, stderr) = handle.join().expect("thread");
+        assert_eq!(
+            code,
+            Some(0),
+            "concurrent clean scan must succeed; stderr={stderr}"
+        );
         let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
-        assert!(
-            parsed.is_array(),
-            "concurrent stdout must stay a JSON array"
+        assert_eq!(
+            parsed,
+            serde_json::json!([]),
+            "concurrent clean scan must emit one exact empty JSON report"
         );
     }
 }

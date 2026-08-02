@@ -11,7 +11,7 @@ fn keyhog_threads_empty_string_is_ignored() {
         .args([
             "scan",
             "--backend",
-            "simd",
+            "cpu",
             "--daemon=off",
             "--format",
             "json",

@@ -25,7 +25,7 @@ fn malformed_config_fails_closed_with_one_operator_error() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            "cpu",
             "--format",
             "json",
         ])

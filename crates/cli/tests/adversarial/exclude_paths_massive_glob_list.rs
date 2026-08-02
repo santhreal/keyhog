@@ -13,7 +13,7 @@ fn exclude_paths_massive_glob_list() {
         "scan",
         "--daemon=off",
         "--backend",
-        "simd",
+        "cpu",
         "--format",
         "json",
     ])

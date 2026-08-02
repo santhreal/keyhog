@@ -41,7 +41,7 @@ pub fn oracle_unicode_path_scan() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            "cpu",
             "--format",
             "json",
         ])
@@ -87,7 +87,7 @@ pub fn oracle_pipe_stdout_json_valid() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            "cpu",
             "--format",
             "json",
         ])
@@ -126,7 +126,7 @@ pub fn oracle_concurrent_four_scans_json() {
                     "scan",
                     "--daemon=off",
                     "--backend",
-                    "simd",
+                    "cpu",
                     "--format",
                     "json",
                 ])
@@ -171,7 +171,7 @@ pub fn oracle_invalid_utf8_filename_rejected() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            "cpu",
             "--format",
             "json",
         ])

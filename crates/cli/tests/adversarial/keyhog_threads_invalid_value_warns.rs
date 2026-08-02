@@ -11,7 +11,7 @@ fn keyhog_threads_invalid_value_is_ignored() {
         .args([
             "scan",
             "--backend",
-            "simd",
+            "cpu",
             "--daemon=off",
             "--format",
             "json",

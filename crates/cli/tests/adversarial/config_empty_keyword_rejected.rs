@@ -34,7 +34,7 @@ fn assert_empty_keyword_rejected(field: &str, toml_line: &str) {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            "cpu",
             "--format",
             "json",
         ])
