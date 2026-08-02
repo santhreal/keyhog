@@ -693,6 +693,10 @@ fn public_ci_install_recipes_pin_crates_io_release() {
         guide.contains("Manual CI installation can pin one exact crates.io version"),
         "CI guidance must state its crates.io version-pinning contract"
     );
+    let install_command = format!(
+        "cargo install --locked --version '={}' keyhog",
+        env!("CARGO_PKG_VERSION")
+    );
     for heading in ["## GitLab CI", "## CircleCI", "## Drone CI", "## Buildkite"] {
         let section = guide
             .split(heading)
@@ -702,7 +706,7 @@ fn public_ci_install_recipes_pin_crates_io_release() {
             .next()
             .expect("CI recipe section must have body text");
         assert!(
-            section.contains("cargo install --locked --version '=0.5.49' keyhog")
+            section.contains(&install_command)
                 && !section.contains("install.sh")
                 && !section.contains("minisign")
                 && !section.contains("libhyperscan5"),
