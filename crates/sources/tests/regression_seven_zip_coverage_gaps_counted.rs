@@ -327,6 +327,7 @@ fn seven_zip_entry_read_errors_are_per_entry_skips() {
     );
 }
 
+/// Locks skipped-entry alignment and bounded allocation to the shared archive safety contract.
 #[test]
 fn seven_zip_skipped_entry_draining_is_limited_to_solid_archives() {
     let source = std::fs::read_to_string(concat!(
@@ -358,7 +359,7 @@ fn seven_zip_skipped_entry_draining_is_limited_to_solid_archives() {
         "solid 7z drain failures must emit a machine-visible SourceError row and typed skip event"
     );
     assert!(
-        source.contains("entry_size.min(READ_CAPACITY_HINT)"),
+        source.contains("entry_size.min(ARCHIVE_ENTRY_READ_CAPACITY_HINT)"),
         "7z content buffers must not preallocate from untrusted declared sizes beyond the fixed hint"
     );
 }
