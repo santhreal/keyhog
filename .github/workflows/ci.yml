@@ -616,7 +616,7 @@ jobs:
       # fat-LTO link. The shipped fat-LTO `--release` build is still gated on
       # every PR by the macos-build job (portable variant) and produced for
       # real at tag time by release.yml, so this loses no fat-LTO coverage.
-      - run: cargo build --profile release-fast -p keyhog
+      - run: cargo build --profile release-fast -p keyhog --features simd
       - name: Smoke test
         run: |
           set +e

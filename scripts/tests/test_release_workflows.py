@@ -63,6 +63,13 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
                 self.assertNotIn(obsolete, CI)
         self.assertIn("length == 15", CI)
 
+    def test_release_dogfood_build_includes_the_simd_backend_it_exercises(self) -> None:
+        """The release dogfood matrix must not request SIMD from a portable-only binary."""
+        self.assertIn(
+            "cargo build --profile release-fast -p keyhog --features simd",
+            CI,
+        )
+
     def test_publisher_uploads_dependency_order_without_release_proofs(self) -> None:
         """Cargo uploads must follow the workspace dependency chain and stop there."""
         self.assertIn(
