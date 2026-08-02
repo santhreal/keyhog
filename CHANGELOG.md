@@ -2,6 +2,23 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.50] - 2026-08-02
+
+### Added
+
+- Add low-overhead causal run profiling with fixed scanner stages, state transitions, process resource measurements, and explicit source and backend identity while keeping per-pattern diagnostics behind --perf-trace.
+
+### Changed
+
+- Publish a patch release to crates.io after every successful main CI run, with automatic version and changelog updates and no signing or release-asset gates.
+- Localize plain phase-two patterns by default on portable and explicit CPU scans, avoiding full portable marking-set compilation when the shared anchor index owns candidate extraction.
+
+### Fixed
+
+- Record scanner accelerator features from dependency-owned compile state so portable autoroute identities no longer claim unavailable GPU or SIMD backends.
+- Keep complete credentials from native binary strings and executable sections when a strong named detector validates an explicit credential shape, while continuing to suppress weak prefix fragments and generic assignment noise.
+- Bound scan-system metadata discovery by the remaining --space budget so small host-scan ceilings stop promptly and report partial coverage instead of traversing the entire filesystem first.
+
 ## [0.5.49] - 2026-07-30
 
 ### Added

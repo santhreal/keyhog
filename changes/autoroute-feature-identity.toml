@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Record scanner accelerator features from dependency-owned compile state so portable autoroute identities no longer claim unavailable GPU or SIMD backends."
-crates = ["cli"]

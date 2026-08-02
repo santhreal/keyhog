@@ -40,7 +40,7 @@ Add the following to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/santhreal/keyhog
-    rev: v0.5.49
+    rev: v0.5.50
     hooks:
       - id: keyhog
         stages: [pre-commit]
