@@ -37,6 +37,7 @@ fn collect_detector_signatures_unifies_primary_and_companion_regexes() {
             regex: "secondary_[A-Z]+".into(),
             within_lines: 2,
             required: false,
+            ..Default::default()
         }],
         ..keyhog_core::DetectorSpec::default()
     }];

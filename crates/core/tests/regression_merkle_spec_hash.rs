@@ -198,6 +198,7 @@ fn spec_hash_changes_when_companion_added() {
         regex: "s=([A-Z]+)".into(),
         within_lines: 3,
         required: true,
+        ..Default::default()
     });
     assert_ne!(
         compute_spec_hash(std::slice::from_ref(&base)),

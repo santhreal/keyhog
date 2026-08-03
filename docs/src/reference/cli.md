@@ -70,6 +70,7 @@ or coverage incomplete.
 | `--git-diff-path` | `GIT_DIFF_PATH` |  | Path to git repository for --git-diff (defaults to current directory) |
 | `--git-history` | `PATH` |  | Scan reachable commits using added lines from each commit patch |
 | `--git-staged` |  |  | Scan exact staged index blobs, never substituted working-tree bytes |
+| `--github-all` |  |  | Include every supported collaboration surface for --github-collaboration. This is the concise equivalent of passing all five --github-* surface flags |
 | `--github-collaboration` | `OWNER/REPO` |  | GitHub repository whose explicitly selected collaboration surfaces are scanned |
 | `--github-discussions` |  |  | Include discussion text and comments from --github-collaboration |
 | `--github-gists` |  |  | Include public gist revisions and comments for the repository owner |
@@ -246,6 +247,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--git-diff-path` | `GIT_DIFF_PATH` |  | Path to git repository for --git-diff (defaults to current directory) |
 | `--git-history` | `PATH` |  | Scan reachable commits using added lines from each commit patch |
 | `--git-staged` |  |  | Scan exact staged index blobs, never substituted working-tree bytes |
+| `--github-all` |  |  | Include every supported collaboration surface for --github-collaboration. This is the concise equivalent of passing all five --github-* surface flags |
 | `--github-collaboration` | `OWNER/REPO` |  | GitHub repository whose explicitly selected collaboration surfaces are scanned |
 | `--github-discussions` |  |  | Include discussion text and comments from --github-collaboration |
 | `--github-gists` |  |  | Include public gist revisions and comments for the repository owner |
@@ -371,7 +373,8 @@ verification-template rewrite; other audit findings require an explicit edit.
 
 Explain the loaded detector. Includes keywords, patterns, companion rules,
 verification endpoint, and detector-owned entropy/BPE/length/suppression
-policy.
+policy. Use `--compiled-plan` to print resolved companion and cross-detector
+evidence operations.
 
 ```sh
 keyhog explain stripe-secret-key
@@ -382,6 +385,7 @@ keyhog explain stripe-secret-key
 |----------|-------|---------|-------------|
 | `<DETECTOR_ID>` *(required)* | `DETECTOR_ID` |  | Detector ID to explain (e.g. `aws-access-key`, `github-pat-fine-grained`). Use `keyhog detectors` to list available IDs |
 | `--bloom-evidence` | `PATH` |  | Read a `bloom-evidence-v1` receipt produced by `keyhog bloom-diagnostic`. The receipt must match the selected detector corpus and prove exact enabled-versus-bypassed finding parity |
+| `--compiled-plan` |  |  | Print the detector's compiled evidence plan, including resolved capture groups, direction, structural scope, and admission semantics |
 | `-d`, `--detectors` | `DETECTORS` | `detectors` | Detector TOML directory. When omitted, KeyHog discovers an installed corpus or uses the embedded corpus. An explicitly named missing path is an error |
 <!-- /keyhog-generated: cli-reference command="explain" -->
 

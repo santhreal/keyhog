@@ -90,6 +90,7 @@ fn companion(name: &str) -> CompanionSpec {
         regex: "[A-Za-z0-9]{20}".into(),
         within_lines: 3,
         required: false,
+        ..Default::default()
     }
 }
 

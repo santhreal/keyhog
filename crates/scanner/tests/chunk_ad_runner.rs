@@ -24,11 +24,15 @@ struct Contract {
 struct Positive {
     text: String,
     credential: String,
+    #[serde(default)]
+    path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Negative {
     text: String,
+    #[serde(default)]
+    path: Option<String>,
 }
 
 fn contracts_dir() -> PathBuf {
@@ -47,12 +51,12 @@ fn load_toml(path: &Path) -> Contract {
     })
 }
 
-fn make_chunk(text: &str) -> Chunk {
+fn make_chunk(text: &str, path: Option<&str>) -> Chunk {
     Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
             source_type: "contract".into(),
-            path: Some("contract.txt".into()),
+            path: Some(path.unwrap_or("contract.txt").into()),
             ..Default::default()
         },
     }
@@ -126,7 +130,7 @@ fn chunk_contracts_pass_positives_and_negatives() {
         for p in &c.positive {
             scanner.clear_fragment_cache();
             let matches = scanner
-                .scan(&make_chunk(&p.text))
+                .scan(&make_chunk(&p.text, p.path.as_deref()))
                 .expect("chunk-ad positive scan should succeed");
             if !any_credential_contains(&matches, &p.credential) {
                 let creds: Vec<_> = matches.iter().map(|m| m.credential.as_ref()).collect();
@@ -143,7 +147,7 @@ fn chunk_contracts_pass_positives_and_negatives() {
         for n in &c.negative {
             scanner.clear_fragment_cache();
             let matches = scanner
-                .scan(&make_chunk(&n.text))
+                .scan(&make_chunk(&n.text, n.path.as_deref()))
                 .expect("chunk-ad negative scan should succeed");
             let fired = matches
                 .iter()

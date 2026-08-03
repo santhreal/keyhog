@@ -81,6 +81,27 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
             with self.subTest(obsolete=obsolete):
                 self.assertNotIn(obsolete, PUBLISH.casefold())
 
+    def test_publisher_uses_oidc_trusted_identity_without_long_lived_token(self) -> None:
+        """Publishing must exchange the exact workflow identity for an ephemeral crates.io token."""
+        self.assertIn("id-token: write", RELEASE)
+        self.assertIn("rust-lang/crates-io-auth-action@", RELEASE)
+        self.assertIn("steps.crates-io-auth.outputs.token", RELEASE)
+        self.assertNotIn("secrets.CARGO_REGISTRY_TOKEN", RELEASE)
+        self.assertRegex(
+            RELEASE,
+            r"rust-lang/crates-io-auth-action@[0-9a-f]{40}",
+        )
+
+    def test_release_uploads_source_bound_integrity_receipt_after_publication(self) -> None:
+        """Every synchronized six-crate release must retain a reproducible commit and lock receipt."""
+        generate = RELEASE.index("scripts/release_integrity_receipt.py")
+        publish = RELEASE.index("bash scripts/publish.sh")
+        upload = RELEASE.index("keyhog-release-integrity-v")
+        self.assertLess(generate, publish)
+        self.assertLess(publish, upload)
+        self.assertIn('--commit "$(git rev-parse HEAD)"', RELEASE)
+        self.assertIn("release-integrity.json", RELEASE)
+
 
 if __name__ == "__main__":
     unittest.main()

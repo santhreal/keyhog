@@ -13,28 +13,48 @@ use crate::pipeline::*;
 use crate::types::*;
 use keyhog_core::{Chunk, CompanionMap};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CompanionRejection {
+    MissingRequired,
+    ForbiddenPresent,
+}
+
 impl CompiledScanner {
     pub(crate) fn match_companions(
         detector_companions: &[CompiledCompanion],
         preprocessed: &ScannerPreprocessedText<'_>,
         line: usize,
-    ) -> Option<CompanionMap> {
-        // Most detectors declare no companions. Return the empty map without
-        // sizing a bucket array (`CompanionMap::new()` is allocation-free until the
-        // first insert) and without entering the search loop. Only detectors
-        // that actually have companions pay for the map.
+        primary_start: usize,
+        primary_end: usize,
+        primary_value: &str,
+    ) -> Result<CompanionMap, CompanionRejection> {
         if detector_companions.is_empty() {
-            return Some(CompanionMap::new());
+            return Ok(CompanionMap::new());
         }
         let mut results = CompanionMap::with_capacity(detector_companions.len());
         for companion in detector_companions {
-            if let Some(val) = find_companion(preprocessed, line, companion) {
-                results.insert(companion.name.clone(), val);
-            } else if companion.required {
-                return None;
+            let found = find_companion(
+                preprocessed,
+                line,
+                primary_start,
+                primary_end,
+                primary_value,
+                companion,
+            );
+            match (companion.requirement, found) {
+                (keyhog_core::EvidenceRequirement::Required, None) => {
+                    return Err(CompanionRejection::MissingRequired);
+                }
+                (keyhog_core::EvidenceRequirement::Forbidden, Some(_)) => {
+                    return Err(CompanionRejection::ForbiddenPresent);
+                }
+                (_, Some(value)) => {
+                    results.insert(companion.name.clone(), value);
+                }
+                (_, None) => {}
             }
         }
-        Some(results)
+        Ok(results)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -206,13 +226,24 @@ impl CompiledScanner {
             return;
         }
 
-        // `None` means a required companion is missing; record that hard skip
-        // instead of treating it like an empty companion set.
-        let companions = match Self::match_companions(&detector_plan.companions, preprocessed, line)
-        {
-            Some(companions) => companions,
-            None => {
+        let companions = match Self::match_companions(
+            &detector_plan.companions,
+            preprocessed,
+            line,
+            credential_start,
+            match_end,
+            credential,
+        ) {
+            Ok(companions) => companions,
+            Err(CompanionRejection::MissingRequired) => {
                 crate::adjudicate::record_missing_required_companion_suppression(
+                    chunk.metadata.path.as_deref(),
+                    credential,
+                );
+                return;
+            }
+            Err(CompanionRejection::ForbiddenPresent) => {
+                crate::adjudicate::record_forbidden_companion_suppression(
                     chunk.metadata.path.as_deref(),
                     credential,
                 );

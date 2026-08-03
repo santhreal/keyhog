@@ -3,8 +3,11 @@
 ## 0.5.50 - 2026-08-02
 
 - Add low-overhead causal run profiling with fixed scanner stages, state transitions, process resource measurements, and explicit source and backend identity while keeping per-pattern diagnostics behind --perf-trace.
+- Add `keyhog explain --compiled-plan` output for resolved companion and cross-detector evidence operations.
+- Show detector-owned positive source-admission selectors in `keyhog explain`.
+- Add `scan --github-all` as the concise complete-surface form of a GitHub collaboration scan while retaining independent surface selectors.
 
-- Publish a patch release to crates.io after every successful main CI run, with automatic version and changelog updates and no signing or release-asset gates.
+- Publish patch releases to crates.io through short-lived OIDC trusted publishing and upload a deterministic six-crate commit and lockfile integrity receipt without a long-lived registry token.
 
 - Record scanner accelerator features from dependency-owned compile state so portable autoroute identities no longer claim unavailable GPU or SIMD backends.
 - Bound scan-system metadata discovery by the remaining --space budget so small host-scan ceilings stop promptly and report partial coverage instead of traversing the entire filesystem first.

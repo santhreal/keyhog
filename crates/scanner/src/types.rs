@@ -526,7 +526,11 @@ pub(crate) struct CompiledCompanion {
     pub(crate) regex: Regex,
     pub(crate) capture_group: Option<usize>,
     pub(crate) within_lines: usize,
-    pub(crate) required: bool,
+    pub(crate) within_bytes: Option<usize>,
+    pub(crate) direction: keyhog_core::EvidenceDirection,
+    pub(crate) scope: keyhog_core::EvidenceScope,
+    pub(crate) requirement: keyhog_core::EvidenceRequirement,
+    pub(crate) value_relation: keyhog_core::EvidenceValueRelation,
 }
 
 #[cfg(feature = "entropy")]

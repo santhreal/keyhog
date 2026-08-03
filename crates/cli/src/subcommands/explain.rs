@@ -27,11 +27,56 @@ pub(crate) fn run(args: ExplainArgs) -> Result<()> {
         keyhog_core::hex_encode(keyhog_core::compute_detector_corpus_digest(&detectors)?);
     let scanner = CompiledScanner::compile(detectors.clone())?;
     print_explanation(detector);
+    if args.compiled_plan {
+        print_compiled_evidence_plan(&scanner, &detector.id)?;
+    }
     print_bigram_prefilter_status(
         &scanner,
         args.bloom_evidence.as_deref(),
         &detector_corpus_sha256,
     )?;
+    Ok(())
+}
+
+fn print_compiled_evidence_plan(scanner: &CompiledScanner, detector_id: &str) -> Result<()> {
+    let plan = scanner
+        .compiled_evidence_plan(detector_id)
+        .ok_or_else(|| anyhow::anyhow!("compiled detector plan is missing {detector_id:?}"))?;
+    let style = crate::style::for_stdout();
+    println!("\n  {}Compiled evidence plan:{}", style.bold, style.reset);
+    println!("    detector: {}", plan.detector_id);
+    println!("    relations: {}", plan.relations.len());
+    for relation in &plan.relations {
+        let capture = relation
+            .capture_group
+            .map_or_else(|| "whole-match".to_string(), |group| group.to_string());
+        let byte_bound = relation
+            .within_bytes
+            .map_or_else(|| "unbounded".to_string(), |bytes| bytes.to_string());
+        println!("    - {}", relation.name);
+        println!("      regex: {}", relation.regex);
+        println!("      capture_group: {capture}");
+        println!("      requirement: {}", relation.requirement.as_str());
+        println!("      direction: {}", relation.direction.as_str());
+        println!("      scope: {}", relation.scope.as_str());
+        println!("      within_lines: {}", relation.within_lines);
+        println!("      within_bytes: {byte_bound}");
+        println!("      value_relation: {}", relation.value_relation.as_str());
+    }
+    println!("    detector_relations: {}", plan.detector_relations.len());
+    for relation in &plan.detector_relations {
+        let byte_bound = relation
+            .within_bytes
+            .map_or_else(|| "unbounded".to_string(), |bytes| bytes.to_string());
+        println!(
+            "    - target={} kind={} direction={} within_lines={} within_bytes={}",
+            relation.detector_id,
+            relation.kind.as_str(),
+            relation.direction.as_str(),
+            relation.within_lines,
+            byte_bound,
+        );
+    }
     Ok(())
 }
 
@@ -215,14 +260,16 @@ fn print_explanation(d: &DetectorSpec) {
     if !d.companions.is_empty() {
         println!("  {}Companions:{}", style.bold, style.reset);
         for c in &d.companions {
-            let req = if c.required {
-                format!(" {}(required){}", style.dim, style.reset)
-            } else {
-                String::new()
-            };
             println!(
-                "    - {}{}: {} {}(within {} lines){}",
-                c.name, req, c.regex, style.dim, c.within_lines, style.reset
+                "    - {}: {} {}(requirement={}, direction={}, scope={}, within_lines={}){}",
+                c.name,
+                c.regex,
+                style.dim,
+                c.effective_requirement().as_str(),
+                c.direction.as_str(),
+                c.scope.as_str(),
+                c.within_lines,
+                style.reset
             );
         }
     }
@@ -624,6 +671,15 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
     }
     for value in &d.allowlist_values {
         println!("    allowlist_value: {value}");
+    }
+    for path in &d.source_admission.path_patterns {
+        println!("    source_admission.path_pattern: {path}");
+    }
+    for source_type in &d.source_admission.source_types {
+        println!("    source_admission.source_type: {source_type}");
+    }
+    for extension in &d.source_admission.file_extensions {
+        println!("    source_admission.file_extension: {extension}");
     }
     for (name, enabled) in [
         ("structural_password_slot", d.structural_password_slot),

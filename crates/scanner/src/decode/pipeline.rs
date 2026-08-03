@@ -107,9 +107,10 @@ fn decode_chunk_with_decoders(
             continue;
         }
 
-        // Prime the whole-chunk extraction ONCE per BFS item so the ~5
-        // whole-chunk decoders reuse it instead of each recomputing
-        // the same candidate extraction (it was ~67% of decode-gen).
+        // Prime whole-chunk extraction once per BFS item. Decoder admission
+        // proofs and the decoders that survive them reuse the same candidates.
+        // This avoids invoking every decoder when only one representation is
+        // present without adding another extraction pass.
         extractor::prime_shared_candidates(&current.data);
         let prof_dec = registry::profile_enabled();
         for (dec_i, decoder) in decoders.iter().enumerate() {
@@ -129,6 +130,12 @@ fn decode_chunk_with_decoders(
                 crate::telemetry::record_decode_truncation();
                 extractor::clear_shared_candidates();
                 return unwrap_decoded_chunks(decoded_chunks);
+            }
+            if matches!(
+                decoder.admission(&current, policy),
+                super::DecodeAdmission::Impossible
+            ) {
+                continue;
             }
             let dec_t0 = prof_dec.then(std::time::Instant::now);
             let (exhaustion, emitted, last_decoded_bytes) = {

@@ -545,6 +545,48 @@ impl CompiledScanner {
             gpu_degrade_count: self.gpu_degrade_count(),
         }
     }
+
+    /// Return the evidence plan after compilation has resolved capture selection,
+    /// compatibility fields, detector targets, and dependency constraints.
+    ///
+    /// This allocates only on explicit introspection calls. Scan paths never
+    /// construct this diagnostic projection.
+    #[must_use]
+    pub fn compiled_evidence_plan(&self, detector_id: &str) -> Option<CompiledEvidencePlan<'_>> {
+        let plan = self.detector_plans.find_by_id(detector_id)?;
+        let relations = plan
+            .companions
+            .iter()
+            .map(|relation| CompiledEvidenceRelation {
+                name: relation.name.as_ref(),
+                regex: relation.regex.as_str(),
+                capture_group: relation.capture_group,
+                within_lines: relation.within_lines,
+                within_bytes: relation.within_bytes,
+                direction: relation.direction,
+                scope: relation.scope,
+                requirement: relation.requirement,
+                value_relation: relation.value_relation,
+            })
+            .collect();
+        let detector_relations = self
+            .detector_plans
+            .detector_relations(detector_id)
+            .iter()
+            .map(|relation| CompiledDetectorEvidenceRelation {
+                detector_id: relation.detector_id.as_ref(),
+                kind: relation.kind,
+                within_lines: relation.within_lines,
+                within_bytes: relation.within_bytes,
+                direction: relation.direction,
+            })
+            .collect();
+        Some(CompiledEvidencePlan {
+            detector_id: plan.metadata.0.as_ref(),
+            relations,
+            detector_relations,
+        })
+    }
     /// Build-time Layer-0.5 bigram-prefilter density and health.
     ///
     /// This performs one 1024-word population-count pass on explicit status

@@ -55,7 +55,7 @@ impl RegisteredDecoder {
     }
 
     #[cfg(any(feature = "decode", test))]
-    fn admission(
+    pub(super) fn admission(
         &self,
         chunk: &keyhog_core::Chunk,
         policy: &super::super::policy::CompiledDecodeTransformPolicy,

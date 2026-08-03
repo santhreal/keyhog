@@ -67,6 +67,9 @@ fn unified_plan_preserves_every_detector_local_compilation_owner() {
             !detector.allowlist_paths.is_empty()
                 || !detector.allowlist_values.is_empty()
                 || !detector.stopwords.is_empty()
+                || !detector.source_admission.path_patterns.is_empty()
+                || !detector.source_admission.source_types.is_empty()
+                || !detector.source_admission.file_extensions.is_empty()
         );
         assert_eq!(plan.companions.len(), detector.companions.len());
         assert_eq!(

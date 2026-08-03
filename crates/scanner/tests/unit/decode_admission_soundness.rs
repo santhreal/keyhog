@@ -204,6 +204,88 @@ fn custom_decoder_unknown_is_conservative_and_visible() {
     assert_eq!(sketch.candidate_bytes(), u32::MAX);
 }
 
+#[cfg(feature = "decode")]
+struct CountingSketchDecoder {
+    name: &'static str,
+    sketch: DecodeAdmissionSketch,
+    calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+#[cfg(feature = "decode")]
+impl Decoder for CountingSketchDecoder {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn admission_sketch(&self, _chunk: &Chunk) -> DecodeAdmissionSketch {
+        self.sketch
+    }
+
+    fn decode_chunk_into(&self, _chunk: &Chunk, _sink: &mut dyn DecodeOutputSink) {
+        self.calls
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+#[cfg(feature = "decode")]
+fn production_decode_calls(name: &'static str, sketch: DecodeAdmissionSketch) -> usize {
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let _registration = super::register_thread_decoder(Box::new(CountingSketchDecoder {
+        name,
+        sketch,
+        calls: std::sync::Arc::clone(&calls),
+    }));
+    let plan = super::CompiledDecoderPlan::snapshot().expect("valid decoder registry snapshot");
+    let input = chunk(0, b"ordinary prose without representation escapes");
+    let decoded = super::super::decode_chunk_with_policy(
+        &input,
+        crate::decode::policy::bundled_compat_policy(),
+        &plan,
+        1,
+        true,
+        None,
+        None,
+    );
+    assert!(decoded.is_empty(), "counting decoder emits no chunks");
+    calls.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Locks the execution-side speed contract: an exact `Impossible` proof skips
+/// the decoder body rather than merely describing work to autoroute.
+#[cfg(feature = "decode")]
+#[test]
+fn production_pipeline_skips_impossible_decoder_bodies() {
+    assert_eq!(
+        production_decode_calls("impossible-execution-test", DecodeAdmissionSketch::NONE),
+        0
+    );
+}
+
+/// Locks fail-open extension behavior: a custom decoder without an admission
+/// proof still executes, so the optimization cannot suppress plugin output.
+#[cfg(feature = "decode")]
+#[test]
+fn production_pipeline_executes_unknown_decoder_bodies() {
+    assert_eq!(
+        production_decode_calls("unknown-execution-test", DecodeAdmissionSketch::UNKNOWN),
+        1
+    );
+}
+
+/// Locks positive admission behavior independently from the unknown fallback:
+/// a decoder that proves candidate work executes exactly once for the root.
+#[cfg(feature = "decode")]
+#[test]
+fn production_pipeline_executes_possible_decoder_bodies() {
+    assert_eq!(
+        production_decode_calls(
+            "possible-execution-test",
+            DecodeAdmissionSketch::possible(DecodeAdmissionSketch::URL, 1, 3)
+        ),
+        1
+    );
+}
+
 #[cfg(not(feature = "decode"))]
 #[test]
 fn public_sketch_is_zero_when_decode_is_disabled() {

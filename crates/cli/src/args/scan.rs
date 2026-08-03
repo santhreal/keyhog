@@ -214,6 +214,11 @@ pub struct ScanArgs {
     #[cfg(feature = "github")]
     #[arg(long, value_name = "OWNER/REPO")]
     pub github_collaboration: Option<String>,
+    /// Include every supported collaboration surface for --github-collaboration.
+    /// This is the concise equivalent of passing all five --github-* surface flags.
+    #[cfg(feature = "github")]
+    #[arg(long, requires = "github_collaboration")]
+    pub github_all: bool,
 
     /// Include issue text and comments from --github-collaboration
     #[cfg(feature = "github")]

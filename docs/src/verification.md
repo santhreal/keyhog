@@ -97,7 +97,7 @@ Each detector's `verify` block in its TOML defines:
   responses
 - optional `metadata` selectors for reviewed response evidence attached to live findings
 
-Schema-2 corpora must write this policy; omission fails validation. A
+Schema-2 and schema-3 corpora must write this policy; omission fails validation. A
 manifest-free or explicitly schema-1 custom corpus retains its historical
 status behavior by normalizing an omitted policy to
 `status_with_error_backstop`, never `status_authoritative`. See

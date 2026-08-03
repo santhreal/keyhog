@@ -1,6 +1,9 @@
 //! Detector-spec hash digest for merkle cache invalidation.
 
-use crate::spec::{CompanionSpec, DetectorKind, DetectorSpec, PatternSpec};
+use crate::spec::{
+    CompanionSpec, DetectorKind, DetectorRelationSpec, DetectorSpec, PatternSpec,
+    SourceAdmissionSpec,
+};
 
 /// Compute a stable BLAKE3 digest over the canonical detector set so a
 /// later scan can detect that detectors changed.
@@ -9,8 +12,15 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
         .iter()
         .flat_map(|d| {
             assert_scan_hash_field_inventory_is_exhaustive(d);
-            let mut entries =
-                Vec::with_capacity(2 + d.patterns.len() + d.companions.len() + d.keywords.len());
+            let mut entries = Vec::with_capacity(
+                2 + d.patterns.len()
+                    + d.companions.len()
+                    + d.detector_relations.len()
+                    + d.source_admission.path_patterns.len()
+                    + d.source_admission.source_types.len()
+                    + d.source_admission.file_extensions.len()
+                    + d.keywords.len(),
+            );
             entries.push(format!("id:{}", d.id));
             // Bind severity to the detector id: an un-bound `sev:{severity}` key
             // makes swapping severities between two detectors produce the same
@@ -52,9 +62,48 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             for (index, c) in d.companions.iter().enumerate() {
                 assert_companion_hash_field_inventory_is_exhaustive(c);
                 entries.push(format!(
-                    "c:{}:{}:{}|{}|w:{}|r:{}",
-                    d.id, index, c.name, c.regex, c.within_lines, c.required
+                    "c:{}:{}:{}|{}|wl:{}|wb:{:?}|dir:{}|scope:{}|req:{}|group:{:?}|value:{}|legacy-required:{}",
+                    d.id,
+                    index,
+                    c.name,
+                    c.regex,
+                    c.within_lines,
+                    c.within_bytes,
+                    c.direction.as_str(),
+                    c.scope.as_str(),
+                    c.requirement.as_str(),
+                    c.capture_group,
+                    c.value_relation.as_str(),
+                    c.required
                 ));
+            }
+            let mut detector_relations = d
+                .detector_relations
+                .iter()
+                .map(|relation| {
+                    assert_detector_relation_hash_field_inventory_is_exhaustive(relation);
+                    format!(
+                        "dr:{}|target:{}|kind:{}|wl:{}|wb:{:?}|dir:{}",
+                        d.id,
+                        relation.detector_id,
+                        relation.kind.as_str(),
+                        relation.within_lines,
+                        relation.within_bytes,
+                        relation.direction.as_str(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            detector_relations.sort_unstable();
+            entries.extend(detector_relations);
+            assert_source_admission_hash_field_inventory_is_exhaustive(&d.source_admission);
+            for path in &d.source_admission.path_patterns {
+                entries.push(format!("source-path:{}:{}", d.id, path));
+            }
+            for source_type in &d.source_admission.source_types {
+                entries.push(format!("source-type:{}:{}", d.id, source_type));
+            }
+            for extension in &d.source_admission.file_extensions {
+                entries.push(format!("source-extension:{}:{}", d.id, extension));
             }
             let mut kws: Vec<&String> = d.keywords.iter().collect();
             kws.sort();
@@ -537,6 +586,8 @@ fn assert_scan_hash_field_inventory_is_exhaustive(detector: &DetectorSpec) {
         decode_transforms: _,
         patterns: _,
         companions: _,
+        detector_relations: _,
+        source_admission: _,
         verify: _,
         keywords: _,
         simdsieve_prefixes: _,
@@ -594,8 +645,34 @@ fn assert_companion_hash_field_inventory_is_exhaustive(companion: &CompanionSpec
         name: _,
         regex: _,
         within_lines: _,
+        within_bytes: _,
+        direction: _,
+        scope: _,
+        requirement: _,
+        capture_group: _,
+        value_relation: _,
         required: _,
     } = companion;
+}
+
+#[inline(always)]
+fn assert_detector_relation_hash_field_inventory_is_exhaustive(relation: &DetectorRelationSpec) {
+    let DetectorRelationSpec {
+        detector_id: _,
+        kind: _,
+        within_lines: _,
+        within_bytes: _,
+        direction: _,
+    } = relation;
+}
+
+#[inline(always)]
+fn assert_source_admission_hash_field_inventory_is_exhaustive(admission: &SourceAdmissionSpec) {
+    let SourceAdmissionSpec {
+        path_patterns: _,
+        source_types: _,
+        file_extensions: _,
+    } = admission;
 }
 
 // `hex_encode` lives in `finding.rs` (the single canonical lower-case-hex of a

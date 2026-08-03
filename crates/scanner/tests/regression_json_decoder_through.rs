@@ -45,19 +45,24 @@ fn scanner() -> CompiledScanner {
     CompiledScanner::compile(detectors).expect("compile scanner")
 }
 
-/// Scan raw text through the full pipeline (decode-through runs in postprocess).
-fn scan(text: &str) -> Vec<RawMatch> {
+/// Scan raw text at `path` through the full decode-through pipeline.
+fn scan_at(text: &str, path: &str) -> Vec<RawMatch> {
     let chunk = Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
             source_type: "json-decode-through".into(),
-            path: Some("config.json".into()),
+            path: Some(path.into()),
             ..Default::default()
         },
     };
     scanner()
         .scan(&chunk)
         .expect("JSON decode-through regression scan succeeds")
+}
+
+/// Scan a generic JSON file for detectors without source admission rules.
+fn scan(text: &str) -> Vec<RawMatch> {
+    scan_at(text, "config.json")
 }
 
 fn count_id(matches: &[RawMatch], id: &str) -> usize {
@@ -150,7 +155,7 @@ fn double_backslash_collapses_to_single_in_netrc() {
     // Anchor `password` hidden as `password`.
     let json =
         "{\"netrc\":\"machine api.example.com login deploy passw\\u006Frd Zx9Qw\\\\3Rt7Lp2Mk\"}";
-    let m = only(&scan(json), "netrc-password");
+    let m = only(&scan_at(json, ".netrc"), "netrc-password");
     // Exactly one interior backslash: NOT the two that appear in the JSON text.
     assert_eq!(m.credential.as_ref(), NETRC_BACKSLASH_PW);
     assert_eq!(
@@ -287,7 +292,7 @@ fn multiple_escaped_values_each_surface_with_exact_credential() {
     // assert the decoded secret is present with its exact bytes (not `only`).
     let json = "{\"a\":\"//registry.npmjs.org/:_authT\\u006Fken=s0meL3gacyT0kenValue12345\",\
 \"b\":\"machine api.example.com login deploy passw\\u006Frd Zx9Qw\\\\3Rt7Lp2Mk\"}";
-    let matches = scan(json);
+    let matches = scan_at(json, ".netrc");
     let npm = only(&matches, "npmrc-auth-token");
     assert_eq!(npm.credential.as_ref(), NPMRC_FULL_TOKEN);
     assert!(

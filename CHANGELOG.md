@@ -7,10 +7,14 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Added
 
 - Add low-overhead causal run profiling with fixed scanner stages, state transitions, process resource measurements, and explicit source and backend identity while keeping per-pattern diagnostics behind --perf-trace.
+- Add schema-v3 typed companion evidence and bounded cross-detector `requires`, `conflicts`, and `subsumes` relations, with deterministic fixed-point resolution, compile-time contradiction and cycle checks, and `explain --compiled-plan` introspection.
+- Add detector-owned positive source admission by path regex, exact source type, and file extension. Declared selector families combine with AND semantics and reject missing metadata.
+- Add `scan --github-all` as the concise complete-surface form of a GitHub collaboration scan while retaining independent surface selectors.
+- Restrict the netrc password detector to `.netrc`, `_netrc`, and `.authinfo` source paths, with explicit fixture paths and boundary regressions.
 
 ### Changed
 
-- Publish a patch release to crates.io after every successful main CI run, with automatic version and changelog updates and no signing or release-asset gates.
+- Publish patch releases to crates.io through short-lived OIDC trusted publishing, update versions and changelogs automatically, and upload a deterministic six-crate commit and lockfile integrity receipt without a long-lived registry token.
 - Localize plain phase-two patterns by default on portable and explicit CPU scans, avoiding full portable marking-set compilation when the shared anchor index owns candidate extraction.
 
 ### Fixed

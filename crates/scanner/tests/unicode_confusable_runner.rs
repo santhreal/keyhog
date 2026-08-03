@@ -56,6 +56,8 @@ struct Contract {
 struct Positive {
     text: String,
     credential: String,
+    #[serde(default)]
+    path: Option<String>,
     #[allow(dead_code)]
     reason: String,
 }
@@ -151,21 +153,21 @@ fn swap_companion(text: &str, credential: &str, swap_every: usize) -> String {
     format!("{prefix}{credential}{suffix}")
 }
 
-fn make_chunk(text: &str) -> Chunk {
+fn make_chunk(text: &str, path: Option<&str>) -> Chunk {
     Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
             source_type: "unicode-confusable".into(),
-            path: Some("confusable.txt".into()),
+            path: Some(path.unwrap_or("confusable.txt").into()),
             ..Default::default()
         },
     }
 }
 
-fn surfaces(scanner: &CompiledScanner, text: &str, credential: &str) -> bool {
+fn surfaces(scanner: &CompiledScanner, text: &str, credential: &str, path: Option<&str>) -> bool {
     scanner.clear_fragment_cache();
     let matches = scanner
-        .scan(&make_chunk(text))
+        .scan(&make_chunk(text, path))
         .expect("unicode-confusable detector scan should succeed");
     matches
         .iter()
@@ -198,13 +200,14 @@ fn credential_sufficient_detectors_are_swap_invariant() {
     for c in &contracts {
         for p in &c.positive {
             // Does the credential surface on its own, with no companion?
-            let credential_only = surfaces(&scanner, &p.credential, &p.credential);
+            let credential_only =
+                surfaces(&scanner, &p.credential, &p.credential, p.path.as_deref());
 
             if credential_only {
                 credential_sufficient += 1;
                 for (n, label) in SWAP_DENSITIES {
                     let text = swap_companion(&p.text, &p.credential, *n);
-                    if !surfaces(&scanner, &text, &p.credential) {
+                    if !surfaces(&scanner, &text, &p.credential, p.path.as_deref()) {
                         violations.push(format!(
                             "{detector}: credential fires standalone but was DROPPED at \
                              swap={label} (homoglyphing unused companion context broke it). \
@@ -219,7 +222,7 @@ fn credential_sufficient_detectors_are_swap_invariant() {
                 for (n, _label) in SWAP_DENSITIES {
                     companion_runs += 1;
                     let text = swap_companion(&p.text, &p.credential, *n);
-                    if surfaces(&scanner, &text, &p.credential) {
+                    if surfaces(&scanner, &text, &p.credential, p.path.as_deref()) {
                         companion_recovered += 1;
                     }
                 }
@@ -274,7 +277,7 @@ fn no_swap_control_matches_contract_positives() {
                 "swap_every=0 must be a byte-identical no-op for {}",
                 c.detector_id
             );
-            if surfaces(&scanner, &text, &p.credential) {
+            if surfaces(&scanner, &text, &p.credential, p.path.as_deref()) {
                 *per_outcome.entry("hit").or_default() += 1;
             } else {
                 *per_outcome.entry("miss").or_default() += 1;

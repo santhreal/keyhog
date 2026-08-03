@@ -73,6 +73,8 @@ struct Contract {
 struct Positive {
     text: String,
     credential: String,
+    #[serde(default)]
+    path: Option<String>,
     #[allow(dead_code)]
     reason: String,
 }
@@ -245,12 +247,15 @@ impl Wrapper {
     }
 }
 
-fn make_chunk(text: &str, label: &str) -> Chunk {
+fn make_chunk(text: &str, label: &str, path: Option<&str>) -> Chunk {
     Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
             source_type: "adversarial-explosion".into(),
-            path: Some(format!("{label}.txt").into()),
+            path: Some(
+                path.map_or_else(|| format!("{label}.txt"), str::to_owned)
+                    .into(),
+            ),
             ..Default::default()
         },
     }
@@ -306,7 +311,7 @@ fn every_contract_positive_fires_under_every_format_wrapper() {
                 cases_run += 1;
                 scanner.clear_fragment_cache();
                 let wrapped = wrapper.wrap(&p.text);
-                let chunk = make_chunk(&wrapped, "wrapped-positive");
+                let chunk = make_chunk(&wrapped, "wrapped-positive", p.path.as_deref());
                 let matches = scanner
                     .scan(&chunk)
                     .expect("wrapped positive scan should succeed");
@@ -422,7 +427,7 @@ fn every_contract_positive_fires_through_decode_wrappers() {
                 cases_run += 1;
                 scanner.clear_fragment_cache();
                 let wrapped = wrapper.wrap(&p.text);
-                let chunk = make_chunk(&wrapped, "decode-wrapped-positive");
+                let chunk = make_chunk(&wrapped, "decode-wrapped-positive", p.path.as_deref());
                 let matches = scanner
                     .scan(&chunk)
                     .expect("decode-wrapped positive scan should succeed");

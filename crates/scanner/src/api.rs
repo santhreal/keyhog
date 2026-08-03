@@ -7,6 +7,7 @@ pub use crate::bigram_bloom::{
     BigramPrefilterCorpusStatus, BigramPrefilterState, BigramPrefilterStatus,
 };
 pub use crate::compiled_scanner::{
+    CompiledDetectorEvidenceRelation, CompiledEvidencePlan, CompiledEvidenceRelation,
     CompiledScannerRuntime, GpuBackendAvailability, GpuBackendCandidateStatus, GpuInitPolicy,
 };
 pub use crate::engine::{

@@ -3,8 +3,10 @@
 ## 0.5.50 - 2026-08-02
 
 - Add low-overhead causal run profiling with fixed scanner stages, state transitions, process resource measurements, and explicit source and backend identity while keeping per-pattern diagnostics behind --perf-trace.
+- Compile bounded cross-detector `requires`, `conflicts`, and `subsumes` operations and resolve them to a deterministic fixed point across source findings.
+- Enforce detector-owned source path, source type, and file-extension admission before named and phase-two findings survive suppression.
 
-- Publish a patch release to crates.io after every successful main CI run, with automatic version and changelog updates and no signing or release-asset gates.
+- Publish patch releases to crates.io through short-lived OIDC trusted publishing and bind deterministic six-crate integrity receipts to the exact workspace lockfile and commit.
 - Localize plain phase-two patterns by default on portable and explicit CPU scans, avoiding full portable marking-set compilation when the shared anchor index owns candidate extraction.
 
 - Keep complete credentials from native binary strings and executable sections when a strong named detector validates an explicit credential shape, while continuing to suppress weak prefix fragments and generic assignment noise.

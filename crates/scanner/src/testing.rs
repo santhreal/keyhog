@@ -1457,6 +1457,7 @@ pub fn compile_companion_for_test(
         regex: regex.to_string(),
         within_lines: 1,
         required: false,
+        ..Default::default()
     };
     crate::compiler::compiler_compile::compile_companion(&spec, detector_id)
         .map(|c| (c.name.to_string(), c.capture_group))
@@ -3142,7 +3143,11 @@ pub struct CompiledCompanion {
     pub regex: regex::Regex,
     pub capture_group: Option<usize>,
     pub within_lines: usize,
-    pub required: bool,
+    pub within_bytes: Option<usize>,
+    pub direction: keyhog_core::EvidenceDirection,
+    pub scope: keyhog_core::EvidenceScope,
+    pub requirement: keyhog_core::EvidenceRequirement,
+    pub value_relation: keyhog_core::EvidenceValueRelation,
 }
 #[cfg(all(feature = "multiline", not(test)))]
 fn inner_preprocessed<'a>(
@@ -3171,7 +3176,11 @@ fn inner_companion(companion: &CompiledCompanion) -> crate::types::CompiledCompa
         regex: companion.regex.clone(),
         capture_group: companion.capture_group,
         within_lines: companion.within_lines,
-        required: companion.required,
+        within_bytes: companion.within_bytes,
+        direction: companion.direction,
+        scope: companion.scope,
+        requirement: companion.requirement,
+        value_relation: companion.value_relation,
     }
 }
 #[cfg(all(feature = "multiline", not(test)))]
@@ -3196,11 +3205,21 @@ pub fn line_window_offsets(
 pub fn find_companion(
     preprocessed: &ScannerPreprocessedText<'_>,
     primary_line: usize,
+    primary_start: usize,
+    primary_end: usize,
+    primary_value: &str,
     companion: &CompiledCompanion,
 ) -> Option<String> {
     let inner_preprocessed = inner_preprocessed(preprocessed);
     let inner_companion = inner_companion(companion);
-    crate::pipeline::find_companion(&inner_preprocessed, primary_line, &inner_companion)
+    crate::pipeline::find_companion(
+        &inner_preprocessed,
+        primary_line,
+        primary_start,
+        primary_end,
+        primary_value,
+        &inner_companion,
+    )
 }
 #[cfg(test)]
 pub(crate) use crate::prefix_trie::build_propagation_table;

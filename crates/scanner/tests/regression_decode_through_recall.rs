@@ -175,7 +175,7 @@ fn npmrc_recovered_through_base64_standard() {
 
 #[test]
 fn netrc_recovered_through_base64_standard() {
-    let matches = scan_embedded(&b64(NETRC));
+    let matches = scan_raw(&format!("decoded_payload = \"{}\"\n", b64(NETRC)), ".netrc");
     let m = matches
         .iter()
         .find(|m| m.credential.as_ref().contains(NETRC_NEEDLE))

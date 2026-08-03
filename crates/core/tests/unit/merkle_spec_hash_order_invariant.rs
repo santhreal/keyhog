@@ -23,6 +23,7 @@ fn make(id: &str) -> DetectorSpec {
             regex: "v=([A-Z]+)".into(),
             within_lines: 3,
             required: false,
+            ..Default::default()
         }],
         verify: None,
         ..Default::default()

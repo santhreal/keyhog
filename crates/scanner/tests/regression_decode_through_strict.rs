@@ -76,14 +76,14 @@ fn scanner() -> CompiledScanner {
     CompiledScanner::compile(detectors).expect("compile scanner")
 }
 
-/// Embed `encoded` in a config value and scan; return the surfaced matches.
-fn scan_embedded(encoded: &str) -> Vec<RawMatch> {
+/// Embed `encoded` in a file-backed config value and return surfaced matches.
+fn scan_embedded_at(encoded: &str, path: &str) -> Vec<RawMatch> {
     let text = format!("decoded_payload = \"{encoded}\"\n");
     let chunk = Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
             source_type: "decode-through-test".into(),
-            path: Some("config.txt".into()),
+            path: Some(path.into()),
             ..Default::default()
         },
     };
@@ -92,10 +92,20 @@ fn scan_embedded(encoded: &str) -> Vec<RawMatch> {
         .expect("strict decode-through regression scan should succeed")
 }
 
-fn surfaces(encoded: &str, needle: &str) -> bool {
-    scan_embedded(encoded)
+/// Use the generic config path for detectors without source admission rules.
+fn scan_embedded(encoded: &str) -> Vec<RawMatch> {
+    scan_embedded_at(encoded, "config.txt")
+}
+
+/// Report whether decoded output surfaces `needle` under the supplied path.
+fn surfaces_at(encoded: &str, needle: &str, path: &str) -> bool {
+    scan_embedded_at(encoded, path)
         .iter()
         .any(|m| m.credential.as_ref().contains(needle))
+}
+
+fn surfaces(encoded: &str, needle: &str) -> bool {
+    surfaces_at(encoded, needle, "config.txt")
 }
 
 // ── BASELINE: each plaintext fires unwrapped (else the test proves nothing) ──
@@ -151,15 +161,15 @@ fn npmrc_fires_through_url() {
 
 #[test]
 fn netrc_fires_through_base64() {
-    assert!(surfaces(&b64(NETRC), NETRC_NEEDLE));
+    assert!(surfaces_at(&b64(NETRC), NETRC_NEEDLE, ".netrc"));
 }
 #[test]
 fn netrc_fires_through_hex() {
-    assert!(surfaces(&hexenc(NETRC), NETRC_NEEDLE));
+    assert!(surfaces_at(&hexenc(NETRC), NETRC_NEEDLE, ".netrc"));
 }
 #[test]
 fn netrc_fires_through_url() {
-    assert!(surfaces(&urlenc(NETRC), NETRC_NEEDLE));
+    assert!(surfaces_at(&urlenc(NETRC), NETRC_NEEDLE, ".netrc"));
 }
 
 // ── SSH2 private key through every decode wrapper ──
@@ -185,7 +195,7 @@ fn base64_urlsafe_no_pad_alphabet_fires() {
 }
 #[test]
 fn hex_uppercase_alphabet_fires() {
-    assert!(surfaces(&hexenc_upper(NETRC), NETRC_NEEDLE));
+    assert!(surfaces_at(&hexenc_upper(NETRC), NETRC_NEEDLE, ".netrc"));
 }
 
 // ── nesting ──

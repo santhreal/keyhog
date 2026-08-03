@@ -62,6 +62,8 @@ struct Contract {
 struct Positive {
     text: String,
     credential: String,
+    #[serde(default)]
+    path: Option<String>,
     #[allow(dead_code)]
     reason: String,
 }
@@ -161,16 +163,19 @@ fn credential_sufficient_secrets_survive_colocation() {
         "tests/contracts/ has no *.toml, multi-secret runner has nothing to drive"
     );
 
-    // First positive of every contract that has one, carrying its
-    // detector id so a miss is attributable.
+    // First path-independent positive of each contract. Path-bound credentials
+    // cannot share one synthetic source path without invalidating admission.
     let primaries: Vec<Primary> = contracts
         .iter()
         .filter_map(|c| {
-            c.positive.first().map(|p| Primary {
-                detector_id: c.detector_id.clone(),
-                text: p.text.clone(),
-                credential: p.credential.clone(),
-            })
+            c.positive
+                .iter()
+                .find(|positive| positive.path.is_none())
+                .map(|p| Primary {
+                    detector_id: c.detector_id.clone(),
+                    text: p.text.clone(),
+                    credential: p.credential.clone(),
+                })
         })
         .collect();
 

@@ -132,6 +132,7 @@ fn companion_regexes_are_validated() {
         regex: "[A-Za-z0-9+/=]{40,}".into(),
         within_lines: 12,
         required: false,
+        ..Default::default()
     });
     let issues = validate_detector(&detector);
     assert!(issues.iter().any(|issue| matches!(

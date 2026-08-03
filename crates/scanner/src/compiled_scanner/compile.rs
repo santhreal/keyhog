@@ -144,6 +144,22 @@ impl CompiledScanner {
         let (gpu_backends, gpu_acquisition_failures) = if !gpu_disabled {
             let mut peers = GpuBackendPeers::default();
             let mut failures = Vec::new();
+            #[cfg(not(target_os = "linux"))]
+            failures.push(GpuBackendAcquisitionFailure {
+                backend: "cuda",
+                diagnostic: format!(
+                    "native CUDA peer acquisition is unavailable on {}; use WGPU or a supported Linux CUDA host",
+                    std::env::consts::OS
+                ),
+            });
+            #[cfg(not(target_os = "macos"))]
+            failures.push(GpuBackendAcquisitionFailure {
+                backend: "metal",
+                diagnostic: format!(
+                    "native Metal peer acquisition is unavailable on {}; use WGPU or a macOS host",
+                    std::env::consts::OS
+                ),
+            });
             {
                 #[cfg(target_os = "linux")]
                 {
@@ -201,6 +217,11 @@ impl CompiledScanner {
                 failures.push(GpuBackendAcquisitionFailure {
                     backend: "wgpu",
                     diagnostic: "WGPU adapter census found no adapters".to_string(),
+                });
+                #[cfg(target_os = "macos")]
+                failures.push(GpuBackendAcquisitionFailure {
+                    backend: "metal",
+                    diagnostic: "native Metal adapter census found no adapters".to_string(),
                 });
             }
             (peers, failures)

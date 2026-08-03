@@ -52,6 +52,8 @@ struct Contract {
 struct Positive {
     text: String,
     credential: String,
+    #[serde(default)]
+    path: Option<String>,
     #[allow(dead_code)]
     reason: String,
 }
@@ -162,7 +164,11 @@ fn every_positive_fires_at_production_paths_and_records_suppressed_rate() {
 
     for (contract_path, c) in &contracts {
         for (pi, p) in c.positive.iter().enumerate() {
-            for path in PRODUCTION_PATHS {
+            let production_paths = p
+                .path
+                .as_deref()
+                .map_or_else(|| PRODUCTION_PATHS.to_vec(), |path| vec![path]);
+            for path in production_paths {
                 production_runs += 1;
                 scanner.clear_fragment_cache();
                 let chunk = make_chunk(&p.text, path);

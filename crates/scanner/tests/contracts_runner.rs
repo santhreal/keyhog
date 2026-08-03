@@ -50,6 +50,8 @@ struct Contract {
 struct Positive {
     text: String,
     credential: String,
+    #[serde(default)]
+    path: Option<String>,
     #[allow(dead_code)]
     reason: String,
 }
@@ -57,6 +59,10 @@ struct Positive {
 #[derive(Debug, Deserialize)]
 struct Negative {
     text: String,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    apply_resolution: bool,
     #[allow(dead_code)]
     reason: String,
 }
@@ -124,12 +130,12 @@ fn load_contracts() -> Vec<(PathBuf, Contract)> {
     out
 }
 
-fn make_chunk(text: &str) -> Chunk {
+fn make_chunk(text: &str, path: Option<&str>) -> Chunk {
     Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
             source_type: "contract".into(),
-            path: Some("contract.txt".into()),
+            path: Some(path.unwrap_or("contract.txt").into()),
             ..Default::default()
         },
     }
@@ -139,6 +145,15 @@ fn scanner() -> CompiledScanner {
     let detectors = keyhog_core::load_detectors(&detector_dir())
         .expect("detectors directory loadable from contract runner");
     CompiledScanner::compile(detectors).expect("scanner compile from contract runner")
+}
+
+fn scan_resolved(scanner: &CompiledScanner, chunk: &Chunk) -> Vec<keyhog_core::RawMatch> {
+    let matches = scanner
+        .scan(chunk)
+        .expect("contract fixture scan should succeed");
+    scanner
+        .try_resolve_matches(matches)
+        .expect("compiled detector relations must resolve")
 }
 
 fn timing_budgets_are_enforced() -> bool {
@@ -203,7 +218,7 @@ fn every_contract_passes_positives_negatives_evasions() {
             // is isolated; cache order is filesystem-dependent and
             // makes pollution a non-deterministic CI-only flake.
             scanner.clear_fragment_cache();
-            let chunk = make_chunk(&p.text);
+            let chunk = make_chunk(&p.text, p.path.as_deref());
             let matches = scanner
                 .scan(&chunk)
                 .expect("positive contract scan should succeed");
@@ -223,10 +238,14 @@ fn every_contract_passes_positives_negatives_evasions() {
 
         for n in &c.negative {
             scanner.clear_fragment_cache();
-            let chunk = make_chunk(&n.text);
-            let matches = scanner
-                .scan(&chunk)
-                .expect("negative contract scan should succeed");
+            let chunk = make_chunk(&n.text, n.path.as_deref());
+            let matches = if n.apply_resolution {
+                scan_resolved(&scanner, &chunk)
+            } else {
+                scanner
+                    .scan(&chunk)
+                    .expect("negative contract scan should succeed")
+            };
             // We don't gate on "zero findings" - a fixture line may
             // also exercise a different detector - we gate on
             // "this detector did not fire on this text."
@@ -251,7 +270,7 @@ fn every_contract_passes_positives_negatives_evasions() {
 
         for e in &c.evasion {
             scanner.clear_fragment_cache();
-            let chunk = make_chunk(&e.text);
+            let chunk = make_chunk(&e.text, e.path.as_deref());
             let matches = scanner
                 .scan(&chunk)
                 .expect("evasion contract scan should succeed");
@@ -271,7 +290,7 @@ fn every_contract_passes_positives_negatives_evasions() {
 
         for r in &c.cve_replay {
             scanner.clear_fragment_cache();
-            let chunk = make_chunk(&r.text);
+            let chunk = make_chunk(&r.text, r.path.as_deref());
             let matches = scanner
                 .scan(&chunk)
                 .expect("CVE replay contract scan should succeed");
@@ -335,7 +354,7 @@ fn every_contract_perf_budget_holds() {
         };
         let mut fixture = "x".repeat(perf.fixture_bytes.saturating_sub(first.text.len()));
         fixture.push_str(&first.text);
-        let chunk = make_chunk(&fixture);
+        let chunk = make_chunk(&fixture, first.path.as_deref());
 
         // Warm any internal caches first; the budget gates steady-
         // state, not cold-start. Clear the fragment cache before
@@ -420,7 +439,7 @@ fn every_contract_scale_gate_holds() {
         let filler_a = String::from_utf8_lossy(&filler[..half.min(filler.len())]).into_owned();
         let filler_b = String::from_utf8_lossy(&filler[half.min(filler.len())..]).into_owned();
         let fixture = format!("{filler_a}{}{filler_b}", first.text);
-        let chunk = make_chunk(&fixture);
+        let chunk = make_chunk(&fixture, first.path.as_deref());
 
         scanner.clear_fragment_cache();
         scanner
@@ -688,7 +707,7 @@ fn every_positive_scans_deterministically_over_the_corpus() {
     let mut scanned = 0usize;
     for (_path, c) in &contracts {
         for p in &c.positive {
-            let chunk = make_chunk(&p.text);
+            let chunk = make_chunk(&p.text, p.path.as_deref());
 
             scanner.clear_fragment_cache();
             let mut first = scanner

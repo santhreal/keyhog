@@ -117,7 +117,7 @@ fn custom_directory_defaults_to_replace() {
 /// Regression: two replace scans with identical normalized detector specs must
 /// retain the selected corpus schema in their reported evidence identity.
 /// Otherwise a manifest-free schema-1 scan could reuse cache or autoroute
-/// evidence produced under schema 2's stricter verifier-policy contract.
+/// evidence produced under schema 3's typed evidence contract.
 #[test]
 fn reported_digest_distinguishes_legacy_and_current_custom_schema() {
     let legacy_root = TempDir::new().expect("legacy tempdir");
@@ -186,7 +186,7 @@ fn reported_digest_distinguishes_legacy_and_current_custom_schema() {
     assert_ne!(
         effective(&legacy_report, "detector_corpus_digest"),
         effective(&current_report, "detector_corpus_digest"),
-        "equal specs under schema 1 and schema 2 need distinct reported identities"
+        "equal specs under schema 1 and schema 3 need distinct reported identities"
     );
 }
 

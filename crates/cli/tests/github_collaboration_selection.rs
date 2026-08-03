@@ -47,6 +47,26 @@ fn independently_selected_surfaces_build_one_collaboration_source() {
     }
 }
 
+/// One concise flag must select the complete collaboration workflow without changing source count.
+#[test]
+fn all_surface_shorthand_builds_one_complete_collaboration_source() {
+    let args = ScanArgs::try_parse_from([
+        "scan",
+        "--github-collaboration",
+        "acme/rocket",
+        "--github-all",
+        "--github-token",
+        "test-token",
+    ])
+    .expect("all-surface shorthand parses");
+    let sources = API
+        .build_sources(&args, vec![], None)
+        .expect("all-surface shorthand builds");
+    assert!(args.github_all);
+    assert_eq!(sources.len(), 1);
+    assert_eq!(sources[0].name(), "github-collaboration");
+}
+
 #[test]
 fn repository_only_source_does_not_construct_collaboration_adapter() {
     let args = ScanArgs::try_parse_from([

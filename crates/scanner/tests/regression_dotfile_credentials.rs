@@ -20,20 +20,26 @@ use support::paths::detector_dir;
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::CompiledScanner;
 
-fn scan(text: &str) -> Vec<RawMatch> {
+/// Scan `text` with the real filename used by source-admitted detectors.
+fn scan_at(text: &str, path: &str) -> Vec<RawMatch> {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
     let scanner = CompiledScanner::compile(detectors).expect("compile scanner");
     let chunk = Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
             source_type: "filesystem".into(),
-            path: Some(".npmrc".into()),
+            path: Some(path.into()),
             ..Default::default()
         },
     };
     scanner
         .scan(&chunk)
         .expect("dotfile credential regression scan should succeed")
+}
+
+/// Scan the default npm credential fixture as an `.npmrc` file.
+fn scan(text: &str) -> Vec<RawMatch> {
+    scan_at(text, ".npmrc")
 }
 
 /// The captured credential for detector `id`, if it fired.
@@ -48,7 +54,10 @@ fn npmrc(text: &str) -> Option<String> {
     capture_for(text, "npmrc-auth-token")
 }
 fn netrc(text: &str) -> Option<String> {
-    capture_for(text, "netrc-password")
+    scan_at(text, ".netrc")
+        .into_iter()
+        .find(|m| m.detector_id.as_ref() == "netrc-password")
+        .map(|m| m.credential.as_ref().to_string())
 }
 
 // ===========================================================================
@@ -201,7 +210,7 @@ fn netrc_password_stops_at_whitespace() {
 fn netrc_two_entries_yield_two_findings() {
     let text = "machine a.example.com login u1 password Secret111aaaa\n\
                 machine b.example.com login u2 password Secret222bbbb";
-    let hits: Vec<_> = scan(text)
+    let hits: Vec<_> = scan_at(text, ".netrc")
         .into_iter()
         .filter(|m| m.detector_id.as_ref() == "netrc-password")
         .collect();
@@ -216,10 +225,13 @@ fn netrc_two_entries_yield_two_findings() {
 
 #[test]
 fn netrc_fires_under_exact_id_and_service() {
-    let m = scan("machine api.example.com login deploy password Zx9Qw3Rt7Lp2Mk")
-        .into_iter()
-        .find(|m| m.detector_id.as_ref() == "netrc-password")
-        .expect("fires");
+    let m = scan_at(
+        "machine api.example.com login deploy password Zx9Qw3Rt7Lp2Mk",
+        ".netrc",
+    )
+    .into_iter()
+    .find(|m| m.detector_id.as_ref() == "netrc-password")
+    .expect("fires");
     assert_eq!(m.detector_id.as_ref(), "netrc-password");
     assert_eq!(m.service.as_ref(), "netrc");
 }
@@ -415,8 +427,9 @@ fn all_covered_dotfile_credentials_surface_together() {
          https://gituser:Xk7Qw9RpLm5Vn8Zt@github.com\n\
          [client]\npassword=Tn4Bv8Cx2Wq6Hs9Jp\n"
     );
-    let creds: Vec<String> = scan(&blob)
+    let creds: Vec<String> = [scan(&blob), scan_at(&blob, ".netrc")]
         .into_iter()
+        .flatten()
         .map(|m| m.credential.as_ref().to_string())
         .collect();
     for needle in [

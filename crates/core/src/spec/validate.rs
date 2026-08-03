@@ -1,12 +1,16 @@
 //! Detector quality gate validation rules used while loading TOML specs.
 
-use super::{CanonicalHexKeyMaterialSpec, DetectorKind, DetectorSpec, VerifySpec};
+use super::{
+    CanonicalHexKeyMaterialSpec, DetectorKind, DetectorRelationKind, DetectorSpec,
+    EvidenceRequirement, EvidenceScope, VerifySpec,
+};
 use regex_syntax::ast;
 use serde::Serialize;
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 const MAX_REGEX_PATTERN_LEN: usize = 4096;
 const MAX_COMPANION_WITHIN_LINES: usize = 100;
+const MAX_COMPANION_WITHIN_BYTES: usize = 1_048_576;
 const MIN_HTTP_STATUS: u16 = 100;
 const MAX_HTTP_STATUS: u16 = 599;
 // MAX_REGEX_AST_NODES / MAX_REGEX_ALTERNATION_BRANCHES /
@@ -37,22 +41,13 @@ pub enum QualityIssue {
 /// # Examples
 ///
 /// ```rust
-/// use keyhog_core::{DetectorSpec, PatternSpec, Severity, validate_detector};
+/// use keyhog_core::{detector_spec_by_id, validate_detector};
 ///
-/// let detector = DetectorSpec {
-///     id: "demo".into(),
-///     name: "Demo".into(),
-///     service: "demo".into(),
-///     severity: Severity::High,
-///     patterns: vec![PatternSpec {
-///         regex: "demo_[A-Z0-9]{8}".into(),
-///         ..Default::default()
-///     }],
-///     keywords: vec!["demo_".into()],
-///     ..Default::default()
-/// };
+/// let detector = detector_spec_by_id("aws-access-key")
+///     .expect("the embedded detector corpus contains AWS access keys");
 ///
-/// assert!(validate_detector(&detector).is_empty());
+/// let issues = validate_detector(&detector);
+/// assert!(issues.is_empty(), "{issues:?}");
 /// ```
 pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     let mut issues = Vec::new();
@@ -68,6 +63,7 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_decode_transforms(spec, &mut issues);
     validate_pattern_specificity(spec, &mut issues, &mut regex_cache);
     validate_companions(spec, &mut issues, &mut regex_cache);
+    validate_detector_relations(spec, &mut issues);
     validate_verify_spec(spec, &mut issues);
     validate_thresholds(spec, &mut issues);
     validate_entropy_floor(spec, &mut issues);
@@ -998,6 +994,10 @@ fn validate_detector_allowlists(spec: &DetectorSpec, issues: &mut Vec<QualityIss
     for (field, patterns) in [
         ("allowlist_paths", &spec.allowlist_paths),
         ("allowlist_values", &spec.allowlist_values),
+        (
+            "source_admission.path_patterns",
+            &spec.source_admission.path_patterns,
+        ),
     ] {
         let mut first_index_by_pattern = HashMap::new();
         for (index, pattern) in patterns.iter().enumerate() {
@@ -1069,6 +1069,38 @@ fn validate_detector_allowlists(spec: &DetectorSpec, issues: &mut Vec<QualityIss
             Entry::Vacant(slot) => {
                 slot.insert(index);
             }
+        }
+    }
+    let mut source_types = HashSet::new();
+    for (index, source_type) in spec.source_admission.source_types.iter().enumerate() {
+        if source_type.trim().is_empty() {
+            issues.push(QualityIssue::Error(format!(
+                "detector {:?} source_admission.source_types[{index}] must not be empty",
+                spec.id
+            )));
+        } else if !source_types.insert(source_type) {
+            issues.push(QualityIssue::Error(format!(
+                "detector {:?} source_admission.source_types[{index}] is duplicated",
+                spec.id
+            )));
+        }
+    }
+    let mut extensions = HashSet::new();
+    for (index, extension) in spec.source_admission.file_extensions.iter().enumerate() {
+        if extension.is_empty()
+            || !extension.is_ascii()
+            || extension.starts_with('.')
+            || extension.bytes().any(|byte| byte.is_ascii_uppercase())
+        {
+            issues.push(QualityIssue::Error(format!(
+                "detector {:?} source_admission.file_extensions[{index}] must be lowercase ASCII without a leading dot",
+                spec.id
+            )));
+        } else if !extensions.insert(extension) {
+            issues.push(QualityIssue::Error(format!(
+                "detector {:?} source_admission.file_extensions[{index}] is duplicated",
+                spec.id
+            )));
         }
     }
 }
@@ -1188,6 +1220,36 @@ fn validate_companions<'a>(
                 i, companion.within_lines, MAX_COMPANION_WITHIN_LINES
             )));
         }
+        if let Some(within_bytes) = companion.within_bytes {
+            if within_bytes == 0 || within_bytes > MAX_COMPANION_WITHIN_BYTES {
+                issues.push(QualityIssue::Error(format!(
+                    "companion {i} within_bytes={within_bytes} must be in 1..={MAX_COMPANION_WITHIN_BYTES}"
+                )));
+            }
+        }
+        if companion.scope == EvidenceScope::SameLine && companion.within_lines != 0 {
+            issues.push(QualityIssue::Error(format!(
+                "companion {i} scope=same-line requires within_lines=0, found {}",
+                companion.within_lines
+            )));
+        }
+        if companion.required && companion.requirement != EvidenceRequirement::Reinforcing {
+            issues.push(QualityIssue::Error(format!(
+                "companion {i} mixes schema-v2 required=true with typed requirement={:?}; \
+                 remove required and keep only the typed requirement",
+                companion.requirement
+            )));
+        }
+        if let Some(group) = companion.capture_group {
+            if let Ok(regex) = regex::Regex::new(&companion.regex) {
+                if group >= regex.captures_len() {
+                    issues.push(QualityIssue::Error(format!(
+                        "companion {i} capture_group={group} does not exist; regex exposes groups 0..{}",
+                        regex.captures_len().saturating_sub(1)
+                    )));
+                }
+            }
+        }
         validate_regex_definition(
             RegexKind::Companion,
             i,
@@ -1219,6 +1281,50 @@ fn validate_companions<'a>(
                 "companion {} regex '{}' is too broad - may produce false positives. \
                  Add a context anchor like 'KEY_NAME='.",
                 i, companion.regex
+            )));
+        }
+    }
+}
+
+fn validate_detector_relations(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    let mut first_by_target: HashMap<&str, (usize, DetectorRelationKind)> = HashMap::new();
+    for (index, relation) in spec.detector_relations.iter().enumerate() {
+        let target = relation.detector_id.trim();
+        if target.is_empty() {
+            issues.push(QualityIssue::Error(format!(
+                "detector relation {index} target detector_id must not be empty"
+            )));
+        }
+        if target == spec.id {
+            issues.push(QualityIssue::Error(format!(
+                "detector relation {index} cannot target its owning detector {:?}",
+                spec.id
+            )));
+        }
+        if relation.within_lines > MAX_COMPANION_WITHIN_LINES {
+            issues.push(QualityIssue::Error(format!(
+                "detector relation {index} within_lines={} exceeds {} search-window limit",
+                relation.within_lines, MAX_COMPANION_WITHIN_LINES
+            )));
+        }
+        if let Some(within_bytes) = relation.within_bytes {
+            if within_bytes > MAX_COMPANION_WITHIN_BYTES {
+                issues.push(QualityIssue::Error(format!(
+                    "detector relation {index} within_bytes={within_bytes} must be in 0..={MAX_COMPANION_WITHIN_BYTES}"
+                )));
+            }
+        }
+        if let Some((first_index, first_kind)) =
+            first_by_target.insert(target, (index, relation.kind))
+        {
+            let detail = if first_kind == relation.kind {
+                "duplicates"
+            } else {
+                "contradicts"
+            };
+            issues.push(QualityIssue::Error(format!(
+                "detector relation {index} {detail} relation {first_index} for target {target:?}; \
+                 declare one operation per detector pair"
             )));
         }
     }

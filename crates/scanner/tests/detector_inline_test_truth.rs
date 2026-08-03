@@ -39,6 +39,7 @@ struct InlineCase {
     toml_file: String,
     positive: Option<String>,
     negative: Option<String>,
+    path: Option<String>,
 }
 
 /// Read every `detectors/*.toml`, returning the id + inline `[[detector.tests]]`
@@ -76,6 +77,7 @@ fn load_inline_cases() -> Vec<InlineCase> {
                 toml_file: stem.clone(),
                 positive: t.test_positive.clone(),
                 negative: t.test_negative.clone(),
+                path: t.test_path.clone(),
             });
         }
     }
@@ -90,7 +92,7 @@ fn scanner() -> CompiledScanner {
     CompiledScanner::compile(detectors).expect("on-disk corpus must compile into one scanner")
 }
 
-fn make_chunk(text: &str) -> Chunk {
+fn make_chunk(text: &str, path: Option<&str>) -> Chunk {
     Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
@@ -98,7 +100,7 @@ fn make_chunk(text: &str) -> Chunk {
             // `test_` basename would lower confidence and could hide both a
             // broken positive and an over-broad negative behind path scoring.
             source_type: "filesystem".into(),
-            path: Some("application.conf".into()),
+            path: Some(path.unwrap_or("application.conf").into()),
             ..Default::default()
         },
     }
@@ -170,7 +172,7 @@ fn every_inline_positive_fires_its_own_detector() {
         // scanner accumulates it across scan() calls (see contracts_runner)).
         scanner.clear_fragment_cache();
         let matches = scanner
-            .scan(&make_chunk(positive))
+            .scan(&make_chunk(positive, case.path.as_deref()))
             .expect("inline positive scan should succeed");
         let fired = matches
             .iter()
@@ -182,7 +184,7 @@ fn every_inline_positive_fires_its_own_detector() {
             scanner.clear_fragment_cache();
             telemetry::with_scan_telemetry(&trace, || {
                 scanner
-                    .scan(&make_chunk(positive))
+                    .scan(&make_chunk(positive, case.path.as_deref()))
                     .expect("inline positive suppression-trace scan should succeed");
             });
             let suppressions = trace.drain().dogfood_events;
@@ -216,6 +218,7 @@ fn agenta_assignment_is_not_a_tripadvisor_alias() {
     let matches = scanner()
         .scan(&make_chunk(
             "AGENTA_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d",
+            None,
         ))
         .expect("Agenta detector regression scan should succeed");
     assert!(
@@ -256,7 +259,7 @@ fn anchored_generic_service_detectors_remain_named_through_resolution() {
         };
         scanner.clear_fragment_cache();
         let raw = scanner
-            .scan(&make_chunk(positive))
+            .scan(&make_chunk(positive, case.path.as_deref()))
             .expect("anchored generic detector scan should succeed");
         let active = scanner
             .try_resolve_matches(raw.clone())
@@ -322,10 +325,10 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
         if !corrected.contains(case.detector_id.as_str()) {
             continue;
         }
-        let Some(positive) = case.positive else {
+        let Some(positive) = &case.positive else {
             continue;
         };
-        let chunk = make_chunk(&positive);
+        let chunk = make_chunk(positive, case.path.as_deref());
         scanner.clear_fragment_cache();
         let mut cpu = scanner
             .scan_with_backend(&chunk, ScanBackend::CpuFallback)
@@ -386,7 +389,7 @@ fn every_inline_negative_does_not_fire_its_own_detector() {
         };
         scanner.clear_fragment_cache();
         let matches = scanner
-            .scan(&make_chunk(negative))
+            .scan(&make_chunk(negative, case.path.as_deref()))
             .expect("inline negative scan should succeed");
         let wrongly_fired: Vec<&str> = matches
             .iter()

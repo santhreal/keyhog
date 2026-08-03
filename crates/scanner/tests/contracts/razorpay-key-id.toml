@@ -4,8 +4,8 @@ service = "razorpay"
 severity = "high"
 
 # Razorpay Key IDs ship in two flavors: test (`rzp_test_`) and live (`rzp_live_`).
-# The `razorpay_key_secret` companion is optional but raises confidence; the
-# contract covers both halves alone and the paired form.
+# Razorpay key IDs are only actionable when a matching key secret is nearby.
+# The contract therefore treats the paired form as positive and the ID alone as noise.
 
 [[positive]]
 text = """RAZORPAY_KEY_ID=rzp_test_Kp4Qx7Rm2Sn5Tb
@@ -13,10 +13,10 @@ RAZORPAY_KEY_SECRET=Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3"""
 credential = "rzp_test_Kp4Qx7Rm2Sn5Tb"
 reason = "Standard env-var pair (test key + secret companion satisfied)."
 
-[[positive]]
+[[negative]]
 text = "razorpay_key_id: rzp_live_KpQxRmSnTbVwYzKp"
-credential = "rzp_live_KpQxRmSnTbVwYzKp"
-reason = "YAML-style live key alone (companion optional)."
+apply_resolution = true
+reason = "A standalone key ID lacks the paired secret required for authentication."
 
 [[negative]]
 text = "rzp_test_short"

@@ -57,7 +57,7 @@ name = "account_sid"
 # pattern above.
 regex = "(?i)(?:twilio[_.\\s-]*)?account[_.-]?sid\\s*[=:]\\s*[\"']?(AC[a-fA-F0-9]{32})[\"']?"
 within_lines = 5
-required = true
+requirement = "required"
 
 [detector.verify]
 method = "GET"

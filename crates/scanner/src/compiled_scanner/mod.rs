@@ -12,6 +12,7 @@ mod types;
 mod validation;
 
 pub use types::{
+    CompiledDetectorEvidenceRelation, CompiledEvidencePlan, CompiledEvidenceRelation,
     CompiledScannerRuntime, GpuBackendAvailability, GpuBackendCandidateStatus, GpuInitPolicy,
 };
 pub(crate) use types::{GpuBackendAcquisitionFailure, GpuBackendPeers};

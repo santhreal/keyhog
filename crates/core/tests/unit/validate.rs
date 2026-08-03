@@ -626,6 +626,7 @@ fn rejects_invalid_companion_regexes() {
         regex: "(".into(),
         within_lines: 3,
         required: false,
+        ..Default::default()
     });
 
     let issues = validate_detector(&detector);
@@ -678,6 +679,7 @@ fn rejects_companion_search_window_above_cap() {
         regex: "api_key=".into(),
         within_lines: 101,
         required: false,
+        ..Default::default()
     });
 
     let issues = validate_detector(&detector);
@@ -1067,6 +1069,7 @@ fn rejects_broad_companion_character_class() {
         regex: "[A-Za-z0-9+/=]{40,}".into(),
         within_lines: 12,
         required: false,
+        ..Default::default()
     });
 
     let issues = validate_detector(&detector);
@@ -1129,6 +1132,7 @@ fn rejects_escaped_closing_bracket_character_class_companion() {
         regex: r"[A-Z\]]+".into(),
         within_lines: 12,
         required: false,
+        ..Default::default()
     });
 
     let issues = validate_detector(&detector);
@@ -1152,6 +1156,7 @@ fn warns_but_accepts_companion_character_class_with_tight_radius() {
         regex: "[A-Za-z0-9+/=]{40,}".into(),
         within_lines: 5,
         required: false,
+        ..Default::default()
     });
 
     let issues = validate_detector(&detector);
@@ -1195,6 +1200,7 @@ fn grouped_companion_literal_satisfies_context_anchor() {
         regex: "(?:api_key=)[A-Z0-9]{8}".into(),
         within_lines: 12,
         required: false,
+        ..Default::default()
     });
 
     let issues = validate_detector(&detector);

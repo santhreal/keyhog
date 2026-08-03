@@ -445,12 +445,27 @@ pub(crate) fn compile_companion(
             index: FIRST_CAPTURE_GROUP_INDEX,
             source: e,
         })?;
-    let capture_group = (regex.captures_len() > 1).then_some(FIRST_CAPTURE_GROUP_INDEX);
+    let capture_group = match spec.capture_group {
+        Some(group) if group < regex.captures_len() => Some(group),
+        Some(group) => {
+            return Err(ScanError::Config(format!(
+                "detector {detector_id:?} companion {:?} selects capture group {group}, \
+                 but its regex exposes groups 0..{}",
+                spec.name,
+                regex.captures_len().saturating_sub(1)
+            )));
+        }
+        None => (regex.captures_len() > 1).then_some(FIRST_CAPTURE_GROUP_INDEX),
+    };
     Ok(CompiledCompanion {
         name: std::sync::Arc::from(spec.name.as_str()),
         regex,
         capture_group,
         within_lines: spec.within_lines,
-        required: spec.required,
+        within_bytes: spec.within_bytes,
+        direction: spec.direction,
+        scope: spec.scope,
+        requirement: spec.effective_requirement(),
+        value_relation: spec.value_relation,
     })
 }

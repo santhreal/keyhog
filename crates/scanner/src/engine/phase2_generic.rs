@@ -326,11 +326,13 @@ impl CompiledScanner {
                     continue;
                 }
 
-                if let Some(stage_id) = detector_plan
-                    .suppression
-                    .as_ref()
-                    .and_then(|policy| policy.full_stage(chunk.metadata.path.as_deref(), value))
-                {
+                if let Some(stage_id) = detector_plan.suppression.as_ref().and_then(|policy| {
+                    policy.full_stage(
+                        chunk.metadata.path.as_deref(),
+                        Some(&chunk.metadata.source_type),
+                        value,
+                    )
+                }) {
                     crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
                         value,

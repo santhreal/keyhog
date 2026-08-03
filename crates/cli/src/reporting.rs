@@ -959,19 +959,19 @@ fn scan_targets(args: &ScanArgs) -> Vec<String> {
     #[cfg(feature = "github")]
     if let Some(repository) = &args.github_collaboration {
         let mut surfaces = Vec::new();
-        if args.github_issues {
+        if args.github_all || args.github_issues {
             surfaces.push("issues");
         }
-        if args.github_pull_requests {
+        if args.github_all || args.github_pull_requests {
             surfaces.push("pull-requests");
         }
-        if args.github_discussions {
+        if args.github_all || args.github_discussions {
             surfaces.push("discussions");
         }
-        if args.github_wiki {
+        if args.github_all || args.github_wiki {
             surfaces.push("wiki");
         }
-        if args.github_gists {
+        if args.github_all || args.github_gists {
             surfaces.push("gists");
         }
         targets.push(format!(

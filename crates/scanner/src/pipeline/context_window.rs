@@ -175,101 +175,246 @@ pub(crate) fn normalize_scannable_chunk<'a>(
 pub(crate) fn find_companion(
     preprocessed: &ScannerPreprocessedText<'_>,
     primary_line: usize,
+    primary_start: usize,
+    primary_end: usize,
+    primary_value: &str,
     companion: &CompiledCompanion,
 ) -> Option<String> {
-    // Companion matches/capture-groups longer than this are skipped on both the
-    // no-group `find_iter` path and the capture-group path: a multi-kilobyte
-    // "match" is never a real adjacent credential, so scanning it past this cap
-    // only wastes the worker. One named owner keeps the two paths in lockstep.
     const MAX_COMPANION_MATCH_BYTES: usize = 4096;
-    // `primary_line` is 1-based (the return of `match_line_number` is
-    // a 1-based partition_point index). Clamp the lower bound at
-    // FIRST_LINE_NUMBER so a primary on line 1 with within=3 starts
-    // at line 1, not line -2 (which saturates to 0 and would silently
-    // shift the whole window off by one).
-    let start = primary_line
-        .saturating_sub(companion.within_lines)
-        .max(FIRST_LINE_NUMBER);
-    let end = primary_line.saturating_add(companion.within_lines);
-    let (window_start, window_end) = line_window_offsets(preprocessed, start, end)?;
-    // Defensive: `line_window_offsets` returns offsets relative to the
-    // line index, but the underlying text may have been truncated
-    // mid-scan (windowed mode, decoded chunk shorter than original)
-    // so the offsets can exceed `text.len()`. Use `get` to bail out
-    // cleanly instead of panicking on a `&str[..]` slice - a single
-    // bogus companion lookup must never crash a worker.
-    let haystack = preprocessed.text.get(window_start..window_end)?;
-    let group = companion.capture_group.unwrap_or(FIRST_CAPTURE_GROUP_INDEX); // LAW10: offset/owned/group absent => documented default (original chunk / first group); recall-safe
-    let line_range = start..=end;
 
-    // Capture-group fast path: when the regex has no groups, `find_iter` is
-    // strictly cheaper than `captures_iter` - `find` allocates no
-    // `Captures` object per iteration. The previous unconditional
-    // `captures_iter` paid for that allocation on every match across every
-    // companion lookup in every scan.
+    let (window_start, window_end) = companion_search_window(
+        preprocessed,
+        primary_line,
+        primary_start,
+        primary_end,
+        companion,
+    )?;
+    let haystack = preprocessed.text.get(window_start..window_end)?;
+    let group = companion.capture_group.unwrap_or(FIRST_CAPTURE_GROUP_INDEX);
+
     if companion.capture_group.is_none() {
-        for m in companion.regex.find_iter(haystack) {
-            if m.len() > MAX_COMPANION_MATCH_BYTES {
+        for matched in companion.regex.find_iter(haystack) {
+            if matched.len() > MAX_COMPANION_MATCH_BYTES {
                 continue;
             }
-            if let Some(line) = preprocessed.line_for_offset(window_start + m.start()) {
-                if line_range.contains(&line) {
-                    return Some(m.as_str().to_string());
-                }
+            let absolute_start = window_start + matched.start();
+            let absolute_end = window_start + matched.end();
+            if evidence_relation_accepts(
+                companion,
+                primary_start,
+                primary_end,
+                primary_value,
+                absolute_start,
+                absolute_end,
+                matched.as_str(),
+            ) {
+                return Some(matched.as_str().to_string());
             }
         }
         return None;
     }
 
-    // Capture-group path: reuse one `CaptureLocations` buffer across every
-    // iter tick. `captures_iter` allocates a fresh `Captures` per match;
-    // `captures_read_at` writes into the borrowed buffer instead.
-    let mut locs = companion.regex.capture_locations();
+    let mut locations = companion.regex.capture_locations();
     let mut cursor = 0usize;
-    let bytes_total = haystack.len();
-    while cursor <= bytes_total {
+    while cursor <= haystack.len() {
         let Some(whole) = companion
             .regex
-            .captures_read_at(&mut locs, haystack, cursor)
+            .captures_read_at(&mut locations, haystack, cursor)
         else {
             break;
         };
-        // Advance the cursor before any branch that might `continue`, to
-        // keep the loop monotonic. Zero-width matches bump by one byte
-        // and we then align onto a UTF-8 boundary - `captures_read_at`'s
-        // behavior is unspecified at non-boundary positions, so we must
-        // never feed it one.
-        let next = if whole.end() == cursor {
-            cursor + 1
-        } else {
-            whole.end()
+        cursor = crate::engine::ceil_char_boundary(
+            haystack,
+            if whole.end() == cursor {
+                cursor + 1
+            } else {
+                whole.end()
+            },
+        );
+        let Some((start, end)) = locations.get(group) else {
+            continue;
         };
-        let next = crate::engine::ceil_char_boundary(haystack, next);
-        let prev_cursor = cursor;
-        cursor = next;
-
-        if let Some((s, e)) = locs.get(group) {
-            if e.saturating_sub(s) <= MAX_COMPANION_MATCH_BYTES {
-                if let Some(line) = preprocessed.line_for_offset(window_start + s) {
-                    if line_range.contains(&line) {
-                        // LAW10: use .get(s..e) instead of haystack[s..e]:
-                        // the regex crate guarantees s..e are valid offsets
-                        // within haystack, but a defensive get() prevents
-                        // any panic from a future backend change or
-                        // attacker-induced offset skew.  A None result
-                        // means this capture is skipped (companion not
-                        // found), recall-safe: we do not suppress the
-                        // primary match, we simply miss the companion value.
-                        if let Some(captured) = haystack.get(s..e) {
-                            return Some(captured.to_string());
-                        }
-                    }
-                }
-            }
+        if end.saturating_sub(start) > MAX_COMPANION_MATCH_BYTES {
+            continue;
         }
-        let _ = prev_cursor; // borrowck scope marker; cursor is already updated  // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
+        let Some(captured) = haystack.get(start..end) else {
+            continue;
+        };
+        let absolute_start = window_start + start;
+        let absolute_end = window_start + end;
+        if evidence_relation_accepts(
+            companion,
+            primary_start,
+            primary_end,
+            primary_value,
+            absolute_start,
+            absolute_end,
+            captured,
+        ) {
+            return Some(captured.to_string());
+        }
     }
     None
+}
+
+fn companion_search_window(
+    preprocessed: &ScannerPreprocessedText<'_>,
+    primary_line: usize,
+    primary_start: usize,
+    primary_end: usize,
+    companion: &CompiledCompanion,
+) -> Option<(usize, usize)> {
+    use keyhog_core::EvidenceScope;
+
+    if primary_start > primary_end || primary_end > preprocessed.text.len() {
+        return None;
+    }
+    let start_line = primary_line
+        .saturating_sub(companion.within_lines)
+        .max(FIRST_LINE_NUMBER);
+    let end_line = primary_line.saturating_add(companion.within_lines);
+    let line_window = line_window_offsets(preprocessed, start_line, end_line)?;
+    let scope_window = match companion.scope {
+        EvidenceScope::Window => line_window,
+        EvidenceScope::SameLine => line_window_offsets(preprocessed, primary_line, primary_line)?,
+        EvidenceScope::SameRecord => {
+            record_scope_offsets(preprocessed.text.as_ref(), primary_start)?
+        }
+        EvidenceScope::SameObject => {
+            object_scope_offsets(preprocessed.text.as_ref(), primary_start, primary_end)?
+        }
+    };
+    let start = line_window.0.max(scope_window.0);
+    let end = line_window.1.min(scope_window.1);
+    (start <= primary_start && primary_end <= end && start < end).then_some((start, end))
+}
+
+fn evidence_relation_accepts(
+    companion: &CompiledCompanion,
+    primary_start: usize,
+    primary_end: usize,
+    primary_value: &str,
+    evidence_start: usize,
+    evidence_end: usize,
+    evidence_value: &str,
+) -> bool {
+    use keyhog_core::{EvidenceDirection, EvidenceValueRelation};
+
+    let direction_matches = match companion.direction {
+        EvidenceDirection::Either => true,
+        EvidenceDirection::Before => evidence_end <= primary_start,
+        EvidenceDirection::After => evidence_start >= primary_end,
+    };
+    if !direction_matches {
+        return false;
+    }
+    if let Some(max_gap) = companion.within_bytes {
+        let gap = if evidence_end <= primary_start {
+            primary_start - evidence_end
+        } else if primary_end <= evidence_start {
+            evidence_start - primary_end
+        } else {
+            0
+        };
+        if gap > max_gap {
+            return false;
+        }
+    }
+    match companion.value_relation {
+        EvidenceValueRelation::Present => true,
+        EvidenceValueRelation::EqualsPrimary => evidence_value == primary_value,
+        EvidenceValueRelation::DiffersFromPrimary => evidence_value != primary_value,
+    }
+}
+
+fn record_scope_offsets(text: &str, primary_start: usize) -> Option<(usize, usize)> {
+    if primary_start > text.len() || !text.is_char_boundary(primary_start) {
+        return None;
+    }
+    let mut start = text[..primary_start]
+        .rfind('\n')
+        .map_or(0, |newline| newline + 1);
+    while start > 0 {
+        let previous_end = start - 1;
+        let previous_start = text[..previous_end]
+            .rfind('\n')
+            .map_or(0, |newline| newline + 1);
+        if text[previous_start..previous_end].trim().is_empty() {
+            break;
+        }
+        start = previous_start;
+    }
+
+    let mut end = text[primary_start..]
+        .find('\n')
+        .map_or(text.len(), |newline| primary_start + newline);
+    while end < text.len() {
+        let next_start = end + 1;
+        let next_end = text[next_start..]
+            .find('\n')
+            .map_or(text.len(), |newline| next_start + newline);
+        if text[next_start..next_end].trim().is_empty() {
+            break;
+        }
+        end = next_end;
+    }
+    Some((start, end))
+}
+
+fn object_scope_offsets(
+    text: &str,
+    primary_start: usize,
+    primary_end: usize,
+) -> Option<(usize, usize)> {
+    if primary_start > primary_end || primary_end > text.len() {
+        return None;
+    }
+    let bytes = text.as_bytes();
+    let mut stack: Vec<(u8, usize)> = Vec::new();
+    let mut quoted = None;
+    let mut escaped = false;
+    let mut smallest = None;
+
+    for (index, byte) in bytes.iter().copied().enumerate() {
+        if let Some(quote) = quoted {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == quote {
+                quoted = None;
+            }
+            continue;
+        }
+        if byte == b'"' || byte == b'\'' {
+            quoted = Some(byte);
+            continue;
+        }
+        match byte {
+            b'{' | b'[' => stack.push((byte, index)),
+            b'}' | b']' => {
+                let expected = if byte == b'}' { b'{' } else { b'[' };
+                let Some((open, start)) = stack.pop() else {
+                    continue;
+                };
+                if open != expected {
+                    stack.clear();
+                    continue;
+                }
+                let end = index + 1;
+                if start <= primary_start
+                    && primary_end <= end
+                    && smallest.is_none_or(|(current_start, current_end)| {
+                        end - start < current_end - current_start
+                    })
+                {
+                    smallest = Some((start, end));
+                }
+            }
+            _ => {}
+        }
+    }
+    smallest
 }
 
 /// Resolve the byte window `[start_offset, end_offset)` spanned by the

@@ -30,12 +30,14 @@ fn scanner_with_companion(required: bool) -> CompiledScanner {
                 regex: r#"(?i:AWS_SECRET_ACCESS_KEY)[=:\s\"']+([0-9a-zA-Z/+=]{40})"#.into(),
                 within_lines: 2,
                 required,
+                ..Default::default()
             },
             CompanionSpec {
                 name: "session_token".into(),
                 regex: r#"(?i:AWS_SESSION_TOKEN)[=:\s\"']+([0-9a-zA-Z/+=]{80,})"#.into(),
                 within_lines: 2,
                 required: false,
+                ..Default::default()
             },
         ],
         keywords: vec!["AKIA".into(), "ASIA".into()],

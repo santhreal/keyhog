@@ -85,7 +85,7 @@ def generate() -> str:
         "}",
         "",
         "macro_rules! positive_fixture {",
-        "    ($name:ident, $detector:literal, $text:expr, $credential:expr) => {",
+        "    ($name:ident, $detector:literal, $text:expr, $credential:expr, $path:expr) => {",
         "        #[test]",
         "        fn $name() {",
         "            let text: &str = $text;",
@@ -93,7 +93,7 @@ def generate() -> str:
         "                data: text.into(),",
         "                metadata: ChunkMetadata {",
         "                    source_type: \"contract\".into(),",
-        "                    path: Some(concat!($detector, \".txt\").into()),",
+        "                    path: Some($path.into()),",
         "                    ..Default::default()",
         "                },",
         "            };",
@@ -115,7 +115,7 @@ def generate() -> str:
         "}",
         "",
         "macro_rules! negative_fixture {",
-        "    ($name:ident, $detector:literal, $text:expr) => {",
+        "    ($name:ident, $detector:literal, $text:expr, $path:expr, $apply_resolution:expr) => {",
         "        #[test]",
         "        fn $name() {",
         "            let text: &str = $text;",
@@ -123,13 +123,20 @@ def generate() -> str:
         "                data: text.into(),",
         "                metadata: ChunkMetadata {",
         "                    source_type: \"contract\".into(),",
-        "                    path: Some(concat!($detector, \".txt\").into()),",
+        "                    path: Some($path.into()),",
         "                    ..Default::default()",
         "                },",
         "            };",
         "            let scanner = scanner();",
         "            scanner.clear_fragment_cache();",
         "            let matches = scan_fixture(&chunk);",
+        "            let matches = if $apply_resolution {",
+        "                scanner",
+        "                    .try_resolve_matches(matches)",
+        "                    .expect(\"generated detector relations must resolve\")",
+        "            } else {",
+        "                matches",
+        "            };",
         "            let detector_ids: Vec<&str> = matches",
         "                .iter()",
         "                .map(|m| m.detector_id.as_ref())",
@@ -189,32 +196,37 @@ def generate() -> str:
         for idx, fixture in enumerate(positives):
             text = fixture["text"]
             credential = fixture["credential"]
+            fixture_path = fixture.get("path", f"{detector_id}.txt")
             name = f"{safe_stem}_positive_{idx}"
             lines.append(
-                f'positive_fixture!({name}, "{rust_str(detector_id)}", {rust_raw(text)}, {rust_raw(credential)});'
+                f'positive_fixture!({name}, "{rust_str(detector_id)}", {rust_raw(text)}, {rust_raw(credential)}, {rust_raw(fixture_path)});'
             )
 
         for idx, fixture in enumerate(negatives):
             text = fixture["text"]
+            fixture_path = fixture.get("path", f"{detector_id}.txt")
+            apply_resolution = str(fixture.get("apply_resolution", False)).lower()
             name = f"{safe_stem}_negative_{idx}"
             lines.append(
-                f'negative_fixture!({name}, "{rust_str(detector_id)}", {rust_raw(text)});'
+                f'negative_fixture!({name}, "{rust_str(detector_id)}", {rust_raw(text)}, {rust_raw(fixture_path)}, {apply_resolution});'
             )
 
         for idx, fixture in enumerate(evasions):
             text = fixture["text"]
             credential = fixture["credential"]
+            fixture_path = fixture.get("path", f"{detector_id}.txt")
             name = f"{safe_stem}_evasion_{idx}"
             lines.append(
-                f'positive_fixture!({name}, "{rust_str(detector_id)}", {rust_raw(text)}, {rust_raw(credential)});'
+                f'positive_fixture!({name}, "{rust_str(detector_id)}", {rust_raw(text)}, {rust_raw(credential)}, {rust_raw(fixture_path)});'
             )
 
         for idx, fixture in enumerate(cve_replays):
             text = fixture["text"]
             credential = fixture["credential"]
+            fixture_path = fixture.get("path", f"{detector_id}.txt")
             name = f"{safe_stem}_cve_{idx}"
             lines.append(
-                f'positive_fixture!({name}, "{rust_str(detector_id)}", {rust_raw(text)}, {rust_raw(credential)});'
+                f'positive_fixture!({name}, "{rust_str(detector_id)}", {rust_raw(text)}, {rust_raw(credential)}, {rust_raw(fixture_path)});'
             )
 
     lines.append("")

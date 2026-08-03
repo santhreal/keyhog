@@ -8,11 +8,7 @@ export KEYHOG_GITHUB_TOKEN='read-only-token'
 
 keyhog scan \
   --github-collaboration acme/payments \
-  --github-issues \
-  --github-pull-requests \
-  --github-discussions \
-  --github-wiki \
-  --github-gists
+  --github-all
 ```
 
 No collaboration surface is implied by `--github-org`. A repository-only scan
@@ -22,15 +18,16 @@ makes no issue, pull request, discussion, wiki, or gist request.
 
 | Flag | Scanned content |
 | --- | --- |
+| `--github-all` | Every surface listed below. Use this for a complete collaboration scan. |
 | `--github-issues` | Issue title, body, and issue comments. Pull requests returned by the issues API are excluded. |
 | `--github-pull-requests` | Pull request title and body, conversation comments, review summaries, and inline review comments. |
 | `--github-discussions` | Discussion title, body, top-level comments, and replies through the GitHub GraphQL API. |
 | `--github-wiki` | Every reachable unique blob in the full `<repo>.wiki.git` history. |
 | `--github-gists` | Every listed revision and comment for public gists owned by the repository owner. This is a public account surface, not a repository-only surface. |
 
-Each flag is independent. Pass only the surfaces the token is allowed to read.
-Use `KEYHOG_GITHUB_TOKEN` instead of `--github-token` so the credential does not
-enter the process argument list.
+Pass `--github-all` for the complete set, or select individual flags for the
+surfaces the token is allowed to read. Use `KEYHOG_GITHUB_TOKEN` instead of
+`--github-token` so the credential does not enter the process argument list.
 
 Limit a fine-grained token to the target repository and grant read-only access
 for the selected Issues, Pull requests, Discussions, and Contents resources.

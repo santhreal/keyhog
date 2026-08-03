@@ -159,7 +159,7 @@ state.
 |---|---|
 | Final package artifact | Run `npm pack`, then scan the produced `.tgz` with `keyhog scan package.tgz`. Archive expansion checks generated files, source maps, fixtures, and metadata that are absent from the expected source tree. |
 | Deployed browser application | `keyhog scan --url https://app.example.com/assets/app.js` follows bounded JavaScript, source-map, WASM, and response decoding without turning the scanner into an unbounded crawler. |
-| GitHub issues, pull requests, discussions, wikis, and gists | `keyhog scan --github-collaboration owner/repo --github-issues --github-pull-requests --github-discussions --github-wiki --github-gists` scans collaboration content outside the checkout. |
+| GitHub issues, pull requests, discussions, wikis, and gists | `keyhog scan --github-collaboration owner/repo --github-all` scans every collaboration surface outside the checkout. |
 | AI agent and MCP configuration | `keyhog scan ~/.config ~/.claude ~/.codex` applies the same detector, decode, confidence, and reporting pipeline to local tool configuration. |
 | Container image layers | `keyhog scan --docker-image registry.example.com/team/app:v1` scans the image content that will run, including files introduced during the build. |
 | Cloud object inventories | `keyhog scan --s3-bucket BUCKET`, `--gcs-bucket BUCKET`, or `--azure-container-url URL` preserves provider pagination, object, and byte-limit coverage in the terminal report. |
@@ -209,7 +209,7 @@ status for each inventory partition.
 | Docker image layers | `keyhog scan --docker-image registry/app:v1` |
 | JavaScript, source maps, WASM, or an endpoint response | `keyhog scan --url https://api.example.com/config` |
 | HTTP request and response captures | `keyhog scan capture.har` |
-| GitHub issues, pull requests, discussions, wikis, and gists | `keyhog scan --github-collaboration owner/repo --github-issues --github-pull-requests --github-discussions --github-wiki --github-gists` |
+| GitHub issues, pull requests, discussions, wikis, and gists | `keyhog scan --github-collaboration owner/repo --github-all` |
 | GitHub, GitLab, or Bitbucket inventories | `--github-org ORG`, `--gitlab-group GROUP`, or `--bitbucket-workspace WORKSPACE` |
 | S3, GCS, or Azure Blob inventories | `--s3-bucket BUCKET`, `--gcs-bucket BUCKET`, or `--azure-container-url URL` |
 | A bounded stream from another tool | `producer | keyhog scan --stdin` |
@@ -594,6 +594,10 @@ Browse detector authoring and inspection in the
   Twilio API key without its API secret is skipped. Optional companions enrich
   confidence or verification. AWS access-key detection does not require its
   secret, but the secret is needed for live verification.
+- **Cross-detector resolution.** Detector TOML can require, reject, or subsume
+  bounded findings from another detector. Resolution stays deterministic across
+  input order, and invalid targets, contradictions, or dependency cycles fail
+  corpus compilation.
 - **Confidence scoring.** Every finding carries a `[0.0, 1.0]` score
   derived from Shannon entropy, surrounding context, companion match,
   detector-owned offline proof (GitHub/npm CRC32 and PyPI payload decoding),

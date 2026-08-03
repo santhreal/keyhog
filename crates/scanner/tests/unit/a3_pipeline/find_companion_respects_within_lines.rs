@@ -1,3 +1,4 @@
+use keyhog_core::{EvidenceDirection, EvidenceRequirement, EvidenceScope, EvidenceValueRelation};
 use keyhog_scanner::testing::{find_companion, CompiledCompanion, ScannerPreprocessedText};
 
 #[test]
@@ -12,7 +13,11 @@ fn companion_beyond_within_lines_returns_none() {
         regex: regex::Regex::new("TARGET=(\\S+)").unwrap(),
         capture_group: Some(1),
         within_lines: 2,
-        required: false,
+        within_bytes: None,
+        direction: EvidenceDirection::Either,
+        scope: EvidenceScope::Window,
+        requirement: EvidenceRequirement::Reinforcing,
+        value_relation: EvidenceValueRelation::Present,
     };
-    assert!(find_companion(&pre, 1, &companion).is_none());
+    assert!(find_companion(&pre, 1, 0, 5, "line0", &companion).is_none());
 }

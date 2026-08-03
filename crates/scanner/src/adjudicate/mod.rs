@@ -120,6 +120,14 @@ impl ProcessCandidateSignals {
         }
     }
 
+    pub(crate) const fn from_forbidden_companion(forbidden_companion: bool) -> Self {
+        if forbidden_companion {
+            Self::suppress(StageId::ForbiddenCompanion)
+        } else {
+            Self::pass()
+        }
+    }
+
     pub(crate) const fn from_entropy_shape(
         entropy_below_floor: bool,
         camel_case_no_digit: bool,
@@ -482,6 +490,17 @@ pub(crate) fn record_missing_required_companion_suppression(
     );
     let recorded = record_suppression(path, credential, &ctx);
     debug_assert_eq!(recorded, Some(StageId::MissingRequiredCompanion));
+    recorded
+}
+
+pub(crate) fn record_forbidden_companion_suppression(
+    path: Option<&str>,
+    credential: &str,
+) -> Option<StageId> {
+    let ctx =
+        MatchCtx::for_process_signals(ProcessCandidateSignals::from_forbidden_companion(true));
+    let recorded = record_suppression(path, credential, &ctx);
+    debug_assert_eq!(recorded, Some(StageId::ForbiddenCompanion));
     recorded
 }
 

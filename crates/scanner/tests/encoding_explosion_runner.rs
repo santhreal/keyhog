@@ -52,6 +52,8 @@ struct Contract {
 struct Positive {
     text: String,
     credential: String,
+    #[serde(default)]
+    path: Option<String>,
     #[allow(dead_code)]
     reason: String,
 }
@@ -180,12 +182,12 @@ fn rot13(s: &str) -> String {
         .collect()
 }
 
-fn make_chunk(text: &str) -> Chunk {
+fn make_chunk(text: &str, path: Option<&str>) -> Chunk {
     Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
             source_type: "encoding-explosion".into(),
-            path: Some("encoded.txt".into()),
+            path: Some(path.unwrap_or("encoded.txt").into()),
             ..Default::default()
         },
     }
@@ -246,7 +248,7 @@ fn every_positive_swept_through_every_encoding() {
                 let encoded = enc.encode(&p.credential);
                 let text = wrap_with_encoded_cred(&p.text, &p.credential, &encoded);
                 scanner.clear_fragment_cache();
-                let chunk = make_chunk(&text);
+                let chunk = make_chunk(&text, p.path.as_deref());
                 let matches = scanner
                     .scan(&chunk)
                     .expect("encoded contract fixture scan should succeed");

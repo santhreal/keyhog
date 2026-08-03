@@ -1046,6 +1046,7 @@ fn companion_empty_name_is_error() {
         regex: "SECRET_KEY".into(),
         within_lines: 3,
         required: false,
+        ..Default::default()
     }];
     let issues = validate_detector(&d);
     assert!(
@@ -1063,6 +1064,7 @@ fn companion_reserved_oob_name_is_error() {
         regex: "SECRET_KEY_VALUE".into(),
         within_lines: 3,
         required: false,
+        ..Default::default()
     }];
     let issues = validate_detector(&d);
     assert!(
@@ -1081,6 +1083,7 @@ fn companion_pure_charclass_tight_radius_is_warning() {
         regex: "[A-Z0-9]{10}".into(),
         within_lines: 5,
         required: false,
+        ..Default::default()
     }];
     let issues = validate_detector(&d);
     assert!(
@@ -1103,6 +1106,7 @@ fn companion_pure_charclass_wide_radius_is_error() {
         regex: "[A-Z0-9]{10}".into(),
         within_lines: 6,
         required: false,
+        ..Default::default()
     }];
     let issues = validate_detector(&d);
     assert!(
@@ -1121,6 +1125,7 @@ fn companion_broad_regex_no_literal_is_warning() {
         regex: r"\w+=\w+".into(),
         within_lines: 3,
         required: false,
+        ..Default::default()
     }];
     let issues = validate_detector(&d);
     assert!(
@@ -1139,6 +1144,7 @@ fn companion_with_substantial_literal_is_clean() {
         regex: "SECRET_KEY=[A-Za-z0-9]{20}".into(),
         within_lines: 3,
         required: true,
+        ..Default::default()
     }];
     let issues = validate_detector(&d);
     assert!(
@@ -1444,6 +1450,7 @@ fn spec_hash_changes_when_companion_added() {
         regex: "SECRET_KEY".into(),
         within_lines: 3,
         required: true,
+        ..Default::default()
     });
     assert_ne!(
         compute_spec_hash(&[a]),
@@ -1461,6 +1468,7 @@ fn spec_hash_changes_when_companion_required_flips() {
         regex: "SECRET_KEY".into(),
         within_lines: 3,
         required: false,
+        ..Default::default()
     });
     let mut b = a.clone();
     b.companions[0].required = true;
@@ -1479,6 +1487,7 @@ fn spec_hash_changes_when_companion_within_lines_changes() {
         regex: "SECRET_KEY".into(),
         within_lines: 3,
         required: false,
+        ..Default::default()
     });
     let mut b = a.clone();
     b.companions[0].within_lines = 4;
@@ -1569,6 +1578,7 @@ fn spec_hash_ignores_tests_field() {
     b.tests.push(keyhog_core::DetectorTestSpec {
         test_positive: Some("demo_ABCD1234".into()),
         test_negative: None,
+        test_path: None,
     });
     assert_eq!(
         compute_spec_hash(&[a]),
@@ -1635,6 +1645,7 @@ fn spec_hash_pattern_and_companion_entries_are_namespaced_by_detector_id() {
         regex: "COMPANION_A_[0-9]+".into(),
         within_lines: 3,
         required: false,
+        ..Default::default()
     }];
     let mut a2 = clean_detector("idB");
     a2.patterns[0].regex = "SHARED_B_[0-9]+".into();
@@ -1643,6 +1654,7 @@ fn spec_hash_pattern_and_companion_entries_are_namespaced_by_detector_id() {
         regex: "COMPANION_B_[0-9]+".into(),
         within_lines: 3,
         required: false,
+        ..Default::default()
     }];
 
     let mut b1 = clean_detector("idA");
@@ -1652,6 +1664,7 @@ fn spec_hash_pattern_and_companion_entries_are_namespaced_by_detector_id() {
         regex: "COMPANION_B_[0-9]+".into(),
         within_lines: 3,
         required: false,
+        ..Default::default()
     }];
     let mut b2 = clean_detector("idB");
     b2.patterns[0].regex = "SHARED_A_[0-9]+".into();
@@ -1660,6 +1673,7 @@ fn spec_hash_pattern_and_companion_entries_are_namespaced_by_detector_id() {
         regex: "COMPANION_A_[0-9]+".into(),
         within_lines: 3,
         required: false,
+        ..Default::default()
     }];
 
     assert_ne!(

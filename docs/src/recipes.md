@@ -86,8 +86,7 @@ land in the tree:
 
 ```bash
 export KEYHOG_GITHUB_TOKEN="$GH_PAT"
-keyhog scan --github-collaboration acme/service \
-  --github-issues --github-pull-requests --github-discussions --github-wiki
+keyhog scan --github-collaboration acme/service --github-all
 ```
 
 See [GitHub collaboration scans](./workflows/github-collaboration.md).

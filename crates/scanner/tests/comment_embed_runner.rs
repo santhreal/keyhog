@@ -117,7 +117,11 @@ fn scan_comments_toggle_is_wired_and_monotone() {
         }
         for style in Comment::ALL {
             let text = style.wrap(&p.text);
-            let chunk = make_chunk(&text, SOURCE_TYPE, "source.txt");
+            let chunk = make_chunk(
+                &text,
+                SOURCE_TYPE,
+                p.path.as_deref().unwrap_or("source.txt"),
+            );
             let default_hit = surfaces(&default_scanner, &chunk, &p.credential);
             let enabled_hit = surfaces(&enabled_scanner, &chunk, &p.credential);
 

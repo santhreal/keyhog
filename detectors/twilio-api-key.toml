@@ -34,7 +34,7 @@ name = "secret"
 # casing is not part of the credential format, so fold the anchor only.
 regex = '''(?i:(?:TWILIO[_\-\s]*API[_\-\s]*SECRET|SECRET))[=:\s"'']+([a-zA-Z0-9]{32})'''
 within_lines = 3
-required = true
+requirement = "required"
 [detector.verify]
 method = "GET"
 url = "https://api.twilio.com/2010-04-01/Accounts/{{match}}.json"

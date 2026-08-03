@@ -4,7 +4,7 @@
 //! execution decision is reached through this single detector-indexed owner.
 
 use keyhog_core::DetectorSpec;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 pub(crate) type CompiledDetectorMetadata = (Arc<str>, Arc<str>, Arc<str>);
@@ -75,6 +75,138 @@ impl DetectorResolutionIndex {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CompiledDetectorRelation {
+    pub(crate) detector_id: Arc<str>,
+    pub(crate) kind: keyhog_core::DetectorRelationKind,
+    pub(crate) within_lines: usize,
+    pub(crate) within_bytes: Option<usize>,
+    pub(crate) direction: keyhog_core::EvidenceDirection,
+}
+
+#[derive(Debug)]
+pub(crate) struct CompiledDetectorRelationIndex {
+    by_owner: HashMap<Arc<str>, Box<[CompiledDetectorRelation]>>,
+}
+
+impl CompiledDetectorRelationIndex {
+    fn compile(detectors: &[DetectorSpec]) -> Result<Self, String> {
+        let detector_ids = detectors
+            .iter()
+            .map(|detector| detector.id.as_str())
+            .collect::<HashSet<_>>();
+        let mut by_owner = HashMap::with_capacity(detectors.len());
+        let mut graph = HashMap::<&str, Vec<&str>>::with_capacity(detectors.len());
+        let mut declared = HashMap::<(&str, &str), keyhog_core::DetectorRelationKind>::new();
+        let mut indegree = detector_ids
+            .iter()
+            .copied()
+            .map(|detector_id| (detector_id, 0usize))
+            .collect::<HashMap<_, _>>();
+
+        for detector in detectors {
+            let mut targets = HashSet::with_capacity(detector.detector_relations.len());
+            let mut compiled = Vec::with_capacity(detector.detector_relations.len());
+            for relation in &detector.detector_relations {
+                let target = relation.detector_id.as_str();
+                if !detector_ids.contains(target) {
+                    return Err(format!(
+                        "detector {:?} relation targets unknown detector {target:?}",
+                        detector.id
+                    ));
+                }
+                if target == detector.id {
+                    return Err(format!(
+                        "detector {:?} relation cannot target itself",
+                        detector.id
+                    ));
+                }
+                if !targets.insert(target) {
+                    return Err(format!(
+                        "detector {:?} declares multiple relations to {target:?}; \
+                         declare one operation per detector pair",
+                        detector.id
+                    ));
+                }
+                if let Some(reverse_kind) = declared.get(&(target, detector.id.as_str())).copied() {
+                    let contradictory = matches!(
+                        (relation.kind, reverse_kind),
+                        (
+                            keyhog_core::DetectorRelationKind::Conflicts,
+                            keyhog_core::DetectorRelationKind::Conflicts
+                        ) | (
+                            keyhog_core::DetectorRelationKind::Requires,
+                            keyhog_core::DetectorRelationKind::Conflicts
+                        ) | (
+                            keyhog_core::DetectorRelationKind::Conflicts,
+                            keyhog_core::DetectorRelationKind::Requires
+                        )
+                    );
+                    if contradictory {
+                        return Err(format!(
+                            "detectors {:?} and {target:?} declare contradictory {} and {} relations",
+                            detector.id,
+                            relation.kind.as_str(),
+                            reverse_kind.as_str(),
+                        ));
+                    }
+                }
+                declared.insert((detector.id.as_str(), target), relation.kind);
+                compiled.push(CompiledDetectorRelation {
+                    detector_id: Arc::from(target),
+                    kind: relation.kind,
+                    within_lines: relation.within_lines,
+                    within_bytes: relation.within_bytes,
+                    direction: relation.direction,
+                });
+                if matches!(
+                    relation.kind,
+                    keyhog_core::DetectorRelationKind::Requires
+                        | keyhog_core::DetectorRelationKind::Subsumes
+                ) {
+                    graph.entry(detector.id.as_str()).or_default().push(target);
+                    *indegree
+                        .get_mut(target)
+                        .expect("validated target has an indegree row") += 1;
+                }
+            }
+            by_owner.insert(Arc::from(detector.id.as_str()), compiled.into_boxed_slice());
+        }
+
+        let mut ready = indegree
+            .iter()
+            .filter_map(|(detector_id, degree)| (*degree == 0).then_some(*detector_id))
+            .collect::<VecDeque<_>>();
+        let mut visited = 0usize;
+        while let Some(owner) = ready.pop_front() {
+            visited += 1;
+            for target in graph.get(owner).into_iter().flatten() {
+                let degree = indegree
+                    .get_mut(target)
+                    .expect("validated target has an indegree row");
+                *degree -= 1;
+                if *degree == 0 {
+                    ready.push_back(target);
+                }
+            }
+        }
+        if visited != detector_ids.len() {
+            return Err(
+                "detector requires/subsumes relations contain a cycle; remove one edge so \
+                 resolution has a deterministic dependency order"
+                    .into(),
+            );
+        }
+        Ok(Self { by_owner })
+    }
+
+    pub(crate) fn get(&self, detector_id: &str) -> &[CompiledDetectorRelation] {
+        self.by_owner
+            .get(detector_id)
+            .map_or(&[], |relations| relations.as_ref())
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct CompiledDetectorPlan {
     pub(crate) metadata: CompiledDetectorMetadata,
@@ -117,6 +249,7 @@ impl CompiledDetectorPlan {
 pub(crate) struct CompiledDetectorPlans {
     by_detector_index: Box<[CompiledDetectorPlan]>,
     resolution: DetectorResolutionIndex,
+    detector_relations: CompiledDetectorRelationIndex,
     validator_index: crate::checksum::CompiledValidatorIndex,
     decode_transforms: Arc<crate::decode::policy::CompiledDecodeTransformPolicy>,
     decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
@@ -226,6 +359,7 @@ impl CompiledDetectorPlans {
         let generic_ownership =
             crate::generic_keyword_owner::GenericOwningDetectorIndex::build(detectors)?;
         let resolution = DetectorResolutionIndex::compile(detectors)?;
+        let detector_relations = CompiledDetectorRelationIndex::compile(detectors)?;
         let validator_index = crate::checksum::CompiledValidatorIndex::compile(
             by_detector_index.iter().map(|plan| &plan.validators),
         );
@@ -247,6 +381,7 @@ impl CompiledDetectorPlans {
         Ok(Self {
             by_detector_index,
             resolution,
+            detector_relations,
             validator_index,
             decode_transforms,
             decoder_plan,
@@ -311,6 +446,12 @@ impl CompiledDetectorPlans {
         &self.by_detector_index[detector_index]
     }
 
+    pub(crate) fn find_by_id(&self, detector_id: &str) -> Option<&CompiledDetectorPlan> {
+        self.by_detector_index
+            .iter()
+            .find(|plan| plan.metadata.0.as_ref() == detector_id)
+    }
+
     #[inline]
     pub(crate) fn len(&self) -> usize {
         self.by_detector_index.len()
@@ -324,6 +465,11 @@ impl CompiledDetectorPlans {
     #[inline]
     pub(crate) fn resolution_priority(&self, detector_id: &str) -> Option<i16> {
         self.resolution.priority(detector_id)
+    }
+
+    #[inline]
+    pub(crate) fn detector_relations(&self, detector_id: &str) -> &[CompiledDetectorRelation] {
+        self.detector_relations.get(detector_id)
     }
 
     #[inline]

@@ -2,7 +2,9 @@
 
 ## 0.5.50 - 2026-08-02
 
-- Publish a patch release to crates.io after every successful main CI run, with automatic version and changelog updates and no signing or release-asset gates.
+- Publish patch releases to crates.io through short-lived OIDC trusted publishing and bind deterministic six-crate integrity receipts to the exact workspace lockfile and commit.
+- Add schema-v3 typed companion evidence and bounded cross-detector relation declarations, including their stable semantic digest fields.
+- Add typed positive source-admission selectors and bind every selector to detector corpus identity.
 
 ## 0.5.49 - 2026-07-30
 

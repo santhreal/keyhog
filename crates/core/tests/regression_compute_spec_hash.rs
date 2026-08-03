@@ -24,9 +24,10 @@
 use keyhog_core::compute_spec_hash;
 use keyhog_core::{
     CanonicalHexKeyMaterialSpec, CompanionSpec, CredentialShape, DetectorBase64Alphabet,
-    DetectorKind, DetectorPlausibilityPolicySpec, DetectorSpec, DetectorValidatorSpec,
-    EntropyDetectionRole, EntropyFallbackMetadata, EntropyFloorBucket, EntropyShapeSpec,
-    PatternSpec, Severity, VerifySpec,
+    DetectorKind, DetectorPlausibilityPolicySpec, DetectorRelationKind, DetectorRelationSpec,
+    DetectorSpec, DetectorValidatorSpec, EntropyDetectionRole, EntropyFallbackMetadata,
+    EntropyFloorBucket, EntropyShapeSpec, EvidenceDirection, PatternSpec, Severity,
+    SourceAdmissionSpec, VerifySpec,
 };
 
 /// Fully-populated single-pattern detector. `name`/`service` are set equal to
@@ -61,6 +62,7 @@ fn companion(name: &str, regex: &str, within_lines: usize, required: bool) -> Co
         regex: regex.to_string(),
         within_lines,
         required,
+        ..Default::default()
     }
 }
 
@@ -402,12 +404,14 @@ fn spec_hash_binds_companion_order_within_a_detector() {
             regex: "first=([A-Z0-9]{8})".to_string(),
             within_lines: 1,
             required: true,
+            ..Default::default()
         },
         CompanionSpec {
             name: "second".to_string(),
             regex: "second=([A-Z0-9]{8})".to_string(),
             within_lines: 2,
             required: false,
+            ..Default::default()
         },
     ];
     let mut reordered = original.clone();
@@ -1032,4 +1036,83 @@ fn spec_hash_distinguishes_every_detector_validator_primitive() {
     assert_ne!(crc, fine_grained);
     assert_ne!(crc, base64);
     assert_ne!(crc, pattern_shape);
+}
+
+/// Every cross-detector operation field changes match resolution and must invalidate cached findings.
+#[test]
+fn spec_hash_covers_complete_detector_relation_program() {
+    fn digest(relation: DetectorRelationSpec) -> [u8; 32] {
+        let mut detector = det("owner", Severity::High, "OWN_[A-Z0-9]{20}", &["OWN_"]);
+        detector.detector_relations = vec![relation];
+        compute_spec_hash(&[detector])
+    }
+
+    let base = DetectorRelationSpec {
+        detector_id: "target".into(),
+        kind: DetectorRelationKind::Requires,
+        within_lines: 2,
+        within_bytes: Some(64),
+        direction: EvidenceDirection::Before,
+    };
+    let variants = [
+        digest(base.clone()),
+        digest(DetectorRelationSpec {
+            detector_id: "other-target".into(),
+            ..base.clone()
+        }),
+        digest(DetectorRelationSpec {
+            kind: DetectorRelationKind::Conflicts,
+            ..base.clone()
+        }),
+        digest(DetectorRelationSpec {
+            within_lines: 3,
+            ..base.clone()
+        }),
+        digest(DetectorRelationSpec {
+            within_bytes: Some(65),
+            ..base.clone()
+        }),
+        digest(DetectorRelationSpec {
+            direction: EvidenceDirection::After,
+            ..base
+        }),
+    ];
+
+    for (left_index, left) in variants.iter().enumerate() {
+        for (right_index, right) in variants.iter().enumerate().skip(left_index + 1) {
+            assert_ne!(
+                left, right,
+                "relation variants {left_index} and {right_index} must have distinct digests"
+            );
+        }
+    }
+}
+
+/// Positive source selectors change finding admission and must invalidate cached findings.
+#[test]
+fn spec_hash_covers_source_admission_selectors() {
+    let base = det("owner", Severity::High, "OWN_[A-Z0-9]{20}", &["OWN_"]);
+    let digest = |admission: SourceAdmissionSpec| {
+        let mut detector = base.clone();
+        detector.source_admission = admission;
+        compute_spec_hash(&[detector])
+    };
+    let default = digest(SourceAdmissionSpec::default());
+    let path = digest(SourceAdmissionSpec {
+        path_patterns: vec![r"(?:^|/)secrets/".into()],
+        ..Default::default()
+    });
+    let source_type = digest(SourceAdmissionSpec {
+        source_types: vec!["filesystem".into()],
+        ..Default::default()
+    });
+    let extension = digest(SourceAdmissionSpec {
+        file_extensions: vec!["json".into()],
+        ..Default::default()
+    });
+
+    assert_ne!(default, path);
+    assert_ne!(path, source_type);
+    assert_ne!(source_type, extension);
+    assert_ne!(path, extension);
 }

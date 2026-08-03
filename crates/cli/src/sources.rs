@@ -340,11 +340,11 @@ pub(crate) fn build_sources(
         )?
         .context("GitHub collaboration source requires --github-token or KEYHOG_GITHUB_TOKEN")?;
         let selection = keyhog_sources::GitHubCollaborationSelection {
-            issues: args.github_issues,
-            pull_requests: args.github_pull_requests,
-            discussions: args.github_discussions,
-            wiki: args.github_wiki,
-            gists: args.github_gists,
+            issues: args.github_all || args.github_issues,
+            pull_requests: args.github_all || args.github_pull_requests,
+            discussions: args.github_all || args.github_discussions,
+            wiki: args.github_all || args.github_wiki,
+            gists: args.github_all || args.github_gists,
         };
         sources.push(Box::new(
             keyhog_sources::GitHubCollaborationSource::new(repository, token, selection)?
@@ -600,14 +600,15 @@ fn validate_source_flag_combinations(args: &ScanArgs, _has_path_source: bool) ->
     }
     #[cfg(feature = "github")]
     if args.github_collaboration.is_some()
-        && !(args.github_issues
+        && !(args.github_all
+            || args.github_issues
             || args.github_pull_requests
             || args.github_discussions
             || args.github_wiki
             || args.github_gists)
     {
         anyhow::bail!(
-            "--github-collaboration requires an explicit surface. Fix: add one or more of --github-issues, --github-pull-requests, --github-discussions, --github-wiki, or --github-gists."
+            "--github-collaboration requires an explicit surface. Fix: add --github-all, or one or more of --github-issues, --github-pull-requests, --github-discussions, --github-wiki, or --github-gists."
         );
     }
 

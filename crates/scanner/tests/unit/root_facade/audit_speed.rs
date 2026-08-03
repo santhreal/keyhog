@@ -87,13 +87,17 @@ fn find_companion_window_lookup_is_not_linear_in_file_lines() {
         regex: Regex::new("ZZZ_NO_MATCH_ZZZ").expect("valid regex"),
         capture_group: None,
         within_lines: 1,
-        required: false,
+        within_bytes: None,
+        direction: keyhog_core::EvidenceDirection::Either,
+        scope: keyhog_core::EvidenceScope::Window,
+        requirement: keyhog_core::EvidenceRequirement::Reinforcing,
+        value_relation: keyhog_core::EvidenceValueRelation::Present,
     };
 
     let start = Instant::now();
     let mut sink = 0usize;
     for _ in 0..CALLS {
-        let found = keyhog_scanner::testing::find_companion(&pp, 2, &companion);
+        let found = keyhog_scanner::testing::find_companion(&pp, 2, 4, 7, "ln1", &companion);
         sink = sink.wrapping_add(found.map(|s| s.len()).unwrap_or(0));
     }
     let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;

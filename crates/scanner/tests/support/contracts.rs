@@ -40,6 +40,8 @@ pub struct Contract {
 pub struct Positive {
     pub text: String,
     pub credential: String,
+    #[serde(default)]
+    pub path: Option<String>,
     pub reason: String,
 }
 
@@ -50,6 +52,7 @@ pub struct Primary {
     pub detector_id: String,
     pub text: String,
     pub credential: String,
+    pub path: Option<String>,
 }
 
 pub fn contracts_dir() -> PathBuf {
@@ -137,6 +140,7 @@ pub fn primaries(contracts: &[Contract]) -> Vec<Primary> {
                 detector_id: c.detector_id.clone(),
                 text: p.text.clone(),
                 credential: p.credential.clone(),
+                path: p.path.clone(),
             })
         })
         .collect()
@@ -185,7 +189,11 @@ pub fn credential_sufficient(
     source_type: &str,
     primary: &Primary,
 ) -> bool {
-    let chunk = make_chunk(&primary.credential, source_type, "sufficiency-probe.txt");
+    let chunk = make_chunk(
+        &primary.credential,
+        source_type,
+        primary.path.as_deref().unwrap_or("sufficiency-probe.txt"),
+    );
     scanner.clear_fragment_cache();
     scanner
         .scan(&chunk)

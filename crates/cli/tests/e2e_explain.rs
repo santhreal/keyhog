@@ -128,12 +128,10 @@ fn explain_help_documents_detector_id_argument() {
     );
 }
 
-/// KH-1237 regression: `explain` previously exposed detector policy but no
-/// production prefilter status, forcing operators to infer whether Layer 0.5
-/// was saturated or effective. Pin density, named-corpus rejection, and the
-/// explicit state as user-visible values.
+/// `explain` must distinguish local filter health from corpus evidence. Without
+/// a receipt it reports measured density but never invents rejection or parity.
 #[test]
-fn explain_includes_operator_visible_bigram_prefilter_status() {
+fn explain_marks_unproven_bigram_corpus_evidence() {
     let output = Command::new(binary())
         .args(["explain", "aws-access-key"])
         .output()
@@ -146,13 +144,99 @@ fn explain_includes_operator_visible_bigram_prefilter_status() {
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Bigram prefilter:")
-            && stdout.contains("density:")
-            && stdout.contains("slots; saturates at 39322")
-            && stdout.contains("state:")
-            && stdout.contains("reject:")
-            && stdout.contains("builtin-source-benchmark-v1"),
-        "explain must render reproducible bloom health and rejection values; stdout={stdout}"
+    for expected in [
+        "Bigram prefilter:",
+        "density:",
+        "slots; saturates at 39322",
+        "state:   HEALTHY / CORPUS UNMEASURED",
+        "reject:  UNMEASURED",
+        "parity:  UNPROVEN",
+        "action:  run `make -C benchmarks bloom`",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "explain prefilter status is missing {expected:?}; stdout={stdout}"
+        );
+    }
+}
+/// `--compiled-plan` must expose the exact capture and admission semantics used by the scanner.
+#[test]
+fn explain_compiled_plan_reports_required_relation() {
+    let output = Command::new(binary())
+        .args(["explain", "twilio-auth-token", "--compiled-plan"])
+        .output()
+        .expect("spawn compiled detector explanation");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "compiled explanation should succeed; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
     );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for expected in [
+        "Compiled evidence plan:",
+        "detector: twilio-auth-token",
+        "relations: 1",
+        "capture_group: 1",
+        "requirement: required",
+        "direction: either",
+        "scope: window",
+        "within_lines: 5",
+        "within_bytes: unbounded",
+        "value_relation: present",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "compiled explanation is missing {expected:?}: {stdout}"
+        );
+    }
+}
+
+/// Explain help must document the opt-in compiled-plan surface operators use for detector audits.
+#[test]
+fn explain_help_documents_compiled_plan_flag() {
+    let output = Command::new(binary())
+        .args(["explain", "--help"])
+        .output()
+        .expect("spawn keyhog explain --help");
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("--compiled-plan")
+            && stdout.contains("resolved capture")
+            && stdout.contains("structural scope"),
+        "help must explain compiled evidence inspection: {stdout}"
+    );
+}
+
+/// Compiled explanations must expose bounded cross-detector resolution operations.
+#[test]
+fn explain_compiled_plan_reports_detector_relation() {
+    let output = Command::new(binary())
+        .args(["explain", "notion-oauth-secret", "--compiled-plan"])
+        .output()
+        .expect("spawn cross-detector compiled explanation");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "compiled explanation should succeed; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for expected in [
+        "detector_relations: 1",
+        "target=notion-integration-token",
+        "kind=subsumes",
+        "direction=either",
+        "within_lines=0",
+        "within_bytes=0",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "compiled explanation is missing {expected:?}: {stdout}"
+        );
+    }
 }

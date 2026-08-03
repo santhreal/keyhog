@@ -77,10 +77,9 @@ impl CompiledDetectorMlFeatures {
             // migration before this input can safely change semantics.
             weak_anchor: detector.weak_anchor,
             live_verifier: detector.verify.is_some(),
-            required_companion: detector
-                .companions
-                .iter()
-                .any(|companion| companion.required),
+            required_companion: detector.companions.iter().any(|companion| {
+                companion.effective_requirement() == keyhog_core::EvidenceRequirement::Required
+            }),
             structural_password_slot: detector.structural_password_slot,
             phase2_generic: detector.kind == keyhog_core::DetectorKind::Phase2Generic,
             entropy_class,

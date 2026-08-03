@@ -244,10 +244,37 @@ source.
 Multiple patterns means "any of these shapes". A typical detector has
 1-3 patterns covering env-var, JSON, and inline forms.
 
-`detector.companions[]` - optional nearby values described by `name`, `regex`,
-`within_lines`, and `required` (default `false`). Optional companions enrich the
-finding and can strengthen confidence or verification. Only a companion marked
-`required = true` gates the primary finding when absent.
+`detector.companions[]` defines typed evidence near a primary match. Each entry
+sets `name`, `regex`, `within_lines`, optional `within_bytes`, `direction`,
+`scope`, `requirement`, optional `capture_group`, and `value_relation`.
+`requirement = "required"` gates the primary. `reinforcing` evidence enriches
+confidence or verification, while `forbidden` evidence suppresses the primary.
+The scopes are `window`, `same-line`, `same-record`, and `same-object`.
+
+`detector.detector_relations[]` resolves findings produced by different
+detectors in the same source, file, and revision. Each relation names a
+`detector_id`, a `kind` (`requires`, `conflicts`, or `subsumes`), bounded line
+and byte distances, and the target direction. `requires` removes the owner when
+the target is absent. `conflicts` removes the owner when the target is present.
+`subsumes` keeps the owner and removes the bounded target. Unknown targets,
+self-relations, contradictory pairs, and dependency cycles reject the compiled
+corpus.
+
+```toml
+[[detector.detector_relations]]
+detector_id = "notion-integration-token"
+kind = "subsumes"
+within_lines = 0
+within_bytes = 0
+direction = "either"
+```
+
+`detector.source_admission` restricts a detector to positively selected
+sources. `path_patterns` contains file-path regexes, `source_types` contains
+exact source labels, and `file_extensions` contains lowercase extensions
+without a dot. Lists are alternatives within one field. Every non-empty field
+must match. Missing path or source metadata fails closed when that selector is
+declared.
 
 `detector.verify` - optional. If present, `keyhog scan --verify`
 makes the documented API call with the captured credential and:
@@ -532,8 +559,16 @@ bounds, stopwords, and allowlists exactly as declared by the detector TOML:
 keyhog explain generic-secret
 ```
 
+Add `--compiled-plan` to inspect the evidence rules the scanner executes. The
+output includes resolved companion capture groups, direction, structural scope,
+requirements, value relations, and cross-detector operations:
+
+```sh
+keyhog explain notion-oauth-secret --compiled-plan
+```
+
 This is the first place to look when debugging why a detector did or did not
-fire; it makes detector-owned tuning visible without searching for a Rust-side
+fire. It makes detector-owned tuning visible without searching for a Rust-side
 override table.
 
 ## Custom detector corpora
@@ -545,7 +580,7 @@ creates a focused corpus from the repository's shipped Stripe detector:
 mkdir -p "$PWD/.keyhog/detectors"
 cp detectors/stripe-secret-key.toml "$PWD/.keyhog/detectors/"
 cat > "$PWD/.keyhog/detectors/corpus.toml" <<'EOF'
-schema_version = 2
+schema_version = 3
 EOF
 keyhog detectors --detectors "$PWD/.keyhog/detectors" --audit
 ```
@@ -553,19 +588,21 @@ keyhog detectors --detectors "$PWD/.keyhog/detectors" --audit
 Edit the copied TOML only after the audit succeeds. A new detector must declare
 all required policy blocks. Copying only the short `[detector]` and
 `[[detector.patterns]]` example from this chapter does not create a valid
-schema-2 detector.
+schema-3 detector.
 
 Declare the current corpus schema beside the detector files:
 
 ```toml
 # my-detectors/corpus.toml
-schema_version = 2
+schema_version = 3
 ```
 
-Schema 2 requires every `[detector.verify.success]` and per-step `success`
-table to classify its evidence explicitly with `policy = "body_positive"`,
-`"status_with_error_backstop"`, or `"status_authoritative"`. An omitted policy
-is a validation error that names the affected success table.
+Schema 3 adds typed companion semantics and cross-detector relations. It also
+keeps the schema-2 requirement that every `[detector.verify.success]` and
+per-step `success` table classify its evidence explicitly with
+`policy = "body_positive"`, `"status_with_error_backstop"`, or
+`"status_authoritative"`. An omitted policy is a validation error that names
+the affected success table.
 
 For compatibility, a directory without `corpus.toml` is schema 1, as is a
 manifest that explicitly declares `schema_version = 1`. Schema-1 success
@@ -573,16 +610,16 @@ tables written before policy classification are normalized to
 `status_with_error_backstop`: an accepted status is necessary, but a known
 error-shaped response still prevents a live verdict. This is deliberately not
 the more permissive `status_authoritative` policy. New corpora should declare
-schema 2 and serialize every policy rather than relying on legacy
+schema 3 and serialize every policy rather than relying on legacy
 normalization.
 
-Manifest typos, unsupported schema versions, and schema-2 success tables with
-missing policies fail closed. A bounded newer schema declaration may be parsed
-only to produce compatibility diagnostics; a gated load refuses the complete
-corpus rather than skipping fields or detector files it cannot interpret. The
-effective corpus digest binds the normalized schema and manifest identity, so
-a legacy corpus and a schema-2 corpus cannot share an identity merely because
-their detector fields otherwise match.
+Manifest typos, unsupported schema versions, and schema-2 or schema-3 success
+tables with missing policies fail closed. A bounded newer schema declaration
+may be parsed only to produce compatibility diagnostics; a gated load refuses
+the complete corpus rather than skipping fields or detector files it cannot
+interpret. The effective corpus digest binds the normalized schema and
+manifest identity, so legacy, schema-2, and schema-3 corpora cannot share an
+identity merely because their detector fields otherwise match.
 
 Audit a custom corpus directly before scanning with it:
 
@@ -649,7 +686,7 @@ Use a replacement corpus when you want an allowlist of detector files:
 ```sh
 mkdir -p "$PWD/my-detectors"
 cp detectors/stripe-secret-key.toml detectors/aws-*.toml "$PWD/my-detectors/"
-printf 'schema_version = 2\n' > "$PWD/my-detectors/corpus.toml"
+printf 'schema_version = 3\n' > "$PWD/my-detectors/corpus.toml"
 keyhog detectors --detectors "$PWD/my-detectors" --audit
 keyhog scan . --detectors "$PWD/my-detectors" --detectors-mode replace
 ```

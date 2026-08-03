@@ -28,9 +28,9 @@ struct TrieNode {
 /// # Examples
 ///
 /// ```rust
-/// use keyhog_scanner::testing::build_propagation_table;
+/// use keyhog_scanner::testing::build_propagation_table_for_test;
 ///
-/// let table = build_propagation_table(&["gh".into(), "ghp_".into()]);
+/// let table = build_propagation_table_for_test(&["gh".into(), "ghp_".into()]);
 /// assert_eq!(table.len(), 2);
 /// ```
 pub(crate) fn build_propagation_table(prefixes: &[String]) -> Vec<Vec<usize>> {

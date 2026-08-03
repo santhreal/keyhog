@@ -96,6 +96,14 @@ pub struct DetectorSpec {
     /// Secondary patterns required to confirm a match.
     #[serde(default)]
     pub companions: Vec<CompanionSpec>,
+    /// Relationships to findings emitted by other detectors in the same source,
+    /// file, and revision.
+    #[serde(default)]
+    pub detector_relations: Vec<DetectorRelationSpec>,
+    /// Positive source selectors. Every non-empty selector family must admit a
+    /// finding before detector-specific matching can report it.
+    #[serde(default)]
+    pub source_admission: SourceAdmissionSpec,
     /// Live verification configuration.
     pub verify: Option<VerifySpec>,
     /// High-performance pre-filtering keywords.
@@ -1389,6 +1397,9 @@ pub struct DetectorTestSpec {
     /// Text this detector MUST NOT fire on.
     #[serde(default)]
     pub test_negative: Option<String>,
+    /// Optional source path used when executing this fixture through the scanner.
+    #[serde(default)]
+    pub test_path: Option<String>,
 }
 
 /// A regex pattern with optional capture group and description.
@@ -1532,8 +1543,163 @@ impl PatternSpec {
     }
 }
 
+/// How a contextual evidence match must be positioned relative to the primary credential.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EvidenceDirection {
+    /// Accept evidence on either side of the primary credential.
+    #[default]
+    Either,
+    /// Accept only evidence ending before the primary credential begins.
+    Before,
+    /// Accept only evidence beginning after the primary credential ends.
+    After,
+}
+
+/// The structural boundary in which contextual evidence may satisfy a relation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EvidenceScope {
+    /// Search the configured line and byte window.
+    #[default]
+    Window,
+    /// Search only the primary credential's physical line.
+    SameLine,
+    /// Search only the blank-line-delimited record containing the credential.
+    SameRecord,
+    /// Search only the smallest balanced JSON-like object or array containing the credential.
+    SameObject,
+}
+
+/// Whether contextual evidence admits, strengthens, or rejects a detector match.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EvidenceRequirement {
+    /// Preserve the match without the evidence, but include a found value in scoring and verification.
+    #[default]
+    Reinforcing,
+    /// Suppress the primary match when the evidence is absent.
+    Required,
+    /// Suppress the primary match when the evidence is present.
+    Forbidden,
+}
+
+/// The value relationship between a selected evidence capture and the primary credential.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EvidenceValueRelation {
+    /// Presence inside the declared structural and distance bounds is sufficient.
+    #[default]
+    Present,
+    /// The selected evidence bytes must exactly equal the primary credential.
+    EqualsPrimary,
+    /// The selected evidence bytes must differ from the primary credential.
+    DiffersFromPrimary,
+}
+
+impl EvidenceDirection {
+    /// Stable detector-schema spelling used by diagnostics and corpus identities.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Either => "either",
+            Self::Before => "before",
+            Self::After => "after",
+        }
+    }
+}
+
+impl EvidenceScope {
+    /// Stable detector-schema spelling used by diagnostics and corpus identities.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Window => "window",
+            Self::SameLine => "same-line",
+            Self::SameRecord => "same-record",
+            Self::SameObject => "same-object",
+        }
+    }
+}
+
+impl EvidenceRequirement {
+    /// Stable detector-schema spelling used by diagnostics and corpus identities.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Reinforcing => "reinforcing",
+            Self::Required => "required",
+            Self::Forbidden => "forbidden",
+        }
+    }
+}
+
+impl EvidenceValueRelation {
+    /// Stable detector-schema spelling used by diagnostics and corpus identities.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Present => "present",
+            Self::EqualsPrimary => "equals-primary",
+            Self::DiffersFromPrimary => "differs-from-primary",
+        }
+    }
+}
+
+/// Cross-detector evidence operation applied during deterministic match resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DetectorRelationKind {
+    /// Keep this detector's finding only when the target detector also matches nearby.
+    Requires,
+    /// Suppress this detector's finding when the target detector matches nearby.
+    Conflicts,
+    /// Suppress nearby target-detector findings when this detector matches.
+    Subsumes,
+}
+
+impl DetectorRelationKind {
+    /// Stable detector-schema spelling used by diagnostics and corpus identities.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Requires => "requires",
+            Self::Conflicts => "conflicts",
+            Self::Subsumes => "subsumes",
+        }
+    }
+}
+
+/// A bounded relationship between findings from two detector owners.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DetectorRelationSpec {
+    /// Stable target detector ID.
+    pub detector_id: String,
+    /// Resolution operation performed when target evidence is present or absent.
+    pub kind: DetectorRelationKind,
+    /// Maximum absolute line distance between source and target findings.
+    pub within_lines: usize,
+    /// Optional maximum byte gap between source and target finding spans.
+    #[serde(default)]
+    pub within_bytes: Option<usize>,
+    /// Direction of the target finding relative to this detector's finding.
+    #[serde(default)]
+    pub direction: EvidenceDirection,
+}
+
+/// Positive source selectors for detector families valid only in known locations.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceAdmissionSpec {
+    /// File-path regexes. At least one must match when this list is non-empty.
+    #[serde(default)]
+    pub path_patterns: Vec<String>,
+    /// Exact `ChunkMetadata::source_type` values admitted by this detector.
+    #[serde(default)]
+    pub source_types: Vec<String>,
+    /// Case-insensitive filename extensions without a leading dot.
+    #[serde(default)]
+    pub file_extensions: Vec<String>,
+}
+
 /// Secondary pattern used to confirm a primary match or provide extra context.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompanionSpec {
     /// Field name used in verification templates (e.g. \`{{companion.secret_key}}\`).
@@ -1543,9 +1709,43 @@ pub struct CompanionSpec {
     pub regex: String,
     /// Maximum line distance from the primary match.
     pub within_lines: usize,
-    /// Whether this companion must be found to report the finding.
+    /// Optional maximum byte gap between the evidence and primary spans.
+    #[serde(default)]
+    pub within_bytes: Option<usize>,
+    /// Direction in which the evidence must occur.
+    #[serde(default)]
+    pub direction: EvidenceDirection,
+    /// Structural boundary that both evidence and primary spans must share.
+    #[serde(default)]
+    pub scope: EvidenceScope,
+    /// Admission effect of a present or absent evidence match.
+    #[serde(default)]
+    pub requirement: EvidenceRequirement,
+    /// Explicit regex capture group whose bytes become the evidence value.
+    ///
+    /// `None` preserves the existing rule: select group 1 when the regex has a
+    /// capture, otherwise select the whole match. Group 0 explicitly selects
+    /// the whole match even when captures exist.
+    #[serde(default)]
+    pub capture_group: Option<usize>,
+    /// Exact relationship required between the selected evidence and primary values.
+    #[serde(default)]
+    pub value_relation: EvidenceValueRelation,
+    /// Schema-v2 compatibility input. New detector corpora use
+    /// `requirement = "required"` instead.
     #[serde(default)]
     pub required: bool,
+}
+
+impl CompanionSpec {
+    /// Resolve the schema-v2 boolean into the typed admission requirement.
+    pub fn effective_requirement(&self) -> EvidenceRequirement {
+        if self.required {
+            EvidenceRequirement::Required
+        } else {
+            self.requirement
+        }
+    }
 }
 
 /// Live verification configuration for a detector.
@@ -2074,7 +2274,7 @@ pub const DETECTOR_CORPUS_MANIFEST_FILE: &str = "corpus.toml";
 pub const DETECTOR_CORPUS_MIN_SCHEMA_VERSION: u32 = 1;
 
 /// Detector schema authored and enforced by this binary.
-pub const DETECTOR_CORPUS_SCHEMA_VERSION: u32 = 2;
+pub const DETECTOR_CORPUS_SCHEMA_VERSION: u32 = 3;
 
 /// Highest newer detector schema this binary may inspect additively.
 ///

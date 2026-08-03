@@ -86,3 +86,35 @@ pub struct CompiledScannerRuntime {
     pub gpu_backends: GpuBackendAvailability,
     pub gpu_degrade_count: u64,
 }
+
+/// One context relation after detector compilation has resolved capture selection and defaults.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompiledEvidenceRelation<'a> {
+    pub name: &'a str,
+    pub regex: &'a str,
+    pub capture_group: Option<usize>,
+    pub within_lines: usize,
+    pub within_bytes: Option<usize>,
+    pub direction: keyhog_core::EvidenceDirection,
+    pub scope: keyhog_core::EvidenceScope,
+    pub requirement: keyhog_core::EvidenceRequirement,
+    pub value_relation: keyhog_core::EvidenceValueRelation,
+}
+
+/// One cross-detector relation after target validation and cycle checks.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompiledDetectorEvidenceRelation<'a> {
+    pub detector_id: &'a str,
+    pub kind: keyhog_core::DetectorRelationKind,
+    pub within_lines: usize,
+    pub within_bytes: Option<usize>,
+    pub direction: keyhog_core::EvidenceDirection,
+}
+
+/// Compiled local and cross-detector evidence exactly as the scanner will execute it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompiledEvidencePlan<'a> {
+    pub detector_id: &'a str,
+    pub relations: Vec<CompiledEvidenceRelation<'a>>,
+    pub detector_relations: Vec<CompiledDetectorEvidenceRelation<'a>>,
+}

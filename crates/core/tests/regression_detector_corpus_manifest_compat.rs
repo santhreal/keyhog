@@ -356,7 +356,7 @@ fn explicit_schema_one_migrates_status_only_success_to_error_backstop() {
     assert_eq!(policy, Some(SuccessPolicy::StatusWithErrorBackstop));
 }
 
-/// Regression: the same absent policy under current schema 2 is an authoring
+/// Regression: the same absent policy under the current schema is an authoring
 /// error, proving the legacy migration is selected by schema rather than by
 /// detector shape alone.
 #[test]
@@ -377,13 +377,13 @@ fn current_manifest_requires_explicit_verifier_success_policy() {
     write_detector(dir.path(), "current.toml", &current);
 
     let detail = strict_rejection_detail(
-        load_detectors(dir.path()).expect_err("schema-2 policy omission must fail"),
+        load_detectors(dir.path()).expect_err("current-schema policy omission must fail"),
     );
     assert!(detail.contains("current.toml"));
     assert!(detail.contains("policy must classify success"));
 }
 
-/// Regression: schema 2 makes policy classification explicit, but does not
+/// Regression: the current schema keeps policy classification explicit, but does not
 /// collapse the three classifications into one behavior. Each supported value
 /// must survive the production load path exactly so authors can distinguish
 /// positive body evidence, conservative status evidence, and a reviewed
@@ -427,7 +427,7 @@ fn current_manifest_accepts_all_three_explicit_success_policies() {
         write_detector(dir.path(), "current.toml", &current);
 
         let detectors = load_detectors(dir.path())
-            .unwrap_or_else(|error| panic!("schema-2 policy {policy_name} must load: {error}"));
+            .unwrap_or_else(|error| panic!("current policy {policy_name} must load: {error}"));
         let policy = detectors[0]
             .verify
             .as_ref()
@@ -490,8 +490,8 @@ fn corpus_manifest_round_trips_exact_schema_version() {
 
 /// Regression: a manifest-free directory and a current-schema directory can
 /// normalize to byte-for-byte equal specs. Their digests must still differ
-/// because schema 1 and schema 2 assign different meaning to an omitted
-/// verifier policy; spec equality cannot erase that compatibility boundary.
+/// because schema 1 and schema 3 assign different meaning to the corpus;
+/// spec equality cannot erase that compatibility boundary.
 #[test]
 fn equal_specs_under_legacy_and_current_schema_have_distinct_digests() {
     let legacy = tempfile::tempdir().expect("legacy tempdir");

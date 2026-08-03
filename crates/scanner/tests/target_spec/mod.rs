@@ -65,6 +65,8 @@ pub struct Positive {
     pub text: String,
     pub credential: String,
     #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
     pub reason: String,
 }
 
@@ -77,6 +79,7 @@ pub struct Canonical {
     pub detector_id: String,
     pub credential: String,
     pub canonical_text: String,
+    pub path: Option<String>,
 }
 
 /// Load every `tests/contracts/*.toml` (NOT the `companion/` subtree, those are
@@ -105,6 +108,7 @@ pub fn load_canonicals() -> Vec<Canonical> {
                 detector_id: contract.detector_id,
                 credential: pos.credential.clone(),
                 canonical_text: pos.text.clone(),
+                path: pos.path.clone(),
             });
         }
     }
@@ -173,15 +177,15 @@ pub fn surfaces_as(matches: &[RawMatch], credential: &str, detector_id: &str) ->
     })
 }
 
-/// The subset of canonicals whose credential is **credential-sufficient**: it
-/// surfaces from its OWN bytes alone, with no surrounding context. Only these
-/// can be context-varied all-or-nothing, a detector that NEEDS a `key=` anchor
-/// next to its value (a bare UUID, a low-entropy generic body) legitimately
-/// depends on context a variant may perturb, so those are reported but not
-/// gated by the context-variant lane. This mirrors the soundness partition in
-/// `tests/support/contracts.rs::credential_sufficient`.
+/// The path-independent subset of canonicals whose credential is
+/// **credential-sufficient**: it surfaces from its own bytes alone, with no
+/// surrounding context. Path-bound credentials cannot participate because the
+/// capability lanes intentionally vary logical paths. A detector that needs a
+/// `key=` anchor next to its value likewise depends on context a variant may
+/// perturb, so those detectors are reported but not gated.
 pub fn sufficient_canonicals(all: &[Canonical]) -> Vec<Canonical> {
     all.iter()
+        .filter(|c| c.path.is_none())
         .filter(|c| {
             let m = scan(&c.credential, "sufficiency-probe.txt");
             surfaces(&m, &c.credential)

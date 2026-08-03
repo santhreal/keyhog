@@ -187,6 +187,8 @@ pub mod regression_entropy_sentence_handle;
 pub mod regression_entropy_unique_char_count;
 #[path = "regression_env_file_source.rs"]
 pub mod regression_env_file_source;
+#[path = "regression_evidence_relations.rs"]
+pub mod regression_evidence_relations;
 #[path = "regression_finalize_confidence_proptest.rs"]
 pub mod regression_finalize_confidence_proptest;
 #[path = "regression_finalize_report_confidence_pipeline.rs"]
@@ -353,6 +355,8 @@ pub mod regression_simd_scalar_parity_chunk;
 pub mod regression_simdsieve_trigger;
 #[path = "regression_slack_token_family_recall.rs"]
 pub mod regression_slack_token_family_recall;
+#[path = "regression_source_admission.rs"]
+pub mod regression_source_admission;
 #[path = "regression_ssh2_private_key.rs"]
 pub mod regression_ssh2_private_key;
 #[path = "regression_stackblitz_backend_parity.rs"]

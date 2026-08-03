@@ -229,7 +229,8 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // so they run FIRST. The broad per-detector STOPWORD substring heuristic is
     // the least-specific reason and runs LAST (just before `suppression_stage_inner`)
     // so a precise structural gate claims the drop with its own reason.
-    if let Some(stage_id) = detector_rules.and_then(|rules| rules.allowlist_stage(path, credential))
+    if let Some(stage_id) =
+        detector_rules.and_then(|rules| rules.allowlist_stage(path, source_type, credential))
     {
         return Some(stage_id);
     }

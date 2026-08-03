@@ -126,14 +126,170 @@ fn try_resolve_matches_with_policy(
     policy: ResolutionPolicy<'_>,
 ) -> Result<(), String> {
     policy.validate(matches)?;
-    if matches.len() <= SINGLE_MATCH_COUNT {
+    if matches.is_empty() {
         return Ok(());
     }
     let source_families = SourceFamilyIndex::new(matches, policy);
+    apply_detector_relations(matches, policy, &source_families);
+    if matches.len() <= SINGLE_MATCH_COUNT {
+        return Ok(());
+    }
     suppress_matches_nested_in_private_key_blocks(matches, policy, &source_families);
     suppress_entropy_duplicates_near_named_detectors(matches, policy, &source_families);
     *matches = resolve_match_groups(std::mem::take(matches), policy, &source_families);
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct DetectorRelationCandidate {
+    index: usize,
+    line: Option<usize>,
+    start: usize,
+    end: usize,
+}
+
+fn apply_detector_relations(
+    matches: &mut Vec<RawMatch>,
+    policy: ResolutionPolicy<'_>,
+    source_families: &SourceFamilyIndex,
+) {
+    let ResolutionPolicy::Active(plans) = policy else {
+        return;
+    };
+    if !matches.iter().any(|matched| {
+        !plans
+            .detector_relations(matched.detector_id.as_ref())
+            .is_empty()
+    }) {
+        return;
+    }
+
+    let mut by_detector_origin =
+        HashMap::<(Arc<str>, MatchOrigin), Vec<DetectorRelationCandidate>>::new();
+    for (index, matched) in matches.iter().enumerate() {
+        let origin = MatchOrigin::from_match(matched, source_families);
+        by_detector_origin
+            .entry((Arc::clone(&matched.detector_id), origin))
+            .or_default()
+            .push(DetectorRelationCandidate {
+                index,
+                line: matched.location.line,
+                start: matched.location.offset,
+                end: matched
+                    .location
+                    .offset
+                    .saturating_add(matched.credential.len()),
+            });
+    }
+
+    let mut retain = vec![true; matches.len()];
+    let mut remove = vec![false; matches.len()];
+    loop {
+        remove.fill(false);
+        for (source_index, source) in matches.iter().enumerate() {
+            if !retain[source_index] {
+                continue;
+            }
+            let relations = plans.detector_relations(source.detector_id.as_ref());
+            if relations.is_empty() {
+                continue;
+            }
+            let origin = MatchOrigin::from_match(source, source_families);
+            let source_candidate = DetectorRelationCandidate {
+                index: source_index,
+                line: source.location.line,
+                start: source.location.offset,
+                end: source
+                    .location
+                    .offset
+                    .saturating_add(source.credential.len()),
+            };
+            for relation in relations {
+                let targets = by_detector_origin
+                    .get(&(Arc::clone(&relation.detector_id), origin.clone()))
+                    .map_or(&[][..], Vec::as_slice);
+                match relation.kind {
+                    keyhog_core::DetectorRelationKind::Requires => {
+                        if !targets.iter().copied().any(|target| {
+                            retain[target.index]
+                                && detector_relation_matches(source_candidate, target, relation)
+                        }) {
+                            remove[source_index] = true;
+                        }
+                    }
+                    keyhog_core::DetectorRelationKind::Conflicts => {
+                        if targets.iter().copied().any(|target| {
+                            retain[target.index]
+                                && detector_relation_matches(source_candidate, target, relation)
+                        }) {
+                            remove[source_index] = true;
+                        }
+                    }
+                    keyhog_core::DetectorRelationKind::Subsumes => {
+                        for target in targets.iter().copied().filter(|target| {
+                            retain[target.index]
+                                && detector_relation_matches(source_candidate, *target, relation)
+                        }) {
+                            remove[target.index] = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut changed = false;
+        for (keep, discard) in retain.iter_mut().zip(&remove) {
+            if *keep && *discard {
+                *keep = false;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    let mut retained = Vec::with_capacity(matches.len());
+    for (matched, keep) in matches.drain(..).zip(retain) {
+        if keep {
+            retained.push(matched);
+        }
+    }
+    *matches = retained;
+}
+
+fn detector_relation_matches(
+    source: DetectorRelationCandidate,
+    target: DetectorRelationCandidate,
+    relation: &crate::detector_plan::CompiledDetectorRelation,
+) -> bool {
+    let line_distance_is_proven = match (source.line, target.line) {
+        (Some(source_line), Some(target_line)) => {
+            source_line.abs_diff(target_line) <= relation.within_lines
+        }
+        _ => relation.within_bytes.is_some(),
+    };
+    if !line_distance_is_proven {
+        return false;
+    }
+    let direction_matches = match relation.direction {
+        keyhog_core::EvidenceDirection::Either => true,
+        keyhog_core::EvidenceDirection::Before => target.end <= source.start,
+        keyhog_core::EvidenceDirection::After => target.start >= source.end,
+    };
+    if !direction_matches {
+        return false;
+    }
+    relation.within_bytes.is_none_or(|max_gap| {
+        let gap = if target.end <= source.start {
+            source.start - target.end
+        } else if source.end <= target.start {
+            target.start - source.end
+        } else {
+            0
+        };
+        gap <= max_gap
+    })
 }
 
 fn suppress_matches_nested_in_private_key_blocks(

@@ -66,6 +66,9 @@ path:.github/workflows/integration-smoke.yml
 path:crates/cli/data/suppressions/test-fixtures.toml
 # Detector unit tests + examples carry sample credentials by design.
 path:crates/scanner/examples/
+# The local-build installer exercise decodes synthetic credentials so the
+# freshly installed binary can prove detector coverage end to end.
+path:tests/install/fixtures/install_from_local_build_posix.sh
 # Test and benchmark fixtures intentionally contain exact positive and negative
 # credential examples. They prove detector behavior and are not live material.
 path:crates/core/tests/

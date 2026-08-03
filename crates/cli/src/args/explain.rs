@@ -20,6 +20,11 @@ pub struct ExplainArgs {
     #[arg(long, value_name = "PATH")]
     pub bloom_evidence: Option<PathBuf>,
 
+    /// Print the detector's compiled evidence plan, including resolved capture
+    /// groups, direction, structural scope, and admission semantics.
+    #[arg(long)]
+    pub compiled_plan: bool,
+
     #[arg(skip)]
     pub(crate) detectors_cli_explicit: bool,
 }

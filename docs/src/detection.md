@@ -444,9 +444,11 @@ A detector's `.toml` carries:
 - zero or more `patterns`, each with `regex` + `group` + optional `description`
   (required for service-anchored detectors; optional structured-envelope
   anchors for `phase2-generic`)
-- optional `companions`; only entries with `required = true` gate acceptance
-- optional `verify` block - HTTP method, URL template, auth scheme,
-  success status
+- optional typed `companions`; `required` entries gate acceptance,
+  `reinforcing` entries add evidence, and `forbidden` entries suppress
+- optional bounded `detector_relations` with `requires`, `conflicts`, or
+  `subsumes` semantics across findings in the same source, file, and revision
+- optional `verify` block: HTTP method, URL template, auth scheme, success status
 
 Detectors fall into two camps:
 

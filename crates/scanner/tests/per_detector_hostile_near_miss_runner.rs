@@ -27,6 +27,8 @@ struct Contract {
 struct Positive {
     text: String,
     credential: String,
+    #[serde(default)]
+    path: Option<String>,
     #[allow(dead_code)]
     reason: String,
 }
@@ -34,6 +36,8 @@ struct Positive {
 #[derive(Debug, Deserialize)]
 struct Negative {
     text: String,
+    #[serde(default)]
+    apply_resolution: bool,
     #[allow(dead_code)]
     reason: String,
 }
@@ -123,7 +127,7 @@ fn every_detector_has_hostile_near_miss_twin() {
 
     for (path, contract) in &contracts {
         let label = contract.detector_id.as_str();
-        let near_miss_texts: Vec<String> = if contract.negative.is_empty() {
+        let near_miss_texts: Vec<(String, bool)> = if contract.negative.is_empty() {
             let Some(first) = contract.positive.first() else {
                 failures.push(format!(
                     "{label}: no [[negative]] and no [[positive]] to synthesize near-miss ({})",
@@ -131,19 +135,36 @@ fn every_detector_has_hostile_near_miss_twin() {
                 ));
                 continue;
             };
-            vec![synthesize_near_miss(first)]
+            vec![(synthesize_near_miss(first), false)]
         } else {
-            contract.negative.iter().map(|n| n.text.clone()).collect()
+            contract
+                .negative
+                .iter()
+                .map(|negative| (negative.text.clone(), negative.apply_resolution))
+                .collect()
         };
+        let admitted_path = contract
+            .positive
+            .iter()
+            .find_map(|positive| positive.path.as_deref());
 
-        for text in near_miss_texts {
+        for (text, apply_resolution) in near_miss_texts {
             covered.insert(label.to_string());
 
             scanner.clear_fragment_cache();
-            let single = make_chunk(&text, &format!("{label}-near-miss.txt"), 0);
+            let single_path =
+                admitted_path.map_or_else(|| format!("{label}-near-miss.txt"), str::to_owned);
+            let single = make_chunk(&text, &single_path, 0);
             let matches = scanner
                 .scan(&single)
                 .expect("single-chunk hostile near-miss scan should succeed");
+            let matches = if apply_resolution {
+                scanner
+                    .try_resolve_matches(matches)
+                    .expect("single-chunk detector relations must resolve")
+            } else {
+                matches
+            };
             if detector_fired(&matches, label) {
                 let captured: Vec<_> = matches
                     .iter()
@@ -158,7 +179,9 @@ fn every_detector_has_hostile_near_miss_twin() {
                 ));
             }
 
-            for (split_idx, chunks) in chunk_boundary_twins(&text, &format!("{label}-split.txt"))
+            let split_path =
+                admitted_path.map_or_else(|| format!("{label}-split.txt"), str::to_owned);
+            for (split_idx, chunks) in chunk_boundary_twins(&text, &split_path)
                 .into_iter()
                 .enumerate()
             {
@@ -167,6 +190,13 @@ fn every_detector_has_hostile_near_miss_twin() {
                     .scan_coalesced(&chunks)
                     .expect("coalesced hostile near-miss scan should succeed");
                 let flat: Vec<_> = results.into_iter().flatten().collect();
+                let flat = if apply_resolution {
+                    scanner
+                        .try_resolve_matches(flat)
+                        .expect("coalesced detector relations must resolve")
+                } else {
+                    flat
+                };
                 if detector_fired(&flat, label) {
                     let captured: Vec<_> = flat
                         .iter()
