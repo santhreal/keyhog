@@ -233,7 +233,7 @@ impl CoalescedScannerWorker {
                 let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerQueueWait);
                 match rx.recv() {
                     Ok(batch) => batch,
-                    Err(_) => break,
+                    Err(_) => break, // LAW10: receiver-dropped is typed queue EOF; all delivered batches were scanned, so recall is preserved before router commit.
                 }
             };
             recv_dur += last_end.elapsed();

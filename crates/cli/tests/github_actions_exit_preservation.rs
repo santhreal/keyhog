@@ -360,7 +360,8 @@ exit "$KEYHOG_FIXTURE_EXIT"
             );
         } else {
             assert_eq!(
-                report, "[]\n",
+                report,
+                "{\"schema_version\":{\"major\":1,\"minor\":7},\"scan_status\":\"failed\",\"coverage_gap_summary\":[],\"findings\":[]}\n",
                 "an operational failure before report generation must preserve the initialized report"
             );
         }

@@ -16,6 +16,14 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
+static WATCH_E2E_SLOT: Mutex<()> = Mutex::new(());
+
+fn watch_e2e_slot() -> std::sync::MutexGuard<'static, ()> {
+    WATCH_E2E_SLOT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Spawn `keyhog watch [extra] <dir>`, draining its stderr on a background thread
 /// into a shared buffer so a caller can poll for a marker DETERMINISTICALLY
 /// instead of racing a fixed sleep against ~900-detector debug-build compilation
@@ -70,6 +78,7 @@ fn stderr_contains_within(buf: &Arc<Mutex<String>>, marker: &str, timeout: Durat
 /// `keyhog watch --help` documents the path argument, --detectors, and --quiet flags.
 #[test]
 fn watch_help_documents_arguments() {
+    let _slot = watch_e2e_slot();
     let output = Command::new(binary())
         .arg("watch")
         .arg("--help")
@@ -95,6 +104,7 @@ fn watch_help_documents_arguments() {
 /// kill it to verify it started cleanly.
 #[test]
 fn watch_path_starts_watching_directory() {
+    let _slot = watch_e2e_slot();
     let dir = TempDir::new().expect("create tempdir");
     let watch_path = dir.path();
 
@@ -115,6 +125,7 @@ fn watch_path_starts_watching_directory() {
         Ok(None) => {
             // Process is running - good. Kill it.
             let _ = child.kill();
+            let _ = child.wait();
         }
         Ok(Some(status)) => {
             panic!(
@@ -132,6 +143,7 @@ fn watch_path_starts_watching_directory() {
 /// emitting only findings. Without --quiet, the output includes watch status.
 #[test]
 fn watch_quiet_flag_suppresses_status_messages() {
+    let _slot = watch_e2e_slot();
     let dir = TempDir::new().expect("create tempdir");
 
     // Non-quiet: once ~900-detector compilation finishes, watch.rs prints the
@@ -173,6 +185,7 @@ fn watch_quiet_flag_suppresses_status_messages() {
 /// With an invalid path, the process should fail to start.
 #[test]
 fn watch_detectors_flag_overrides_detector_directory() {
+    let _slot = watch_e2e_slot();
     let dir = TempDir::new().expect("create tempdir");
     let nonexistent = dir.path().join("nonexistent-detectors");
 
@@ -251,6 +264,7 @@ fn wait_until_contains(buffer: &Arc<Mutex<String>>, needles: &[&str], deadline: 
 /// delivery is sub-millisecond, so the generous deadlines never flake.
 #[test]
 fn watch_detects_changes_under_every_root() {
+    let _slot = watch_e2e_slot();
     let root_a = TempDir::new().expect("tempdir a");
     let root_b = TempDir::new().expect("tempdir b");
     let canon_a = root_a.path().canonicalize().expect("canonical a");
@@ -295,6 +309,7 @@ fn watch_detects_changes_under_every_root() {
     // Both findings must reach stdout (the first AND the second root).
     let both_found = wait_until_contains(&stdout_buf, &["a.env", "b.env"], Duration::from_secs(15));
     let _ = child.kill();
+    let _ = child.wait();
 
     assert!(
         both_found,
@@ -309,6 +324,7 @@ fn watch_detects_changes_under_every_root() {
 /// This is equivalent to `keyhog watch --quiet .`.
 #[test]
 fn watch_default_path_is_current_directory() {
+    let _slot = watch_e2e_slot();
     let dir = TempDir::new().expect("create tempdir");
 
     // Spawn watch with no explicit path from an isolated current directory.

@@ -33,6 +33,7 @@
 #   bench gate, keyhog must lead competitors + not regress (needs results/)
 #   audit.sh: cargo audit (needs cargo-audit + advisory DB)
 #   ml/parity_check.py: Rust<->Python feature parity (skipped if ml/ absent)
+#   coverage.sh: per-crate llvm-cov thresholds (needs cargo-llvm-cov)
 #
 # Usage:
 #   scripts/gates/run_all.sh            # run every gate, loud-skip missing assets
@@ -230,6 +231,16 @@ elif [ -d benchmarks/results ] && \
       --baseline baselines/mirror-keyhog-baseline.json --epsilon 0.005 ) || rc=1
 else
   skip "no benchmarks/results/*.json (run \`make leaderboard\` (or the bench-nightly workflow) to enable the differential gate)."
+fi
+echo
+
+echo "== Coverage gate: per-crate llvm-cov thresholds =="
+if [ "$GATES_SOURCE_ONLY" = "1" ]; then
+  skip "GATES_SOURCE_ONLY=1 (coverage gate not run)."
+elif "$CARGO_BIN" llvm-cov --version >/dev/null 2>&1; then
+  bash scripts/gates/coverage.sh --enforce || rc=1
+else
+  skip "cargo-llvm-cov not installed: \`cargo install cargo-llvm-cov\` to enable the coverage gate."
 fi
 echo
 

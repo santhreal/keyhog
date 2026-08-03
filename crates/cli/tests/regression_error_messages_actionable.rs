@@ -74,11 +74,11 @@ fn rare_setup_errors_are_actionable_in_source() {
         "/src/subcommands/scan_system.rs"
     ))
     .expect("scan-system source readable");
-    let orchestrator_config = std::fs::read_to_string(concat!(
+    let detector_config = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/orchestrator_config.rs"
+        "/src/orchestrator_config/detectors.rs"
     ))
-    .expect("orchestrator_config source readable");
+    .expect("detector config source readable");
 
     assert!(
         !watch.contains("scanner compile failed: {e:?}")
@@ -86,7 +86,7 @@ fn rare_setup_errors_are_actionable_in_source() {
         "watch/scan-system must not expose bare scanner compile debug errors"
     );
     assert!(
-        orchestrator_config.contains("keyhog detectors --audit --detectors"),
+        detector_config.contains("keyhog detectors --audit --detectors"),
         "detector compile failures must point at the detector audit command"
     );
     assert!(

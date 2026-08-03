@@ -70,13 +70,20 @@ fn exit_code_contract_clean_findings_error() {
 #[test]
 fn every_detector_toml_is_loaded_by_the_binary() {
     // Load-integrity at the BINARY level: a detector TOML that fails to parse or
-    // compile is silently dropped from the embedded set (this is exactly how
-    // discord-bot-token went dead). The count the binary reports must equal the
-    // number of detector TOMLs on disk (no silent drops).
+    // compile is silently dropped from the embedded set. Count only TOMLs that
+    // declare `[detector]`; `detectors/corpus.toml` is corpus metadata.
     let toml_count = fs::read_dir(detectors_dir())
         .expect("detectors dir readable")
         .flatten()
-        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("toml"))
+        .filter(|entry| entry.path().extension().and_then(|s| s.to_str()) == Some("toml"))
+        .filter(|entry| {
+            let path = entry.path();
+            let source = fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            let document: toml::Value = toml::from_str(&source)
+                .unwrap_or_else(|error| panic!("parse {}: {error}", path.display()));
+            document.get("detector").is_some()
+        })
         .count();
     assert!(
         toml_count > 800,

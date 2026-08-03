@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <testsuites>
   <testsuite name="keyhog" tests="1" failures="1" errors="0" time="0.0">
+    <properties>
+      <property name="keyhog.scan.status" value="success"/>
+    </properties>
     <testcase name="<TMP>/tree/planted.txt:1:aws-access-key" classname="keyhog.findings" time="0.0">
       <failure message="Secret detected: AWS Access Key (id: aws-access-key)" type="critical">
         <![CDATA[
@@ -15,7 +18,9 @@ Offset:        19
 Redacted:      AK...YA
 Hash:          01c2c0cfbc4247225dbbe5fdbf59cecb4abdc6a1c6d78b7ff0c7a5b968fb40b2
 Verification:  skipped
+Companions:    {"secret_key":"wJal...EKEY"}
 Confidence:    1
+Entropy:       3.784 bits/byte
         ]]>
       </failure>
     </testcase>

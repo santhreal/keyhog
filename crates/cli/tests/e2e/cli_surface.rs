@@ -56,7 +56,7 @@ fn tmp_with(name: &str, content: &str) -> (TempDir, String) {
     (d, s)
 }
 
-const AWS: &str = "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\n";
+const AWS: &str = "AWS_ACCESS_KEY_ID=ASIAY34FZKBOKMUTVV7A\n";
 const CLEAN: &str = "the quick brown fox jumps over the lazy dog\n";
 
 // ── global flags ─────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ fn scan_text_secret_exit_1_and_redacts() {
     let (so, _se, code) = out(&["scan", "--daemon=off", "--format", "text", &p]);
     assert_eq!(code, Some(1), "a file with a live key must exit 1");
     assert!(
-        so.contains("AK...YA"),
+        so.contains("AS...7A"),
         "text report should show the redacted preview (first2...last2):\n{so}"
     );
 }

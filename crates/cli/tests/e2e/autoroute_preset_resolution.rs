@@ -32,6 +32,14 @@ fn scan(
     let out = Command::new(binary())
         .args(&args)
         .env("XDG_CACHE_HOME", cache_home)
+        .env(
+            "KEYHOG_CI_AUTOROUTE_TIMING_FIXTURE",
+            "confidence-separated-v1",
+        )
+        .env(
+            "KEYHOG_CI_AUTOROUTE_FIXTURE_AUTH",
+            "bench-backend-parity-v1",
+        )
         .output()
         .expect("spawn keyhog scan");
     if !matches!(out.status.code(), Some(0) | Some(1)) {

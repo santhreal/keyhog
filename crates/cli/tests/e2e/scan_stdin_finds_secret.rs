@@ -4,6 +4,8 @@ use crate::e2e::support::binary;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+/// A pathless piped credential must reach the named-detector pipeline and
+/// preserve its exact detector, severity, redaction, and source line.
 #[test]
 fn scan_stdin_finds_secret() {
     let mut child = Command::new(binary())
@@ -14,7 +16,7 @@ fn scan_stdin_finds_secret() {
             "--format",
             "json",
             "--backend",
-            "simd",
+            "cpu",
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -25,7 +27,7 @@ fn scan_stdin_finds_secret() {
         .stdin
         .as_mut()
         .unwrap()
-        .write_all(b"AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n")
+        .write_all(b"AWS_ACCESS_KEY_ID = \"ASIAY34FZKBOKMUTVV7A\"\n")
         .unwrap();
     let output = child.wait_with_output().expect("wait");
     assert_eq!(output.status.code(), Some(1));
@@ -39,6 +41,6 @@ fn scan_stdin_finds_secret() {
     assert_eq!(f["detector_id"], "aws-access-key");
     assert_eq!(f["service"], "aws");
     assert_eq!(f["severity"], "critical");
-    assert_eq!(f["credential_redacted"], "AK...YA");
+    assert_eq!(f["credential_redacted"], "AS...7A");
     assert_eq!(f["location"]["line"], 1);
 }

@@ -31,6 +31,16 @@ fn require_gpu_scan_when_self_test_passes() {
         return;
     }
 
+    let backend = if self_test_report.contains("route=gpu-cuda") {
+        "gpu-cuda-region-presence"
+    } else if self_test_report.contains("route=gpu-metal") {
+        "gpu-metal-region-presence"
+    } else if self_test_report.contains("route=gpu-wgpu") {
+        "gpu-wgpu-region-presence"
+    } else {
+        panic!("GPU self-test passed without naming a usable GPU route: {self_test_report}");
+    };
+
     let (_dir, path) = write_temp_file("clean.txt", "hello\n");
     let output = Command::new(binary())
         .args([
@@ -38,7 +48,7 @@ fn require_gpu_scan_when_self_test_passes() {
             "--daemon=off",
             "--require-gpu",
             "--backend",
-            "gpu",
+            backend,
             "--format",
             "json",
         ])

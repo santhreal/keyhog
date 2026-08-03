@@ -9,10 +9,10 @@
 //!     classes (e.g. a parse error that exits 1 instead of 2) is caught.
 //!
 //!   * BACKEND × FORMAT GRID, the SAME planted secret must surface under the
-//!     explicit `--backend {simd,cpu,gpu}` CLI flag AND under every
-//!     `--format {text,json,jsonl,sarif,csv,html,junit}`, with the JSON/JSONL
-//!     paths carrying the SAME credential hash. This is a Cartesian product
-//!     re-run for structural parse + count,
+//!     explicit `--backend {simd,cpu,gpu-cuda-region-presence}` CLI flag AND
+//!     every `--format {text,json,jsonl,sarif,csv,html,junit}`, with the
+//!     JSON/JSONL paths carrying the SAME credential hash. This is a Cartesian
+//!     product re-run for structural parse + count,
 //!     so a serializer or backend-routing bug that drops the finding on ONE
 //!     cell is a recall hole the operator hits by switching a flag.
 //!
@@ -60,7 +60,7 @@ const REDACTED: &str = "ghp_...DSiF";
 /// Explicit operator-selectable backends. `auto` is covered by autoroute
 /// calibration tests because it
 /// correctly fails closed on hosts without persisted calibration evidence.
-const BACKENDS: &[&str] = &["simd", "cpu", "gpu"];
+const BACKENDS: &[&str] = &["simd", "cpu", "gpu-cuda-region-presence"];
 /// Every output format the `--format` value-enum accepts.
 const FORMATS: &[&str] = &["text", "json", "jsonl", "sarif", "csv", "html", "junit"];
 

@@ -56,6 +56,19 @@ fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
         // shard runs beside other real scans. The route decisions are
         // backend/parity-bound, not dependent on Rayon width.
         .env("RAYON_NUM_THREADS", "4")
+        .env(
+            "KEYHOG_CI_AUTOROUTE_TIMING_FIXTURE",
+            "confidence-separated-v1",
+        )
+        .env(
+            "KEYHOG_CI_AUTOROUTE_FIXTURE_AUTH",
+            "bench-backend-parity-v1",
+        )
+        .env("KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE", "bounded-e2e-v1")
+        .env(
+            "KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE_AUTH",
+            "core-workload-plan-v1",
+        )
         .output()
         .expect("spawn keyhog calibrate-autoroute");
     let stdout = String::from_utf8_lossy(&out.stdout);

@@ -24,9 +24,9 @@
 //! endpoints authenticate the connected Unix peer.
 //!
 //! ```compile_fail
-//! // External crates must not be able to name or serialize the plaintext DTO.
-//! let response: keyhog::daemon::protocol::Response = todo!();
-//! let _ = serde_json::to_string(&response);
+//! // External crates cannot import the private response DTO.
+//! use keyhog::daemon::protocol::Response;
+//! fn serialize(response: &Response) { let _ = serde_json::to_string(response); }
 //! ```
 
 pub(crate) mod client;

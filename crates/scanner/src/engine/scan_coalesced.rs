@@ -154,8 +154,8 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         plan: Option<&super::Phase1AdmissionPlan>,
         route: crate::ScanExecutionRoute,
-        #[cfg_attr(not(feature = "gpu"), allow(unused_variables))]
-        recover_gpu_dispatch_faults: bool,
+        #[cfg(feature = "gpu")] recover_gpu_dispatch_faults: bool,
+        #[cfg(not(feature = "gpu"))] _recover_gpu_dispatch_faults: bool,
     ) -> crate::error::Result<super::CoalescedScanOutcome> {
         let expected_residual_backend = if backend.is_gpu() {
             crate::hw_probe::ScanBackend::CpuFallback

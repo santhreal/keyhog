@@ -85,7 +85,7 @@ fn scan_json(path: &PathBuf) -> serde_json::Value {
         .arg("scan")
         .arg("--daemon=off")
         .arg("--backend")
-        .arg("simd")
+        .arg("cpu")
         .arg(path)
         .arg("--format")
         .arg("json")

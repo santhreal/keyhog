@@ -106,6 +106,34 @@ rotate, or suppress the credential. Other nonzero codes describe input,
 system, verification, or coverage failures; see the
 [exit-code reference](https://santhreal.github.io/keyhog/reference/exit-codes.html).
 
+The complete process contract is:
+
+| Exit | Meaning |
+|---|---|
+| `0` clean | The scan completed with no reportable finding or coverage failure. |
+| `1` findings | Findings are present, but none were confirmed live. |
+| `2` operator error | Fix the arguments, configuration, detector corpus, or operator-correctable input. |
+| `3` system error | Repair or retry the runner. This includes low-level I/O, fatal daemon service, incremental-cache, and explicitly selected SIMD failures. |
+| `4` `backend --self-test` or maintenance failure | The requested installation, repair, backend, or autoroute health check was unhealthy. |
+| `10` live credentials | At least one credential was confirmed live. `update --check` also uses this code when a newer release exists. |
+| `11` scanner panic | Discard the scan result because scanner state is not trustworthy. |
+| `12` required GPU failure | An explicitly selected or required GPU path could not execute. |
+| `13` incomplete coverage | A requested source failed or input coverage was incomplete, and no finding outcome took precedence. |
+| `130` interrupted | SIGINT or Ctrl-C interrupted the process. |
+
+**Filter, format, gate:**
+
+Create a baseline before using it as a filter:
+
+```sh
+keyhog scan . --create-baseline .keyhog-baseline.json
+keyhog scan . --baseline .keyhog-baseline.json --format json-envelope --output keyhog.json
+```
+
+The first command snapshots reviewed findings. Commit that file, then use the
+second command to report only new finding identities. Changed credentials and
+incomplete coverage remain visible.
+
 For the next scan, use the [recipes
 cookbook](https://santhreal.github.io/keyhog/recipes.html) or the copyable
 commands in [Choose the right workflow](#choose-the-right-workflow). You can

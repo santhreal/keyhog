@@ -3,6 +3,7 @@
 //! mod {}` block) so the `no_inline_tests_in_src` gate stays green while these
 //! still reach the parent module's private items via `use super::*`.
 
+mod disabled_detector_relations;
 mod shared_default_detector_modes;
 
 use super::run::{resolve_scan_exit, ScanOutcome};

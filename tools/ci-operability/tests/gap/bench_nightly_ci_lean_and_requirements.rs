@@ -501,6 +501,8 @@ fn hosted_cpu_workflows_capture_pinned_supply_receipts_before_context() {
     }
 }
 
+/// Hosted benchmark installs must remain reproducible and include the pinned
+/// CredData decoder dependency without accepting undeclared packages.
 #[test]
 fn benchmark_requirements_are_a_complete_hashed_python_312_linux_lock() {
     let requirements = std::fs::read_to_string(repo_root().join("benchmarks/requirements.txt"))
@@ -519,6 +521,7 @@ fn benchmark_requirements_are_a_complete_hashed_python_312_linux_lock() {
         "packaging==24.1",
         "pluggy==1.5.0",
         "pyarrow==16.1.0",
+        "pybase62==1.0.0",
         "pytest==8.2.2",
     ];
     for dependency in expected {

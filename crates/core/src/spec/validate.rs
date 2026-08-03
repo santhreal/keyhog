@@ -1242,6 +1242,7 @@ fn validate_companions<'a>(
         }
         if let Some(group) = companion.capture_group {
             if let Ok(regex) = regex::Regex::new(&companion.regex) {
+                // LAW10: malformed input fails closed in validation below; this reporting-only branch adds a capture-group diagnostic.
                 if group >= regex.captures_len() {
                     issues.push(QualityIssue::Error(format!(
                         "companion {i} capture_group={group} does not exist; regex exposes groups 0..{}",

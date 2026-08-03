@@ -236,8 +236,8 @@ fn stdin_json_redacts_credential_and_hashes_exact_bytes() {
     );
     assert_eq!(
         obj.get("confidence").and_then(|x| x.as_f64()),
-        Some(0.9),
-        "the reported confidence for this token is exactly 0.9"
+        Some(1.0),
+        "the literal-anchored Slack bot token reports confidence 1.0 over stdin"
     );
 }
 

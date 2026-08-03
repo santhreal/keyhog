@@ -190,7 +190,7 @@ pub(crate) fn find_companion(
         companion,
     )?;
     let haystack = preprocessed.text.get(window_start..window_end)?;
-    let group = companion.capture_group.unwrap_or(FIRST_CAPTURE_GROUP_INDEX);
+    let group = companion.capture_group.unwrap_or(FIRST_CAPTURE_GROUP_INDEX); // LAW10: absent capture group selects the full regex match; no evidence is dropped.
 
     if companion.capture_group.is_none() {
         for matched in companion.regex.find_iter(haystack) {

@@ -39,7 +39,7 @@ stream:
 # Terminal 1.
 keyhog daemon start --mass
 
-# Terminal 2. This required route never falls back to an in-process scan.
+# Terminal 2. This required route never retries in process.
 keyhog scan --daemon=mass /srv/inventory/team-a \
   --format json-envelope --output team-a.json
 ```
@@ -103,7 +103,11 @@ another backend.
 scan attempts, active scans, detector count, backend policy, and identity
 staleness. `scans served` includes attempts that returned a daemon error, so it
 is an activity counter rather than a success counter. Status never starts a
-daemon. `active scans` counts accepted scan attempts until their blocking task
+daemon. It also prints whether the service accepts warm stdin and single-file
+requests or mass source batches. Warm requests return before baseline,
+Merkle-state, verification, lockdown, and per-request scanner-policy post-steps.
+Those steps run in process.
+`active scans` counts accepted scan attempts until their blocking task
 finishes, including attempts queued behind the scanner's fragment-state lock.
 Backend health reports the number of recovered requests and the last failed and
 recovery backend with recovered byte count. `autoroute-invalid -> cpu-fallback`
@@ -178,12 +182,13 @@ On Unix, omitting `--daemon` is equivalent to `--daemon=auto`. Bare
 | `--daemon=mass` | Require a daemon started with `--mass`, stream bounded source batches, and validate its execution receipt. | Exit with the specific availability, trust, identity, or protocol error. | Exit before source acquisition when scanner policy is incompatible. |
 | `--daemon=off` | Do not connect. | Run in process. | Run in process. |
 
-`--daemon=on`, bare `--daemon`, and `--daemon=mass` require daemon execution.
-If the selected service is unavailable or cannot honor the source or policy,
-the scan exits with the specific diagnostic. No in-process retry occurs.
-`--daemon=auto` is the opportunistic warm route. It uses a reachable compatible
-daemon only for one-file or bounded-stdin requests and retries those requests
-in process on failure.
+`--daemon=on`, bare `--daemon`, and `--daemon=mass` require the daemon route.
+An unavailable service is an error. A daemon that cannot honor the source or
+policy is also an error. No in-process retry occurs. `--daemon=auto` is the
+opportunistic warm route. It can use a reachable daemon only when it can honor
+the request. It
+otherwise keeps compatible one-file or bounded-stdin requests in process, and
+retries them in process after a daemon execution failure.
 
 `--daemon-socket` cannot be combined with `--daemon=off`.
 

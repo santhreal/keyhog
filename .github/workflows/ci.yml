@@ -67,6 +67,9 @@ jobs:
       # configuration failure instead of a false failure on GitHub hardware.
       # Several library contracts compile the complete detector corpus. Bound
       # test concurrency so high-core runners do not multiply that resident set.
+      # The public scanner crate promises a dependency-light build with every
+      # optional detector subsystem absent. Compile that exact feature boundary.
+      - run: cargo check -p keyhog-scanner --lib --no-default-features
       - run: cargo test -p keyhog-scanner --lib --no-default-features --features ci-lean -- --test-threads=4
       - run: cargo test -p keyhog --lib
       # verifier + sources inline unit tests: previously only their `--test`

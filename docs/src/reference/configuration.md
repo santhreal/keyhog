@@ -33,8 +33,8 @@ system or user configuration-file tier.
 
 Relative paths in `.keyhog.toml` resolve from the directory containing that
 file. Relative CLI paths resolve from the caller's working directory. A
-malformed file, unknown table or key, invalid value, or unreadable explicit path
-fails before findings are written.
+malformed `.keyhog.toml`, unknown table or key, invalid value, or unreadable
+explicit path fails closed before any scan output is written.
 
 Some detection settings compose rather than use simple replacement. Presets
 seed a base before compatible explicit knobs apply. Detector confidence floors,
@@ -271,9 +271,11 @@ min_confidence = 0.6
 ```
 
 `enabled = false` removes the matching detector after replace or overlay
-composition and before scanner compilation. It cannot restore a detector absent
-from a replacement corpus. An unknown ID produces a warning. Disabling every
-loaded detector fails before scanning.
+composition and before scanner compilation. Detectors that `require` it are
+removed transitively. Surviving `conflicts` and `subsumes` relations to it are
+pruned. The override cannot restore a detector absent from a replacement
+corpus. An unknown ID produces a warning. Disabling every loaded detector,
+including dependency removals, fails before scanning.
 
 A detector confidence floor resolves in this order:
 

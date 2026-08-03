@@ -2,6 +2,7 @@
 
 use crate::e2e::support::{binary, DaemonGuard};
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
@@ -15,7 +16,11 @@ fn daemon_docs_do_not_claim_forced_daemon_fallback() {
         )),
     )];
     for (path, doc) in docs {
-        let doc = doc.to_ascii_lowercase();
+        let doc = doc
+            .to_ascii_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         for stale in [
             "client falls back",
             "falls back to an in-process scan",
@@ -171,20 +176,30 @@ fn forced_daemon_rejects_per_detector_confidence_policy() {
     );
 }
 
+/// A valid overlay corpus must reach forced-daemon compatibility validation
+/// instead of being rejected earlier as an empty detector directory.
 #[test]
-fn forced_daemon_rejects_custom_detector_corpus() {
+fn forced_daemon_rejects_overlay_detector_corpus() {
     let work = TempDir::new().expect("work dir");
     let path = work.path().join("leak.env");
     std::fs::write(&path, aws_key_line()).expect("write fixture");
     let detectors = work.path().join("custom-detectors");
     std::fs::create_dir(&detectors).expect("create detector directory");
+    let repo_detectors =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors");
+    for name in ["corpus.toml", "aws-access-key.toml"] {
+        std::fs::copy(repo_detectors.join(name), detectors.join(name))
+            .expect("copy valid custom detector corpus");
+    }
     let runtime = TempDir::new().expect("isolated runtime");
+    std::fs::set_permissions(runtime.path(), std::fs::Permissions::from_mode(0o700))
+        .expect("make runtime directory private");
 
     let out = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
         .args(["scan", "--daemon=on", "--detectors"])
         .arg(&detectors)
-        .args(["--format", "json"])
+        .args(["--detectors-mode=overlay", "--format", "json"])
         .arg(&path)
         .output()
         .expect("spawn keyhog scan");
@@ -197,9 +212,9 @@ fn forced_daemon_rejects_custom_detector_corpus() {
     );
     assert!(
         combined.contains("--daemon=on cannot be honored")
-            && combined.contains("detector corpus")
-            && combined.contains("precompiled daemon scanner"),
-        "forced-daemon rejection must identify the unhonored detector corpus; output={combined}"
+            && combined.contains("`--detectors-mode=overlay`")
+            && combined.contains("precompiled scanner"),
+        "forced-daemon rejection must identify the unsupported overlay corpus; output={combined}"
     );
     assert!(
         !combined.contains("aws-access-key"),
@@ -516,7 +531,7 @@ fn aws_key_line() -> String {
 }
 
 fn aws_key() -> String {
-    concat!("AKIA", "QYLPMN5HFIQR7XYA").to_string()
+    concat!("ASIA", "Y34FZKBOKMUTVV7A").to_string()
 }
 
 fn har_with_base64_response_body() -> String {
@@ -537,7 +552,7 @@ fn har_with_base64_response_body() -> String {
                         "statusText": "OK",
                         "headers": [],
                         "content": {
-                            "text": "QVdTX0FDQ0VTU19LRVlfSUQ9QUtJQVFZTFBNTjVIRklRUjdYWUEK",
+                            "text": "QVdTX0FDQ0VTU19LRVlfSUQ9QVNJQVkzNEZaS0JPS01VVFZWN0EK",
                             "encoding": "base64"
                         }
                     }

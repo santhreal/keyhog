@@ -47,6 +47,63 @@ fn collect_detector_signatures(detectors: &[DetectorSpec]) -> std::collections::
         }))
         .collect()
 }
+/// Remove explicitly disabled detectors and any detector whose `requires`
+/// dependency becomes unavailable. Relations to removed detectors are pruned
+/// from surviving owners because those targets cannot produce findings.
+///
+/// Unknown relation targets are preserved so corpus validation still rejects
+/// misspelled or missing detector IDs instead of treating them as configuration.
+fn filter_disabled_detectors(
+    detectors: &mut Vec<DetectorSpec>,
+    disabled_detectors: &std::collections::HashSet<String>,
+) -> usize {
+    let known_ids: std::collections::HashSet<String> = detectors
+        .iter()
+        .map(|detector| detector.id.clone())
+        .collect();
+    let mut removed: std::collections::HashSet<String> = disabled_detectors
+        .intersection(&known_ids)
+        .cloned()
+        .collect();
+    if removed.is_empty() {
+        return 0;
+    }
+
+    let mut required_by: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for detector in detectors.iter() {
+        for relation in &detector.detector_relations {
+            if relation.kind == keyhog_core::DetectorRelationKind::Requires
+                && known_ids.contains(&relation.detector_id)
+            {
+                required_by
+                    .entry(relation.detector_id.clone())
+                    .or_default()
+                    .push(detector.id.clone());
+            }
+        }
+    }
+
+    let mut queue: std::collections::VecDeque<String> = removed.iter().cloned().collect();
+    while let Some(target_id) = queue.pop_front() {
+        if let Some(dependents) = required_by.get(&target_id) {
+            for dependent_id in dependents {
+                if removed.insert(dependent_id.clone()) {
+                    queue.push_back(dependent_id.clone());
+                }
+            }
+        }
+    }
+
+    let before = detectors.len();
+    detectors.retain(|detector| !removed.contains(&detector.id));
+    for detector in detectors.iter_mut() {
+        detector
+            .detector_relations
+            .retain(|relation| !removed.contains(&relation.detector_id));
+    }
+    before - detectors.len()
+}
 
 /// Hosts with strictly less RAM than this are treated as low-RAM and get the
 /// deep-decode scan limits below clamped down to avoid an OOM. 4 GiB, expressed
@@ -804,7 +861,7 @@ fn setup_default_scan_runtime_with_rayon_policy(
     let disabled_detectors = effective_config.disabled_detectors.clone();
     if !disabled_detectors.is_empty() {
         let before = detectors.len();
-        detectors.retain(|d| !disabled_detectors.contains(d.id.as_str()));
+        filter_disabled_detectors(&mut detectors, &disabled_detectors);
         if detectors.is_empty() && before > 0 {
             anyhow::bail!(
                 "all {before} loaded detector(s) were disabled by .keyhog.toml \
@@ -1073,8 +1130,7 @@ impl ScanOrchestrator {
         // (Previously this config key was parsed and silently ignored.)
         if !disabled_detectors.is_empty() {
             let before = detectors.len();
-            detectors.retain(|d| !disabled_detectors.contains(d.id.as_str()));
-            let dropped = before - detectors.len();
+            let dropped = filter_disabled_detectors(&mut detectors, &disabled_detectors);
             if dropped > 0 {
                 if detectors.is_empty() {
                     let mut disabled_ids: Vec<&str> =

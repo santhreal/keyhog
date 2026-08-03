@@ -14,20 +14,20 @@
 //! field (works on every platform's cache-dir convention).
 //!
 //! Pinned facts (read from source, asserted exactly):
-//!   * `AUTOROUTE_CACHE_VERSION = 48` (backend.rs), the schema version an
+//!   * `AUTOROUTE_CACHE_VERSION = 50` (backend.rs), the schema version an
 //!     inspected valid cache reports and an incompatible one is rejected against.
 //!   * `AUTOROUTE_CACHE_FILE_BYTES = 8 * 1024 * 1024` in the cache codec, the read
 //!     cap; a file one byte over is reported "unreadable".
-//!   * `calibrate-autoroute` sweeps 96 workloads × 4 scan policies (default +
-//!     `--fast`/`--deep`/`--precision`) = 384 probes, and each policy resolves a
-//!     DISTINCT config digest, so the primed cache holds exactly 4 configs.
+//!   * the production plan sweeps 96 workloads × 4 scan policies. The cache
+//!     inspection E2E uses the authenticated three-workload fixture across the
+//!     same four policies, while the calibration unit suite pins all 96 workloads.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
 /// Schema version this build's cache reports and requires.
-const EXPECTED_CACHE_VERSION: u64 = 42;
+const EXPECTED_CACHE_VERSION: u64 = 50;
 /// Read cap for the cache file (kept in sync with the cache codec).
 const CACHE_FILE_CAP_BYTES: usize = 8 * 1024 * 1024;
 
@@ -428,6 +428,20 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
 
     // 1. Drive the real install-time sweep into the default (hermetic) cache.
     let calibrate = cmd(home.path())
+        .env("RAYON_NUM_THREADS", "4")
+        .env(
+            "KEYHOG_CI_AUTOROUTE_TIMING_FIXTURE",
+            "confidence-separated-v1",
+        )
+        .env(
+            "KEYHOG_CI_AUTOROUTE_FIXTURE_AUTH",
+            "bench-backend-parity-v1",
+        )
+        .env("KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE", "bounded-e2e-v1")
+        .env(
+            "KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE_AUTH",
+            "core-workload-plan-v1",
+        )
         .args(["calibrate-autoroute", "--quiet"])
         .output()
         .expect("spawn keyhog calibrate-autoroute");
@@ -438,10 +452,10 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
         String::from_utf8_lossy(&calibrate.stderr)
     );
     let cal_stdout = String::from_utf8_lossy(&calibrate.stdout);
-    // 96 workloads × 4 policies = 384 probes across 4 scan policies.
+    // Three bounded E2E workloads × four policies = 12 probes.
     assert!(
-        cal_stdout.contains("ran 384 workload probes"),
-        "summary reports the exact 384-probe sweep; stdout={cal_stdout}"
+        cal_stdout.contains("ran 12 workload probes"),
+        "summary reports the exact 12-probe bounded sweep; stdout={cal_stdout}"
     );
     assert!(
         cal_stdout.contains("4 scan policies"),
@@ -589,11 +603,12 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
         cal_stdout.contains(&format!("cache contains {total_decisions} route decisions")),
         "calibration summary decision count must match independent cache inspection; stdout={cal_stdout}; total={total_decisions}"
     );
-    assert!(
-        cal_stdout.contains(&format!(
-            "measured {total_decisions} unique route classes"
-        )),
-        "a clean sweep must report every independently inspected decision as newly measured; stdout={cal_stdout}; total={total_decisions}"
+    assert_eq!(
+        cal_stdout
+            .matches("retained 3 measured points in 3 route classes")
+            .count(),
+        4,
+        "each policy child must report all three independently inspected decisions as newly measured; stdout={cal_stdout}; total={total_decisions}"
     );
 
     // 4. The human inspection reports the same 4-config count in prose.

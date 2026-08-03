@@ -94,7 +94,8 @@ impl<'a> DispatchPlan<'a> {
     fn new(
         chunk: ChunkTriggerEvidence<'a>,
         scope: PrefilterScope,
-        #[cfg_attr(not(feature = "simd"), allow(unused_variables))] allow_hyperscan: bool,
+        #[cfg(feature = "simd")] allow_hyperscan: bool,
+        #[cfg(not(feature = "simd"))] _allow_hyperscan: bool,
         config: DispatchConfig,
     ) -> Self {
         Self {

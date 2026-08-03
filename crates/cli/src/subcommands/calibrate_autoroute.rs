@@ -286,6 +286,51 @@ fn core_workload_plan() -> Vec<Workload> {
     workloads
 }
 
+#[cfg(any(test, feature = "ci-lean"))]
+fn bounded_e2e_workload_plan(mut workloads: Vec<Workload>) -> Result<Vec<Workload>> {
+    workloads.retain(|workload| {
+        matches!(
+            workload.label(),
+            "1 KiB workload" | "4 KiB workload" | "64 KiB workload"
+        )
+    });
+    if workloads.len() != 3 {
+        anyhow::bail!(
+            "bounded-e2e-v1 expected three canonical file workloads, found {}",
+            workloads.len()
+        );
+    }
+    Ok(workloads)
+}
+
+#[cfg(any(test, feature = "ci-lean"))]
+fn selected_workload_plan() -> Result<Vec<Workload>> {
+    const FIXTURE_ENV: &str = "KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE";
+    const AUTH_ENV: &str = "KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE_AUTH";
+    const AUTH: &str = "core-workload-plan-v1";
+
+    let workloads = core_workload_plan();
+    let Some(fixture) = std::env::var_os(FIXTURE_ENV) else {
+        return Ok(workloads);
+    };
+    if std::env::var(AUTH_ENV).as_deref() != Ok(AUTH) {
+        anyhow::bail!(
+            "test-only autoroute workload fixture authorization failed; {AUTH_ENV} must equal {AUTH:?}"
+        );
+    }
+    match fixture.to_string_lossy().as_ref() {
+        "bounded-e2e-v1" => bounded_e2e_workload_plan(workloads),
+        fixture => {
+            anyhow::bail!("unsupported {FIXTURE_ENV} value {fixture:?}; expected bounded-e2e-v1")
+        }
+    }
+}
+
+#[cfg(not(any(test, feature = "ci-lean")))]
+fn selected_workload_plan() -> Result<Vec<Workload>> {
+    Ok(core_workload_plan())
+}
+
 /// Build `total` bytes of calibration content by repeating `seed`'s 1 KiB block.
 /// The final repetition is truncated for sub-KiB and non-aligned probes, matching
 /// the installers' exact-byte probe writers.
@@ -344,6 +389,7 @@ fn policy_cli_value(policy: AutorouteCalibrationPolicy) -> &'static str {
 }
 
 fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Result<ExitCode> {
+    let workload_count = selected_workload_plan()?.len();
     let executable =
         std::env::current_exe().context("resolving keyhog for isolated autoroute calibration")?;
     for policy in [
@@ -407,7 +453,7 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
     println!(
         "{} ran {} workload probes across 4 scan policies in isolated policy processes; combined cache contains {decisions} route decisions",
         crate::style::pass("PASS", &palette),
-        core_workload_plan().len() * 4
+        workload_count * 4
     );
     Ok(ExitCode::SUCCESS)
 }
@@ -455,7 +501,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         )
     })?;
 
-    let workloads = core_workload_plan();
+    let workloads = selected_workload_plan()?;
     let policy_flags = selected_policy_flags(args.policy);
     let total = workloads.len() * policy_flags.len();
 

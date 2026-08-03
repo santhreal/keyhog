@@ -32,10 +32,10 @@ run_report() {
 }
 
 run_report keyhog-sources "--lib --test all_tests --features ${FEATURES}"
-run_report keyhog-core    "--lib"
+run_report keyhog-core    "--tests"
 run_report keyhog-scanner "--lib"
 
-python3 - "$REPORT_DIR" "$ENFORCE" <<'PY'
+python3 -B - "$REPORT_DIR" "$ENFORCE" <<'PY'
 import json, pathlib, sys
 
 report_dir = pathlib.Path(sys.argv[1])

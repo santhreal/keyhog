@@ -41,10 +41,13 @@ fn decode_at_exact_cap_boundary_returns_full() {
     assert_eq!(out.len(), 5);
 }
 
+/// The first byte above the configured cap must fail with the exact limit and
+/// serialize its process-global skip-counter side effect against other tests.
 #[test]
 fn decode_one_byte_over_cap_fails_with_exact_message() {
     // len == cap + 1 is the first byte over the limit: a loud, counted failure
     // with the exact cap value in the message, never a silent truncation.
+    let _guard = TestApi.skip_counter_guard();
     let err = TestApi
         .read_stdin_test_input_with_limit(b"abcd", 3)
         .expect_err("4 bytes over a 3-byte cap must fail loud");

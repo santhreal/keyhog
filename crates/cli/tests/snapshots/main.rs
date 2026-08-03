@@ -80,6 +80,7 @@ use tempfile::TempDir;
 /// AWS rule will fire on.
 const AWS_KEY_PREFIX: &str = "AKIA";
 const AWS_KEY_BODY: &str = "QYLPMN5HFIQR7XYA";
+const AWS_KEY_REDACTED: &str = "AK...YA";
 const AWS_SECRET_PREFIX: &str = "wJalrXUtnFEMI";
 const AWS_SECRET_BODY: &str = "/K7MDENG/bPxRfiCYEXAMPLEKEY";
 
@@ -844,8 +845,7 @@ fn html_format_report_contains_finding() {
 
     // The in-page script renders from `const rawFindings = [...]`. Pull the
     // array literal and assert it is non-empty and carries the planted AWS
-    // key. The scanner redacts the credential to `first4...last4`, so the
-    // `AKIA` prefix of the planted key survives into `credential_redacted`.
+    // finding with the scanner's exact short-credential redaction.
     let line = out
         .lines()
         .find(|l| l.trim_start().starts_with("const rawFindings = "))
@@ -862,8 +862,8 @@ fn html_format_report_contains_finding() {
         "html findings payload missing the planted AWS finding: {json}"
     );
     assert!(
-        json.contains(AWS_KEY_PREFIX),
-        "html findings payload missing the redacted AKIA key prefix: {json}"
+        json.contains(AWS_KEY_REDACTED),
+        "html findings payload missing the redacted AWS access key {AWS_KEY_REDACTED}: {json}"
     );
 }
 

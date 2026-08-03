@@ -2353,6 +2353,13 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
+path = "crates/cli/src/orchestrator/tests/disabled_detector_relations.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
 path = "crates/cli/src/orchestrator/dispatch/tests.rs"
 boundary = true
 error = true

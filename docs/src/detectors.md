@@ -669,9 +669,12 @@ detector with that ID. It cannot add a detector that the selected corpus does
 not contain.
 
 Disabled detectors are removed before scanner compilation, so they have no scan
-cost. Accelerated literal slots use the same canonical TOML ID. There is no
-separate `hot-*` ID to disable. Retired `hot-*` IDs are rejected by `keyhog
-explain` rather than accepted as aliases.
+cost. A detector that `requires` a disabled detector is also removed, including
+transitive dependents. `conflicts` and `subsumes` relations to the disabled
+detector are removed while their owners remain active. Accelerated literal slots
+use the same canonical TOML ID. There is no separate `hot-*` ID to disable.
+Retired `hot-*` IDs are rejected by `keyhog explain` rather than accepted as
+aliases.
 
 An unmatched disabled ID produces a warning. If the overrides remove every
 loaded detector, KeyHog fails before scanning instead of reporting a clean scan

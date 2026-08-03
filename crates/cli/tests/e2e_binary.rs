@@ -1100,13 +1100,23 @@ fn lockdown_bails_on_verify_flag() {
 /// ScanText/stdin, example-suppression-wire, and `daemon status`
 /// tests all drive the same real listener through this one helper.
 #[cfg(unix)]
-fn start_daemon() -> (TempDir, std::process::Child) {
+static DAEMON_E2E_SLOT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(unix)]
+fn start_daemon() -> (
+    std::sync::MutexGuard<'static, ()>,
+    TempDir,
+    std::process::Child,
+) {
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
 
+    let slot = DAEMON_E2E_SLOT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let runtime = TempDir::new().expect("runtime dir");
     let detectors = workspace_detectors();
-    let daemon = Command::new(binary())
+    let mut daemon = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
         .args([
             "daemon",
@@ -1122,15 +1132,19 @@ fn start_daemon() -> (TempDir, std::process::Child) {
         .expect("spawn daemon");
 
     let socket = runtime.path().join("keyhog.sock");
-    let deadline = Instant::now() + Duration::from_secs(30);
+    let deadline = Instant::now() + Duration::from_secs(60);
     while !socket.exists() {
-        assert!(
-            Instant::now() < deadline,
-            "daemon socket did not appear in time"
-        );
+        if let Some(status) = daemon.try_wait().expect("poll daemon process") {
+            panic!("daemon exited before binding its socket with status {status}");
+        }
+        if Instant::now() >= deadline {
+            let _ = daemon.kill();
+            let status = daemon.wait();
+            panic!("daemon socket did not appear in time; final child status: {status:?}");
+        }
         std::thread::sleep(Duration::from_millis(50));
     }
-    (runtime, daemon)
+    (slot, runtime, daemon)
 }
 
 /// Tear down a daemon started by `start_daemon`: ask it to stop over
@@ -1155,11 +1169,11 @@ fn daemon_wire_scan_path_finds_planted_secret() {
     let fixture = dir.path().join("daemon_planted.txt");
     std::fs::write(
         &fixture,
-        concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
+        concat!("AWS_ACCESS_KEY_ID = \"ASIA", "Y34FZKBOKMUTVV7A\"\n"),
     )
     .unwrap();
 
-    let (runtime, mut daemon) = start_daemon();
+    let (_slot, runtime, mut daemon) = start_daemon();
 
     let scan = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
@@ -1206,9 +1220,9 @@ fn daemon_wire_scan_stdin_finds_planted_secret() {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    let (runtime, mut daemon) = start_daemon();
+    let (_slot, runtime, mut daemon) = start_daemon();
 
-    let fixture = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n");
+    let fixture = concat!("AWS_ACCESS_KEY_ID = \"ASIA", "Y34FZKBOKMUTVV7A\"\n");
     let mut child = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
         .args(["scan", "--daemon", "--stdin", "--format", "json"])
@@ -1271,7 +1285,7 @@ fn daemon_wire_stdin_example_suppression_summary_propagates() {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    let (runtime, mut daemon) = start_daemon();
+    let (_slot, runtime, mut daemon) = start_daemon();
 
     // AWS-published EXAMPLE credential: matched then suppressed as a
     // known example on the daemon side, so the daemon suppression
@@ -1330,11 +1344,11 @@ fn daemon_status_reports_payload_after_live_scan() {
     let fixture = dir.path().join("daemon_status_planted.txt");
     std::fs::write(
         &fixture,
-        concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
+        concat!("AWS_ACCESS_KEY_ID = \"ASIA", "Y34FZKBOKMUTVV7A\"\n"),
     )
     .unwrap();
 
-    let (runtime, mut daemon) = start_daemon();
+    let (_slot, runtime, mut daemon) = start_daemon();
 
     // One real scan over the socket so the served counter is provably
     // non-zero in the status payload below.

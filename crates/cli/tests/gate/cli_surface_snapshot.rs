@@ -168,6 +168,7 @@ fn expected_scan_long_flags() -> BTreeSet<String> {
     }
     #[cfg(feature = "github")]
     {
+        add("github-all");
         add("github-collaboration");
         add("github-discussions");
         add("github-gists");

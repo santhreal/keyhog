@@ -1,122 +1,108 @@
-//! Release trust-boundary contract for GitHub build provenance.
+//! Release trust-boundary contracts for the crates.io-only release workflow.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+fn root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn release_workflow() -> String {
+    fs::read_to_string(root().join(".github/workflows/release.yml")).expect("read release workflow")
+}
+
+/// A release must originate from a successful push to `main`, bind the checked
+/// out commit to that CI run, and push the release commit and tag atomically.
 #[test]
-fn every_matrix_payload_is_attested_before_private_staging() {
-    let workflow_path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.github/workflows/release.yml");
-    let workflow = fs::read_to_string(&workflow_path).expect("read release workflow");
-    let build = workflow
-        .split("\n  build:")
-        .nth(1)
-        .and_then(|tail| tail.split("\n  sign:").next())
-        .expect("release build job");
-
-    assert!(
-        build.contains("id-token: write") && build.contains("attestations: write"),
-        "the matrix build needs the two least-privilege attestation permissions"
-    );
-    assert!(
-        build.contains("KEYHOG_RELEASE_EVENT_REF: ${{ github.ref }}")
-            && build.contains("refs/tags/$tag")
-            && build.contains("KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}")
-            && build.contains("git rev-parse HEAD")
-            && build.contains("actual\" != \"$KEYHOG_RELEASE_EVENT_SHA"),
-        "manual and tag-push builds must bind the checkout to the event identity attested by GitHub"
-    );
-    assert!(
-        build.contains("uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1"),
-        "release provenance must use the reviewed immutable action revision"
-    );
-
-    let attest = build
-        .find("- name: Attest release payload provenance")
-        .expect("attestation step");
-    let upload = build
-        .find("- name: Stage unsigned release bundle")
-        .expect("private artifact staging step");
-    assert!(
-        attest < upload,
-        "payloads must be attested before private staging"
-    );
-
-    let attestation_step = &build[attest..upload];
-    assert!(
-        !attestation_step.contains("\n        if:"),
-        "every release matrix payload must be attested without a skip condition"
-    );
-    for subject in [
-        "${{ matrix.asset }}",
-        "${{ matrix.asset }}.gpu-literals.tar.gz",
+fn automatic_release_is_bound_to_the_successful_main_ci_identity() {
+    let workflow = release_workflow();
+    for contract in [
+        "workflows: [CI]",
+        "github.event.workflow_run.conclusion == 'success'",
+        "github.event.workflow_run.event == 'push'",
+        "github.event.workflow_run.head_branch == 'main'",
+        "CI_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}",
+        "ref: main",
+        "if [[ \"$current\" == \"$CI_HEAD_SHA\" ]]",
+        "summary=\"$(git show -s --format=%s \"$CI_HEAD_SHA\")\"",
+        "python3 -B scripts/auto_release.py --summary \"$summary\" --apply",
+        "git push --atomic origin HEAD:main \"refs/tags/v${version}\"",
     ] {
         assert!(
-            attestation_step.contains(subject),
-            "attestation is missing release payload {subject}"
-        );
-    }
-
-    let install_doc =
-        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/src/install.md"))
-            .expect("read install documentation");
-    for policy in [
-        "--signer-workflow github.com/santhreal/keyhog/.github/workflows/release.yml",
-        "--source-ref \"refs/tags/$TAG\"",
-        "--deny-self-hosted-runners",
-    ] {
-        assert!(
-            install_doc.contains(policy),
-            "documented attestation verification is missing policy constraint {policy}"
+            workflow.contains(contract),
+            "automatic release identity contract is missing {contract}"
         );
     }
 }
 
+/// Trusted publishing must use GitHub OIDC, generate the commit-bound integrity
+/// receipt first, and pass only the exchanged short-lived token to publish.sh.
 #[test]
-fn versioned_installers_are_attested_signed_and_manifest_bound() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let workflow = fs::read_to_string(root.join(".github/workflows/release.yml"))
-        .expect("read release workflow");
-    let installers = workflow
-        .split("\n  installers:")
-        .nth(1)
-        .and_then(|tail| tail.split("\n  sign:").next())
-        .expect("installer staging job");
+fn crates_publish_uses_oidc_after_the_integrity_receipt() {
+    let workflow = release_workflow();
     for contract in [
-        "ref: refs/tags/${{ steps.tag.outputs.tag }}",
-        "KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}",
-        "- name: Attest installer provenance",
-        "install.sh.sha256",
-        "install.ps1.sha256",
-        "name: unsigned-installers",
+        "id-token: write",
+        "python3 -B scripts/release_integrity_receipt.py",
+        "--commit \"$(git rev-parse HEAD)\"",
+        "--version \"${{ steps.release.outputs.version }}\"",
+        "--output release-integrity.json",
+        "rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5",
+        "run: bash scripts/publish.sh",
+        "CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}",
+        "path: release-integrity.json",
     ] {
         assert!(
-            installers.contains(contract),
-            "versioned installer staging is missing {contract}"
+            workflow.contains(contract),
+            "trusted crates.io release contract is missing {contract}"
         );
     }
 
+    let receipt = workflow
+        .find("- name: Generate release integrity receipt")
+        .expect("integrity receipt step");
+    let authenticate = workflow
+        .find("- name: Authenticate to crates.io")
+        .expect("OIDC authentication step");
     let publish = workflow
-        .split("- name: Sign, validate, and publish the exact release manifest")
-        .nth(1)
-        .and_then(|tail| tail.split("\n  docker:").next())
-        .expect("signed publish step");
-    for asset in [
-        "install.sh install.sh.sha256",
-        "install.ps1 install.ps1.sha256",
-        "payloads=(install.sh install.ps1)",
+        .find("- name: Publish crates.io packages")
+        .expect("publish step");
+    let upload = workflow
+        .find("- name: Upload release integrity receipt")
+        .expect("receipt upload step");
+    assert!(
+        receipt < authenticate && authenticate < publish && publish < upload,
+        "release order must be receipt, OIDC exchange, publish, then receipt upload"
+    );
+}
+
+/// Installation documentation and automation must agree that releases are six
+/// crates.io packages, not unsigned or unattested binary installer assets.
+#[test]
+fn install_docs_match_the_crates_only_release_surface() {
+    let workflow = release_workflow();
+    let docs = fs::read_to_string(root().join("docs/src/install.md")).expect("read install docs");
+
+    for contract in [
+        "cargo install --locked keyhog",
+        "cargo install --locked --version '=0.5.50' keyhog",
+        "Every successful `main` CI run publishes the next patch version.",
+        "does\nnot publish binary release assets or installer bundles.",
     ] {
         assert!(
-            publish.contains(asset),
-            "signed release manifest is missing {asset}"
+            docs.contains(contract),
+            "installation guide is missing crates-only contract {contract}"
         );
     }
-
-    let docs = fs::read_to_string(root.join("docs/src/install.md")).expect("read install docs");
-    assert!(
-        docs.contains("releases/download/$TAG")
-            && docs.contains("minisign -Vm install.sh")
-            && docs.contains("KEYHOG_VERSION=\"$TAG\" sh install.sh"),
-        "the recommended POSIX bootstrap must authenticate a pinned release installer before execution"
-    );
+    for retired in [
+        "releases/download/",
+        "minisign -Vm install.sh",
+        "KEYHOG_VERSION=",
+        "unsigned-installers",
+        "actions/attest@",
+    ] {
+        assert!(
+            !docs.contains(retired) && !workflow.contains(retired),
+            "crates-only release surfaces must not retain retired binary asset contract {retired}"
+        );
+    }
 }

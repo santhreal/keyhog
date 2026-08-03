@@ -22,6 +22,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Record scanner accelerator features from dependency-owned compile state so portable autoroute identities no longer claim unavailable GPU or SIMD backends.
 - Keep complete credentials from native binary strings and executable sections when a strong named detector validates an explicit credential shape, while continuing to suppress weak prefix fragments and generic assignment noise.
 - Bound scan-system metadata discovery by the remaining --space budget so small host-scan ceilings stop promptly and report partial coverage instead of traversing the entire filesystem first.
+- Preserve valid `.keyhog.toml` detector-disable configurations by transitively removing detectors that require a disabled target and pruning inactive conflict or subsumption relations before scanner compilation.
+- Restore the documented minimal `keyhog-scanner --no-default-features` build by keeping decoder admission available when optional decode transforms are absent.
 
 ## [0.5.49] - 2026-07-30
 

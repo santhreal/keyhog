@@ -527,6 +527,20 @@ fn calibrated_auto_backend_surfaces_the_same_finding_set_as_cpu() {
         .env("HOME", home.path())
         .env("XDG_CACHE_HOME", home.path())
         .env("NO_COLOR", "1")
+        .env("RAYON_NUM_THREADS", "4")
+        .env(
+            "KEYHOG_CI_AUTOROUTE_TIMING_FIXTURE",
+            "confidence-separated-v1",
+        )
+        .env(
+            "KEYHOG_CI_AUTOROUTE_FIXTURE_AUTH",
+            "bench-backend-parity-v1",
+        )
+        .env("KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE", "bounded-e2e-v1")
+        .env(
+            "KEYHOG_CI_AUTOROUTE_WORKLOAD_FIXTURE_AUTH",
+            "core-workload-plan-v1",
+        )
         .args(["calibrate-autoroute", "--quiet"])
         .output()
         .expect("spawn keyhog calibrate-autoroute");

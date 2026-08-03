@@ -1,643 +1,872 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="obsidian">
+<html lang="en" data-theme="keyhog">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KeyHog Secret Scan Report</title>
   <style>
-/* Master stylesheet for KeyHog interactive report. Zero external dependencies. */
+/* KeyHog interactive report: Santh house style.
+   Sharp, black & white, one keyhog-yellow accent. Vercel-grade minimalism:
+   hairline borders, a faint grid canvas, monospace data, generous whitespace,
+   precise custom motion. Zero external dependencies (system font stacks only).
+   ----------------------------------------------------------------------------
+   Sections:  1 tokens · 2 reset/canvas · 3 header · 4 layout · 5 cards
+              6 stats · 7 charts · 8 filters · 9 table · 10 badges/status
+              11 details · 12 misc · 13 motion
+   ========================================================================== */
 
+/* ---- 1 · DESIGN TOKENS --------------------------------------------------- */
 :root {
-  /* Obsidian (Glassmorphic Obsidian) Theme Tokens */
-  --bg-gradient: radial-gradient(circle at top left, #0e1017, #07080b);
-  --panel-bg: rgba(25, 28, 41, 0.45);
-  --panel-border: 1px solid rgba(255, 255, 255, 0.08);
-  --panel-blur: blur(16px);
-  --text-main: #e2e8f0;
-  --text-muted: #94a3b8;
-  --accent-primary: #818cf8;
-  --accent-glow: 0 0 20px rgba(129, 140, 248, 0.2);
-  --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-  --font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
+  /* KEYHOG (default): black canvas, white type, a single yellow accent. */
+  --bg:          #000000;
+  --bg-elev:     #0a0a0a;
+  --bg-inset:    #101010;
+  --border:      #242424;
+  --border-hi:   #383838;
+  --text:        #ededed;
+  --text-muted:  #8f8f8f;
+  --text-dim:    #5a5a5a;
+  --accent-primary: #ffd60a;          /* keyhog yellow */
+  --accent-ink:  #000000;             /* readable text ON the yellow */
+  --accent-soft: rgba(255, 214, 10, 0.12);
+  --accent-line: rgba(255, 214, 10, 0.55);
+  --radius:      0px;                  /* sharp */
+  --grid-line:   rgba(255, 255, 255, 0.025);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
 
-  /* Shared status colors */
-  --color-critical: #ef4444;
-  --color-high: #f97316;
-  --color-medium: #eab308;
-  --color-low: #3b82f6;
-  --color-info: #06b6d4;
-  --color-client-safe: #a855f7;
+  /* Severity, a warm heat scale (hot = danger) so the breakdown reads at a
+     glance and never collapses into one flat colour: red → amber → yellow →
+     grey → green. Distinct, on-brand, intuitive. */
+  --color-critical:   #ff453a;
+  --color-high:       #ff9f0a;
+  --color-medium:     #ffd60a;
+  --color-low:        #a0a0a0;
+  --color-info:       #6a6a6a;
+  --color-client-safe:#30d158;
 
-  --color-live: #22c55e;
-  --color-revoked: #f43f5e;
-  --color-dead: #64748b;
-  --color-rate-limited: #d946ef;
-  --color-error: #eab308;
-  --color-unverifiable: #06b6d4;
-  --color-skipped: #94a3b8;
+  /* Verification, a LIVE secret glows yellow ("look here"); dead fades out. */
+  --color-live:         #ffd60a;
+  --color-revoked:      #8f8f8f;
+  --color-dead:         #5a5a5a;
+  --color-rate-limited: #ededed;
+  --color-error:        #ff4d4d;
+  --color-unverifiable: #8f8f8f;
+  --color-skipped:      #5a5a5a;
 
-  --tr-bg-hover: rgba(255, 255, 255, 0.03);
-  --border-radius: 12px;
+  --badge-critical-ink: #ffffff;
+  --badge-high-ink:     #000000;
+  --badge-medium-ink:   #000000;
 }
 
-[data-theme="cyberpunk"] {
-  --bg-gradient: linear-gradient(135deg, #030308 0%, #0c091f 100%);
-  --panel-bg: rgba(13, 11, 26, 0.85);
-  --panel-border: 2px solid #ff007f;
-  --panel-blur: none;
-  --text-main: #00f0ff;
-  --text-muted: #94468f;
-  --accent-primary: #fffb00;
-  --accent-glow: 0 0 12px #ff007f, 0 0 2px #fffb00;
-  --card-shadow: 0 0 15px rgba(255, 0, 127, 0.3);
-  --font-family: 'Courier New', Courier, monospace;
-  --border-radius: 0px;
-  --tr-bg-hover: rgba(255, 0, 127, 0.1);
+[data-theme="light"] {
+  --bg:          #ffffff;
+  --bg-elev:     #fafafa;
+  --bg-inset:    #f5f5f5;
+  --border:      #eaeaea;
+  --border-hi:   #cfcfcf;
+  --text:        #0a0a0a;
+  --text-muted:  #666666;
+  --text-dim:    #999999;
+  --accent-primary: #e0a400;          /* deeper yellow for contrast on white */
+  --accent-ink:  #000000;
+  --accent-soft: rgba(224, 164, 0, 0.14);
+  --accent-line: rgba(224, 164, 0, 0.6);
+  --grid-line:   rgba(0, 0, 0, 0.04);
 
-  --color-critical: #ff003c;
-  --color-high: #ff5e00;
-  --color-medium: #fffb00;
-  --color-live: #00ff66;
-  --color-revoked: #ff007f;
-}
+  --color-critical:   #e5484d;
+  --color-high:       #b07d00;
+  --color-medium:     #0a0a0a;
+  --color-low:        #666666;
+  --color-info:       #999999;
+  --color-client-safe:#666666;
+  --color-live:         #b07d00;
+  --color-revoked:      #666666;
+  --color-dead:         #999999;
+  --color-rate-limited: #0a0a0a;
+  --color-error:        #e5484d;
+  --color-unverifiable: #666666;
+  --color-skipped:      #999999;
 
-[data-theme="win98"] {
-  --bg-gradient: none;
-  background-color: #55aaaa;
-  --panel-bg: #c0c0c0;
-  --panel-border: 2px solid;
-  --panel-border-style: outset;
-  --panel-blur: none;
-  --text-main: #000000;
-  --text-muted: #404040;
-  --accent-primary: #000080;
-  --accent-glow: none;
-  --card-shadow: none;
-  --font-family: "MS Sans Serif", "Arial", sans-serif;
-  --border-radius: 0px;
-  --tr-bg-hover: #000080;
-
-  --color-critical: #800000;
-  --color-high: #808000;
-  --color-medium: #808080;
-  --color-live: #008000;
-  --color-revoked: #800080;
+  --badge-critical-ink: #ffffff;
+  --badge-high-ink:     #000000;
+  --badge-medium-ink:   #ffffff;
 }
 
 [data-theme="matrix"] {
-  --bg-gradient: none;
-  background-color: #000000;
-  --panel-bg: #000000;
-  --panel-border: 1px solid #00ff00;
-  --panel-blur: none;
-  --text-main: #00ff00;
-  --text-muted: #008000;
-  --accent-primary: #33ff33;
-  --accent-glow: 0 0 8px #00ff00;
-  --card-shadow: 0 0 10px rgba(0, 255, 0, 0.15);
-  --font-family: 'Courier New', Courier, monospace;
-  --border-radius: 2px;
-  --tr-bg-hover: rgba(0, 255, 0, 0.08);
+  --bg:          #000000;
+  --bg-elev:     #020a02;
+  --bg-inset:    #010801;
+  --border:      #0c3b0c;
+  --border-hi:   #146614;
+  --text:        #00ff66;
+  --text-muted:  #0a9a3e;
+  --text-dim:    #066a29;
+  --accent-primary: #00ff66;
+  --accent-ink:  #000000;
+  --accent-soft: rgba(0, 255, 102, 0.10);
+  --accent-line: rgba(0, 255, 102, 0.55);
+  --grid-line:   rgba(0, 255, 102, 0.04);
+  --font-sans:   var(--font-mono);
 
-  --color-critical: #00ff00;
-  --color-high: #00ff00;
-  --color-medium: #00ff00;
-  --color-live: #ffffff;
-  --color-revoked: #008000;
+  --color-critical:   #aaff00;
+  --color-high:       #00ff66;
+  --color-medium:     #0a9a3e;
+  --color-low:        #066a29;
+  --color-info:       #066a29;
+  --color-client-safe:#0a9a3e;
+  --color-live:         #aaff00;
+  --color-revoked:      #066a29;
+  --color-dead:         #044d1d;
+  --color-rate-limited: #00ff66;
+  --color-error:        #aaff00;
+  --color-unverifiable: #0a9a3e;
+  --color-skipped:      #066a29;
+
+  --badge-critical-ink: #000000;
+  --badge-high-ink:     #000000;
+  --badge-medium-ink:   #000000;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  transition: background <DUR> ease, border <DUR> ease, color <DUR> ease;
-}
+/* ---- 2 · RESET + CANVAS -------------------------------------------------- */
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  background: var(--bg-gradient);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
   min-height: 100vh;
-  color: var(--text-main);
-  font-family: var(--font-family);
-  padding: 24px;
+  padding: 40px 28px;
+  position: relative;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Faint engineering-grid canvas behind everything. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 46px 46px;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .report-container {
-  max-width: 1400px;
+  max-width: 1320px;
   margin: 0 auto;
-}
-
-/* Header Section */
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-  padding: 20px;
-  background: var(--panel-bg);
-  border: var(--panel-border);
-  backdrop-filter: var(--panel-blur);
-  box-shadow: var(--card-shadow);
-  border-radius: var(--border-radius);
-  border-style: var(--panel-border-style);
-}
-
-.logo-section h1 {
-  font-size: 28px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.logo-section h1 span {
-  color: var(--accent-primary);
-  text-shadow: var(--accent-glow);
-}
-
-.logo-section p {
-  color: var(--text-muted);
-  font-size: 14px;
-  margin-top: 4px;
-}
-
-/* Theme Selector styles */
-.theme-selector {
-  display: flex;
-  gap: 8px;
-  background: rgba(0, 0, 0, 0.2);
-  padding: 4px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-/* Win98 Bevel Border Overrides */
-[data-theme="win98"] .theme-selector {
-  background: #c0c0c0;
-  border: 2px solid;
-  border-style: inset;
-  border-radius: 0px;
-}
-
-.theme-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  border-radius: 6px;
-  font-family: var(--font-family);
+  position: relative;
+  z-index: 1;
 }
 
 button:focus-visible,
 input:focus-visible,
 tbody tr:focus-visible {
   outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
-  box-shadow: var(--accent-glow);
+  outline-offset: 1px;
 }
 
-.theme-btn.active {
-  background: var(--accent-primary);
-  color: #fff;
+/* ---- 3 · HEADER ---------------------------------------------------------- */
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 30px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--border);
 }
 
-[data-theme="win98"] .theme-btn {
-  border-radius: 0px;
-  color: #000;
+/* One wordmark across terminal, README, and HTML reports. */
+.logo-lockup {
+  display: flex;
+  align-items: center;
 }
-
-[data-theme="win98"] .theme-btn.active {
-  background: #000080;
-  color: #fff;
-  border: 1px dotted #fff;
-}
-
-[data-theme="win98"] header {
-  border: 2px solid;
-  border-style: outset;
-  background: #c0c0c0;
-}
-
-/* Dashboard Panel Layout */
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 24px;
-}
-
-@media (max-width: 1024px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.sidebar {
+.logo-word {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 3px;
 }
-
-/* Widget Card styling */
-.card {
-  background: var(--panel-bg);
-  border: var(--panel-border);
-  backdrop-filter: var(--panel-blur);
-  box-shadow: var(--card-shadow);
-  border-radius: var(--border-radius);
-  border-style: var(--panel-border-style);
-  padding: 20px;
-}
-
-[data-theme="win98"] .card {
-  border: 2px solid;
-  border-style: outset;
-  background: #c0c0c0;
-}
-
-.card h2 {
-  font-size: 16px;
+.logo-name {
+  font-size: 23px;
   font-weight: 700;
-  margin-bottom: 16px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--text);
+}
+.logo-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--accent-primary);
-  text-shadow: var(--accent-glow);
+  color: var(--text-muted);
 }
 
-/* Metric Display Stats */
+/* Sharp segmented theme switch. */
+.theme-selector {
+  display: flex;
+  border: 1px solid var(--border);
+}
+.theme-btn {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 7px 13px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  transition: color <DUR> ease, background <DUR> ease;
+}
+.theme-btn:last-child { border-right: none; }
+.theme-btn:hover { color: var(--text); }
+.theme-btn.active { background: var(--accent-primary); color: var(--accent-ink); }
+
+/* ---- 4 · LAYOUT ---------------------------------------------------------- */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 296px minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+@media (max-width: 1024px) {
+  .dashboard-grid { grid-template-columns: 1fr; }
+}
+.sidebar { display: flex; flex-direction: column; gap: 22px; }
+/* The main column stacks the coverage banner above the findings table and owns
+   the wide track. `min-width: 0` lets the table shrink to the column (so its
+   own `.table-wrapper` handles any overflow) instead of forcing the whole grid
+   wider and pushing the table into a sideways-scrolling sliver. */
+.main-content { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+
+/* ---- 5 · CARDS ----------------------------------------------------------- */
+.card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  transition: border-color <DUR> ease, transform <DUR> ease;
+}
+.card h2 {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 18px;
+  font-family: var(--font-mono);
+}
+
+/* ---- 6 · STATS ----------------------------------------------------------- */
 .metric-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 10px;
+  margin-bottom: 10px;
 }
-
 .stat-box {
-  background: rgba(0, 0, 0, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.03);
-  padding: 12px;
-  border-radius: 8px;
-  text-align: center;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
 }
-
-[data-theme="win98"] .stat-box {
-  border: 2px solid;
-  border-style: inset;
-  background: #c0c0c0;
-  border-radius: 0px;
-}
-
 .stat-val {
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--text-main);
+  font-size: 30px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
-
 .stat-lbl {
   font-size: 10px;
   color: var(--text-muted);
   text-transform: uppercase;
-  margin-top: 4px;
+  letter-spacing: 0.1em;
+  margin-top: 9px;
+  font-family: var(--font-mono);
 }
 
-/* SVG Chart styles */
+/* ---- 7 · CHARTS ---------------------------------------------------------- */
 .chart-container {
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 180px;
-  margin: 10px 0;
+  height: 168px;
+  margin: 4px 0 2px;
 }
-
-.chart-svg {
-  width: 150px;
-  height: 150px;
+.chart-svg { width: 150px; height: 150px; overflow: visible; }
+.chart-hole { fill: transparent; }
+/* Faint full-circle rail behind the arcs, so an empty/sparse breakdown still
+   reads as a ring rather than a stray sliver. */
+.chart-track {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 12;
+  opacity: 0.5;
 }
-
-.chart-hole {
-  fill: transparent;
-}
-
 .chart-segment {
   fill: none;
-  stroke-width: 14;
+  stroke-width: 12;
+  stroke-linecap: round;               /* rounded arc caps, softer, futuristic */
+  stroke-dasharray: 0 100;             /* drawn-empty; JS animates each arc in */
+  stroke-dashoffset: 0;
   transform: rotate(-90deg);
   transform-origin: 50% 50%;
 }
-
-.chart-bar-container {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 10px;
+/* Center readout inside the donut hole. */
+.chart-center-num {
+  fill: var(--text);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
 }
-
-.chart-bar-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.chart-center-lbl {
+  fill: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 3px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
 }
-
+/* Compact colour-keyed legend so the breakdown is legible even when one
+   severity dominates the ring (e.g. an all-high scan). */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  justify-content: center;
+  margin-top: 4px;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.legend-swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.legend-count { color: var(--text); font-weight: 700; }
+.chart-bar-container { display: flex; flex-direction: column; gap: 12px; margin-top: 6px; }
+.chart-bar-item { display: flex; flex-direction: column; gap: 6px; }
 .chart-bar-label {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
 }
-
 .chart-bar-track {
   width: 100%;
-  height: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
+  height: 6px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
   overflow: hidden;
 }
+.chart-bar-fill { height: 100%; background: var(--service-bar-color, var(--accent-primary)); }
 
-[data-theme="win98"] .chart-bar-track {
-  border: 2px solid;
-  border-style: inset;
-  border-radius: 0px;
-  height: 12px;
-  background: #fff;
-}
-
-.chart-bar-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width <DUR> ease-in-out;
-}
-
-[data-theme="win98"] .chart-bar-fill {
-  border-radius: 0px;
-}
-
-/* Filters UI Panel */
-.filter-group {
-  margin-bottom: 16px;
-}
-
+/* ---- 8 · FILTERS --------------------------------------------------------- */
+.filter-group { margin-bottom: 4px; }
 .filter-group label {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  margin-bottom: 8px;
+  gap: 9px;
+  font-size: 12px;
+  margin-bottom: 10px;
   cursor: pointer;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
 }
-
-.filter-group label input {
-  cursor: pointer;
-}
+.filter-group label:hover { color: var(--text); }
+.filter-group label input { accent-color: var(--accent-primary); cursor: pointer; }
 
 .search-input {
   width: 100%;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   padding: 10px 12px;
-  border-radius: 6px;
-  color: var(--text-main);
-  font-family: var(--font-family);
-  margin-bottom: 16px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  margin-bottom: 14px;
 }
+.search-input::placeholder { color: var(--text-dim); }
+.search-input:focus { outline: none; border-color: var(--accent-primary); }
 
 .result-count {
-  color: var(--text-muted);
-  font-size: 12px;
-  margin: -8px 0 16px;
+  color: var(--text-dim);
+  font-size: 11px;
+  margin: -6px 0 16px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
 }
 
-.search-input:focus {
-  outline: none;
-  border-color: var(--accent-primary);
-  box-shadow: var(--accent-glow);
-}
-
-[data-theme="win98"] .search-input {
-  border: 2px solid;
-  border-style: inset;
-  background: #fff;
-  color: #000;
-  border-radius: 0px;
-}
-
-/* Tabs for Status filtering */
 .tabs {
   display: flex;
-  gap: 8px;
+  gap: 2px;
   margin-bottom: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
 }
-
-[data-theme="win98"] .tabs {
-  border-bottom: 2px solid #808080;
-}
-
 .tab-btn {
   background: transparent;
   border: none;
+  border-bottom: 2px solid transparent;
   color: var(--text-muted);
-  padding: 6px 12px;
-  font-size: 13px;
-  font-weight: 600;
+  padding: 8px 12px;
+  margin-bottom: -1px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   cursor: pointer;
-  border-radius: 4px;
-  font-family: var(--font-family);
+  font-family: var(--font-mono);
+  transition: color <DUR> ease, border-color <DUR> ease;
 }
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--text); border-bottom-color: var(--accent-primary); }
 
-.tab-btn.active {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-main);
-}
+/* ---- 9 · TABLE ----------------------------------------------------------- */
+.findings-panel { display: flex; flex-direction: column; gap: 16px; }
+.table-wrapper { overflow-x: auto; width: 100%; }
+/* `table-layout: fixed` + explicit column widths: every cell wraps/ellipsizes
+   inside its own track, so columns can never collide or force a sideways scroll
+   at any viewport width. */
+table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; table-layout: fixed; }
+thead th:nth-child(1), tbody td:nth-child(1) { width: 21%; }   /* detector */
+thead th:nth-child(2), tbody td:nth-child(2) { width: 13%; }   /* service */
+thead th:nth-child(3), tbody td:nth-child(3) { width: 34%; }   /* file path */
+thead th:nth-child(4), tbody td:nth-child(4) { width: 11%; }   /* severity */
+thead th:nth-child(5), tbody td:nth-child(5) { width: 21%; }   /* verification */
 
-[data-theme="win98"] .tab-btn {
-  border-radius: 0px;
-  color: #000;
-}
-
-[data-theme="win98"] .tab-btn.active {
-  background: #808080;
-  color: #fff;
-}
-
-/* Findings Table */
-.findings-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.table-wrapper {
-  overflow-x: auto;
-  width: 100%;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-  font-size: 13px;
-}
-
-th, td {
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-[data-theme="win98"] th, [data-theme="win98"] td {
-  border-bottom: 1px solid #808080;
-  color: #000;
-}
-
-th {
-  color: var(--text-muted);
-  font-weight: 600;
+thead th {
+  padding: 10px 16px;
+  color: var(--text-dim);
+  font-weight: 500;
   text-transform: uppercase;
-  font-size: 11px;
-  letter-spacing: 0.5px;
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  font-family: var(--font-mono);
+  border-bottom: 1px solid var(--border);
+}
+tbody td {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+/* Only the detector id (long, hyphenated) may break to its own line; everything
+   else either truncates with an ellipsis (path, service) or stays on one line
+   (badges). Short words like "CRITICAL" or "datadog" must never be shattered
+   mid-word, so the global break-anywhere rule is gone. */
+tbody td:nth-child(1) small { overflow-wrap: anywhere; }
+/* Service cell: one tidy line, ellipsis when a service name runs long. */
+.kh-service {
+  display: inline-block; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  vertical-align: bottom;
+  font-family: var(--font-mono); font-size: 12px;
 }
 
-tbody tr {
-  cursor: pointer;
+/* File-path cell: filename first (bold, whole), directory below (dimmed, left
+   truncated to its tail), line number accented. A wall of long absolute paths
+   stays compact and scannable instead of wrapping into tall mid-word blocks. */
+.kh-path { font-family: var(--font-mono); display: flex; flex-direction: column; gap: 1px; min-width: 0; max-width: 100%; }
+.kh-path-file {
+  color: var(--text); font-weight: 600; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-
-tbody tr:hover {
-  background: var(--tr-bg-hover);
+.kh-path-dir {
+  color: var(--text-muted); font-size: 11px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.kh-path-line { color: var(--accent-primary); margin-left: 1px; }
 
-[data-theme="win98"] tbody tr:hover {
-  background: #000080;
-}
+tbody tr.finding-row { cursor: pointer; transition: background <DUR> ease; }
+tbody tr.finding-row:hover { background: var(--bg-inset); }
+tbody tr.finding-row:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent-primary); }
 
-[data-theme="win98"] tbody tr:hover td {
-  color: #fff !important;
-}
-
-/* Badges for Severity and Status */
+/* ---- 10 · BADGES + STATUS ------------------------------------------------ */
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 3px 8px;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 500;
   text-transform: uppercase;
-  border-radius: 4px;
+  letter-spacing: 0.06em;
+  font-family: var(--font-mono);
+  border: 1px solid currentColor;
+  border-radius: var(--radius);
+  white-space: nowrap;
 }
-
-.badge-critical { background: rgba(239, 68, 68, 0.15); color: var(--color-critical); }
-.badge-high { background: rgba(249, 115, 22, 0.15); color: var(--color-high); }
-.badge-medium { background: rgba(234, 179, 8, 0.15); color: var(--color-medium); }
-.badge-low { background: rgba(59, 130, 246, 0.15); color: var(--color-low); }
-.badge-info { background: rgba(6, 182, 212, 0.15); color: var(--color-info); }
-.badge-client-safe { background: rgba(168, 85, 247, 0.15); color: var(--color-client-safe); }
+.badge-critical    { color: var(--badge-critical-ink); background: var(--color-critical); border-color: var(--color-critical); }
+.badge-high        { color: var(--badge-high-ink);     background: var(--color-high);     border-color: var(--color-high); }
+.badge-medium      { color: var(--badge-medium-ink);   background: var(--color-medium);   border-color: var(--color-medium); }
+.badge-low         { color: var(--color-low);         background: rgba(255, 255, 255, 0.03); }
+.badge-info        { color: var(--color-info);        background: rgba(255, 255, 255, 0.02); }
+.badge-client-safe { color: var(--color-client-safe); background: rgba(48, 209, 88, 0.09); }
 
 .status-badge {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  align-items: flex-start;
+  gap: 7px;
+  font-family: var(--font-mono);
 }
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+/* Verification reads as a two-line stack, primary verdict on top, the dim
+   qualifier ("skipped", "no verifier", "active") beneath, so it never wraps
+   mid-phrase and mirrors the path cell's filename/dir rhythm. */
+.status-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; line-height: 1.25; }
+.status-primary { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status-qual { font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+.dot-live         { background: var(--color-live); box-shadow: 0 0 8px var(--color-live); }
+.dot-revoked      { background: var(--color-revoked); }
+.dot-dead         { background: var(--color-dead); }
+.dot-rate-limited { background: var(--color-rate-limited); }
+.dot-error        { background: var(--color-error); }
+.dot-unverifiable { background: var(--color-unverifiable); }
+.dot-skipped      { background: var(--color-skipped); }
+/* "Not attempted" (skipped / unverifiable): render as an UNKNOWN, a hollow
+   dashed ring, never a solid (and never green) dot, so an unverified secret is
+   visibly "we did not check this", not mistaken for checked-and-safe. */
+.dot-unattempted {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 1.5px dashed var(--text-muted);
+  width: 8px;
+  height: 8px;
 }
-
-.dot-live { background-color: var(--color-live); box-shadow: 0 0 6px var(--color-live); }
-.dot-revoked { background-color: var(--color-revoked); }
-.dot-dead { background-color: var(--color-dead); }
-.dot-rate-limited { background-color: var(--color-rate-limited); }
-.dot-error { background-color: var(--color-error); }
-.dot-unverifiable { background-color: var(--color-unverifiable); }
-.dot-skipped { background-color: var(--color-skipped); }
-
-/* Row Expansion Details block */
-.details-row {
-  display: none;
-  background: rgba(0, 0, 0, 0.15);
-}
-
-[data-theme="win98"] .details-row {
-  background: #e0e0e0;
-}
-
-.details-row.active {
-  display: table-row;
-}
-
-.details-container {
-  padding: 20px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-}
-
-@media (max-width: 768px) {
-  .details-container {
-    grid-template-columns: 1fr;
-  }
-}
-
-.details-block h3 {
-  font-size: 12px;
-  text-transform: uppercase;
+.status-badge--unattempted .status-primary {
   color: var(--text-muted);
-  margin-bottom: 10px;
-  letter-spacing: 0.5px;
+  text-decoration: underline dotted var(--border-hi);
+  text-underline-offset: 3px;
 }
+.verify-note { color: var(--accent-primary); font-size: 10px; font-family: var(--font-mono); }
 
-.details-list {
+/* Scan-coverage panel, honest account of what was NOT fully scanned, so a
+   findings list is never silently read as a clean bill of health. */
+.coverage-panel { margin-bottom: 18px; }
+.coverage-dot {
+  display: inline-block;
+  width: 9px; height: 9px; border-radius: 50%;
+  margin-right: 7px; vertical-align: middle;
+}
+.coverage-dot--clean  { background: var(--color-client-safe); box-shadow: 0 0 8px var(--color-client-safe); }
+.coverage-dot--gapped { background: var(--color-high); box-shadow: 0 0 9px var(--color-high); }
+.coverage-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  margin: 2px 0 0;
+  line-height: 1.5;
+}
+.coverage-panel.coverage-gapped .coverage-note { color: var(--color-high); }
+.coverage-list {
+  list-style: none;
+  margin: 13px 0 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-
-.details-item {
+.coverage-item {
   display: flex;
+  align-items: baseline;
+  gap: 11px;
+  font-size: 13px;
+  border-left: 2px solid var(--color-high);
+  padding-left: 10px;
+}
+.coverage-count {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--color-high);
+  min-width: 2.4em;
+  text-align: right;
+}
+.coverage-reason { color: var(--text); }
+
+/* ---- 11 · DETAILS ROW ---------------------------------------------------- */
+.details-row { display: none; }
+.details-row.active { display: table-row; }
+.details-row td { background: var(--bg-inset); }
+.details-container {
+  padding: 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+@media (max-width: 768px) {
+  .details-container { grid-template-columns: 1fr; }
+}
+.details-block h3 {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+  letter-spacing: 0.11em;
+  font-family: var(--font-mono);
+}
+.details-list { display: flex; flex-direction: column; gap: 9px; }
+.details-item { display: flex; align-items: baseline; font-size: 12px; }
+.details-lbl {
+  width: 150px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.details-val {
+  color: var(--text);
+  word-break: break-all;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
-.details-lbl {
-  width: 140px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.details-val {
-  color: var(--text-main);
-  word-break: break-all;
-  font-family: monospace;
-}
-
-[data-theme="win98"] .details-val, [data-theme="win98"] .details-lbl {
-  color: #000;
-}
-
-/* Credential redaction display */
 .cred-box {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: rgba(0, 0, 0, 0.2);
-  padding: 6px 10px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--bg);
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
 }
 
-[data-theme="win98"] .cred-box {
-  border: 2px solid;
-  border-style: inset;
-  background: #fff;
-  border-radius: 0px;
+/* ---- 12 · MISC ----------------------------------------------------------- */
+.copy-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  margin-left: 8px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  transition: color <DUR> ease, border-color <DUR> ease, transform <DUR> ease;
 }
+.copy-btn:hover { color: var(--text); border-color: var(--accent-primary); }
+.copy-btn.copied { color: var(--accent-primary); border-color: var(--accent-primary); }
+.copy-btn:active { transform: scale(0.94); }
 
 .empty-state {
   text-align: center;
-  padding: 40px;
+  padding: 48px;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+
+#cnt-live.has-live { color: var(--accent-primary); }
+
+/* Risk-posture hero, one-glance verdict for the whole scan. */
+.risk-hero {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 20px 24px;
+  margin-bottom: 22px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-primary);
+}
+.risk-hero-verdict {
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.risk-hero-verdict.danger { color: var(--accent-primary); }
+.risk-hero-verdict.warn   { color: var(--color-high); }
+.risk-hero-verdict.ok     { color: var(--text-muted); }
+.risk-hero.danger { border-left-color: var(--color-critical); }
+.risk-hero.warn   { border-left-color: var(--color-high); }
+.risk-hero.ok     { border-left-color: var(--border-hi); }
+.risk-hero-sub {
+  font-family: var(--font-mono);
+  font-size: 12px;
   color: var(--text-muted);
-  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.scan-metadata {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1px;
+  margin: -8px 0 22px;
+  border: 1px solid var(--border);
+  background: var(--border);
+}
+.metadata-item {
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--bg-elev);
+}
+.metadata-label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.metadata-value {
+  display: block;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1024px) {
+  .scan-metadata { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  body { padding: 24px 14px; }
+  header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .theme-selector { width: 100%; }
+  .theme-btn { flex: 1; }
+  .scan-metadata { grid-template-columns: 1fr; }
+  .risk-hero { padding: 16px; }
+  .risk-hero-verdict { font-size: 19px; }
+}
+
+/* Sortable column headers (interactivity wired by JS; markup stays static). */
+thead th.sortable { cursor: pointer; user-select: none; transition: color <DUR> ease; }
+thead th.sortable:hover { color: var(--text); }
+.sort-ind { color: var(--accent-primary); margin-left: 4px; }
+
+/* ---- 13 · MOTION (custom; reduced-motion aware) -------------------------- */
+@keyframes kh-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes kh-row-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes kh-expand-in {
+  from { opacity: 0; transform: translateY(-5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes kh-pulse-live {
+  0%, 100% { box-shadow: 0 0 4px var(--color-live); }
+  50%      { box-shadow: 0 0 10px var(--color-live), 0 0 16px var(--color-live); }
+}
+@keyframes kh-pulse-critical {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0); }
+  50%      { box-shadow: 0 0 11px 0 rgba(255, 77, 77, 0.5); }
+}
+@keyframes kh-scanline {
+  0%   { transform: translateY(-2px); opacity: 0.85; }
+  92%  { opacity: 0.85; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* On-load scanner sweep: a single keyhog-yellow line crosses the page. */
+  .report-container::after {
+    content: "";
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent-primary), transparent);
+    box-shadow: 0 0 14px var(--accent-line);
+    z-index: 999;
+    pointer-events: none;
+    animation: kh-scanline <DUR> cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+
+  header { animation: kh-rise <DUR> cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .risk-hero { animation: kh-rise <DUR> cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: <DUR>; }
+  .sidebar .card { animation: kh-rise <DUR> cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .sidebar .card:nth-child(1) { animation-delay: <DUR>; }
+  .sidebar .card:nth-child(2) { animation-delay: <DUR>; }
+  .sidebar .card:nth-child(3) { animation-delay: <DUR>; }
+  .sidebar .card:nth-child(4) { animation-delay: <DUR>; }
+  .findings-panel .card { animation: kh-rise <DUR> cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: <DUR>; }
+
+  /* Rows cascade only on the first render (JS adds the class once). */
+  .finding-row--enter {
+    animation: kh-row-in <DUR> cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--kh-i, 0) * <DUR>);
+  }
+  .details-row.active .details-container {
+    animation: kh-expand-in <DUR> cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .dot-live { animation: kh-pulse-live <DUR> ease-in-out infinite; }
+  .badge-critical { animation: kh-pulse-critical <DUR> ease-in-out infinite; }
+
+  .card:hover { transform: translateY(-1px); border-color: var(--border-hi); }
+
+  .chart-segment {
+    transition: stroke-dasharray <DUR> cubic-bezier(0.16, 1, 0.3, 1),
+                stroke-dashoffset <DUR> cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .chart-bar-fill { transition: width <DUR> cubic-bezier(0.16, 1, 0.3, 1); }
+}
+
+@media print {
+  :root,
+  [data-theme="keyhog"],
+  [data-theme="light"],
+  [data-theme="matrix"] {
+    --bg: #ffffff;
+    --bg-elev: #ffffff;
+    --bg-inset: #f5f5f5;
+    --border: #cfcfcf;
+    --border-hi: #999999;
+    --text: #000000;
+    --text-muted: #444444;
+    --text-dim: #666666;
+    --accent-primary: #000000;
+    --accent-ink: #ffffff;
+    --grid-line: transparent;
+  }
+  body { padding: 0; background: #ffffff; }
+  body::before,
+  .report-container::after,
+  .theme-selector,
+  .filter-group,
+  .search-input,
+  .copy-btn {
+    display: none !important;
+  }
+  .report-container { max-width: none; }
+  header,
+  .risk-hero,
+  .scan-metadata,
+  .card {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+  .dashboard-grid,
+  .details-container,
+  .scan-metadata {
+    grid-template-columns: 1fr;
+  }
+  .sidebar { display: none; }
+  .findings-panel { width: 100%; }
+  .details-row.active { display: table-row; }
+  table { font-size: 10px; }
 }
 
   </style>
@@ -647,16 +876,65 @@ tbody tr:hover {
   <!-- Header -->
   <header>
     <div class="logo-section">
-      <h1>Key<span>Hog</span></h1>
-      <p>Developer-first Secret Scanning Report &bull; Verified Findings</p>
+      <div class="logo-lockup">
+        <div class="logo-word"><span class="logo-name">keyhog</span><span class="logo-sub">secret scan report</span></div>
+      </div>
     </div>
     <div class="theme-selector" aria-label="Report theme">
-      <button class="theme-btn active" onclick="setTheme('obsidian')" aria-label="Use Obsidian theme" aria-pressed="true">OBSIDIAN</button>
-      <button class="theme-btn" onclick="setTheme('cyberpunk')" aria-label="Use Cyberpunk theme" aria-pressed="false">CYBERPUNK</button>
-      <button class="theme-btn" onclick="setTheme('win98')" aria-label="Use Windows 98 theme" aria-pressed="false">WIN98</button>
+      <button class="theme-btn active" onclick="setTheme('keyhog')" aria-label="Use KeyHog theme" aria-pressed="true">KEYHOG</button>
+      <button class="theme-btn" onclick="setTheme('light')" aria-label="Use Light theme" aria-pressed="false">LIGHT</button>
       <button class="theme-btn" onclick="setTheme('matrix')" aria-label="Use Matrix theme" aria-pressed="false">MATRIX</button>
     </div>
   </header>
+
+  <!-- Risk posture hero, one-glance verdict for the whole scan -->
+  <div class="risk-hero" id="risk-hero">
+    <div class="risk-hero-verdict" id="risk-verdict">: </div>
+    <div class="risk-hero-sub" id="risk-sub" aria-live="polite">analyzing findings…</div>
+  </div>
+
+  <div class="scan-metadata" id="scan-metadata" style="display: none;">
+    <div class="metadata-item">
+      <span class="metadata-label">Target</span>
+      <span class="metadata-value" id="meta-targets">: </span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Generated</span>
+      <span class="metadata-value" id="meta-generated">: </span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Duration</span>
+      <span class="metadata-value" id="meta-duration">: </span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Scan ID</span>
+      <span class="metadata-value" id="meta-scan-id">: </span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Scan Status</span>
+      <span class="metadata-value" id="meta-scan-status">: </span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Backend recovery</span>
+      <span class="metadata-value" id="meta-backend-recovery">: </span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Source Chunks</span>
+      <span class="metadata-value" id="meta-source-chunks">: </span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Source Bytes</span>
+      <span class="metadata-value" id="meta-source-bytes">: </span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Detectors</span>
+      <span class="metadata-value" id="meta-detectors">: </span>
+    </div>
+    <div class="metadata-item">
+      <span class="metadata-label">Version</span>
+      <span class="metadata-value" id="meta-version">: </span>
+    </div>
+  </div>
 
   <!-- Content Grid -->
   <div class="dashboard-grid">
@@ -673,6 +951,10 @@ tbody tr:hover {
           <div class="stat-box">
             <div class="stat-val" id="cnt-live" style="color: var(--color-live);">0</div>
             <div class="stat-lbl">Live</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="cnt-not-checked" style="color: var(--color-skipped);">0</div>
+            <div class="stat-lbl">Not checked</div>
           </div>
         </div>
         <div class="metric-row">
@@ -691,16 +973,28 @@ tbody tr:hover {
       <div class="card">
         <h2>Severity Breakdown</h2>
         <div class="chart-container">
-          <svg class="chart-svg" viewBox="0 0 42 42" aria-hidden="true" focusable="false">
+          <svg class="chart-svg" viewBox="0 0 42 42" role="img" aria-label="Severity breakdown donut chart">
+            <defs>
+              <filter id="seg-glow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="0.9" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <circle class="chart-track" cx="21" cy="21" r="15.91549430918954"></circle>
             <circle class="chart-hole" cx="21" cy="21" r="15.91549430918954"></circle>
-            <circle class="chart-segment" id="seg-critical" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-critical)"></circle>
-            <circle class="chart-segment" id="seg-high" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-high)"></circle>
-            <circle class="chart-segment" id="seg-medium" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-medium)"></circle>
-            <circle class="chart-segment" id="seg-low" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-low)"></circle>
-            <circle class="chart-segment" id="seg-info" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-info)"></circle>
-            <circle class="chart-segment" id="seg-client" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-client-safe)"></circle>
+            <g filter="url(#seg-glow)">
+              <circle class="chart-segment" id="seg-critical" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-critical)"></circle>
+              <circle class="chart-segment" id="seg-high" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-high)"></circle>
+              <circle class="chart-segment" id="seg-medium" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-medium)"></circle>
+              <circle class="chart-segment" id="seg-low" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-low)"></circle>
+              <circle class="chart-segment" id="seg-info" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-info)"></circle>
+              <circle class="chart-segment" id="seg-client" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-client-safe)"></circle>
+            </g>
+            <text class="chart-center-num" id="chart-total" x="21" y="20.4" text-anchor="middle" dominant-baseline="central">0</text>
+            <text class="chart-center-lbl" x="21" y="25.6" text-anchor="middle" dominant-baseline="central">findings</text>
           </svg>
         </div>
+        <div class="chart-legend" id="severity-legend" aria-hidden="true"></div>
       </div>
 
       <!-- Top Services Chart -->
@@ -725,13 +1019,27 @@ tbody tr:hover {
       </div>
     </div>
 
+    <!-- Main column: the coverage banner and the findings table, stacked so the
+         table owns the full content width instead of the narrow sidebar track. -->
+    <div class="main-content">
+    <!-- Scan coverage, honest account of what was NOT fully scanned, so "N
+         findings" is never read as a clean bill of health when files went
+         unscanned (unreadable, over-size, truncated archives, …). -->
+    <div class="coverage-panel" id="coverage-panel" style="display: none;">
+      <div class="card">
+        <h2><span class="coverage-dot" id="coverage-dot"></span> Scan Coverage</h2>
+        <div class="coverage-note" id="coverage-note"></div>
+        <ul class="coverage-list" id="coverage-list"></ul>
+      </div>
+    </div>
+
     <!-- Findings Listing -->
     <div class="findings-panel">
       <div class="card">
         <h2>Findings</h2>
 
         <!-- Search bar -->
-        <input type="text" class="search-input" id="search-box" placeholder="Search by file path, detector ID, service..." aria-label="Search findings by file path, detector, or service" aria-describedby="result-count" oninput="applyFilters()">
+        <input type="text" class="search-input" id="search-box" placeholder="Search by file path, detector ID, service..." aria-label="Search findings by file path, detector, or service" aria-describedby="result-count" oninput="applyFiltersDebounced()">
         <div class="result-count" id="result-count" aria-live="polite" aria-atomic="true">Showing 0 findings.</div>
 
         <!-- Status Filter Tabs -->
@@ -766,11 +1074,14 @@ tbody tr:hover {
         </div>
       </div>
     </div>
+    </div>
   </div>
 </div>
 
   <script>
     const rawFindings = [];
+    const coverageGaps = [];
+    const scanMetadata = {"scan_id":"da0c759572177510febec16503dfa68b","scan_status":"success","static_recovery":{"schema_version":"static-recovery-v1","supported":0,"unsupported":0,"erroneous":0,"reasons":{}},"keyhog_version":"0.5.50","git_hash":"de8f69ed84c92f4b59ffa05c68bb9fb51e9d1eb3","detector_digest":"923-34acf0b8588ab785","config_digest":"b2bc78d25e9331dc","resolved_scan":{"schema_version":1,"preset":"default","effective":{"detector_corpus_custom_count":"0","detector_corpus_digest":"f9022577538f6750761882825582969b31c1d09a340c21cb9906a8f78c1568da","detector_corpus_embedded_count":"923","detector_corpus_mode":"embedded","detector_corpus_source":"embedded","entropy_bpe_max_bytes_per_token":"2.2","entropy_bpe_override":"unset","entropy_enabled":"true","entropy_in_source_files":"false","entropy_ml_authoritative":"true","entropy_threshold":"4.5","generic_keyword_low_entropy":"true","known_prefixes_digest":"6896b27724024105737d74aaeeb38c7b3583471bb24bf935506e1037eb9f386b","max_decode_bytes":"524288","max_decode_depth":"10","max_matches_per_chunk":"1000","min_confidence":"0.4","min_secret_len":"16","ml_enabled":"true","ml_weight":"detector-policy","penalize_test_paths":"true","placeholder_keywords_digest":"283e54296c2451e59c411990bfb7b32cb80d63ff9b1785fad74ecdde00f0c581","scan_comments":"false","secret_keywords_digest":"0fd91f3f6c3e6426d182885ca4338e554332550f2299c01b5a9982ea116384e8","test_keywords_digest":"24803da6d2a6e722bd33fded7156edd35fae4b6d1e1fe58787a81351f4004b9e","unicode_normalization":"true","validate_decode":"true"},"overrides":[]},"generated_at":"2026-08-03T16:12:01","scan_started_at":"2026-08-03T16:12:01","scan_finished_at":"2026-08-03T16:12:01","duration_ms":570,"targets":["path:\u002ftmp\u002f.tmpIgBjCd\u002ftree"],"source_chunks_scanned":3,"source_bytes_scanned":146,"detector_count":923};
 // Master scripting file for the KeyHog interactive report. Zero external dependencies.
 
 let activeStatusTab = 'all';
@@ -791,6 +1102,127 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// True when the reader has asked the OS to minimize motion. Every autoplaying
+// animation short-circuits to its final state when this is set.
+function prefersReducedMotion() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+// Count a stat from 0 up to its value with an ease-out curve. Used only on the
+// initial render (the "settle" moment); filtering sets the number directly so
+// it stays responsive on every keystroke.
+function animateCount(el, target) {
+  if (prefersReducedMotion() || target <= 0) {
+    el.textContent = String(target);
+    return;
+  }
+  const duration = 850;
+  const startTime = performance.now();
+  function step(now) {
+    const progress = Math.min((now - startTime) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = String(Math.round(target * eased));
+    if (progress < 1) {
+      requestAnimationFrame(step);
+    } else {
+      el.textContent = String(target);
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+function setStat(id, value, animate) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (animate) {
+    animateCount(el, value);
+  } else {
+    el.textContent = String(value);
+  }
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = String(value);
+}
+
+function formatDuration(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n < 0) return 'unknown';
+  if (n < 1000) return `${Math.round(n)} ms`;
+  if (n < 60000) return `${(n / 1000).toFixed(n < 10000 ? 2 : 1)} s`;
+  const minutes = Math.floor(n / 60000);
+  const seconds = Math.round((n % 60000) / 1000);
+  return `${minutes}m ${seconds}s`;
+}
+
+function renderScanMetadata() {
+  const panel = document.getElementById('scan-metadata');
+  if (!panel || !scanMetadata) return;
+  const targets = Array.isArray(scanMetadata.targets) && scanMetadata.targets.length > 0
+    ? scanMetadata.targets.join(', ')
+    : 'not recorded';
+  setText('meta-targets', targets);
+  setText('meta-generated', scanMetadata.generated_at || scanMetadata.scan_finished_at || 'not recorded');
+  setText('meta-duration', formatDuration(scanMetadata.duration_ms));
+  setText('meta-scan-id', scanMetadata.scan_id || 'not recorded');
+  setText('meta-scan-status', scanMetadata.scan_status || 'not recorded');
+  const recoveries = Array.isArray(scanMetadata.backend_recoveries)
+    ? scanMetadata.backend_recoveries
+    : [];
+  const recoveredEvents = recoveries.reduce((sum, row) => sum + Number(row.events || 0), 0);
+  const recoveredBytes = recoveries.reduce((sum, row) => sum + Number(row.recovered_bytes || 0), 0);
+  setText('meta-backend-recovery', recoveredEvents > 0
+    ? `${recoveredEvents} event(s), ${recoveredBytes} byte(s) recovered`
+    : 'none');
+  setText('meta-source-chunks', scanMetadata.source_chunks_scanned ?? 'not recorded');
+  setText('meta-source-bytes', scanMetadata.source_bytes_scanned ?? 'not recorded');
+  setText('meta-detectors', scanMetadata.detector_count ?? 'not recorded');
+  setText('meta-version', scanMetadata.keyhog_version || 'not recorded');
+  panel.style.display = '';
+}
+
+// Copy the text of the value element immediately before the button. Reads the
+// sibling's textContent rather than taking the value through an attribute, so
+// no scan-derived bytes are ever interpolated into markup or a handler.
+function copyFrom(btn) {
+  const src = btn.previousElementSibling;
+  if (!src) return;
+  const text = src.textContent;
+  const flash = () => {
+    btn.classList.add('copied');
+    const original = btn.textContent;
+    btn.textContent = 'Copied';
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.textContent = original;
+    }, 1400);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(flash, () => fallbackCopy(text, flash));
+  } else {
+    fallbackCopy(text, flash);
+  }
+}
+
+// Clipboard fallback for reports opened from disk (file://, no secure context).
+function fallbackCopy(text, onDone) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand('copy');
+    onDone();
+  } catch (err) {
+    /* clipboard genuinely unavailable; leave the value on screen to copy by hand */
+  }
+  document.body.removeChild(ta);
 }
 
 function setTheme(theme) {
@@ -860,6 +1292,15 @@ function toggleDetailsFromKeyboard(event, idx) {
   }
 }
 
+// The search box fires on every keystroke; each run rebuilds the whole table,
+// so coalesce rapid typing into one render. Checkboxes/tabs call applyFilters
+// directly (a single discrete event needs no debounce (it stays instant)).
+let filterDebounceTimer = null;
+function applyFiltersDebounced() {
+  if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
+  filterDebounceTimer = setTimeout(applyFilters, 110);
+}
+
 function applyFilters() {
   const searchQuery = document.getElementById('search-box').value.toLowerCase().trim();
 
@@ -882,7 +1323,7 @@ function applyFilters() {
     const status = f.verification.toLowerCase();
     if (activeStatusTab === 'live' && !status.startsWith('live')) return false;
     if (activeStatusTab === 'revoked' && !status.startsWith('revoked')) return false;
-    if (activeStatusTab === 'unverifiable' && !status.startsWith('unverifiable')) return false;
+    if (activeStatusTab === 'unverifiable' && !verificationIsUnattempted(status)) return false;
 
     // Text search check
     if (searchQuery) {
@@ -897,14 +1338,172 @@ function applyFilters() {
     return true;
   });
 
-  renderTable(filtered);
-  renderMetrics(filtered);
+  renderTable(filtered, false);
+  renderMetrics(filtered, false);
 }
 
-function renderTable(findings) {
+// Lead with the worst: severity descending, then live credentials first within
+// a severity (a confirmed-live Critical is the single most urgent line in the
+// report). Pure presentation order (does not touch counts or filtering).
+const SEVERITY_RANK = { 'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'info': 4, 'client-safe': 5 };
+function findingOrderKey(f) {
+  const sev = SEVERITY_RANK[(f.severity || '').toLowerCase()];
+  const sevRank = sev === undefined ? 9 : sev;
+  const liveRank = (f.verification || '').toLowerCase().startsWith('live') ? 0 : 1;
+  return sevRank * 2 + liveRank;
+}
+
+// Column sort. Default = severity (worst first). Header click (wired in
+// DOMContentLoaded) re-sorts; the <th> markup stays static, so the structural
+// test is unaffected and sorting is pure progressive enhancement.
+const COLUMN_SORTERS = {
+  detector: f => (f.detector_name || '').toLowerCase(),
+  service: f => (f.service || '').toLowerCase(),
+  path: f => `${(f.location.file_path || '').toLowerCase()}:${String(f.location.line || 0).padStart(9, '0')}`,
+  severity: f => findingOrderKey(f),
+  verification: f => (f.verification || '').toLowerCase(),
+};
+const COLUMN_KEYS = ['detector', 'service', 'path', 'severity', 'verification'];
+let sortState = { key: 'severity', dir: 1 }; // severity ascending == worst first
+
+function setSort(key) {
+  if (sortState.key === key) {
+    sortState.dir = -sortState.dir;
+  } else {
+    sortState.key = key;
+    sortState.dir = 1;
+  }
+  updateSortIndicators();
+  applyFilters();
+}
+
+function updateSortIndicators() {
+  document.querySelectorAll('thead th').forEach((th, i) => {
+    const existing = th.querySelector('.sort-ind');
+    if (existing) existing.remove();
+    if (COLUMN_KEYS[i] === sortState.key) {
+      const ind = document.createElement('span');
+      ind.className = 'sort-ind';
+      ind.textContent = sortState.dir === 1 ? '↑' : '↓';
+      th.appendChild(ind);
+      th.setAttribute('aria-sort', sortState.dir === 1 ? 'ascending' : 'descending');
+    } else {
+      th.removeAttribute('aria-sort');
+    }
+  });
+}
+
+function wireSortableHeaders() {
+  document.querySelectorAll('thead th').forEach((th, i) => {
+    const key = COLUMN_KEYS[i];
+    if (!key) return;
+    th.classList.add('sortable');
+    th.setAttribute('role', 'button');
+    th.tabIndex = 0;
+    th.addEventListener('click', () => setSort(key));
+    th.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSort(key); }
+    });
+  });
+  updateSortIndicators();
+}
+
+// One-glance risk verdict, computed from the FULL scan (not the filtered view).
+function renderRiskHero(allFindings) {
+  const hero = document.getElementById('risk-hero');
+  const verdict = document.getElementById('risk-verdict');
+  const sub = document.getElementById('risk-sub');
+  if (!hero || !verdict || !sub) return;
+  const total = allFindings.length;
+  const live = allFindings.filter(f => (f.verification || '').toLowerCase().startsWith('live')).length;
+  const critical = allFindings.filter(f => (f.severity || '').toLowerCase() === 'critical').length;
+  const notChecked = allFindings.filter(f => verificationIsUnattempted(f.verification)).length;
+  let label, state;
+  if (total === 0) { label = 'No secrets detected'; state = 'ok'; }
+  else if (live > 0) { label = `${live} live secret${live === 1 ? '' : 's'} exposed`; state = 'danger'; }
+  else if (critical > 0) { label = `${critical} critical finding${critical === 1 ? '' : 's'}`; state = 'danger'; }
+  else if (notChecked === total) { label = `${total} finding${total === 1 ? '' : 's'} · liveness not checked`; state = 'warn'; }
+  else { label = `${total} finding${total === 1 ? '' : 's'} detected`; state = ''; }
+  verdict.textContent = label;
+  verdict.className = 'risk-hero-verdict' + (state ? ' ' + state : '');
+  hero.className = 'risk-hero' + (state ? ' ' + state : '');
+  // Always surface "not checked" so unverified exposure is never read as safe.
+  const parts = [`${total} total`, `${live} live`];
+  if (notChecked > 0) parts.push(`${notChecked} not checked`);
+  parts.push(`${critical} critical`);
+  sub.textContent = parts.join(' · ');
+}
+
+// Human-readable verification label. Critically distinguishes "we tried and it
+// is dead/revoked" from "we did NOT attempt verification" (skipped /
+// unverifiable), so an unverified secret is never silently read as a safe one.
+function verificationLabel(raw) {
+  const k = (raw || '').toLowerCase();
+  if (k.startsWith('live')) return 'Live · active';
+  if (k.startsWith('revoked')) return 'Revoked';
+  if (k.startsWith('dead')) return 'Dead';
+  if (k.startsWith('rate_limited')) return 'Rate-limited';
+  if (k.startsWith('error')) return 'Verify failed';
+  if (k.startsWith('unverifiable')) return 'Not checked · no verifier';
+  if (k.startsWith('skipped')) return 'Not checked · skipped';
+  return raw;
+}
+function verificationIsUnattempted(raw) {
+  const k = (raw || '').toLowerCase();
+  return k.startsWith('skipped') || k.startsWith('unverifiable');
+}
+
+const SEVERITY_BADGE_CLASSES = {
+  critical: 'badge-critical',
+  high: 'badge-high',
+  medium: 'badge-medium',
+  low: 'badge-low',
+  info: 'badge-info',
+  'client-safe': 'badge-client-safe',
+};
+function severityBadgeClass(raw) {
+  return SEVERITY_BADGE_CLASSES[(raw || '').toLowerCase()] || 'badge-info';
+}
+
+const SERVICE_BAR_COLORS = [
+  'var(--color-critical)',
+  'var(--color-high)',
+  'var(--color-medium)',
+  'var(--color-client-safe)',
+  'var(--color-live)',
+];
+function serviceBarColor(rank) {
+  return SERVICE_BAR_COLORS[rank % SERVICE_BAR_COLORS.length];
+}
+
+function verificationDotClass(raw) {
+  const statusKey = (raw || '').toLowerCase();
+  if (statusKey.startsWith('live')) return 'dot-live';
+  if (statusKey.startsWith('revoked')) return 'dot-revoked';
+  if (statusKey.startsWith('dead')) return 'dot-dead';
+  if (statusKey.startsWith('rate_limited')) return 'dot-rate-limited';
+  if (statusKey.startsWith('error')) return 'dot-error';
+  if (statusKey.startsWith('unverifiable')) return 'dot-unverifiable';
+  return 'dot-skipped';
+}
+
+function renderTable(findings, isInitial) {
   const tbody = document.getElementById('findings-table-body');
   const emptyView = document.getElementById('empty-view');
   const resultCount = document.getElementById('result-count');
+
+  // Sort a copy so the caller's array (and rawFindings) is never mutated.
+  // Decorate-sort-undecorate: compute each row's sort key ONCE (n builds)
+  // instead of recomputing it inside the O(n log n) comparator (~2·n·log n
+  // builds). The path column's key is a freshly-built string, so on a large
+  // report that redundant work is the gap between a snappy and a janky column
+  // sort. The index tiebreak keeps the order stable.
+  const sorter = COLUMN_SORTERS[sortState.key] || COLUMN_SORTERS.severity;
+  const dir = sortState.dir;
+  const ordered = findings
+    .map((f, i) => ({ f, k: sorter(f), i }))
+    .sort((a, b) => (a.k < b.k ? -dir : a.k > b.k ? dir : a.i - b.i))
+    .map((d) => d.f);
 
   tbody.innerHTML = '';
   if (resultCount) {
@@ -920,10 +1519,17 @@ function renderTable(findings) {
 
   emptyView.style.display = 'none';
 
-  findings.forEach((finding, idx) => {
+  ordered.forEach((finding, idx) => {
     const tr = document.createElement('tr');
     tr.id = `finding-row-${idx}`;
     tr.className = 'finding-row';
+    // Stagger the entrance only on the first render; capped so a huge result
+    // set doesn't trail a multi-second cascade. Filtering re-renders without
+    // the class, so search stays instant.
+    if (isInitial) {
+      tr.classList.add('finding-row--enter');
+      tr.style.setProperty('--kh-i', Math.min(idx, 22));
+    }
     tr.tabIndex = 0;
     tr.setAttribute('role', 'button');
     tr.setAttribute('aria-expanded', 'false');
@@ -933,36 +1539,62 @@ function renderTable(findings) {
     tr.onkeydown = event => toggleDetailsFromKeyboard(event, idx);
 
     const line = finding.location.line ? `:${finding.location.line}` : '';
-    const filePath = finding.location.file_path ? escapeHtml(finding.location.file_path) : '&lt;unknown&gt;';
-    const shortPath = `${filePath}${line}`;
-
-    const sevKey = finding.severity.toLowerCase();
-    const statusKey = finding.verification.toLowerCase();
-
-    // Status visual elements
-    let statusClass = 'dot-skipped';
-    if (statusKey.startsWith('live')) statusClass = 'dot-live';
-    else if (statusKey.startsWith('revoked')) statusClass = 'dot-revoked';
-    else if (statusKey.startsWith('dead')) statusClass = 'dot-dead';
-    else if (statusKey.startsWith('rate_limited')) statusClass = 'dot-rate-limited';
-    else if (statusKey.startsWith('error')) statusClass = 'dot-error';
-    else if (statusKey.startsWith('unverifiable')) statusClass = 'dot-unverifiable';
-
-    // Format verification status readable name
-    let statusText = finding.verification;
-    if (statusText.length > 25) {
-      statusText = statusText.substring(0, 22) + '...';
+    // Split the path so the filename, what the eye scans for, is emphasised
+    // while the directory recedes and the line number reads as an accent. Both
+    // segments are escaped independently; no scan-derived bytes skip escaping.
+    const rawPath = finding.location.file_path || '';
+    const sepIdx = Math.max(rawPath.lastIndexOf('/'), rawPath.lastIndexOf('\\'));
+    const dirPart = sepIdx >= 0 ? rawPath.slice(0, sepIdx + 1) : '';
+    const basePart = sepIdx >= 0 ? rawPath.slice(sepIdx + 1) : rawPath;
+    // Filename first (bold, never split) with the line as an accent; the
+    // directory follows on a dimmed second line that left-truncates to its
+    // meaningful tail (…/parent/) with the full path on hover, so a column of
+    // long absolute paths stays compact and scannable instead of wrapping into
+    // tall mid-word blocks.
+    const lineHtml = line ? `<span class="kh-path-line">${escapeHtml(line)}</span>` : '';
+    const fullTitle = escapeHtml(rawPath + line);
+    // Collapse a long absolute directory to its last two segments (…/parent/child/)
+    // so the row stays one tidy line; the full path is on hover (title).
+    let dirDisplay = dirPart;
+    const segs = dirPart.split(/[/\\]/).filter(Boolean);
+    if (segs.length > 2 && dirPart.length > 42) {
+      dirDisplay = '…/' + segs.slice(-2).join('/') + '/';
     }
+    const shortPath = rawPath
+      ? `<span class="kh-path-file" title="${fullTitle}">${escapeHtml(basePart)}${lineHtml}</span>`
+        + (dirPart ? `<span class="kh-path-dir" title="${fullTitle}">${escapeHtml(dirDisplay)}</span>` : '')
+      : '<span class="kh-path-file">&lt;unknown&gt;</span>';
+
+    // Status visual elements use closed class maps. Text remains the escaped
+    // original value, but no scan-derived bytes can enter a class attribute.
+    const severityClass = severityBadgeClass(finding.severity);
+    let statusClass = verificationDotClass(finding.verification);
+
+    // Format verification status as a clear, human-readable label, then split
+    // the "primary · qualifier" form so it can render as a compact two-line
+    // stack (primary verdict / dim qualifier) instead of wrapping mid-phrase.
+    const statusText = verificationLabel(finding.verification);
+    const statusParts = statusText.split(' · ');
+    const statusPrimary = statusParts[0];
+    const statusQual = statusParts.length > 1 ? statusParts.slice(1).join(' · ') : '';
+    const unattempted = verificationIsUnattempted(finding.verification);
+    if (unattempted) statusClass += ' dot-unattempted';
+    const statusTitle = unattempted
+      ? 'Verification was NOT attempted, treat this secret as potentially live'
+      : 'Verification result';
 
     tr.innerHTML = `
       <td><strong>${escapeHtml(finding.detector_name)}</strong><br><small style="color: var(--text-muted); font-size:10px;">${escapeHtml(finding.detector_id)}</small></td>
-      <td><span style="font-family:monospace; font-size:12px;">${escapeHtml(finding.service)}</span></td>
-      <td><span style="font-family:monospace;">${shortPath}</span></td>
-      <td><span class="badge badge-${sevKey}">${escapeHtml(finding.severity)}</span></td>
+      <td><span class="kh-service" title="${escapeHtml(finding.service)}">${escapeHtml(finding.service)}</span></td>
+      <td><span class="kh-path">${shortPath}</span></td>
+      <td><span class="badge ${severityClass}">${escapeHtml(finding.severity)}</span></td>
       <td>
-        <span class="status-badge">
+        <span class="status-badge${unattempted ? ' status-badge--unattempted' : ''}" title="${escapeHtml(statusText)}">
           <span class="status-dot ${statusClass}"></span>
-          <span style="font-size:11px;">${escapeHtml(statusText)}</span>
+          <span class="status-text">
+            <span class="status-primary">${escapeHtml(statusPrimary)}</span>
+            ${statusQual ? `<span class="status-qual">${escapeHtml(statusQual)}</span>` : ''}
+          </span>
         </span>
       </td>
     `;
@@ -978,7 +1610,8 @@ function renderTable(findings) {
     const commitStr = finding.location.commit ? escapeHtml(finding.location.commit) : 'none';
     const authorStr = finding.location.author ? escapeHtml(finding.location.author) : 'none';
     const dateStr = finding.location.date ? escapeHtml(finding.location.date) : 'none';
-    const confidenceStr = finding.confidence ? `${Math.round(finding.confidence * 100)}%` : 'none';
+    const confidenceStr = (finding.confidence != null && Number.isFinite(finding.confidence))
+      ? `${Math.round(finding.confidence * 100)}%` : 'none';
 
     // Format companion strings
     let metadataItems = '';
@@ -1003,8 +1636,8 @@ function renderTable(findings) {
                   <span id="cred-text-${idx}">${credRedacted}</span>
                 </span>
               </div>
-              <div class="details-item"><span class="details-lbl">Credential Hash:</span><span class="details-val">${escapeHtml(finding.credential_hash)}</span></div>
-              <div class="details-item"><span class="details-lbl">Verification Result:</span><span class="details-val">${escapeHtml(finding.verification)}</span></div>
+              <div class="details-item"><span class="details-lbl">Credential Hash:</span><span class="details-val">${escapeHtml(finding.credential_hash)}</span><button class="copy-btn" type="button" onclick="copyFrom(this)" aria-label="Copy credential hash to clipboard">Copy</button></div>
+              <div class="details-item"><span class="details-lbl">Verification:</span><span class="details-val">${escapeHtml(verificationLabel(finding.verification))}${verificationIsUnattempted(finding.verification) ? ' <span class="verify-note">, not attempted; treat as potentially live</span>' : ''}</span></div>
               <div class="details-item"><span class="details-lbl">Confidence:</span><span class="details-val">${confidenceStr}</span></div>
             </div>
           </div>
@@ -1032,34 +1665,45 @@ function renderTable(findings) {
   });
 }
 
-function renderMetrics(findings) {
+function renderMetrics(findings, isInitial) {
+  // Single pass instead of eight full .filter() scans of the finding set.
   const total = findings.length;
-  const live = findings.filter(f => f.verification.toLowerCase().startsWith('live')).length;
-  const critical = findings.filter(f => f.severity.toLowerCase() === 'critical').length;
-  const high = findings.filter(f => f.severity.toLowerCase() === 'high').length;
-  const medium = findings.filter(f => f.severity.toLowerCase() === 'medium').length;
-  const low = findings.filter(f => f.severity.toLowerCase() === 'low').length;
-  const info = findings.filter(f => f.severity.toLowerCase() === 'info').length;
-  const clientSafe = findings.filter(f => f.severity.toLowerCase() === 'client-safe').length;
+  let live = 0, notChecked = 0;
+  const sevCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0, 'client-safe': 0 };
+  findings.forEach(f => {
+    const v = (f.verification || '').toLowerCase();
+    if (v.startsWith('live')) live++;
+    if (verificationIsUnattempted(f.verification)) notChecked++;
+    const s = (f.severity || '').toLowerCase();
+    if (s in sevCounts) sevCounts[s]++;
+  });
+  const { critical, high, medium, low, info } = sevCounts;
+  const clientSafe = sevCounts['client-safe'];
 
-  document.getElementById('cnt-total').innerText = total;
-  document.getElementById('cnt-live').innerText = live;
-  document.getElementById('cnt-critical').innerText = critical;
-  document.getElementById('cnt-high').innerText = high;
+  // Count up on the initial render (the "settle" moment); set directly when
+  // re-rendering from a filter so the numbers track typing without jitter.
+  setStat('cnt-total', total, isInitial);
+  setStat('cnt-live', live, isInitial);
+  setStat('cnt-not-checked', notChecked, isInitial);
+  setStat('cnt-critical', critical, isInitial);
+  setStat('cnt-high', high, isInitial);
+  const liveEl = document.getElementById('cnt-live');
+  if (liveEl) liveEl.classList.toggle('has-live', live > 0);
 
   // Render Severity Donut Chart Segments
   const segments = [
-    { el: 'seg-critical', val: critical },
-    { el: 'seg-high', val: high },
-    { el: 'seg-medium', val: medium },
-    { el: 'seg-low', val: low },
-    { el: 'seg-info', val: info },
-    { el: 'seg-client', val: clientSafe }
+    { el: 'seg-critical', val: critical, label: 'Critical', cssVar: '--color-critical' },
+    { el: 'seg-high', val: high, label: 'High', cssVar: '--color-high' },
+    { el: 'seg-medium', val: medium, label: 'Medium', cssVar: '--color-medium' },
+    { el: 'seg-low', val: low, label: 'Low', cssVar: '--color-low' },
+    { el: 'seg-info', val: info, label: 'Info', cssVar: '--color-info' },
+    { el: 'seg-client', val: clientSafe, label: 'Client-safe', cssVar: '--color-client-safe' }
   ];
 
   let cumulative = 0;
   segments.forEach(seg => {
     const circle = document.getElementById(seg.el);
+    if (!circle) return;
     if (total === 0 || seg.val === 0) {
       circle.style.strokeDasharray = '0 100';
       circle.style.strokeDashoffset = '0';
@@ -1067,11 +1711,35 @@ function renderMetrics(findings) {
     }
 
     const pct = (seg.val / total) * 100;
-    // Donut SVG circumference is 2 * pi * r = 2 * 3.14159 * 15.91549 = 100
-    circle.style.strokeDasharray = `${pct} ${100 - pct}`;
+    // Donut SVG circumference is 2 * pi * r = 2 * 3.14159 * 15.91549 = 100. Leave
+    // a hairline gap between arcs so adjacent severities stay visually separate.
+    const gap = segments.filter(s => s.val > 0).length > 1 ? 0.8 : 0;
+    circle.style.strokeDasharray = `${Math.max(pct - gap, 0.4)} ${100 - Math.max(pct - gap, 0.4)}`;
     circle.style.strokeDashoffset = `${cumulative}`;
     cumulative -= pct; // subtract to move clockwise
   });
+
+  // Center readout: the total, counted up.
+  const totalEl = document.getElementById('chart-total');
+  if (totalEl) {
+    if (isInitial) animateCount(totalEl, total);
+    else totalEl.textContent = total;
+  }
+
+  // Colour-keyed legend (non-zero severities only) so the breakdown is legible
+  // even when a single severity dominates the ring.
+  const legend = document.getElementById('severity-legend');
+  if (legend) {
+    legend.innerHTML = '';
+    segments.filter(s => s.val > 0).forEach(s => {
+      const item = document.createElement('span');
+      item.className = 'legend-item';
+      item.innerHTML =
+        `<span class="legend-swatch" style="background:var(${s.cssVar})"></span>` +
+        `${s.label} <span class="legend-count">${s.val}</span>`;
+      legend.appendChild(item);
+    });
+  }
 
   // Render Top Services Bars
   const services = {};
@@ -1093,17 +1761,18 @@ function renderMetrics(findings) {
 
   const maxVal = sortedServices[0][1];
 
-  sortedServices.forEach(([name, count]) => {
+  sortedServices.forEach(([name, count], rank) => {
     const pct = (count / maxVal) * 100;
     const item = document.createElement('div');
     item.className = 'chart-bar-item';
+    item.style.setProperty('--service-bar-color', serviceBarColor(rank));
     item.innerHTML = `
       <div class="chart-bar-label">
         <span><strong>${escapeHtml(name)}</strong></span>
         <span>${count}</span>
       </div>
       <div class="chart-bar-track">
-        <div class="chart-bar-fill" style="width: ${pct}%; background-color: var(--accent-primary);"></div>
+        <div class="chart-bar-fill" style="width: ${pct}%;"></div>
       </div>
     `;
     serviceContainer.appendChild(item);
@@ -1111,9 +1780,48 @@ function renderMetrics(findings) {
 }
 
 // Initial setup
+// Render the scan-coverage panel: an honest account of what was NOT fully
+// scanned. Absence of a panel must never be read as "fully clean", so the panel
+// is shown either way (listing the gaps, or stating none were recorded).
+function renderCoverageGaps() {
+  const panel = document.getElementById('coverage-panel');
+  const note = document.getElementById('coverage-note');
+  const list = document.getElementById('coverage-list');
+  const dot = document.getElementById('coverage-dot');
+  if (!panel || !note || !list) return;
+  const gaps = (typeof coverageGaps !== 'undefined' && Array.isArray(coverageGaps))
+    ? coverageGaps.filter(g => g && g.count > 0)
+    : [];
+  panel.style.display = '';
+  list.innerHTML = '';
+  if (gaps.length === 0) {
+    panel.classList.add('coverage-clean');
+    if (dot) dot.classList.add('coverage-dot--clean');
+    note.textContent = 'No coverage gaps recorded, every reachable file was scanned.';
+    return;
+  }
+  panel.classList.add('coverage-gapped');
+  if (dot) dot.classList.add('coverage-dot--gapped');
+  const totalAffected = gaps.reduce((n, g) => n + g.count, 0);
+  note.textContent =
+    `${totalAffected} item(s) across ${gaps.length} categor${gaps.length === 1 ? 'y' : 'ies'} were NOT fully scanned. ` +
+    `findings below are not a complete picture of this target.`;
+  gaps.sort((a, b) => b.count - a.count).forEach(g => {
+    const li = document.createElement('li');
+    li.className = 'coverage-item';
+    li.innerHTML = `<span class="coverage-count">${g.count}</span> <span class="coverage-reason"></span>`;
+    li.querySelector('.coverage-reason').textContent = g.reason;
+    list.appendChild(li);
+  });
+}
+
 window.addEventListener('DOMContentLoaded', () => {
-  renderTable(rawFindings);
-  renderMetrics(rawFindings);
+  renderRiskHero(rawFindings);
+  renderScanMetadata();
+  wireSortableHeaders();
+  renderTable(rawFindings, true);
+  renderMetrics(rawFindings, true);
+  renderCoverageGaps();
 });
 
   </script>

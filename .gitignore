@@ -47,6 +47,7 @@ tools/diff_bench/
 # Pre-existing local-noise paths
 **/__pycache__/
 **/.pytest_cache/
+.ruff_cache/
 *.pyc
 .keyhog-cache.json
 detectors/.keyhog-cache.json
@@ -77,6 +78,7 @@ detectors/.keyhog-cache.json
 /test_memmem
 /test_tokio_id.rs
 /wp.pid
+/*.sock
 /test_out.log
 /-
 

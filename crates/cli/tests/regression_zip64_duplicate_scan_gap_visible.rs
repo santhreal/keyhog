@@ -29,10 +29,10 @@ fn zip64_duplicate_scan_gap_is_visible_to_operator() {
         .output()
         .expect("spawn keyhog");
 
-    assert!(
-        output.status.success(),
-        "zip64 duplicate-detection degrade with a readable sibling should complete; status={:?} stderr={}",
+    assert_eq!(
         output.status.code(),
+        Some(13),
+        "an unreadable ZIP64 archive must fail closed as incomplete coverage even when a readable sibling exists; stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
 
@@ -71,10 +71,10 @@ fn zip64_duplicate_scan_gap_is_visible_in_sarif_notifications() {
         .output()
         .expect("spawn keyhog");
 
-    assert!(
-        output.status.success(),
-        "zip64 duplicate-detection degrade with a readable sibling should complete; status={:?} stderr={}",
+    assert_eq!(
         output.status.code(),
+        Some(13),
+        "SARIF output must retain the incomplete-coverage exit for an unreadable ZIP64 archive; stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
 

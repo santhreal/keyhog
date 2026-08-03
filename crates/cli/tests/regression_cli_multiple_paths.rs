@@ -272,8 +272,8 @@ fn slack_finding_exact_identity_fields() {
     );
     assert_eq!(
         f["confidence"].as_f64(),
-        Some(0.9),
-        "the slack bot token reports confidence 0.9"
+        Some(1.0),
+        "the literal-anchored Slack bot token in assignment context reports confidence 1.0"
     );
     assert_eq!(
         f["credential_hash"].as_str(),

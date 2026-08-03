@@ -123,16 +123,19 @@ fn allowed_env_read(rel: &str, name: &str) -> bool {
     }
 }
 
-/// Dynamic reads are limited to credential-provider helpers and the two
-/// authenticated autoroute timing-fixture variables. The fixture is compiled
-/// into `ci-lean` so integration tests can drive the real binary, but its
-/// authorization sentinel prevents it from becoming an ambient backend policy.
+/// Dynamic reads are limited to credential-provider helpers and authenticated
+/// autoroute timing/workload fixture pairs. The fixtures compile into `ci-lean`
+/// so integration tests can drive the real binary, but authorization sentinels
+/// prevent them from becoming ambient backend policy.
 fn allowed_dynamic_env_read(rel: &str, line: &str) -> bool {
     rel.starts_with("crates/sources/src/s3/")
         || rel == "crates/sources/src/gcs.rs"
         || (rel == "crates/cli/src/orchestrator/dispatch/backend/calibration.rs"
             && (line.contains("std::env::var_os(TEST_TIMING_FIXTURE_ENV)")
                 || line.contains("std::env::var(TEST_TIMING_FIXTURE_AUTH_ENV)")))
+        || (rel == "crates/cli/src/subcommands/calibrate_autoroute.rs"
+            && (line.contains("std::env::var_os(FIXTURE_ENV)")
+                || line.contains("std::env::var(AUTH_ENV)")))
 }
 
 #[test]
@@ -156,6 +159,10 @@ fn env_policy_parser_catches_aliases_and_dynamic_names() {
     assert!(allowed_dynamic_env_read(
         "crates/cli/src/orchestrator/dispatch/backend/calibration.rs",
         "let fixture = std::env::var_os(TEST_TIMING_FIXTURE_ENV);"
+    ));
+    assert!(allowed_dynamic_env_read(
+        "crates/cli/src/subcommands/calibrate_autoroute.rs",
+        "let fixture = std::env::var_os(FIXTURE_ENV);"
     ));
     assert!(!allowed_dynamic_env_read(
         "crates/cli/src/orchestrator/dispatch/backend/calibration.rs",

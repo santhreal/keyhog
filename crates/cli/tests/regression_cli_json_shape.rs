@@ -5,9 +5,9 @@
 //! Each element is a serialized `VerifiedFinding` whose custom `Serialize` impl
 //! (finding.rs) emits, in this exact set:
 //!   detector_id, detector_name, service, severity, credential_redacted,
-//!   credential_hash, location{source,file_path,line,offset,commit,author,date},
-//!   verification, metadata, additional_locations, (confidence if Some),
-//!   remediation.
+//!   credential_hash, companions_redacted,
+//!   location{source,file_path,line,offset,commit,author,date}, verification,
+//!   metadata, additional_locations, (confidence and entropy if Some), remediation.
 //!
 //! One secret is planted: a GitHub classic PAT (`ghp_` + 36 alnum) that fires
 //! the `github-classic-pat` detector (critical / github). Every assertion pins
@@ -50,20 +50,21 @@ const CRED_HASH: &str = "7b85310a29300230c865bc48ca1836f15b81bd50ac85e8c0785e814
 /// The complete set of top-level keys a finding object may carry. `confidence`
 /// is optional (skipped when the ML score is None on ML-less builds); every
 /// other key is required.
-const REQUIRED_KEYS: [&str; 11] = [
+const REQUIRED_KEYS: [&str; 12] = [
     "detector_id",
     "detector_name",
     "service",
     "severity",
     "credential_redacted",
     "credential_hash",
+    "companions_redacted",
     "location",
     "verification",
     "metadata",
     "additional_locations",
     "remediation",
 ];
-const OPTIONAL_KEYS: [&str; 1] = ["confidence"];
+const OPTIONAL_KEYS: [&str; 2] = ["confidence", "entropy"];
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))

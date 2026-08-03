@@ -285,8 +285,10 @@ fn ak_p4_cli_hot_paths_stay_linear() {
         std::fs::read_to_string(root.join("src/subcommands/scan.rs")).expect("read scan command");
 
     assert!(
-        orchestrator.contains("detectors.retain(|d| !disabled_detectors.contains(d.id.as_str()))"),
-        "disabled detector filtering must use the resolved HashSet, not a linear search per detector"
+        orchestrator.contains(".intersection(&known_ids)")
+            && orchestrator
+                .contains("detectors.retain(|detector| !removed.contains(&detector.id));"),
+        "disabled detector closure must use HashSet membership instead of a linear search per detector"
     );
     assert!(
         !orchestrator.contains("disabled_detectors.iter().any(|id| id == &d.id)"),

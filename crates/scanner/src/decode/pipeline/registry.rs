@@ -9,7 +9,6 @@ use crate::decode::url::{
     HtmlNamedEntityDecoder, HtmlNumericEntityDecoder, MimeEncodedWordDecoder, OctalEscapeDecoder,
     QuotedPrintableDecoder, UnicodeEscapeDecoder, UrlDecoder,
 };
-#[cfg(feature = "decode")]
 use crate::decode::DecodeAdmission;
 #[cfg(any(feature = "decode", test))]
 use crate::decode::DecodeAdmissionSketch;
@@ -54,7 +53,6 @@ impl RegisteredDecoder {
         }
     }
 
-    #[cfg(any(feature = "decode", test))]
     pub(super) fn admission(
         &self,
         chunk: &keyhog_core::Chunk,

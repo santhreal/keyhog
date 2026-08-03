@@ -5,11 +5,12 @@
 //! CONTROL-BYTE sanitization contract observed end-to-end through the shipped
 //! binary over a piped stdin.
 //!
-//! Every value below was observed by running the real binary; nothing is
-//! guessed. The piped secret is a Slack **bot** token
-//! (`xoxb-` + two 13-digit groups + 24-char secret) which fires
-//! `slack-bot-token` (service `slack`, severity `critical`, confidence 0.9)
-//! deterministically on the path-less stdin chunk.
+//! Every value below is asserted through the real binary. The piped secret is
+//! a Slack **bot** token (`xoxb-` + two 13-digit groups + 24-character secret)
+//! which fires `slack-bot-token` (service `slack`, severity `critical`,
+//! confidence 1.0) deterministically on the path-less stdin chunk. Synthetic
+//! fixture suppression is disabled explicitly so multi-finding tests exercise
+//! repeated-detector behavior rather than known-example policy.
 //!
 //! Control-byte truth (proven here, not asserted from memory): the scan path
 //! STRIPS non-whitespace C0 control bytes (0x08 backspace, 0x0C form-feed)
@@ -30,14 +31,14 @@ use std::process::{Command, Stdio};
 /// `xoxb-` + 13-digit + 13-digit + 24 alnum secret.
 const TOKEN: &str = "xoxb-1234567890123-1234567890123-abcdefghijklmnopqrstuvwx";
 /// A second, distinct valid bot token (different numeric groups + secret).
-const TOKEN2: &str = "xoxb-9999999999999-8888888888888-zzzzyyyyxxxxwwwwvvvvuuuu";
+const TOKEN2: &str = "xoxb-9876543210987-8765432109876-Ab3Cd5Ef7Gh9Jk2Lm4Np6Qr8";
 
 const DETECTOR_ID: &str = "slack-bot-token";
 const DETECTOR_NAME: &str = "Slack Bot Token";
 /// SHA-256 of the exact `TOKEN` bytes (`credential_hash` == sha256(value)).
 const TOKEN_SHA256: &str = "a8dd917042994f6c6f183c6f0718ab4241065165b299050b51302d3167cc3901";
 /// SHA-256 of the exact `TOKEN2` bytes.
-const TOKEN2_SHA256: &str = "d77b50464417994d02dc631feb18fce261d187534c4d451f49665a61aee95145";
+const TOKEN2_SHA256: &str = "3b67577d54380c9ef8ac608f95f411da22f05eff991898431d88e5cde9e9749c";
 const REDACTED: &str = "xoxb...uvwx";
 
 fn binary() -> PathBuf {
@@ -54,6 +55,7 @@ fn run(input: &[u8], backend: &str, format: &str) -> (Option<i32>, String, Strin
             "--daemon=off",
             "--backend",
             backend,
+            "--no-suppress-test-fixtures",
             "--stdin",
             "--format",
             format,
@@ -167,34 +169,41 @@ fn stdin_two_secrets_yield_two_findings_distinct_hash_line_offset() {
     let f = json_findings(&out);
     assert_eq!(f.len(), 2, "two distinct tokens -> two findings, got {f:?}");
 
+    let first = f
+        .iter()
+        .find(|finding| {
+            finding
+                .get("credential_hash")
+                .and_then(|value| value.as_str())
+                == Some(TOKEN_SHA256)
+        })
+        .expect("TOKEN finding");
+    let second = f
+        .iter()
+        .find(|finding| {
+            finding
+                .get("credential_hash")
+                .and_then(|value| value.as_str())
+                == Some(TOKEN2_SHA256)
+        })
+        .expect("TOKEN2 finding");
     assert_eq!(
-        f[0].get("credential_hash").and_then(|x| x.as_str()),
-        Some(TOKEN_SHA256),
-        "first finding hashes TOKEN"
-    );
-    assert_eq!(
-        f[0].pointer("/location/line").and_then(|x| x.as_u64()),
+        first.pointer("/location/line").and_then(|x| x.as_u64()),
         Some(1),
         "first token on line 1"
     );
     assert_eq!(
-        f[0].pointer("/location/offset").and_then(|x| x.as_u64()),
+        first.pointer("/location/offset").and_then(|x| x.as_u64()),
         Some(0),
         "first token at offset 0"
     );
-
     assert_eq!(
-        f[1].get("credential_hash").and_then(|x| x.as_str()),
-        Some(TOKEN2_SHA256),
-        "second finding hashes the DISTINCT TOKEN2, not a repeat of TOKEN"
-    );
-    assert_eq!(
-        f[1].pointer("/location/line").and_then(|x| x.as_u64()),
+        second.pointer("/location/line").and_then(|x| x.as_u64()),
         Some(2),
         "second token on line 2"
     );
     assert_eq!(
-        f[1].pointer("/location/offset").and_then(|x| x.as_u64()),
+        second.pointer("/location/offset").and_then(|x| x.as_u64()),
         Some(58),
         "second token at offset 58 (57-byte token1 + newline)"
     );

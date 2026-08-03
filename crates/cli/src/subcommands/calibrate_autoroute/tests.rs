@@ -182,6 +182,17 @@ fn plain_route_probe_has_sparse_real_phase2_work_without_changing_size() {
     );
 }
 
+/// The bounded E2E fixture must retain every bucket used by its post-calibration
+/// scans while leaving the production 96-workload plan independently intact.
+#[test]
+fn bounded_e2e_workload_fixture_keeps_verified_buckets() {
+    let plan = bounded_e2e_workload_plan(core_workload_plan()).expect("bounded workload fixture");
+    assert_eq!(
+        plan.iter().map(Workload::label).collect::<Vec<_>>(),
+        ["1 KiB workload", "4 KiB workload", "64 KiB workload"]
+    );
+}
+
 #[test]
 fn workload_plan_matches_the_installer_ladder() {
     let plan = core_workload_plan();

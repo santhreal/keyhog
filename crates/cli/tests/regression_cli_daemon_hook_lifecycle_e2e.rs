@@ -627,7 +627,7 @@ fn daemon_start_status_stop_reports_exact_lines_and_codes() {
     );
     assert_eq!(
         *scope_line,
-        "scan scope: warm stdin/single-file requests only; start with --mass for bounded client-acquired source batches."
+        "scan scope: warm stdin/single-file requests only; start with --mass for bounded client-acquired source batches. Warm daemon requests return before baseline, Merkle state, verification, lockdown, and per-request scanner policy; those post-steps run in-process."
     );
     assert_eq!(
         *policy_line,

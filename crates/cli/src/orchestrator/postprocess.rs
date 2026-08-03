@@ -41,10 +41,11 @@ pub(crate) fn offline_finding_metadata(
 /// it silently drops real leaks from any user repo whose tree contains a
 /// `tests/` or `fixtures/` directory: and that is "every repo with tests."
 ///
-/// The marker is keyhog's own root `Cargo.toml`: it lists `crates/scanner` plus
-/// `crates/cli` as workspace members and contains the literal `"keyhog` (from
-/// the embedded crate names). We resolve the keyhog repo root ONCE per process
-/// by walking up from the binary's CWD, then for each finding check whether
+/// The marker is keyhog's own root `Cargo.toml`: it lists `crates/scanner` and
+/// `crates/cli` as workspace members and declares the canonical
+/// `https://github.com/santhreal/keyhog` repository.
+/// We resolve the keyhog repository root once per process by walking up from
+/// the binary's current working directory. For each finding, we then check
 /// its file path is a descendant of that root. A finding scanned from
 /// `/tmp/some-other-project/` stays unsuppressed even if the user happens to
 /// be running `keyhog` while CWD is inside the keyhog repo.
@@ -65,7 +66,7 @@ fn keyhog_repo_root() -> Option<&'static std::path::Path> {
                         let head: String = text.chars().take(4096).collect();
                         if head.contains("crates/scanner")
                             && head.contains("crates/cli")
-                            && head.contains("\"keyhog")
+                            && head.contains("repository = \"https://github.com/santhreal/keyhog\"")
                         {
                             return Some(match std::fs::canonicalize(&dir) {
                                 Ok(canonical) => canonical,

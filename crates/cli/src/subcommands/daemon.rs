@@ -229,7 +229,9 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
             } else {
                 println!(
                     "scan scope: warm stdin/single-file requests only; start with --mass for \
-                     bounded client-acquired source batches."
+                     bounded client-acquired source batches. Warm daemon requests return before baseline, \
+                     Merkle state, verification, lockdown, and per-request scanner policy; those post-steps \
+                     run in-process."
                 );
             }
             if backend_policy == "autoroute" {

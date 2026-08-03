@@ -52,6 +52,7 @@ const REAL_SUBCOMMANDS: &[&str] = &[
     "completion",
     "backend",
     "doctor",
+    "bloom-diagnostic",
     "update",
     "repair",
     "uninstall",
@@ -215,8 +216,8 @@ fn help_lists_every_real_subcommand() {
 }
 
 /// clap's auto-generated `help` subcommand is present in the `Commands:` block,
-/// and the block lists exactly the 17 real subcommands plus `help`: 18 entries,
-/// no more, no fewer. A silently-added or hidden-then-unhidden subcommand fails.
+/// and the block lists exactly the real subcommands plus `help`, no more and no
+/// fewer. A silently-added or hidden-then-unhidden subcommand fails.
 #[test]
 fn help_lists_exactly_real_subcommands_plus_help() {
     let (code, stdout, _e) = run(&["--help"]);

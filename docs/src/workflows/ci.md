@@ -60,8 +60,34 @@ reachable commit additions:
   run: keyhog scan --git-history . --format sarif --output keyhog.sarif
 ```
 
-Install and retain that report with the same authenticated installer and
-exit-preserving wrapper shown in [Generic shell](#generic-shell).
+Install KeyHog before these steps. Capture the exact scan status, upload the
+report, then restore that status after the upload:
+
+```yaml
+- name: Scan reachable history
+  id: keyhog
+  shell: bash
+  run: |
+    scan_status=0
+    keyhog scan --git-history . --format sarif --output keyhog.sarif \
+      || scan_status=$?
+    printf 'exit-code=%s\n' "$scan_status" >> "$GITHUB_OUTPUT"
+- name: Upload KeyHog SARIF
+  if: always()
+  uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+  with:
+    sarif_file: keyhog.sarif
+- name: Enforce scan result
+  if: always()
+  env:
+    KEYHOG_EXIT: ${{ steps.keyhog.outputs.exit-code }}
+  shell: bash
+  run: exit "$KEYHOG_EXIT"
+```
+
+The capture step exits successfully so the upload can run. The enforcement
+step then restores every KeyHog finding, live-credential, panic, backend,
+system, and coverage status without translating it to a generic failure.
 
 ## Exclusions and adoption policy
 

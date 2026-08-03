@@ -368,7 +368,7 @@ fn sarif_driver_is_keyhog_and_rule_has_exact_name() {
 // ---------------------------------------------------------------------------
 
 /// `explain github-classic-pat` prints the detector id header, exact name,
-/// service, and the `Critical` severity label.
+/// service, and the canonical lowercase `critical` severity label.
 #[test]
 fn explain_prints_exact_name_service_and_severity() {
     let (code, stdout, stderr) = explain(&[DETECTOR_ID]);
@@ -387,8 +387,10 @@ fn explain_prints_exact_name_service_and_severity() {
         "explain must print the Service line and github rotation block; got {stdout}"
     );
     assert!(
-        stdout.contains("Severity:") && stdout.contains("Critical"),
-        "explain must print the Severity line with value Critical; got {stdout}"
+        stdout
+            .lines()
+            .any(|line| line.trim() == "Severity:  critical"),
+        "explain must print the Severity line with canonical value critical; got {stdout}"
     );
 }
 
