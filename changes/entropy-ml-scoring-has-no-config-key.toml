@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Correct the configuration reference, which advertised a `no_entropy_ml_scoring` key that has never existed. Writing it into `.keyhog.toml` fails closed as an unknown key; the knob is CLI-only."
+crates = ["cli"]

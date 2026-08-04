@@ -1,0 +1,3 @@
+category = "Added"
+summary = "Check every `.keyhog.toml` key and table in the configuration reference against the real config schema, reading the accepted field list out of the schema itself rather than restating it, so a renamed or removed key fails the build instead of failing the reader with an unknown-key error."
+crates = ["cli"]

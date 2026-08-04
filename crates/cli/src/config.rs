@@ -311,3 +311,7 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     outcome.allowlist_max_expires_days = allowlist_max_expires_days;
     outcome
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/config_reference_keys.rs"]
+mod config_reference_keys;
