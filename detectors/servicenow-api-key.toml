@@ -31,11 +31,13 @@ weak_anchor = true
 regex = "(?:servicenow|SN)[._-]?(?:pass|password|pwd)[=:\\s\"'']+([a-zA-Z0-9!@#$%^&*._-]{8,})"
 description = "ServiceNow password with context anchor"
 group = 1
+required_literals = ["servicenow", "sn"]
 
 [[detector.patterns]]
 regex = '''(?:servicenow|(?:^|[^A-Za-z])SN)[._-]?(?:token|api[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "ServiceNow API token with context anchor"
 group = 1
+required_literals = ["servicenow", "sn"]
 
 [[detector.tests]]
 test_positive = "servicenow_instance=dev12345.service-now.com"

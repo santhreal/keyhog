@@ -21,6 +21,7 @@ keywords = ["africastalking", "AFRICASTALKING", "africa", "AT_API_KEY", "apiKey"
 regex = '''(?:africas?talking|AFRICAS?TALKING|(?:^|[^A-Za-z])at|(?:^|[^A-Za-z])AT)[_.-]?(?:api|API)[_.-]?(?:key|KEY)?[=:\s"\' ]+([a-zA-Z0-9_-]{32,})'''
 description = "Africa's Talking API Key with context anchor"
 group = 1
+required_literals = ["api"]
 
 [[detector.patterns]]
 regex = '''(?:apiKey|ApiKey)["\' ]?\s*[:=]\s*["\' ]?([a-zA-Z0-9_-]{32,})["\' ]?.*(?:africas?talking|AFRICAS?TALKING)'''

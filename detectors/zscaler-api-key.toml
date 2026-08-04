@@ -16,6 +16,7 @@ keywords = ["ZSCALER", "zscaler", "ZPA", "zpa", "ZIA"]
 regex = '''(?:ZSCALER|zscaler|(?:^|[^A-Za-z])ZPA|(?:^|[^A-Za-z])zpa)[_\-\s]*(?:CLIENT[_\-\s]*)?ID[=:\s"'']+([a-zA-Z0-9_-]{24,36})'''
 description = "Zscaler client ID with context anchor"
 group = 1
+required_literals = ["zpa", "zscaler"]
 
 [[detector.companions]]
 name = "zscaler_client_secret"

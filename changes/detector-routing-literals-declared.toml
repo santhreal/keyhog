@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Stop one detector's pattern from silently costing another detector's recall. A pattern with no literal prefix and no declared routing literal leaves the shared prefilter nothing to route it on, and the loss lands elsewhere: twenty-three patterns across the corpus now declare a literal the compiler proves is required by every match, including the Datadog application key pattern itself."
+crates = ["scanner"]

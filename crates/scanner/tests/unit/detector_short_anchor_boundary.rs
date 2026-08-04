@@ -38,21 +38,16 @@ const GUARD: &str = "(?:^|[^A-Za-z])";
 
 /// Patterns still admitting a short bare token with no guard.
 ///
-/// Twenty-eight of the original thirty-one are fixed. The three below are
-/// BLOCKED, not forgotten: guarding either of `wix-api-credentials` patterns 0
-/// and 1 silently stops `datadog-application-key` from reporting eight
-/// credentials on the mirror corpus, a cross-detector effect with no business
-/// existing at all. Pattern 2 is listed with them because the detector should
-/// be guarded as one unit once the cause is fixed. See KH-1584.
+/// Empty. All thirty-one across nineteen detectors carry the guard now,
+/// including the three `wix-api-credentials` patterns that were blocked while
+/// guarding them suppressed `datadog-application-key`; that turned out to be a
+/// missing `required_literals` declaration rather than anything about wix, and
+/// is fixed.
 ///
-/// `wix` is also the weakest case on its own merits: it is the vendor's whole
-/// name rather than an abbreviation that can end a longer word, so the false
-/// positive it admits needs a contrived identifier like `UNIWIX`.
-const KNOWN_UNANCHORED: &[(&str, usize)] = &[
-    ("wix-api-credentials", 0), // wix, WIX - blocked by KH-1584
-    ("wix-api-credentials", 1), // wix, WIX - blocked by KH-1584
-    ("wix-api-credentials", 2), // wix, WIX - blocked by KH-1584
-];
+/// The list stays rather than being deleted because a new detector arriving
+/// with a bare short anchor should fail against something that already exists.
+const KNOWN_UNANCHORED: &[(&str, usize)] = &[];
+
 
 fn detector_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors")

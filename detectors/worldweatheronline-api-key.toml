@@ -16,6 +16,7 @@ keywords = ["WORLDWEATHERONLINE", "worldweatheronline", "WORLD_WEATHER_ONLINE", 
 regex = '''(?:WORLDWEATHERONLINE|worldweatheronline|WORLD[_\-\s]*WEATHER[_\-\s]*ONLINE|(?:^|[^A-Za-z])WWO)[_\-\s]*(?:API[_\-\s]*)?KEY[=:\s"'']+([a-zA-Z0-9]{20,})'''
 description = "World Weather Online API key with context anchor"
 group = 1
+required_literals = ["weather", "worldweatheronline", "wwo"]
 
 [[detector.patterns]]
 regex = "(?:key|KEY)[=:\\s\"'']+([a-zA-Z0-9]{20,})[^a-zA-Z0-9].*worldweatheronline"

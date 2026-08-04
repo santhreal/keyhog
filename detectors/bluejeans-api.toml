@@ -16,6 +16,7 @@ keywords = ["bluejeans", "BLUEJEANS", "bjn", "bluejeans.com"]
 regex = '''(?:bluejeans|(?:^|[^A-Za-z])BJN)[_\-\s]*(?:api[_\-\s]*key|access[_\-\s]*token|secret)["\'\s]*[=:]["\'\s]*([a-zA-Z0-9]{32,})'''
 description = "BlueJeans API credential with context anchor"
 group = 1
+required_literals = ["bjn", "bluejeans"]
 
 [[detector.patterns]]
 regex = '''(?:BLUEJEANS[_\-\s]*API[_\-\s]*KEY|BLUEJEANS[_\-\s]*TOKEN|BJN[_\-\s]*SECRET)["\'\s]*[=:]["\'\s]*([a-zA-Z0-9]{32,})'''

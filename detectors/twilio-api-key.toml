@@ -26,6 +26,7 @@ keywords = [
 
 [[detector.patterns]]
 regex = "SK[a-f0-9]{32}"
+required_literals = ["sk"]
 description = "Twilio API key SID (SK prefix + exactly 32 hex chars)"
 
 [[detector.companions]]

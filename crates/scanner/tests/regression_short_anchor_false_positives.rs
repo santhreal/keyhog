@@ -189,9 +189,6 @@ fn a_short_anchor_after_a_letter_never_fires() {
     let h32 = "5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e";
     let hexu = "5D8C1A9F4E2B6C8D3A5E";
 
-    // `wix-api-credentials` is absent on purpose: guarding it suppresses
-    // `datadog-application-key` on unrelated input (KH-1584), so it is still
-    // unguarded and would fail this table.
     for (detector, text) in [
         ("azure-client-secret", format!("XARM_CLIENT_SECRET={a32}")),
         ("bluejeans-api", format!("WEBBJN_API_KEY={a32}")),
@@ -203,6 +200,7 @@ fn a_short_anchor_after_a_letter_never_fires() {
         ("sap-api-key", format!("WHATSAP_CLIENT_SECRET={a32}")),
         ("servicenow-api-key", format!("JSN_TOKEN={a32}")),
         ("singapore-govtech-api-key", format!("MSG_API_KEY={a32}")),
+        ("wix-api-credentials", format!("UNIWIX APP_ID={UUID}")),
         ("workday-api-key", format!("FWD_TOKEN={a32}")),
         ("worldweatheronline-api-key", format!("SHOWWO_API_KEY={h32}")),
         ("zscaler-api-key", format!("XZPA_CLIENT_ID={a32}")),
@@ -234,6 +232,7 @@ fn a_short_anchor_after_a_separator_still_fires() {
         ("powerbi-credentials", format!("MY_PBI_CLIENT_ID={UUID}")),
         ("sap-api-key", "MY_SAP_CLIENT_ID=SapClientId12".to_string()),
         ("singapore-govtech-api-key", format!("MY_SG_API_KEY={a32}")),
+        ("wix-api-credentials", format!("MY_WIX_APP_ID={UUID}")),
         ("worldweatheronline-api-key", format!("MY_WWO_API_KEY={h32}")),
         ("zscaler-api-key", format!("MY_ZPA_CLIENT_ID={a32}")),
         ("cmcom-api-key", format!("MY_CM_PRODUCT_TOKEN={UUID}")),

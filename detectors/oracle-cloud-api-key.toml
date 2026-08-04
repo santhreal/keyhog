@@ -33,6 +33,7 @@ group = 1
 regex = '''(?:(?:^|[^A-Za-z])OCI|oracle)[._-]?(?:api[_\-\s]*key|private[_\-\s]*key|key[_\-\s]*file)[=:\s"'']+([a-zA-Z0-9_/.-]+)'''
 description = "Oracle Cloud API key file path"
 group = 1
+required_literals = ["oci", "oracle"]
 weak_anchor = true
 
 [[detector.patterns]]

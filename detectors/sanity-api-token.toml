@@ -20,6 +20,7 @@ description = "Sanity.io API token (sk prefix with project ID and secret)"
 regex = '''(?:SANITY|sanity)[_\-\s]*(?:API[_\-\s]*TOKEN|TOKEN)[=:\s"']+(sk[a-zA-Z0-9]{8,16}[a-f0-9]{24})'''
 description = "Sanity.io API token with context anchor"
 group = 1
+required_literals = ["sk"]
 
 [[detector.companions]]
 name = "sanity_project_id"

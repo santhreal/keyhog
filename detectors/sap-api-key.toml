@@ -30,6 +30,7 @@ required_literals = ["client", "secret"]
 regex = '''(?:(?:^|[^A-Za-z])sap)[._-]?(?:api[_\-\s]*key|token)[=:\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "SAP API key with context anchor"
 group = 1
+required_literals = ["sap"]
 
 [[detector.patterns]]
 regex = "(?:sap)[._-]?(?:username|user)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
