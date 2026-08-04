@@ -1,7 +1,50 @@
-use super::dispatch_plan::{DispatchConfig, DispatchPlan, PrefilterScope};
+use super::dispatch_plan::{BatchMatcher, DispatchConfig, DispatchPlan, PrefilterScope};
 use super::gating::{combined_gate_decision, CombinedGateDecision, PortableGateEvidence};
 use super::trigger_evidence::{ChunkTriggerEvidence, TriggerEvidence};
 use super::{CombinedNoCandidateGate, FirstBigramSet, PortablePrefilter, PrefilterBatch};
+
+/// A batch whose matcher cells are already populated. Every test below passes
+/// an EMPTY pattern slice alongside it, so any attempt to (re)compile would
+/// panic on an out-of-range phase-2 index. That is the assertion: a resolved
+/// matcher is served from its cell, never rebuilt per chunk.
+fn seeded_batch(
+    sources: &[&str],
+    phase2_indices: Vec<usize>,
+    gateable: bool,
+    homoglyph_skippable: bool,
+) -> PrefilterBatch {
+    let build = || regex::RegexSet::new(sources).expect("fixture RegexSet");
+    let batch = PrefilterBatch {
+        phase2_indices,
+        case_insensitive: false,
+        gateable,
+        homoglyph_skippable,
+        set: std::sync::OnceLock::new(),
+        ascii_set: std::sync::OnceLock::new(),
+        set_trunc: std::sync::OnceLock::new(),
+        ascii_set_trunc: std::sync::OnceLock::new(),
+    };
+    batch.set.set(Some(build())).expect("fresh cell");
+    batch.ascii_set.set(Some(build())).expect("fresh cell");
+    batch.set_trunc.set(Some(build())).expect("fresh cell");
+    batch
+        .ascii_set_trunc
+        .set(Some(build()))
+        .expect("fresh cell");
+    batch
+}
+
+/// The compile input for a seeded batch: empty, so a compile attempt panics.
+const NO_PATTERNS: &[(crate::types::CompiledPattern, Vec<String>)] = &[];
+
+fn run_matcher(matcher: BatchMatcher<'_>, text: &str) -> Vec<usize> {
+    match matcher {
+        BatchMatcher::Run { set, .. } | BatchMatcher::RunUngated(set) => {
+            set.matches(text).iter().collect()
+        }
+        BatchMatcher::Unavailable => panic!("seeded batch must resolve a matcher"),
+    }
+}
 
 fn config() -> DispatchConfig {
     DispatchConfig {
@@ -111,7 +154,6 @@ fn combined_gate_positive_negative_and_degraded_truth_table() {
 fn portable_partition_gates_are_independent_and_fail_closed() {
     let portable = PortablePrefilter {
         batches: Vec::new(),
-        ungated_indices: Vec::new(),
         ci_gate: Some(
             aho_corasick::AhoCorasick::builder()
                 .ascii_case_insensitive(true)
@@ -210,17 +252,12 @@ fn dispatch_plan_storage_is_constant_scale_and_borrows_input() {
 /// entry ids and preserves their phase-2 marking order on dense mixed triggers.
 #[test]
 fn portable_dispatch_plans_preserve_exact_match_id_order() {
-    let sources = [r"token=[A-Z0-9]+", r"secret=[a-z0-9]+", r"key_[0-9]+="];
-    let build = || regex::RegexSet::new(sources).expect("fixture RegexSet");
-    let batch = PrefilterBatch {
-        set: build(),
-        ascii_set: Some(build()),
-        set_trunc: build(),
-        ascii_set_trunc: Some(build()),
-        phase2_indices: vec![11, 3, 29],
-        gateable: false,
-        homoglyph_skippable: false,
-    };
+    let batch = seeded_batch(
+        &[r"token=[A-Z0-9]+", r"secret=[a-z0-9]+", r"key_[0-9]+="],
+        vec![11, 3, 29],
+        false,
+        false,
+    );
     let text = format!(
         "{} secret=abc token=XYZ9 key_42= {}",
         "tokenish=".repeat(4096),
@@ -233,18 +270,11 @@ fn portable_dispatch_plans_preserve_exact_match_id_order() {
     let full = DispatchPlan::for_admission(&text, false, full_config);
     let expected = vec![0, 1, 2];
     assert_eq!(
-        truncated
-            .matcher_for(&batch)
-            .matches(&text)
-            .iter()
-            .collect::<Vec<_>>(),
+        run_matcher(truncated.matcher_for(&batch, NO_PATTERNS), &text),
         expected
     );
     assert_eq!(
-        full.matcher_for(&batch)
-            .matches(&text)
-            .iter()
-            .collect::<Vec<_>>(),
+        run_matcher(full.matcher_for(&batch, NO_PATTERNS), &text),
         expected
     );
     assert_eq!(
@@ -253,5 +283,78 @@ fn portable_dispatch_plans_preserve_exact_match_id_order() {
             .map(|&set_index| batch.phase2_indices[set_index])
             .collect::<Vec<_>>(),
         vec![11, 3, 29]
+    );
+}
+
+/// A batch the plan skips must never compile a matcher. Eager compilation
+/// charged 1.4 s of RegexSet construction to the first decoded sub-chunk of a
+/// scan and then skipped every batch it had just built, which made decode
+/// through the dominant cost of an otherwise sub-second scan.
+///
+/// The batch here has EMPTY matcher cells and an out-of-range phase-2 index, so
+/// resolving a matcher would panic. Reaching the end of the test proves the
+/// skip happened before any compile was attempted.
+#[test]
+fn a_skipped_homoglyph_batch_never_compiles_its_matcher() {
+    let batch = PrefilterBatch {
+        phase2_indices: vec![usize::MAX],
+        case_insensitive: false,
+        gateable: false,
+        homoglyph_skippable: true,
+        set: std::sync::OnceLock::new(),
+        ascii_set: std::sync::OnceLock::new(),
+        set_trunc: std::sync::OnceLock::new(),
+        ascii_set_trunc: std::sync::OnceLock::new(),
+    };
+    // A pure-ASCII chunk with homoglyph ASCII-skip enabled is exactly the case
+    // the skip exists for.
+    let plan = DispatchPlan::for_admission("plain ascii chunk", false, config());
+    assert!(
+        plan.skip_homoglyph_batch(&batch),
+        "an ASCII chunk must skip a homoglyph-variant batch"
+    );
+    assert!(
+        batch.set.get().is_none()
+            && batch.set_trunc.get().is_none()
+            && batch.ascii_set.get().is_none()
+            && batch.ascii_set_trunc.get().is_none(),
+        "deciding to skip a batch must not populate any matcher cell"
+    );
+}
+
+/// Each matcher variant is compiled independently, so selecting the truncated
+/// form must leave the untruncated cell empty. A batch that eagerly built all
+/// four variants paid four compiles to run one.
+#[test]
+fn resolving_one_variant_leaves_the_others_uncompiled() {
+    let batch = PrefilterBatch {
+        phase2_indices: vec![usize::MAX],
+        case_insensitive: false,
+        gateable: false,
+        homoglyph_skippable: false,
+        set: std::sync::OnceLock::new(),
+        ascii_set: std::sync::OnceLock::new(),
+        set_trunc: std::sync::OnceLock::new(),
+        ascii_set_trunc: std::sync::OnceLock::new(),
+    };
+    let sources = [r"token=[A-Z0-9]+"];
+    batch
+        .ascii_set_trunc
+        .set(Some(
+            regex::RegexSet::new(sources).expect("fixture RegexSet"),
+        ))
+        .expect("fresh cell");
+
+    // ASCII text with the homoglyph gate on selects the folded truncated form.
+    let plan = DispatchPlan::for_admission("token=ABC1", false, config());
+    assert_eq!(
+        run_matcher(plan.matcher_for(&batch, NO_PATTERNS), "token=ABC1"),
+        vec![0]
+    );
+    assert!(
+        batch.set.get().is_none()
+            && batch.set_trunc.get().is_none()
+            && batch.ascii_set.get().is_none(),
+        "resolving the folded truncated matcher must not compile the other three"
     );
 }

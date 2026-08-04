@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Resolve a candidate's whole assignment value from the start of its own line rather than from the start of the chunk. Quote and escape state reset at every line break, so the previous walk reread the entire preceding chunk for every candidate and was quadratic in candidates per chunk."
+crates = ["scanner"]

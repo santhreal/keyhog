@@ -2,7 +2,9 @@
 
 use super::gating::PortableGateEvidence;
 use super::trigger_evidence::ChunkTriggerEvidence;
-use super::{homoglyph_skip_applies, PortablePrefilter, PrefilterBatch};
+use super::{
+    homoglyph_skip_applies, Phase2AlwaysActivePrefilter, PortablePrefilter, PrefilterBatch,
+};
 use crate::scanner_config::ResolvedRuntimeTuningConfig;
 
 /// The pattern ownership slice served by one prefilter invocation.
@@ -151,27 +153,70 @@ impl<'a> DispatchPlan<'a> {
         )
     }
 
+    /// Whether a batch runs after consulting the combined prefix-literal gate.
+    /// `plain_gate` selects which evidence describes the matcher that will run.
     #[inline]
     pub(super) fn run_gateable_batch(
         self,
         batch: &PrefilterBatch,
+        plain_gate: bool,
         gates: PortableGateEvidence,
     ) -> bool {
-        !batch.gateable || gates.run_gateable_batch(batch.ascii_set.is_some())
+        !batch.gateable || gates.run_gateable_batch(plain_gate)
     }
 
+    /// Resolve the one matcher this plan runs for `batch`, compiling it on
+    /// first use.
     #[inline]
-    pub(super) fn matcher_for<'b>(self, batch: &'b PrefilterBatch) -> &'b regex::RegexSet {
-        match (
+    pub(super) fn matcher_for<'b>(
+        self,
+        batch: &'b PrefilterBatch,
+        phase2_patterns: &[(crate::types::CompiledPattern, Vec<String>)],
+    ) -> BatchMatcher<'b> {
+        let unicode = || {
+            Phase2AlwaysActivePrefilter::batch_unicode_matcher(phase2_patterns, batch, self.truncate)
+        };
+        if !self.use_ascii_matcher || batch.case_insensitive {
+            return match unicode() {
+                Some(set) => BatchMatcher::Run {
+                    set,
+                    plain_gate: !batch.case_insensitive,
+                },
+                None => BatchMatcher::Unavailable,
+            };
+        }
+        match Phase2AlwaysActivePrefilter::batch_folded_matcher(
+            phase2_patterns,
+            batch,
             self.truncate,
-            self.use_ascii_matcher,
-            &batch.ascii_set,
-            &batch.ascii_set_trunc,
         ) {
-            (true, true, Some(_), Some(ascii_trunc)) => ascii_trunc,
-            (false, true, Some(ascii), _) => ascii,
-            (true, _, _, _) => &batch.set_trunc,
-            (false, _, _, _) => &batch.set,
+            Some(set) => BatchMatcher::Run {
+                set,
+                plain_gate: true,
+            },
+            // The folded matcher the plain gate describes is unavailable, so its
+            // literal evidence no longer describes what runs. Run the unicode
+            // form ungated rather than skip on evidence about a matcher that is
+            // not executing.
+            None => match unicode() {
+                Some(set) => BatchMatcher::RunUngated(set),
+                None => BatchMatcher::Unavailable,
+            },
         }
     }
+}
+
+/// What one batch contributes to marking on this chunk.
+pub(super) enum BatchMatcher<'b> {
+    /// Run `set`. `plain_gate` selects which combined prefix-literal evidence
+    /// describes it: the folded plain gate, or the case-insensitive gate.
+    Run {
+        set: &'b regex::RegexSet,
+        plain_gate: bool,
+    },
+    /// Run `set` without consulting the gate.
+    RunUngated(&'b regex::RegexSet),
+    /// No matcher compiled: mark every pattern in the batch, a recall-safe
+    /// superset of what the matcher would have reported.
+    Unavailable,
 }

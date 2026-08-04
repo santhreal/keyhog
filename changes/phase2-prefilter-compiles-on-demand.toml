@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "Compile each phase-two always-active matcher variant when a chunk selects it instead of building all four for every batch up front, which removed a 1.4 second stall that the first decoded sub-chunk of any scan charged to every scan worker."
+crates = ["scanner"]

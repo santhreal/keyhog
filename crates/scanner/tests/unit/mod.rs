@@ -186,6 +186,7 @@ pub mod unicode_mixed_evasion_normalization;
 pub mod unicode_rtl_override_removal;
 pub mod unicode_separator_and_bidi_completeness;
 pub mod unicode_zero_width_removal;
+pub mod whole_assignment_line_scope;
 pub mod z85_decode_alphabet_contract;
 
 pub(crate) fn compiled_detector_plans(

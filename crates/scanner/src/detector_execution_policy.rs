@@ -101,7 +101,14 @@ pub(crate) fn whole_assignment_value(
     let candidate_end = crate::engine::ceil_char_boundary(data, candidate_end).max(candidate_start);
     let mut active_quote = None;
     let mut escaped = false;
-    let mut cursor = 0;
+    // Both pieces of state reset unconditionally at `\n` and `\r`, so the state
+    // at `candidate_start` depends only on the bytes since the preceding line
+    // break. Starting at byte 0 instead made this O(chunk length) per candidate
+    // and therefore quadratic in candidates per chunk: on a real source tree it
+    // was 19% of total scan time. Starting at the line makes it O(line length)
+    // with a byte-identical result.
+    let mut cursor = memchr::memrchr2(b'\n', b'\r', &bytes[..candidate_start])
+        .map_or(0, |line_break| line_break + 1);
     while cursor < candidate_start {
         let byte = bytes[cursor];
         if matches!(byte, b'\n' | b'\r') {

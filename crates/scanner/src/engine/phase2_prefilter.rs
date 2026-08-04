@@ -10,16 +10,23 @@ use super::phase2_truncate::truncate_for_prefilter;
 use super::*;
 use crate::scanner_config::ResolvedRuntimeTuningConfig;
 use aho_corasick::AhoCorasick;
-use dispatch_plan::{DispatchConfig, DispatchPlan, PrefilterScope};
+use dispatch_plan::{BatchMatcher, DispatchConfig, DispatchPlan, PrefilterScope};
 use gating::{combined_gate_decision, CombinedGateDecision};
 use std::sync::atomic::Ordering::Relaxed;
 
 impl Phase2AlwaysActivePrefilter {
     /// Patterns per RegexSet batch. A single set over all ~2.7k always-active
-    /// patterns blows the compiled-program size limit; batching keeps each
-    /// set's NFA bounded while still collapsing thousands of full-chunk regex
-    /// walks into a handful of linear set passes.
-    const BATCH_SIZE: usize = 512;
+    /// patterns blows the compiled-program size limit, so the set is batched.
+    ///
+    /// Batch size is a direct cost lever, not just a size guard. Reporting
+    /// WHICH patterns matched has no lazy-DFA implementation, so a batch that
+    /// contains any match pays a PikeVM pass proportional to the batch's whole
+    /// NFA. Small batches confine that pass to the patterns near the match and
+    /// let the cheap `is_match` pre-check clear the rest. Measured on a real
+    /// source tree (5,583 files, 44 MiB, portable CPU route): 512 -> 4.93 s,
+    /// 256 -> 4.64 s, 128 -> 3.40 s, 64 -> 3.20 s, 32 -> 3.20 s. 64 is the knee;
+    /// smaller only adds per-batch scans for no further gain.
+    const BATCH_SIZE: usize = 64;
     /// Generous per-batch compiled-program + lazy-DFA budget. Larger than the
     /// per-pattern `REGEX_SIZE_LIMIT_BYTES` because a batch holds many patterns;
     /// size/DFA limits only affect compile success and cache size, never which
@@ -150,7 +157,6 @@ impl Phase2AlwaysActivePrefilter {
             }
         }
         let mut batches = Vec::new();
-        let mut ungated_indices = Vec::new();
         let mut ci_gate_lits: Vec<Vec<u8>> = Vec::new();
         let mut plain_gate_lits: Vec<Vec<u8>> = Vec::new();
         Self::build_partition(
@@ -159,7 +165,6 @@ impl Phase2AlwaysActivePrefilter {
             true,
             false,
             &mut batches,
-            &mut ungated_indices,
             &mut ci_gate_lits,
         );
         Self::build_partition(
@@ -168,7 +173,6 @@ impl Phase2AlwaysActivePrefilter {
             false,
             false,
             &mut batches,
-            &mut ungated_indices,
             &mut plain_gate_lits,
         );
         Self::build_partition(
@@ -177,12 +181,10 @@ impl Phase2AlwaysActivePrefilter {
             false,
             true,
             &mut batches,
-            &mut ungated_indices,
             &mut plain_gate_lits,
         );
         PortablePrefilter {
             batches,
-            ungated_indices,
             ci_gate: Self::build_gate_ac(&ci_gate_lits, true),
             plain_gate: Self::build_gate_ac(&plain_gate_lits, false),
         }
@@ -312,7 +314,6 @@ impl Phase2AlwaysActivePrefilter {
         case_insensitive: bool,
         homoglyph: bool,
         batches: &mut Vec<PrefilterBatch>,
-        ungated_indices: &mut Vec<usize>,
         gate_lits: &mut Vec<Vec<u8>>,
     ) {
         // Split the partition into gate-eligible vs not so each compiled batch is
@@ -329,31 +330,13 @@ impl Phase2AlwaysActivePrefilter {
             }
         }
         // Ungateable patterns: always-run batches (gateable = false).
-        Self::build_batches(
-            phase2_patterns,
-            &other,
-            case_insensitive,
-            false,
-            homoglyph,
-            batches,
-            ungated_indices,
-        );
-        // Eligible patterns: gateable batches. Only contribute their literals to
-        // the combined gate when the batch was actually built as `gateable` (a
-        // plain batch missing its `ascii_set`, or a compile failure, downgrades
-        // to always-run, and then its literals must NOT gate anything).
+        Self::build_batches(&other, case_insensitive, false, homoglyph, batches);
+        // Eligible patterns: gateable batches, which contribute their literals to
+        // the combined gate. A plain batch whose ASCII fold fails to compile is
+        // detected at match time and runs ungated there, so the gate stays sound
+        // without needing the fold to be compiled here.
         let first_new = batches.len();
-        Self::build_batches(
-            phase2_patterns,
-            &eligible,
-            case_insensitive,
-            true,
-            homoglyph,
-            batches,
-            ungated_indices,
-        );
-        // Re-derive contributed literals from the batches that ended up gateable,
-        // so a downgraded batch (ascii_set None / compile failure) is excluded.
+        Self::build_batches(&eligible, case_insensitive, true, homoglyph, batches);
         for batch in &batches[first_new..] {
             if !batch.gateable {
                 continue;
@@ -368,86 +351,141 @@ impl Phase2AlwaysActivePrefilter {
         }
     }
 
-    /// Compile `indices` into RegexSet batches with the given `gateable` intent.
-    /// A plain batch is only marked gateable when its `ascii_set` compiles (the
-    /// folded matcher the gate describes); otherwise it downgrades to always-run.
+    /// Partition `indices` into batches with the given `gateable` intent.
+    ///
+    /// No matcher is compiled here. Each batch compiles exactly the variant a
+    /// chunk selects, on first use, so a batch that every chunk skips costs
+    /// nothing. Compile failures are handled where they surface: an
+    /// unavailable matcher makes the caller mark every index in the batch, and
+    /// a plain batch whose ASCII fold does not compile runs ungated, both of
+    /// which are the recall-safe supersets the eager path produced.
     fn build_batches(
-        phase2_patterns: &[(CompiledPattern, Vec<String>)],
         indices: &[usize],
         case_insensitive: bool,
         gateable: bool,
         homoglyph: bool,
         batches: &mut Vec<PrefilterBatch>,
-        ungated_indices: &mut Vec<usize>,
     ) {
         for chunk in indices.chunks(Self::BATCH_SIZE) {
-            let mut srcs = Vec::with_capacity(chunk.len());
-            for &index in chunk {
-                let (pattern, _) = &phase2_patterns[index];
-                srcs.push(pattern.regex.as_str());
-            }
-            if srcs.is_empty() {
+            if chunk.is_empty() {
                 continue;
             }
-            let built = Self::compile_set(&srcs, case_insensitive);
-            match built {
-                Ok(set) => {
-                    let ascii_set = if case_insensitive {
-                        None
-                    } else {
-                        Self::build_ascii_alternate(phase2_patterns, chunk)
-                    };
-                    let trunc_srcs: Vec<String> = srcs
-                        .iter()
-                        .map(|s| truncate_for_prefilter(s).unwrap_or_else(|| (*s).to_string())) // LAW10: truncation is a prefilter perf-opt over a SUPERSET; un-truncatable => full form, recall-safe (never under-matches)
-                        .collect();
-                    let set_trunc = match Self::compile_truncated_or_full_set(
-                        &srcs,
-                        &trunc_srcs,
-                        case_insensitive,
-                    ) {
-                        Ok(set) => set,
-                        Err(error) => {
-                            tracing::warn!(
-                                batch_size = chunk.len(),
-                                case_insensitive,
-                                %error,
-                                "phase-2 RegexSet batch recompile failed; batch will run ungated (recall preserved)"
-                            );
-                            ungated_indices.extend_from_slice(chunk);
-                            continue;
-                        }
-                    };
-                    let ascii_set_trunc = ascii_set
-                        .as_ref()
-                        .and_then(|_| Self::build_ascii_alternate_trunc(phase2_patterns, chunk))
-                        .or_else(|| ascii_set.clone());
-                    // A plain gateable batch needs its folded matcher present for
-                    // the (ASCII-path) gate to describe what actually runs. If the
-                    // fold failed to compile, the unicode `set` runs on ASCII text
-                    // and the folded-literal gate would be unsound -> downgrade.
-                    let batch_gateable = gateable && (case_insensitive || ascii_set.is_some());
-                    batches.push(PrefilterBatch {
-                        set,
-                        ascii_set,
-                        set_trunc,
-                        ascii_set_trunc,
-                        phase2_indices: chunk.to_vec(),
-                        gateable: batch_gateable,
-                        homoglyph_skippable: homoglyph,
-                    });
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        batch_size = chunk.len(),
-                        case_insensitive,
-                        %error,
-                        "phase-2 RegexSet batch compile failed; batch will run ungated (recall preserved)"
-                    );
-                    ungated_indices.extend_from_slice(chunk);
-                }
+            batches.push(PrefilterBatch {
+                phase2_indices: chunk.to_vec(),
+                case_insensitive,
+                gateable,
+                homoglyph_skippable: homoglyph,
+                set: std::sync::OnceLock::new(),
+                ascii_set: std::sync::OnceLock::new(),
+                set_trunc: std::sync::OnceLock::new(),
+                ascii_set_trunc: std::sync::OnceLock::new(),
+            });
+        }
+    }
+
+    /// The batch's pattern sources, in set-entry order.
+    fn batch_sources<'a>(
+        phase2_patterns: &'a [(CompiledPattern, Vec<String>)],
+        indices: &[usize],
+    ) -> Vec<&'a str> {
+        indices
+            .iter()
+            .map(|&index| phase2_patterns[index].0.regex.as_str())
+            .collect()
+    }
+
+    /// Compile the unicode form. `None` on failure, which makes the caller mark
+    /// every index in the batch rather than lose recall.
+    fn compile_batch_set(
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        batch: &PrefilterBatch,
+    ) -> Option<regex::RegexSet> {
+        let srcs = Self::batch_sources(phase2_patterns, &batch.phase2_indices);
+        match Self::compile_set(&srcs, batch.case_insensitive) {
+            Ok(set) => Some(set),
+            Err(error) => {
+                tracing::warn!(
+                    batch_size = batch.phase2_indices.len(),
+                    case_insensitive = batch.case_insensitive,
+                    %error,
+                    "phase-2 RegexSet batch compile failed; every pattern in the batch is marked unconditionally (recall preserved)"
+                );
+                None
             }
         }
+    }
+
+    /// Compile the truncated unicode form, falling back to the full form.
+    fn compile_batch_set_trunc(
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        batch: &PrefilterBatch,
+    ) -> Option<regex::RegexSet> {
+        let srcs = Self::batch_sources(phase2_patterns, &batch.phase2_indices);
+        let trunc_srcs: Vec<String> = srcs
+            .iter()
+            .map(|s| truncate_for_prefilter(s).unwrap_or_else(|| (*s).to_string())) // LAW10: truncation is a prefilter perf-opt over a SUPERSET; un-truncatable => full form, recall-safe (never under-matches)
+            .collect();
+        match Self::compile_truncated_or_full_set(&srcs, &trunc_srcs, batch.case_insensitive) {
+            Ok(set) => Some(set),
+            Err(error) => {
+                tracing::warn!(
+                    batch_size = batch.phase2_indices.len(),
+                    case_insensitive = batch.case_insensitive,
+                    %error,
+                    "phase-2 truncated RegexSet batch compile failed; every pattern in the batch is marked unconditionally (recall preserved)"
+                );
+                None
+            }
+        }
+    }
+
+    /// The unicode matcher for `batch` under the active truncation setting.
+    pub(super) fn batch_unicode_matcher<'b>(
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        batch: &'b PrefilterBatch,
+        truncate: bool,
+    ) -> Option<&'b regex::RegexSet> {
+        if truncate {
+            batch
+                .set_trunc
+                .get_or_init(|| Self::compile_batch_set_trunc(phase2_patterns, batch))
+                .as_ref()
+        } else {
+            batch
+                .set
+                .get_or_init(|| Self::compile_batch_set(phase2_patterns, batch))
+                .as_ref()
+        }
+    }
+
+    /// The ASCII-folded matcher for a plain batch under the active truncation
+    /// setting. `None` for a case-insensitive batch (it has no fold) and on
+    /// fold-compile failure, which makes the caller run the unicode form
+    /// ungated because the folded literal gate no longer describes it.
+    pub(super) fn batch_folded_matcher<'b>(
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        batch: &'b PrefilterBatch,
+        truncate: bool,
+    ) -> Option<&'b regex::RegexSet> {
+        if batch.case_insensitive {
+            return None;
+        }
+        let slot = if truncate {
+            &batch.ascii_set_trunc
+        } else {
+            &batch.ascii_set
+        };
+        slot.get_or_init(|| {
+            if truncate {
+                Self::build_ascii_alternate_trunc(phase2_patterns, &batch.phase2_indices)
+                    .or_else(|| {
+                        Self::build_ascii_alternate(phase2_patterns, &batch.phase2_indices)
+                    })
+            } else {
+                Self::build_ascii_alternate(phase2_patterns, &batch.phase2_indices)
+            }
+        })
+        .as_ref()
     }
 
     fn compile_set(
@@ -655,23 +693,40 @@ impl Phase2AlwaysActivePrefilter {
             if plan.skip_homoglyph_batch(batch) {
                 continue;
             }
-            if batch.gateable {
-                if !plan.run_gateable_batch(batch, gates) {
-                    if prof {
-                        GATE_BATCH_SKIPS.fetch_add(1, Relaxed);
+            let (matcher, gated) = match plan.matcher_for(batch, phase2_patterns) {
+                BatchMatcher::Run { set, plain_gate } => {
+                    if !plan.run_gateable_batch(batch, plain_gate, gates) {
+                        if prof && batch.gateable {
+                            GATE_BATCH_SKIPS.fetch_add(1, Relaxed);
+                        }
+                        continue;
+                    }
+                    (set, batch.gateable)
+                }
+                BatchMatcher::RunUngated(set) => (set, false),
+                BatchMatcher::Unavailable => {
+                    for &index in &batch.phase2_indices {
+                        scratch.mark(index);
                     }
                     continue;
                 }
-                if prof {
-                    GATE_BATCH_RUNS.fetch_add(1, Relaxed);
-                }
+            };
+            if prof && gated {
+                GATE_BATCH_RUNS.fetch_add(1, Relaxed);
             }
-            for set_idx in plan.matcher_for(batch).matches(match_text).iter() {
+            // `RegexSet::matches` has no lazy-DFA implementation: reporting
+            // WHICH patterns matched forces the meta engine onto PikeVM, which
+            // walks every NFA state for every byte. `is_match` takes the normal
+            // fast path, and "no pattern matched" is the overwhelmingly common
+            // answer on real source, so proving emptiness first skips the
+            // PikeVM pass entirely. The result is identical by definition: an
+            // empty `is_match` means `matches` reports nothing.
+            if !matcher.is_match(match_text) {
+                continue;
+            }
+            for set_idx in matcher.matches(match_text).iter() {
                 scratch.mark(batch.phase2_indices[set_idx]);
             }
-        }
-        for &index in &portable.ungated_indices {
-            scratch.mark(index);
         }
     }
 
@@ -738,15 +793,24 @@ impl Phase2AlwaysActivePrefilter {
         }
 
         let portable = self.portable_for(phase2_patterns, plan.scope());
-        if !portable.ungated_indices.is_empty() {
-            return true;
-        }
         let gates = plan.portable_gates(portable);
         for batch in &portable.batches {
-            if plan.skip_homoglyph_batch(batch) || !plan.run_gateable_batch(batch, gates) {
+            if plan.skip_homoglyph_batch(batch) {
                 continue;
             }
-            if plan.matcher_for(batch).is_match(match_text) {
+            let matcher = match plan.matcher_for(batch, phase2_patterns) {
+                BatchMatcher::Run { set, plain_gate } => {
+                    if !plan.run_gateable_batch(batch, plain_gate, gates) {
+                        continue;
+                    }
+                    set
+                }
+                BatchMatcher::RunUngated(set) => set,
+                // Marking would mark every pattern in the batch, so the active
+                // set is non-empty by construction.
+                BatchMatcher::Unavailable => return true,
+            };
+            if matcher.is_match(match_text) {
                 return true;
             }
         }

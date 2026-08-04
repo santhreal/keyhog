@@ -219,24 +219,14 @@ thread_local! {
 /// One compiled RegexSet batch plus the phase-2 indices its set entries map
 /// back to (`phase2_indices[set_pattern_id] == phase-2 pattern index`).
 pub(crate) struct PrefilterBatch {
-    pub(crate) set: regex::RegexSet,
-    /// For PLAIN (homoglyph-variant) batches: an ASCII-folded RegexSet (the
-    /// homoglyph regex with non-ASCII stripped: `[sѕｓ]`→`[s]`, `[lіІιΙｌΟοо]`→
-    /// `[l]`), in the SAME entry order as `set`. On a pure-ASCII chunk the
-    /// fold is match-equivalent to the unicode form, so `matches()` returns the
-    /// IDENTICAL set of entry ids, identical marking, identical active-set
-    /// order, but evaluates faster. `None` for case-insensitive batches and on
-    /// fold-compile failure (the unicode `set` is then used everywhere).
-    pub(crate) ascii_set: Option<regex::RegexSet>,
-    /// Truncated-at-first-unbounded-repetition variant of `set` (each entry
-    /// passed through `truncate_for_prefilter`, SAME entry order), kept on the
-    /// fast lazy-DFA. A sound SUPERSET marking gate (see `truncate_for_prefilter`).
-    /// Used instead of `set` when `prefilter_truncate_enabled()`.
-    pub(crate) set_trunc: regex::RegexSet,
-    /// Truncated variant of `ascii_set` (the folded form, then truncated). Same
-    /// `None` conditions as `ascii_set`.
-    pub(crate) ascii_set_trunc: Option<regex::RegexSet>,
+    /// Phase-2 pattern indices owned by this batch, in set-entry order
+    /// (`phase2_indices[set_pattern_id]`). They are also the compile input:
+    /// every matcher variant is derived from these patterns on demand.
     pub(crate) phase2_indices: Vec<usize>,
+    /// The case partition this batch was built for. Case-sensitive batches are
+    /// the PLAIN (homoglyph-variant) ones and own an ASCII-folded alternate;
+    /// case-insensitive batches have none.
+    pub(crate) case_insensitive: bool,
     /// True iff EVERY pattern in this batch is prefix-anchorable (a finite,
     /// non-empty, pure-ASCII required-prefix literal set, each member >= 3
     /// bytes). When true, the combined prefix-literal Aho-Corasick gate
@@ -254,6 +244,38 @@ pub(crate) struct PrefilterBatch {
     /// case-sensitivity heuristic got wrong (generic plain fallbacks share the
     /// case flag but have no base AC pattern; they land in non-skippable batches).
     pub(crate) homoglyph_skippable: bool,
+    /// The unicode form: reports a pattern iff that pattern's regex matches.
+    /// `None` after a failed compile, which makes the caller mark every index
+    /// in the batch (a recall-safe superset).
+    ///
+    /// Every variant below is compiled on FIRST USE, not at prefilter
+    /// construction. A whole scope is routinely built and then skipped for an
+    /// entire scan: the residual scope exists for non-ASCII chunks, and on a
+    /// decoded sub-chunk every one of its batches is homoglyph-skippable. Eager
+    /// compilation charged 1.4 s (24 RegexSets over 2,739 patterns) to the first
+    /// decoded sub-chunk of any scan, then ran none of them, and every other
+    /// scan worker blocked on that one initialization.
+    ///
+    /// `OnceLock` rather than `LazyLock`: the initializer needs the runtime
+    /// `phase2_patterns` slice, which is not available where the cell is
+    /// declared. This matches the enclosing per-scope caches.
+    pub(crate) set: std::sync::OnceLock<Option<regex::RegexSet>>,
+    /// For PLAIN (homoglyph-variant) batches: an ASCII-folded RegexSet (the
+    /// homoglyph regex with non-ASCII stripped: `[sѕｓ]`→`[s]`, `[lіІιΙｌΟοо]`→
+    /// `[l]`), in the SAME entry order as `set`. On a pure-ASCII chunk the
+    /// fold is match-equivalent to the unicode form, so `matches()` returns the
+    /// IDENTICAL set of entry ids, identical marking, identical active-set
+    /// order, but evaluates faster. `None` for case-insensitive batches and on
+    /// fold-compile failure (the unicode `set` is then used, ungated).
+    pub(crate) ascii_set: std::sync::OnceLock<Option<regex::RegexSet>>,
+    /// Truncated-at-first-unbounded-repetition variant of `set` (each entry
+    /// passed through `truncate_for_prefilter`, SAME entry order), kept on the
+    /// fast lazy-DFA. A sound SUPERSET marking gate (see `truncate_for_prefilter`).
+    /// Used instead of `set` when `prefilter_truncate_enabled()`.
+    pub(crate) set_trunc: std::sync::OnceLock<Option<regex::RegexSet>>,
+    /// Truncated variant of `ascii_set` (the folded form, then truncated). Same
+    /// `None` conditions as `ascii_set`.
+    pub(crate) ascii_set_trunc: std::sync::OnceLock<Option<regex::RegexSet>>,
 }
 
 /// Lazily built portable RegexSet prefilter state. Hyperscan and the
@@ -265,9 +287,9 @@ pub(crate) struct PortablePrefilter {
     /// equivalent to running every entry's regex individually, but in a handful
     /// of linear passes instead of thousands.
     pub(crate) batches: Vec<PrefilterBatch>,
-    /// Patterns whose batch failed to compile (e.g. exceeded the size limit):
-    /// run unconditionally so a compile failure costs performance, never recall.
-    pub(crate) ungated_indices: Vec<usize>,
+    // A batch whose matcher cannot compile is discovered at match time and its
+    // patterns are marked unconditionally there, so there is no eager list of
+    // compile casualties to carry.
     /// Combined Aho-Corasick over the required-prefix literals of every
     /// CASE-INSENSITIVE gateable batch's patterns (built `ascii_case_insensitive`
     /// to mirror the detector regexes' case folding). A no-hit proves NO gateable

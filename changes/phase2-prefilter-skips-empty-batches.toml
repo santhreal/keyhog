@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "Prove a phase-two batch is empty with the DFA-backed match test before asking which patterns matched, since reporting the matching set has no lazy-DFA path and forced a full PikeVM pass over every batch on every chunk."
+crates = ["scanner"]
