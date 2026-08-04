@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.57 - 2026-08-04
+
+- Repeatable autoroute calibration.
+
 ## 0.5.56 - 2026-08-04
 
 - Overlapping coalesced batches and autoroute classification for any batch size.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.57 - 2026-08-04
+
+- Stop autoroute calibration from discarding a whole workload class over measurement noise. An execution plan now has to clear the other plan's confidence interval, not just win a paired test, before it beats it on the same backend; points that agree on the backend but split on the plan reconcile to the plan the binary was compiled with instead of producing no decision; and merging a point re-declares the reconciled route so the persisted cache matches its own evidence. Calibrating the mirror corpus went from persisting a decision on 4 of 10 identical runs to 12 of 12.
+
 ## 0.5.56 - 2026-08-04
 
 - Scan many coalesced batches at once instead of one at a time. The batch pipeline's consumer was a single receive-then-scan loop whose only parallelism was inside one batch, so every batch boundary idled the machine; it now bridges the batch channel onto the global pool the way the fused pipeline already does. On this repository's sources the batch pipeline drops from 4.95 s to 2.43 s and gpu-cuda from 6.70 s to 3.52 s, and the report is byte-identical to the fused pipeline's.
