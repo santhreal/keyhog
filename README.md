@@ -339,7 +339,7 @@ per-category recall.
 ### Detection accuracy
 
 <!-- BENCH:accuracy:start -->
-KeyHog `KeyHog v0.5.57` scanned the **mirror** corpus: 15,000 fixtures, 3,000 labeled positives, and 2,430,321 input bytes. The answer-key manifest was excluded from the scan tree. The row uses the default policy on the explicit Hyperscan/SIMD route on **AMD Ryzen 9 9950X 16-Core Processor**.
+KeyHog `KeyHog v0.5.63` scanned the **mirror** corpus: 15,000 fixtures, 3,000 labeled positives, and 2,430,321 input bytes. The answer-key manifest was excluded from the scan tree. The row uses the default policy on the explicit Hyperscan/SIMD route on **AMD Ryzen 9 9950X 16-Core Processor**.
 
 | Precision | Recall | F1 | True positives | False positives | False negatives |
 |---:|---:|---:|---:|---:|---:|
@@ -351,7 +351,7 @@ The tracked source tree was clean.
 ### Execution routes, presets, and cache
 
 <!-- BENCH:config:start -->
-Measured on **AMD Ryzen 9 9950X 16-Core Processor** with **NVIDIA GeForce RTX 5090**, 32 logical cores, 15,000 fixtures, 3,000 labeled positives, and 2,430,321 input bytes. Scanner: `KeyHog v0.5.57`. The tracked source tree was clean.
+Measured on **AMD Ryzen 9 9950X 16-Core Processor** with **NVIDIA GeForce RTX 5090**, 32 logical cores, 15,000 fixtures, 3,000 labeled positives, and 2,430,321 input bytes. Scanner: `KeyHog v0.5.63`. The tracked source tree was clean.
 
 #### Full scan by execution route
 
@@ -359,11 +359,11 @@ All rows use the default detection policy with incremental cache and daemon off.
 
 | Requested route | Wall | Throughput | Peak RSS | F1 |
 |---|---:|---:|---:|---:|
-| Hyperscan/SIMD | 1.07 s | 2.16 MB/s | 1043 MiB | 0.9447 |
-| Pure-Rust CPU | 924 ms | 2.51 MB/s | 940 MiB | 0.9447 |
-| CUDA | 2.11 s | 1.10 MB/s | 1541 MiB | 0.9447 |
-| WGPU | 2.07 s | 1.12 MB/s | 1458 MiB | 0.9447 |
-| Automatic | 1.08 s | 2.16 MB/s | 1033 MiB | 0.9447 |
+| Hyperscan/SIMD | 929 ms | 2.49 MB/s | 997 MiB | 0.9447 |
+| Pure-Rust CPU | 1.03 s | 2.26 MB/s | 893 MiB | 0.9447 |
+| CUDA | 2.21 s | 1.05 MB/s | 1517 MiB | 0.9447 |
+| WGPU | 2.13 s | 1.09 MB/s | 1403 MiB | 0.9447 |
+| Automatic | 1.04 s | 2.23 MB/s | 996 MiB | 0.9447 |
 
 #### Detection policy on Hyperscan/SIMD
 
@@ -371,10 +371,10 @@ The route, cache, daemon state, corpus, and host remain fixed. Presets change de
 
 | Policy | Wall | Precision | Recall | F1 | Findings |
 |---|---:|---:|---:|---:|---:|
-| Fast | 791 ms | 0.9733 | 0.9113 | 0.9413 | 2,816 |
-| Default | 1.07 s | 0.9708 | 0.9200 | 0.9447 | 2,868 |
-| Deep | 981 ms | 0.9708 | 0.9207 | 0.9451 | 2,875 |
-| Precision | 972 ms | 0.9690 | 0.8033 | 0.8784 | 2,488 |
+| Fast | 774 ms | 0.9733 | 0.9113 | 0.9413 | 2,816 |
+| Default | 929 ms | 0.9708 | 0.9200 | 0.9447 | 2,868 |
+| Deep | 893 ms | 0.9708 | 0.9207 | 0.9451 | 2,874 |
+| Precision | 851 ms | 0.9691 | 0.8057 | 0.8799 | 2,495 |
 
 #### Incremental warm rerun
 
@@ -382,8 +382,8 @@ The benchmark populates the BLAKE3 Merkle index, then times the second identical
 
 | Hyperscan/SIMD default policy | Wall | Throughput | Peak RSS |
 |---|---:|---:|---:|
-| Cache off | 1.07 s | 2.16 MB/s | 1043 MiB |
-| Warm incremental cache | 947 ms | 2.45 MB/s | 1063 MiB |
+| Cache off | 929 ms | 2.49 MB/s | 997 MiB |
+| Warm incremental cache | 937 ms | 2.47 MB/s | 1068 MiB |
 <!-- BENCH:config:end -->
 
 ### Warm daemon requests
@@ -393,10 +393,10 @@ One deterministic 8 MiB regular file (`sha256:afafbe7b6487fd62866f510e7c281a9e7b
 
 | Explicit route | In process | Warm daemon | Warm / one-shot | In-process RSS | Daemon RSS |
 |---|---:|---:|---:|---:|---:|
-| Hyperscan/SIMD | 394 ms | 157 ms | 0.40× | 599 MiB | 630 MiB |
-| Pure-Rust CPU | 380 ms | 160 ms | 0.42× | 598 MiB | 633 MiB |
-| CUDA | 1.33 s | 212 ms | 0.16× | 1187 MiB | 1175 MiB |
-| WGPU | 1.32 s | 214 ms | 0.16× | 1100 MiB | 1113 MiB |
+| Hyperscan/SIMD | 369 ms | 148 ms | 0.40× | 575 MiB | 609 MiB |
+| Pure-Rust CPU | 364 ms | 146 ms | 0.40× | 568 MiB | 603 MiB |
+| CUDA | 1.39 s | 217 ms | 0.16× | 1189 MiB | 1211 MiB |
+| WGPU | 1.32 s | 218 ms | 0.17× | 1110 MiB | 1131 MiB |
 
 The daemon is not a general directory or CI accelerator. It accepts only eligible single-file and bounded-stdin requests on Unix, and it serializes execution.
 <!-- BENCH:daemon:end -->
