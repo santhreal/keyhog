@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.62 - 2026-08-04
+
+- Make the prefixless-pattern gate ask the question that matters. It previously only flagged patterns with extractable inner literals, which let through the exact pattern whose missing declaration suppressed an unrelated detector; it now flags any prefixless pattern that declares no routing literal, with shape-only detectors such as Asana tokens and Telegram bot tokens recorded as a category rather than as debt.
+
+- Stop one detector's pattern from silently costing another detector's recall. A pattern with no literal prefix and no declared routing literal leaves the shared prefilter nothing to route it on, and the loss lands elsewhere: twenty-three patterns across the corpus now declare a literal the compiler proves is required by every match, including the Datadog application key pattern itself.
+
 ## 0.5.61 - 2026-08-04
 
 - Extend token-boundary anchoring to every remaining detector whose vendor prefix is three letters or fewer, so `MSG_API_KEY=` is no longer a Singapore GovTech key, `XPBI_CLIENT_ID=` no longer a Power BI credential and `WEBCB_API_KEY=` no longer a Carbon Black key. Fourteen such false positives are now silent, seventeen genuine separator-prefixed forms still report, and findings are unchanged on every corpus.

@@ -2,6 +2,17 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.62] - 2026-08-04
+
+### Changed
+
+- Make the prefixless-pattern gate ask the question that matters. It previously only flagged patterns with extractable inner literals, which let through the exact pattern whose missing declaration suppressed an unrelated detector; it now flags any prefixless pattern that declares no routing literal, with shape-only detectors such as Asana tokens and Telegram bot tokens recorded as a category rather than as debt.
+- Routing literals for every prefixless detector pattern.
+
+### Fixed
+
+- Stop one detector's pattern from silently costing another detector's recall. A pattern with no literal prefix and no declared routing literal leaves the shared prefilter nothing to route it on, and the loss lands elsewhere: twenty-three patterns across the corpus now declare a literal the compiler proves is required by every match, including the Datadog application key pattern itself.
+
 ## [0.5.61] - 2026-08-04
 
 ### Changed
