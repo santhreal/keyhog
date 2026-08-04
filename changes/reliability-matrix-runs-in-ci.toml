@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Run the 1,202-cell product-reliability matrix in CI and drive it on the portable scalar backend, so hostile-environment exit-code, output-format, and installer contracts can no longer rot unexecuted or fail closed on a Hyperscan-free build."
+crates = ["cli"]

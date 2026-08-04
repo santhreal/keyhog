@@ -248,6 +248,13 @@ jobs:
         run: cargo test -p keyhog --test property --profile release-fast
       - name: cli adversarial
         run: cargo test -p keyhog --test adversarial --profile release-fast -- --test-threads=4
+      # 1,200 product-reliability cells (subcommand x hostile profile, format x
+      # hostile profile, exit-code and installer contracts) that no workflow ran
+      # until now, so the whole lane was free to rot. It drives the shipped
+      # binary on the scalar backend, so it needs no accelerator and no feature
+      # flags beyond the default build.
+      - name: cli product reliability matrix
+        run: cargo test -p keyhog --test reliability_all --profile release-fast
 
   integration-detector-contracts:
     name: Integration (detector + recall contracts)

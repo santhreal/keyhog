@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "Report accelerator evidence dedup overflow on the `keyhog::gpu` tracing target with its exact running loss count, replacing a counter that no caller read."
+crates = ["scanner"]

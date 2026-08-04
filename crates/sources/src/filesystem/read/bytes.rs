@@ -72,11 +72,6 @@ impl FileBytes {
             FileBytes::Owned(v) => v,
         }
     }
-
-    #[cfg(test)]
-    pub(in crate::filesystem) fn len(&self) -> usize {
-        self.as_slice().len()
-    }
 }
 
 /// Read a file as a borrowable byte slice, preferring mmap to avoid

@@ -20,8 +20,9 @@ pub mod matrix_macros;
 
 pub mod harness;
 
-// Subcommand × profile matrices.
+// Subcommand × profile and format × profile matrices.
 pub mod determinism;
+pub mod machine_format;
 pub mod surface_badflag;
 pub mod surface_help;
 pub mod surface_noargs;

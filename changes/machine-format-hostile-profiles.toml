@@ -1,0 +1,3 @@
+category = "Added"
+summary = "Assert JSON, JSONL, and SARIF stay completely parseable and ANSI-free across all sixteen hostile environment profiles, including CLICOLOR_FORCE, an unset HOME, an unwritable working directory, a missing TMPDIR, and a rejected backend request."
+crates = ["cli"]

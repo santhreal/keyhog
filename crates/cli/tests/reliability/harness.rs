@@ -38,31 +38,6 @@ pub fn subprocess_slot() -> MutexGuard<'static, ()> {
     }
 }
 
-/// The full list of CLI subcommands. Kept here as the single source the matrix
-/// macros fan out over so adding a subcommand surfaces as a compile-time gap
-/// (the `surface_*` matrices reference this list).
-pub const SUBCOMMANDS: &[&str] = &[
-    "scan",
-    "action-report",
-    "hook",
-    "detectors",
-    "explain",
-    "diff",
-    "calibrate",
-    "config",
-    "watch",
-    "completion",
-    "backend",
-    "doctor",
-    "bloom-diagnostic",
-    "update",
-    "repair",
-    "uninstall",
-    "scan-system",
-    "daemon",
-    "calibrate-autoroute",
-];
-
 /// A hostile-environment profile. Each variant flips a real runtime branch
 /// (color decision, config/IO path, terminal-size math, backend probe), so a
 /// matrix over `(subcommand × Profile)` is genuinely distinct coverage, not
@@ -106,24 +81,10 @@ pub enum Profile {
     ManyThreads,
 }
 
-pub const ALL_PROFILES: &[Profile] = &[
-    Profile::Plain,
-    Profile::NoColor,
-    Profile::ClicolorForce,
-    Profile::DumbTerm,
-    Profile::EmptyTerm,
-    Profile::TinyCols,
-    Profile::HugeCols,
-    Profile::NoHome,
-    Profile::EmptyHome,
-    Profile::CLocale,
-    Profile::Utf8Locale,
-    Profile::BadTmpdir,
-    Profile::ReadOnlyCwd,
-    Profile::BogusBackend,
-    Profile::OneThread,
-    Profile::ManyThreads,
-];
+// The fan-out source for every matrix is `kh_profiles!` in `matrix_macros.rs`,
+// which lists each profile explicitly so the set stays auditable. A new
+// `Profile` variant must be added there and to `Profile::label` below;
+// otherwise it exists but no matrix cell exercises it.
 
 impl Profile {
     /// True when this profile explicitly REQUESTS color even on a pipe

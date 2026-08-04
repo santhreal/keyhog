@@ -21,7 +21,7 @@ fn scan(content: &str, fmt: &str) -> (Option<i32>, String, String) {
 
 fn scan_path(p: &Path, fmt: &str) -> (Option<i32>, String, String) {
     let out = Command::new(binary())
-        .args(["scan", "--daemon=off", "--backend", "simd", "--format", fmt])
+        .args(["scan", "--daemon=off", "--backend", "cpu", "--format", fmt])
         .arg(p)
         .output()
         .expect("spawn keyhog");
@@ -163,7 +163,7 @@ fn json_stays_clean_under_clicolor_force() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            "cpu",
             "--format",
             "json",
         ])

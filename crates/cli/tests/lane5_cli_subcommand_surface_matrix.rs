@@ -26,29 +26,70 @@ fn binary() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// The complete set of subcommands the CLI ships, as the user types them
-/// (clap kebab-cases the enum variants. `ScanSystem` → `scan-system`). This
-/// list is the contract: adding a `Command` variant without adding it here
-/// leaves the new surface untested; removing one here without removing the
-/// variant breaks `every_subcommand_long_help_exits_zero_and_names_itself`.
-const SUBCOMMANDS: &[&str] = &[
-    "scan",
-    "hook",
-    "detectors",
-    "explain",
-    "diff",
-    "calibrate",
-    "calibrate-autoroute",
-    "watch",
-    "completion",
-    "backend",
-    "doctor",
-    "update",
-    "repair",
-    "uninstall",
-    "scan-system",
-    "daemon",
-];
+/// Every subcommand the CLI ships, as the user types them, read from the
+/// compiled clap model rather than a hand-kept copy. A hand-kept list drifts
+/// silently: before this was derived it omitted `config` and
+/// `bloom-diagnostic`, so two shipped surfaces had no help contract at all.
+/// Hidden subcommands are excluded because they are not part of the advertised
+/// menu `top_level_help_lists_every_subcommand_by_name` checks.
+fn subcommands() -> Vec<String> {
+    keyhog::args::command()
+        .get_subcommands()
+        .filter(|sub| !sub.is_hide_set())
+        .map(|sub| sub.get_name().to_owned())
+        .collect()
+}
+
+/// Deriving the matrix from the clap model makes an ADDED subcommand
+/// automatically contract-covered, but it would also let a REMOVED or renamed
+/// subcommand pass silently, both sides move together. This pin is the other
+/// half: the advertised menu is a compatibility surface, so changing it must
+/// be a deliberate, reviewed diff here.
+#[test]
+fn advertised_subcommand_set_is_exactly_the_shipped_menu() {
+    assert_eq!(
+        subcommands(),
+        [
+            "scan",
+            "config",
+            "hook",
+            "detectors",
+            "explain",
+            "diff",
+            "calibrate",
+            "calibrate-autoroute",
+            "watch",
+            "completion",
+            "backend",
+            "doctor",
+            "bloom-diagnostic",
+            "update",
+            "repair",
+            "uninstall",
+            "scan-system",
+            "daemon",
+        ],
+        "the advertised subcommand menu changed; update the docs, completions, \
+         and reference pages in the same change"
+    );
+}
+
+/// `action-report` is deliberately hidden: it is the GitHub Action's internal
+/// receipt renderer, not an operator command. It must still answer `--help`
+/// so a workflow debugging session is not a dead end.
+#[test]
+fn hidden_action_report_still_answers_help() {
+    let (code, stdout, stderr) = run(&["action-report", "--help"]);
+    assert_eq!(
+        code,
+        Some(0),
+        "hidden `action-report --help` must still exit 0; stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("keyhog action-report"),
+        "hidden `action-report --help` must render its own Usage line; got:\n{stdout}"
+    );
+}
 
 fn run(args: &[&str]) -> (Option<i32>, String, String) {
     let out = Command::new(binary())
@@ -64,7 +105,8 @@ fn run(args: &[&str]) -> (Option<i32>, String, String) {
 
 #[test]
 fn every_subcommand_long_help_exits_zero_and_names_itself() {
-    for &sc in SUBCOMMANDS {
+    for sc in subcommands() {
+        let sc = sc.as_str();
         let (code, stdout, stderr) = run(&[sc, "--help"]);
         assert_eq!(
             code,
@@ -83,7 +125,8 @@ fn every_subcommand_long_help_exits_zero_and_names_itself() {
 
 #[test]
 fn every_subcommand_short_help_exits_zero() {
-    for &sc in SUBCOMMANDS {
+    for sc in subcommands() {
+        let sc = sc.as_str();
         let (code, stdout, stderr) = run(&[sc, "-h"]);
         assert_eq!(
             code,
@@ -104,7 +147,8 @@ fn short_and_long_help_agree_for_every_subcommand() {
     // Usage line, the dynamic-help `mut_subcommand` wiring in `args::command`
     // could regress one spelling while leaving the other intact, which this
     // pins.
-    for &sc in SUBCOMMANDS {
+    for sc in subcommands() {
+        let sc = sc.as_str();
         let long = run(&[sc, "--help"]);
         let short = run(&[sc, "-h"]);
         assert_eq!(
@@ -128,7 +172,8 @@ fn top_level_help_lists_every_subcommand_by_name() {
             Some(0),
             "`keyhog {flag}` must exit 0; stderr={stderr}"
         );
-        for &sc in SUBCOMMANDS {
+        for sc in subcommands() {
+            let sc = sc.as_str();
             assert!(
                 stdout.contains(sc),
                 "`keyhog {flag}` must list the `{sc}` subcommand in its menu; got:\n{stdout}"

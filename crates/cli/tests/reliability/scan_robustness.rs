@@ -20,7 +20,7 @@ fn scan_bounded(path: &Path, extra: &[&str], secs: u64) -> (Option<i32>, bool) {
         "--no-config".into(),
         "--daemon=off".into(),
         "--backend".into(),
-        "simd".into(),
+        "cpu".into(),
         "--per-chunk-timeout-ms".into(),
         "5000".into(),
     ];
@@ -233,7 +233,7 @@ fn filename_that_looks_like_a_flag_via_separator() {
             "scan",
             "--daemon=off",
             "--backend",
-            "simd",
+            "cpu",
             "--format",
             "json",
             "--",

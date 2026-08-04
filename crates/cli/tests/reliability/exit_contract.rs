@@ -22,11 +22,15 @@ fn scan_file(content: &str, extra: &[&str]) -> (Option<i32>, String, String) {
 }
 
 fn run_scan(path: &Path, extra: &[&str]) -> (Option<i32>, String, String) {
+    // `cpu` is the scalar route every build ships. Pinning `simd` here made
+    // the whole suite fail closed on a default (portable, Hyperscan-free)
+    // build, which is the build most contributors and `cargo install` users
+    // have. Backend behaviour is not what these contracts measure.
     let mut args: Vec<String> = vec![
         "scan".into(),
         "--daemon=off".into(),
         "--backend".into(),
-        "simd".into(),
+        "cpu".into(),
     ];
     for e in extra {
         args.push((*e).into());

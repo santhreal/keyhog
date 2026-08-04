@@ -18,7 +18,7 @@
 //! `#[doc(hidden)]` testing facade.
 #![cfg(feature = "gitlab")]
 
-use keyhog_core::{Source, SourceError};
+use keyhog_core::SourceError;
 use keyhog_sources::create_source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 

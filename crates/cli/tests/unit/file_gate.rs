@@ -134,7 +134,6 @@ fn scan_exit_precedence_keeps_system_failure_above_source_coverage_gap() {
 #[test]
 fn git_object_coverage_gaps_are_reported_separately() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let run = std::fs::read_to_string(root.join("src/orchestrator/run.rs")).expect("read run");
     let reporting = std::fs::read_to_string(root.join("src/orchestrator/reporting.rs"))
         .expect("read reporting");
     let report = std::fs::read_to_string(root.join("src/reporting.rs")).expect("read report");

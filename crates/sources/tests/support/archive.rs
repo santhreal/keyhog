@@ -1,4 +1,9 @@
 //! Shared archive fixture builders for source-container tests.
+//!
+//! Included both by `tests/support/mod.rs` (the `all_tests` aggregator) and
+//! directly by standalone regression binaries, each of which builds a
+//! different subset of fixtures.
+#![allow(dead_code)]
 
 use sevenz_rust2::{ArchiveEntry, ArchiveWriter};
 use std::io::{Cursor, Write};
