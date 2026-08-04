@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.60 - 2026-08-04
+
+- Anchor four more detectors whose vendor prefix is two or three letters, so they stop matching at the tail of an unrelated identifier. Two were reproducibly wrong on ordinary input: `xapi_key=<uuid>` near the word mexico was reported as a Mexican government key, and `LEIGH_WEBHOOK_SECRET=` was reported as a GitHub webhook secret. Every genuine form still fires and reported findings are unchanged on every corpus.
+
 ## 0.5.59 - 2026-08-04
 
 - Stop the Africa's Talking detector matching inside a larger identifier. Its anchor accepted a bare `at`/`AT` with nothing in front of it, and `SNAPCHAT_API_KEY=` contains a literal `AT_API_KEY=`, so every Snapchat token was also matched as an Africa's Talking key. Deduplication kept it out of the report, but the extra match blocked GPU autoroute calibration for the whole workload class.

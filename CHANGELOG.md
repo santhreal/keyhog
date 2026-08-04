@@ -2,6 +2,16 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.60] - 2026-08-04
+
+### Changed
+
+- Token-boundary anchoring for short vendor prefixes.
+
+### Fixed
+
+- Anchor four more detectors whose vendor prefix is two or three letters, so they stop matching at the tail of an unrelated identifier. Two were reproducibly wrong on ordinary input: `xapi_key=<uuid>` near the word mexico was reported as a Mexican government key, and `LEIGH_WEBHOOK_SECRET=` was reported as a GitHub webhook secret. Every genuine form still fires and reported findings are unchanged on every corpus.
+
 ## [0.5.59] - 2026-08-04
 
 ### Changed

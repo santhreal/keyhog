@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.60 - 2026-08-04
+
+- Token-boundary anchoring for short vendor prefixes.
+
 ## 0.5.59 - 2026-08-04
 
 - Token-boundary anchoring and an actionable autoroute parity rejection.

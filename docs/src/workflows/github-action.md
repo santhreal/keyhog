@@ -237,7 +237,7 @@ The floating major ref follows the latest published `v0` release:
 Use an exact Action ref when workflow code must change only through review:
 
 ```yaml
-- uses: santhreal/keyhog@v0.5.59
+- uses: santhreal/keyhog@v0.5.60
 ```
 
 The optional `version` input pins the scanner crate. It does not pin the Action
