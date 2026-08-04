@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Fall back to the honest legacy identity gaps when a causal profile's detector, configuration, or source enrichment is absent, instead of panicking while rendering the report at the end of a completed scan."
+crates = ["cli"]

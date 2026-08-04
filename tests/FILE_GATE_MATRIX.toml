@@ -2754,3 +2754,29 @@ boundary = true
 error = true
 adversarial = true
 e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/daemon/request_profile_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/orchestrator/workflow_state.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/orchestrator/tests/workflow_state.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/sources/src/profile.rs"
+error = true
+adversarial = true

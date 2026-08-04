@@ -15,8 +15,11 @@ pub(crate) use documentation::documentation_line_flags;
 pub(crate) use false_positive::parse_disclaimer_phrases;
 pub(crate) use false_positive::{
     has_disclaimer_comment_bytes, is_false_positive_context, is_false_positive_match_context,
-    is_integrity_hash_bytes, is_public_pem_block_at,
+    is_integrity_hash_bytes,
 };
+// The only consumer is the entropy-fallback suppression gate.
+#[cfg(feature = "entropy")]
+pub(crate) use false_positive::is_public_pem_block_at;
 pub use inference::infer_context;
 pub(crate) use inference::infer_context_with_documentation;
 #[cfg(test)]

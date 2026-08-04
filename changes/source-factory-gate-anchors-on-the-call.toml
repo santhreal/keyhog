@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Check the default-exclusion policy flag at each source factory call rather than at the first mention of a source name anywhere in the file, which reported a missing flag on a call that passes it."
+crates = ["cli"]

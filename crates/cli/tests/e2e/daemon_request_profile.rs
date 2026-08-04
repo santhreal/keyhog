@@ -13,10 +13,15 @@ fn aws_key_line() -> String {
     format!("AWS_ACCESS_KEY_ID = \"{}\"\n", concat!("ASIA", "Y34FZKBOKMUTVV7A"))
 }
 
+/// Every caller of this helper drives the daemon route, so `--daemon=on` is
+/// part of the helper's contract rather than a per-call argument. Declaring it
+/// at the subprocess construction site is also what makes the routing intent
+/// of these tests visible: a bare `scan` here would ride the implicit default
+/// route with no declared backend evidence.
 fn daemon_scan(runtime_dir: &std::path::Path, extra_args: &[&str], stdin_bytes: &[u8]) -> Output {
     let mut cmd = Command::new(binary());
     cmd.env("XDG_RUNTIME_DIR", runtime_dir)
-        .args(["scan", "--stdin", "--format", "json"])
+        .args(["scan", "--daemon=on", "--stdin", "--format", "json"])
         .args(extra_args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -54,7 +59,7 @@ fn daemon_profile_renders_isolated_request_profile() {
     let daemon = DaemonGuard::start_cpu();
     let out = daemon_scan(
         daemon.runtime_dir(),
-        &["--daemon=on", "--profile"],
+        &["--profile"],
         aws_key_line().as_bytes(),
     );
 
@@ -124,7 +129,7 @@ fn daemon_scan_without_profile_emits_no_request_profile_lines() {
     let daemon = DaemonGuard::start_cpu();
     let out = daemon_scan(
         daemon.runtime_dir(),
-        &["--daemon=on"],
+        &[],
         aws_key_line().as_bytes(),
     );
 
@@ -155,12 +160,12 @@ fn concurrent_profiled_daemon_scans_get_distinct_request_ids() {
     let first = std::thread::spawn({
         let runtime_dir = daemon.runtime_dir().to_path_buf();
         let body = aws_key_line();
-        move || daemon_scan(&runtime_dir, &["--daemon=on", "--profile"], body.as_bytes())
+        move || daemon_scan(&runtime_dir, &["--profile"], body.as_bytes())
     });
     let second = std::thread::spawn({
         let runtime_dir = daemon.runtime_dir().to_path_buf();
         let body = format!("{}\n{}", aws_key_line(), "# second concurrent request\n");
-        move || daemon_scan(&runtime_dir, &["--daemon=on", "--profile"], body.as_bytes())
+        move || daemon_scan(&runtime_dir, &["--profile"], body.as_bytes())
     });
     let first = first.join().expect("first concurrent scan");
     let second = second.join().expect("second concurrent scan");

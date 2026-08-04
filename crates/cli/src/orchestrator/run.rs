@@ -643,10 +643,11 @@ impl OperatorProfile {
             let profile = session.finish(state);
             let typed_metrics = runtime.take_session_typed_metrics();
             let report = profile.render_text();
-            let build = self
-                .build
-                .take()
-                .expect("enabled operator profile owns build identity");
+            // Rendering a profile must never be able to end a scan. The build
+            // identity is captured when profiling is enabled, so the absent
+            // case is unreachable; recapturing it is still cheaper than a
+            // panic and keeps the report complete.
+            let build = self.build.take().unwrap_or_else(profiler_build_identity);
             let requested_backend = profile.identity.backend_requested.clone();
             let mut causal = keyhog_profile::CausalProfileV2::from_v1_with_build(profile, build);
             causal.typed_metrics = typed_metrics;
@@ -667,18 +668,18 @@ impl OperatorProfile {
                 requested_backend,
                 batch_routes,
             );
-            causal.identity.detectors = self
-                .detectors
-                .take()
-                .expect("enabled operator profile owns detector identity");
-            causal.identity.config = self
-                .config
-                .take()
-                .expect("enabled operator profile owns config identity");
-            causal.identity.source = self
-                .source
-                .take()
-                .expect("enabled operator profile owns source identity");
+            // These three enrich the identity the v1 conversion already filled
+            // with explicit legacy gaps. When an enrichment is missing, that
+            // honest gap is the right answer, not a crash.
+            if let Some(detectors) = self.detectors.take() {
+                causal.identity.detectors = detectors;
+            }
+            if let Some(config) = self.config.take() {
+                causal.identity.config = config;
+            }
+            if let Some(source) = self.source.take() {
+                causal.identity.source = source;
+            }
             eprint!("{report}");
             // Workflow-state identity: the in-process orchestrator only runs
             // with the daemon route off (daemon-routed scans are served by

@@ -125,6 +125,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "perf-trace",
     "precision",
     "profile",
+    "profile-out",
     "progress",
     "quiet",
     // removed; the field is now `verify_rate` and the flag is `--verify-rate`.

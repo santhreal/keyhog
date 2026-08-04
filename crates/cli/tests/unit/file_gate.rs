@@ -526,25 +526,39 @@ fn sources_wires_no_default_excludes_into_git_sources() {
         sources.contains("create_source_with_http_config_limits_and_policy"),
         "CLI source construction must use the policy-aware source factory"
     );
-    for source_name in [
-        "\"github-org\"",
-        "\"gitlab-group\"",
-        "\"bitbucket-workspace\"",
-        "\"docker\"",
-        "source_name",
-    ] {
-        let start = sources.find(source_name).unwrap_or_else(|| {
-            panic!("sources.rs must construct {source_name} through the resolved config path")
-        });
-        let tail = &sources[start..];
-        let call_end = tail.find(")?").unwrap_or_else(|| {
-            tail.find(") {")
-                .expect("dynamic source factory call must close")
-        });
-        let call = &tail[..call_end];
+    // Anchor on the factory CALL, not on the first mention of the source name
+    // anywhere in the file: the name also appears in effective-config field
+    // keys, and matching those made this gate report a missing flag on a call
+    // that passes it correctly.
+    let mut checked = std::collections::BTreeSet::new();
+    for call in sources
+        .split("create_source_with_http_config_limits_and_policy(")
+        .skip(1)
+    {
+        let call_end = call
+            .find(")?")
+            .expect("source factory call must close with `)?`");
+        let call = &call[..call_end];
+        let name = call
+            .split(['"']).nth(1)
+            .expect("source factory call names its source")
+            .to_owned();
         assert!(
             call.contains("!resolved.no_default_excludes"),
-            "{source_name} source factory call must receive the resolved no-default-excludes flag"
+            "{name:?} source factory call must receive the resolved no-default-excludes flag"
+        );
+        checked.insert(name);
+    }
+    for required in [
+        "github-org",
+        "gitlab-group",
+        "bitbucket-workspace",
+        "docker",
+    ] {
+        assert!(
+            checked.contains(required),
+            "sources.rs must construct {required:?} through the policy-aware factory; \
+             checked {checked:?}"
         );
     }
 }

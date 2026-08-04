@@ -328,6 +328,8 @@ pub fn dump(label: &str) {
     // swap per collector, is what lets the scanner drop every per-collector
     // dump/reset path: the profile runtime is the single store.
     let typed = keyhog_profile::take_typed_metrics();
+    // The ML batch-size histogram is the only distribution consumer.
+    #[cfg(feature = "ml")]
     let distributions = keyhog_profile::take_metric_distributions();
     // The prefilter call decomposition (gate-skip / HS-served / RegexSet-served)
     // answers whether the `phase2:prefilter` cost is cheap
