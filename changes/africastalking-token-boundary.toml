@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Stop the Africa's Talking detector matching inside a larger identifier. Its anchor accepted a bare `at`/`AT` with nothing in front of it, and `SNAPCHAT_API_KEY=` contains a literal `AT_API_KEY=`, so every Snapchat token was also matched as an Africa's Talking key. Deduplication kept it out of the report, but the extra match blocked GPU autoroute calibration for the whole workload class."
+crates = ["scanner"]

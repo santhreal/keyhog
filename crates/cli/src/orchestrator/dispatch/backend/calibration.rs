@@ -17,7 +17,7 @@ use keyhog_scanner::{CompiledScanner, Phase1AdmissionPlan};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
-    canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
+    canonical_match_differences, canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
     differing_canonical_match_fields, gpu_cold_warm_route_evidence, simd_cold_warm_route_evidence,
     AutorouteDecision, BackendTimingEvidence, CanonicalMatch, MeasuredRoute, RouteTimingEvidence,
 };
@@ -494,34 +494,28 @@ fn validate_calibration_candidate_matches(
     };
 
     let trial_key = canonical_matches(matches);
-    let only_in_reference_count = sorted_calibration_difference_count(reference_key, &trial_key);
-    let only_in_trial_count = sorted_calibration_difference_count(&trial_key, reference_key);
-    let differing_fields = differing_canonical_match_fields(reference_key, &trial_key);
-    if backend == ScanBackend::CpuFallback {
-        tracing::error!(
-            target: "keyhog::routing",
-            backend = backend.label(),
-            trial = reported_trial,
-            reference_match_count = reference_key.len(),
-            trial_match_count = trial_key.len(),
-            only_in_reference_count,
-            only_in_trial_count,
-            differing_fields = ?differing_fields,
+    // Positional field comparison only means something when both sides have the
+    // same number of records. One extra match shifts every later pair, so the
+    // list would name almost every field and say nothing.
+    let differing_fields = (reference_key.len() == trial_key.len())
+        .then(|| differing_canonical_match_fields(reference_key, &trial_key))
+        .unwrap_or_default();
+    tracing::error!(
+        target: "keyhog::routing",
+        backend = backend.label(),
+        trial = reported_trial,
+        reference_match_count = reference_key.len(),
+        trial_match_count = trial_key.len(),
+        only_in_reference_count =
+            sorted_calibration_difference_count(reference_key, &trial_key),
+        only_in_trial_count = sorted_calibration_difference_count(&trial_key, reference_key),
+        differing_fields = ?differing_fields,
+        message = if backend == ScanBackend::CpuFallback {
             "reference backend produced inconsistent calibration results; autoroute calibration aborted"
-        );
-    } else {
-        tracing::error!(
-            target: "keyhog::routing",
-            backend = backend.label(),
-            trial = reported_trial,
-            reference_match_count = reference_key.len(),
-            trial_match_count = trial_key.len(),
-            only_in_reference_count,
-            only_in_trial_count,
-            differing_fields = ?differing_fields,
+        } else {
             "backend rejected by autoroute parity check"
-        );
-    }
+        },
+    );
     scanner.clear_fragment_cache();
     Err(error)
 }
@@ -560,6 +554,17 @@ fn run_end<T: Eq>(records: &[T], start: usize) -> usize {
     end
 }
 
+/// Enough differing records to recognise a pattern, few enough to stay one
+/// readable line.
+const PARITY_EXAMPLES: usize = 3;
+
+/// Whether a candidate backend reproduced the scalar reference exactly.
+///
+/// A rejection blocks the entire calibration, so the message carries the
+/// evidence an operator needs to act: how many records each side had, how many
+/// were unique to each, and a few of them named by detector, file, line and
+/// offset. Those fields are already redacted, and only eight hex characters of
+/// the credential digest appear, so nothing here is secret-bearing.
 pub(super) fn calibration_candidate_parity_result(
     backend: ScanBackend,
     trial: usize,
@@ -572,10 +577,32 @@ pub(super) fn calibration_candidate_parity_result(
     if backend == ScanBackend::CpuFallback {
         return Err(AutorouteRoutingError::inconsistent_reference_backend(trial));
     }
+    let trial_key = canonical_matches(matches);
+    let only_in_reference = canonical_match_differences(reference_key, &trial_key, PARITY_EXAMPLES);
+    let only_in_trial = canonical_match_differences(&trial_key, reference_key, PARITY_EXAMPLES);
     Err(AutorouteRoutingError::candidate_backend_rejected(
         backend,
-        "candidate findings diverged from the scalar reference",
+        &format!(
+            "candidate findings diverged from the scalar reference: \
+             {reference_count} reference matches against {trial_count}, \
+             {only_in_reference_count} only in the reference{reference_examples}, \
+             {only_in_trial_count} only in the candidate{trial_examples}",
+            reference_count = reference_key.len(),
+            trial_count = trial_key.len(),
+            only_in_reference_count =
+                sorted_calibration_difference_count(reference_key, &trial_key),
+            only_in_trial_count = sorted_calibration_difference_count(&trial_key, reference_key),
+            reference_examples = render_parity_examples(&only_in_reference),
+            trial_examples = render_parity_examples(&only_in_trial),
+        ),
     ))
+}
+
+fn render_parity_examples(examples: &[String]) -> String {
+    if examples.is_empty() {
+        return String::new();
+    }
+    format!(" (e.g. {})", examples.join("; "))
 }
 
 /// Run every calibration candidate through the same backend-dispatch boundary

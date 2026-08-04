@@ -13,12 +13,17 @@ match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20,
 keywords = ["africastalking", "AFRICASTALKING", "africa", "AT_API_KEY", "apiKey"]
 
 [[detector.patterns]]
-regex = '''(?:africas?talking|AFRICAS?TALKING|at|AT)[_.-]?(?:api|API)[_.-]?(?:key|KEY)?[=:\s"\' ]+([a-zA-Z0-9_-]{32,})'''
+# `\b` is load-bearing: the alternation accepts a bare `at`/`AT` for the
+# `AT_API_KEY` env var, and without a leading boundary that also matches the
+# tail of any identifier ending in those letters. `SNAPCHAT_API_KEY=<64 hex>`
+# contains a literal `AT_API_KEY=`, so every Snapchat token was also reported
+# as an Africa's Talking key.
+regex = '''\b(?:africas?talking|AFRICAS?TALKING|at|AT)[_.-]?(?:api|API)[_.-]?(?:key|KEY)?[=:\s"\' ]+([a-zA-Z0-9_-]{32,})'''
 description = "Africa's Talking API Key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = '''(?:apiKey|ApiKey)["\' ]?\s*[:=]\s*["\' ]?([a-zA-Z0-9_-]{32,})["\' ]?.*(?:africas?talking|AFRICAS?TALKING)'''
+regex = '''\b(?:apiKey|ApiKey)["\' ]?\s*[:=]\s*["\' ]?([a-zA-Z0-9_-]{32,})["\' ]?.*(?:africas?talking|AFRICAS?TALKING)'''
 description = "Africa's Talking API Key from header with context"
 group = 1
 

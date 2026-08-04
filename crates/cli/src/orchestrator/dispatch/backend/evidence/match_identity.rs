@@ -181,6 +181,76 @@ pub(crate) fn differing_canonical_match_fields(
     fields.into_iter().collect()
 }
 
+/// One match's identity as a single redacted line.
+///
+/// Every field here is already secret-safe: credentials are present only as
+/// SHA-256 digests, and only the first eight hex characters of those are shown,
+/// which is enough to correlate two records without publishing a digest that
+/// could be checked against a guess.
+pub(crate) fn render_canonical_match(record: &CanonicalMatch<'_>) -> String {
+    let digest = keyhog_core::hex_encode(record.credential_value_hash);
+    format!(
+        "chunk {} {} @ {}:{} offset {} credential {}",
+        record.chunk_idx,
+        record.detector_id,
+        record.file_path.unwrap_or("<no path>"),
+        record
+            .line
+            .map_or_else(|| "?".to_string(), |line| line.to_string()),
+        record.offset,
+        &digest[..8.min(digest.len())],
+    )
+}
+
+/// The records present on one side of the comparison and not the other.
+///
+/// Counts alone cannot be acted on. A rejected backend candidate blocks the
+/// whole calibration, and the operator's first question is which detector, at
+/// which file and offset, disagreed. Both slices must already be sorted, which
+/// `canonical_matches` guarantees.
+///
+/// This is a multiset difference, so a record appearing twice on the left and
+/// once on the right is reported once.
+pub(crate) fn canonical_match_differences<'a>(
+    left: &[CanonicalMatch<'a>],
+    right: &[CanonicalMatch<'a>],
+    limit: usize,
+) -> Vec<String> {
+    let mut rendered = Vec::new();
+    let mut left_index = 0usize;
+    let mut right_index = 0usize;
+    while left_index < left.len() && rendered.len() < limit {
+        let record = &left[left_index];
+        while right_index < right.len() && right[right_index] < *record {
+            right_index += 1;
+        }
+        let left_end = run_end(left, left_index);
+        let right_count = if right.get(right_index) == Some(record) {
+            run_end(right, right_index) - right_index
+        } else {
+            0
+        };
+        let missing = (left_end - left_index).saturating_sub(right_count);
+        if missing > 0 {
+            rendered.push(if missing == 1 {
+                render_canonical_match(record)
+            } else {
+                format!("{} (x{missing})", render_canonical_match(record))
+            });
+        }
+        left_index = left_end;
+    }
+    rendered
+}
+
+fn run_end(records: &[CanonicalMatch<'_>], start: usize) -> usize {
+    let mut end = start + 1;
+    while end < records.len() && records[end] == records[start] {
+        end += 1;
+    }
+    end
+}
+
 pub(crate) fn canonical_match_digest(matches: &[CanonicalMatch<'_>]) -> u64 {
     let mut h = crate::stable_hash::StableHasher::new("autoroute-correctness-digest");
     h.field_usize("matches.len", matches.len());
