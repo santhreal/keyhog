@@ -3130,7 +3130,7 @@ fn calibration_rejects_a_recovery_backend_crossover_inside_one_workload_class() 
             Some(5),
         ))
         .expect_err("recovery crossover must split the workload class");
-    assert!(error.contains("changes its confidence-supported remaining one-shot recovery route"));
+    assert!(error.contains("changes its confidence-supported remaining one-shot recovery backend"));
 }
 
 #[test]
@@ -4026,7 +4026,7 @@ fn calibration_envelope_retains_agreeing_points_and_rejects_a_crossover() {
             None,
         ))
         .expect_err("a measured winner change must split the workload identity");
-    assert!(error.contains("changes its confidence-supported route across measured points"));
+    assert!(error.contains("changes its confidence-supported backend across measured points"));
     assert!(error.contains("split the workload identity"));
 }
 
@@ -7053,4 +7053,353 @@ fn live_calibration_measures_every_gpu_peer_before_resolving_or_refusing() {
             );
         }
     }
+}
+
+// --- Same-backend execution-plan stability ---------------------------------
+//
+// Calibrating the mirror corpus five times with an identical binary, corpus
+// and host, the same 664,161-byte/4,096-chunk point resolved
+// `plain=true+keyword=true` on three runs and `false+false` on two, and the
+// merge check then rejected the whole calibration as a workload crossover.
+// Two of those five runs disagreed in OPPOSITE directions on that one point,
+// which is the proof the verdict was noise: `cpu-fallback` won every time and
+// only the sub-plan flipped. Three of five runs therefore persisted nothing,
+// and every later scan of that workload paid scalar recovery.
+//
+// A paired 95% test can call a winner while the two intervals overlap almost
+// entirely, and on the next sample it calls the other one. These contracts pin
+// the rule that stops that: on one backend, a plan wins only when its interval
+// clears the other's as well.
+
+/// Trials that rise together, one consistently a hair faster.
+///
+/// The paired test sees a uniform sign and declares a winner; the intervals
+/// overlap almost completely, so the lead is inside the noise. This is the
+/// exact shape that made calibration flip run to run.
+fn overlapping_paired_trials(offset_ns: u128) -> BackendTimingEvidence {
+    let trials = (1..=AUTOROUTE_CALIBRATION_TRIALS)
+        .map(|round| (round as u128) * 100_000_000 + offset_ns)
+        .collect::<Vec<_>>();
+    BackendTimingEvidence::from_trial_ns(trials).expect("valid trial evidence")
+}
+
+fn scalar_plan_decision(
+    sample_bytes: u64,
+    faster_plan: (bool, bool),
+    compiled_default: (bool, bool),
+) -> AutorouteDecision {
+    // A far slower accelerator peer, so the scalar routes are compared the way
+    // they are in a real calibration: cpu-fallback clearly wins the backend,
+    // and the only open question is which execution plan it runs.
+    let mut route_timings = vec![RouteTimingEvidence::new(
+        MeasuredRoute {
+            backend: ScanBackend::SimdCpu,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
+        },
+        BackendTimingEvidence::constant_ms(50_000, AUTOROUTE_CALIBRATION_TRIALS),
+    )];
+    route_timings.extend([(false, false), (true, true)].into_iter().map(
+        |(plain, keyword)| {
+            let offset = if (plain, keyword) == faster_plan {
+                0
+            } else {
+                1_000_000
+            };
+            RouteTimingEvidence::new(
+                MeasuredRoute {
+                    backend: ScanBackend::CpuFallback,
+                    phase2_plain_localizer: plain,
+                    phase2_keyword_localizer: keyword,
+                },
+                overlapping_paired_trials(offset),
+            )
+        },
+    ));
+    let mut decision = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::CpuFallback,
+        sample_bytes,
+        1,
+        test_measurement_shape_evidence(sample_bytes, 1),
+        0x5A17_D0C5_5A17_D0C5,
+        1,
+        route_timings,
+        compiled_default.0,
+        compiled_default.1,
+    );
+    // Calibration declares the route it resolved before the point is merged
+    // (see `calibrate_workload_backend`), so the fixture must too.
+    let resolved = decision
+        .resolved_routing_route()
+        .expect("fixture evidence resolves one route");
+    decision.backend = resolved.backend.label().to_string();
+    decision.phase2_plain_localizer = resolved.phase2_plain_localizer;
+    decision.phase2_keyword_localizer = resolved.phase2_keyword_localizer;
+    decision
+}
+
+/// A lead that does not clear its own error bars must not decide the plan.
+///
+/// Both orderings of the same overlapping measurement have to resolve to the
+/// compiled default. If either one instead followed the paired winner, the
+/// persisted plan would depend on which way the noise fell, which is what made
+/// three of five identical calibration runs persist nothing at all.
+#[test]
+fn an_overlapping_plan_lead_resolves_to_the_compiled_default_either_way() {
+    for faster_plan in [(false, false), (true, true)] {
+        let decision = scalar_plan_decision(8 * 1024 * 1024, faster_plan, (true, true));
+        let resolved = decision
+            .resolved_routing_route()
+            .expect("an overlapping same-backend plan pair still resolves one route");
+        assert_eq!(resolved.backend, ScanBackend::CpuFallback);
+        assert!(
+            resolved.phase2_plain_localizer && resolved.phase2_keyword_localizer,
+            "noise favouring {faster_plan:?} must not move the plan off the compiled default"
+        );
+    }
+}
+
+/// The same holds when the build's default is the other plan.
+///
+/// Pinning only one default would let the rule pass by accident on a build
+/// whose default happened to match the tie-break's fallback ordering.
+#[test]
+fn an_overlapping_plan_lead_honours_whichever_plan_the_build_defaults_to() {
+    for faster_plan in [(false, false), (true, true)] {
+        let decision = scalar_plan_decision(8 * 1024 * 1024, faster_plan, (false, false));
+        let resolved = decision
+            .resolved_routing_route()
+            .expect("an overlapping same-backend plan pair still resolves one route");
+        assert!(
+            !resolved.phase2_plain_localizer && !resolved.phase2_keyword_localizer,
+            "noise favouring {faster_plan:?} must not move the plan off the compiled default"
+        );
+    }
+}
+
+/// Two points measuring the same class must merge, whichever way the noise fell.
+///
+/// This is the end of the chain that failed in the field: each point resolved
+/// its own plan from an overlapping lead, the points disagreed, and
+/// `merge_calibration_point` rejected the entire calibration with advice to
+/// split the workload identity, which could never have fixed a verdict that
+/// flips on identical input.
+#[test]
+fn points_whose_plan_leads_are_noise_merge_into_one_envelope() {
+    let mut envelope = scalar_plan_decision(8 * 1024 * 1024, (true, true), (true, true));
+    envelope
+        .merge_calibration_point(scalar_plan_decision(
+            12 * 1024 * 1024,
+            (false, false),
+            (true, true),
+        ))
+        .expect("points that disagree only inside the noise must form one envelope");
+    assert_eq!(envelope.calibration_points.len(), 2);
+    let resolved = envelope
+        .resolved_routing_route()
+        .expect("the merged class resolves one route");
+    assert_eq!(resolved.backend, ScanBackend::CpuFallback);
+    assert!(resolved.phase2_plain_localizer && resolved.phase2_keyword_localizer);
+}
+
+/// A plan lead that DOES clear its error bars still decides the plan.
+///
+/// The rule raises the evidence bar; it must not become a blanket preference
+/// for the compiled default. A plan that is genuinely, separably faster has to
+/// win, or calibration would stop finding the fastest execution plan at all.
+#[test]
+fn a_separated_plan_lead_still_beats_the_compiled_default() {
+    let route_timings = [(false, false), (true, true)]
+        .into_iter()
+        .map(|(plain, keyword)| {
+            let ms = if (plain, keyword) == (false, false) {
+                10
+            } else {
+                90
+            };
+            RouteTimingEvidence::new(
+                MeasuredRoute {
+                    backend: ScanBackend::CpuFallback,
+                    phase2_plain_localizer: plain,
+                    phase2_keyword_localizer: keyword,
+                },
+                BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS),
+            )
+        })
+        .collect::<Vec<_>>();
+    let decision = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::CpuFallback,
+        8 * 1024 * 1024,
+        1,
+        test_measurement_shape_evidence(8 * 1024 * 1024, 1),
+        0x5A17_D0C5_5A17_D0C5,
+        1,
+        route_timings,
+        true,
+        true,
+    );
+    let resolved = decision
+        .resolved_routing_route()
+        .expect("a separated plan lead resolves");
+    assert!(
+        !resolved.phase2_plain_localizer && !resolved.phase2_keyword_localizer,
+        "a 9x separated lead must beat the compiled default"
+    );
+}
+
+/// Points that split on the plan after a SEPARATED lead still reconcile to the
+/// compiled default rather than discarding the class.
+///
+/// Interval separation cut the mirror corpus's failure rate from three runs in
+/// five to one in ten, but did not reach zero: with seven trials a 95% interval
+/// can separate by luck. Whatever the cause, two points that agree the backend
+/// is `cpu-fallback` have settled the question autoroute exists to answer, and
+/// throwing that away over a sub-plan leaves the workload paying scalar
+/// recovery on every future scan.
+#[test]
+fn a_split_plan_across_points_reconciles_to_the_compiled_default() {
+    let separated = |sample_bytes: u64, faster_plan: (bool, bool)| {
+        let mut route_timings = vec![RouteTimingEvidence::new(
+            MeasuredRoute {
+                backend: ScanBackend::SimdCpu,
+                phase2_plain_localizer: false,
+                phase2_keyword_localizer: false,
+            },
+            BackendTimingEvidence::constant_ms(50_000, AUTOROUTE_CALIBRATION_TRIALS),
+        )];
+        route_timings.extend([(false, false), (true, true)].into_iter().map(
+            |(plain, keyword)| {
+                let ms = if (plain, keyword) == faster_plan { 10 } else { 90 };
+                RouteTimingEvidence::new(
+                    MeasuredRoute {
+                        backend: ScanBackend::CpuFallback,
+                        phase2_plain_localizer: plain,
+                        phase2_keyword_localizer: keyword,
+                    },
+                    BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS),
+                )
+            },
+        ));
+        let mut decision = AutorouteDecision::from_peer_timing_evidence(
+            ScanBackend::CpuFallback,
+            sample_bytes,
+            1,
+            test_measurement_shape_evidence(sample_bytes, 1),
+            0x5A17_D0C5_5A17_D0C5,
+            1,
+            route_timings,
+            true,
+            true,
+        );
+        let resolved = decision
+            .resolved_routing_route()
+            .expect("a separated lead resolves");
+        decision.backend = resolved.backend.label().to_string();
+        decision.phase2_plain_localizer = resolved.phase2_plain_localizer;
+        decision.phase2_keyword_localizer = resolved.phase2_keyword_localizer;
+        decision
+    };
+
+    let mut envelope = separated(8 * 1024 * 1024, (true, true));
+    envelope
+        .merge_calibration_point(separated(12 * 1024 * 1024, (false, false)))
+        .expect("points agreeing on the backend must not discard the class");
+    let resolved = envelope
+        .resolved_routing_route()
+        .expect("the class reconciles to one route");
+    assert_eq!(resolved.backend, ScanBackend::CpuFallback);
+    assert!(
+        resolved.phase2_plain_localizer && resolved.phase2_keyword_localizer,
+        "a split plan must land on the compiled default, not on either point's pick"
+    );
+}
+
+/// A genuine BACKEND crossover is still refused.
+///
+/// Reconciling the execution plan must not soften the thing autoroute actually
+/// selects. If two points disagree about which backend is fastest, the class is
+/// unresolved and must stay that way.
+#[test]
+fn a_backend_crossover_across_points_still_refuses_to_resolve() {
+    let winner = |sample_bytes: u64, cpu_ms: u128, simd_ms: u128| {
+        let route_timings = vec![
+            RouteTimingEvidence::new(
+                MeasuredRoute {
+                    backend: ScanBackend::SimdCpu,
+                    phase2_plain_localizer: false,
+                    phase2_keyword_localizer: false,
+                },
+                BackendTimingEvidence::constant_ms(simd_ms, AUTOROUTE_CALIBRATION_TRIALS),
+            ),
+            RouteTimingEvidence::new(
+                MeasuredRoute {
+                    backend: ScanBackend::CpuFallback,
+                    phase2_plain_localizer: true,
+                    phase2_keyword_localizer: true,
+                },
+                BackendTimingEvidence::constant_ms(cpu_ms, AUTOROUTE_CALIBRATION_TRIALS),
+            ),
+        ];
+        AutorouteDecision::from_peer_timing_evidence(
+            ScanBackend::CpuFallback,
+            sample_bytes,
+            1,
+            test_measurement_shape_evidence(sample_bytes, 1),
+            0x5A17_D0C5_5A17_D0C5,
+            1,
+            route_timings,
+            true,
+            true,
+        )
+    };
+    let mut envelope = winner(8 * 1024 * 1024, 10, 900);
+    envelope
+        .calibration_points
+        .push(winner(12 * 1024 * 1024, 900, 10).calibration_points.remove(0));
+    assert_eq!(
+        envelope.resolved_routing_route(),
+        None,
+        "points that disagree about the backend must leave the class unresolved"
+    );
+}
+
+/// A merge that moves the class's plan must move the DECLARED plan with it.
+///
+/// Validation requires the persisted backend and localizer fields to equal what
+/// `resolved_routing_route` computes from the timing evidence. Reconciling a
+/// split plan onto the compiled default changes that answer, so a merge that
+/// left the first point's plan declared produced a cache that failed its own
+/// validation with "selected route is not supported by the persisted timing
+/// evidence" - one calibration run in ten on the mirror corpus.
+#[test]
+fn merging_a_point_redeclares_the_reconciled_route() {
+    let mut envelope = scalar_plan_decision(8 * 1024 * 1024, (false, false), (true, true));
+    envelope.backend = ScanBackend::CpuFallback.label().to_string();
+    envelope.phase2_plain_localizer = false;
+    envelope.phase2_keyword_localizer = false;
+
+    envelope
+        .merge_calibration_point(scalar_plan_decision(
+            12 * 1024 * 1024,
+            (true, true),
+            (true, true),
+        ))
+        .expect("the points agree on the backend");
+
+    let resolved = envelope
+        .resolved_routing_route()
+        .expect("the merged class resolves one route");
+    assert_eq!(
+        (
+            envelope.backend.as_str(),
+            envelope.phase2_plain_localizer,
+            envelope.phase2_keyword_localizer
+        ),
+        (
+            resolved.backend.label(),
+            resolved.phase2_plain_localizer,
+            resolved.phase2_keyword_localizer
+        ),
+        "the declared route must equal the route the evidence resolves"
+    );
 }
