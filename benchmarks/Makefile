@@ -90,7 +90,7 @@ ifneq ($(strip $(KEYHOG_BIN)),)
 export KEYHOG_BIN
 endif
 
-.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus leakage-audit creddata bloom canonical readme-matrix-corpus readme-scaling readme-scaling-check readme-matrix readme-matrix-check kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
+.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus leakage-audit creddata bloom canonical readme-matrix-corpus readme-scaling readme-scaling-check readme-matrix readme-matrix-check require-clean-tree kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
 
 help:
 	@grep -E '^#   make ' $(lastword $(MAKEFILE_LIST)) | sed 's/^#   /  /'
@@ -146,7 +146,14 @@ readme-matrix-corpus:
 	cd $(BENCH_DIR) && $(PY) -m bench.readme_matrix \
 		--generate-daemon-corpus "$(README_MATRIX_DAEMON_CORPUS)"
 
-readme-matrix: readme-matrix-corpus readme-scaling
+# `readme-scaling` is deliberately NOT a prerequisite. It rewrites README.md and
+# reports/readme-scaling.json, and the leaderboard below refuses to scan with a
+# binary whose tracked workspace is dirty, so chaining them failed every one of
+# this target's forty rows with "the tracked KeyHog workspace has uncommitted
+# changes" whenever it was run from a clean tree, which is the only tree it can
+# run on. Regenerate and commit the scaling evidence first, then run this;
+# Commit the scaling refresh first, then run this on the clean tree.
+readme-matrix: require-clean-tree readme-matrix-corpus
 	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus mirror \
 		--scanners keyhog --tier perf --out "$(README_MATRIX_CONFIG_OUT)" --require-available
 	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus daemon-file \
@@ -166,6 +173,17 @@ readme-scaling:
 		--trials "$(README_SCALING_TRIALS)" --warmups "$(README_SCALING_WARMUPS)" \
 		--backend "$(README_SCALING_BACKEND)" \
 		--source-state "$(README_SCALING_SOURCE_STATE)" $(README_SCALING_OPTIONAL_ARGS)
+
+# Every measured row refuses to scan with a binary whose tracked workspace is
+# dirty, so say that once, up front, instead of forty times after the work.
+require-clean-tree:
+	@cd $(REPO_ROOT) && test -z "$$(git status --porcelain -- ':!BACKLOG.md')" || { \
+		echo "benchmarks: the tracked workspace is dirty, so no measured row can prove"; \
+		echo "  which source its binary came from. Commit or stash, rebuild the binary,"; \
+		echo "  then rerun. Regenerating README evidence goes scaling first (it rewrites"; \
+		echo "  README.md and reports/readme-scaling.json), commit, then readme-matrix."; \
+		cd $(REPO_ROOT) && git status --porcelain -- ':!BACKLOG.md'; \
+		exit 1; }
 
 readme-scaling-check:
 	cd $(BENCH_DIR) && $(PY) -m bench.scaling_matrix check \

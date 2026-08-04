@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "Refresh the README scaling evidence against the current binary. A single-worker scan of the scaling workload drops from 21.3 s to 10.4 s and a 32-worker scan from 1.83 s to 0.93 s, throughput rises from 35.0 MiB/s to 68.6 MiB/s, and peak resident memory falls from 810 MiB to 684 MiB. The snapshot is now attested clean rather than developer-dirty."
+crates = []
