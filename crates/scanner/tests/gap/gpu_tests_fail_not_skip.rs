@@ -26,8 +26,11 @@ fn gpu_ac_recall_test_does_not_pin_personal_corpus_path() {
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/gpu_ac_recall_bug_56.rs");
     let src = std::fs::read_to_string(&path).expect("read gpu AC recall test source");
     assert!(
-        !src.contains("/media/mukund-thiru/SanthData/keyhog-bench-corpora"),
-        "gpu AC recall regression must not depend on one developer's corpus path"
+        !src.contains("/media/")
+            && !src.contains("/home/")
+            && !src.contains("/Users/")
+            && !src.contains("C:\\Users\\"),
+        "gpu AC recall regression must not depend on one developer's absolute corpus path"
     );
     assert!(
         src.contains("KEYHOG_GPU_AC_RECALL_CORPUS"),

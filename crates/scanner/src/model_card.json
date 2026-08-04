@@ -1977,7 +1977,7 @@
       "real_recall": 0.9309,
       "recall_at_0_40_floor": 0.9377,
       "six_scanner_differential": {
-        "error": "/media/mukund-thiru/SanthData/Santh/software/keyhog/benchmarks/results/82fcd9288623/creddata-betterleaks-default-nocache-nodaemon-no-validate.json has schema_version='bench-v1'; supported='bench-v3'. Rerun the benchmark with the current harness",
+        "error": "${SANTH_ROOT}/software/keyhog/benchmarks/results/82fcd9288623/creddata-betterleaks-default-nocache-nodaemon-no-validate.json has schema_version='bench-v1'; supported='bench-v3'. Rerun the benchmark with the current harness",
         "status": "unavailable"
       }
     },

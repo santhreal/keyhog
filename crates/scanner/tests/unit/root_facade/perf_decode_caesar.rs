@@ -78,7 +78,7 @@
 //! stays >= 50x.
 //!
 //! Build/run:
-//!   cd /media/mukund-thiru/SanthData/Santh/software/keyhog && \
+//!   cd . && \
 //!   CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target \
 //!   cargo test -p keyhog-scanner --test perf_decode_caesar --no-run
 

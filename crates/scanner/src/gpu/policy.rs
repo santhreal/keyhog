@@ -131,10 +131,16 @@ pub(crate) fn require_gpu_preflight_with_policy(policy: GpuRuntimePolicy) -> Res
     }
 
     if let Err(reason) = super::gpu_region_presence_self_test() {
+        // The policy reaches `Required` from `--require-gpu` OR from an
+        // explicit GPU `--backend`, and this layer cannot see which. Naming
+        // only the flag sent an operator who wrote `--backend gpu-cuda`
+        // looking for a flag they never passed, so the message names the
+        // condition and every way to leave it.
         return Err(format!(
-            "--require-gpu requested but no complete production GPU peer set passed region-presence parity ({reason}); \
-             refusing to run on CPU. Fix the GPU stack or run without \
-             --require-gpu."
+            "GPU execution is required by the resolved runtime policy (--require-gpu, or an \
+             explicit --backend gpu-cuda/gpu-metal/gpu-wgpu) but no complete production GPU peer \
+             set passed region-presence parity ({reason}); refusing to run on CPU. Fix the GPU \
+             stack, or drop --require-gpu and any explicit GPU --backend to allow CPU execution."
         ));
     }
 

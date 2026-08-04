@@ -111,3 +111,45 @@ fn require_gpu_on_no_gpu_host_exits_twelve() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// The refusal names every way GPU became required, not just the flag.
+///
+/// An explicit `--backend gpu-cuda` also resolves the policy to required, and
+/// the message used to say only "--require-gpu requested ... run without
+/// --require-gpu". An operator who never passed that flag was sent looking for
+/// it. Both routes now produce a message naming the condition and both exits
+/// from it.
+#[test]
+fn the_gpu_refusal_names_every_route_that_required_it() {
+    if host_has_usable_gpu() {
+        return;
+    }
+
+    for demand in [
+        vec!["scan", "--no-config", "--daemon=off", "--require-gpu"],
+        vec!["scan", "--no-config", "--daemon=off", "--backend", "gpu-cuda"],
+    ] {
+        let (_dir, path) = aws_leak_fixture();
+        let output = Command::new(binary())
+            .args(&demand)
+            .arg(&path)
+            .output()
+            .expect("spawn keyhog scan");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        assert_eq!(
+            output.status.code(),
+            Some(12),
+            "{demand:?} must fail closed; stderr={stderr}"
+        );
+        assert!(
+            stderr.contains("required by the resolved runtime policy")
+                && stderr.contains("--backend gpu-cuda/gpu-metal/gpu-wgpu"),
+            "{demand:?} must name the condition and the explicit-backend route; stderr={stderr}"
+        );
+        assert!(
+            stderr.contains("drop --require-gpu and any explicit GPU --backend"),
+            "{demand:?} must tell the operator every way out; stderr={stderr}"
+        );
+    }
+}
