@@ -1,3 +1,0 @@
-category = "Changed"
-summary = "Refresh the README accuracy, execution-route and daemon panels, which had been stuck on v0.5.49 because the target that regenerates them could not run. The GPU rows were the worst affected and were understating the CUDA and WGPU routes by six times: a full mirror scan reads 2.11 s rather than 12.64 s on CUDA and 2.07 s rather than 12.34 s on WGPU, with F1 unchanged at 0.9447 on every route."
-crates = []

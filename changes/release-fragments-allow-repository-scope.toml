@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Let a release note describe a change with no crate behind it. The fragment schema required at least one crate, so a README, benchmark-harness or CI change had to be filed against a crate it never touched, putting a false claim in that crate's published changelog. An empty crate list now means repository scope: the root changelog carries the note and no crate changelog does."
-crates = []

@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Let the README benchmark matrix regenerate. The target depended on the scaling measurement, which rewrites README.md and the scaling snapshot, after which every measured row refused to scan because the tracked workspace was dirty, so the panels could not be refreshed at all. The dependency is gone and a clean-tree check now reports the problem once, up front, instead of forty times after the work."
-crates = []

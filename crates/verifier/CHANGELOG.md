@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.58 - 2026-08-04
+
+- README evidence panels remeasured against the current binary.
+
 ## 0.5.57 - 2026-08-04
 
 - Repeatable autoroute calibration.

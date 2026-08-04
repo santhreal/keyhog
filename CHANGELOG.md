@@ -2,6 +2,19 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.58] - 2026-08-04
+
+### Changed
+
+- Refresh the README accuracy, execution-route and daemon panels, which had been stuck on v0.5.49 because the target that regenerates them could not run. The GPU rows were the worst affected and were understating the CUDA and WGPU routes by six times: a full mirror scan reads 2.11 s rather than 12.64 s on CUDA and 2.07 s rather than 12.34 s on WGPU, with F1 unchanged at 0.9447 on every route.
+- Refresh the README scaling evidence against the current binary. A single-worker scan of the scaling workload drops from 21.3 s to 10.4 s and a 32-worker scan from 1.83 s to 0.93 s, throughput rises from 35.0 MiB/s to 68.6 MiB/s, and peak resident memory falls from 810 MiB to 684 MiB. The snapshot is now attested clean rather than developer-dirty.
+- README evidence panels remeasured against the current binary.
+
+### Fixed
+
+- Let the README benchmark matrix regenerate. The target depended on the scaling measurement, which rewrites README.md and the scaling snapshot, after which every measured row refused to scan because the tracked workspace was dirty, so the panels could not be refreshed at all. The dependency is gone and a clean-tree check now reports the problem once, up front, instead of forty times after the work.
+- Let a release note describe a change with no crate behind it. The fragment schema required at least one crate, so a README, benchmark-harness or CI change had to be filed against a crate it never touched, putting a false claim in that crate's published changelog. An empty crate list now means repository scope: the root changelog carries the note and no crate changelog does.
+
 ## [0.5.57] - 2026-08-04
 
 ### Changed
