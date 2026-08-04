@@ -15,7 +15,7 @@ keywords = ["cm.com", "CMCOM", "cmcom", "product_token", "X-CM-PRODUCTTOKEN"]
 [[detector.patterns]]
 # `\b` is load-bearing: a bare `cm`/`CM` matches at the tail of any identifier
 # ending in those letters, such as `WEBCM_TOKEN=`.
-regex = '''\b(?:cm|CM)[_.-]?(?:com|COM)?[_.-]?(?:product|PRODUCT)?[_.-]?(?:token|TOKEN)?[=:\s"\' ]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+regex = '''(?:(?:^|[^A-Za-z])cm|(?:^|[^A-Za-z])CM)[_.-]?(?:com|COM)?[_.-]?(?:product|PRODUCT)?[_.-]?(?:token|TOKEN)?[=:\s"\' ]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "CM.com Product Token (UUID format)"
 group = 1
 
@@ -25,7 +25,7 @@ description = "CM.com Product Token in header"
 group = 1
 
 [[detector.patterns]]
-regex = '''\b(?:cm|CM)[_.-]?(?:com|COM)?[_.-]?(?:api|API)?[_.-]?(?:key|KEY)?[=:\s"\' ]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+regex = '''(?:(?:^|[^A-Za-z])cm|(?:^|[^A-Za-z])CM)[_.-]?(?:com|COM)?[_.-]?(?:api|API)?[_.-]?(?:key|KEY)?[=:\s"\' ]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "CM.com API Key (UUID format)"
 group = 1
 

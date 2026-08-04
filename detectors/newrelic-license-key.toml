@@ -15,7 +15,7 @@ keywords = ["NEW_RELIC_LICENSE_KEY", "license_key", "NEWRELIC_LICENSE", "NR_LICE
 [[detector.patterns]]
 # `\b` is load-bearing: the alternation accepts a bare `nr`/`NR` and a bare
 # `license`, either of which matches at the tail of an unrelated identifier.
-regex = '''\b(?:NEW_RELIC|new_relic|NEWRELIC|newrelic|NR|nr|license)[_\-\s]*(?:LICENSE|license)?[_\-\s]*(?:KEY|key)?[=:\s"']+([a-f0-9]{40})'''
+regex = '''(?:NEW_RELIC|new_relic|NEWRELIC|newrelic|(?:^|[^A-Za-z])NR|(?:^|[^A-Za-z])nr|license)[_\-\s]*(?:LICENSE|license)?[_\-\s]*(?:KEY|key)?[=:\s"']+([a-f0-9]{40})'''
 description = "New Relic license key (40 hex) with context anchor"
 group = 1
 

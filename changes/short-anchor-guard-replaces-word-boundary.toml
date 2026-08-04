@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Repair a recall regression in the previous two releases. Anchoring short vendor prefixes with a word boundary also stopped them matching after an underscore, because `_` is a word character, so `MY_NR_LICENSE_KEY=`, `MY_GH_WEBHOOK_SECRET=` and every other `PREFIX_TOKEN_...` form went unreported. The anchor now tests the character class before the token instead, which keeps the false positives suppressed and finds the separator forms again."
+crates = ["scanner"]

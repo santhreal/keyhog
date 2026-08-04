@@ -13,21 +13,22 @@ match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20,
 keywords = ["data.europa.eu", "EU_LOGIN", "EU-Login", "party_token"]
 
 [[detector.patterns]]
-regex = '''(?:EU|data\.europa)[_.-]?(?:CLIENT[_\-\s]*ID|client_id)[\s"''=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+regex = '''(?:(?:^|[^A-Za-z])EU|data\.europa)[_.-]?(?:CLIENT[_\-\s]*ID|client_id)[\s"''=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 required_literals = ["CLIENT"]
 description = "EU Open Data client ID for service account"
 group = 1
 
 [[detector.patterns]]
-regex = '''(?:EU|data\.europa)[_.-]?(?:CLIENT[_\-\s]*SECRET|client_secret)[\s"''=:]+([a-zA-Z0-9_-]{20,})'''
+regex = '''(?:(?:^|[^A-Za-z])EU|data\.europa)[_.-]?(?:CLIENT[_\-\s]*SECRET|client_secret)[\s"''=:]+([a-zA-Z0-9_-]{20,})'''
 required_literals = ["SECRET"]
 description = "EU Open Data client secret for service account"
 group = 1
 
 [[detector.patterns]]
-regex = '''(?:data\.europa|EDP)[_.-]?(?:API[_\-\s]*TOKEN|token)[\s"''=:]+([a-zA-Z0-9_-]{30,})'''
+regex = '''(?:data\.europa|(?:^|[^A-Za-z])EDP)[_.-]?(?:API[_\-\s]*TOKEN|token)[\s"''=:]+([a-zA-Z0-9_-]{30,})'''
 description = "EU Open Data Portal API token"
 group = 1
+required_literals = ["token"]
 
 [[detector.tests]]
 test_positive = "party_token EU_CLIENT-ID=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"

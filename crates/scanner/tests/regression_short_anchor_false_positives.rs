@@ -1,18 +1,24 @@
 //! A vendor anchor that is two or three letters must not match at the tail of
-//! an unrelated identifier.
+//! an unrelated identifier, and must still match after a separator.
 //!
-//! `africastalking-api-key` began `(?:...|at|AT)[_.-]?API...` with no leading
-//! boundary, so `SNAPCHAT_API_KEY=` matched. Four more detectors carried the
-//! same shape, and two of them were reproducibly wrong on ordinary input:
-//! `xapi_key=<uuid>` near the word "mexico" was reported as a Mexican
-//! government key, and `LEIGH_WEBHOOK_SECRET=` was reported as a GitHub webhook
-//! secret.
+//! `africastalking-api-key` began `(?:...|at|AT)[_.-]?API...` with nothing in
+//! front of the alternation, so `SNAPCHAT_API_KEY=` matched. Eighteen more
+//! detectors carried the same shape, and several were reproducibly wrong on
+//! ordinary input: `xapi_key=<uuid>` near the word "mexico" was a Mexican
+//! government key, `LEIGH_WEBHOOK_SECRET=` was a GitHub webhook secret, and
+//! `MSG_API_KEY=` was a Singapore GovTech key.
 //!
-//! Every case below was run against the scanner before the fix. The two marked
-//! as previously firing did fire; the rest are pinned so the anchors cannot
-//! loosen later. The true positives are here for the same reason: `\b` is only
-//! the right fix if the real credential still surfaces, so each detector's
-//! genuine form is asserted beside the identifier it must now ignore.
+//! Both halves of this file matter equally, and the second half exists because
+//! the first fix was wrong. `\b` looks like the answer and is not: `_` is a
+//! word character, so a word boundary cannot separate `SNAPCHAT_API_KEY` from
+//! `MY_AT_API_KEY`, and anchoring with it lost all sixteen measured
+//! `PREFIX_<TOKEN>_...` forms. The guard `(?:^|[^A-Za-z])` consumes the
+//! character instead and tests its class, which is the property that actually
+//! distinguishes them.
+//!
+//! So every detector here is asserted twice: silent after a letter, and still
+//! found after an underscore. Dropping either half would let the other be
+//! satisfied by a fix that breaks real scanning.
 
 use keyhog_scanner::CompiledScanner;
 
@@ -169,4 +175,86 @@ fn cmcom_ignores_the_cm_inside_another_identifier() {
         "cmcom-api-key",
         &format!("X-CM-PRODUCTTOKEN={UUID}"),
     );
+}
+
+/// Every guarded detector stays silent after a letter.
+///
+/// One table rather than one test each: the property is identical for all of
+/// them, and a per-detector test would hide that a NEW detector joining the
+/// corpus is not covered here.
+#[test]
+fn a_short_anchor_after_a_letter_never_fires() {
+    let scanner = scanner();
+    let a32 = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5";
+    let h32 = "5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e";
+    let hexu = "5D8C1A9F4E2B6C8D3A5E";
+
+    // `wix-api-credentials` is absent on purpose: guarding it suppresses
+    // `datadog-application-key` on unrelated input (KH-1584), so it is still
+    // unguarded and would fail this table.
+    for (detector, text) in [
+        ("azure-client-secret", format!("XARM_CLIENT_SECRET={a32}")),
+        ("bluejeans-api", format!("WEBBJN_API_KEY={a32}")),
+        ("carbon-black-api-key", format!("WEBCB_API_KEY={hexu}")),
+        ("eu-open-data-api-key", format!("MENU_CLIENT_ID={UUID}")),
+        ("oracle-cloud-api-key", "XOCI_API_KEY=/path/to/key.pem".to_string()),
+        ("openweathermap-api-key", format!("SHOWM_API_KEY={h32}")),
+        ("powerbi-credentials", format!("XPBI_CLIENT_ID={UUID}")),
+        ("sap-api-key", format!("WHATSAP_CLIENT_SECRET={a32}")),
+        ("servicenow-api-key", format!("JSN_TOKEN={a32}")),
+        ("singapore-govtech-api-key", format!("MSG_API_KEY={a32}")),
+        ("workday-api-key", format!("FWD_TOKEN={a32}")),
+        ("worldweatheronline-api-key", format!("SHOWWO_API_KEY={h32}")),
+        ("zscaler-api-key", format!("XZPA_CLIENT_ID={a32}")),
+    ] {
+        assert_silent(&scanner, detector, &text);
+    }
+}
+
+/// The same anchors still fire after a separator.
+///
+/// This is the half `\b` failed. `MY_PBI_CLIENT_ID=`, `MY_ZPA_CLIENT_ID=` and
+/// `MY_NR_LICENSE_KEY=` are ordinary environment-variable names, and the
+/// word-boundary attempt stopped finding every one of them while still passing
+/// the silence table above. A fix that only satisfies one direction is not a
+/// fix.
+#[test]
+fn a_short_anchor_after_a_separator_still_fires() {
+    let scanner = scanner();
+    let a32 = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5";
+    let h32 = "5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e";
+    let hexu = "5D8C1A9F4E2B6C8D3A5E";
+
+    for (detector, text) in [
+        ("bluejeans-api", format!("MY_BJN_API_KEY={a32}")),
+        ("carbon-black-api-key", format!("MY_CB_API_KEY={hexu}")),
+        ("eu-open-data-api-key", format!("MY_EU_CLIENT_ID={UUID}")),
+        ("eu-open-data-api-key", format!("MY_EDP_TOKEN={a32}")),
+        ("openweathermap-api-key", format!("MY_OWM_API_KEY={h32}")),
+        ("powerbi-credentials", format!("MY_PBI_CLIENT_ID={UUID}")),
+        ("sap-api-key", "MY_SAP_CLIENT_ID=SapClientId12".to_string()),
+        ("singapore-govtech-api-key", format!("MY_SG_API_KEY={a32}")),
+        ("worldweatheronline-api-key", format!("MY_WWO_API_KEY={h32}")),
+        ("zscaler-api-key", format!("MY_ZPA_CLIENT_ID={a32}")),
+        ("cmcom-api-key", format!("MY_CM_PRODUCT_TOKEN={UUID}")),
+        ("newrelic-license-key", format!("MY_NR_LICENSE_KEY={HEX40}")),
+        (
+            "github-webhook-secret",
+            "MY_GH_WEBHOOK_SECRET=N-hyshMKLyl_Pj_laamriw0VaNok".to_string(),
+        ),
+        (
+            "mexico-datosgobmx-api-key",
+            format!("MY_API_KEY={UUID} datos.gob.mx"),
+        ),
+        (
+            "carbon-black-api-key",
+            format!("VMWARE_CARBON_BLACK_API_KEY={hexu}"),
+        ),
+        (
+            "singapore-govtech-api-key",
+            "SINGAPORE_GOVTECH_API_KEY=PDsuJtQ1j69J6nI4deWgxnRlCTHmcYgbmcRfsLA4".to_string(),
+        ),
+    ] {
+        assert_fires(&scanner, detector, &text);
+    }
 }

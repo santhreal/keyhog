@@ -13,7 +13,7 @@ match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20,
 keywords = ["WORLDWEATHERONLINE", "worldweatheronline", "WORLD_WEATHER_ONLINE", "WWO_API_KEY"]
 
 [[detector.patterns]]
-regex = '''(?:WORLDWEATHERONLINE|worldweatheronline|WORLD[_\-\s]*WEATHER[_\-\s]*ONLINE|WWO)[_\-\s]*(?:API[_\-\s]*)?KEY[=:\s"'']+([a-zA-Z0-9]{20,})'''
+regex = '''(?:WORLDWEATHERONLINE|worldweatheronline|WORLD[_\-\s]*WEATHER[_\-\s]*ONLINE|(?:^|[^A-Za-z])WWO)[_\-\s]*(?:API[_\-\s]*)?KEY[=:\s"'']+([a-zA-Z0-9]{20,})'''
 description = "World Weather Online API key with context anchor"
 group = 1
 

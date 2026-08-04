@@ -33,7 +33,7 @@ description = "Workday password with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = '''(?:workday|WD)[._-]?(?:token|api[_\-\s]*key|bearer)[=:\s"'']+([a-zA-Z0-9_-]{20,})'''
+regex = '''(?:workday|(?:^|[^A-Za-z])WD)[._-]?(?:token|api[_\-\s]*key|bearer)[=:\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "Workday API token/bearer with context anchor"
 group = 1
 
