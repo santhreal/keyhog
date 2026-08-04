@@ -2,6 +2,16 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.55] - 2026-08-04
+
+### Changed
+
+- Idempotent source contract-test generator and a warning-free workspace build.
+
+### Fixed
+
+- Make the keyhog-sources contract-test generator idempotent by formatting its own output, so re-running it no longer produces a large formatting-only diff, and give the generated rejected-extension cases snake_case names. The workspace now builds all targets without a warning.
+
 ## [0.5.54] - 2026-08-04
 
 ### Added

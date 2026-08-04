@@ -2,6 +2,10 @@
 
 All notable changes to `keyhog-profile` are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.5.55 - 2026-08-04
+
+- Idempotent source contract-test generator and a warning-free workspace build.
+
 ## 0.5.54 - 2026-08-04
 
 - Skip homoglyph variants on chunks that provably contain no confusable glyph.

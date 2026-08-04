@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.55 - 2026-08-04
+
+- Idempotent source contract-test generator and a warning-free workspace build.
+
 ## 0.5.54 - 2026-08-04
 
 - Report how many phase-two prefilter batches the prefix gate ran versus skipped in `--perf-trace`, which answers whether the prefilter is expensive because every chunk reaches it or because every batch runs.
