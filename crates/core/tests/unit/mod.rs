@@ -160,6 +160,7 @@ pub mod save_load_roundtrip;
 pub mod save_merges_with_existing_disk_entries;
 pub mod save_overwrites_disk_entry_for_same_path;
 pub mod save_with_spec_then_load_with_matching_spec_keeps_entries;
+pub mod scan_config_no_effect_fields;
 pub mod scan_config_unknown_field_rejected;
 pub mod schema_mismatch_returns_empty;
 pub mod schema_version_mismatch_treated_as_cold_start;

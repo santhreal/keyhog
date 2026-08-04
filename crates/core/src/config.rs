@@ -201,6 +201,20 @@ pub enum ConfigError {
     /// `entropy_threshold` exceeded the mathematical byte-entropy range.
     #[error("entropy_threshold must be between 0.0 and 8.0 bits per byte, found {0}")]
     InvalidEntropyThreshold(f64),
+    /// A field this config carries for schema completeness but the scanner
+    /// never reads was set to something other than its default. Honouring it
+    /// silently would be a lie: the value has no effect on any scan. The error
+    /// names the surface that does own the behaviour.
+    #[error(
+        "{field} is not read by the scanner; the effective value comes from {owner}. \
+         Fix: leave {field} at its default and set {owner} instead"
+    )]
+    NoEffectField {
+        /// The `ScanConfig` field that was set.
+        field: &'static str,
+        /// The surface that actually applies the behaviour.
+        owner: &'static str,
+    },
     /// The TOML text could not be deserialized into a [`ScanConfig`] (syntax
     /// error, wrong type, or an unknown field, the struct is
     /// `#[serde(deny_unknown_fields)]`). The inner string is the `toml` crate's
@@ -312,6 +326,21 @@ impl ScanConfig {
         }
         if !(0.0..=8.0).contains(&self.entropy_threshold) {
             return Err(ConfigError::InvalidEntropyThreshold(self.entropy_threshold));
+        }
+        // Two fields exist for schema completeness and are never read by the
+        // scanner. A caller who sets one is expressing an intent that would be
+        // dropped in silence, so say so and name the surface that owns it.
+        if self.max_file_size != DEFAULT_MAX_FILE_SIZE_BYTES {
+            return Err(ConfigError::NoEffectField {
+                field: "max_file_size",
+                owner: "the source walker (FilesystemSource::with_max_file_size)",
+            });
+        }
+        if self.dedup != DedupScope::Credential {
+            return Err(ConfigError::NoEffectField {
+                field: "dedup",
+                owner: "the report dedup scope applied by keyhog_core::dedup",
+            });
         }
         Ok(())
     }

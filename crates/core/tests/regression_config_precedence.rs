@@ -35,6 +35,11 @@ const F64_EPS: f64 = 1e-12;
 /// A complete, valid `.keyhog.toml` whose `min_confidence` (0.65) and
 /// `max_decode_depth` (7) both DIFFER from the shipped defaults (0.40 / 10), so
 /// "TOML beats default" is observable and not a default leaking through.
+///
+/// `max_file_size` and `dedup` stay at their defaults on purpose: the scanner
+/// does not read either one, so `validate()` refuses a non-default value rather
+/// than accept a setting it would drop. They are present only because
+/// `ScanConfig` requires every field.
 const TOML_LAYER: &str = r#"
 min_confidence = 0.65
 max_decode_depth = 7
@@ -42,7 +47,7 @@ entropy_enabled = true
 entropy_in_source_files = false
 entropy_threshold = 4.5
 min_secret_len = 16
-max_file_size = 1000
+max_file_size = 104857600
 dedup = "Credential"
 ml_enabled = true
 ml_weight = 0.5
