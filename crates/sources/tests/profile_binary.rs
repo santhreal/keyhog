@@ -41,7 +41,11 @@ fn binary_records_acquire_read_decode_and_extracted_totals() {
             .collect::<Vec<_>>()
     });
 
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(chunks.len(), 1, "one strings chunk expected: {rows:?}");
     assert!(chunks[0].data.contains("AKIABINARYFIXTURE001_visible_secret"));
 

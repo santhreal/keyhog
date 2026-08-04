@@ -66,7 +66,11 @@ fn collaboration_issues_record_pages_and_content_totals() {
             .collect::<Vec<_>>()
     });
 
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(chunks.len(), 1, "one issue yields one chunk: {rows:?}");
     assert_eq!(chunks[0].data.as_str(), expected_text);
     assert_eq!(issues.calls(), 1);

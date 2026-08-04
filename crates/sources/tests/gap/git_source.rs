@@ -1682,12 +1682,19 @@ fn git_blob_decode_uses_worker_local_parallel_repositories() {
         std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/git/source.rs"))
             .expect("git source readable");
 
+    // The function is named for what it does, not for how it does it: it now
+    // owns both a small-batch serial path and the parallel one. Assert the
+    // parallel construction, not a name that a rename made stale.
     assert!(
-        source.contains("decode_git_blob_candidates_parallel")
+        source.contains("fn decode_git_blob_candidates(")
             && source.contains(".into_par_iter()")
             && source.contains(".map_init(")
             && source.contains("gix::open(&repo_path)"),
         "GitSource blob decoding must use rayon with worker-local gix repositories"
+    );
+    assert!(
+        source.contains("GIT_PARALLEL_DECODE_MIN_BLOBS"),
+        "the serial small-batch path must be a declared threshold, not an ad-hoc branch"
     );
     assert!(
         !source.contains("Serial blob decompression")

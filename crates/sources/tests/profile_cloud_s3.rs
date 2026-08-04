@@ -90,7 +90,11 @@ fn s3_paginated_listing_records_pages_downloads_and_object_totals() {
             .collect::<Vec<_>>()
     });
 
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(chunks.len(), 3, "all listed objects scan: {rows:?}");
     assert_eq!(list_one.calls(), 1);
     assert_eq!(list_two.calls(), 1);
@@ -133,7 +137,11 @@ fn s3_single_page_records_one_walk_and_one_read() {
             .collect::<Vec<_>>()
     });
 
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(chunks.len(), 1, "the one listed object scans: {rows:?}");
     assert_eq!(list.calls(), 1);
 

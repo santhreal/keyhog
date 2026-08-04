@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "Assert source-instrumentation tests see no coverage errors instead of silently discarding error rows while collecting chunks, so a profiled adapter that starts failing shows up as a failure rather than a smaller chunk count."
+crates = ["sources"]

@@ -103,7 +103,16 @@ impl PinnedWebClientCache {
                     let signal = std::sync::Arc::new(BuildSignal::default());
                     slots.insert(key.clone(), PinnedWebClientSlot::Building(signal.clone()));
                     drop(slots);
-                    let build = build.take().expect("builder runs once per slot");
+                    // The `None` arm always returns, so the builder is taken at
+                    // most once. Fail closed rather than panic if that ever
+                    // stops holding: a scan must not die inside a client cache.
+                    let Some(build) = build.take() else {
+                        return Err(SourceError::Other(
+                            "pinned web client builder was already consumed. Fix: rerun the scan; \
+                             report this if it repeats"
+                                .to_string(),
+                        ));
+                    };
                     return match build() {
                         Ok(client) => {
                             let mut slots = self

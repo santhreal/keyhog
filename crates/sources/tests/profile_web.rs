@@ -39,7 +39,11 @@ fn web_fetch_records_acquire_read_and_response_totals() {
             .collect::<Vec<_>>()
     });
 
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(chunks.len(), 1, "one endpoint yields one chunk: {rows:?}");
     assert!(chunks[0].data.contains("AKIAWEBFIXTURE000001"));
     assert_eq!(app.calls(), 1);
@@ -84,7 +88,11 @@ fn web_two_endpoints_record_one_span_each() {
             .collect::<Vec<_>>()
     });
 
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(chunks.len(), 2, "both endpoints yield chunks: {rows:?}");
 
     assert_eq!(stage_calls(&profile, Stage::SourceAcquire), 1);

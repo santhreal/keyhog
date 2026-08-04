@@ -43,10 +43,11 @@ fn filesystem_records_acquire_walk_read_and_input_totals() {
             .collect::<Vec<_>>()
     });
 
-    let chunks: Vec<_> = rows
-        .iter()
-        .filter_map(|row| row.as_ref().ok())
-        .collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(chunks.len(), 2, "both fixture files must scan: {rows:?}");
 
     assert_eq!(stage_calls(&profile, Stage::SourceAcquire), 1);
@@ -85,10 +86,11 @@ fn filesystem_tgz_records_decode_span_and_derived_bytes() {
             .collect::<Vec<_>>()
     });
 
-    let chunks: Vec<_> = rows
-        .iter()
-        .filter_map(|row| row.as_ref().ok())
-        .collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(chunks.len(), 1, "the tar member scans as one chunk: {rows:?}");
     assert!(
         chunks[0].data.contains("AKIAFIXTURE00000001"),
@@ -122,10 +124,11 @@ fn buffered_stdin_records_acquire_read_and_payload_totals() {
             .collect::<Vec<_>>()
     });
 
-    let chunks: Vec<_> = rows
-        .iter()
-        .filter_map(|row| row.as_ref().ok())
-        .collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(chunks.len(), 1, "stdin yields exactly one chunk: {rows:?}");
     assert_eq!(
         chunks[0].data.as_str(),

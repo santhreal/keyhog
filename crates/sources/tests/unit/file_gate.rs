@@ -119,13 +119,17 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
             && !filesystem.contains(".to_ascii_lowercase();"),
         "filesystem include-symlink/archive symlink checks must cover link and resolved target paths, and unreadable target classification must surface visibly"
     );
+    // These call sites now route the emitter through `run_derived_extractor`,
+    // which renames the closure parameter. Pin the arguments that carry policy
+    // (path, extension, size cap, default-exclusion), not the local name of the
+    // emitter the wrapper supplies.
     assert!(
         archive.contains("static OPENPACK_EXTS")
             && archive.contains("ext.eq_ignore_ascii_case(candidate)")
             && archive.contains("ext.eq_ignore_ascii_case(\"crx\")")
             && archive.contains("extract_openpack_archive(\n    path: &Path,\n    ext: &str,")
             && extract.contains(
-                "archive::extract_openpack_archive(&path, ext, max_size, respect_default_excludes, emit)"
+                "archive::extract_openpack_archive(&path, ext, max_size, respect_default_excludes,"
             )
             && !archive.contains("let is_crx = path")
             && !archive.contains("to_ascii_lowercase()"),
@@ -135,9 +139,8 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
         compressed.contains("pub(super) fn is_compressed_ext(ext: &str)")
             && compressed.contains("CompressedFormat::from_ext(ext).is_some()")
             && compressed.contains("extract_compressed_chunks(\n    path: &Path,\n    ext: &str,")
-            && extract.contains(
-                "compressed::extract_compressed_chunks(&path, ext, max_size, respect_default_excludes, emit)"
-            )
+            && extract.contains("compressed::extract_compressed_chunks(")
+            && extract.contains("respect_default_excludes,\n                    counted,")
             && !compressed.contains("let ext = path.extension()")
             && compressed.contains("fn is_tgz_ext(ext: &str)")
             && !compressed.contains("const COMPRESSED_EXTS")
@@ -146,7 +149,7 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
         "compressed extension routing must stay allocation-free, ASCII-case-insensitive, and single-sourced through CompressedFormat::from_ext"
     );
     assert!(
-        extract.contains("rar::extract_rar_chunks(&path, max_size, respect_default_excludes, emit)")
+        extract.contains("rar::extract_rar_chunks(&path, max_size, respect_default_excludes,")
             && rar.contains(
                 "fn new(archive_path: &'a Path, max_size: u64, respect_default_excludes: bool)"
             )

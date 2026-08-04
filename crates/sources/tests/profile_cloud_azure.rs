@@ -57,7 +57,11 @@ fn azure_listing_records_walk_download_and_blob_totals() {
             .collect::<Vec<_>>()
     });
 
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(chunks.len(), 1, "the listed blob scans: {rows:?}");
     assert!(chunks[0].data.contains("AKIAAZUREFIXTURE01"));
     assert_eq!(list.calls(), 1);

@@ -10,9 +10,16 @@ fn github_org_listing_uses_shared_api_response_cap() {
         .nth(1)
         .and_then(|body| body.split("fn build_client(").next())
         .expect("collect_org_chunks body present");
+    // Match the argument list, not its formatting: wrapping the call in a
+    // profiling span re-indented it and broke an exact-whitespace expectation
+    // on code that still threads the cap correctly.
+    let call = collect
+        .split("list_repos(")
+        .nth(1)
+        .and_then(|args| args.split(')').next())
+        .expect("collect_org_chunks calls list_repos");
     assert!(
-        collect.contains("limits.web_response_bytes")
-            && collect.contains("list_repos(\n        &client,\n        org,\n        limits.hosted_git_pages,\n        limits.web_response_bytes,\n    )"),
+        call.contains("limits.hosted_git_pages") && call.contains("limits.web_response_bytes"),
         "github-org must thread SourceLimits::web_response_bytes into repository listing"
     );
 

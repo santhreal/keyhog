@@ -30,7 +30,11 @@ fn git_source_records_acquire_walk_read_and_blob_totals() {
     let (profile, rows) =
         run_with_profile(|| GitSource::new(repo.clone()).chunks().collect::<Vec<_>>());
 
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy git fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(chunks.len(), 1, "one committed blob yields one chunk: {rows:?}");
     assert!(chunks[0].data.contains("AKIAGITFIXTURE000001"));
 
@@ -63,7 +67,11 @@ fn git_history_records_enumeration_and_hunk_totals() {
         GitHistorySource::new(repo.clone()).chunks().collect::<Vec<_>>()
     });
 
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy git fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(
         chunks.len(),
         2,
@@ -98,7 +106,11 @@ fn git_diff_records_acquire_and_hunk_totals() {
             .collect::<Vec<_>>()
     });
 
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy git fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(chunks.len(), 1, "one modified file yields one hunk: {rows:?}");
     assert!(chunks[0].data.contains("line two"));
 
@@ -133,7 +145,11 @@ fn git_staged_records_enumeration_read_and_blob_totals() {
             .collect::<Vec<_>>()
     });
 
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, errors) = support::split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "a healthy git fixture must not report coverage errors: {errors:?}"
+    );
     assert_eq!(chunks.len(), 1, "one staged file yields one chunk: {rows:?}");
     assert!(chunks[0].data.contains("AKIASTAGEDFIXTURE01"));
 
