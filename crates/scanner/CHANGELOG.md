@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.63 - 2026-08-04
+
+- Report Mailchimp keys as Mailchimp keys. The three datacenter patterns declared no routing literal, so the prefilter had nothing to route them on and nine keys on the benchmark corpus were reported as generic secrets instead, one of them a base64 value the generic detector could only show opaquely. Scored against the corpus answer key, declaring the literals moves one finding from false positive to true positive and changes nothing else.
+
 ## 0.5.62 - 2026-08-04
 
 - Make the prefixless-pattern gate ask the question that matters. It previously only flagged patterns with extractable inner literals, which let through the exact pattern whose missing declaration suppressed an unrelated detector; it now flags any prefixless pattern that declares no routing literal, with shape-only detectors such as Asana tokens and Telegram bot tokens recorded as a category rather than as debt.

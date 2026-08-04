@@ -2,6 +2,16 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.63] - 2026-08-04
+
+### Changed
+
+- Mailchimp datacenter key routing.
+
+### Fixed
+
+- Report Mailchimp keys as Mailchimp keys. The three datacenter patterns declared no routing literal, so the prefilter had nothing to route them on and nine keys on the benchmark corpus were reported as generic secrets instead, one of them a base64 value the generic detector could only show opaquely. Scored against the corpus answer key, declaring the literals moves one finding from false positive to true positive and changes nothing else.
+
 ## [0.5.62] - 2026-08-04
 
 ### Changed
