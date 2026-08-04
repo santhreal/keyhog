@@ -285,5 +285,78 @@ class ReleaseTransformationTests(unittest.TestCase):
                 )
 
 
+class RepositoryScopeFragmentTests(unittest.TestCase):
+    """A change with no crate behind it still has to be releasable."""
+
+    def test_a_repository_scope_fragment_reaches_only_the_root_changelog(self) -> None:
+        """README evidence, the benchmark harness and CI belong in the root notes.
+
+        Requiring at least one crate forced these against a crate they never
+        touched, which puts a false claim in a published crate changelog. An
+        empty list means repository scope: the root changelog carries it and no
+        crate changelog does.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            changes = Path(directory)
+            (changes / "readme.toml").write_text(
+                'category = "Changed"\nsummary = "Remeasure the README panels."\ncrates = []\n'
+            )
+            (changes / "scanner.toml").write_text(
+                'category = "Fixed"\nsummary = "Repair exact output."\ncrates = ["scanner"]\n'
+            )
+
+            fragments = release.load_fragments(changes)
+
+            self.assertIn(
+                "- Remeasure the README panels.",
+                release.render_section("0.5.58", "2026-08-04", fragments),
+            )
+            for crate in release.CRATE_CHANGELOGS:
+                self.assertNotIn(
+                    "Remeasure the README panels.",
+                    release.render_section("0.5.58", "2026-08-04", fragments, crate),
+                    f"the {crate} changelog must not claim a repository-scope change",
+                )
+
+    def test_a_repository_scope_fragment_does_not_cover_any_crate(self) -> None:
+        """It must not suppress the automatic per-crate note.
+
+        Coverage exists so every published crate gets a line for the version it
+        ships. A note about the README says nothing about `keyhog-scanner`, so
+        it cannot stand in for one.
+        """
+        fragments = [
+            release.Fragment(Path("readme.toml"), "Changed", "Remeasure the panels.", ()),
+        ]
+
+        completed = release.complete_fragment_coverage(fragments, "Routine release.")
+        synthetic = [item for item in completed if item.synthetic]
+
+        self.assertEqual(len(synthetic), 1)
+        self.assertEqual(
+            set(synthetic[0].crates),
+            set(release.CRATE_CHANGELOGS),
+            "every crate still needs its own note",
+        )
+
+    def test_an_unknown_crate_is_still_rejected(self) -> None:
+        """Allowing an empty list must not allow a misspelled one.
+
+        `crates = ["scaner"]` would otherwise route a real change into no
+        changelog at all and look exactly like a deliberate repository-scope
+        note.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            changes = Path(directory)
+            (changes / "typo.toml").write_text(
+                'category = "Fixed"\nsummary = "Repair output."\ncrates = ["scaner"]\n'
+            )
+
+            with self.assertRaises(release.PrepareError) as raised:
+                release.load_fragments(changes)
+
+            self.assertIn("unique subset", str(raised.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

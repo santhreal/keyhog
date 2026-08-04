@@ -67,7 +67,14 @@ def parse_version(value: str) -> tuple[int, int, int]:
 
 
 def load_fragments(directory: Path) -> list[Fragment]:
-    """Load deterministic, strictly shaped release change fragments."""
+    """Load deterministic, strictly shaped release change fragments.
+
+    An empty ``crates`` list means repository scope: the note belongs in the
+    root changelog and in no crate changelog. README evidence, the benchmark
+    harness and CI are real user-visible changes with no crate behind them, and
+    requiring at least one crate forced them to be filed against a crate they
+    never touched, which is worse than not listing them.
+    """
     if not directory.is_dir():
         raise PrepareError(f"change fragment directory does not exist: {directory}")
     fragments: list[Fragment] = []
@@ -98,12 +105,12 @@ def load_fragments(directory: Path) -> list[Fragment]:
         summaries.add(summary.casefold())
         if (
             not isinstance(crates, list)
-            or not crates
             or any(not isinstance(crate, str) or crate not in CRATE_CHANGELOGS for crate in crates)
             or len(set(crates)) != len(crates)
         ):
             raise PrepareError(
-                f"{path} crates must be a unique non-empty subset of {sorted(CRATE_CHANGELOGS)}"
+                f"{path} crates must be a unique subset of {sorted(CRATE_CHANGELOGS)}, "
+                "or empty for a repository-scope change"
             )
         fragments.append(Fragment(path, category, summary, tuple(sorted(crates))))
     return fragments
