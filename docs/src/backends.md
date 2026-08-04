@@ -250,6 +250,45 @@ set, GPU identity, finding parity, held-out pairs, and confidence interval.
 Autoroute still requires calibration on the deployment host for the exact
 workload class.
 
+## What the GPU does for a whole-tree scan
+
+The crossover above measures one 8 MiB window through the matching kernel. A
+repository scan is a different workload, and the answer there is different, so
+measure before you choose a backend for one.
+
+Scan a tree with each backend and compare. These are median wall times over five
+runs on an RTX 5090 with a Ryzen 9 9950X, scanning copies of this repository:
+
+| Input | Pure-Rust CPU | CUDA | Difference |
+|---|---:|---:|---:|
+| 63 MiB | 4.22 s | 4.64 s | +9.9% |
+| 251 MiB | 10.43 s | 11.34 s | +8.7% |
+
+The GPU route is slower, by roughly the same percentage at both sizes, so this
+is not a startup cost that a larger tree amortizes away.
+
+The reason is which stage the GPU accelerates. A scan runs phase one, which
+finds candidate regions, and phase two, which confirms them against the full
+detector patterns. The GPU runs phase one. Phase two runs on the CPU in both
+cases, and phase two is the larger cost: a `--perf-trace` of one 4,096 chunk
+batch shows `dispatch=0.04s` for the GPU kernel against `phase2=0.39s` for
+confirmation. The GPU shortens the smaller half and adds its own dispatch and
+transfer on top of an unchanged larger half.
+
+You can see the same thing in the trace field `phase2_gpu_ascii_patterns`. It
+reads `0` on this detector corpus, meaning no pattern is eligible for the GPU
+phase-two path, so none of the confirmation work moves off the CPU.
+
+What to do with that:
+
+- For a repository, container, or history scan, leave routing automatic. The
+  calibrated router measures both and will pick the CPU route when it is faster.
+- Use an explicit `--backend gpu-cuda` for diagnostics, parity checks, and
+  kernel-level benchmarking, not because you expect a whole-tree scan to finish
+  sooner.
+- Findings do not depend on the choice. Every route reports the same secrets,
+  which is what the parity contract above guarantees.
+
 ## Automatic routing failures and recovery
 
 Automatic routing has two visible failure states. Neither one changes an
