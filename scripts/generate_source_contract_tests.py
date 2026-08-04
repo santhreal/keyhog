@@ -11,21 +11,62 @@ Run from repo root:
 
 import pathlib
 import re
+import shutil
+import subprocess
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT = ROOT / "crates/sources/tests/unit"
 
 _IDENT_RE = re.compile(r"[^A-Za-z0-9_]+")
+_UNDERSCORE_RUN_RE = re.compile(r"_{2,}")
+
 
 def safe_name(name: str) -> str:
-    return _IDENT_RE.sub("_", name).strip("_").lower()
+    """A snake_case Rust identifier.
+
+    Runs of substituted characters collapse to one underscore. Without that,
+    the case built from ``.png`` emitted ``extension_rejects__png`` and rustc
+    reported a non-snake-case identifier on every build of the workspace test
+    targets.
+    """
+    replaced = _IDENT_RE.sub("_", name)
+    return _UNDERSCORE_RUN_RE.sub("_", replaced).strip("_").lower()
+
 
 def rust_str(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
 
 
+def assert_unique_names(names: list[str], label: str) -> None:
+    """Two cases that normalise to one identifier stop the file compiling.
+
+    Collapsing underscore runs makes that reachable (``.png`` and ``PNG`` both
+    reduce toward ``png``), so the generator refuses to emit a colliding grid
+    rather than write a file that fails to build.
+    """
+    seen: dict[str, int] = {}
+    for name in names:
+        seen[name] = seen.get(name, 0) + 1
+    duplicates = sorted(name for name, count in seen.items() if count > 1)
+    if duplicates:
+        raise SystemExit(f"{label}: duplicate generated test names: {duplicates}")
+
+
 def write(path: pathlib.Path, content: str) -> None:
+    """Write the module, formatted exactly as the repository stores it.
+
+    The generator used to emit unformatted source that was then formatted in
+    place, so re-running it produced a large formatting-only diff and nobody
+    could use it to change anything. Formatting here makes generation
+    idempotent: run it twice and the tree is unchanged.
+    """
     path.write_text(content)
+    rustfmt = shutil.which("rustfmt")
+    if rustfmt is None:
+        print("warning: rustfmt not found; generated output left unformatted", file=sys.stderr)
+        return
+    subprocess.run([rustfmt, "--edition", "2021", str(path)], check=True)
 
 
 def url_redaction_cases() -> str:
@@ -96,9 +137,17 @@ def filter_cases() -> str:
     # extension: valid
     for ext in ["exe", "png", "tar", "gz", "zip"]:
         cases.append((safe_name(f"extension_accepts_{ext}"), "extension", ext, True))
-    # extension: invalid
+    # extension: invalid. The mangling names the offending character rather
+    # than deleting it, so `.png` and `PNG` stay distinct identifiers once
+    # underscore runs collapse.
     for bad in [".png", "a/b", "a\\b", "PNG", "pi\ng", "", "  "]:
-        safe = bad.replace("\\", "backslash").replace("/", "slash").replace("\n", "nl").replace(" ", "space")
+        safe = (
+            bad.replace("\\", "backslash")
+            .replace("/", "slash")
+            .replace(".", "dot")
+            .replace("\n", "nl")
+            .replace(" ", "space")
+        )
         cases.append((safe_name(f"extension_rejects_{safe or 'empty'}"), "extension", bad, False))
     # suffix/infix
     cases.append(("suffix_accepts_dotmin", "suffix", ".min", True))
@@ -248,6 +297,7 @@ def emit_url_redaction():
 
 def emit_filter():
     cases = filter_cases()
+    assert_unique_names([name for name, *_ in cases], "filesystem_filter_generated")
     validate_lines = [
         "#![cfg(test)]",
         "",

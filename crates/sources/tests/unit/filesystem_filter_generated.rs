@@ -32,7 +32,7 @@ validate_cases! {
     extension_accepts_tar: "extension", "tar", true;
     extension_accepts_gz: "extension", "gz", true;
     extension_accepts_zip: "extension", "zip", true;
-    extension_rejects__png: "extension", ".png", false;
+    extension_rejects_dotpng: "extension", ".png", false;
     extension_rejects_aslashb: "extension", "a/b", false;
     extension_rejects_abackslashb: "extension", "a\\b", false;
     extension_rejects_png: "extension", "PNG", false;
