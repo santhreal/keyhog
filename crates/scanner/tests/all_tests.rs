@@ -347,6 +347,8 @@ pub mod regression_selective_bloom_anchors;
 pub mod regression_shannon_entropy;
 #[path = "regression_shape_collision_recall_carveout.rs"]
 pub mod regression_shape_collision_recall_carveout;
+#[path = "regression_short_anchor_false_positives.rs"]
+pub mod regression_short_anchor_false_positives;
 #[path = "regression_simd_label_owner.rs"]
 pub mod regression_simd_label_owner;
 #[path = "regression_simd_scalar_parity_chunk.rs"]

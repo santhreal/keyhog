@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Anchor four more detectors whose vendor prefix is two or three letters, so they stop matching at the tail of an unrelated identifier. Two were reproducibly wrong on ordinary input: `xapi_key=<uuid>` near the word mexico was reported as a Mexican government key, and `LEIGH_WEBHOOK_SECRET=` was reported as a GitHub webhook secret. Every genuine form still fires and reported findings are unchanged on every corpus."
+crates = ["scanner"]

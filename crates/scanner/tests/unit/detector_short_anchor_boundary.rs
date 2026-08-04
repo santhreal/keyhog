@@ -13,7 +13,7 @@
 //! `\b` fixes it precisely: `AT_API_KEY=` at a token start still matches, and
 //! `SNAPCHAT_API_KEY=`, `FORMAT_API_KEY=` and `CHAT_API_KEY=` no longer do.
 //!
-//! This is a ratchet, not a clean bill of health. Thirty-three patterns still
+//! This is a ratchet, not a clean bill of health. Twenty-nine patterns still
 //! carry the same shape and are listed below with the token that makes them
 //! reachable. A NEW one fails immediately; fixing a listed one also fails,
 //! which is deliberate, because deleting its line is how the debt shrinks
@@ -35,17 +35,12 @@ const KNOWN_UNANCHORED: &[(&str, usize)] = &[
     ("carbon-black-api-key", 0),         // CB
     ("carbon-black-api-key", 1),         // CB
     ("carbon-black-api-key", 2),         // CB
-    ("cmcom-api-key", 0),                // CM, cm
-    ("cmcom-api-key", 2),                // CM, cm
     ("countly-api-key", 0),              // APP
     ("eu-open-data-api-key", 0),         // EU
     ("eu-open-data-api-key", 1),         // EU
     ("eu-open-data-api-key", 2),         // EDP
-    ("github-webhook-secret", 0),        // gh
     ("leptonai-api-token", 0),           // run
-    ("mexico-datosgobmx-api-key", 2),    // api
     ("neon-serverless-driver-token", 0), // URL
-    ("newrelic-license-key", 0),         // NR, nr
     ("openweathermap-api-key", 0),       // OWM
     ("oracle-cloud-api-key", 0),         // OCI
     ("powerbi-credentials", 0),          // PBI
