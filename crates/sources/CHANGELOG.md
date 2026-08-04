@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.56 - 2026-08-04
+
+- Overlapping coalesced batches and autoroute classification for any batch size.
+
 ## 0.5.55 - 2026-08-04
 
 - Make the keyhog-sources contract-test generator idempotent by formatting its own output, so re-running it no longer produces a large formatting-only diff, and give the generated rejected-extension cases snake_case names. The workspace now builds all targets without a warning.

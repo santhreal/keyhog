@@ -2,6 +2,17 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.56] - 2026-08-04
+
+### Changed
+
+- Scan many coalesced batches at once instead of one at a time. The batch pipeline's consumer was a single receive-then-scan loop whose only parallelism was inside one batch, so every batch boundary idled the machine; it now bridges the batch channel onto the global pool the way the fused pipeline already does. On this repository's sources the batch pipeline drops from 4.95 s to 2.43 s and gpu-cuda from 6.70 s to 3.52 s, and the report is byte-identical to the fused pipeline's.
+- Overlapping coalesced batches and autoroute classification for any batch size.
+
+### Fixed
+
+- Let autoroute classify a batch of any size. The decoder sampling budget was enforced as a ceiling on the total sample instead of a budget for the residual above each chunk's floor, so a batch of more than roughly 341 chunks failed classification outright. The coalesced pipeline packs up to 4,096, which meant autoroute calibration could not run through --batch-pipeline on any real corpus, and so the GPU route, which runs only through that pipeline, could not be calibrated at all. A batch whose floors already fit keeps exactly the previous budget, so no persisted decision changes.
+
 ## [0.5.55] - 2026-08-04
 
 ### Changed

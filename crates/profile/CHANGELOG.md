@@ -2,6 +2,10 @@
 
 All notable changes to `keyhog-profile` are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.5.56 - 2026-08-04
+
+- Overlapping coalesced batches and autoroute classification for any batch size.
+
 ## 0.5.55 - 2026-08-04
 
 - Idempotent source contract-test generator and a warning-free workspace build.
