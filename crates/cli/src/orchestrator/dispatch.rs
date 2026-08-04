@@ -674,6 +674,10 @@ fn batch_has_no_scan_bytes(batch: &[Chunk]) -> bool {
     batch.iter().all(|chunk| chunk.data.is_empty())
 }
 
+/// The reference batch-split predicate, retained as the oracle
+/// [`BatchRouteState`] is differentially tested against. Production uses the
+/// incremental state; this rescans the whole batch and is quadratic.
+#[cfg(test)]
 fn should_split_for_route_class(
     batch: &[Chunk],
     next: &Chunk,
@@ -694,6 +698,73 @@ fn should_split_for_route_class(
     !batch.iter().any(|chunk| same_chunk_identity(chunk, next))
 }
 
+/// Incremental form of [`should_split_for_route_class`] for an accumulating
+/// batch.
+///
+/// The predicate above is the reference: it rescans the whole batch and hashes
+/// every chunk's source class on every call. That is quadratic in batch length,
+/// and `source_route_class` runs a full stable hash per chunk. At the coalesced
+/// pipeline's 4,096-chunk limit it cost 8.4 million source-class hashes per
+/// batch, which was 9.4 s of the 10.2 s a 15,002-file scan took, and it is why
+/// an explicit GPU backend (which is forced onto that pipeline) measured slower
+/// than CPU while the GPU itself sat idle 93% of the time.
+///
+/// The three facts the predicate needs are all maintainable as chunks arrive:
+/// the first chunk's route class, whether every chunk since has matched it, and
+/// the set of chunk identities already in the batch. Keeping them costs one
+/// hash and one set insert per chunk instead of one per chunk per predecessor.
+#[derive(Default)]
+struct BatchRouteState {
+    /// Route class of the batch's FIRST chunk. `None` while the batch is empty
+    /// or when that chunk has no class, both of which make a split impossible.
+    first_class: Option<backend::SourceRouteClass>,
+    /// Set once a pushed chunk's class differs from `first_class`.
+    mixed: bool,
+    /// `(source_type, path)` of every chunk in the batch.
+    identities: std::collections::HashSet<(Arc<str>, Option<Arc<str>>)>,
+}
+
+impl BatchRouteState {
+    fn identity(chunk: &Chunk) -> (Arc<str>, Option<Arc<str>>) {
+        (
+            Arc::clone(&chunk.metadata.source_type),
+            chunk.metadata.path.clone(),
+        )
+    }
+
+    fn push(&mut self, chunk: &Chunk) {
+        let class = backend::source_route_class(chunk);
+        if self.identities.is_empty() && !self.mixed {
+            self.first_class = class;
+        } else if class != self.first_class {
+            self.mixed = true;
+        }
+        self.identities.insert(Self::identity(chunk));
+    }
+
+    fn clear(&mut self) {
+        self.first_class = None;
+        self.mixed = false;
+        self.identities.clear();
+    }
+
+    /// Equivalent to `should_split_for_route_class(batch, next, contiguous)`
+    /// for the batch this state was built from.
+    fn should_split_before(&self, next: &Chunk, source_keeps_identities_contiguous: bool) -> bool {
+        if self.identities.is_empty() || !source_keeps_identities_contiguous || self.mixed {
+            return false;
+        }
+        let Some(first_class) = self.first_class else {
+            return false;
+        };
+        if backend::source_route_class(next) == Some(first_class) {
+            return false;
+        }
+        !self.identities.contains(&Self::identity(next))
+    }
+}
+
+#[cfg(test)]
 fn same_chunk_identity(left: &Chunk, right: &Chunk) -> bool {
     left.metadata.source_type == right.metadata.source_type
         && left.metadata.path == right.metadata.path
@@ -776,6 +847,7 @@ struct CoalescedBatchProducer {
     merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     batch: Vec<Chunk>,
     batch_bytes: usize,
+    route_state: BatchRouteState,
     pipeline_alive: bool,
     skipped_unchanged: usize,
 }
@@ -792,6 +864,7 @@ impl CoalescedBatchProducer {
             merkle,
             batch: Vec::with_capacity(plan.batch_chunk_limit),
             batch_bytes: 0,
+            route_state: BatchRouteState::default(),
             pipeline_alive: true,
             skipped_unchanged: 0,
         }
@@ -826,11 +899,10 @@ impl CoalescedBatchProducer {
                 if self.record_unchanged_chunk(&c) {
                     continue;
                 }
-                if should_split_for_route_class(
-                    &self.batch,
-                    &c,
-                    source_keeps_chunk_identities_contiguous,
-                ) || self.should_flush_before(&c)
+                if self
+                    .route_state
+                    .should_split_before(&c, source_keeps_chunk_identities_contiguous)
+                    || self.should_flush_before(&c)
                 {
                     self.flush_batch();
                     if !self.pipeline_alive {
@@ -899,6 +971,7 @@ impl CoalescedBatchProducer {
             self.batch_bytes = self.batch_bytes.saturating_add(1);
         }
         self.batch_bytes = self.batch_bytes.saturating_add(c.data.len());
+        self.route_state.push(&c);
         self.batch.push(c);
         crate::TOTAL_CHUNKS.fetch_add(1, Ordering::Relaxed);
     }
@@ -921,6 +994,7 @@ impl CoalescedBatchProducer {
     }
 
     fn flush_batch(&mut self) {
+        self.route_state.clear();
         if !self.pipeline_alive || self.batch.is_empty() {
             self.batch.clear();
             self.batch_bytes = 0;

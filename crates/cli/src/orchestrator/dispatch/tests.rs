@@ -343,3 +343,174 @@ fn admission_recovery_receipt_is_counted_in_json_and_terminal_status() {
     );
     API.reset_scan_runtime_state_for_test(&guard);
 }
+
+// ── incremental batch-split state ───────────────────────────────────────────
+//
+// `BatchRouteState` replaced a predicate that rescanned the whole accumulating
+// batch and hashed every chunk's source class on every call. At the coalesced
+// pipeline's 4,096-chunk limit that was 8.4 million source-class hashes per
+// batch and 9.4 s of the 10.2 s a 15,002-file scan took, which is also why an
+// explicit GPU backend measured slower than CPU. The incremental state must
+// decide EXACTLY what the reference decided; these tests are the proof.
+
+/// Replay one chunk sequence through both predicates and report the first
+/// position where they disagree. The reference is fed the real accumulated
+/// batch, the incremental state is pushed and cleared in lockstep, so this is a
+/// true differential over the same inputs a producer would see.
+fn differential_split_disagreement(chunks: &[Chunk], contiguous: bool) -> Option<usize> {
+    let mut batch: Vec<Chunk> = Vec::new();
+    let mut state = BatchRouteState::default();
+    for (index, chunk) in chunks.iter().enumerate() {
+        let reference = should_split_for_route_class(&batch, chunk, contiguous);
+        let incremental = state.should_split_before(chunk, contiguous);
+        if reference != incremental {
+            return Some(index);
+        }
+        if reference {
+            batch.clear();
+            state.clear();
+        }
+        batch.push(chunk.clone());
+        state.push(chunk);
+    }
+    None
+}
+
+/// The two predicates agree on every sequence that exercises a distinct split
+/// reason: a uniform run, a class change, a class change back, a repeat of an
+/// identity already in the batch, and a mixed batch that can never split.
+#[test]
+fn incremental_split_state_matches_the_reference_predicate() {
+    let plain = |name: &str| routed_chunk("filesystem", name, "body", true);
+    let extracted = |name: &str| routed_chunk("filesystem/tar", name, "body", true);
+    let sizeless = |name: &str| routed_chunk("filesystem", name, "body", false);
+
+    let cases: Vec<(&str, Vec<Chunk>)> = vec![
+        ("empty", vec![]),
+        ("single", vec![plain("a")]),
+        ("uniform run", vec![plain("a"), plain("b"), plain("c")]),
+        (
+            "class change",
+            vec![plain("a"), plain("b"), extracted("c"), extracted("d")],
+        ),
+        (
+            "class change back",
+            vec![plain("a"), extracted("b"), plain("c"), extracted("d")],
+        ),
+        (
+            "repeat identity across a class change",
+            vec![plain("a"), plain("b"), extracted("a")],
+        ),
+        (
+            "size-provenance change only",
+            vec![plain("a"), sizeless("b"), plain("c")],
+        ),
+        (
+            "alternating identities and classes",
+            vec![
+                plain("a"),
+                extracted("a"),
+                plain("a"),
+                extracted("b"),
+                plain("b"),
+            ],
+        ),
+    ];
+
+    for (label, chunks) in cases {
+        for contiguous in [true, false] {
+            assert_eq!(
+                differential_split_disagreement(&chunks, contiguous),
+                None,
+                "{label} (contiguous={contiguous}) disagreed with the reference predicate"
+            );
+        }
+    }
+}
+
+/// A long deterministic sequence over a small alphabet of classes and paths.
+/// Short hand-written cases cannot reach the states a real 4,096-chunk batch
+/// visits; this walks 600 chunks through repeated splits and resets.
+#[test]
+fn incremental_split_state_matches_the_reference_over_a_long_sequence() {
+    let mut chunks = Vec::with_capacity(600);
+    for index in 0..600usize {
+        let source_type = match index % 3 {
+            0 => "filesystem",
+            1 => "filesystem/tar",
+            _ => "git",
+        };
+        let path = format!("p{}", index % 7);
+        let full_size = index % 5 != 0;
+        chunks.push(routed_chunk(source_type, &path, "body", full_size));
+    }
+    assert_eq!(
+        differential_split_disagreement(&chunks, true),
+        None,
+        "the incremental state diverged from the reference on a long mixed sequence"
+    );
+}
+
+/// Clearing must reset the class AND the identity set. A stale identity would
+/// suppress a legitimate split; a stale class would invent one.
+///
+/// Chunk identity is `(source_type, path)`, so the case where identity actually
+/// suppresses a split is a route-class change that keeps the source type: the
+/// same file seen once with a known size and once without.
+#[test]
+fn clearing_the_state_forgets_both_the_class_and_the_identities() {
+    let sized = routed_chunk("filesystem", "same", "body", true);
+    let sizeless = routed_chunk("filesystem", "same", "body", false);
+    assert_ne!(
+        backend::source_route_class(&sized),
+        backend::source_route_class(&sizeless),
+        "the fixture must differ in route class or it proves nothing"
+    );
+
+    let mut state = BatchRouteState::default();
+    state.push(&sized);
+    assert!(
+        !state.should_split_before(&sizeless, true),
+        "an identity already in the batch must suppress the split"
+    );
+
+    state.clear();
+    assert!(
+        !state.should_split_before(&sizeless, true),
+        "an empty batch can never split"
+    );
+
+    let other = routed_chunk("filesystem", "other", "body", true);
+    state.push(&other);
+    assert!(
+        state.should_split_before(&sizeless, true),
+        "after a clear, a new batch with a different class and identity must split"
+    );
+}
+
+/// A batch whose classes are already mixed can never split, and one more chunk
+/// must not un-mix it. The reference reaches this through an `any` over the
+/// batch; the incremental state has to latch it.
+#[test]
+fn a_mixed_batch_stays_unsplittable() {
+    let mut state = BatchRouteState::default();
+    state.push(&routed_chunk("filesystem", "a", "body", true));
+    state.push(&routed_chunk("filesystem/tar", "b", "body", true));
+    let probe = routed_chunk("git", "c", "body", true);
+    assert!(!state.should_split_before(&probe, true));
+    state.push(&routed_chunk("filesystem", "d", "body", true));
+    assert!(
+        !state.should_split_before(&probe, true),
+        "a chunk matching the FIRST class must not clear the mixed latch"
+    );
+}
+
+/// A non-contiguous source never splits, whatever the classes are. This is the
+/// guard that keeps identity-based splitting sound for sources that interleave
+/// chunk identities.
+#[test]
+fn a_non_contiguous_source_never_splits() {
+    let mut state = BatchRouteState::default();
+    state.push(&routed_chunk("filesystem", "a", "body", true));
+    assert!(!state.should_split_before(&routed_chunk("git", "b", "body", true), false));
+}

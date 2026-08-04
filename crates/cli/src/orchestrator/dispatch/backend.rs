@@ -66,7 +66,7 @@ use self::store::{
     AutorouteCacheSaveOutcome,
 };
 pub(crate) use self::store::{inspect_autoroute_cache, AutorouteReadiness, StagedAutorouteCache};
-pub(crate) use self::workload::source_route_class;
+pub(crate) use self::workload::{source_route_class, SourceRouteClass};
 use self::workload::{measurement_shape_evidence, render_workload_key, workload_key, WorkloadKey};
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};

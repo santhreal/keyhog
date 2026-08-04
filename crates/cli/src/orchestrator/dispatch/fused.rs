@@ -213,6 +213,7 @@ impl ScanOrchestrator {
                 .as_ref()
                 .map(keyhog_profile::Runtime::enter);
             let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(fused_batch);
+            let mut route_state = super::BatchRouteState::default();
             'sources: for source in &sources {
                 let source_keeps_chunk_identities_contiguous =
                     source.chunk_identities_are_contiguous();
@@ -240,21 +241,21 @@ impl ScanOrchestrator {
                     ) else {
                         continue;
                     };
-                    if super::should_split_for_route_class(
-                        &batch,
-                        &c,
-                        source_keeps_chunk_identities_contiguous,
-                    ) {
+                    if route_state
+                        .should_split_before(&c, source_keeps_chunk_identities_contiguous)
+                    {
                         let send_result = {
                             let _profile_span =
                                 keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
                             tx.send(std::mem::take(&mut batch))
                         };
+                        route_state.clear();
                         if send_result.is_err() {
                             break 'sources;
                         }
                         batch = Vec::with_capacity(fused_batch);
                     }
+                    route_state.push(&c);
                     batch.push(c);
                     if batch.len() >= fused_batch {
                         let send_result = {
@@ -262,6 +263,7 @@ impl ScanOrchestrator {
                                 keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
                             tx.send(std::mem::take(&mut batch))
                         };
+                        route_state.clear();
                         if send_result.is_err() {
                             break 'sources;
                         }

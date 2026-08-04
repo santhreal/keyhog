@@ -31,6 +31,13 @@ VERSIONED_TEXT_PATHS = (
     Path("PUBLISHING.md"),
     Path(".github/actions/keyhog/README.md"),
     Path(".github/workflows/action-e2e.yml"),
+    # Both published Action entrypoints state the minimum version they install,
+    # and a contract test requires them to stay byte-identical. Neither was in
+    # this list, so both sat on v0.5.50 through two releases and
+    # `action_examples_and_hosted_release_default_follow_workspace_version`
+    # failed as soon as that suite ran.
+    Path("action.yml"),
+    Path(".github/actions/keyhog/action.yml"),
 )
 _VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 _FRAGMENT_RE = re.compile(r"^[a-z0-9][a-z0-9-]*\.toml$")

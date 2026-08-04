@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Track the accumulating batch's route class and chunk identities as chunks arrive instead of rescanning and rehashing the whole batch for every chunk. The coalesced pipeline's 4,096-chunk batches made that quadratic, which is why an explicit GPU backend measured slower than CPU while the accelerator sat idle."
+crates = ["cli"]
