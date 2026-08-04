@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.52 - 2026-08-04
+
+- Check every `keyhog` command in the README and the handbook against the compiled command model, so a documented subcommand or long flag that is renamed or removed fails the build instead of failing the reader who types it.
+
+- Correct the system-wide triage example, which showed a `--exclude` flag `scan-system` does not have, and state the bound it actually applies: a total-bytes ceiling plus network filesystems skipped by default.
+
 ## 0.5.51 - 2026-08-04
 
 - Assert JSON, JSONL, and SARIF stay completely parseable and ANSI-free across all sixteen hostile environment profiles, including CLICOLOR_FORCE, an unset HOME, an unwritable working directory, a missing TMPDIR, and a rejected backend request.

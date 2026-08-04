@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.52 - 2026-08-04
+
+- Refuse configuration fields the scanner cannot honour and check every documented command against the real CLI.
+
 ## 0.5.51 - 2026-08-04
 
 - Prove the bounded accelerator-evidence dedup set refuses and counts every record past capacity, keeps dedup rejection separate from loss, and saturates its loss counter instead of wrapping to zero under sustained overflow.

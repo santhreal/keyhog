@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.52 - 2026-08-04
+
+- Refuse a non-default `max_file_size` or `dedup` on `ScanConfig` and name the surface that owns the behaviour, instead of accepting two documented no-op fields that gave a library caller the same scan they would have got by leaving them alone.
+
 ## 0.5.51 - 2026-08-04
 
 - Make the portable phase-two prefilter two to three times faster and repair ten red gates.

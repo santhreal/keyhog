@@ -2,6 +2,21 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.52] - 2026-08-04
+
+### Added
+
+- Check every `keyhog` command in the README and the handbook against the compiled command model, so a documented subcommand or long flag that is renamed or removed fails the build instead of failing the reader who types it.
+
+### Changed
+
+- Refuse configuration fields the scanner cannot honour and check every documented command against the real CLI.
+
+### Fixed
+
+- Refuse a non-default `max_file_size` or `dedup` on `ScanConfig` and name the surface that owns the behaviour, instead of accepting two documented no-op fields that gave a library caller the same scan they would have got by leaving them alone.
+- Correct the system-wide triage example, which showed a `--exclude` flag `scan-system` does not have, and state the bound it actually applies: a total-bytes ceiling plus network filesystems skipped by default.
+
 ## [0.5.51] - 2026-08-04
 
 ### Added

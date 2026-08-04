@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.52 - 2026-08-04
+
+- Refuse configuration fields the scanner cannot honour and check every documented command against the real CLI.
+
 ## 0.5.51 - 2026-08-04
 
 - Assert source-instrumentation tests see no coverage errors instead of silently discarding error rows while collecting chunks, so a profiled adapter that starts failing shows up as a failure rather than a smaller chunk count.

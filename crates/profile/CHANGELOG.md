@@ -2,6 +2,10 @@
 
 All notable changes to `keyhog-profile` are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.5.52 - 2026-08-04
+
+- Refuse configuration fields the scanner cannot honour and check every documented command against the real CLI.
+
 ## 0.5.51 - 2026-08-04
 
 - Make the portable phase-two prefilter two to three times faster and repair ten red gates.

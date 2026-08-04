@@ -32,7 +32,7 @@ Use an exact Cargo version requirement when a build or CI job must stay on one
 release:
 
 ```sh
-cargo install --locked --version '=0.5.51' keyhog
+cargo install --locked --version '=0.5.52' keyhog
 ```
 
 The leading equals sign prevents Cargo from selecting another compatible
