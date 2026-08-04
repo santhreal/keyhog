@@ -9,7 +9,7 @@ and execution route that match the job.
 $ keyhog scan . --progress
     K E Y H O G
     ───────────
-    v0.5.60 · secret scanner · 923 detectors
+    v0.5.61 · secret scanner · 923 detectors
     by santh
 
   ⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 923 detectors (5822 patterns) io_uring | backend=simd-regex | gpu=none

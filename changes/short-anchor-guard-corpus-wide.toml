@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Extend token-boundary anchoring to every remaining detector whose vendor prefix is three letters or fewer, so `MSG_API_KEY=` is no longer a Singapore GovTech key, `XPBI_CLIENT_ID=` no longer a Power BI credential and `WEBCB_API_KEY=` no longer a Carbon Black key. Fourteen such false positives are now silent, seventeen genuine separator-prefixed forms still report, and findings are unchanged on every corpus."
-crates = ["scanner"]

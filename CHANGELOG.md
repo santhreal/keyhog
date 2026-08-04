@@ -2,6 +2,17 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.61] - 2026-08-04
+
+### Changed
+
+- Character-class token anchoring for short vendor prefixes.
+
+### Fixed
+
+- Extend token-boundary anchoring to every remaining detector whose vendor prefix is three letters or fewer, so `MSG_API_KEY=` is no longer a Singapore GovTech key, `XPBI_CLIENT_ID=` no longer a Power BI credential and `WEBCB_API_KEY=` no longer a Carbon Black key. Fourteen such false positives are now silent, seventeen genuine separator-prefixed forms still report, and findings are unchanged on every corpus.
+- Repair a recall regression in the previous two releases. Anchoring short vendor prefixes with a word boundary also stopped them matching after an underscore, because `_` is a word character, so `MY_NR_LICENSE_KEY=`, `MY_GH_WEBHOOK_SECRET=` and every other `PREFIX_TOKEN_...` form went unreported. The anchor now tests the character class before the token instead, which keeps the false positives suppressed and finds the separator forms again.
+
 ## [0.5.60] - 2026-08-04
 
 ### Changed

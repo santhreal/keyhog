@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.61 - 2026-08-04
+
+- Character-class token anchoring for short vendor prefixes.
+
 ## 0.5.60 - 2026-08-04
 
 - Token-boundary anchoring for short vendor prefixes.
