@@ -126,9 +126,16 @@ pub(super) fn pct(part: u64, whole: u64) -> f64 {
 /// `phase2:prefilter` leaf. Pure (no I/O) so the formatting is unit-testable.
 ///
 /// Example (candidate-dense corpus, HS engaged on small chunks):
-/// `mark: calls=10123  gate-skip=120 (1.2%)  per-pattern=10003 (98.8%)  [hs=8800 (88.0%)  regexset=1203 (12.0%)]`
+/// `mark: calls=10123  gate-skip=120 (1.2%)  per-pattern=10003 (98.8%)  [hs=8800 (88.0%)  regexset=1203 (12.0%)]  batches: run=4012 skip=39988 (90.9% skipped)`
+///
+/// The batch tail answers the question the call-level split cannot: once a
+/// chunk falls through to per-pattern work, how much of the batch set the
+/// prefix gate actually eliminated. It is the difference between "the prefilter
+/// is expensive because every chunk reaches it" and "because every batch runs".
+/// It is omitted when no gateable batch was evaluated, which is the case on any
+/// build that never reaches the portable RegexSet path.
 pub(crate) fn format_mark_decomposition(s: &MarkSnapshot) -> String {
-    format!(
+    let mut line = format!(
         "mark: calls={}  gate-skip={} ({:.1}%)  per-pattern={} ({:.1}%)  \
          [hs={} ({:.1}%)  regexset={} ({:.1}%)]",
         s.calls,
@@ -140,7 +147,17 @@ pub(crate) fn format_mark_decomposition(s: &MarkSnapshot) -> String {
         s.hs_served_pct(),
         s.regexset_served,
         s.regexset_served_pct(),
-    )
+    );
+    let batch_runs = super::GATE_BATCH_RUNS.load(std::sync::atomic::Ordering::Relaxed);
+    let batch_skips = super::GATE_BATCH_SKIPS.load(std::sync::atomic::Ordering::Relaxed);
+    let batch_total = batch_runs.saturating_add(batch_skips);
+    if batch_total > 0 {
+        line.push_str(&format!(
+            "  batches: run={batch_runs} skip={batch_skips} ({:.1}% skipped)",
+            pct(batch_skips, batch_total)
+        ));
+    }
+    line
 }
 
 #[inline]
