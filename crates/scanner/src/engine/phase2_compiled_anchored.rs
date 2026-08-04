@@ -153,10 +153,8 @@ impl CompiledScanner {
             None => &preprocessed.text,
         };
         let scan_text_is_ascii = scan_text.is_ascii();
-        let skip_homoglyph = homoglyph_skip_applies(
-            scan_text_is_ascii,
-            self.tuning.homoglyph_ascii_skip_enabled(),
-        );
+        let skip_homoglyph =
+            homoglyph_skip_applies(scan_text, self.tuning.homoglyph_ascii_skip_enabled());
         let shift = focus.map_or(0u32, |(fs, _)| fs as u32);
         // `cursor_range` for whole-chunk phase-2 extraction: restrict match
         // STARTS to the focus window (matches still extend right freely).

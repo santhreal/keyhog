@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Let the configuration module's no-inline-tests gate accept the sanctioned `#[cfg(test)] #[path]` sibling-module hook, which the blanket attribute ban rejected even though the test code lives outside the source tree."
+crates = ["cli"]

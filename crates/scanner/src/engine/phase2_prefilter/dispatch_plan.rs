@@ -110,7 +110,7 @@ impl<'a> DispatchPlan<'a> {
                 && config.fallback_hs
                 && (chunk.len() <= config.hs_prefilter_max_len || chunk.is_ascii()),
             use_ascii_matcher: config.homoglyph_gate && chunk.is_ascii(),
-            skip_homoglyph: homoglyph_skip_applies(chunk.is_ascii(), config.homoglyph_ascii_skip),
+            skip_homoglyph: homoglyph_skip_applies(chunk.text(), config.homoglyph_ascii_skip),
             prefix_gate: config.fallback_prefix_gate,
             truncate: config.prefilter_truncate,
         }

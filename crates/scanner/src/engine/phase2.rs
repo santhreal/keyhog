@@ -441,12 +441,26 @@ pub(crate) struct Phase2AlwaysActivePrefilter {
 /// `decode_focus_parity` gate validates it is sufficient.
 pub(crate) const DECODE_FOCUS_MARGIN: usize = 64;
 
-/// Whether homoglyph variants are inert for this chunk. Pure-ASCII source is
-/// covered by each variant's base pattern; decoded non-ASCII bytes are not
-/// credential homoglyphs. Every phase-two owner uses this single predicate.
+/// Whether homoglyph variants are inert for this chunk.
+///
+/// A homoglyph variant only adds reach over its base pattern when the text
+/// actually contains a confusable glyph; every variant's base ASCII prefix is
+/// already owned by the anchor and confirmed paths. So the exact condition is
+/// "no confusable glyph is present", which
+/// [`crate::homoglyph::may_contain_confusable`] proves in one byte pass.
+///
+/// This used to test `chunk_is_ascii`, a much cruder proxy for the same fact.
+/// Any non-ASCII byte at all forced the full residual pattern set, even though
+/// most non-ASCII source text (accented names, box drawing, arrows, emoji,
+/// CJK) contains no confusable. On this repository's own sources that was 858
+/// of 945 non-ASCII files paying for nothing, and those chunks were where
+/// `phase2:prefilter` spent its time.
+///
+/// Decoded sub-chunks keep their existing blanket skip: decoded non-ASCII
+/// bytes are payload, not credential homoglyphs.
 #[inline]
-pub(crate) fn homoglyph_skip_applies(chunk_is_ascii: bool, enabled: bool) -> bool {
-    enabled && (chunk_is_ascii || super::profile::in_decode())
+pub(crate) fn homoglyph_skip_applies(text: &str, enabled: bool) -> bool {
+    enabled && (super::profile::in_decode() || !crate::homoglyph::may_contain_confusable(text))
 }
 
 // NOTE: there is intentionally NO confirmed-pass equivalent of this focus. A

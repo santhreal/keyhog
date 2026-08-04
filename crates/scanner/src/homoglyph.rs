@@ -68,6 +68,46 @@ pub(crate) fn homoglyph_confusables() -> Vec<(char, Vec<char>)> {
     entries
 }
 
+/// The set of FIRST UTF-8 bytes of every confusable glyph in
+/// [`homoglyph_map`], as a 256-entry table.
+///
+/// Derived from the map rather than hand-listed, so adding a glyph cannot
+/// leave the table behind. Every confusable is non-ASCII, so an ASCII-only
+/// text sets none of these.
+fn confusable_lead_bytes() -> &'static [bool; 256] {
+    static LEADS: OnceLock<[bool; 256]> = OnceLock::new();
+    LEADS.get_or_init(|| {
+        let mut table = [false; 256];
+        let mut buffer = [0_u8; 4];
+        for glyphs in homoglyph_map().values() {
+            for glyph in glyphs {
+                let encoded = glyph.encode_utf8(&mut buffer).as_bytes();
+                table[usize::from(encoded[0])] = true;
+            }
+        }
+        table
+    })
+}
+
+/// Whether `text` could contain any confusable glyph.
+///
+/// A one-pass byte test over [`confusable_lead_bytes`]. It is a sound
+/// over-approximation: `false` PROVES no confusable is present, because every
+/// confusable's UTF-8 encoding begins with one of those bytes. `true` only
+/// means one of a handful of Cyrillic, Greek, Latin-extended, or fullwidth
+/// lead bytes appeared, which some non-confusable characters in those blocks
+/// also use.
+///
+/// This is the exact condition the homoglyph-variant skip needs. Keying that
+/// skip on "the chunk is pure ASCII" was a far cruder proxy: on this
+/// repository's own sources, 945 of 5,592 files are non-ASCII but only 87 of
+/// them carry a confusable lead byte, so the proxy forced the full residual
+/// pattern set over 858 chunks that provably could not match a homoglyph.
+pub(crate) fn may_contain_confusable(text: &str) -> bool {
+    let leads = confusable_lead_bytes();
+    text.as_bytes().iter().any(|byte| leads[usize::from(*byte)])
+}
+
 /// Expand a regex pattern to include homoglyphs.
 /// e.g. "ghp_" -> "[gɡｇ][hнһｈ][pрρｐ]_"
 pub(crate) fn expand_homoglyphs(pattern: &str) -> String {
