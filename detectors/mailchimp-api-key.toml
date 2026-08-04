@@ -23,16 +23,19 @@ group = 1
 
 [[detector.patterns]]
 regex = "([a-f0-9]{32}-us[0-9]{1,2})"
+required_literals = ["us"]
 description = "Mailchimp API key with US datacenter"
 group = 1
 
 [[detector.patterns]]
 regex = "([a-f0-9]{32}-eu[0-9]{1,2})"
+required_literals = ["eu"]
 description = "Mailchimp API key with EU datacenter"
 group = 1
 
 [[detector.patterns]]
 regex = "([a-f0-9]{32}-uk[0-9]{1,2})"
+required_literals = ["uk"]
 description = "Mailchimp API key with UK datacenter"
 group = 1
 

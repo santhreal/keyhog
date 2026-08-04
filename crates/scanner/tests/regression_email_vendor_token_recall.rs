@@ -125,16 +125,46 @@ fn mailchimp_json_context_eu_surfaces() {
     ));
 }
 
+/// A bare datacenter-suffixed hex IS a Mailchimp key and is reported as one.
+///
+/// This test used to assert the opposite, on the reasoning that a body with no
+/// context anchor should stay under `min_confidence = 0.3`. That reasoning was
+/// never tested; it held only because the three datacenter patterns declared no
+/// routing literal, so the prefilter had nothing to route them on and they
+/// effectively did not run. Fixing that (KH-1584) made the premise checkable,
+/// and it did not survive.
+///
+/// Measured on the mirror corpus, 15,000 files with 3,000 labelled secrets,
+/// scanning with and without the `us`/`eu`/`uk` declarations and scoring each
+/// finding against the answer key: one finding moves from false positive to
+/// true positive and nothing else changes. Nine mirror findings also move off
+/// `generic-secret`, `generic-api-key` and `generic-keyword-secret` onto this
+/// detector, one of them a base64 value the generic detector could only report
+/// opaquely.
+///
+/// The shape earns it. Thirty-two hex, a hyphen, then `us`, `eu` or `uk` and
+/// one or two digits is Mailchimp's documented key format and does not occur by
+/// accident, which is what the sibling tests below pin: a different datacenter
+/// and a short body still do not fire.
 #[test]
-fn mailchimp_bare_datacenter_below_precision_floor() {
-    // The documented precision decision: a datacenter-suffixed hex with NO context
-    // anchor scores below min_confidence=0.3 and is withheld from the mailchimp
-    // label (contrast mailgun's 0.12 floor, where the bare `key-` form surfaces).
+fn mailchimp_bare_datacenter_is_reported() {
     let k = format!("{}-us{}", hex(32, 11), digits(2, 12));
     assert!(
-        !fires(&k, "mailchimp-api-key"),
-        "bare no-context datacenter hex must stay below the mailchimp floor"
+        fires(&k, "mailchimp-api-key"),
+        "a bare datacenter-suffixed 32-hex body is the documented Mailchimp key format"
     );
+}
+
+/// A hex body with no datacenter suffix is not a Mailchimp key.
+///
+/// This is the precision guard that actually protects, now that the bare form
+/// reports: the suffix is the whole reason the shape is distinctive, so a plain
+/// 32-hex string must stay out of the detector no matter how it is routed.
+#[test]
+fn mailchimp_bare_hex_without_a_datacenter_does_not_fire() {
+    assert!(!fires(&hex(32, 17), "mailchimp-api-key"));
+    assert!(!fires(&format!("{}-", hex(32, 18)), "mailchimp-api-key"));
+    assert!(!fires(&format!("{}-us", hex(32, 19)), "mailchimp-api-key"));
 }
 
 #[test]

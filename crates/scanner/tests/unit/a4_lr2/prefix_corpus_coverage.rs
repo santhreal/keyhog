@@ -29,14 +29,7 @@ use keyhog_scanner::testing::extract_literal_prefixes;
 ///
 /// `generic-password` and `huawei-cloud-api-credentials` are here because their
 /// alternations are case-insensitive over branches with no shared literal run.
-///
-/// The three `mailchimp-api-key` datacenter patterns are different and are the
-/// one honest exception: `us`, `eu` and `uk` ARE provable routing literals, but
-/// declaring them restores enough routing that a bare `<hex32>-us<NN>` with no
-/// context anchor starts firing, which
-/// `mailchimp_bare_datacenter_below_precision_floor` documents as a deliberate
-/// precision decision. Choosing between the routing and the floor needs a
-/// confidence change, not a declaration. KH-1585.
+
 const LITERAL_FREE: &[(&str, usize)] = &[
     ("asana-pat", 0),
     ("asana-pat", 1),
@@ -46,9 +39,6 @@ const LITERAL_FREE: &[(&str, usize)] = &[
     ("generic-password", 5),
     ("huawei-cloud-api-credentials", 0),
     ("kubernetes-bootstrap-token", 0),
-    ("mailchimp-api-key", 1), // provable, blocked by KH-1585
-    ("mailchimp-api-key", 2), // provable, blocked by KH-1585
-    ("mailchimp-api-key", 3), // provable, blocked by KH-1585
     ("sanity-api-token", 0),
     ("telegram-bot-token", 0),
     ("twilio-auth-token", 1),
