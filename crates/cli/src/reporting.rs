@@ -8,6 +8,7 @@ use keyhog_core::{
     ReportFormat, ResolvedScanManifest, ScanCompletionStatus, ScanReport, ScanReportMetadata,
     StaticRecoveryMetrics, VerifiedFinding, STATIC_RECOVERY_METRICS_SCHEMA_VERSION,
 };
+use keyhog_profile::Stage;
 use std::collections::BTreeMap;
 use std::io::{self, IsTerminal};
 
@@ -48,14 +49,21 @@ fn report_with<W: std::io::Write + 'static + Send>(
 ) -> Result<()> {
     // One match owns every format. CSV uses write_csv_coverage_report (coverage
     // columns + gap summary); other formats go through write_scan_report.
-    let report = ScanReport::new(findings).with_metadata(metadata);
+    let report = {
+        // Report finalization/assembly is Reporting-stage work.
+        let _assembly = keyhog_profile::span(Stage::Reporting);
+        ScanReport::new(findings).with_metadata(metadata)
+    };
     match format {
         OutputFormat::Csv => {
+            // Per-format encoder span covers this format's write and flush.
+            let _encoder = keyhog_profile::span(Stage::Reporting);
             let coverage_gap_summary = coverage_gap_summary(&CoverageCounts::current());
             keyhog_core::write_csv_coverage_report(w, report, &coverage_gap_summary)?;
             Ok(())
         }
         OutputFormat::Text => {
+            let _encoder = keyhog_profile::span(Stage::Reporting);
             // Pass the example-suppression count so the empty-findings summary
             // distinguishes "no matches at all" from "matched + suppressed N as
             // known examples". Structured formats don't render prose, so the
@@ -72,10 +80,12 @@ fn report_with<W: std::io::Write + 'static + Send>(
             Ok(())
         }
         OutputFormat::Json => {
+            let _encoder = keyhog_profile::span(Stage::Reporting);
             keyhog_core::write_scan_report(w, ReportFormat::Json, report)?;
             Ok(())
         }
         OutputFormat::JsonEnvelope => {
+            let _encoder = keyhog_profile::span(Stage::Reporting);
             keyhog_core::write_scan_report(
                 w,
                 ReportFormat::JsonEnvelope {
@@ -86,10 +96,12 @@ fn report_with<W: std::io::Write + 'static + Send>(
             Ok(())
         }
         OutputFormat::Jsonl => {
+            let _encoder = keyhog_profile::span(Stage::Reporting);
             keyhog_core::write_scan_report(w, ReportFormat::Jsonl, report)?;
             Ok(())
         }
         OutputFormat::JsonlEnvelope => {
+            let _encoder = keyhog_profile::span(Stage::Reporting);
             keyhog_core::write_scan_report(
                 w,
                 ReportFormat::JsonlEnvelope {
@@ -100,6 +112,7 @@ fn report_with<W: std::io::Write + 'static + Send>(
             Ok(())
         }
         OutputFormat::Sarif => {
+            let _encoder = keyhog_profile::span(Stage::Reporting);
             keyhog_core::write_scan_report(
                 w,
                 ReportFormat::Sarif {
@@ -110,6 +123,7 @@ fn report_with<W: std::io::Write + 'static + Send>(
             Ok(())
         }
         OutputFormat::GithubAnnotations => {
+            let _encoder = keyhog_profile::span(Stage::Reporting);
             keyhog_core::write_scan_report(
                 w,
                 ReportFormat::GithubAnnotationsCoverage {
@@ -120,6 +134,7 @@ fn report_with<W: std::io::Write + 'static + Send>(
             Ok(())
         }
         OutputFormat::GitlabSast => {
+            let _encoder = keyhog_profile::span(Stage::Reporting);
             keyhog_core::write_scan_report(
                 w,
                 ReportFormat::GitlabSastCoverage {
@@ -132,6 +147,7 @@ fn report_with<W: std::io::Write + 'static + Send>(
             Ok(())
         }
         OutputFormat::Html => {
+            let _encoder = keyhog_profile::span(Stage::Reporting);
             keyhog_core::write_scan_report(
                 w,
                 ReportFormat::Html {
@@ -143,6 +159,7 @@ fn report_with<W: std::io::Write + 'static + Send>(
             Ok(())
         }
         OutputFormat::Junit => {
+            let _encoder = keyhog_profile::span(Stage::Reporting);
             keyhog_core::write_scan_report(
                 w,
                 ReportFormat::JunitCoverage {
@@ -905,11 +922,16 @@ impl CoverageGapKind {
 /// path omitted unreadable *binaries* and the structured decode-through
 /// oversize skip (so both are explicit entries below).
 pub(crate) fn coverage_gap_summary(counts: &CoverageCounts) -> Vec<(String, usize)> {
-    CoverageGapKind::ALL
+    let summary: Vec<(String, usize)> = CoverageGapKind::ALL
         .iter()
         .map(|kind| (kind.sarif_reason().to_string(), kind.count(counts)))
         .filter(|(_, n)| *n > 0)
-        .collect()
+        .collect();
+    // One event per detection pass that found at least one gap.
+    if !summary.is_empty() {
+        keyhog_profile::record_event(keyhog_profile::EventId::CoverageGap, 1);
+    }
+    summary
 }
 
 #[cfg(test)]

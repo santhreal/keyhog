@@ -9,19 +9,18 @@ use keyhog_core::{Chunk, RawMatch};
 #[cfg(feature = "decode")]
 use std::collections::HashSet;
 #[cfg(feature = "decode")]
-use std::sync::atomic::Ordering::Relaxed;
-#[cfg(feature = "decode")]
 use std::sync::Arc;
 
 // Re-export the post-processing satellites through their established engine paths.
 // Scanner tuning owns enablement; the suffix-gate satellite only builds the gate.
 #[cfg(feature = "decode")]
-use super::scan_postprocess_profile::{
-    decode_prof_enabled, DECODE_GEN_NS, DECODE_PARENTS, DECODE_SCAN_NS, DECODE_SUBCHUNKS,
-    DECODE_SUBCHUNK_BYTES,
+pub(crate) use super::scan_postprocess_profile::{
+    decode_recursion_from_typed, format_decode_recursion,
 };
-pub(crate) use super::scan_postprocess_profile::{decode_profile_dump, decode_profile_reset};
-pub(crate) use super::scan_postprocess_profile::{ml_batch_profile_dump, ml_batch_profile_reset};
+#[cfg(feature = "ml")]
+pub(crate) use super::scan_postprocess_profile::{
+    format_ml_batch_profile, ml_batch_profile_from_parts,
+};
 pub(crate) use super::scan_postprocess_suffix_gate::build_confirmed_suffix_gate;
 
 impl CompiledScanner {
@@ -54,8 +53,10 @@ impl CompiledScanner {
 
         #[cfg(feature = "decode")]
         if chunk.data.len() <= self.config.max_decode_bytes {
-            let prof_decode = decode_prof_enabled();
-            let gen_start = prof_decode.then(std::time::Instant::now);
+            // Generation time is owned by the profile runtime's Decode stage
+            // span; rescan time by its Decoded attribution on every leaf span
+            // inside the rescans below. The counts/bytes are typed counters in
+            // the same runtime (no-ops when no runtime is active).
             let decoded_chunks = {
                 let _g = super::profile::span(super::profile::P::Decode);
                 crate::decode::decode_chunk_with_policy(
@@ -71,12 +72,12 @@ impl CompiledScanner {
             if crate::deadline::expired(deadline) {
                 return Ok(());
             }
-            if let Some(t) = gen_start {
-                DECODE_GEN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
-                if !decoded_chunks.is_empty() {
-                    DECODE_PARENTS.fetch_add(1, Relaxed);
-                    DECODE_SUBCHUNKS.fetch_add(decoded_chunks.len() as u64, Relaxed);
-                }
+            if !decoded_chunks.is_empty() {
+                keyhog_profile::add_counter(keyhog_profile::CounterId::DecodeParentChunks, 1);
+                keyhog_profile::add_counter(
+                    keyhog_profile::CounterId::DecodeDerivedChunks,
+                    decoded_chunks.len() as u64,
+                );
             }
             // Avoid allocating dedup state when decoding produced no sub-chunks.
             if !decoded_chunks.is_empty() {
@@ -108,10 +109,10 @@ impl CompiledScanner {
                         );
                         continue;
                     }
-                    if prof_decode {
-                        DECODE_SUBCHUNK_BYTES.fetch_add(decoded_chunk.data.len() as u64, Relaxed);
-                    }
-                    let scan_start = prof_decode.then(std::time::Instant::now);
+                    keyhog_profile::add_counter(
+                        keyhog_profile::CounterId::DecodeDerivedBytes,
+                        decoded_chunk.data.len() as u64,
+                    );
                     // Track recursive decode work separately and preserve the
                     // calibrated route's explicit small-buffer backend.
                     let restore_rescan = super::profile::set_in_decode(true);
@@ -125,9 +126,6 @@ impl CompiledScanner {
                     let decoded_matches = decoded_result?;
                     if crate::deadline::expired(deadline) {
                         break;
-                    }
-                    if let Some(t) = scan_start {
-                        DECODE_SCAN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
                     }
                     for m in decoded_matches {
                         // Generic decoded matches retain structural assignment evidence.

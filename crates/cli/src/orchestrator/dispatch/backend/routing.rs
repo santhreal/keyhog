@@ -25,6 +25,12 @@ pub(crate) struct RuntimeRouteIdentity {
     pub(super) key: WorkloadKey,
 }
 
+impl RuntimeRouteIdentity {
+    pub(crate) fn workload_key_digest(&self) -> String {
+        keyhog_core::hex_encode(&super::workload::workload_evidence_digest(&self.key))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AutorouteRuntimeClass {
     OneShot,

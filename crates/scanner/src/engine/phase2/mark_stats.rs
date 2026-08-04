@@ -28,18 +28,18 @@
 //! scan or a multi-pattern RegexSet pass, is hundreds-to-thousands of ns, so the
 //! added atomic is a rounding error and never gates a fast path (Law 7).
 //!
-//! In normal builds these are process-wide relaxed atomics that aggregate across
-//! rayon workers and decode rescans. Under `cargo test` they are thread-local so
-//! a full-suite parallel scan cannot pollute the reset → scan → read window owned
-//! by one counter-sensitive test (the SWE-101 `phase2_no_candidate_zero_work`
-//! regression and the decomposition unit tests).
-
-#[cfg(not(test))]
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+//! Storage: the keyhog-profile runtime owns the counters. Each `record_*` is
+//! one `keyhog_profile::add_counter` call, which is a no-op when no profile
+//! runtime is active (one relaxed atomic load on the disabled path), records
+//! into the per-thread legacy store under `--perf-trace`, and into the
+//! worker-sharded session store under an active `Runtime`/`Session`. The
+//! unified profiler drains them once per dump via
+//! `keyhog_profile::take_typed_metrics` and builds a [`MarkSnapshot`] from the
+//! drained values with [`mark_snapshot_from_typed`].
 
 /// Immutable snapshot of the prefilter call counters at one instant.
 ///
-/// Fields are cumulative since the last [`phase2_mark_stats_reset`]. The derived
+/// Fields are cumulative since the last typed-metric drain. The derived
 /// helpers ([`per_pattern_work`], [`served_total`], the `*_pct` accessors)
 /// centralize the arithmetic the profiler and tests would otherwise duplicate.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -143,77 +143,22 @@ pub(crate) fn format_mark_decomposition(s: &MarkSnapshot) -> String {
     )
 }
 
-// ---------------------------------------------------------------------------
-// Production storage: process-wide relaxed atomics (aggregate across workers).
-// ---------------------------------------------------------------------------
-#[cfg(not(test))]
-pub(crate) static MARK_CALLS: AtomicU64 = AtomicU64::new(0);
-#[cfg(not(test))]
-pub(crate) static MARK_GATE_SKIPS: AtomicU64 = AtomicU64::new(0);
-#[cfg(not(test))]
-pub(crate) static MARK_PERPATTERN_WORK: AtomicU64 = AtomicU64::new(0);
-#[cfg(not(test))]
-pub(crate) static MARK_HS_SERVED: AtomicU64 = AtomicU64::new(0);
-#[cfg(not(test))]
-pub(crate) static MARK_REGEXSET_SERVED: AtomicU64 = AtomicU64::new(0);
-
-// ---------------------------------------------------------------------------
-// Test storage: thread-local so one test owns its reset → scan → read window.
-// ---------------------------------------------------------------------------
-#[cfg(test)]
-#[derive(Clone, Copy, Default)]
-struct MarkStats {
-    calls: u64,
-    gate_skips: u64,
-    perpattern_work: u64,
-    hs_served: u64,
-    regexset_served: u64,
-}
-
-#[cfg(test)]
-thread_local! {
-    static MARK_STATS: std::cell::Cell<MarkStats> = const { std::cell::Cell::new(MarkStats {
-        calls: 0,
-        gate_skips: 0,
-        perpattern_work: 0,
-        hs_served: 0,
-        regexset_served: 0,
-    }) };
-}
-
-/// Mutate the thread-local test stats in place. Centralizes the get/modify/set
-/// dance so every `record_*` is a one-liner.
-#[cfg(test)]
-fn with_mark_stats(f: impl FnOnce(&mut MarkStats)) {
-    MARK_STATS.with(|cell| {
-        let mut snapshot = cell.get();
-        f(&mut snapshot);
-        cell.set(snapshot);
-    });
-}
-
 #[inline]
 pub(crate) fn record_mark_call() {
-    #[cfg(test)]
-    with_mark_stats(|s| s.calls += 1);
-    #[cfg(not(test))]
-    MARK_CALLS.fetch_add(1, Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::Phase2PrefilterMarkCalls, 1);
 }
 
 #[inline]
 pub(crate) fn record_mark_gate_skip() {
-    #[cfg(test)]
-    with_mark_stats(|s| s.gate_skips += 1);
-    #[cfg(not(test))]
-    MARK_GATE_SKIPS.fetch_add(1, Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::Phase2PrefilterGateSkips, 1);
 }
 
 #[inline]
 pub(crate) fn record_mark_perpattern_work() {
-    #[cfg(test)]
-    with_mark_stats(|s| s.perpattern_work += 1);
-    #[cfg(not(test))]
-    MARK_PERPATTERN_WORK.fetch_add(1, Relaxed);
+    keyhog_profile::add_counter(
+        keyhog_profile::CounterId::Phase2PrefilterPerPatternWork,
+        1,
+    );
 }
 
 /// A per-pattern call was served by the Hyperscan SIMD fast path. Fires exactly
@@ -224,10 +169,7 @@ pub(crate) fn record_mark_perpattern_work() {
 #[cfg(feature = "simd")]
 #[inline]
 pub(crate) fn record_mark_hs_served() {
-    #[cfg(test)]
-    with_mark_stats(|s| s.hs_served += 1);
-    #[cfg(not(test))]
-    MARK_HS_SERVED.fetch_add(1, Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::Phase2PrefilterHsServed, 1);
 }
 
 /// A per-pattern call was served by the portable `regex::RegexSet` batches.
@@ -235,55 +177,41 @@ pub(crate) fn record_mark_hs_served() {
 /// (HS unavailable/errored, chunk over the size gate, or a non-`simd` build).
 #[inline]
 pub(crate) fn record_mark_regexset_served() {
-    #[cfg(test)]
-    with_mark_stats(|s| s.regexset_served += 1);
-    #[cfg(not(test))]
-    MARK_REGEXSET_SERVED.fetch_add(1, Relaxed);
+    keyhog_profile::add_counter(
+        keyhog_profile::CounterId::Phase2PrefilterRegexsetServed,
+        1,
+    );
 }
 
-/// Snapshot the prefilter call counters without resetting them.
-///
-/// Available in every build: the profiler ([`super::super::profile::dump`])
-/// reads the production atomics; tests read their thread-local copy.
-pub(crate) fn phase2_mark_stats() -> MarkSnapshot {
-    #[cfg(test)]
-    {
-        let s = MARK_STATS.with(std::cell::Cell::get);
-        MarkSnapshot {
-            calls: s.calls,
-            gate_skips: s.gate_skips,
-            perpattern_work: s.perpattern_work,
-            hs_served: s.hs_served,
-            regexset_served: s.regexset_served,
-        }
-    }
-    #[cfg(not(test))]
+/// Build a [`MarkSnapshot`] from one drained typed-metric batch
+/// (`keyhog_profile::take_typed_metrics`). Missing counters read as zero, so a
+/// scan with the profiler off (or a scan that never reached the prefilter)
+/// yields the default snapshot.
+pub(crate) fn mark_snapshot_from_typed(
+    metrics: &[keyhog_profile::TypedMetricRecordV2],
+) -> MarkSnapshot {
+    let value = |counter: keyhog_profile::CounterId| {
+        metrics
+            .iter()
+            .find(|record| record.metric_id == counter.metric_id())
+            .map_or(0, |record| record.value)
+    };
+    use keyhog_profile::CounterId;
     MarkSnapshot {
-        calls: MARK_CALLS.load(Relaxed),
-        gate_skips: MARK_GATE_SKIPS.load(Relaxed),
-        perpattern_work: MARK_PERPATTERN_WORK.load(Relaxed),
-        hs_served: MARK_HS_SERVED.load(Relaxed),
-        regexset_served: MARK_REGEXSET_SERVED.load(Relaxed),
+        calls: value(CounterId::Phase2PrefilterMarkCalls),
+        gate_skips: value(CounterId::Phase2PrefilterGateSkips),
+        perpattern_work: value(CounterId::Phase2PrefilterPerPatternWork),
+        hs_served: value(CounterId::Phase2PrefilterHsServed),
+        regexset_served: value(CounterId::Phase2PrefilterRegexsetServed),
     }
 }
 
-/// Reset every prefilter call counter to zero for test isolation (thread-local).
+/// Drain the prefilter call counters for test isolation. Returns the drained
+/// snapshot so a test can reset-then-scan-then-read with exact values; each
+/// drain is destructive, matching the profile runtime's bounded-storage model.
 #[cfg(test)]
-pub(crate) fn phase2_mark_stats_reset() {
-    MARK_STATS.with(|cell| cell.set(MarkStats::default()));
-}
-
-/// Reset every production prefilter call counter to zero. Used by the profiler's
-/// warm-up discard and post-dump reset so each report reflects only its own run.
-/// Kept as a distinct `#[cfg(not(test))]` function (not only a test reset) so the
-/// production atomics provably have a real reset path.
-#[cfg(not(test))]
-pub(crate) fn phase2_mark_stats_reset() {
-    MARK_CALLS.store(0, Relaxed);
-    MARK_GATE_SKIPS.store(0, Relaxed);
-    MARK_PERPATTERN_WORK.store(0, Relaxed);
-    MARK_HS_SERVED.store(0, Relaxed);
-    MARK_REGEXSET_SERVED.store(0, Relaxed);
+pub(crate) fn take_mark_stats() -> MarkSnapshot {
+    mark_snapshot_from_typed(&keyhog_profile::take_typed_metrics())
 }
 
 #[cfg(test)]

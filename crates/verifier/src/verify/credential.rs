@@ -156,6 +156,11 @@ where
 
     for attempt in 0..max_attempts {
         if attempt > 0 {
+            // Profile: each scheduled retry is annotated with its attempt index.
+            keyhog_profile::record_annotation(
+                keyhog_profile::AnnotationId::RetryAttempt,
+                attempt as u64,
+            );
             let (min_delay_ms, max_delay_ms) =
                 retry_delay_bounds_for_attempt(attempt, base_delay_ms);
             let delay_ms = if min_delay_ms == max_delay_ms {

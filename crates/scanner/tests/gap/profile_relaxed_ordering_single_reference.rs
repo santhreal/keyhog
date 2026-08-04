@@ -6,11 +6,8 @@
 //! ordering was spelled two ways in one file. The import is now unconditional
 //! and every atomic op uses the `Relaxed` alias, byte-identical (the alias
 //! resolves to the same enum variant), a pure coherence/dedup normalization.
-//!
-//! This is a source-shape gate (the module is private `mod
-//! scan_postprocess_profile` included via `#[path]`, so its measurement fns are
-//! not reachable behaviorally). It also pins the ml histogram array/bucket-fn
-//! coherence so the catch-all bucket can never index past the array bound.
+//! It also pins the ML batch recorder's migration onto the keyhog-profile
+//! typed counters + batch-size distribution (no scanner-owned histogram array).
 
 fn profile_src() -> String {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -54,17 +51,25 @@ fn profiler_uses_one_relaxed_ordering_reference() {
 }
 
 #[test]
-fn ml_histogram_array_and_bucket_fn_stay_coherent() {
+fn ml_batch_metrics_flow_through_profile_runtime() {
     let src = profile_src();
-    // 10-slot histogram array; the bucket fn's catch-all must map to the last
-    // valid index (9), so `ML_BATCH_BUCKETS[ml_batch_bucket(n)]` is always in
-    // bounds for every n.
+    // The ML batch-size histogram and totals migrated off the scanner-owned
+    // atomics onto the keyhog-profile runtime: typed counters for the totals,
+    // the bounded log-scale distribution for the per-call batch sizes.
+    for needle in [
+        "CounterId::MlBatchCalls",
+        "CounterId::MlBatchCandidates",
+        "CounterId::MlBatchCallsGe64",
+        "CounterId::MlBatchCandidatesGe64",
+        "record_distribution(MetricId::MlBatchSize",
+    ] {
+        assert!(
+            src.contains(needle),
+            "ml_batch_record must record through {needle}"
+        );
+    }
     assert!(
-        src.contains("static ML_BATCH_BUCKETS: [AtomicU64; 10]"),
-        "the ML batch histogram is a 10-slot array"
-    );
-    assert!(
-        src.contains("_ => 9,"),
-        "the bucket catch-all must map to index 9 (last slot of the 10-element array)"
+        !src.contains("ML_BATCH_BUCKETS"),
+        "the scanner-owned ML batch histogram array must be gone; the profile runtime owns it"
     );
 }

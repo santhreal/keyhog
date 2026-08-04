@@ -39,6 +39,7 @@ hex = { workspace = true }
 async-trait = { workspace = true }
 parking_lot = { workspace = true }
 indexmap = { workspace = true }
+keyhog-profile = { workspace = true }
 fs2 = { workspace = true }
 ahash = { workspace = true }
 # `pure` forces the portable Rust implementation and drops blake3's C/assembly

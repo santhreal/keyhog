@@ -15,7 +15,8 @@ pub(crate) fn run(args: ExplainArgs) -> Result<()> {
         args.detectors_cli_explicit,
     )?;
     let detectors_path = crate::orchestrator_config::auto_discover_detectors(&args.detectors)?;
-    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&detectors_path)?;
+    // Detector corpus load, profiled as backend selection at the shared seam.
+    let detectors = crate::subcommands::detectors::load_detector_corpus(&detectors_path)?;
 
     let requested = args.detector_id.as_str();
     let detector = detectors
@@ -25,7 +26,14 @@ pub(crate) fn run(args: ExplainArgs) -> Result<()> {
 
     let detector_corpus_sha256 =
         keyhog_core::hex_encode(keyhog_core::compute_detector_corpus_digest(&detectors)?);
-    let scanner = CompiledScanner::compile(detectors.clone())?;
+    let scanner = {
+        // Detector compilation for the evidence plan, profiled as backend
+        // selection.
+        let _compile_span = keyhog_profile::span(keyhog_profile::Stage::BackendSelect);
+        CompiledScanner::compile(detectors.clone())?
+    };
+    // Explanation output publication.
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     print_explanation(detector);
     if args.compiled_plan {
         print_compiled_evidence_plan(&scanner, &detector.id)?;

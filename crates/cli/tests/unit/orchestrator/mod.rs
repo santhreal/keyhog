@@ -46,6 +46,7 @@ pub mod pipeline_processes_many_chunks_to_exercise_batch_flush;
 pub mod pipeline_two_chunks_in_one_source_both_yield_findings;
 pub mod pipeline_with_merkle_records_metadata_for_chunks_seen;
 pub mod pipeline_with_merkle_skips_already_cached_chunks;
+pub mod profile_config_identity;
 pub mod sanitise_thread_count_caps_pathological;
 pub mod sanitise_thread_count_passes_sane_values;
 pub mod sanitise_thread_count_zero_fallback;

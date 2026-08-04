@@ -14,6 +14,10 @@ pub(crate) struct AcquiredGpuPeer {
     pub(crate) device_identity: Option<String>,
     pub(crate) is_software: bool,
     pub(crate) resident_timed_dispatch_supported: bool,
+    /// PCI vendor id where the backend exposes one; 0 means unknown.
+    pub(crate) adapter_vendor: u32,
+    /// PCI device id where the backend exposes one; 0 means unknown.
+    pub(crate) adapter_device: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -187,6 +191,10 @@ fn acquire_cuda_peer() -> Result<AcquiredGpuPeer, String> {
         device_identity: None,
         is_software: false,
         resident_timed_dispatch_supported: true,
+        // CUDA implies an NVIDIA device; the CUDA caps API does not expose a
+        // PCI device id, so the device facet stays 0 (unknown).
+        adapter_vendor: 0x10de,
+        adapter_device: 0,
     })
 }
 
@@ -213,6 +221,10 @@ fn acquire_metal_peer() -> Result<AcquiredGpuPeer, String> {
         device_identity: Some("Apple Metal default device".to_string()),
         is_software: false,
         resident_timed_dispatch_supported: false,
+        // Metal implies an Apple device; the Metal acquisition API does not
+        // expose a PCI device id, so the device facet stays 0 (unknown).
+        adapter_vendor: 0x106b,
+        adapter_device: 0,
     })
 }
 
@@ -250,12 +262,16 @@ fn acquire_wgpu_peer() -> Result<AcquiredGpuPeer, String> {
         device_identity,
         "selected WGPU peer backend acquired"
     );
+    let adapter_vendor = info.vendor;
+    let adapter_device = info.device;
     let backend: Arc<dyn vyre::VyreBackend> = backend;
     Ok(AcquiredGpuPeer {
         backend,
         device_identity: Some(device_identity),
         is_software,
         resident_timed_dispatch_supported,
+        adapter_vendor,
+        adapter_device,
     })
 }
 

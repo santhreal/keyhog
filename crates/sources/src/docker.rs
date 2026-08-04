@@ -119,19 +119,44 @@ fn collect_docker_chunks(
     let workspace = DockerScanWorkspace::new()?;
     let docker_bin = resolve_docker_binary()?;
 
-    export_docker_image_archive(&docker_bin, &image, workspace.archive_path())?;
+    // Container export is the acquisition boundary for this adapter.
+    let archive_path = {
+        let _export = crate::profile::acquire_span();
+        acquire_docker_image_archive(&docker_bin, &image, &workspace)?
+    };
     let mut rows = Vec::new();
+    // Archive unpack + metadata enumeration walk the exported image layout.
+    let _enumerate = crate::profile::walk_span();
     let mut error_rows =
-        archive::unpack_tar(workspace.archive_path(), workspace.root_path(), limits)?.into_rows();
+        archive::unpack_tar(&archive_path, workspace.root_path(), limits)?.into_rows();
 
     match find_archive_metadata_chunks(workspace.root_path(), &image, limits) {
-        Ok(chunks) => rows.extend(chunks.into_iter().map(Ok)),
+        Ok(chunks) => {
+            // Input accounting: layer payloads are counted by the inner
+            // per-layer FilesystemSource walks, so only the metadata chunks
+            // this adapter synthesizes itself are recorded (no double count).
+            crate::profile::add_input_units(chunks.len() as u64);
+            crate::profile::add_input_bytes(
+                chunks.iter().map(|chunk| chunk.data.len() as u64).sum(),
+            );
+            rows.extend(chunks.into_iter().map(Ok))
+        }
         Err(error) => error_rows.push(Err(error)),
     }
     match find_manifest_config_chunks(workspace.root_path(), &image, limits) {
-        Ok(chunks) => rows.extend(chunks.into_iter().map(Ok)),
+        Ok(chunks) => {
+            crate::profile::add_input_units(chunks.len() as u64);
+            crate::profile::add_input_bytes(
+                chunks.iter().map(|chunk| chunk.data.len() as u64).sum(),
+            );
+            rows.extend(chunks.into_iter().map(Ok))
+        }
         Err(error) => error_rows.push(Err(error)),
     }
+    // Layer traversal (per-layer unpack, dedup, and scan) is the walk
+    // boundary; per-layer reads record through the inner FilesystemSource.
+    drop(_enumerate);
+    let _layer_walk = crate::profile::walk_span();
     for row in
         layer::collect_docker_layer_chunks(&workspace, &image, limits, respect_default_excludes)
     {
@@ -199,6 +224,15 @@ fn resolve_docker_binary() -> Result<PathBuf, SourceError> {
                 .into(),
         )
     })
+}
+
+fn acquire_docker_image_archive(
+    docker_bin: &Path,
+    image: &str,
+    workspace: &DockerScanWorkspace,
+) -> Result<PathBuf, SourceError> {
+    export_docker_image_archive(docker_bin, image, workspace.archive_path())?;
+    Ok(workspace.archive_path().to_path_buf())
 }
 
 fn export_docker_image_archive(

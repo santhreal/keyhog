@@ -4,6 +4,7 @@ pub mod archive;
 #[cfg(feature = "git")]
 pub mod git;
 pub mod pdf;
+pub mod profile;
 
 use keyhog_core::{Chunk, Source, SourceError};
 

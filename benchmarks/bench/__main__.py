@@ -210,7 +210,204 @@ def _gate(args: argparse.Namespace) -> int:
         max_detector_fp_abs=args.max_detector_fp_abs,
         max_detector_fp_rel=args.max_detector_fp_rel,
         required_competitors={s.strip() for s in args.require_competitors.split(",") if s.strip()} or None,
+        speed_budgets=args.speed_budgets,
+        speed_control_results=args.speed_control_results,
     )
+
+
+def _profile_run(args: argparse.Namespace) -> int:
+    """Run one paired control/candidate profiled trial set and write receipts."""
+    import shlex
+    import shutil
+    import subprocess
+    import time
+
+    from . import hardware
+    from .executable_snapshot import sha256_file
+    from .keyhog_version import workspace_git_hash
+    from .profile_capture import ProfileCaptureError, capture_profiled_run
+    from .receipts import build_receipt
+    from .trials import TrialOutcome, run_trials
+
+    scan_args = shlex.split(args.scan_args)
+    out_dir = pathlib.Path(args.out)
+    cache_dir = pathlib.Path(args.cache_dir) if args.cache_dir else None
+
+    def clear_caches() -> None:
+        if cache_dir is not None and cache_dir.exists():
+            shutil.rmtree(cache_dir)
+
+    host = hardware.capture()
+    for role, binary in (("control", args.control_bin), ("candidate", args.candidate_bin)):
+        binary_path = pathlib.Path(binary)
+        if not binary_path.exists():
+            print(f"ERROR: {role} binary {binary} does not exist", file=sys.stderr)
+            return 2
+
+        def executor(state, index, _binary=binary_path, _role=role):
+            if index < 0:
+                # Untimed priming run: no artifact, its wall is not evidence.
+                start = time.perf_counter()
+                proc = subprocess.run([str(_binary), *scan_args],
+                                      capture_output=True)
+                if proc.returncode != 0:
+                    raise ProfileCaptureError(
+                        f"priming run exited {proc.returncode} for {_binary}"
+                    )
+                return TrialOutcome(
+                    wall_ms=(time.perf_counter() - start) * 1000.0
+                )
+            profile_path = out_dir / _role / f"{state.value}-{index}-profile.json"
+            outcome, _artifact = capture_profiled_run(
+                binary=_binary,
+                scan_args=scan_args,
+                profile_path=profile_path,
+            )
+            return outcome
+
+        try:
+            trial_set = run_trials(
+                workload=args.workload,
+                role=role,
+                executor=executor,
+                cold=args.cold,
+                warm=args.warm,
+                steady=args.steady,
+                pin_affinity=not args.no_affinity,
+                governor_required=args.governor,
+                clear_caches=clear_caches,
+            )
+        except ProfileCaptureError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        receipt = build_receipt(
+            trial_set,
+            binary_sha256=sha256_file(binary_path.resolve(strict=True)),
+            git_hash=workspace_git_hash(),
+            host=host,
+        )
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / f"{role}-{args.workload}-trials.json").write_text(
+            json.dumps(trial_set.to_json(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (out_dir / f"{role}-{args.workload}-receipt.json").write_text(
+            json.dumps(receipt.to_json(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        invalid = sum(1 for trial in trial_set.trials if not trial.valid)
+        print(f"{role}: {len(trial_set.trials)} trials ({invalid} invalid), "
+              f"receipt digest {receipt.digest()}", file=sys.stderr)
+    return 0
+
+
+def _profile_matrix(args: argparse.Namespace) -> int:
+    from .profile_matrix import MatrixError, load_matrix, plan_jobs
+
+    try:
+        matrix = load_matrix(args.matrix)
+    except MatrixError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    jobs = plan_jobs(matrix)
+    print(json.dumps([job.to_json() for job in jobs], indent=2, sort_keys=True))
+    return 0
+
+
+def _profile_gate(args: argparse.Namespace) -> int:
+    """Profiler overhead and stage-regression budgets over captured artifacts."""
+    from .profile_artifact import ProfileArtifactError, load_causal_profile
+    from .profile_gates import (
+        BudgetError,
+        evaluate_overhead,
+        evaluate_stage_regressions,
+        load_budgets,
+    )
+    from .trials import TrialSet
+
+    def load_trial_set(path: pathlib.Path) -> TrialSet:
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise BudgetError(f"cannot load trial set {path}: {exc}") from exc
+        try:
+            return TrialSet.from_json(payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise BudgetError(f"invalid trial set {path}: {exc}") from exc
+
+    violations: list[str] = []
+    try:
+        budgets = load_budgets(args.budgets)
+        if args.profiled_trials is not None or args.unprofiled_trials is not None:
+            if args.profiled_trials is None or args.unprofiled_trials is None:
+                raise BudgetError(
+                    "the overhead gate needs both --profiled-trials and "
+                    "--unprofiled-trials"
+                )
+            if budgets.overhead_max_ratio is None:
+                raise BudgetError(
+                    f"{args.budgets} declares no [profiler_overhead] budget"
+                )
+            profiled = load_trial_set(args.profiled_trials)
+            unprofiled = load_trial_set(args.unprofiled_trials)
+            if profiled.workload != unprofiled.workload:
+                raise BudgetError(
+                    f"overhead gate workload mismatch: {profiled.workload!r} vs "
+                    f"{unprofiled.workload!r}; both legs must measure one workload"
+                )
+            profiled_walls = profiled.valid_wall_ms()
+            unprofiled_walls = unprofiled.valid_wall_ms()
+            if not profiled_walls or not unprofiled_walls:
+                raise BudgetError(
+                    "overhead gate has no valid trials "
+                    f"(profiled {len(profiled_walls)}, unprofiled "
+                    f"{len(unprofiled_walls)}); invalid trials are never "
+                    "silently retried"
+                )
+            verdict = evaluate_overhead(
+                profiled_walls,
+                unprofiled_walls,
+                max_ratio=budgets.overhead_max_ratio,
+                seed=args.seed,
+            )
+            violations.extend(verdict.violations)
+        if args.control_profile is not None or args.candidate_profile is not None:
+            if args.control_profile is None or args.candidate_profile is None:
+                raise BudgetError(
+                    "the stage gate needs both --control-profile and "
+                    "--candidate-profile"
+                )
+            if not args.workflow:
+                raise BudgetError("the stage gate needs --workflow")
+            budget = budgets.workflows.get(args.workflow)
+            if budget is None:
+                raise BudgetError(
+                    f"{args.budgets} declares no workflow {args.workflow!r} budget"
+                )
+            if not budget.stages:
+                raise BudgetError(
+                    f"workflow {args.workflow!r} declares no stage budgets"
+                )
+            control = load_causal_profile(args.control_profile)
+            candidate = load_causal_profile(args.candidate_profile)
+            violations.extend(evaluate_stage_regressions(control, candidate, budget))
+        if args.profiled_trials is None and args.control_profile is None:
+            raise BudgetError(
+                "no gate selected: pass --profiled-trials/--unprofiled-trials "
+                "and/or --control-profile/--candidate-profile"
+            )
+    except (BudgetError, ProfileArtifactError) as exc:
+        print(f"PROFILE GATE UNDECIDABLE: {exc}", file=sys.stderr)
+        return 2
+
+    if violations:
+        print(f"PROFILE GATE FAILED ({len(violations)} violation(s)):",
+              file=sys.stderr)
+        for violation in violations:
+            print(f"  - {violation}", file=sys.stderr)
+        return 1
+    print("PROFILE GATE PASSED", file=sys.stderr)
+    return 0
 
 
 def _cross_device(args: argparse.Namespace) -> int:
@@ -332,6 +529,58 @@ def main(argv: list[str] | None = None) -> int:
                            "tolerated vs baseline; a spike must clear BOTH to fail")
     gate.add_argument("--require-competitors", default="",
                       help="comma-separated competitor names that must produce usable results")
+    gate.add_argument("--speed-budgets", type=pathlib.Path, default=None,
+                      help="TOML budget file; enables the per-workflow-class "
+                           "end-to-end speed gate (requires --speed-control-results)")
+    gate.add_argument("--speed-control-results", type=pathlib.Path, default=None,
+                      help="directory of control RunResult JSONs the candidate "
+                           "rows are compared against for speed budgets")
+
+    profile_run = sub.add_parser(
+        "profile-run",
+        help="Run a paired control/candidate profiled trial set and write "
+             "trial sets, profile artifacts, and provenance receipts.")
+    profile_run.add_argument("--control-bin", required=True)
+    profile_run.add_argument("--candidate-bin", required=True)
+    profile_run.add_argument("--workload", required=True)
+    profile_run.add_argument("--scan-args", required=True,
+                             help="scan argument string shared by both binaries; "
+                                  "--profile-out is appended per run")
+    profile_run.add_argument("--out", required=True,
+                             help="output directory for artifacts, trial sets, receipts")
+    profile_run.add_argument("--cold", type=int, default=1)
+    profile_run.add_argument("--warm", type=int, default=1)
+    profile_run.add_argument("--steady", type=int, default=3)
+    profile_run.add_argument("--cache-dir", default=None,
+                             help="keyhog cache directory cleared before cold trials")
+    profile_run.add_argument("--no-affinity", action="store_true",
+                             help="do not request affinity pinning (trials record "
+                                  "the control as not requested)")
+    profile_run.add_argument("--governor", default="",
+                             help="required CPU governor (e.g. performance); trials "
+                                  "on any other governor are invalid")
+
+    profile_matrix = sub.add_parser(
+        "profile-matrix",
+        help="Expand the nightly profiling matrix into its deterministic job plan.")
+    profile_matrix.add_argument(
+        "--matrix", type=pathlib.Path,
+        default=pathlib.Path("profile-matrix/nightly.toml"))
+
+    profile_gate = sub.add_parser(
+        "profile-gate",
+        help="Profiler overhead and stage-regression budgets over captured "
+             "artifacts (exit 1 on violation, 2 if undecidable).")
+    profile_gate.add_argument("--budgets", type=pathlib.Path, required=True)
+    profile_gate.add_argument("--workflow", default=None)
+    profile_gate.add_argument("--control-profile", type=pathlib.Path, default=None)
+    profile_gate.add_argument("--candidate-profile", type=pathlib.Path, default=None)
+    profile_gate.add_argument("--profiled-trials", type=pathlib.Path, default=None,
+                              help="TrialSet JSON of profiled runs (overhead gate)")
+    profile_gate.add_argument("--unprofiled-trials", type=pathlib.Path, default=None,
+                              help="TrialSet JSON of unprofiled runs (overhead gate)")
+    profile_gate.add_argument("--seed", type=int, default=0,
+                              help="bootstrap seed for the overhead intervals")
 
     cross_device = sub.add_parser(
         "cross-device",
@@ -364,6 +613,12 @@ def main(argv: list[str] | None = None) -> int:
         return _gate(args)
     if args.cmd == "cross-device":
         return _cross_device(args)
+    if args.cmd == "profile-run":
+        return _profile_run(args)
+    if args.cmd == "profile-matrix":
+        return _profile_matrix(args)
+    if args.cmd == "profile-gate":
+        return _profile_gate(args)
     parser.error(f"unknown command {args.cmd}")
     return 2
 

@@ -13,6 +13,7 @@ mod postprocess;
 pub(crate) mod reporting;
 mod run;
 mod streaming;
+mod workflow_state;
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
@@ -306,6 +307,12 @@ pub(crate) use dispatch::backend_requires_coalesced_batch_pipeline_for_test;
 // `crate::testing` facade without spawning a scan.
 #[doc(hidden)]
 pub(crate) use run::scan_exit_code;
+
+// Re-export the daemon request-profile renderer so the daemon scan route in
+// `subcommands::scan` can surface isolated per-request measurements on the
+// same operator profile surface as the in-process `--profile` report.
+#[cfg(unix)]
+pub(crate) use run::render_daemon_request_profile;
 
 // Test seam: the completion-summary and progress-ticker renderers are pure
 // formatting functions whose unit tests were relocated out of the `reporting`
@@ -683,6 +690,13 @@ impl DefaultScanRuntime {
                 backend.label()
             )
         })?;
+        dispatch::record_profiled_batch_route(
+            batch,
+            self.backend_override
+                .map_or("auto", keyhog_scanner::ScanBackend::label),
+            &selection,
+            &outcome,
+        );
         if let Some(recovery) = outcome.recovery.as_ref() {
             self.router
                 .quarantine_recovered_route(&selection, recovery)?;
@@ -1337,16 +1351,22 @@ impl ScanOrchestrator {
     pub(crate) fn build_merkle_index(
         &self,
         path: Option<&std::path::Path>,
-    ) -> Option<Arc<keyhog_core::MerkleIndex>> {
-        let path = path?;
+    ) -> (
+        Option<Arc<keyhog_core::MerkleIndex>>,
+        Option<keyhog_core::MerkleLoadStatus>,
+    ) {
+        let Some(path) = path else {
+            return (None, None);
+        };
         let report =
             keyhog_core::MerkleIndex::load_with_spec_report(path, &self.detector_spec_hash);
         if let Some(warning) = incremental_cache_warning(report.status()) {
             eprintln!("{warning}");
         }
+        let status = report.status().clone();
         let idx = report.into_index();
         tracing::info!("incremental scan: loaded merkle index");
-        Some(Arc::new(idx))
+        (Some(Arc::new(idx)), Some(status))
     }
 
     /// Test-only entry point for the producer/scanner pipeline.

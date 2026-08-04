@@ -65,10 +65,12 @@ impl CompiledScanner {
         use rayon::prelude::*;
         let telemetry = crate::telemetry::capture_scan_telemetry();
         let recovery_receipts = crate::gpu::capture_recovery_receipts();
+        let profile_runtime = keyhog_profile::current_runtime();
         let mut results: Vec<Vec<RawMatch>> = chunks
             .par_iter()
             .enumerate()
             .map(|(index, chunk)| {
+                let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
                 crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
                     crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
                         let admission = admission_plan.and_then(|plan| plan.admission_for(index));

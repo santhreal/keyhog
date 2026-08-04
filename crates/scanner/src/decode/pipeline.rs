@@ -263,6 +263,7 @@ impl super::DecodeOutputSink for BoundedDecodeSink<'_> {
         }
         *self.produced = next_produced;
         *self.total_bytes = next_total_bytes;
+        crate::scan_profile::add_derived_decoder_bytes(decoded.data.len() as u64);
 
         // LAW10: recall-preserving: the decoded bytes still take the decode-through
         // queue unchanged; the screen proves only the direct scanner pass impossible.
@@ -369,7 +370,8 @@ mod extractor;
 mod registry;
 mod splice;
 pub(crate) use extractor::with_extracted_value_spans;
-pub(crate) use extractor::{extract_profile_dump, extract_profile_reset};
+#[cfg(feature = "decode")]
+pub(crate) use extractor::{extract_profile_from_typed, format_extract_profile};
 pub(super) use extractor::{hash_fast, ExtractedValue};
 #[cfg(feature = "decode")]
 pub(crate) use registry::default_decoder_names;

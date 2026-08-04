@@ -19,19 +19,12 @@
 //! guessed.
 //!
 //! Cost discipline: the timing is PROFILE-GATED. `Phase2AlwaysActivePrefilter`'s
-//! caller only takes `Instant::now()` when the unified profiler is enabled (the
-//! same gate the per-pattern profiler uses). When profiling is off this module
-//! contributes nothing to the hot path. The counters are process-wide relaxed
-//! atomics that sum across rayon workers, matching `POPULATE_PREFILTER_NS`.
+//! caller only takes `Instant::now()` when a profile runtime is active. When
+//! profiling is off this module contributes nothing to the hot path. The
+//! counters live in the keyhog-profile runtime (typed nanosecond counters),
+//! drained once per unified-profile dump.
 
 use super::mark_stats::pct;
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
-
-/// Nanoseconds spent in the HS SIMD scan + mark callback, summed across workers.
-static HS_MARK_SCAN_NS: AtomicU64 = AtomicU64::new(0);
-/// Nanoseconds spent in the dropped HS-incompatible host-regex loop, summed
-/// across workers.
-static HS_MARK_DROPPED_NS: AtomicU64 = AtomicU64::new(0);
 
 /// Immutable view of the HS-mark timing split. Cumulative since the last
 /// [`hs_mark_timing_reset`]. The derived helpers centralize the percentage
@@ -86,29 +79,38 @@ pub(crate) fn format_hs_mark_split(s: &HsMarkSplit) -> String {
 
 /// Add `ns` to the HS SIMD scan accumulator. Called only when profiling is on
 /// (the caller gates the `Instant`), so the add is never on the unprofiled path.
+/// The keyhog-profile runtime owns the counter (a sub-stage duration sum: the
+/// split nests inside the `phase2:prefilter` leaf, so a span would double-count
+/// the leaf's inclusive total).
 #[cfg(feature = "simd")]
 #[inline]
 pub(crate) fn record_hs_mark_scan_ns(ns: u64) {
-    HS_MARK_SCAN_NS.fetch_add(ns, Relaxed);
+    keyhog_profile::add_counter(keyhog_profile::CounterId::Phase2PrefilterHsScanNs, ns);
 }
 
 /// Add `ns` to the dropped host-loop accumulator.
 #[cfg(feature = "simd")]
 #[inline]
 pub(crate) fn record_hs_mark_dropped_ns(ns: u64) {
-    HS_MARK_DROPPED_NS.fetch_add(ns, Relaxed);
+    keyhog_profile::add_counter(
+        keyhog_profile::CounterId::Phase2PrefilterDroppedHostNs,
+        ns,
+    );
 }
 
-/// Snapshot the HS-mark timing split without resetting it.
-pub(crate) fn hs_mark_timing_snapshot() -> HsMarkSplit {
+/// Build an [`HsMarkSplit`] from one drained typed-metric batch
+/// (`keyhog_profile::take_typed_metrics`). Missing counters read as zero.
+pub(crate) fn hs_mark_split_from_typed(
+    metrics: &[keyhog_profile::TypedMetricRecordV2],
+) -> HsMarkSplit {
+    let value = |counter: keyhog_profile::CounterId| {
+        metrics
+            .iter()
+            .find(|record| record.metric_id == counter.metric_id())
+            .map_or(0, |record| record.value)
+    };
     HsMarkSplit {
-        scan_ns: HS_MARK_SCAN_NS.load(Relaxed),
-        dropped_ns: HS_MARK_DROPPED_NS.load(Relaxed),
+        scan_ns: value(keyhog_profile::CounterId::Phase2PrefilterHsScanNs),
+        dropped_ns: value(keyhog_profile::CounterId::Phase2PrefilterDroppedHostNs),
     }
-}
-
-/// Reset the HS-mark timing accumulators (profiler warm-up and post-dump reset).
-pub(crate) fn hs_mark_timing_reset() {
-    HS_MARK_SCAN_NS.store(0, Relaxed);
-    HS_MARK_DROPPED_NS.store(0, Relaxed);
 }

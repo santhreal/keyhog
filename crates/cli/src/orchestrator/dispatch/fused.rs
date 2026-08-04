@@ -206,7 +206,12 @@ impl ScanOrchestrator {
             .unwrap_or_else(|| fused_depth_default(rayon::current_num_threads())); // LAW10: absent fused-depth config => documented worker-derived default, surfaced by effective config as auto and hashed through thread/hardware identity; recall-safe throughput default
         let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(fused_depth);
         let drain_skipped_unchanged = Arc::clone(&skipped_unchanged);
+        let profile_runtime = keyhog_profile::current_runtime();
+        let drain_profile_runtime = profile_runtime.clone();
         let drain = std::thread::spawn(move || {
+            let _profile_context = drain_profile_runtime
+                .as_ref()
+                .map(keyhog_profile::Runtime::enter);
             let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(fused_batch);
             'sources: for source in &sources {
                 let source_keeps_chunk_identities_contiguous =
@@ -268,6 +273,18 @@ impl ScanOrchestrator {
                 if source_skipped > 0 {
                     drain_skipped_unchanged.fetch_add(source_skipped, Ordering::Relaxed);
                 }
+                // Same per-partition workflow evidence as the coalesced
+                // producer: the drain thread visits sources sequentially, so
+                // the aggregate-counter delta at each boundary is exactly
+                // this source's contribution (see the coalesced path).
+                if crate::operator_profile_active() {
+                    let (bytes, units) = keyhog_profile::take_input_totals();
+                    super::super::workflow_state::record_source_partition(
+                        source.name(),
+                        units,
+                        bytes,
+                    );
+                }
             }
             if !batch.is_empty() {
                 let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
@@ -284,6 +301,7 @@ impl ScanOrchestrator {
             .into_iter()
             .par_bridge()
             .flat_map_iter(|batch| {
+                let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
                 let route_failed = match routing_error_ref.lock() {
                     Ok(guard) => guard.is_some(),
                     Err(poisoned) => poisoned.into_inner().is_some(),
@@ -421,6 +439,12 @@ impl ScanOrchestrator {
                         return Vec::new();
                     }
                 };
+                super::record_profiled_batch_route(
+                    &batch,
+                    explicit_backend.map_or("auto", keyhog_scanner::ScanBackend::label),
+                    &selection,
+                    &outcome,
+                );
                 if let Some(recovery) = outcome.recovery.as_ref() {
                     if let Err(error) =
                         active_router.quarantine_recovered_route(&selection, recovery)

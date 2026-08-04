@@ -540,6 +540,7 @@ impl CompiledScanner {
             detector_count: self.detector_count(),
             pattern_count: self.pattern_count(),
             detector_digest: self.detector_digest(),
+            compiled_plan_digest: self.compiled_plan_digest,
             preferred_backend: self.preferred_backend_label(),
             gpu_backends: self.gpu_backends.availability(),
             gpu_degrade_count: self.gpu_degrade_count(),

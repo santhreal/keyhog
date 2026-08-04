@@ -23,7 +23,7 @@ use crate::orchestrator::{setup_default_scan_runtime, DefaultScanRuntime};
 use crate::skip_dirs::SkipDirPolicy;
 use crate::style;
 use anyhow::{Context, Result};
-use keyhog_core::{Chunk, ChunkMetadata, RuleSuppressor};
+use keyhog_core::{Chunk, ChunkMetadata, RawMatch, RuleSuppressor};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -112,6 +112,9 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
     // value fails fast. With it set, the per-file scan forces that backend and
     // never consults the autoroute cache -- so watch works on an uncalibrated
     // binary (and the autoroute error's `--backend` advice is actionable here).
+    // Watch setup (root policy resolution, scanner compile, per-root
+    // suppressor loads) is the command's collect/compute phase.
+    let setup_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let backend_override = crate::orchestrator::explicit_backend_override(args.backend.as_deref())?;
     // Root config discovery + allowlist loading at the primary watched tree, so
     // `keyhog watch` resolves the SAME `.keyhog.toml` / `.keyhogignore` policy an
@@ -138,6 +141,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
     for root in &watch_roots {
         rule_suppressors.insert(root.clone(), load_rule_suppressor(Some(root))?);
     }
+    drop(setup_span);
     if watch_roots.len() > 1 && !args.quiet {
         let palette = style::for_stderr();
         eprintln!(
@@ -500,10 +504,7 @@ fn scan_file(
     };
     // Declarative `.keyhogignore.toml` (RuleSuppressor) — same post-filter
     // surface `keyhog scan` applies after finalize (KH-1329).
-    let matches: Vec<_> = matches
-        .into_iter()
-        .filter(|m| !rule_suppressor.matches_raw_match(m))
-        .collect();
+    let matches = filter_rule_suppressed(&rule_suppressor, matches);
     // Second dedup layer: the content pre-check above only suppresses a re-read
     // of byte-identical content, but a save's burst can read different
     // intermediate bytes that still produce the same findings. Collapse those to
@@ -732,9 +733,9 @@ pub(crate) mod testing {
         let matches = runtime.scan_chunk(&chunk)?;
         let filtered = runtime.filter_and_resolve(matches)?;
         let rule_suppressor = load_rule_suppressor(Some(root))?;
-        Ok(filtered
+        let kept = super::filter_rule_suppressed(&rule_suppressor, filtered);
+        Ok(kept
             .iter()
-            .filter(|m| !rule_suppressor.matches_raw_match(m))
             .map(|m| m.detector_id.as_ref().to_string())
             .collect())
     }
@@ -757,6 +758,20 @@ pub(crate) mod testing {
             super::suppress_duplicate_findings(path, second, second_at, &mut recently_scanned);
         (first_suppressed, second_suppressed)
     }
+}
+
+/// Apply the declarative `.keyhogignore.toml` suppressor to post-scan
+/// matches. The suppression evaluation span lives here, the single owner, so
+/// the watch scan path and its test seam measure the same filter.
+pub(crate) fn filter_rule_suppressed(
+    rule_suppressor: &RuleSuppressor,
+    matches: Vec<RawMatch>,
+) -> Vec<RawMatch> {
+    let _eval_span = keyhog_profile::span(keyhog_profile::Stage::Suppression);
+    matches
+        .into_iter()
+        .filter(|m| !rule_suppressor.matches_raw_match(m))
+        .collect()
 }
 
 fn should_skip(path: &std::path::Path, skip_dirs: &SkipDirPolicy) -> bool {

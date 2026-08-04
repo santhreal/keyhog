@@ -1,9 +1,10 @@
 //! Phase-2 post-process PROFILERS (measurement only), extracted
-//! from `scan_postprocess.rs` (Law 5). Confirmed-pass per-pattern timing, the
-//! ML batch-size histogram, and decode-recursion counters. The recorder fns +
-//! `DECODE_*` counters are `pub(crate)` because the post-process impl (still in
-//! `scan_postprocess.rs`) pokes them inline as it measures; the dumps stay on
-//! the public interface, re-exported through `scan_postprocess`. Pure move.
+//! from `scan_postprocess.rs` (Law 5). The confirmed-pass per-pattern timing
+//! table stays scanner-owned (the profile registry has no per-pattern labeled
+//! metric API); the ML batch metrics and decode-recursion counts record
+//! through the keyhog-profile runtime's typed counters and batch-size
+//! distribution, and this module keeps only the pure snapshot/format helpers
+//! the unified profiler renders after one typed drain.
 use std::sync::atomic::AtomicU64;
 // One `Relaxed` reference for the whole module: the always-compiled
 // confirmed-pass counters use it too, so the import is unconditional (no cfg
@@ -137,148 +138,142 @@ impl super::CompiledScanner {
     }
 }
 
-/// ML batch-size histogram. Buckets the actual batch submitted by the
+/// ML batch-size metrics. Records the actual batch submitted by the
 /// single-chunk or coalesced scorer so GPU engagement and remaining sparse
-/// windowed work stay measurable. Zero-cost when unset.
-///
-/// Gated by the unified scanner profile switch (the histogram is dumped as
-/// part of [`super::profile::dump`]).
+/// windowed work stay measurable. The keyhog-profile runtime owns every
+/// figure: the totals are typed counters and the batch-size histogram is the
+/// runtime's bounded log-scale distribution (`MetricId::MlBatchSize`), drained
+/// once per [`super::profile::dump`]. Recording is a no-op when no profile
+/// runtime is active.
 #[cfg(feature = "ml")]
-pub(crate) fn ml_batch_prof_enabled() -> bool {
-    super::profile::enabled()
-}
-#[cfg(feature = "ml")]
-static ML_BATCH_BUCKETS: [AtomicU64; 10] = [
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-];
-#[cfg(feature = "ml")]
-static ML_BATCH_CALLS: AtomicU64 = AtomicU64::new(0);
-#[cfg(feature = "ml")]
-static ML_BATCH_CANDIDATES: AtomicU64 = AtomicU64::new(0);
-#[cfg(feature = "ml")]
-static ML_BATCH_CALLS_GE64: AtomicU64 = AtomicU64::new(0);
-#[cfg(feature = "ml")]
-static ML_BATCH_CANDIDATES_GE64: AtomicU64 = AtomicU64::new(0);
+use keyhog_profile::{CounterId, MetricId};
 
+/// All ML batch figures drained from one typed-metric batch plus the
+/// batch-size distribution buckets as `(lower_bound, upper_bound, count)`.
 #[cfg(feature = "ml")]
-fn ml_batch_bucket(n: usize) -> usize {
-    match n {
-        0 => 0,
-        1 => 1,
-        2..=7 => 2,
-        8..=15 => 3,
-        16..=31 => 4,
-        32..=63 => 5,
-        64..=127 => 6,
-        128..=255 => 7,
-        256..=1023 => 8,
-        _ => 9,
-    }
+pub(crate) struct MlBatchProfile {
+    pub calls: u64,
+    pub candidates: u64,
+    pub calls_ge64: u64,
+    pub candidates_ge64: u64,
+    pub buckets: Vec<(u64, u64, u64)>,
 }
 
 /// Record one `apply_ml_batch_scores` call's pending-candidate count.
 #[cfg(feature = "ml")]
 pub(crate) fn ml_batch_record(n: usize) {
-    ML_BATCH_BUCKETS[ml_batch_bucket(n)].fetch_add(1, Relaxed);
-    ML_BATCH_CALLS.fetch_add(1, Relaxed);
-    ML_BATCH_CANDIDATES.fetch_add(n as u64, Relaxed);
+    keyhog_profile::add_counter(CounterId::MlBatchCalls, 1);
+    keyhog_profile::add_counter(CounterId::MlBatchCandidates, n as u64);
     if n >= 64 {
-        ML_BATCH_CALLS_GE64.fetch_add(1, Relaxed);
-        ML_BATCH_CANDIDATES_GE64.fetch_add(n as u64, Relaxed);
+        keyhog_profile::add_counter(CounterId::MlBatchCallsGe64, 1);
+        keyhog_profile::add_counter(CounterId::MlBatchCandidatesGe64, n as u64);
+    }
+    keyhog_profile::record_distribution(MetricId::MlBatchSize, n as u64);
+}
+
+/// Build the ML batch figures from one drained typed-metric batch and one
+/// drained distribution batch. Missing counters read as zero.
+#[cfg(feature = "ml")]
+pub(crate) fn ml_batch_profile_from_parts(
+    metrics: &[keyhog_profile::TypedMetricRecordV2],
+    distributions: &[keyhog_profile::MetricDistributionV2],
+) -> MlBatchProfile {
+    let value = |counter: CounterId| {
+        metrics
+            .iter()
+            .find(|record| record.metric_id == counter.metric_id())
+            .map_or(0, |record| record.value)
+    };
+    let buckets = distributions
+        .iter()
+        .find(|distribution| distribution.metric_id == MetricId::MlBatchSize)
+        .map(|distribution| {
+            distribution
+                .buckets
+                .iter()
+                .map(|bucket| (bucket.lower_bound, bucket.upper_bound, bucket.count))
+                .collect()
+        })
+        .unwrap_or_default();
+    MlBatchProfile {
+        calls: value(CounterId::MlBatchCalls),
+        candidates: value(CounterId::MlBatchCandidates),
+        calls_ge64: value(CounterId::MlBatchCallsGe64),
+        candidates_ge64: value(CounterId::MlBatchCandidatesGe64),
+        buckets,
     }
 }
 
-/// Print + reset the ML batch-size histogram. Folded into the unified profiler:
-/// called from [`super::profile::dump`] (early-returns when no data was recorded).
+/// Render the ML batch-size lines the unified profiler prints (headline plus
+/// one line per non-empty distribution bucket). Pure (no I/O) so the
+/// formatting is unit-testable.
 #[cfg(feature = "ml")]
-pub(crate) fn ml_batch_profile_dump() {
-    let calls = ML_BATCH_CALLS.swap(0, Relaxed);
-    let cands = ML_BATCH_CANDIDATES.swap(0, Relaxed);
-    let calls_ge64 = ML_BATCH_CALLS_GE64.swap(0, Relaxed);
-    let cands_ge64 = ML_BATCH_CANDIDATES_GE64.swap(0, Relaxed);
-    let buckets: [u64; 10] = std::array::from_fn(|i| ML_BATCH_BUCKETS[i].swap(0, Relaxed));
-    if calls == 0 {
-        return;
-    }
-    let names = [
-        "0", "1", "2-7", "8-15", "16-31", "32-63", "64-127", "128-255", "256-1023", "1024+",
-    ];
-    eprintln!(
-        "=== ML batch-size histogram: calls={calls} candidates={cands} (avg {:.1}/call) | \
-GPU-eligible (>=64): {calls_ge64} calls ({:.1}%), {cands_ge64} candidates ({:.1}% of all ML work) ===",
-        cands as f64 / calls as f64,
-        100.0 * calls_ge64 as f64 / calls as f64,
-        100.0 * cands_ge64 as f64 / cands.max(1) as f64,
+pub(crate) fn format_ml_batch_profile(p: &MlBatchProfile) -> String {
+    let mut out = format!(
+        "=== ML batch-size histogram: calls={} candidates={} (avg {:.1}/call) | \
+GPU-eligible (>=64): {} calls ({:.1}%), {} candidates ({:.1}% of all ML work) ===",
+        p.calls,
+        p.candidates,
+        p.candidates as f64 / p.calls.max(1) as f64,
+        p.calls_ge64,
+        100.0 * p.calls_ge64 as f64 / p.calls.max(1) as f64,
+        p.candidates_ge64,
+        100.0 * p.candidates_ge64 as f64 / p.candidates.max(1) as f64,
     );
-    for i in 0..10 {
-        eprintln!("  {:>9}: {}", names[i], buckets[i]);
+    for (lower, upper, count) in &p.buckets {
+        let label = if lower == upper {
+            format!("{lower}")
+        } else {
+            format!("{lower}-{upper}")
+        };
+        out.push_str(&format!("\n  {label:>9}: {count}"));
     }
+    out
 }
 
-#[cfg(feature = "ml")]
-pub(crate) fn ml_batch_profile_reset() {
-    for bucket in &ML_BATCH_BUCKETS {
-        bucket.store(0, Relaxed);
-    }
-    ML_BATCH_CALLS.store(0, Relaxed);
-    ML_BATCH_CANDIDATES.store(0, Relaxed);
-    ML_BATCH_CALLS_GE64.store(0, Relaxed);
-    ML_BATCH_CANDIDATES_GE64.store(0, Relaxed);
-}
-
-#[cfg(not(feature = "ml"))]
-pub(crate) fn ml_batch_profile_dump() {}
-
-#[cfg(not(feature = "ml"))]
-pub(crate) fn ml_batch_profile_reset() {}
-
-/// Decode-recursion profiler (measurement only). Use `keyhog scan --profile` to
-/// accumulate, across a full scan, how many parent
+/// Decode-recursion accounting (measurement only). Use `keyhog scan --profile`
+/// to accumulate, across a full scan, how many parent
 /// chunks entered decode-through, how many decoded sub-chunks were produced and
-/// rescanned, their total byte volume, the wall time spent generating them
-/// (`decode_chunk`) and the wall time spent rescanning them (`scan_inner` /
-/// `scan_windowed`). This is the lever behind the ~0.4 MB/s end-to-end ceiling:
+/// rescanned, and their total byte volume. The keyhog-profile runtime owns all
+/// of it: the counts/bytes are typed counters, generation wall time is the
+/// `Decode` stage span, and rescan wall time is the decode-attributed share of
+/// every leaf span, all drained once per [`super::profile::dump`]. This is the
+/// lever behind the ~0.4 MB/s end-to-end ceiling:
 /// the per-sub-chunk fixed phase-2 cost (prefilter) is paid once per
-/// decoded sub-chunk, so the sub-chunk COUNT is what dominates. Zero-cost when
-/// unset. Dump+reset with [`decode_profile_dump`].
+/// decoded sub-chunk, so the sub-chunk COUNT is what dominates. Recording is a
+/// no-op when no profile runtime is active.
+/// Build the decode-recursion counts from one drained typed-metric batch.
+/// Missing counters read as zero.
 #[cfg(feature = "decode")]
-pub(crate) fn decode_prof_enabled() -> bool {
-    super::profile::enabled()
+pub(crate) fn decode_recursion_from_typed(
+    metrics: &[keyhog_profile::TypedMetricRecordV2],
+) -> (u64, u64, u64) {
+    let value = |counter: keyhog_profile::CounterId| {
+        metrics
+            .iter()
+            .find(|record| record.metric_id == counter.metric_id())
+            .map_or(0, |record| record.value)
+    };
+    (
+        value(keyhog_profile::CounterId::DecodeParentChunks),
+        value(keyhog_profile::CounterId::DecodeDerivedChunks),
+        value(keyhog_profile::CounterId::DecodeDerivedBytes),
+    )
 }
-#[cfg(feature = "decode")]
-pub(crate) static DECODE_PARENTS: AtomicU64 = AtomicU64::new(0);
-#[cfg(feature = "decode")]
-pub(crate) static DECODE_SUBCHUNKS: AtomicU64 = AtomicU64::new(0);
-#[cfg(feature = "decode")]
-pub(crate) static DECODE_SUBCHUNK_BYTES: AtomicU64 = AtomicU64::new(0);
-#[cfg(feature = "decode")]
-pub(crate) static DECODE_GEN_NS: AtomicU64 = AtomicU64::new(0);
-#[cfg(feature = "decode")]
-pub(crate) static DECODE_SCAN_NS: AtomicU64 = AtomicU64::new(0);
 
-/// Print and reset the accumulated decode-recursion counters. Call after a
-/// explicit profile run. Returns `(parents, subchunks, bytes, gen_ms,
-/// scan_ms)` so a measurement test can assert on it.
+/// Render the one-line decode-recursion diagnostic the unified profiler prints.
+/// Pure (no I/O) so the formatting is unit-testable. `gen_ms` is the profile
+/// runtime's `Decode` stage total (generation); `scan_ms` is the runtime's
+/// decode-attributed leaf total (sub-chunk rescans).
 #[cfg(feature = "decode")]
-pub(crate) fn decode_profile_dump() -> (u64, u64, u64, f64, f64) {
-    let parents = DECODE_PARENTS.swap(0, Relaxed);
-    let subchunks = DECODE_SUBCHUNKS.swap(0, Relaxed);
-    let bytes = DECODE_SUBCHUNK_BYTES.swap(0, Relaxed);
-    let gen_ms = DECODE_GEN_NS.swap(0, Relaxed) as f64 / 1e6;
-    let scan_ms = DECODE_SCAN_NS.swap(0, Relaxed) as f64 / 1e6;
-    if parents == 0 && subchunks == 0 && bytes == 0 && gen_ms == 0.0 && scan_ms == 0.0 {
-        return (parents, subchunks, bytes, gen_ms, scan_ms);
-    }
-    eprintln!(
+pub(crate) fn format_decode_recursion(
+    parents: u64,
+    subchunks: u64,
+    bytes: u64,
+    gen_ms: f64,
+    scan_ms: f64,
+) -> String {
+    format!(
         "decode-recursion: parents={parents} subchunks={subchunks} \
          ({:.1} sub/parent) bytes={bytes} gen={gen_ms:.1}ms scan={scan_ms:.1}ms \
          ({:.2} MB/s rescan)",
@@ -292,23 +287,5 @@ pub(crate) fn decode_profile_dump() -> (u64, u64, u64, f64, f64) {
         } else {
             0.0
         },
-    );
-    (parents, subchunks, bytes, gen_ms, scan_ms)
+    )
 }
-
-#[cfg(feature = "decode")]
-pub(crate) fn decode_profile_reset() {
-    DECODE_PARENTS.store(0, Relaxed);
-    DECODE_SUBCHUNKS.store(0, Relaxed);
-    DECODE_SUBCHUNK_BYTES.store(0, Relaxed);
-    DECODE_GEN_NS.store(0, Relaxed);
-    DECODE_SCAN_NS.store(0, Relaxed);
-}
-
-#[cfg(not(feature = "decode"))]
-pub(crate) fn decode_profile_dump() -> (u64, u64, u64, f64, f64) {
-    (0, 0, 0, 0.0, 0.0)
-}
-
-#[cfg(not(feature = "decode"))]
-pub(crate) fn decode_profile_reset() {}

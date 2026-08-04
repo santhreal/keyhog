@@ -71,6 +71,11 @@ binary = ["dep:goblin", "dep:tempfile", "dep:glob", "dep:wait-timeout"]  # ELF/P
 
 [dependencies]
 keyhog-core = { workspace = true }
+# Uniform source-stage instrumentation (SourceAcquire/SourceWalk/SourceRead/
+# SourceQueueWait spans plus typed input counters). Always-on: the disabled
+# path is one relaxed atomic load per span, so non-profiled scans pay no
+# measurable cost.
+keyhog-profile = { workspace = true }
 # Canonical SSRF IP classifier lives here as `keyhog_verifier::ssrf`
 # (which composes the fast reserved-range checks with
 # `bogon::ip_addr_is_bogon`); canonical SigV4 signing lives here as
@@ -176,6 +181,7 @@ optional = true
 workspace = true
 
 [dev-dependencies]
+keyhog-profile = { workspace = true }
 flate2 = { workspace = true }
 httpmock = { workspace = true }
 proptest = { workspace = true }
@@ -183,6 +189,46 @@ proptest-derive = { workspace = true }
 rusty-fork = { workspace = true }
 tempfile = { workspace = true }
 sevenz-rust2 = { workspace = true, features = ["compress"] }
+
+[[test]]
+name = "profile_git"
+path = "tests/profile_git.rs"
+required-features = ["git"]
+
+[[test]]
+name = "profile_web"
+path = "tests/profile_web.rs"
+required-features = ["web"]
+
+[[test]]
+name = "profile_cloud_s3"
+path = "tests/profile_cloud_s3.rs"
+required-features = ["s3"]
+
+[[test]]
+name = "profile_collaboration_github"
+path = "tests/profile_collaboration_github.rs"
+required-features = ["github"]
+
+[[test]]
+name = "profile_slack"
+path = "tests/profile_slack.rs"
+required-features = ["slack"]
+
+[[test]]
+name = "profile_binary"
+path = "tests/profile_binary.rs"
+required-features = ["binary"]
+
+[[test]]
+name = "profile_cloud_gcs"
+path = "tests/profile_cloud_gcs.rs"
+required-features = ["gcs"]
+
+[[test]]
+name = "profile_cloud_azure"
+path = "tests/profile_cloud_azure.rs"
+required-features = ["azure"]
 
 [[test]]
 name = "s3_ambient_credential_forward"

@@ -80,6 +80,8 @@ pub struct CompiledScannerRuntime {
     /// Versioned 64-bit projection of the canonical 256-bit scan-execution
     /// hash. Autoroute also persists the complete hash as its rules identity.
     pub detector_digest: u64,
+    /// Complete BLAKE3 identity for the compiled detector and decoder execution plan.
+    pub compiled_plan_digest: [u8; 32],
     /// Backend used by the no-backend library APIs. CLI calibrated routing is a
     /// separate persisted per-workload decision and is never inferred here.
     pub preferred_backend: &'static str,

@@ -154,6 +154,7 @@ pub mod pipeline;
 pub mod placeholder_suppression_boundaries;
 pub mod prefix_trie;
 pub mod prefix_trie_extended;
+pub mod profile_extraction;
 pub mod resolution;
 pub mod resolution_extended;
 pub mod root_facade;

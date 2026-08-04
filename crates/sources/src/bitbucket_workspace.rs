@@ -73,9 +73,14 @@ impl Source for BitbucketWorkspaceSource {
         // recording (unreachable API / bad token). A no-op in production where the
         // gate is never armed; see `skip::gate_scan`.
         crate::gate_scan(|| {
+            // Propagate the active profiling runtime onto the fetch thread so
+            // workspace enumeration and clone spans record there.
+            let profile_runtime = crate::profile::current_runtime();
             let result = thread::scope(|s| {
                 match s
-                    .spawn(|| {
+                    .spawn(move || {
+                        let _profile_guard =
+                            profile_runtime.as_ref().map(|runtime| runtime.enter());
                         collect_workspace_chunks(
                             &self.workspace,
                             &self.username,
@@ -142,13 +147,18 @@ fn collect_workspace_chunks(
     validate_basic_auth(username, token)?;
     let api_root = hosted_git::validated_api_endpoint("bitbucket", endpoint)?;
     let client = build_client(username, token, http)?;
-    let (repos, listing_errors) = list_repositories(
-        &client,
-        &api_root,
-        workspace,
-        limits.hosted_git_pages,
-        limits.web_response_bytes,
-    )?;
+    let (repos, listing_errors) = {
+        // Workspace repo enumeration is the acquisition boundary; cloning and
+        // per-repo scans record inside `hosted_git::scan_hosted_repos`.
+        let _enumerate = crate::profile::acquire_span();
+        list_repositories(
+            &client,
+            &api_root,
+            workspace,
+            limits.hosted_git_pages,
+            limits.web_response_bytes,
+        )?
+    };
     let expected_clone_origin = hosted_git::ExpectedCloneOrigin::bitbucket(&api_root)?;
     let mut rows = hosted_git::scan_hosted_repos(
         "bitbucket",
@@ -206,6 +216,8 @@ fn list_repositories(
     url.set_query(Some("pagelen=100"));
 
     for _page in 1..=max_pages {
+        // One walk span per listing page.
+        let _page_span = crate::profile::walk_span();
         let response = client.get(url.clone()).send().map_err(|e| {
             hosted_git::api_unreadable_error(format!("Bitbucket API request failed: {e}"))
         })?;

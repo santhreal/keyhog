@@ -70,9 +70,14 @@ impl Source for GitLabGroupSource {
         // recording (unreachable API / bad token). A no-op in production where the
         // gate is never armed; see `skip::gate_scan`.
         crate::gate_scan(|| {
+            // Propagate the active profiling runtime onto the fetch thread so
+            // group enumeration and clone spans record there.
+            let profile_runtime = crate::profile::current_runtime();
             let result = thread::scope(|s| {
                 match s
-                    .spawn(|| {
+                    .spawn(move || {
+                        let _profile_guard =
+                            profile_runtime.as_ref().map(|runtime| runtime.enter());
                         collect_group_chunks(
                             &self.group,
                             &self.token,
@@ -119,13 +124,18 @@ fn collect_group_chunks(
     validate_group_path(group)?;
     let api_root = normalize_gitlab_api_root(endpoint)?;
     let client = build_client(token, http)?;
-    let repos = list_projects(
-        &client,
-        &api_root,
-        group,
-        limits.hosted_git_pages,
-        limits.web_response_bytes,
-    )?;
+    // Group project enumeration is the acquisition boundary; cloning and
+    // per-repo scans record inside `hosted_git::scan_hosted_repos`.
+    let repos = {
+        let _enumerate = crate::profile::acquire_span();
+        list_projects(
+            &client,
+            &api_root,
+            group,
+            limits.hosted_git_pages,
+            limits.web_response_bytes,
+        )?
+    };
     let expected_clone_origin = hosted_git::ExpectedCloneOrigin::from_api_root(&api_root)?;
     hosted_git::scan_hosted_repos(
         "gitlab",
@@ -169,6 +179,8 @@ fn list_projects(
     let encoded_group = urlencoding::encode(group);
 
     for page in 1..=max_pages {
+        // One walk span per listing page.
+        let _page_span = crate::profile::walk_span();
         let mut url = api_root.clone();
         url.set_path(&format!(
             "{}/groups/{}/projects",

@@ -77,9 +77,7 @@ impl CompiledScanner {
     }
 
     pub(crate) fn apply_ml_batch_scores(&self, scan_state: &mut ScanState) -> crate::Result<()> {
-        if scan_postprocess_profile::ml_batch_prof_enabled() {
-            scan_postprocess_profile::ml_batch_record(scan_state.ml_pending.len());
-        }
+        scan_postprocess_profile::ml_batch_record(scan_state.ml_pending.len());
         if scan_state.ml_pending.is_empty() {
             return Ok(());
         }
@@ -117,9 +115,7 @@ impl CompiledScanner {
                 "internal invariant violation: coalesced ML pending queues populated while ML is disabled; pending={total_pending}"
             )));
         }
-        if scan_postprocess_profile::ml_batch_prof_enabled() {
-            scan_postprocess_profile::ml_batch_record(total_pending);
-        }
+        scan_postprocess_profile::ml_batch_record(total_pending);
 
         let mut owner_counts = Vec::with_capacity(scan_states.len());
         let mut pending_matches = Vec::with_capacity(total_pending);

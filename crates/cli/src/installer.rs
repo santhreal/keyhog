@@ -110,6 +110,8 @@ fn create_installer_artifact(path: &Path, purpose: &str) -> Result<std::fs::File
 pub(crate) fn install_binary(exe: &Path, bytes: &[u8]) -> Result<()> {
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
+    // Binary publication (stage + atomic rename), profiled as reporting.
+    let _publish_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     let dir = exe
         .parent()
         .ok_or_else(|| anyhow!("current executable has no parent directory"))?;
@@ -437,6 +439,8 @@ fn process_is_running(_pid: u32) -> bool {
 
 #[cfg(windows)]
 pub(crate) fn install_binary(exe: &Path, bytes: &[u8]) -> Result<()> {
+    // Binary publication, profiled as reporting.
+    let _publish_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     // Rename-away replace without a health gate (that is install_with_rollback's
     // job). Leaves the prior image stashed; reaped by `reap_stale_binaries` on
     // the next update/repair once this process has exited and unlocked it.
@@ -535,6 +539,9 @@ pub(crate) fn verify_candidate_release(
     current_version: &str,
     allow_explicit_downgrade: bool,
 ) -> Result<()> {
+    // Candidate validation (doctor gate + version binding), profiled as
+    // preprocessing.
+    let _verify_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     verify_via_doctor_checked(exe)?;
 
     let observed_version = candidate_reported_version(exe)?;

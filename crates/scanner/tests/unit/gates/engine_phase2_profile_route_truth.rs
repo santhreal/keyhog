@@ -27,22 +27,38 @@ fn engine_profile_reset_clears_phase2_mark_stats() {
     let profile = std::fs::read_to_string(root.join("src/scan_profile.rs"))
         .expect("scan profile source readable");
 
+    // The profile runtime owns the mark counters: every record_* must be a
+    // typed-counter add with its exact registry ID, and the drain-based reader
+    // must build the snapshot from one take_typed_metrics batch.
+    for (record_fn, counter) in [
+        ("record_mark_call", "Phase2PrefilterMarkCalls"),
+        ("record_mark_gate_skip", "Phase2PrefilterGateSkips"),
+        ("record_mark_perpattern_work", "Phase2PrefilterPerPatternWork"),
+        ("record_mark_hs_served", "Phase2PrefilterHsServed"),
+        ("record_mark_regexset_served", "Phase2PrefilterRegexsetServed"),
+    ] {
+        assert!(
+            mark_stats.contains(&format!("fn {record_fn}"))
+                && mark_stats.contains(&format!("CounterId::{counter}")),
+            "{record_fn} must record through keyhog_profile::add_counter(CounterId::{counter})"
+        );
+    }
     assert!(
-        mark_stats.contains("#[cfg(not(test))]\npub(crate) fn phase2_mark_stats_reset()")
-            && mark_stats.contains("MARK_CALLS.store(0, Relaxed)")
-            && mark_stats.contains("MARK_GATE_SKIPS.store(0, Relaxed)")
-            && mark_stats.contains("MARK_PERPATTERN_WORK.store(0, Relaxed)")
-            && mark_stats.contains("MARK_HS_SERVED.store(0, Relaxed)")
-            && mark_stats.contains("MARK_REGEXSET_SERVED.store(0, Relaxed)"),
-        "production phase2 mark counters (incl. the HS/RegexSet path split) must \
-         all have a real reset, not only a test-only reset"
+        !mark_stats.contains("AtomicU64"),
+        "mark stats must not keep its own atomic counters; the profile runtime owns them"
     );
     assert!(
-        phase2.contains("phase2_mark_stats_reset, record_mark_call"),
-        "engine phase2 owner must re-export phase2_mark_stats_reset outside cfg(test)"
+        mark_stats.contains("fn mark_snapshot_from_typed"),
+        "the mark snapshot must be built from the drained typed-metric batch"
     );
     assert!(
-        profile.contains("crate::engine::phase2::phase2_mark_stats_reset();"),
-        "scan_profile::reset must clear phase2 mark stats between explicit profile runs"
+        phase2.contains("mark_snapshot_from_typed, record_mark_call"),
+        "engine phase2 owner must re-export the typed-counter mark API"
+    );
+    // profile::reset must reach the typed-counter store (keyhog_profile::reset
+    // clears it) so each report reflects only its own run.
+    assert!(
+        profile.contains("keyhog_profile::reset();"),
+        "scan_profile::reset must clear the profile runtime (incl. mark stats) between explicit profile runs"
     );
 }

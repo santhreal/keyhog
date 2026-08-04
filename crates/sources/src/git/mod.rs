@@ -384,6 +384,23 @@ pub(crate) trait GitTreeVisitor {
         Ok(true)
     }
 
+    /// Prune hook: true when this subtree (by object id) was already walked
+    /// cleanly earlier in the same scan, so every blob identity under it is
+    /// already collected. Default never prunes.
+    fn subtree_already_collected(&mut self, _oid: &gix::ObjectId) -> bool {
+        false
+    }
+
+    /// Called after a subtree walk completes without any new visitor error,
+    /// so the collector can memoize the subtree object id.
+    fn note_subtree_collected(&mut self, _oid: gix::ObjectId) {}
+
+    /// Monotonic count of entries the visitor recorded through its
+    /// `handle_*` error funnel; used to memoize only error-free subtrees.
+    fn walk_error_count(&self) -> usize {
+        0
+    }
+
     fn visit_blob(&mut self, oid: gix::ObjectId, filepath: Vec<u8>) -> Result<(), SourceError>;
 
     fn handle_entry_error(&mut self, error: String) -> Result<(), SourceError>;
@@ -432,6 +449,14 @@ pub(crate) fn walk_tree_recursive<V: GitTreeVisitor + ?Sized>(
 
         let mode = entry.mode();
         if mode.is_tree() {
+            // Identical subtrees recur across commits/refs; a subtree already
+            // walked cleanly this scan contributes the same (oid, path) blob
+            // identities, which the collector dedups anyway, so skip the
+            // re-descent (and its object reads) entirely.
+            if visitor.subtree_already_collected(&oid) {
+                continue;
+            }
+            let err_before = visitor.walk_error_count();
             let obj = match repo.find_object(oid) {
                 Ok(obj) => obj,
                 Err(error) => {
@@ -440,7 +465,12 @@ pub(crate) fn walk_tree_recursive<V: GitTreeVisitor + ?Sized>(
                 }
             };
             match obj.try_into_tree() {
-                Ok(subtree) => walk_tree_recursive(repo, &subtree, &filepath, visitor)?,
+                Ok(subtree) => {
+                    walk_tree_recursive(repo, &subtree, &filepath, visitor)?;
+                    if visitor.walk_error_count() == err_before {
+                        visitor.note_subtree_collected(oid);
+                    }
+                }
                 Err(error) => {
                     visitor.handle_subtree_type_error(&filepath, error.to_string())?;
                 }

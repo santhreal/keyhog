@@ -12,7 +12,12 @@ pub(crate) fn run(mut args: ConfigArgs) -> Result<ExitCode> {
         );
     }
 
-    let resolved = resolve_scan_config(&mut args.scan)?;
+    // Resolution (config merge) then publication of the rendered config.
+    let resolved = {
+        let _resolve_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
+        resolve_scan_config(&mut args.scan)?
+    };
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     print!("{}", render_effective_config(&resolved));
     Ok(ExitCode::SUCCESS)
 }

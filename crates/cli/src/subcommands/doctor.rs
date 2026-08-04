@@ -23,6 +23,14 @@ fn canonicalize_for_shadow_check(path: std::path::PathBuf) -> std::path::PathBuf
     std::fs::canonicalize(&path).unwrap_or(path) // LAW10: canonicalize failure => original path for reporting-only PATH-shadow diagnostic; recall-safe
 }
 
+/// Collect the host hardware probe. Doctor's check-collection phase, profiled
+/// as preprocessing; kept as one seam so the profiling suite can drive the
+/// real probe without spawning the binary.
+pub(crate) fn collect_host_probe() -> &'static keyhog_scanner::hw_probe::HardwareCaps {
+    let _collect_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
+    probe_hardware()
+}
+
 /// True iff `dir` is one of the entries in `pathvar`, comparing CANONICAL forms
 /// so a trailing-slash / symlinked / `.`-relative PATH entry
 /// (`~/.local/bin/` vs `~/.local/bin`) still matches. Pure over its inputs so the
@@ -285,7 +293,7 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
     println!("{bold}keyhog doctor{reset}  v{}", env!("CARGO_PKG_VERSION"));
 
     // ── Host ──────────────────────────────────────────────────────────
-    let hw = probe_hardware();
+    let hw = collect_host_probe();
     let simd = simd_label(hw.has_avx512, hw.has_avx2, hw.has_neon);
     println!("\n{bold}host{reset}");
     println!(

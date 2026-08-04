@@ -523,6 +523,8 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     let measured_points = Arc::new(Mutex::new(BTreeSet::new()));
     let hardware = keyhog_scanner::hw_probe::probe_hardware();
     let physical_gpu_available = hardware.gpu_available && !hardware.gpu_is_software;
+    // Probe sweep: the calibration measurement (collect/compute) phase.
+    let sweep_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     for policy in &policy_flags {
         let policy_label = policy.unwrap_or("default policy"); // LAW10: documented default label only; it does not select a fallback backend
         let scan_args = calibration_scan_args(
@@ -627,7 +629,13 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         );
     }
 
-    let inspection = crate::orchestrator::inspect_autoroute_cache(Some(transaction.staged_path()));
+    drop(sweep_span);
+    // Persisted cache readback after the sweep, profiled as an incremental
+    // lookup.
+    let inspection = {
+        let _cache_span = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
+        crate::orchestrator::inspect_autoroute_cache(Some(transaction.staged_path()))
+    };
     if let Some(error) = inspection.error.as_deref() {
         anyhow::bail!(
             "autoroute calibration probes succeeded, but persisted cache readback failed: {error}"
@@ -718,6 +726,8 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         Some(path) => path.to_string(),
         None => "the default autoroute cache".to_string(),
     };
+    // Generation publication, profiled as reporting.
+    let _publish_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     transaction
         .publish(&measured_route_classes)
         .with_context(|| {

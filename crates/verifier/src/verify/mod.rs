@@ -215,7 +215,10 @@ fn spawn_tracked_verify_task(
     group: DedupedMatch,
 ) {
     let group_for_error = group.clone();
-    let abort_handle = join_set.spawn(verify_group_task_safe(shared, group));
+    let abort_handle = join_set.spawn(keyhog_profile::instrument_future(
+        keyhog_profile::Stage::LiveVerification,
+        verify_group_task_safe(shared, group),
+    ));
     task_groups.insert(abort_handle.id(), group_for_error);
 }
 
@@ -295,14 +298,24 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
     let inflight_count = shared.inflight_count;
     let max_inflight_keys = shared.max_inflight_keys;
 
-    let Ok(_global_permit) = global.acquire().await else {
+    let Ok(_global_permit) = keyhog_profile::instrument_future(
+        keyhog_profile::Stage::LiveVerification,
+        global.acquire(),
+    )
+    .await
+    else {
         return into_finding(
             group,
             VerificationResult::Error("semaphore closed".into()),
             HashMap::new(),
         );
     };
-    let Ok(_service_permit) = service_sem.acquire().await else {
+    let Ok(_service_permit) = keyhog_profile::instrument_future(
+        keyhog_profile::Stage::LiveVerification,
+        service_sem.acquire(),
+    )
+    .await
+    else {
         return into_finding(
             group,
             VerificationResult::Error("service semaphore closed".into()),
@@ -530,6 +543,11 @@ impl VerificationEngine {
         let mut task_groups = HashMap::new();
 
         while join_set.len() < max_active {
+            // Profile: queue depth at each scheduling decision, pending plus in-flight.
+            keyhog_profile::record_annotation(
+                keyhog_profile::AnnotationId::QueueDepth,
+                (join_set.len() + pending.len()) as u64,
+            );
             let Some(group) = pending.next() else {
                 break;
             };
@@ -550,6 +568,11 @@ impl VerificationEngine {
                 }
             }
             if let Some(group) = pending.next() {
+                // Profile: queue depth as a completed task's slot is refilled.
+                keyhog_profile::record_annotation(
+                    keyhog_profile::AnnotationId::QueueDepth,
+                    (join_set.len() + pending.len()) as u64,
+                );
                 spawn_tracked_verify_task(&mut join_set, &mut task_groups, shared.clone(), group);
             }
         }

@@ -1,0 +1,70 @@
+# Nightly cross-platform, cross-device profiling matrix (schema_version 1).
+#
+# Consumed by bench.profile_matrix; the nightly CI job expands this plan and
+# runs one profiled control/candidate trial set per (device, workload) pair.
+# Devices are lanes, not hostnames: a lane runs wherever a runner with that
+# os/arch/class is available. Seeds pin bootstrap interval streams so gate
+# verdicts are reproducible per workload.
+
+schema_version = 1
+cadence = "nightly"
+
+[[device]]
+id = "linux-x86_64-desktop"
+os = "linux"
+arch = "x86_64"
+class = "desktop"
+
+[[device]]
+id = "linux-x86_64-hosted-4core"
+os = "linux"
+arch = "x86_64"
+class = "hosted"
+
+[[device]]
+id = "linux-arm64-hosted"
+os = "linux"
+arch = "aarch64"
+class = "hosted"
+
+[[device]]
+id = "macos-arm64-laptop"
+os = "macos"
+arch = "aarch64"
+class = "laptop"
+
+[[device]]
+id = "windows-x86_64-laptop"
+os = "windows"
+arch = "x86_64"
+class = "laptop"
+
+[[workload]]
+name = "mirror"
+corpus = "mirror"
+config_id = "simd-nocache-nodaemon-full"
+budgets = "profile-gates/budgets.toml"
+cold = 3
+warm = 3
+steady = 5
+seed = 20260803
+
+[[workload]]
+name = "creddata"
+corpus = "creddata"
+config_id = "simd-nocache-nodaemon-full"
+budgets = "profile-gates/budgets.toml"
+cold = 3
+warm = 3
+steady = 5
+seed = 20260804
+
+[[workload]]
+name = "homefield"
+corpus = "homefield"
+config_id = "simd-nocache-nodaemon-full"
+budgets = "profile-gates/budgets.toml"
+cold = 2
+warm = 2
+steady = 5
+seed = 20260805

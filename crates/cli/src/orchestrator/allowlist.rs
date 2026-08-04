@@ -18,6 +18,9 @@ pub(crate) fn load_allowlist(
         None => base_path.join(".keyhogignore"),
     };
     if configured_file || ignore_path.exists() {
+        // Allowlist rule load + compile (patterns are compiled inside
+        // `load_with_metadata_policy`), profiled as preprocessing.
+        let _load_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
         keyhog_core::Allowlist::load_with_metadata_policy(
             &ignore_path,
             config.require_reason,
@@ -56,6 +59,10 @@ pub(crate) fn load_rule_suppressor(
             toml_path.display()
         )
     })?;
+    // Declarative rule load + compile (vyre rule parse), profiled as
+    // preprocessing; per-match evaluation is profiled as suppression at the
+    // filter sites.
+    let _compile_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     match raw.parse::<keyhog_core::RuleSuppressor>() {
         Ok(s) => {
             tracing::debug!(

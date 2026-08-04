@@ -1,6 +1,3 @@
-use super::scan_inner_profile::{
-    scan_inner_prof_enabled, SCAN_INNER_CALLS, SCAN_PHASE1_NS, SCAN_PREPARE_NS,
-};
 use super::*;
 
 impl CompiledScanner {
@@ -47,27 +44,13 @@ impl CompiledScanner {
         if backend.is_gpu() {
             crate::telemetry::record_gpu_dispatch();
         }
-        let prof = scan_inner_prof_enabled();
-        let t0 = prof.then(std::time::Instant::now);
+        // prepare_chunk and phase-1 timing are owned by the unified profiler's
+        // Preprocess / Phase1Triggers leaf spans (opened inside those calls).
         let prepared = self.prepare_chunk(chunk);
-        if let Some(t) = t0 {
-            SCAN_PREPARE_NS.fetch_add(
-                t.elapsed().as_nanos() as u64,
-                std::sync::atomic::Ordering::Relaxed,
-            );
-        }
         if crate::deadline::expired(deadline) {
             return Ok(Vec::new());
         }
-        let t1 = prof.then(std::time::Instant::now);
         let triggered = self.collect_triggered_patterns_for_backend(&chunk.data, backend)?;
-        if let Some(t) = t1 {
-            SCAN_PHASE1_NS.fetch_add(
-                t.elapsed().as_nanos() as u64,
-                std::sync::atomic::Ordering::Relaxed,
-            );
-            SCAN_INNER_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
         if crate::deadline::expired(deadline) {
             return Ok(Vec::new());
         }

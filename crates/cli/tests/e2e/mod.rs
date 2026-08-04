@@ -11,6 +11,7 @@ pub mod cli_precision_engine_config;
 pub mod cli_precision_mode;
 pub mod cli_surface;
 pub mod daemon_mass_service;
+pub mod daemon_request_profile;
 pub mod daemon_route_forced_contract;
 pub mod daemon_route_verify_config;
 pub mod daemon_scan_path_utf16;

@@ -60,7 +60,7 @@ fn reset_sigpipe() {}
 /// `eprintln!`-based handler could deadlock there).
 #[cfg(unix)]
 mod interrupt {
-    fn append(buf: &mut [u8; 96], len: &mut usize, src: &[u8]) {
+    fn append(buf: &mut [u8; 256], len: &mut usize, src: &[u8]) {
         for &byte in src {
             if *len < buf.len() {
                 buf[*len] = byte;
@@ -69,7 +69,7 @@ mod interrupt {
         }
     }
 
-    fn append_usize(buf: &mut [u8; 96], len: &mut usize, mut value: usize) {
+    fn append_usize(buf: &mut [u8; 256], len: &mut usize, mut value: usize) {
         if value == 0 {
             append(buf, len, b"0");
             return;
@@ -90,7 +90,7 @@ mod interrupt {
 
     extern "C" fn handle_sigint(_signum: libc::c_int) {
         let (scanned, total, findings) = keyhog::interrupt_counts();
-        let mut buf = [0u8; 96];
+        let mut buf = [0u8; 256];
         let mut len = 0;
         append(&mut buf, &mut len, b"\nScan interrupted. ");
         append_usize(&mut buf, &mut len, scanned);
@@ -99,6 +99,13 @@ mod interrupt {
         append(&mut buf, &mut len, b" files scanned. ");
         append_usize(&mut buf, &mut len, findings);
         append(&mut buf, &mut len, b" findings.\n");
+        if keyhog::operator_profile_active() {
+            append(
+                &mut buf,
+                &mut len,
+                b"profile outcome status=failed coverage=cancelled errors=1 exit=130 interruption=sigint\n",
+            );
+        }
         // SAFETY: async-signal-safe primitives only: `write(2)` over a valid
         // stack buffer + length, then `_exit` with the documented interrupt
         // code (128 + SIGINT). The code is the compile-time `EXIT_INTERRUPTED`
@@ -131,7 +138,11 @@ mod interrupt {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
+    // Startup surface: signal-handler installation is process setup, profiled
+    // as preprocessing; the runtime session itself is owned by the caller.
+    let _startup_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     reset_sigpipe();
     interrupt::install();
+    drop(_startup_span);
     keyhog::cli_main().await
 }

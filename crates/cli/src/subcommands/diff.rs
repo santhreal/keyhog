@@ -39,6 +39,10 @@ struct DiffResult<'a> {
 }
 
 pub(crate) async fn run(args: DiffArgs) -> Result<ExitCode> {
+    // Input validation + baseline load / artifact scan: the collect phase.
+    // The guard is dropped before the async classify step so it never crosses
+    // an await.
+    let collect_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     ensure_regular_input(&args.before, args.artifacts)?;
     ensure_regular_input(&args.after, args.artifacts)?;
 
@@ -51,10 +55,13 @@ pub(crate) async fn run(args: DiffArgs) -> Result<ExitCode> {
             HashMap::new(),
         )
     };
+    drop(collect_span);
 
     let removed_states = classify_removed(&args, removed_groups).await?;
     let result = compare(&before, &after, &removed_states);
 
+    // Diff publication.
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     if args.json {
         print_json(&result, args.hide_unchanged)?;
     } else {
@@ -102,17 +109,22 @@ fn scan_artifacts(
     }
     let requested_detectors = args.detectors.as_deref().unwrap_or(Path::new("detectors")); // LAW10: absent CLI value selects the documented auto-discovery starting path
     let detectors_path = crate::orchestrator_config::auto_discover_detectors(requested_detectors)?;
-    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&detectors_path)?;
-    let scanner = keyhog_scanner::CompiledScanner::compile_with_gpu_policy(
-        detectors,
-        keyhog_scanner::GpuInitPolicy::ForceDisabled,
-    )
-    .with_context(|| {
-        format!(
-            "compiling detector corpus for artifact diff from {}",
-            detectors_path.display()
+    // Corpus load + compile for the artifact diff, profiled as backend
+    // selection (load at the shared seam, compile inline).
+    let detectors = crate::subcommands::detectors::load_detector_corpus(&detectors_path)?;
+    let scanner = {
+        let _compile_span = keyhog_profile::span(keyhog_profile::Stage::BackendSelect);
+        keyhog_scanner::CompiledScanner::compile_with_gpu_policy(
+            detectors,
+            keyhog_scanner::GpuInitPolicy::ForceDisabled,
         )
-    })?;
+        .with_context(|| {
+            format!(
+                "compiling detector corpus for artifact diff from {}",
+                detectors_path.display()
+            )
+        })?
+    };
 
     let before_groups = scan_artifact(&scanner, &args.before, max_artifact_bytes)?;
     scanner.clear_fragment_cache();

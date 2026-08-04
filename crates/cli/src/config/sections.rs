@@ -217,6 +217,8 @@ pub(super) fn apply_allowlist_section(
     allowlist_max_expires_days: &mut Option<u64>,
     allowlist: Option<&AllowlistSection>,
 ) {
+    // `[allowlist]` layer merge + validation, profiled as preprocessing.
+    let _allowlist_section_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     if let Some(allowlist) = allowlist {
         if let Some(require_reason) = allowlist.require_reason {
             *allowlist_require_reason = require_reason;

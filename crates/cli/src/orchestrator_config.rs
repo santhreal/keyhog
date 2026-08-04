@@ -17,7 +17,10 @@ pub(crate) use detectors::{
     load_effective_detector_corpus, validate_detector_mode_selection,
     validate_explicit_detector_path, DetectorCorpusProvenance,
 };
-pub(crate) use effective::{autoroute_config_digest, render_effective_config};
+pub(crate) use effective::{
+    autoroute_config_digest, profiling_policy_digest, profiling_resolved_config_digest,
+    render_effective_config,
+};
 pub(crate) use engine_runtime::ResolvedEngineRuntimeSettings;
 pub(crate) use policy::{ResolvedAllowlistConfig, ResolvedReportPolicy, ResolvedVerifyPolicy};
 #[cfg(feature = "git")]
@@ -189,8 +192,11 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
     let scanner_tuning = outcome.scanner_tuning;
     let scanner_input = ScannerConfigInput::from_scan_args(args);
     let mut scanner = build_scanner_config_from_input(&scanner_input);
-    let (calibration_cache_path, calibration_store, calibration_entry_count, calibration_digest) =
-        load_explicit_scan_calibration(runtime_input.calibration_cache.as_deref())?;
+    let (calibration_cache_path, calibration_store, calibration_entry_count, calibration_digest) = {
+        // Detector calibration cache load and lookup share the incremental-cache stage.
+        let _cache_span = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
+        load_explicit_scan_calibration(runtime_input.calibration_cache.as_deref())?
+    };
     if let Some(calibration_store) = calibration_store {
         scanner = scanner.with_calibration(calibration_store);
     }

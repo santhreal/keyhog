@@ -220,6 +220,13 @@ pub trait CliTestApi {
         findings: &[VerifiedFinding],
     ) -> Vec<VerifiedFinding>;
     fn baseline_looks_like_findings_report(&self, content: &str) -> bool;
+    fn write_scan_receipt_for_test(
+        &self,
+        args: &ScanArgs,
+        findings: usize,
+        exit_code: u8,
+        status: keyhog_core::ScanCompletionStatus,
+    ) -> Result<()>;
 
     fn bundled_test_fixture_suppressions(&self) -> TestFixtureSuppressions;
     fn empty_test_fixture_suppressions(&self) -> TestFixtureSuppressions;
@@ -395,6 +402,10 @@ pub trait CliTestApi {
     fn render_effective_config_for_scanner(&self, scanner: ScannerConfig) -> String;
     fn autoroute_config_digest_for_args(&self, args: &mut ScanArgs) -> Result<u64>;
     fn autoroute_config_digest_for_scanner(&self, scanner: ScannerConfig) -> u64;
+    fn profiling_config_digests_for_args(
+        &self,
+        args: &mut ScanArgs,
+    ) -> Result<([u8; 32], [u8; 32])>;
     fn ml_threshold_default(&self) -> f64;
 
     fn explicit_backend_override(
@@ -742,6 +753,15 @@ impl CliTestApi for TestApi {
     }
     fn baseline_looks_like_findings_report(&self, content: &str) -> bool {
         crate::baseline::testing::looks_like_findings_report(content)
+    }
+    fn write_scan_receipt_for_test(
+        &self,
+        args: &ScanArgs,
+        findings: usize,
+        exit_code: u8,
+        status: keyhog_core::ScanCompletionStatus,
+    ) -> Result<()> {
+        crate::action_report::write_scan_receipt(args, findings, exit_code, status)
     }
 
     fn bundled_test_fixture_suppressions(&self) -> TestFixtureSuppressions {
@@ -1185,6 +1205,16 @@ impl CliTestApi for TestApi {
         let resolved = crate::orchestrator_config::resolved_scan_config_for_scanner(scanner);
         crate::orchestrator_config::autoroute_config_digest(&resolved)
     }
+    fn profiling_config_digests_for_args(
+        &self,
+        args: &mut ScanArgs,
+    ) -> Result<([u8; 32], [u8; 32])> {
+        let resolved = crate::orchestrator_config::resolve_scan_config(args)?;
+        Ok((
+            crate::orchestrator_config::profiling_resolved_config_digest(&resolved),
+            crate::orchestrator_config::profiling_policy_digest(&resolved),
+        ))
+    }
     fn ml_threshold_default(&self) -> f64 {
         crate::orchestrator_config::ML_THRESHOLD_DEFAULT
     }
@@ -1528,6 +1558,7 @@ impl CliTestApi for TestApi {
             dogfood_detail_events_dropped: 0,
             source_coverage_gaps: SourceCoverageGaps::default(),
             backend_recovery: RequiredOption::None,
+            profile: RequiredOption::None,
         })?;
         let after = keyhog_scanner::telemetry::static_recovery_status();
         Ok(StaticRecoveryMergeSnapshot { before, after })

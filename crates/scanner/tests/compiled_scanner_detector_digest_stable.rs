@@ -1,7 +1,7 @@
 use keyhog_core::{DetectorSpec, DetectorTestSpec, DetectorValidatorSpec, PatternSpec, Severity};
 use keyhog_scanner::CompiledScanner;
 
-fn expected_digest(detectors: &[DetectorSpec], decoder_plan_identity: u64) -> u64 {
+fn expected_digest(detectors: &[DetectorSpec], decoder_plan_identity: u64) -> [u8; 32] {
     fn update(hasher: &mut blake3::Hasher, tag: &[u8], value: &[u8]) {
         hasher.update(&(tag.len() as u64).to_le_bytes());
         hasher.update(tag);
@@ -21,9 +21,7 @@ fn expected_digest(detectors: &[DetectorSpec], decoder_plan_identity: u64) -> u6
         b"decoder_plan",
         &decoder_plan_identity.to_le_bytes(),
     );
-    let mut bytes = [0u8; 8];
-    bytes.copy_from_slice(&hasher.finalize().as_bytes()[..8]);
-    u64::from_le_bytes(bytes)
+    *hasher.finalize().as_bytes()
 }
 
 fn detector(id: &str, regex: &str, keyword: &str) -> DetectorSpec {
@@ -50,43 +48,52 @@ fn detector(id: &str, regex: &str, keyword: &str) -> DetectorSpec {
     }
 }
 
+/// The full execution-plan digest must be stable, order-independent, and retain its legacy projection.
 #[test]
 fn compiled_scanner_detector_digest_is_stable_and_boundary_aware() {
     let detectors = vec![
         detector("alpha", "AKIA[0-9A-Z]{16}", "AKIA"),
         detector("beta", "ghp_[0-9A-Za-z]{36}", "ghp_"),
     ];
-    let first_scanner = CompiledScanner::compile(detectors.clone()).expect("compile first scanner");
-    let first = first_scanner.runtime_status().detector_digest;
-    let second = CompiledScanner::compile(detectors.clone())
+    let first_status = CompiledScanner::compile(detectors.clone())
+        .expect("compile first scanner")
+        .runtime_status();
+    let first = first_status.detector_digest;
+    let first_plan = first_status.compiled_plan_digest;
+    let second_status = CompiledScanner::compile(detectors.clone())
         .expect("compile second scanner")
-        .runtime_status()
-        .detector_digest;
-    let changed = CompiledScanner::compile(vec![
+        .runtime_status();
+    let changed_status = CompiledScanner::compile(vec![
         detector("alpha", "AKIA[0-9A-Z]{16}", "AKIA"),
         detector("beta", "ghp_[0-9A-Za-z]{37}", "ghp_"),
     ])
     .expect("compile changed scanner")
-    .runtime_status()
-    .detector_digest;
+    .runtime_status();
 
     assert_ne!(first, 0, "runtime detector digest must carry real identity");
+    assert_ne!(
+        first_plan, [0; 32],
+        "full plan digest must carry real identity"
+    );
     assert_eq!(
-        first, second,
-        "same compiled detector runtime must produce the same autoroute cache identity"
+        first_plan, second_status.compiled_plan_digest,
+        "same compiled detector runtime must produce the same full plan identity"
     );
     assert_ne!(
-        first, changed,
-        "regex source changes must invalidate autoroute detector identity"
+        first_plan, changed_status.compiled_plan_digest,
+        "regex source changes must invalidate the full compiled-plan identity"
     );
+    let expected = expected_digest(
+        &detectors,
+        keyhog_scanner::testing::decoder_plan_identity_for_test().expect("decoder plan identity"),
+    );
+    assert_eq!(first_plan, expected);
+    let mut projected = [0_u8; 8];
+    projected.copy_from_slice(&first_plan[..8]);
     assert_eq!(
         first,
-        expected_digest(
-            &detectors,
-            keyhog_scanner::testing::decoder_plan_identity_for_test()
-                .expect("decoder plan identity"),
-        ),
-        "autoroute identity must project the canonical detector-spec hash through the versioned scanner contract"
+        u64::from_le_bytes(projected),
+        "legacy autoroute identity must project the complete compiled-plan digest"
     );
 
     let reordered = CompiledScanner::compile(detectors.iter().cloned().rev().collect())
@@ -99,6 +106,7 @@ fn compiled_scanner_detector_digest_is_stable_and_boundary_aware() {
     );
 }
 
+/// Routing, validation, and emission policy changes must invalidate compiled runtime identity.
 #[test]
 fn compiled_scanner_detector_digest_covers_routing_validation_and_policy() {
     let base = detector("beta", "ghp_[0-9A-Za-z]{36}", "ghp_");

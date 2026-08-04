@@ -189,6 +189,7 @@ pub fn command() -> clap::Command {
 /// rendered `--help` carries the live detector count and the full exit-code
 /// contract. Mirrors `Cli::parse()` but with the runtime help wiring.
 pub fn parse() -> Cli {
+    let _parse_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let matches = command().get_matches();
     match cli_from_matches(&matches) {
         Ok(cli) => cli,
@@ -208,6 +209,7 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
+    let _parse_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let matches = command().try_get_matches_from(args)?;
     cli_from_matches(&matches)
 }

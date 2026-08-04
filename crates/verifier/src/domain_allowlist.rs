@@ -20,6 +20,8 @@ pub(crate) fn check_url_against_spec(
     raw_url: &str,
     spec: &keyhog_core::VerifySpec,
 ) -> Result<(), String> {
+    // Profile: domain-allowlist evaluation is suppression-stage policy work.
+    let _span = keyhog_profile::span(keyhog_profile::Stage::Suppression);
     let url = reqwest::Url::parse(raw_url)
         .map_err(|error| format!("blocked: invalid verify URL: {error}"))?;
     let host = url

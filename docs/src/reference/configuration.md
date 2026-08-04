@@ -186,10 +186,20 @@ completeness-reducing switches, and the scan remains in process.
 `--profile` is not a named configuration profile. It emits low-overhead fixed
 scanner-stage timings and one causal operator-run record to standard error. The
 record names the source, workload, backend, cache, thread configuration, input
-totals, run states, CPU time, memory, and observed process threads. It never
-includes source content or credential values. Use `--perf-trace` when you need
-the higher-overhead per-pattern and backend diagnostic counters. Neither flag
-selects the fast, deep, or precision preset.
+totals, run states, CPU time, memory, observed process threads, exact binary
+SHA-256, enabled-feature SHA-256, target triple, build profile, compiler,
+allocator, linked-backend SHA-256, detector-corpus SHA-256,
+enabled-detector BLAKE3, compiled-plan BLAKE3, hashed detector provenance,
+complete resolved-configuration BLAKE3, performance-policy BLAKE3, preset,
+applied protection state, source adapters, hashed source-target BLAKE3,
+hashed source-partition BLAKE3, raw source bytes, source-unit fanout,
+decode-derived bytes, completed backend-dispatch bytes, and stable size/fanout
+buckets. Byte domains that their source adapter cannot yet distinguish remain
+explicitly unavailable instead of becoming measured zeroes. It never includes
+source content, credential values, raw paths, raw URLs, or raw configuration
+values. Use `--perf-trace` when you need the higher-overhead per-pattern and
+backend diagnostic counters. Neither flag selects the fast, deep, or precision
+preset.
 
 ## Policy tables
 

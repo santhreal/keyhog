@@ -75,7 +75,7 @@ async fn start(
                                                              // `failed to read detector file detectors: No such file or directory`
                                                              // on every install where the user hadn't `cd`'d into a checked-out
                                                              // repo - which is every install via `install.sh` / `cargo install`.
-    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&detectors_dir)
+    let detectors = crate::subcommands::detectors::load_detector_corpus(&detectors_dir)
         .with_context(|| {
             format!(
                 "daemon start: load detectors from {}",
@@ -98,16 +98,21 @@ async fn stop(socket: Option<PathBuf>) -> Result<ExitCode> {
                                                              // `daemon stop` is to clear exactly that stale daemon. The strict
                                                              // version-gated `connect` (used by the scan route) would REFUSE to talk to
                                                              // it, stranding the stale process; `stop` must still be able to shut it down.
-    let mut conn = client::connect_any_version(&socket)
-        .await
-        .with_context(|| {
-            format!(
-                "daemon stop: no daemon at {} (already stopped?)",
-                socket.display()
-            )
-        })?;
+    let mut conn = keyhog_profile::instrument_future(
+        keyhog_profile::Stage::Preprocess,
+        client::connect_any_version(&socket),
+    )
+    .await
+    .with_context(|| {
+        format!(
+            "daemon stop: no daemon at {} (already stopped?)",
+            socket.display()
+        )
+    })?;
     match conn.round_trip(&Request::Shutdown).await? {
         Response::Shutdown => {
+            // Shutdown receipt publication.
+            let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
             eprintln!("keyhog daemon stopped");
             Ok(ExitCode::SUCCESS)
         }
@@ -128,14 +133,17 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                                                              // daemon left running across an upgrade NEEDS to see it (so they can decide
                                                              // to restart it), not get a refusal. The strict version-gated `connect`
                                                              // would hide the very stale daemon the operator is trying to find.
-    let mut conn = client::connect_any_version(&socket)
-        .await
-        .with_context(|| {
-            format!(
-                "daemon status: no daemon at {} (start one with `keyhog daemon start`)",
-                socket.display()
-            )
-        })?;
+    let mut conn = keyhog_profile::instrument_future(
+        keyhog_profile::Stage::Preprocess,
+        client::connect_any_version(&socket),
+    )
+    .await
+    .with_context(|| {
+        format!(
+            "daemon status: no daemon at {} (start one with `keyhog daemon start`)",
+            socket.display()
+        )
+    })?;
     // Surface staleness LOUDLY: a daemon left running across a `keyhog update`
     // serves an OLDER detector corpus. The scan route already refuses it
     // (`connect` fails closed), but an operator running `status` must SEE that

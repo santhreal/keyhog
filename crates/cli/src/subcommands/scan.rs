@@ -20,8 +20,8 @@ use crate::exit_codes::{EXIT_CREDENTIALS_FOUND, EXIT_LIVE_CREDENTIALS, EXIT_SOUR
 use crate::daemon::client;
 #[cfg(unix)]
 use crate::daemon::protocol::{
-    response_kind, Request, RequiredOption, Response, SourceCoverageGaps, MASS_BATCH_BYTES,
-    MASS_BATCH_CHUNKS,
+    response_kind, Request, RequestProfile, RequiredOption, Response, SourceCoverageGaps,
+    MASS_BATCH_BYTES, MASS_BATCH_CHUNKS,
 };
 #[cfg(unix)]
 use crate::daemon::server::default_socket_path;
@@ -717,6 +717,7 @@ async fn run_via_mass_daemon(args: &mut ScanArgs) -> Result<ExitCode> {
     match conn
         .round_trip(&Request::MassBegin {
             dogfood: args.dogfood,
+            profile: args.profile,
         })
         .await?
     {
@@ -869,6 +870,9 @@ async fn run_via_mass_daemon(args: &mut ScanArgs) -> Result<ExitCode> {
             detector_corpus_digest,
             detector_corpus_provenance,
             detector_count,
+            // Mass batch profiles were rendered per batch as each ScanResults
+            // arrived; there is no transaction-level payload to replay here.
+            profile: None,
         },
         args,
     )
@@ -926,9 +930,13 @@ fn validate_mass_daemon_policy(
              daemon with the exact replacement corpus or run with --daemon=off."
         );
     }
+    // `--profile` is a per-request diagnostic that rides the v12 wire; it does
+    // not change scanner semantics, so it must not poison the policy digest.
+    let mut policy_resolved = resolved.clone();
+    policy_resolved.scanner.profile = false;
     let resolved_identity = format!(
         "{:016x}",
-        crate::orchestrator_config::autoroute_config_digest(resolved)
+        crate::orchestrator_config::autoroute_config_digest(&policy_resolved)
     );
     let daemon_identity = crate::orchestrator::autoroute_default_config_identity();
     if resolved_identity != daemon_identity {
@@ -990,6 +998,9 @@ async fn scan_daemon_local_filesystems(
         loop {
             match conn.round_trip(&Request::MassFilesystemNext).await? {
                 response @ Response::ScanResults { .. } => {
+                    if let Some(profile) = request_profile_of(&response) {
+                        crate::orchestrator::render_daemon_request_profile(&profile);
+                    }
                     let (batch_matches, batch_gaps) = unwrap_scan_results(response)?;
                     matches.extend(batch_matches);
                     merge_source_coverage(&mut gaps, batch_gaps);
@@ -1071,6 +1082,9 @@ impl<'a> MassDaemonBatcher<'a> {
         let chunks = std::mem::take(&mut self.chunks);
         self.bytes = 0;
         let response = self.conn.round_trip(&Request::MassBatch { chunks }).await?;
+        if let Some(profile) = request_profile_of(&response) {
+            crate::orchestrator::render_daemon_request_profile(&profile);
+        }
         let (matches, gaps) = unwrap_scan_results(response)?;
         self.matches.extend(matches);
         merge_source_coverage(&mut self.source_coverage_gaps, gaps);
@@ -1216,6 +1230,9 @@ struct DaemonScan {
     detector_corpus_digest: String,
     detector_corpus_provenance: crate::orchestrator_config::DetectorCorpusProvenance,
     detector_count: usize,
+    /// Isolated per-request profile returned by a v12 daemon when
+    /// `--profile` was forwarded; `None` when profiling was not requested.
+    profile: Option<RequestProfile>,
 }
 
 #[cfg(unix)]
@@ -1247,7 +1264,7 @@ async fn acquire_via_daemon(args: &mut ScanArgs) -> Result<DaemonScan> {
         )
     })?;
 
-    let (matches, source_coverage_gaps, source_bytes_scanned) = if args.stdin {
+    let (matches, source_coverage_gaps, source_bytes_scanned, profile) = if args.stdin {
         let bytes = read_stdin_bytes(args)?;
         let source_bytes_scanned = bytes.len() as u64;
         // Keep the owned payload on the effective argument clone until the
@@ -1266,10 +1283,12 @@ async fn acquire_via_daemon(args: &mut ScanArgs) -> Result<DaemonScan> {
                 path: None,
                 text,
                 dogfood: args.dogfood,
+                profile: args.profile,
             })
             .await?;
+        let profile = request_profile_of(&resp);
         let (matches, gaps) = unwrap_scan_results(resp)?;
-        (matches, gaps, source_bytes_scanned)
+        (matches, gaps, source_bytes_scanned, profile)
     } else if let Some(path) = effective_single_file_path(args)? {
         let source_bytes_scanned = std::fs::metadata(path)
             .with_context(|| format!("stat daemon input {}", path.display()))?
@@ -1282,10 +1301,12 @@ async fn acquire_via_daemon(args: &mut ScanArgs) -> Result<DaemonScan> {
                 path: path.to_string_lossy().into_owned(),
                 working_dir,
                 dogfood: args.dogfood,
+                profile: args.profile,
             })
             .await?;
+        let profile = request_profile_of(&resp);
         let (matches, gaps) = unwrap_scan_results(resp)?;
-        (matches, gaps, source_bytes_scanned)
+        (matches, gaps, source_bytes_scanned, profile)
     } else {
         bail!(
             "daemon route requires either --stdin or a single file path. \
@@ -1302,6 +1323,7 @@ async fn acquire_via_daemon(args: &mut ScanArgs) -> Result<DaemonScan> {
         detector_corpus_digest,
         detector_corpus_provenance,
         detector_count,
+        profile,
     })
 }
 
@@ -1316,6 +1338,7 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         detector_corpus_digest,
         detector_corpus_provenance,
         detector_count,
+        profile,
     } = scan;
     let findings = finalize_for_report(matches, args)?;
     let report_finished_at = chrono::Utc::now();
@@ -1355,6 +1378,9 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         report_metadata.scan_status = ScanCompletionStatus::Partial;
     }
     crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
+    if let Some(profile) = &profile {
+        crate::orchestrator::render_daemon_request_profile(profile);
+    }
     if args.dogfood {
         crate::orchestrator::reporting::dump_dogfood_trace();
     }
@@ -1409,6 +1435,17 @@ fn read_stdin_bytes(args: &ScanArgs) -> Result<Vec<u8>> {
         .read_to_end(&mut buf)
         .context("daemon route: reading stdin")?;
     Ok(buf)
+}
+
+/// Extract the isolated per-request profile a v12 daemon attached to a
+/// `ScanResults` frame, without consuming the response. `None` for any other
+/// response kind and for requests that did not ask for a profile.
+#[cfg(unix)]
+fn request_profile_of(resp: &Response) -> Option<RequestProfile> {
+    match resp {
+        Response::ScanResults { profile, .. } => profile.clone().into(),
+        _ => None,
+    }
 }
 
 #[cfg(unix)]

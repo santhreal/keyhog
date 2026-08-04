@@ -120,7 +120,11 @@ fn run_autoroute_inspection(
 ) -> Result<ExitCode> {
     let path = crate::autoroute_cache_path::resolve_autoroute_cache_path(autoroute_cache)
         .map_err(|message| anyhow::anyhow!(message))?;
-    let inspection = crate::orchestrator::inspect_autoroute_cache(path.as_deref());
+    // Calibration-cache inspection, profiled as an incremental lookup.
+    let inspection = {
+        let _cache_span = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
+        crate::orchestrator::inspect_autoroute_cache(path.as_deref())
+    };
     let health = inspection.readiness();
     let exit = autoroute_inspection_exit_code(health);
 
@@ -487,7 +491,12 @@ fn render_age_ms(age_ms: u128) -> String {
 }
 
 fn print_backend_report(args: &BackendArgs) -> Result<()> {
-    let hw = probe_hardware();
+    // Probe collection, then report publication.
+    let hw = {
+        let _collect_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
+        probe_hardware()
+    };
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
 
     println!("## hardware");
     println!("  physical_cores:    {}", hw.physical_cores);
@@ -754,6 +763,8 @@ fn run_self_test(json: bool, require_gpu: bool) -> Result<ExitCode> {
 }
 
 fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
+    // Self-test probe collection, profiled as preprocessing.
+    let _collect_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let hw = probe_hardware();
     let region_presence = keyhog_scanner::gpu::gpu_region_presence_self_test();
     let acquired_backends: Vec<_> = match &region_presence {

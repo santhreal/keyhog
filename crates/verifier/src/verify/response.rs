@@ -124,7 +124,12 @@ pub(crate) async fn execute_and_read_response(
 ) -> std::result::Result<HttpResponseBody, RequestError> {
     let response = execute_request(request).await?;
     let status = response.status().as_u16();
-    let body = read_response_body(response).await?;
+    // Profile: streaming the response body is async live-verification work.
+    let body = keyhog_profile::instrument_future(
+        keyhog_profile::Stage::LiveVerification,
+        read_response_body(response),
+    )
+    .await?;
     Ok(HttpResponseBody { status, body })
 }
 
@@ -177,6 +182,8 @@ pub(crate) fn evaluate_success(
     status: u16,
     body: &str,
 ) -> Result<bool, ResponseContractError> {
+    // Profile: success-contract evaluation parses the response body.
+    let _span = keyhog_profile::span(keyhog_profile::Stage::LiveVerification);
     if let Some(expected_status) = spec.status {
         if status != expected_status {
             return Ok(false);
@@ -233,6 +240,8 @@ pub(crate) fn evaluate_success(
 /// back to a whole-word (not arbitrary-substring) scan so values like
 /// `error_rate` or `myinvalidatedname` no longer trigger it.
 pub(crate) fn body_indicates_error(body: &str) -> bool {
+    // Profile: the error backstop parses/scans the response body.
+    let _span = keyhog_profile::span(keyhog_profile::Stage::LiveVerification);
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
         // LAW10: non-JSON bodies use the whole-word text contract below; verification stays conservative.
         return json_indicates_error(&json);
@@ -320,6 +329,8 @@ pub(crate) fn extract_provider_evidence(
     specs: &[MetadataSpec],
     body: &str,
 ) -> Result<HashMap<String, String>, ResponseContractError> {
+    // Profile: provider-evidence extraction parses the response body.
+    let _span = keyhog_profile::span(keyhog_profile::Stage::LiveVerification);
     let mut metadata = HashMap::new();
     let Some(first) = specs.first() else {
         return Ok(metadata);
@@ -359,6 +370,8 @@ pub(crate) fn extract_metadata(
     specs: &[MetadataSpec],
     body: &str,
 ) -> Result<HashMap<String, String>, ResponseContractError> {
+    // Profile: metadata extraction parses the response body.
+    let _span = keyhog_profile::span(keyhog_profile::Stage::LiveVerification);
     let mut metadata = HashMap::new();
     let Some(first) = specs.first() else {
         return Ok(metadata);

@@ -33,10 +33,12 @@ use std::sync::{Mutex, OnceLock};
 
 use keyhog_scanner::CompiledScanner;
 
-/// The `mark_matches` instrumentation counters (`phase2_mark_stats`) are
-/// PROCESS-GLOBAL atomics. The counter-reading tests in this binary run in
-/// parallel by default, so a concurrent scan would pollute a reset→scan→read
-/// window. Serialize every counter-sensitive test so each owns the counters for
+/// The `mark_matches` instrumentation counters live in the keyhog-profile
+/// runtime's typed-counter store (per-thread legacy store under
+/// `set_enabled(true)`). The counter-reading tests in this binary run in
+/// parallel by default, so a concurrent scan could pollute a reset→scan→read
+/// window if it shared this thread's store. Serialize every counter-sensitive
+/// test so each owns the counters for
 /// the duration of its single-chunk scan. (Findings parity in the third test does
 /// not read counters, but it also scans and thus must not race a reader.)
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());
@@ -102,7 +104,8 @@ fn no_candidate_chunk_does_zero_per_pattern_work() {
     let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let scanner = support::compile_full_detector_scanner();
     scanner.clear_fragment_cache();
-    crate::engine::phase2_mark_stats_reset();
+    keyhog_profile::set_enabled(true);
+    let _ = crate::engine::take_mark_stats();
     // Warm: scan the no-candidate chunk once so the counters reflect exactly one
     // production `mark_matches` invocation pattern.
     let keys = finding_keys(&scanner, NO_CANDIDATE_TEXT, "notes.rs");
@@ -111,7 +114,8 @@ fn no_candidate_chunk_does_zero_per_pattern_work() {
         "no-candidate chunk must produce zero findings; got {keys:?}"
     );
 
-    let snap = crate::engine::phase2_mark_stats();
+    let snap = crate::engine::take_mark_stats();
+    keyhog_profile::set_enabled(false);
     let (calls, skips, work) = (snap.calls, snap.gate_skips, snap.perpattern_work);
     // The direct scan path always reaches `mark_matches` (scan_inner →
     // scan_prepared_with_triggered → scan_phase2_patterns → mark_matches), so at
@@ -140,7 +144,8 @@ fn no_candidate_chunk_does_zero_per_pattern_work() {
 fn always_active_finding_survives_the_gate() {
     let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let scanner = scanner();
-    crate::engine::phase2_mark_stats_reset();
+    keyhog_profile::set_enabled(true);
+    let _ = crate::engine::take_mark_stats();
     // asana-pat shape `1/<16-20 digits>/<32 hex>`: a prefix-less / keyword-less
     // always-active phase-2 detector (issue #69 class), exactly the kind the
     // no-candidate gate must NOT drop: whichever path the gate takes (full body on
@@ -157,7 +162,8 @@ fn always_active_finding_survives_the_gate() {
     // Structural invariant: every `mark_matches` call resolves to EXACTLY one of
     // {gate skip, per-pattern body}, never both, never neither. A drift here means
     // the counters (and the SWE-101 accounting they pin) are wrong.
-    let snap = crate::engine::phase2_mark_stats();
+    let snap = crate::engine::take_mark_stats();
+    keyhog_profile::set_enabled(false);
     let (calls, skips, work) = (snap.calls, snap.gate_skips, snap.perpattern_work);
     assert!(calls >= 1, "mark_matches must run (calls={calls})");
     assert_eq!(

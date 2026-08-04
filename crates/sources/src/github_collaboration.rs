@@ -86,6 +86,9 @@ impl GitHubCollaborationSource {
     }
 
     fn collect_chunks(&self) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
+        // Collaboration acquisition: client build and the selected surface
+        // collections (issues, pull requests, discussions, wiki, gists).
+        let _acquire = crate::profile::acquire_span();
         let client = build_client(&self.token, &self.http)?;
         let mut api = GitHubApi::new(
             client,
@@ -740,6 +743,8 @@ impl<'a> GitHubApi<'a> {
         let mut items = Vec::new();
         let mut page = 1;
         loop {
+            // Collaboration enumeration: one walk span per fetched page.
+            let _page_span = crate::profile::walk_span();
             let query = if extra_query.is_empty() {
                 format!("per_page={API_PAGE_SIZE}&page={page}")
             } else {
@@ -792,6 +797,8 @@ impl<'a> GitHubApi<'a> {
             let status = response.status();
             let rate_limited = response_is_rate_limited(status, response.headers());
             if rate_limited && attempt + 1 < MAX_RATE_LIMIT_ATTEMPTS {
+                // Record the retry with its 1-based attempt number.
+                crate::profile::record_retry(attempt as u64 + 1);
                 let seconds = rate_limit_backoff_seconds(response.headers(), attempt);
                 std::thread::sleep(std::time::Duration::from_secs(seconds));
                 continue;
@@ -850,6 +857,8 @@ impl<'a> GitHubApi<'a> {
             let status = response.status();
             let rate_limited = response_is_rate_limited(status, response.headers());
             if rate_limited && attempt + 1 < MAX_RATE_LIMIT_ATTEMPTS {
+                // Record the retry with its 1-based attempt number.
+                crate::profile::record_retry(attempt as u64 + 1);
                 let seconds = rate_limit_backoff_seconds(response.headers(), attempt);
                 std::thread::sleep(std::time::Duration::from_secs(seconds));
                 continue;
@@ -1011,6 +1020,10 @@ fn push_text_chunk(
     }
     let data_len = data.len();
     budget.consume(surface, data_len)?;
+    // Real collaboration content counts at the single emission sink (after
+    // dedup on `seen`, so re-fetched revisions are not double counted).
+    crate::profile::add_input_units(1);
+    crate::profile::add_input_bytes(data_len as u64);
     output.push(Chunk {
         data: SensitiveString::from(data),
         metadata: ChunkMetadata {

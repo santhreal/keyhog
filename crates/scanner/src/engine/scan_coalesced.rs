@@ -256,7 +256,6 @@ impl CompiledScanner {
         // once, while every successful coalesced backend reports the same bytes.
         if result.is_ok() {
             profile::add_bytes(chunks.iter().map(|chunk| chunk.data.len() as u64).sum());
-            profile::add_files(chunks.len() as u64);
         }
         result
     }
@@ -278,7 +277,6 @@ impl CompiledScanner {
             self.execution_route_for_backend(backend),
         )?;
         profile::add_bytes(chunks.iter().map(|chunk| chunk.data.len() as u64).sum());
-        profile::add_files(chunks.len() as u64);
         Ok(matches)
     }
 
@@ -337,10 +335,12 @@ impl CompiledScanner {
         use rayon::prelude::*;
         let ac_len = self.ac_map.len();
         let words_needed = super::trigger_bitmap::words_for(ac_len);
+        let profile_runtime = keyhog_profile::current_runtime();
         let triggers: Result<Vec<Option<Vec<u64>>>, String> = chunks
             .par_iter()
             .enumerate()
             .map(|(chunk_index, chunk)| {
+                let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
                 let data = chunk.data.as_bytes();
                 let admission =
                     match admission_plan.and_then(|plan| plan.admission_for(chunk_index)) {
@@ -591,6 +591,7 @@ impl CompiledScanner {
         let phase2_start = perf_trace.then(std::time::Instant::now);
         let telemetry = crate::telemetry::capture_scan_telemetry();
         let recovery_receipts = crate::gpu::capture_recovery_receipts();
+        let profile_runtime = keyhog_profile::current_runtime();
         struct CoalescedChunkOutput {
             state: Option<crate::types::ScanState>,
             matches: Vec<keyhog_core::RawMatch>,
@@ -602,6 +603,7 @@ impl CompiledScanner {
             .zip(triggers.into_par_iter())
             .enumerate()
             .map(|(chunk_index, (chunk, triggered_opt))| {
+                let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
                 crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
                     crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
                         let keyword_hints = phase2_keyword_hints
@@ -773,6 +775,7 @@ impl CompiledScanner {
             .into_par_iter()
             .zip(chunks.par_iter())
             .map(|(mut output, chunk)| {
+                let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
                 crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
                     crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
                         if output.needs_postprocess {

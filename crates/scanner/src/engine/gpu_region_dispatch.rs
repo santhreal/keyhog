@@ -100,6 +100,29 @@ impl CompiledScanner {
         };
         let resident_timed_dispatch_supported =
             self.gpu_backends.resident_timed_dispatch_supported(route);
+        let backend_code = crate::gpu::evidence::backend_code(backend.id());
+        // Typed identity + capability evidence on the first dispatch under
+        // each profile runtime; string facets ride the daemon warm identity.
+        if let Some(peer) = self.gpu_backends.initialized(route) {
+            crate::gpu::evidence::record_adapter_identity(
+                &crate::gpu::evidence::AdapterIdentity {
+                    backend_code,
+                    vendor: peer.adapter_vendor,
+                    device: peer.adapter_device,
+                    is_software: peer.is_software,
+                    name: peer.device_identity.as_deref().unwrap_or(backend.id()),
+                    driver: "",
+                    driver_info: "",
+                },
+            );
+        }
+        crate::gpu::evidence::report_counter_caps_unsupported(backend_code);
+        if !resident_timed_dispatch_supported {
+            crate::gpu::evidence::report_capability_unsupported(
+                backend_code,
+                crate::gpu::evidence::capability::KERNEL_TIMESTAMPS,
+            );
+        }
         let Some(resident_slot) = self.gpu_resident_literal_slot(route) else {
             return dispatch_failure(format!(
                 "{} has no scanner-owned resident pipeline slot",
@@ -365,6 +388,8 @@ impl CompiledScanner {
                             ));
                     }
                     recovered_dispatches = recovered_dispatches.saturating_add(1);
+                    crate::gpu::evidence::record_recovery(backend_code);
+                    crate::gpu::evidence::record_residual_batch();
                     for region in 0..rows {
                         let source_start =
                             usize::try_from(region_starts[region]).map_err(|_| {

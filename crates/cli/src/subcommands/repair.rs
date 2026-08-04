@@ -96,6 +96,8 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
         Ok(())
     }) {
         Ok(()) => {
+            // Publication of the repair outcome.
+            let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
             println!(
                 "\n{} repaired: reinstalled {} and verified healthy.",
                 style::pass("PASS", &palette),

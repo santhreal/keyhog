@@ -50,7 +50,9 @@ use diagnostics::{
     classify_gpu_init_failure, on_gpu_init_failed, GpuInitError, GpuInitFailureAction,
 };
 #[cfg(all(test, feature = "gpu"))]
-use execution::{checked_moe_scores, dispatch_moe_batch, gpu_moe_parity_probe_features, INPUT_DIM};
+use execution::{
+    checked_moe_scores, dispatch_moe_batch, gpu_moe_parity_probe_features, GpuParams, INPUT_DIM,
+};
 #[cfg(all(test, feature = "gpu"))]
 use std::sync::OnceLock;
 #[cfg(all(test, feature = "gpu"))]
@@ -59,3 +61,6 @@ use std::time::Duration;
 #[cfg(all(test, feature = "gpu"))]
 #[path = "../../tests/unit/gpu_backend.rs"]
 mod tests;
+#[cfg(all(test, feature = "gpu"))]
+#[path = "../../tests/unit/gpu_evidence_dispatch.rs"]
+mod gpu_evidence_dispatch_tests;

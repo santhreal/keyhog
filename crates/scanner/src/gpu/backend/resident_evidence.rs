@@ -6,6 +6,7 @@
 //! scanner's full input budget at startup.
 
 use crate::engine::CompiledScanner;
+use crate::gpu::evidence;
 use zeroize::Zeroize;
 
 #[cfg(test)]
@@ -61,6 +62,10 @@ pub(crate) struct GpuResidentLiteralState {
     output: Vec<u32>,
     matches: Vec<vyre_libs::scan::LiteralMatch>,
     scratch: Vec<u8>,
+    /// Lower-bound device bytes held by the resident pipeline (haystack +
+    /// region controls + match buffer); transition/bloom tables are not
+    /// exposed through the vyre API and stay uncounted.
+    device_bytes: u64,
 }
 
 pub(crate) struct GpuBorrowedLiteralState {
@@ -204,9 +209,14 @@ impl GpuResidentLiteralState {
 
     fn free(mut self) -> Result<(), String> {
         self.clear_host_buffers();
-        self.pipeline
+        let freed = self
+            .pipeline
             .free(self.backend.as_ref())
-            .map_err(|error| format!("failed to free GPU resident literal pipeline: {error}"))
+            .map_err(|error| format!("failed to free GPU resident literal pipeline: {error}"));
+        if freed.is_ok() {
+            evidence::note_device_free(self.device_bytes);
+        }
+        freed
     }
 }
 
@@ -249,6 +259,11 @@ fn scan_gpu_literal_evidence_by_region_borrowed<R>(
     consume: impl FnOnce(&[u32], &[vyre_libs::scan::LiteralMatch]) -> Result<R, String>,
 ) -> Result<R, String> {
     prepare_borrowed_literal_state(slot)?;
+    let backend_code = evidence::backend_code(backend.id());
+    let upload_bytes = (haystack.len() + region_starts.len() * 4) as u64;
+    // The borrowed path exists because the backend lacks timestamp features;
+    // say so once per profile runtime instead of leaving kernel time absent.
+    evidence::report_capability_unsupported(backend_code, evidence::capability::KERNEL_TIMESTAMPS);
     let mut consume = Some(consume);
     for attempt in 0..2 {
         let (scan_error, current_capacity) = {
@@ -258,6 +273,7 @@ fn scan_gpu_literal_evidence_by_region_borrowed<R>(
                         .to_string(),
                 );
             };
+            let dispatch_wall = keyhog_profile::enabled().then(std::time::Instant::now);
             let dispatch = matcher
                 .scan_presence_and_positions_by_region_with_scratch(
                     backend.as_ref(),
@@ -271,6 +287,15 @@ fn scan_gpu_literal_evidence_by_region_borrowed<R>(
                 .map_err(|error| error.to_string());
             match dispatch {
                 Ok(output) => {
+                    evidence::record_dispatch_submitted();
+                    evidence::record_upload(upload_bytes, None);
+                    if let Some(start) = dispatch_wall {
+                        evidence::record_submit_to_complete(start.elapsed().as_nanos() as u64);
+                    }
+                    evidence::record_readback(
+                        (output.len() * 4 + state.matches.len() * 12) as u64,
+                        None,
+                    );
                     state.output = output;
                     let consume = consume.take().ok_or_else(|| {
                         "GPU borrowed literal output consumer was already invoked".to_string()
@@ -280,6 +305,7 @@ fn scan_gpu_literal_evidence_by_region_borrowed<R>(
                     return result;
                 }
                 Err(error) => {
+                    evidence::record_fault(backend_code, evidence::fault::DISPATCH);
                     let current_capacity = state.max_matches;
                     state.clear_host_buffers();
                     (
@@ -307,6 +333,7 @@ fn scan_gpu_literal_evidence_by_region_borrowed<R>(
             return Err("GPU borrowed literal pipeline disappeared before replay".to_string());
         };
         state.max_matches = exact_count;
+        evidence::record_retry(1);
     }
     Err("GPU borrowed literal scan exhausted its bounded replay".to_string())
 }
@@ -337,6 +364,10 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
     if !resident_timed_dispatch_supported {
         #[cfg(test)]
         if injected_dispatch_failure() {
+            evidence::record_fault(
+                evidence::backend_code(backend.id()),
+                evidence::fault::DISPATCH,
+            );
             return Err("injected borrowed fused literal dispatch fault".to_string());
         }
         return scan_gpu_literal_evidence_by_region_borrowed(
@@ -348,6 +379,8 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
             consume,
         );
     }
+    let backend_code = evidence::backend_code(backend.id());
+    let upload_bytes = (haystack.len() + region_starts.len() * 4) as u64;
     let mut consume = Some(consume);
 
     let must_rebuild = match &*slot {
@@ -403,7 +436,7 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
                 } else {
                     state
                         .pipeline
-                        .scan_into(
+                        .scan_into_timed(
                             backend.as_ref(),
                             haystack,
                             region_starts,
@@ -418,7 +451,7 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
                 {
                     state
                         .pipeline
-                        .scan_into(
+                        .scan_into_timed(
                             backend.as_ref(),
                             haystack,
                             region_starts,
@@ -431,13 +464,37 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
                 }
             };
             match dispatch {
-                Ok(()) => {
+                Ok(timed) => {
+                    evidence::record_dispatch_submitted();
+                    evidence::record_upload(upload_bytes, None);
+                    evidence::record_submit_to_complete(timed.wall_ns);
+                    match timed.device_ns {
+                        Some(device_ns) => {
+                            evidence::record_kernel(device_ns);
+                            evidence::record_queue_wait(
+                                timed.wall_ns.saturating_sub(device_ns),
+                            );
+                        }
+                        None => {
+                            evidence::report_capability_unsupported(
+                                backend_code,
+                                evidence::capability::KERNEL_TIMESTAMPS,
+                            );
+                        }
+                    }
+                    evidence::record_readback(
+                        (guard.output.len() * 4 + guard.matches.len() * 12) as u64,
+                        None,
+                    );
                     let consume = consume.take().ok_or_else(|| {
                         "GPU resident literal output consumer was already invoked".to_string()
                     })?;
                     return consume(guard.output.as_slice(), guard.matches.as_slice());
                 }
-                Err(error) => format!("resident fused literal dispatch error: {error}"),
+                Err(error) => {
+                    evidence::record_fault(backend_code, evidence::fault::DISPATCH);
+                    format!("resident fused literal dispatch error: {error}")
+                }
             }
         };
         if attempt == 1 {
@@ -479,6 +536,7 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
                 | GpuResidentLiteralSlot::Borrowed(_)
                 | GpuResidentLiteralSlot::Failed(_) => None,
             });
+        evidence::record_retry(1);
         rebuild_resident_literal_state(&mut slot, matcher, backend, capacity)?;
     }
     Err("GPU resident literal scan exhausted its bounded replay".to_string())
@@ -527,13 +585,19 @@ fn rebuild_resident_literal_state(
             return Err(error);
         }
     };
+    let device_bytes = capacity.haystack_bytes as u64
+        + u64::from(capacity.regions) * 4
+        + 8
+        + u64::from(capacity.max_matches) * 12;
     *slot = GpuResidentLiteralSlot::Ready(GpuResidentLiteralState {
         pipeline,
         backend: std::sync::Arc::clone(backend),
         output: Vec::new(),
         matches: Vec::new(),
         scratch: Vec::new(),
+        device_bytes,
     });
+    evidence::note_device_alloc(device_bytes);
     Ok(())
 }
 

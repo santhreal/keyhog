@@ -12,7 +12,7 @@ fn sigint_mid_scan_exits_130() {
         // enough to be interrupted mid-flight: an un-calibrated `auto` scan
         // fails closed (exit 2) before the 800 ms SIGINT, which would race the
         // signal contract this test exists to verify.
-        .args(["scan", "--backend", "simd", "--daemon=off"])
+        .args(["scan", "--backend", "simd", "--daemon=off", "--profile"])
         .arg(workspace_detectors())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -36,6 +36,12 @@ fn sigint_mid_scan_exits_130() {
     assert!(
         stderr.contains("Scan interrupted"),
         "stderr must announce interrupt; got: {stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "profile outcome status=failed coverage=cancelled errors=1 exit=130 interruption=sigint"
+        ),
+        "profiled SIGINT must emit signal-safe interruption identity; got: {stderr}"
     );
 }
 

@@ -246,6 +246,8 @@ pub(super) fn apply_scan_section(
     config_errors: &mut Vec<String>,
     scan: Option<ScanSection>,
 ) {
+    // `[scan]` layer merge + validation, profiled as preprocessing.
+    let _scan_section_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     // `[scan]` nested table - the surface the README documents as canonical.
     // Fills only fields still at their CLI defaults; command-line flags win.
     if let Some(scan) = scan {

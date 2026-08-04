@@ -171,6 +171,7 @@ impl MerkleIndex {
         expected_spec_hash: Option<&[u8; 32]>,
         max_entries: usize,
     ) -> (Self, MerkleLoadStatus) {
+        let _profile = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
         let bytes =
             match state_file::read_capped(path, MERKLE_INDEX_CACHE_FILE_BYTES, "merkle index") {
                 Ok(bytes) => bytes,
@@ -335,6 +336,7 @@ impl MerkleIndex {
     }
 
     fn save_inner(&self, path: &Path, spec_hash: Option<&[u8; 32]>) -> std::io::Result<()> {
+        let _profile = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
         let _save_lock = state_file::StateFileWriteLock::acquire(path)?;
         let mut merged = self.load_merge_base(path, spec_hash);
         let in_memory_paths = self.overlay_in_memory_entries(&mut merged);

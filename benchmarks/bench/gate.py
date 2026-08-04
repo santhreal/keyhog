@@ -341,6 +341,8 @@ def run_gate(
     max_detector_fp_abs: int = DEFAULT_DETECTOR_FP_ABS,
     max_detector_fp_rel: float = DEFAULT_DETECTOR_FP_REL,
     required_competitors: set[str] | None = None,
+    speed_budgets: pathlib.Path | None = None,
+    speed_control_results: pathlib.Path | None = None,
 ) -> int:
     """Run (or load) a leaderboard, evaluate the gate, print the verdict.
 
@@ -398,6 +400,28 @@ def run_gate(
         print(f"\nGATE UNDECIDABLE: {exc}", file=sys.stderr)
         return 2
 
+    if speed_budgets is not None:
+        # End-to-end speed is gated per workflow class against a committed
+        # control result set; the freshly gated rows are the candidate.
+        from .profile_gates import BudgetError, evaluate_workflow_speed, load_budgets
+
+        if speed_control_results is None:
+            print("\nGATE UNDECIDABLE: --speed-budgets requires "
+                  "--speed-control-results (the control result directory)",
+                  file=sys.stderr)
+            return 2
+        try:
+            budgets = load_budgets(speed_budgets)
+            control_rows = canonical_leaderboard(
+                load_results(speed_control_results), corpus
+            )
+            violations.extend(
+                evaluate_workflow_speed(control_rows, rows, budgets)
+            )
+        except (BudgetError, ResultLoadError) as exc:
+            print(f"\nGATE UNDECIDABLE: {exc}", file=sys.stderr)
+            return 2
+
     if violations:
         print(f"\nGATE FAILED ({len(violations)} violation(s)):", file=sys.stderr)
         for v in violations:
@@ -445,6 +469,12 @@ def _main(argv: list[str] | None = None) -> int:
                          "tolerated vs baseline; a spike must clear BOTH to fail")
     ap.add_argument("--require-competitors", default="",
                     help="comma-separated competitor names that must produce usable results")
+    ap.add_argument("--speed-budgets", type=pathlib.Path, default=None,
+                    help="TOML budget file; enables the per-workflow-class "
+                         "end-to-end speed gate (requires --speed-control-results)")
+    ap.add_argument("--speed-control-results", type=pathlib.Path, default=None,
+                    help="directory of control RunResult JSONs the candidate "
+                         "rows are compared against for speed budgets")
     args = ap.parse_args(argv)
     scanners = [s.strip() for s in args.scanners.split(",") if s.strip()]
     required_competitors = {s.strip() for s in args.require_competitors.split(",") if s.strip()}
@@ -463,6 +493,8 @@ def _main(argv: list[str] | None = None) -> int:
         max_detector_fp_abs=args.max_detector_fp_abs,
         max_detector_fp_rel=args.max_detector_fp_rel,
         required_competitors=required_competitors or None,
+        speed_budgets=args.speed_budgets,
+        speed_control_results=args.speed_control_results,
     )
 
 

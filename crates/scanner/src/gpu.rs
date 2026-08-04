@@ -30,6 +30,8 @@
 #[cfg(feature = "gpu")]
 mod adapter_probe;
 mod backend;
+#[cfg(feature = "gpu")]
+pub(crate) mod evidence;
 #[cfg(all(test, feature = "gpu", target_os = "linux"))]
 pub(crate) use backend::load_dynamic_library;
 #[cfg(all(feature = "gpu", target_os = "linux"))]
@@ -82,6 +84,12 @@ pub(crate) fn with_recovery_receipt_scope<T>(operation: impl FnOnce() -> T) -> (
 }
 
 pub(crate) fn record_recovery_receipt() {
+    // Every GPU recovery receipt is also typed accelerator evidence. All
+    // receipt producers today are WGPU MoE/init paths, so the recovery event
+    // carries the WGPU backend code; the region-presence recovery path
+    // records its own backend directly.
+    #[cfg(feature = "gpu")]
+    evidence::record_recovery(evidence::BACKEND_WGPU);
     RECOVERY_RECEIPT_COUNTER.with_borrow(|counter| {
         if let Some(counter) = counter {
             match counter.fetch_update(
@@ -122,37 +130,40 @@ pub(crate) use adapter_probe::{
 /// across all batch ML inference calls. Only the SCORING fraction is
 /// GPU-offloadable; feature extraction is inherent per-candidate CPU work. This
 /// is the data that decides whether moving the MoE to a unified GPU batch is
-/// worth the recall cost of reordering finalization.
-static MOE_FEATURE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static MOE_SCORE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// Gated by the unified scanner profile switch and dumped as part of
-/// [`crate::profile_dump`].
-#[cfg(feature = "ml")]
-fn ml_split_prof_enabled() -> bool {
-    crate::scan_profile::enabled()
-}
-
-/// Print + reset the feature-vs-score split. Folded into the unified profiler:
-/// called from [`crate::profile_dump`] (early-returns when no data).
-pub(crate) fn ml_split_profile_dump() {
-    use std::sync::atomic::Ordering::Relaxed;
-    let f = MOE_FEATURE_NS.swap(0, Relaxed) as f64 / 1e6;
-    let s = MOE_SCORE_NS.swap(0, Relaxed) as f64 / 1e6;
-    if f == 0.0 && s == 0.0 {
-        return;
-    }
-    eprintln!(
+/// worth the recall cost of reordering finalization. The keyhog-profile runtime
+/// owns both counters (typed nanosecond sums: the split nests inside the
+/// `MachineLearning` stage span, so spans would double-count the stage total).
+/// Render the ML feature/score split line the unified profiler prints. Pure
+/// (no I/O) so the formatting is unit-testable.
+pub(crate) fn format_ml_split(feature_ns: u64, score_ns: u64) -> String {
+    let f = feature_ns as f64 / 1e6;
+    let s = score_ns as f64 / 1e6;
+    format!(
         "=== ML split: feature_extract={f:.1}ms moe_score={s:.1}ms (score = {:.1}% of ML compute; \
 only this fraction is GPU-offloadable) ===",
         100.0 * s / (f + s).max(1e-9),
-    );
+    )
 }
 
-pub(crate) fn ml_split_profile_reset() {
-    use std::sync::atomic::Ordering::Relaxed;
-    MOE_FEATURE_NS.store(0, Relaxed);
-    MOE_SCORE_NS.store(0, Relaxed);
+/// Build the feature/score split from one drained typed-metric batch. Missing
+/// counters read as zero; the caller prints nothing when both are zero.
+pub(crate) fn ml_split_from_typed(metrics: &[keyhog_profile::TypedMetricRecordV2]) -> (u64, u64) {
+    let value = |counter: keyhog_profile::CounterId| {
+        metrics
+            .iter()
+            .find(|record| record.metric_id == counter.metric_id())
+            .map_or(0, |record| record.value)
+    };
+    (
+        value(keyhog_profile::CounterId::MlFeatureNs),
+        value(keyhog_profile::CounterId::MlScoreNs),
+    )
+}
+
+/// The split timers only pay `Instant::now()` when a profile runtime is active.
+#[cfg(feature = "ml")]
+fn ml_split_prof_enabled() -> bool {
+    keyhog_profile::enabled()
 }
 
 #[cfg(all(test, feature = "ml", feature = "multiline"))]
@@ -200,10 +211,10 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
             let scores = crate::ml_scorer::score_input_batch_serial(candidates, config);
             if let Some(t) = t {
                 // Fused loop: attribute the whole cost to feature+score combined
-                // under MOE_SCORE_NS (kept separate from the large-batch split).
-                MOE_SCORE_NS.fetch_add(
+                // under the score counter (kept separate from the large-batch split).
+                keyhog_profile::add_counter(
+                    keyhog_profile::CounterId::MlScoreNs,
                     t.elapsed().as_nanos() as u64,
-                    std::sync::atomic::Ordering::Relaxed,
                 );
             }
             return Ok(scores);
@@ -216,9 +227,9 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
             .map(|candidate| candidate.ml_features(config))
             .collect();
         if let Some(t) = t_feat {
-            MOE_FEATURE_NS.fetch_add(
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::MlFeatureNs,
                 t.elapsed().as_nanos() as u64,
-                std::sync::atomic::Ordering::Relaxed,
             );
         }
 
@@ -242,6 +253,11 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
                             candidates.len(),
                             "backend::batch_score_features must return one score per input"
                         );
+                        evidence::record_fault(
+                            evidence::BACKEND_WGPU,
+                            evidence::fault::SCORE_COUNT_MISMATCH,
+                        );
+                        evidence::record_residual_batch();
                         backend::moe_runtime_degrade(&format!(
                             "caller-side score count mismatch: backend returned {} scores for {} candidates",
                             scores.len(),
@@ -262,9 +278,9 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
             }
         };
         if let Some(t) = t_score {
-            MOE_SCORE_NS.fetch_add(
+            keyhog_profile::add_counter(
+                keyhog_profile::CounterId::MlScoreNs,
                 t.elapsed().as_nanos() as u64,
-                std::sync::atomic::Ordering::Relaxed,
             );
         }
         Ok(scores)
@@ -294,3 +310,10 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
 pub fn gpu_available() -> bool {
     gpu_probe().available
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/gpu_evidence_cpu_silence.rs"]
+mod gpu_evidence_cpu_silence_tests;
+#[cfg(all(test, feature = "gpu"))]
+#[path = "../tests/unit/gpu_evidence_recovery.rs"]
+mod gpu_evidence_recovery_tests;

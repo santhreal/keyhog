@@ -125,7 +125,6 @@ pub use recovery::{BackendRecoveryReceipt, CoalescedScanOutcome, RecoveredInputR
 mod scan;
 mod scan_coalesced;
 pub(crate) mod scan_filters;
-pub(crate) mod scan_inner_profile;
 pub(crate) mod scan_postprocess;
 pub(crate) use scan_postprocess::{
     build_confirmed_suffix_gate, confirmed_anchor::ConfirmedAnchorIndex,
@@ -163,11 +162,7 @@ pub(crate) use boundary::scan_chunk_boundaries;
 #[cfg(test)]
 pub(crate) use gpu_forced_helpers::gpu_forced_unavailable_message;
 #[cfg(test)]
-pub(crate) use phase2::{phase2_gate_stats_dump, phase2_mark_stats, phase2_mark_stats_reset};
-#[cfg(test)]
-pub(crate) use scan_inner_profile::scan_inner_profile_dump;
-#[cfg(test)]
-pub(crate) use scan_postprocess::decode_profile_dump;
+pub(crate) use phase2::{phase2_gate_stats_dump, take_mark_stats};
 pub(crate) use scan_postprocess_suffix_gate::suffix_gate_literals;
 pub(crate) use windowed::{reject_oversized_window_chunk, MAX_WINDOW_CHUNK_BYTES};
 pub(crate) use windowed_support::{absolute_line, absolute_offset, ceil_char_boundary};
@@ -221,6 +216,8 @@ pub struct CompiledScanner {
     /// Autoroute and runtime receipts consume this stored identity so every
     /// execution-affecting detector policy change invalidates stale evidence.
     pub(crate) detector_digest: u64,
+    /// Complete BLAKE3 identity for the compiled detector and decoder execution plan.
+    pub(crate) compiled_plan_digest: [u8; 32],
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,
     pub(crate) ac: Option<AhoCorasick>,
     pub(crate) gpu_backends: GpuBackendPeers,

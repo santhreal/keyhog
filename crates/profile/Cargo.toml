@@ -13,17 +13,32 @@ keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
 
+[features]
+default = ["build-identity", "host-identity", "process-metrics", "allocation-tracking"]
+build-identity = ["dep:hex", "dep:sha2"]
+host-identity = ["dep:hex", "dep:libc", "dep:sha2"]
+process-metrics = ["dep:libc", "dep:sysinfo"]
+hardware-counters = ["dep:libc"]
+allocation-tracking = []
+
 [dependencies]
+clap = { workspace = true }
 serde = { workspace = true }
+hex = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
 serde_json = { workspace = true }
-sysinfo = { workspace = true }
+sysinfo = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = { workspace = true }
+libc = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
 
 [[bench]]
 name = "span_overhead"
+harness = false
+
+[[bench]]
+name = "overhead_budget"
 harness = false

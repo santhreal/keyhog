@@ -206,16 +206,28 @@ impl BinarySource {
         // Try section-aware extraction using goblin (ELF/PE/Mach-O)
         #[cfg(feature = "binary")]
         {
+            let _extract = crate::profile::decode_span();
             if let Some(section_chunks) = sections::extract_sections(&bytes, &path_display) {
+                crate::profile::add_derived_bytes(
+                    section_chunks
+                        .iter()
+                        .map(|chunk| chunk.data.len() as u64)
+                        .sum(),
+                );
                 chunks.extend(section_chunks.into_iter().map(Ok));
             }
         }
 
         // Always do full strings extraction as fallback/supplement
-        let strings = extract_printable_strings(&bytes, crate::strings::MIN_PRINTABLE_STRING_LEN);
+        let strings = {
+            let _extract = crate::profile::decode_span();
+            extract_printable_strings(&bytes, crate::strings::MIN_PRINTABLE_STRING_LEN)
+        };
         if !strings.is_empty() {
+            let data = crate::strings::join_sensitive_strings(&strings, "\n");
+            crate::profile::add_derived_bytes(data.len() as u64);
             chunks.push(Ok(Chunk {
-                data: crate::strings::join_sensitive_strings(&strings, "\n"),
+                data,
                 metadata: ChunkMetadata {
                     base_offset: 0,
                     base_line: 0,
@@ -269,6 +281,9 @@ impl Source for BinarySource {
         // lease covers its whole recording window. A no-op in production where the
         // gate is never armed; see `skip::gate_scan`.
         crate::gate_scan(|| {
+            // Binary acquisition is the safe-open + capped read; section and
+            // strings extraction is derived-content decoding.
+            let _acquire = crate::profile::acquire_span();
             let rows = if let Some(ghidra_bin) = &self.ghidra_path {
                 let analyzer = GhidraAnalyzer::new(ghidra_bin);
                 match self.analyzer_chunks(&analyzer) {
@@ -278,6 +293,9 @@ impl Source for BinarySource {
             } else {
                 self.strings_chunks()
             };
+            for row in &rows {
+                crate::profile::record_emitted_chunk(row);
+            }
 
             Box::new(rows.into_iter())
         })
@@ -310,6 +328,7 @@ fn read_binary_capped(path: &Path, cap: usize) -> std::io::Result<CappedBinaryRe
             "binary read cap is too large for this platform",
         )
     })?;
+    let _read = crate::profile::read_span();
     let read = crate::capped_read::read_to_cap(file, cap, Some(capacity_hint))?;
     Ok(CappedBinaryRead {
         bytes: read.bytes,

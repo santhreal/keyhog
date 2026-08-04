@@ -82,6 +82,7 @@ async fn scan_path_request_roundtrips() {
         path: "src/main.rs".into(),
         working_dir: Some("/tmp/project".into()),
         dogfood: true,
+        profile: false,
     };
     frame::write_request(&mut client, &sent)
         .await
@@ -95,6 +96,7 @@ async fn scan_path_request_roundtrips() {
             path,
             working_dir,
             dogfood,
+            ..
         } => {
             assert_eq!(path, "src/main.rs");
             assert_eq!(working_dir.as_deref(), Some("/tmp/project"));
@@ -265,6 +267,7 @@ async fn a_body_delivered_one_byte_at_a_time_reassembles_into_the_exact_frame() 
         path: Some("trickle.txt".into()),
         text: "a slowly delivered scan body".into(),
         dogfood: true,
+        profile: false,
     };
     let wire = wire_bytes_for(&sent).await;
     assert!(
@@ -301,6 +304,7 @@ async fn a_body_delivered_one_byte_at_a_time_reassembles_into_the_exact_frame() 
             path,
             text,
             dogfood,
+            ..
         } => {
             assert_eq!(path.as_deref(), Some("trickle.txt"));
             assert_eq!(text, "a slowly delivered scan body");

@@ -111,9 +111,9 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // irreducibly source-local; the consts are crate-internal engine details.
     "engine/mod.rs",
     // `engine/phase2/mark_stats.rs` exposes a `pub(crate)` telemetry facade
-    // (`record_mark_*`, `phase2_mark_stats_reset`) over thread-local mark-gate
-    // counters. Same justification as `telemetry.rs`: keeping the reset/read seam
-    // in-module avoids making the mutable counter internals public API.
+    // (`record_mark_*`, `take_mark_stats`) over the profile runtime's typed
+    // counters. Same justification as `telemetry.rs`: keeping the record/read
+    // seam in-module avoids making the counter plumbing public API.
     "engine/phase2/mark_stats.rs",
     // `engine/phase2_generic/keywords.rs` pins the private encoded-text-secret
     // anchoring (`is_strong_keyword_anchored_encoded_text_secret`,

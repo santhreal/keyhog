@@ -86,6 +86,9 @@ impl Source for GitDiffSource {
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
         crate::gate_scan(|| {
+            // Top-level acquisition: ref validation, commit resolution, and
+            // the `git diff` child spawn.
+            let acquire = crate::profile::acquire_span();
             match stream_added_lines(
                 &self.repo_path,
                 &self.base_ref,
@@ -93,7 +96,13 @@ impl Source for GitDiffSource {
                 self.limits,
                 self.respect_default_excludes,
             ) {
-                Ok(iter) => Box::new(iter),
+                Ok(iter) => {
+                    drop(acquire);
+                    Box::new(iter.map(|row| {
+                        crate::profile::record_emitted_chunk(&row);
+                        row
+                    }))
+                }
                 Err(e) => Box::new(std::iter::once(Err(e))),
             }
         })
@@ -243,6 +252,9 @@ fn stream_added_lines(
             return error.map(Err);
         }
 
+        // Diff enumeration: streaming `git diff` output and parsing hunks is
+        // the walk boundary for this adapter.
+        let _enumerate = crate::profile::walk_span();
         loop {
             let line =
                 match super::read_capped_line(&mut reader, &mut line_buf, limits.git_line_bytes) {
@@ -312,6 +324,13 @@ fn stream_added_lines(
                         }
                     }
                 };
+
+            // Fast path: hunk body lines of a file whose added lines are not
+            // collected (excluded/binary/deleted) cannot match or change
+            // parser state; skip full classification.
+            if current_path.is_none() && diff_parser.line_is_skippable_hunk_body(line) {
+                continue;
+            }
 
             let event = match diff_parser.parse_line(line, "git diff") {
                 Ok(event) => event,

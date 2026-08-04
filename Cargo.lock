@@ -2825,6 +2825,7 @@ dependencies = [
  "fs2",
  "hex",
  "indexmap",
+ "keyhog-profile",
  "libc",
  "parking_lot",
  "proptest",
@@ -2851,10 +2852,13 @@ dependencies = [
 name = "keyhog-profile"
 version = "0.5.50"
 dependencies = [
+ "clap",
  "criterion",
+ "hex",
  "libc",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sysinfo",
 ]
 
@@ -2934,6 +2938,7 @@ dependencies = [
  "ignore",
  "io-uring",
  "keyhog-core",
+ "keyhog-profile",
  "keyhog-verifier",
  "libc",
  "lz4_flex",
@@ -2981,6 +2986,7 @@ dependencies = [
  "hex",
  "hmac 0.12.1",
  "keyhog-core",
+ "keyhog-profile",
  "parking_lot",
  "percent-encoding",
  "quick-xml",

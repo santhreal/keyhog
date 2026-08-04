@@ -1,7 +1,7 @@
 use keyhog_profile::{
     add_input_bytes, add_input_units, reset, set_attribution, set_enabled, span,
-    take_stage_measurements, Attribution, CacheState, DaemonState, RunIdentity, RunProfile,
-    RunState, Session, Stage, PROFILE_SCHEMA,
+    take_stage_measurements, Attribution, CacheState, CollectorAvailability, CollectorId,
+    DaemonState, RunIdentity, RunProfile, RunState, Session, Stage, PROFILE_SCHEMA,
 };
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -146,68 +146,181 @@ fn session_round_trip_preserves_causal_profile_record() {
             .sum::<u64>()
             <= profile.wall_time_ns
     );
+    #[cfg(feature = "process-metrics")]
     assert!(profile.states.iter().all(|state| state
         .resident_start_bytes
         .zip(state.resident_end_bytes)
         .is_some_and(|(start, finish)| start > 0 && finish > 0)));
+    #[cfg(feature = "process-metrics")]
     assert!(profile.resource_samples.iter().all(|sample| sample
         .snapshot
         .resident_bytes
         .is_some_and(|bytes| bytes > 0)));
+    #[cfg(feature = "process-metrics")]
     assert!(profile
         .resources
         .max_observed_resident_bytes
         .is_some_and(|bytes| bytes > 0));
+    #[cfg(not(feature = "process-metrics"))]
+    assert!(profile
+        .resource_samples
+        .iter()
+        .all(|sample| sample.snapshot == Default::default()));
 
     let json = profile.to_json_pretty().expect("serialize profile");
     let decoded: RunProfile = serde_json::from_str(&json).expect("deserialize profile");
     assert_eq!(decoded, profile);
     let mut legacy_json: serde_json::Value =
         serde_json::from_str(&json).expect("parse profile JSON value");
-    legacy_json
-        .as_object_mut()
-        .expect("profile JSON object")
-        .remove("states");
+    let legacy_object = legacy_json.as_object_mut().expect("profile JSON object");
+    legacy_object.remove("states");
+    legacy_object.remove("collectors");
     let legacy: RunProfile =
         serde_json::from_value(legacy_json).expect("deserialize additive legacy record");
     assert!(legacy.states.is_empty());
+    assert!(legacy.collectors.is_empty());
 }
 
-/// Concurrent process-global sessions must fail explicitly, and dropping the owner must release the slot.
+/// Every profile must report the process-resource collector state without hiding host capability gaps.
 #[test]
-fn concurrent_session_is_rejected_and_drop_releases_slot() {
+fn session_reports_process_resource_collector_capability() {
     let _guard = isolated_profile_test();
-    let first = Session::start(identity("first")).expect("start first profile session");
-    let error = Session::start(identity("second"))
-        .err()
-        .expect("reject concurrent session");
-    assert_eq!(
-        error.to_string(),
-        "a KeyHog profile session is already active in this process"
-    );
-    drop(first);
+    let profile = Session::start(identity("collector-capability"))
+        .expect("start profile session")
+        .finish(RunState::Completed);
 
-    let replacement = Session::start(identity("replacement")).expect("session slot released");
+    assert_eq!(profile.collectors.len(), 8);
     assert_eq!(
-        replacement.finish(RunState::Failed).status,
-        RunState::Failed
+        profile.collectors[0].collector,
+        CollectorId::ProcessResources
     );
+    assert_eq!(
+        profile.collectors[1].collector,
+        CollectorId::HardwareCounters
+    );
+    assert_eq!(
+        profile.collectors[2].collector,
+        CollectorId::SchedulerActivity
+    );
+    assert_eq!(
+        profile.collectors[3].collector,
+        CollectorId::ThreadUtilization
+    );
+    assert_eq!(profile.collectors[4].collector, CollectorId::CpuTopology);
+    assert_eq!(
+        profile.collectors[5].collector,
+        CollectorId::AllocationTracking
+    );
+    assert_eq!(profile.collectors[6].collector, CollectorId::SystemIo);
+    assert_eq!(
+        profile.collectors[7].collector,
+        CollectorId::PressureThermal
+    );
+    #[cfg(not(feature = "hardware-counters"))]
+    for capability in &profile.collectors[1..5] {
+        assert_eq!(capability.availability, CollectorAvailability::Disabled);
+        assert_eq!(
+            capability.detail.as_deref(),
+            Some("enable the keyhog-profile hardware-counters feature")
+        );
+    }
+    #[cfg(feature = "hardware-counters")]
+    for capability in &profile.collectors[1..5] {
+        assert_ne!(capability.availability, CollectorAvailability::Disabled);
+    }
+    assert_eq!(
+        profile.collectors[0].collector,
+        CollectorId::ProcessResources
+    );
+    #[cfg(all(feature = "process-metrics", target_os = "linux"))]
+    assert_eq!(
+        profile.collectors[0].availability,
+        CollectorAvailability::Available
+    );
+    #[cfg(all(feature = "process-metrics", target_os = "linux"))]
+    assert_eq!(profile.collectors[0].detail, None);
+    #[cfg(not(feature = "process-metrics"))]
+    assert_eq!(
+        profile.collectors[0].availability,
+        CollectorAvailability::Disabled
+    );
+    #[cfg(not(feature = "process-metrics"))]
+    assert_eq!(
+        profile.collectors[0].detail.as_deref(),
+        Some("enable the keyhog-profile process-metrics feature")
+    );
+}
+
+/// Concurrent sessions on separate threads must remain isolated even when their spans overlap.
+#[test]
+fn concurrent_sessions_keep_overlapping_thread_measurements_isolated() {
+    let _guard = isolated_profile_test();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let workers =
+        [("first", Stage::SourceRead), ("second", Stage::Reporting)].map(|(label, stage)| {
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                let session = Session::start(identity(label)).expect("start isolated session");
+                barrier.wait();
+                {
+                    let _span = span(stage);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                session.finish(RunState::Completed)
+            })
+        });
+
+    let profiles = workers.map(|worker| worker.join().expect("join profile worker"));
+    assert_eq!(profiles[0].identity.source_kind, "first");
+    assert_eq!(profiles[0].stages.len(), 1);
+    assert_eq!(profiles[0].stages[0].stage, Stage::SourceRead);
+    assert_eq!(profiles[1].identity.source_kind, "second");
+    assert_eq!(profiles[1].stages.len(), 1);
+    assert_eq!(profiles[1].stages[0].stage, Stage::Reporting);
+}
+
+/// Explicit runtime propagation must attribute worker-thread work to its owning session.
+#[test]
+fn propagated_runtime_records_worker_thread_span_without_cross_contamination() {
+    let _guard = isolated_profile_test();
+    let session = Session::start(identity("worker-propagation")).expect("start profile session");
+    let runtime = session.runtime();
+    std::thread::spawn(move || {
+        let _context = runtime.enter();
+        let _span = span(Stage::SourceRead);
+        std::thread::sleep(Duration::from_millis(1));
+    })
+    .join()
+    .expect("join profiled worker");
+
+    let profile = session.finish(RunState::Completed);
+    assert_eq!(profile.stages.len(), 1);
+    assert_eq!(profile.stages[0].stage, Stage::SourceRead);
+    assert_eq!(profile.stages[0].calls, 1);
+    assert!(profile.stages[0].elapsed_ns >= 1_000_000);
 }
 
 /// Linux resource snapshots must observe real process CPU time and thread transitions without a system-wide refresh.
-#[cfg(target_os = "linux")]
+#[cfg(all(feature = "process-metrics", target_os = "linux"))]
 #[test]
 fn linux_resource_snapshots_track_cpu_and_thread_changes() {
+    const WORKERS: usize = 8;
     let _guard = isolated_profile_test();
     let mut session = Session::start(identity("linux-process-resources"))
         .expect("start Linux resource profile session");
-    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(0);
-    let (done_tx, done_rx) = std::sync::mpsc::sync_channel(0);
-    let worker = std::thread::spawn(move || {
-        ready_tx.send(()).expect("publish worker readiness");
-        done_rx.recv().expect("wait for worker completion");
-    });
-    ready_rx.recv().expect("observe live worker");
+    let ready = std::sync::Arc::new(std::sync::Barrier::new(WORKERS + 1));
+    let release = std::sync::Arc::new(std::sync::Barrier::new(WORKERS + 1));
+    let workers = (0..WORKERS)
+        .map(|_| {
+            let ready = ready.clone();
+            let release = release.clone();
+            std::thread::spawn(move || {
+                ready.wait();
+                release.wait();
+            })
+        })
+        .collect::<Vec<_>>();
+    ready.wait();
     session.transition(RunState::Acquiring);
 
     let started = Instant::now();
@@ -218,11 +331,18 @@ fn linux_resource_snapshots_track_cpu_and_thread_changes() {
             .wrapping_add(1);
         std::hint::black_box(accumulator);
     }
-    done_tx.send(()).expect("release worker");
-    worker.join().expect("join worker");
+    release.wait();
+    for worker in workers {
+        worker.join().expect("join resource sampler worker");
+    }
     session.transition(RunState::Scanning);
     let profile = session.finish(RunState::Completed);
 
+    let created = profile
+        .states
+        .iter()
+        .find(|measurement| measurement.state == RunState::Created)
+        .expect("created state measurement");
     let acquiring = profile
         .states
         .iter()
@@ -241,11 +361,18 @@ fn linux_resource_snapshots_track_cpu_and_thread_changes() {
         "CPU utilization must agree with the measured busy interval: {acquiring:?}"
     );
     assert!(
+        created
+            .threads_start
+            .zip(created.threads_end)
+            .is_some_and(|(start, finish)| finish.saturating_sub(start) >= (WORKERS / 2) as u64),
+        "the created boundary must observe a material live-worker increase: {created:?}"
+    );
+    assert!(
         acquiring
             .threads_start
             .zip(acquiring.threads_end)
-            .is_some_and(|(start, finish)| start > finish),
-        "the boundary snapshots must observe the live worker and its exit: {acquiring:?}"
+            .is_some_and(|(start, finish)| start.saturating_sub(finish) >= (WORKERS / 2) as u64),
+        "the acquiring boundary must observe all worker exits: {acquiring:?}"
     );
 }
 
@@ -282,5 +409,13 @@ fn text_report_exposes_actionable_identity_and_resource_fields() {
     assert!(report.contains("calls=1 per_call_us="));
     assert!(report.contains("attributed_ms=0.000"));
     assert!(report.contains("resources aggregate_cpu="));
+    #[cfg(feature = "process-metrics")]
     assert!(report.contains("max_observed_rss_bytes="));
+    #[cfg(feature = "process-metrics")]
+    assert!(report.contains("collector process-resources availability=available"));
+    #[cfg(not(feature = "process-metrics"))]
+    assert!(report.contains(
+        "collector process-resources availability=disabled \
+         detail=enable the keyhog-profile process-metrics feature"
+    ));
 }

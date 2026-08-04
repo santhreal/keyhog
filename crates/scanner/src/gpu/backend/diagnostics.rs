@@ -89,6 +89,10 @@ pub(super) fn on_gpu_init_failed(
             err.detail
         ))),
         GpuInitFailureAction::RecoverWithReceipt => {
+            crate::gpu::evidence::record_fault(
+                crate::gpu::evidence::BACKEND_WGPU,
+                crate::gpu::evidence::fault::INIT,
+            );
             crate::gpu::record_recovery_receipt();
             eprintln!(
                 "keyhog: a GPU was detected but could not be initialized; using the \
@@ -184,6 +188,10 @@ the CPU MoE instead. Use --require-gpu to fail until the GPU shader/driver/weigh
 
 pub(super) fn report_buffer_pool_poison_once() {
     if !MOE_BUFFER_POOL_POISON_WARNED.swap(true, Ordering::Relaxed) {
+        crate::gpu::evidence::record_fault(
+            crate::gpu::evidence::BACKEND_WGPU,
+            crate::gpu::evidence::fault::BUFFER_POOL_POISON,
+        );
         tracing::warn!(
             "GPU MoE buffer pool lock was poisoned; recovering the reusable buffer state"
         );

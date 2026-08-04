@@ -1,11 +1,47 @@
 //! Pre-decoding extraction of encoded values (Base64, Hex, URL, etc.).
 
-/// MEASUREMENT (`keyhog scan --profile`): call count + total bytes + wall time of
-/// `extract_encoded_values`, to size the redundant-extraction lever. Folded
-/// into the unified scanner profiler so profiling has one env owner.
-static EXTRACT_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static EXTRACT_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static EXTRACT_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// MEASUREMENT: call count + total bytes + wall time of
+/// `extract_encoded_values`, to size the redundant-extraction lever. The
+/// keyhog-profile runtime owns all three (typed counters; the wall time is a
+/// nanosecond sum because extraction nests inside the `Decode` stage span, so
+/// a span would double-count the stage total). Counts/bytes record through the
+/// runtime gate (a no-op when no runtime is active); the `Instant` is taken
+/// only when profiling is on. The unified profiler drains and prints the line
+/// via [`format_extract_profile`].
+
+/// Render the extraction profile line the unified profiler prints. Pure (no
+/// I/O) so the formatting is unit-testable.
+#[cfg(feature = "decode")]
+pub(crate) fn format_extract_profile(calls: u64, bytes: u64, ns: u64) -> String {
+    let ms = ns as f64 / 1e6;
+    format!(
+        "extract_encoded_values: calls={calls} bytes={bytes} time={ms:.1}ms ({:.2} µs/call)",
+        if calls > 0 {
+            ms * 1000.0 / calls as f64
+        } else {
+            0.0
+        }
+    )
+}
+
+/// Build the extraction figures from one drained typed-metric batch. Missing
+/// counters read as zero; the caller prints nothing when all three are zero.
+#[cfg(feature = "decode")]
+pub(crate) fn extract_profile_from_typed(
+    metrics: &[keyhog_profile::TypedMetricRecordV2],
+) -> (u64, u64, u64) {
+    let value = |counter: keyhog_profile::CounterId| {
+        metrics
+            .iter()
+            .find(|record| record.metric_id == counter.metric_id())
+            .map_or(0, |record| record.value)
+    };
+    (
+        value(keyhog_profile::CounterId::DecodeExtractCalls),
+        value(keyhog_profile::CounterId::DecodeExtractBytes),
+        value(keyhog_profile::CounterId::DecodeExtractNs),
+    )
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtractedValue {
@@ -24,31 +60,7 @@ impl ExtractedValue {
     }
 }
 fn extract_prof_enabled() -> bool {
-    crate::scan_profile::enabled()
-}
-pub(crate) fn extract_profile_dump() {
-    use std::sync::atomic::Ordering::Relaxed;
-    let calls = EXTRACT_CALLS.swap(0, Relaxed);
-    let bytes = EXTRACT_BYTES.swap(0, Relaxed);
-    let ms = EXTRACT_NS.swap(0, Relaxed) as f64 / 1e6;
-    if calls == 0 && bytes == 0 && ms == 0.0 {
-        return;
-    }
-    eprintln!(
-        "extract_encoded_values: calls={calls} bytes={bytes} time={ms:.1}ms ({:.2} µs/call)",
-        if calls > 0 {
-            ms * 1000.0 / calls as f64
-        } else {
-            0.0
-        }
-    );
-}
-
-pub(crate) fn extract_profile_reset() {
-    use std::sync::atomic::Ordering::Relaxed;
-    EXTRACT_CALLS.store(0, Relaxed);
-    EXTRACT_BYTES.store(0, Relaxed);
-    EXTRACT_NS.store(0, Relaxed);
+    keyhog_profile::enabled()
 }
 
 thread_local! {
@@ -109,20 +121,20 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
     // as a decode candidate. Both extraction paths apply the same floor; one
     // owner so they can never drift to different cutoffs.
     const MIN_EXTRACTED_VALUE_LEN: usize = 4;
-    let _prof = extract_prof_enabled().then(|| {
-        use std::sync::atomic::Ordering::Relaxed;
-        EXTRACT_CALLS.fetch_add(1, Relaxed);
-        EXTRACT_BYTES.fetch_add(text.len() as u64, Relaxed);
-        std::time::Instant::now()
-    });
+    keyhog_profile::add_counter(keyhog_profile::CounterId::DecodeExtractCalls, 1);
+    keyhog_profile::add_counter(
+        keyhog_profile::CounterId::DecodeExtractBytes,
+        text.len() as u64,
+    );
+    let _prof = extract_prof_enabled().then(std::time::Instant::now);
     let _guard = ExtractTimer(_prof);
     struct ExtractTimer(Option<std::time::Instant>);
     impl Drop for ExtractTimer {
         fn drop(&mut self) {
             if let Some(t) = self.0 {
-                EXTRACT_NS.fetch_add(
+                keyhog_profile::add_counter(
+                    keyhog_profile::CounterId::DecodeExtractNs,
                     t.elapsed().as_nanos() as u64,
-                    std::sync::atomic::Ordering::Relaxed,
                 );
             }
         }

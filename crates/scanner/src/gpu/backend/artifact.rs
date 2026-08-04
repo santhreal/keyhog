@@ -19,12 +19,10 @@ pub(super) fn load_moe_artifacts(
     device_limits: &wgpu::Limits,
 ) -> Result<MoeArtifacts, String> {
     let all_weights = crate::ml_scorer::ml_weights::all_weights_slice();
-    validate_weights_size(
-        std::mem::size_of_val(all_weights) as u64,
-        adapter_info,
-        device_limits,
-    )?;
+    let weights_bytes = std::mem::size_of_val(all_weights) as u64;
+    validate_weights_size(weights_bytes, adapter_info, device_limits)?;
 
+    let compile_start = keyhog_profile::enabled().then(std::time::Instant::now);
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("moe_shader"),
         source: wgpu::ShaderSource::Wgsl(moe_shader().into()),
@@ -60,11 +58,26 @@ pub(super) fn load_moe_artifacts(
         compilation_options: Default::default(),
         cache: None,
     });
+    if let Some(start) = compile_start {
+        crate::gpu::evidence::record_compile(start.elapsed().as_nanos() as u64);
+    }
+    // The pipeline descriptor sets `cache: None`, so the compile above is a
+    // guaranteed persistent-cache miss (counted inside `record_compile`);
+    // driver-internal shader cache behavior is not observable through wgpu
+    // and is reported as an explicit capability gap.
+    crate::gpu::evidence::report_capability_unsupported(
+        crate::gpu::evidence::BACKEND_WGPU,
+        crate::gpu::evidence::capability::PIPELINE_CACHE,
+    );
     let weights_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("weights"),
         contents: bytemuck::cast_slice(all_weights),
         usage: wgpu::BufferUsages::STORAGE,
     });
+    // The weights upload is host-to-device traffic and device residency for
+    // the process lifetime of the shared context.
+    crate::gpu::evidence::record_upload(weights_bytes, None);
+    crate::gpu::evidence::note_device_alloc(weights_bytes);
 
     Ok(MoeArtifacts {
         pipeline,

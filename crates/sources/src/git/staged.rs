@@ -114,13 +114,22 @@ impl Source for GitStagedSource {
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
         crate::gate_scan(|| {
+            // Top-level acquisition: worktree discovery, gix open, ignore
+            // matcher build, and the staged raw-diff child spawn.
+            let acquire = crate::profile::acquire_span();
             match StagedChunkIter::new(
                 &self.repo_path,
                 self.limits,
                 self.respect_default_excludes,
                 &self.ignore_paths,
             ) {
-                Ok(chunks) => Box::new(chunks),
+                Ok(chunks) => {
+                    drop(acquire);
+                    Box::new(chunks.map(|row| {
+                        crate::profile::record_emitted_chunk(&row);
+                        row
+                    }))
+                }
                 Err(error) => Box::new(std::iter::once(Err(error))),
             }
         })
@@ -264,6 +273,9 @@ impl Iterator for StagedChunkIter {
         if self.done {
             return None;
         }
+        // Index enumeration: streaming the staged raw-diff records is the
+        // walk boundary for this adapter.
+        let _enumerate = crate::profile::walk_span();
         loop {
             let header_bytes = match super::read_capped_record(
                 &mut self.reader,
@@ -357,6 +369,8 @@ impl Iterator for StagedChunkIter {
                 .map(Err);
             }
 
+            // Staged blob object read + text decode is the read boundary.
+            let _blob_read = crate::profile::read_span();
             let object = match self.repo.find_object(object_id) {
                 Ok(object) => object,
                 Err(error) => {

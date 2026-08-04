@@ -5,6 +5,7 @@
 
 mod disabled_detector_relations;
 mod shared_default_detector_modes;
+mod workflow_state;
 
 use super::run::{resolve_scan_exit, ScanOutcome};
 #[cfg(feature = "simd")]

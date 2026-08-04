@@ -78,6 +78,10 @@ jobs:
       # default build.
       - run: cargo test -p keyhog-verifier --lib
       - run: cargo test -p keyhog-sources --lib
+      - name: Profiler runtime contracts
+        run: cargo test -p keyhog-profile
+      - name: Profiler hot-path overhead budgets
+        run: cargo bench -p keyhog-profile --bench overhead_budget
 
       # End-to-end tests against the built binary. Exercises the
       # full CLI surface (JSON shape, exit codes, --no-suppress-

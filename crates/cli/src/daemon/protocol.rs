@@ -61,8 +61,16 @@ use std::collections::BTreeMap;
 /// * v11 - mass services can acquire local filesystem roots directly. The wire
 ///   carries only path/config metadata while bounded source batches remain in
 ///   the daemon process.
+/// * v12 - scan requests carry an opt-in `profile` flag and `ScanResults`
+///   carries a bounded per-request profile: a daemon-unique request id, wall
+///   time, per-stage call/elapsed aggregates, and explicit event loss counts.
+///   Each profiled request runs inside an isolated profiling runtime in the
+///   daemon, so concurrent requests never share measurements. Old-version
+///   handling is unchanged: the Hello handshake compares `WIRE_VERSION` on
+///   both ends and a mismatched peer is refused before any scan traffic, so a
+///   v11 client never parses a v12 frame (and vice versa).
 
-pub(crate) const WIRE_VERSION: u32 = 11;
+pub(crate) const WIRE_VERSION: u32 = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -104,6 +112,36 @@ impl MassScanStats {
     }
 }
 
+/// One per-stage aggregate inside a daemon request profile. The stage
+/// vocabulary is the fixed `keyhog_profile::Stage` enum, so names carry no
+/// input data and the payload is privacy-safe by construction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ProfileStageMeasurement {
+    pub stage: String,
+    pub calls: u64,
+    pub elapsed_ns: u64,
+}
+
+/// Bounded, privacy-safe profile of one daemon-served scan request. Carries
+/// no paths (beyond what `ScanResults` already carries) and no credentials:
+/// only the server-assigned request id, one wall-clock total, per-stage
+/// aggregates bounded by the fixed `keyhog_profile::Stage` enum (25 entries),
+/// and exact event loss counts so dropped detail is never silent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RequestProfile {
+    /// Server-assigned identity: the daemon generation string from
+    /// [`WarmBackendStatus`] plus a process-atomic per-request sequence.
+    pub request_id: String,
+    pub wall_time_ns: u64,
+    pub stages: Vec<ProfileStageMeasurement>,
+    pub dropped_span_events: u64,
+    pub dropped_point_events: u64,
+    pub dropped_annotations: u64,
+    pub sampled_out_events: u64,
+}
+
 /// Maximum length of a single framed message body. 64 MiB ceiling
 /// matches `MAX_SCAN_CHUNK_BYTES * 64` so a chunk batch fits, but
 /// bounds the recv buffer so a hostile client can't OOM the daemon
@@ -130,6 +168,10 @@ pub(crate) enum Request {
         path: Option<String>,
         text: String,
         dogfood: bool,
+        /// Opt-in per-request profiling. The daemon isolates the scan in its
+        /// own profiling runtime and returns the measurements in
+        /// [`Response::ScanResults::profile`].
+        profile: bool,
     },
     /// Scan a filesystem path (a regular file) using the daemon's
     /// pre-compiled scanner. Path resolution happens on the daemon
@@ -138,10 +180,12 @@ pub(crate) enum Request {
         path: String,
         working_dir: Option<String>,
         dogfood: bool,
+        /// Opt-in per-request profiling, same contract as [`Request::ScanText`].
+        profile: bool,
     },
     /// Begin one bounded mass scan. The server acquires exclusive ownership of
     /// fragment-reassembly state until `MassEnd` or connection teardown.
-    MassBegin { dogfood: bool },
+    MassBegin { dogfood: bool, profile: bool },
     /// Scan one client-acquired source batch inside an active mass transaction.
     /// The raw payload and chunk count are independently bounded.
     MassBatch {
@@ -238,6 +282,10 @@ pub(crate) enum Response {
         /// Exact completed recovery for this request, when a selected route
         /// faulted or autoroute state was invalid. `None` means no recovery.
         backend_recovery: RequiredOption<BackendRecoveryStatus>,
+        /// Isolated profile of this exact request. Present only when the
+        /// request carried `profile: true`; `None` means the daemon recorded
+        /// no per-request measurements. Required since wire v12.
+        profile: RequiredOption<RequestProfile>,
     },
     /// The mass-service fragment-state lease is held and batches may follow.
     MassReady,
@@ -289,10 +337,6 @@ pub(crate) enum RequiredOption<T> {
 impl<T> RequiredOption<T> {
     pub(crate) fn is_none(&self) -> bool {
         matches!(self, RequiredOption::None)
-    }
-
-    pub(crate) fn is_some(&self) -> bool {
-        matches!(self, RequiredOption::Some(_))
     }
 
     pub(crate) fn expect(self, msg: &str) -> T {

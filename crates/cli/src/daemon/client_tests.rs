@@ -23,6 +23,7 @@ fn scan_text_uses_mid_timeout() {
         path: None,
         text: "x".into(),
         dogfood: false,
+        profile: false,
     };
     assert_eq!(request_timeout(&req), DAEMON_SCAN_TEXT_TIMEOUT);
     assert_eq!(DAEMON_SCAN_TEXT_TIMEOUT.as_secs(), 60);
@@ -35,6 +36,7 @@ fn scan_path_uses_full_file_timeout() {
         path: "/tmp/a".into(),
         working_dir: None,
         dogfood: false,
+        profile: false,
     };
     assert_eq!(request_timeout(&req), DAEMON_REQUEST_TIMEOUT);
     assert_eq!(DAEMON_REQUEST_TIMEOUT.as_secs(), 300);

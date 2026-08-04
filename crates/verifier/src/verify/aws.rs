@@ -250,7 +250,12 @@ async fn build_sigv4_request(
 
     let response = execute_request(request).await?;
     let status = response.status().as_u16();
-    let resp_body = read_response_body(response).await?;
+    // Profile: streaming the STS response body is async live-verification work.
+    let resp_body = keyhog_profile::instrument_future(
+        keyhog_profile::Stage::LiveVerification,
+        read_response_body(response),
+    )
+    .await?;
 
     if resp_body.contains("RequestTimeTooSkewed") || resp_body.contains("SignatureDoesNotMatch") {
         tracing::warn!(
@@ -279,6 +284,8 @@ async fn build_sigv4_request(
 }
 
 pub(crate) fn classify_aws_sts_failure(status: u16, body: &str) -> (VerificationResult, bool) {
+    // Profile: STS failure classification inspects the parsed response body.
+    let _span = keyhog_profile::span(keyhog_profile::Stage::LiveVerification);
     if status == 403 {
         if body.contains("RequestTimeTooSkewed") {
             return (
@@ -315,6 +322,8 @@ struct StsGetCallerIdentityResult {
 pub(crate) fn parse_aws_sts_success_metadata(
     body: &str,
 ) -> Result<HashMap<String, String>, String> {
+    // Profile: STS success parsing is response-parse work.
+    let _span = keyhog_profile::span(keyhog_profile::Stage::LiveVerification);
     if body.trim_start().starts_with('{') {
         return parse_aws_sts_json_success_metadata(body);
     }

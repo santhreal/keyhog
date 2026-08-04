@@ -318,6 +318,9 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         },
     );
 
+    // Setup (hardening, detector corpus load, mount + git discovery): the
+    // collect phase. The guard is dropped before the scan loop runs.
+    let setup_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     // `None` filter root: scan-system runs paranoid and deliberately ignores the
     // local `.keyhogignore` allowlist (an attacker would allowlist their leak),
     // so no post-scan allowlist filter is installed. It STILL benefits from the
@@ -363,6 +366,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         eprintln!("🌿 discovered {} git repo(s)", git_repos.len());
     }
 
+    drop(setup_span);
     let bytes_scanned = Arc::new(AtomicU64::new(0));
     let space_cap = args.space;
     // Bounded sink: holds only redacted findings, capped at
@@ -421,6 +425,8 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         }
     }
 
+    // Findings publication (summary + optional atomic report write).
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     let palette = style::for_stderr();
     if sink.skipped_chunks() > 0 {
         eprintln!(
@@ -441,6 +447,8 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     // the whole tree. Say so loudly, a partial audit that looks clean is worse
     // than no audit.
     if sink.skipped_chunks() > 0 {
+        // Coverage gap detected: the scan did not cover everything requested.
+        keyhog_profile::record_event(keyhog_profile::EventId::CoverageGap, 1);
         let palette = style::for_stderr();
         eprintln!(
             "{} {} source/discovery coverage gap(s) were UNREADABLE or skipped \

@@ -11,7 +11,7 @@ use self::keywords::{
     is_strong_keyword_anchored_encoded_text_secret,
 };
 use self::line_mapping::line_at_index;
-pub(crate) use self::metrics::{generic_profile_dump, generic_profile_reset};
+pub(crate) use self::metrics::{format_generic_profile, generic_profile_from_typed};
 pub(crate) use self::pattern::{
     build_generic_re, compile_generic_re_with_max, compile_generic_re_with_policy,
     generic_keyword_alternation, generic_keyword_alternation_from, generic_vendor_suffix_arm,
@@ -49,7 +49,7 @@ impl CompiledScanner {
         // Take ownership so the RefCell is not borrowed during the consume loop.
         let mut lines_with_keyword = KEYWORD_LINES_POOL.with(|cell| cell.take());
         lines_with_keyword.clear();
-        let profile_enabled = super::profile::enabled();
+        let profile_enabled = keyhog_profile::enabled();
         let prefilter_start = profile_enabled.then(std::time::Instant::now);
         if let Some(positions) = generic_keyword_positions {
             collect_generic_keyword_lines_from_positions(
@@ -65,9 +65,7 @@ impl CompiledScanner {
             );
         }
         metrics::record_prefilter_ns(prefilter_start);
-        if profile_enabled {
-            metrics::record_prefilter_call(lines_with_keyword.len());
-        }
+        metrics::record_prefilter_call(lines_with_keyword.len());
         if lines_with_keyword.is_empty() {
             // Preserve buffer capacity across chunks.
             KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
@@ -114,9 +112,7 @@ impl CompiledScanner {
                     KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
                     return;
                 }
-                if profile_enabled {
-                    metrics::record_regex_capture();
-                }
+                metrics::record_regex_capture();
                 let Some(keyword_match) = caps.get(1) else {
                     continue;
                 };
@@ -490,7 +486,7 @@ impl CompiledScanner {
                         checksum_decision,
                         ml_mode,
                     );
-                    if profile_enabled && inserted {
+                    if inserted {
                         metrics::record_emit();
                     }
                     continue;
@@ -522,9 +518,7 @@ impl CompiledScanner {
                 };
                 let raw = build_raw(scan_state, report_conf);
                 scan_state.push_match(raw, self.config.max_matches_per_chunk);
-                if profile_enabled {
-                    metrics::record_emit();
-                }
+                metrics::record_emit();
             }
         }
         metrics::record_extract_ns(extract_start);

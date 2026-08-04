@@ -76,6 +76,7 @@ pub mod regression_report_junit_wellformed_proptest;
 pub mod regression_report_junit_xml;
 pub mod regression_report_output_bytes;
 pub mod regression_report_sonarqube;
+pub mod profiling_instrumentation;
 pub mod regression_report_text_format;
 pub mod regression_rule_suppressor_predicates;
 pub mod regression_sarif_information_uri;

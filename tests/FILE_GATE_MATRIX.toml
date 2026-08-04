@@ -1113,11 +1113,6 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/scan_inner_profile.rs"
-error = true
-adversarial = true
-
-[[module]]
 path = "crates/scanner/src/engine/scan_postprocess.rs"
 error = true
 adversarial = true

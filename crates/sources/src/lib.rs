@@ -14,6 +14,7 @@ mod decode;
 mod factory;
 mod limits;
 mod magic;
+mod profile;
 #[cfg(any(
     feature = "azure",
     feature = "s3",

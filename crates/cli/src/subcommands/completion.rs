@@ -12,6 +12,8 @@
 use crate::args::{self, CompletionArgs};
 
 pub(crate) fn run(args: CompletionArgs) {
+    // Script publication to stdout.
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     let mut cmd = args::command();
     let bin_name = cmd.get_name().to_string();
     clap_complete::generate(args.shell, &mut cmd, bin_name, &mut std::io::stdout());

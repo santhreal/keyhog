@@ -288,9 +288,19 @@ keyhog backend --autoroute --json
 Inspect the resolved policy with `keyhog config --effective`. Use `--profile`
 to measure fixed scanner stages and the complete operator run before you change
 reader, batch, or channel-depth controls. The low-overhead report records
-source, backend, cache, workload, thread, input, state-transition, CPU-time, and
-peak memory identity without source content or credential values. Use
-`--perf-trace` only for expensive per-pattern and backend diagnostic counters.
+source, backend, cache, workload, thread, input, state-transition, CPU-time,
+peak memory, exact binary SHA-256, enabled-feature SHA-256, target triple, build
+profile, compiler, allocator, linked-backend SHA-256, detector-corpus SHA-256,
+enabled-detector BLAKE3, compiled-plan BLAKE3, hashed detector-provenance,
+complete resolved-configuration BLAKE3, performance-policy BLAKE3, preset,
+applied protection state, source adapters, hashed source-target BLAKE3,
+hashed source-partition BLAKE3, raw source bytes, source-unit fanout,
+decode-derived bytes, completed backend-dispatch bytes, and stable size/fanout
+buckets. Byte domains that their source adapter cannot yet distinguish remain
+explicitly unavailable instead of becoming measured zeroes. The report does
+not record source content, credential values, raw paths, raw URLs, or raw
+configuration values. Use `--perf-trace` only for expensive per-pattern and
+backend diagnostic counters.
 Keep advanced pipeline controls unset unless a reproducible measurement on the
 target worker shows an improvement.
 

@@ -7,6 +7,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Added
 
 - Add low-overhead causal run profiling with fixed scanner stages, state transitions, process resource measurements, and explicit source and backend identity while keeping per-pattern diagnostics behind --perf-trace.
+- Add bounded causal span timelines, latency percentiles, typed telemetry, async profiling propagation, and exact per-category event-loss reporting to operator profiles.
 - Add schema-v3 typed companion evidence and bounded cross-detector `requires`, `conflicts`, and `subsumes` relations, with deterministic fixed-point resolution, compile-time contradiction and cycle checks, and `explain --compiled-plan` introspection.
 - Add detector-owned positive source admission by path regex, exact source type, and file extension. Declared selector families combine with AND semantics and reject missing metadata.
 - Add `scan --github-all` as the concise complete-surface form of a GitHub collaboration scan while retaining independent surface selectors.
@@ -16,6 +17,17 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - Publish patch releases to crates.io through short-lived OIDC trusted publishing, update versions and changelogs automatically, and upload a deterministic six-crate commit and lockfile integrity receipt without a long-lived registry token.
 - Localize plain phase-two patterns by default on portable and explicit CPU scans, avoiding full portable marking-set compilation when the shared anchor index owns candidate extraction.
+- Bind profile comparisons to the exact running binary SHA-256, enabled-feature SHA-256, target triple, build profile, compiler, allocator, and linked-backend SHA-256 instead of relying on the package version alone.
+- Record complete detector-corpus, enabled-detector, compiled execution-plan, and hashed external-provenance identities in causal scan profiles, with unavailable backend databases surfaced explicitly instead of inferred.
+- Bind causal profiles to complete resolved-configuration and performance-policy BLAKE3 identities plus the selected preset and applied protection state, without exposing raw configuration values.
+- Record normalized source adapters plus privacy-safe target and partition BLAKE3 identities in causal profiles without emitting raw paths, URLs, source parameters, or credentials.
+- Measure raw source, source-unit fanout, decode-derived, and completed backend-dispatch byte domains in causal profiles, classify stable workload size and fanout buckets, and keep uninstrumented expansion domains explicitly unavailable.
+- Enforce optimized profiler hot-path overhead budgets in the regular CI workflow.
+- Add `scan --profile-out <PATH>` writing the complete causal profile as JSON atomically at scan end, implying `--profile`.
+- Route daemon scans through wire protocol v12 with per-request profile capture: each profiled daemon request gets a unique request identity, an isolated profiling runtime, and a bounded per-request profile payload rendered by the client.
+- Instrument every source adapter with acquisition, walk, read, queue-wait, and decode spans plus exact unit and byte accounting, including cloud pagination retries and collaboration backoff attempts.
+- Migrate scanner-internal timing and count collectors (mark statistics, Hyperscan split, generic detection, extractor, decode recursion, ML batch, MoE split) onto keyhog-profile typed counters and distributions with one runtime-owned drain; `--perf-trace` lines render from the same records.
+- Instrument verifier queue, TLS, request, cache, report encoders, baseline, allowlist, Merkle, CLI startup, detector loading, Action receipts, and maintenance commands with batch-level stage spans and typed counters.
 
 ### Fixed
 

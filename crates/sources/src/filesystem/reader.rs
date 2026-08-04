@@ -75,15 +75,24 @@ pub(super) fn spawn_chunk_producer(
         closed: false,
     }));
     let reader_count = reader_thread_count(rayon::current_num_threads(), reader_threads);
+    // Propagate the active profiling runtime (if any) into the reader crew so
+    // per-entry SourceRead spans and queue backpressure record there. `None`
+    // when no profile is entered, which keeps the disabled path free.
+    let profile_runtime = crate::profile::current_runtime();
 
     std::thread::spawn(move || {
+        let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
         let mut next_seq = 0usize;
         let mut pending: BTreeMap<usize, Vec<Result<Chunk, SourceError>>> = BTreeMap::new();
         for (seq, chunks) in entry_rx {
             pending.insert(seq, chunks);
             while let Some(chunks) = pending.remove(&next_seq) {
                 for chunk in chunks {
-                    if tx.send(chunk).is_err() {
+                    let send_result = {
+                        let _queue_wait = crate::profile::queue_wait_span();
+                        tx.send(chunk)
+                    };
+                    if send_result.is_err() {
                         return;
                     }
                 }
@@ -92,10 +101,12 @@ pub(super) fn spawn_chunk_producer(
         }
     });
 
+    let profile_runtime = crate::profile::current_runtime();
     let run_reader = move |cursor: Arc<Mutex<ReaderCursor>>,
                            tx: EntryBatchSender,
                            merkle: Option<Arc<MerkleIndex>>,
                            skipped: Arc<AtomicUsize>| {
+        let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
         loop {
             let item = {
                 let guard = match cursor.lock() {
@@ -128,6 +139,7 @@ pub(super) fn spawn_chunk_producer(
             };
             let entry_path = entry.path.clone();
             if let Err(payload) = catch_unwind(AssertUnwindSafe(|| {
+                let _read = crate::profile::read_span();
                 process_entry(
                     entry,
                     &merkle,
@@ -142,7 +154,11 @@ pub(super) fn spawn_chunk_producer(
             })) {
                 chunks.push(Err(process_entry_panic_error(seq, &entry_path, payload)));
             }
-            if tx.send((seq, chunks)).is_err() {
+            let send_result = {
+                let _queue_wait = crate::profile::queue_wait_span();
+                tx.send((seq, chunks))
+            };
+            if send_result.is_err() {
                 return;
             }
         }

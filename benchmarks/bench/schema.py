@@ -557,6 +557,69 @@ class BloomEvidence:
         return cls(**value)
 
 
+# ── profile: causal profile artifact binding ────────────────────────
+
+PROFILE_ARTIFACT_SCHEMA_VERSION = "profile-artifact-v1"
+
+
+@dataclass(frozen=True)
+class ProfileArtifact:
+    """Reference + content digest binding one run to one causal profile artifact.
+
+    The artifact bytes (a ``keyhog-profile`` v2 envelope JSON) live beside the
+    result JSON; the result carries only the reference and digest so a profile
+    can never be silently swapped for another run's evidence.
+    """
+
+    schema_version: str
+    path: str
+    sha256: str
+    bytes: int
+    profile_schema: str
+    profile_schema_major: int
+
+    def __post_init__(self) -> None:
+        if self.schema_version != PROFILE_ARTIFACT_SCHEMA_VERSION:
+            raise ValueError(
+                f"profile artifact schema_version must be "
+                f"{PROFILE_ARTIFACT_SCHEMA_VERSION!r}, got {self.schema_version!r}"
+            )
+        if not isinstance(self.path, str) or not self.path:
+            raise ValueError("profile artifact path must be a non-empty string")
+        if not is_sha256(self.sha256):
+            raise ValueError(
+                "profile artifact sha256 must be a lowercase SHA-256 digest"
+            )
+        if isinstance(self.bytes, bool) or not isinstance(self.bytes, int) or self.bytes <= 0:
+            raise ValueError("profile artifact bytes must be a positive integer")
+        if not isinstance(self.profile_schema, str) or not self.profile_schema:
+            raise ValueError("profile artifact profile_schema must be a non-empty string")
+        if (
+            isinstance(self.profile_schema_major, bool)
+            or not isinstance(self.profile_schema_major, int)
+            or self.profile_schema_major < 0
+        ):
+            raise ValueError(
+                "profile artifact profile_schema_major must be a non-negative integer"
+            )
+
+    def to_json(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_json(cls, value: object) -> "ProfileArtifact":
+        if not isinstance(value, dict):
+            raise ValueError("profile artifact must be an object")
+        required = set(cls.__dataclass_fields__)
+        missing = sorted(required - set(value))
+        extra = sorted(set(value) - required)
+        if missing:
+            raise ValueError(f"profile artifact missing required fields: {missing}")
+        if extra:
+            raise ValueError(f"profile artifact has unknown fields: {extra}")
+        return cls(**value)
+
+
 # ── host: the hardware axis (OS / CPU / GPU) ──────────────────────────
 
 
@@ -812,6 +875,7 @@ class RunResult:
     static_recovery: StaticRecoveryMetrics | None = None
     bloom: BloomEvidence | None = None
     hosted_binding: HostedBinding | None = None
+    profile: ProfileArtifact | None = None
 
     def to_json(self) -> dict:
         value = {
@@ -841,6 +905,10 @@ class RunResult:
                 if self.hosted_binding is not None
                 else None
             )
+            # Emitted only when present so rows recorded before profile capture
+            # existed stay byte-identical.
+            if self.profile is not None:
+                value["profile"] = self.profile.to_json()
         return value
 
     @classmethod
@@ -860,6 +928,7 @@ class RunResult:
         static_recovery = None
         bloom = None
         hosted_binding = None
+        profile = None
         if observed_version == SCHEMA_VERSION:
             if "static_recovery" not in d:
                 raise ValueError(
@@ -884,10 +953,16 @@ class RunResult:
             raw_hosted_binding = d["hosted_binding"]
             if raw_hosted_binding is not None:
                 hosted_binding = HostedBinding.from_json(raw_hosted_binding)
-        elif "static_recovery" in d or "bloom" in d or "hosted_binding" in d:
+            raw_profile = d.get("profile")
+            if raw_profile is not None:
+                profile = ProfileArtifact.from_json(raw_profile)
+        elif any(
+            field_name in d
+            for field_name in ("static_recovery", "bloom", "hosted_binding", "profile")
+        ):
             current_fields = sorted(
                 field_name
-                for field_name in ("static_recovery", "bloom", "hosted_binding")
+                for field_name in ("static_recovery", "bloom", "hosted_binding", "profile")
                 if field_name in d
             )
             raise ValueError(
@@ -911,6 +986,7 @@ class RunResult:
             static_recovery=static_recovery,
             bloom=bloom,
             hosted_binding=hosted_binding,
+            profile=profile,
         )
 
     def result_filename(self) -> str:

@@ -134,34 +134,65 @@ fn collect_azure_blob_chunks(
     http: &crate::http::HttpClientConfig,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     let container_url = validate_container_url(container_url, http.allow_private_endpoint)?;
+    // Container acquisition: URL validation and client build.
+    let _acquire = crate::profile::acquire_span();
     let client = crate::cloud::blocking_client("Azure Blob", http)?;
-    let mut marker = None::<String>;
+    drop(_acquire);
     let mut chunks = Vec::new();
     let mut coverage = crate::cloud::CloudListingCoverage::new("azure_blob", "blobs", max_objects);
     let fetch_pool = crate::cloud::object_fetch_pool("azure_blob")?;
+
+    // First listing page is fetched inline; every later page prefetches during
+    // the previous page's download batch (`ListingPrefetch`), hiding listing
+    // latency behind the downloads. Page contents, marker threading, and
+    // coverage accounting are identical to the serial loop.
+    let mut listing = {
+        let _page = crate::profile::walk_span();
+        fetch_azure_blob_listing_page(&client, &container_url, prefix, None, limits.web_response_bytes)?
+    };
 
     loop {
         if !coverage.has_capacity_or_record(&mut chunks) {
             break;
         }
 
-        let listing = fetch_azure_blob_listing_page(
-            &client,
-            &container_url,
-            prefix,
-            marker.as_deref(),
-            limits.web_response_bytes,
-        )?;
         let next_marker = listing.next_marker().map(str::to_string);
         let (page, reached_limit) = coverage.take_page(listing.blobs.blob);
+        // The marker is decided BEFORE the download batch (from the listing
+        // already in hand) so the next listing page can overlap the
+        // downloads; the max_objects gap still records at the exact serial
+        // position (after this page's chunks are pushed).
+        let prefetch = match &next_marker {
+            Some(marker) if !reached_limit && coverage.has_listed_capacity() => {
+                let client = client.clone();
+                let container_url = container_url.clone();
+                let prefix = prefix.map(str::to_string);
+                let marker = marker.clone();
+                let max_response_bytes = limits.web_response_bytes;
+                crate::cloud::ListingPrefetch::spawn(move || {
+                    fetch_azure_blob_listing_page(
+                        &client,
+                        &container_url,
+                        prefix.as_deref(),
+                        Some(&marker),
+                        max_response_bytes,
+                    )
+                })
+            }
+            _ => crate::cloud::ListingPrefetch::none(),
+        };
 
-        let page_chunks = download_azure_blob_listing_page(
-            &fetch_pool,
-            &page,
-            &client,
-            &container_url,
-            limits.azure_blob_bytes,
-        );
+        // Blob downloads: one read span per page batch.
+        let page_chunks = {
+            let _download = crate::profile::read_span();
+            download_azure_blob_listing_page(
+                &fetch_pool,
+                &page,
+                &client,
+                &container_url,
+                limits.azure_blob_bytes,
+            )
+        };
         crate::cloud::push_page_chunks(&mut chunks, page_chunks);
 
         if reached_limit {
@@ -171,9 +202,17 @@ fn collect_azure_blob_chunks(
             );
             break;
         }
-        match next_marker {
-            Some(next) => marker = Some(next),
-            None => break,
+        if next_marker.is_none() {
+            break;
+        }
+        match prefetch.join() {
+            Some(next_listing) => listing = next_listing?,
+            // Capacity exactly exhausted by this page: the serial loop-top
+            // check recorded the max_objects gap here without fetching again.
+            None => {
+                coverage.has_capacity_or_record(&mut chunks);
+                break;
+            }
         }
     }
 

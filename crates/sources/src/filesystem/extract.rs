@@ -61,6 +61,26 @@ pub(crate) fn extraction_total_budget(max_size: u64) -> u64 {
     }
 }
 
+/// Run one derived-content extractor (archive, compressed stream, document,
+/// structured file) under a Decode span and charge every emitted chunk's
+/// bytes to the derived-decoder byte counter. The emit wrapper adds one
+/// saturating add per chunk; when profiling is disabled the span is a single
+/// relaxed atomic and the counter call returns without recording.
+fn run_derived_extractor(
+    extract: impl FnOnce(&mut dyn FnMut(Result<Chunk, SourceError>) -> bool),
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) {
+    let _decode = crate::profile::decode_span();
+    let mut derived_bytes = 0_u64;
+    extract(&mut |chunk| {
+        if let Ok(chunk) = &chunk {
+            derived_bytes = derived_bytes.saturating_add(chunk.data.len() as u64);
+        }
+        emit(chunk)
+    });
+    crate::profile::add_derived_bytes(derived_bytes);
+}
+
 pub(super) fn extraction_total_budget_usize(max_size: u64) -> usize {
     match usize::try_from(extraction_total_budget(max_size)) {
         Ok(value) => value,
@@ -558,16 +578,32 @@ pub(super) fn process_entry(
     }
 
     if ext.eq_ignore_ascii_case("pdf") {
-        pdf::extract_pdf_chunks(&path, file_size, live_mtime_ns, max_size, emit);
+        run_derived_extractor(
+            |counted| pdf::extract_pdf_chunks(&path, file_size, live_mtime_ns, max_size, counted),
+            emit,
+        );
         return;
     } else if ext.eq_ignore_ascii_case("7z") {
-        seven_zip::extract_seven_zip_chunks(&path, max_size, respect_default_excludes, emit);
+        run_derived_extractor(
+            |counted| {
+                seven_zip::extract_seven_zip_chunks(&path, max_size, respect_default_excludes, counted)
+            },
+            emit,
+        );
         return;
     } else if ext.eq_ignore_ascii_case("rar") {
-        rar::extract_rar_chunks(&path, max_size, respect_default_excludes, emit);
+        run_derived_extractor(
+            |counted| rar::extract_rar_chunks(&path, max_size, respect_default_excludes, counted),
+            emit,
+        );
         return;
     } else if archive::is_openpack_archive_ext(ext) {
-        archive::extract_openpack_archive(&path, ext, max_size, respect_default_excludes, emit);
+        run_derived_extractor(
+            |counted| {
+                archive::extract_openpack_archive(&path, ext, max_size, respect_default_excludes, counted)
+            },
+            emit,
+        );
         return;
     } else if ext.eq_ignore_ascii_case("tar") {
         // Bare (uncompressed) `.tar`: unpack per-entry exactly as the zip
@@ -601,11 +637,16 @@ pub(super) fn process_entry(
                 // when the ustar/GNU magic is actually present, otherwise fall
                 // through to the normal scan path so the bytes are still examined.
                 if compressed::looks_like_tar(&bytes) {
-                    compressed::emit_tar_entries(
-                        &bytes,
-                        &display_path(&path),
-                        max_size,
-                        respect_default_excludes,
+                    run_derived_extractor(
+                        |counted| {
+                            compressed::emit_tar_entries(
+                                &bytes,
+                                &display_path(&path),
+                                max_size,
+                                respect_default_excludes,
+                                counted,
+                            )
+                        },
                         emit,
                     );
                     return;
@@ -637,7 +678,18 @@ pub(super) fn process_entry(
         // decompressed stream is a tar container, else scan the real
         // decompressed bytes. These extensions are removed from SKIP_EXTENSIONS
         // so they reach this branch.
-        compressed::extract_compressed_chunks(&path, ext, max_size, respect_default_excludes, emit);
+        run_derived_extractor(
+            |counted| {
+                compressed::extract_compressed_chunks(
+                    &path,
+                    ext,
+                    max_size,
+                    respect_default_excludes,
+                    counted,
+                )
+            },
+            emit,
+        );
         return;
     } else if ext.eq_ignore_ascii_case("har") {
         // Route the HAR read through the same no-follow-symlink guard
@@ -651,13 +703,24 @@ pub(super) fn process_entry(
         match read::read_file_safe(&path, file_size) {
             Ok(bytes) => {
                 let path_str = display_path(&path);
+                // HAR files are captured HTTP wire traffic; expansion is a
+                // structured-document extraction, so it runs under Decode and
+                // charges derived bytes per emitted entry body.
+                let _decode = crate::profile::decode_span();
                 match crate::har::try_expand_har(&bytes, &path_str, max_size) {
                     Some(har_chunks) => {
+                        let mut derived_bytes = 0_u64;
                         for chunk in har_chunks {
+                            if let Ok(chunk) = &chunk {
+                                derived_bytes =
+                                    derived_bytes.saturating_add(chunk.data.len() as u64);
+                            }
                             if !emit(chunk) {
+                                crate::profile::add_derived_bytes(derived_bytes);
                                 return;
                             }
                         }
+                        crate::profile::add_derived_bytes(derived_bytes);
                         return;
                     }
                     None => {

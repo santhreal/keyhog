@@ -199,14 +199,16 @@ pub(crate) fn span(point: P) -> Guard {
     keyhog_profile::span(stage(point))
 }
 
-/// Record the input size of a top-level scan (for the throughput line).
+/// Record bytes submitted to a completed backend route (for the throughput
+/// line). Raw input bytes are recorded once by source adapters at acquisition;
+/// recording them here too would double-count every adapter-served scan.
 pub(crate) fn add_bytes(bytes: u64) {
-    keyhog_profile::add_input_bytes(bytes);
+    keyhog_profile::add_backend_dispatched_bytes(bytes);
 }
 
-/// Record a top-level file/chunk count.
-pub(crate) fn add_files(files: u64) {
-    keyhog_profile::add_input_units(files);
+/// Record accepted decode-through bytes once per derived chunk.
+pub(crate) fn add_derived_decoder_bytes(bytes: u64) {
+    keyhog_profile::add_derived_decoder_bytes(bytes);
 }
 
 fn read_reset() -> ([u64; N], [u64; N], [u64; N], u64, u64) {
@@ -226,17 +228,12 @@ fn read_reset() -> ([u64; N], [u64; N], [u64; N], u64, u64) {
 }
 
 /// Discard all accumulated counters without printing (warm-up between runs).
+/// `keyhog_profile::reset` clears the stage counters, input totals, typed
+/// counters, and distributions; only the per-decoder named table (no labeled
+/// metric API exists for it) is still scanner-owned.
 pub fn reset() {
     keyhog_profile::reset();
-    crate::engine::scan_inner_profile::scan_inner_profile_reset();
-    crate::engine::scan_postprocess::decode_profile_reset();
-    crate::decode::extract_profile_reset();
     crate::decode::decoder_profile_reset();
-    crate::engine::phase2_generic::generic_profile_reset();
-    crate::engine::phase2::phase2_mark_stats_reset();
-    crate::engine::phase2::hs_mark_timing_reset();
-    crate::engine::scan_postprocess::ml_batch_profile_reset();
-    crate::gpu::ml_split_profile_reset();
 }
 
 const PHASE2_CAPTURE_LEAVES: [usize; 5] = [
@@ -322,15 +319,22 @@ pub fn dump(label: &str) {
         );
     };
 
+    // One typed-metric + distribution drain feeds every auxiliary section
+    // below (mark decomposition, HS split, decode recursion, extraction,
+    // generic bridge, ML batch, ML split). Draining once here, instead of one
+    // swap per collector, is what lets the scanner drop every per-collector
+    // dump/reset path: the profile runtime is the single store.
+    let typed = keyhog_profile::take_typed_metrics();
+    let distributions = keyhog_profile::take_metric_distributions();
     // The prefilter call decomposition (gate-skip / HS-served / RegexSet-served)
-    // is read BEFORE its reset below so a candidate-dense vs sparse corpus is
-    // distinguishable: it answers whether the `phase2:prefilter` cost is cheap
+    // answers whether the `phase2:prefilter` cost is cheap
     // gate-skips averaged with a few brutal RegexSet passes, or uniformly heavy.
-    let mark: crate::engine::phase2::MarkSnapshot = crate::engine::phase2::phase2_mark_stats();
-    // Internal timing split of the HS-served portion (scan vs dropped host loop),
-    // read before its reset below. Only printed when HS-mark time was recorded.
+    let mark: crate::engine::phase2::MarkSnapshot =
+        crate::engine::phase2::mark_snapshot_from_typed(&typed);
+    // Internal timing split of the HS-served portion (scan vs dropped host loop).
+    // Only printed when HS-mark time was recorded.
     let hs_split: crate::engine::phase2::HsMarkSplit =
-        crate::engine::phase2::hs_mark_timing_snapshot();
+        crate::engine::phase2::hs_mark_split_from_typed(&typed);
 
     leaf(P::Preprocess as usize, scan_ns, "  ");
     leaf(P::Phase1Triggers as usize, scan_ns, "  ");
@@ -380,19 +384,62 @@ pub fn dump(label: &str) {
         pct(decode_total, scan_ns),
     );
 
-    // Fold in the auxiliary histograms recorded on the hot path. Each early-returns
-    // when its counters are empty, so an unrelated run prints nothing extra.
-    crate::engine::scan_inner_profile::scan_inner_profile_dump();
-    crate::engine::scan_postprocess::decode_profile_dump();
-    crate::decode::extract_profile_dump();
+    // Fold in the auxiliary figures recorded on the hot path, all sourced from
+    // the single typed/distribution drain above. Each section stays silent when
+    // its figures are all zero, so an unrelated run prints nothing extra.
+    #[cfg(feature = "decode")]
+    {
+        let (parents, subchunks, derived_bytes) =
+            crate::engine::scan_postprocess::decode_recursion_from_typed(&typed);
+        let gen_ms = ns[P::Decode as usize] as f64 / 1e6;
+        let scan_ms = decode_total as f64 / 1e6;
+        if parents != 0 || subchunks != 0 || derived_bytes != 0 || gen_ms != 0.0 || scan_ms != 0.0
+        {
+            eprintln!(
+                "{}",
+                crate::engine::scan_postprocess::format_decode_recursion(
+                    parents,
+                    subchunks,
+                    derived_bytes,
+                    gen_ms,
+                    scan_ms,
+                )
+            );
+        }
+        let (extract_calls, extract_bytes, extract_ns) =
+            crate::decode::extract_profile_from_typed(&typed);
+        if extract_calls != 0 || extract_bytes != 0 || extract_ns != 0 {
+            eprintln!(
+                "{}",
+                crate::decode::format_extract_profile(extract_calls, extract_bytes, extract_ns)
+            );
+        }
+    }
+    // The per-decoder named table has no labeled-metric API in the profile
+    // registry, so it stays scanner-owned (and perf-trace gated) for now.
     crate::decode::decoder_profile_dump();
-    crate::engine::phase2_generic::generic_profile_dump();
-    crate::engine::scan_postprocess::ml_batch_profile_dump();
-    crate::gpu::ml_split_profile_dump();
-
-    // Reset the prefilter call counters now that they have been reported, so the
-    // next dump reflects only its own run (the leaf NS/CALLS were already swapped
-    // out by `read_reset`; this keeps the mark counters consistent with them).
-    crate::engine::phase2::phase2_mark_stats_reset();
-    crate::engine::phase2::hs_mark_timing_reset();
+    let generic = crate::engine::phase2_generic::generic_profile_from_typed(&typed);
+    if generic.any_recorded() {
+        eprintln!(
+            "{}",
+            crate::engine::phase2_generic::format_generic_profile(&generic)
+        );
+    }
+    #[cfg(feature = "ml")]
+    {
+        let batch = crate::engine::scan_postprocess::ml_batch_profile_from_parts(
+            &typed,
+            &distributions,
+        );
+        if batch.calls != 0 {
+            eprintln!(
+                "{}",
+                crate::engine::scan_postprocess::format_ml_batch_profile(&batch)
+            );
+        }
+    }
+    let (feature_ns, score_ns) = crate::gpu::ml_split_from_typed(&typed);
+    if feature_ns != 0 || score_ns != 0 {
+        eprintln!("{}", crate::gpu::format_ml_split(feature_ns, score_ns));
+    }
 }

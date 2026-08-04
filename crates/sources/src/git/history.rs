@@ -84,13 +84,22 @@ impl Source for GitHistorySource {
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
         crate::gate_scan(|| {
+            // Top-level acquisition: repo validation and the `git log -p`
+            // child spawn.
+            let acquire = crate::profile::acquire_span();
             match stream_git_history_chunks(
                 &self.repo_path,
                 self.max_commits,
                 self.limits,
                 self.respect_default_excludes,
             ) {
-                Ok(iter) => Box::new(iter),
+                Ok(iter) => {
+                    drop(acquire);
+                    Box::new(iter.map(|row| {
+                        crate::profile::record_emitted_chunk(&row);
+                        row
+                    }))
+                }
                 Err(error) => Box::new(std::iter::once(Err(error))),
             }
         })
@@ -181,6 +190,9 @@ fn stream_git_history_chunks(
             return error.map(Err);
         }
 
+        // History enumeration: streaming the `git log -p` output and parsing
+        // hunks is the walk boundary for this adapter.
+        let _enumerate = crate::profile::walk_span();
         loop {
             line_buf.clear();
             let line =
@@ -277,6 +289,13 @@ fn stream_git_history_chunks(
 
             if let Some(date) = line.strip_prefix(b"Date: ") {
                 current_date = Some(String::from_utf8_lossy(date).trim().to_string());
+                continue;
+            }
+
+            // Fast path: hunk body lines of a file whose added lines are not
+            // collected (excluded/binary/deleted) cannot match or change
+            // parser state; skip full classification.
+            if current_path.is_none() && diff_parser.line_is_skippable_hunk_body(line) {
                 continue;
             }
 

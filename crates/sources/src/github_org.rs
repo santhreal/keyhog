@@ -97,9 +97,14 @@ impl Source for GitHubOrgSource {
         // recording (unreachable API / bad token). A no-op in production where the
         // gate is never armed; see `skip::gate_scan`.
         crate::gate_scan(|| {
+            // Propagate the active profiling runtime onto the fetch thread so
+            // org enumeration and clone spans record there.
+            let profile_runtime = crate::profile::current_runtime();
             let result = thread::scope(|s| {
                 match s
-                    .spawn(|| {
+                    .spawn(move || {
+                        let _profile_guard =
+                            profile_runtime.as_ref().map(|runtime| runtime.enter());
                         collect_org_chunks(
                             &self.org,
                             &self.token,
@@ -196,12 +201,17 @@ fn collect_org_chunks(
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     validate_org_name(org)?;
     let client = build_client(token, http)?;
-    let repos = list_repos(
-        &client,
-        org,
-        limits.hosted_git_pages,
-        limits.web_response_bytes,
-    )?;
+    // Org repo enumeration is the acquisition boundary; cloning and per-repo
+    // scans record inside `hosted_git::scan_hosted_repos`.
+    let repos = {
+        let _enumerate = crate::profile::acquire_span();
+        list_repos(
+            &client,
+            org,
+            limits.hosted_git_pages,
+            limits.web_response_bytes,
+        )?
+    };
     hosted_git::scan_hosted_repos(
         "github",
         "github-org",
@@ -259,6 +269,8 @@ fn list_repos(
     let mut page = 1;
 
     while page <= max_pages {
+        // One walk span per listing page.
+        let _page_span = crate::profile::walk_span();
         let response = send_github_request_with_backoff(client, org, page)?;
 
         if !response.status().is_success() {
@@ -347,6 +359,8 @@ fn send_github_request_with_backoff(
 
         // LAW10: absent Retry-After => attempt-based backoff; hostile/oversized
         // header clamped to MAX_BACKOFF_SECS so it can't wedge the thread.
+        // Record the retry with its 1-based attempt number.
+        crate::profile::record_retry(attempt as u64 + 1);
         let backoff_secs = rate_limit_backoff_secs(retry_after, attempt);
         std::thread::sleep(std::time::Duration::from_secs(backoff_secs));
     }

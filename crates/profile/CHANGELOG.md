@@ -5,6 +5,10 @@ All notable changes to `keyhog-profile` are documented here. Versions follow [Se
 ## 0.5.50 - 2026-08-02
 
 - Add low-overhead causal run profiling with fixed scanner stages, state transitions, process resource measurements, and explicit source and backend identity while keeping per-pattern diagnostics behind --perf-trace.
+- Add nested causal events, fixed-memory latency distributions, typed counters, gauges, events, annotations, bounded sampling, async context propagation, and explicit point-event, annotation, and span loss counts.
+- Enforce optimized hot-path budgets in CI for disabled checks, aggregate spans, and complete causal span recording.
+- Add cross-thread causal parent tokens, producer-consumer queue links, queue depth high-water marks, blocked-wait accounting, typed work origins, task and worker identities, deterministic shard merging, and worker imbalance measurements.
+- Record legacy-mode typed counters and distributions so `--perf-trace` diagnostics flow through one runtime-owned drain.
 
 ## 0.5.49 - 2026-07-31
 

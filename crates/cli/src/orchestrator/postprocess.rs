@@ -319,6 +319,9 @@ impl ScanOrchestrator {
         matches: Vec<RawMatch>,
         allowlist: &keyhog_core::Allowlist,
     ) -> Result<Vec<RawMatch>> {
+        // Suppression, confidence floors, relations, and allowlist evaluation
+        // share one batch-level resolve stage.
+        let _resolve_span = keyhog_profile::span(keyhog_profile::Stage::Suppression);
         // Build the shared filter from the orchestrator's resolved config and
         // delegate to the ONE PLACE `keyhog watch` also uses.
         let filter = MatchFilter {
@@ -341,7 +344,10 @@ impl ScanOrchestrator {
 
     pub(crate) async fn finalize(&self, matches: Vec<RawMatch>) -> Result<Vec<VerifiedFinding>> {
         let scope = self.effective_config.report.dedup.to_core();
-        let deduped = dedup_for_report(matches, &scope);
+        let deduped = {
+            let _dedup_span = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
+            dedup_for_report(matches, &scope)
+        };
 
         #[cfg(feature = "verify")]
         if self.effective_config.report.verify {

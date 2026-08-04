@@ -21,9 +21,11 @@ impl CompiledScanner {
         let ranges = window_ranges(chunk_text, MAX_SCAN_CHUNK_BYTES, WINDOW_OVERLAP_BYTES);
         let telemetry = crate::telemetry::capture_scan_telemetry();
         let recovery_receipts = crate::gpu::capture_recovery_receipts();
+        let profile_runtime = keyhog_profile::current_runtime();
         let window_matches: crate::error::Result<Vec<(usize, usize, Vec<RawMatch>)>> = ranges
             .par_iter()
             .map(|&(offset, end)| {
+                let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
                 crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
                     crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
                         let window_len = end - offset;
@@ -84,10 +86,12 @@ impl CompiledScanner {
         let ranges = window_ranges(chunk_text, MAX_SCAN_CHUNK_BYTES, WINDOW_OVERLAP_BYTES);
         let telemetry = crate::telemetry::capture_scan_telemetry();
         let recovery_receipts = crate::gpu::capture_recovery_receipts();
+        let profile_runtime = keyhog_profile::current_runtime();
 
         let window_matches: crate::error::Result<Vec<(usize, usize, Vec<RawMatch>)>> = ranges
             .par_iter()
             .map(|&(offset, end)| {
+                let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
                 crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
                     crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
                         let window_len = end - offset;

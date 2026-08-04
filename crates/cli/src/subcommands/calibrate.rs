@@ -21,7 +21,11 @@ pub(crate) fn run(args: CalibrateArgs) -> Result<()> {
         );
     }
 
-    let calibration = match Calibration::try_load(&cache_path) {
+    // Calibration cache load (a persisted counter lookup).
+    let calibration = match {
+        let _cache_span = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
+        Calibration::try_load(&cache_path)
+    } {
         Ok(Some(calibration)) => calibration,
         Ok(None) => Calibration::default(),
         Err(error) => {
@@ -46,6 +50,8 @@ pub(crate) fn run(args: CalibrateArgs) -> Result<()> {
         calibration.record_outcome(detector_id, false);
     }
 
+    // Cache persistence + outcome publication.
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     calibration
         .save(&cache_path)
         .with_context(|| format!("saving calibration cache to {}", cache_path.display()))?;

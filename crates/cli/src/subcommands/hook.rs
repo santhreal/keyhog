@@ -61,6 +61,8 @@ pub(crate) fn run(command: HookCommand) -> Result<ExitCode> {
 }
 
 fn install(force: bool) -> Result<ExitCode> {
+    // Hook path resolution + existing-hook check: the collect phase.
+    let _check_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let hooks_dir = find_hooks_dir()?;
     let hook_path = hooks_dir.join("pre-commit");
 
@@ -100,6 +102,9 @@ fn install(force: bool) -> Result<ExitCode> {
         .truncate(true)
         .open(&hook_path)
         .with_context(|| format!("creating hook at {}", hook_path.display()))?;
+    drop(_check_span);
+    // Hook publication (write + chmod + receipt).
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
 
     file.write_all(HOOK_CONTENT.as_bytes())
         .with_context(|| format!("writing hook to {}", hook_path.display()))?;
@@ -131,6 +136,8 @@ fn install(force: bool) -> Result<ExitCode> {
 }
 
 fn uninstall() -> Result<ExitCode> {
+    // Hook path resolution + ownership check: the collect phase.
+    let _check_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let hook_path = find_hooks_dir()?.join("pre-commit");
 
     if !hook_path.exists() {
@@ -152,7 +159,10 @@ fn uninstall() -> Result<ExitCode> {
 
     std::fs::remove_file(&hook_path)
         .with_context(|| format!("removing hook at {}", hook_path.display()))?;
+    drop(_check_span);
 
+    // Publication of the removal receipt.
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     let palette = crate::style::for_stderr();
     let msg = format!(
         "KeyHog pre-commit hook removed from {}.",

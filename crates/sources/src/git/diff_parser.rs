@@ -25,6 +25,22 @@ impl UnifiedDiffParser {
         Self { in_hunk: false }
     }
 
+    /// True when `line` is hunk BODY content (`+`/`-`/context/`\` prefixed)
+    /// while inside a hunk. A caller that is not collecting the current
+    /// file's added lines (excluded, deleted, or binary file) may skip full
+    /// classification for these lines: they cannot change parser state or
+    /// produce an event that caller acts on. Headers (`diff --git`, `@@`,
+    /// `+++`, `---`, ...) never match because hunk body lines are always
+    /// prefixed, and the `in_hunk` gate keeps `+++ b/path` file headers on
+    /// the full parse path.
+    pub(crate) fn line_is_skippable_hunk_body(&self, line: &[u8]) -> bool {
+        self.in_hunk
+            && matches!(
+                line.first(),
+                Some(b'+') | Some(b'-') | Some(b' ') | Some(b'\\')
+            )
+    }
+
     pub(crate) fn parse_line<'a>(
         &mut self,
         line: &'a [u8],

@@ -387,6 +387,7 @@ impl MerkleIndex {
     /// content hash. Kept for callers that already have the hash in hand
     /// (e.g. the orchestrator's chunk-level skip path).
     pub(crate) fn unchanged(&self, path: &Path, content_hash: &[u8; 32]) -> bool {
+        let _profile = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
         // perf: borrow the path via CacheKeyRef (zero-alloc Equivalent lookup,
         // same as the write path at `record_*`) instead of allocating a
         // CacheKey::file(path.to_path_buf()) on every chunk-level skip check.
@@ -406,6 +407,7 @@ impl MerkleIndex {
     /// A `false` return means "either we've never seen this path, or
     /// metadata differs - caller must read + hash to decide."
     pub fn metadata_unchanged(&self, path: &Path, mtime_ns: u64, size: u64) -> bool {
+        let _profile = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
         // perf: this is the per-file fast-path skip (dominant cold-cache cost);
         // borrow the path via CacheKeyRef so it never allocates a PathBuf.
         let i = shard_index(path);
@@ -423,6 +425,7 @@ impl MerkleIndex {
     /// verifiers that want to confirm content didn't change even when
     /// metadata happens to match.
     pub(crate) fn lookup(&self, path: &Path) -> Option<(u64, u64, [u8; 32])> {
+        let _profile = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
         // perf: zero-alloc borrowed lookup (see `metadata_unchanged`).
         let i = shard_index(path);
         self.shards[i]
@@ -492,6 +495,7 @@ impl MerkleIndex {
         chunk_offset: u64,
         entry: CacheEntry,
     ) -> bool {
+        let _profile = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
         let i = shard_index(path);
         let mut shard = self.shards[i].write();
         let lookup = CacheKeyRef { path, chunk_offset };
@@ -518,6 +522,7 @@ impl MerkleIndex {
     /// The first drop emits a single WARN; subsequent drops are silent to
     /// avoid a log storm on a multi-million-file overflow.
     fn try_insert(&self, key: CacheKey, entry: CacheEntry) -> bool {
+        let _profile = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
         let i = shard_index(&key.path);
         let mut shard = self.shards[i].write();
         let slot = match shard.entry(key) {
@@ -568,6 +573,7 @@ impl MerkleIndex {
     /// unaffected, and because we store the ABSENCE of an entry rather than the
     /// finding, no secret value ever touches the on-disk index.
     pub fn forget(&self, path: &Path) {
+        let _profile = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
         let i = shard_index(path);
         self.shards[i].write().retain(|key, _| key.path != path);
     }

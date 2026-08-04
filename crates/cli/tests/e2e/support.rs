@@ -1,4 +1,10 @@
 //! Shared helpers for end-to-end binary tests.
+//!
+//! `#[path]`-included by five test binaries (`e2e_all`, `all_tests`,
+//! `gap_all`, `stress_all`, `dogfood_all`), each of which needs a different
+//! subset. Per-binary dead-code warnings here are an artifact of that sharing,
+//! not unused code.
+#![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -115,6 +121,12 @@ pub fn autoroute_calibration_slot() -> MutexGuard<'static, ()> {
 impl DaemonGuard {
     pub fn start() -> Self {
         Self::start_impl(&[], false, false, None)
+    }
+
+    /// Warm daemon on the portable CPU backend: daemon/profile e2e tests must
+    /// pass on hosts without a Hyperscan/SIMD runtime.
+    pub fn start_cpu() -> Self {
+        Self::start_impl(&[], false, false, Some("cpu"))
     }
 
     pub fn start_mass() -> Self {

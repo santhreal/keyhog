@@ -91,10 +91,11 @@ impl CompiledScanner {
                         })?;
             }
         }
-        let detector_digest = super::detector_digest::from_execution_plan(
+        let compiled_plan_digest = super::detector_digest::from_execution_plan(
             keyhog_core::compute_spec_hash(&detectors),
             decoder_plan.identity(),
         );
+        let detector_digest = super::detector_digest::projection(compiled_plan_digest);
         let detector_plans =
             crate::detector_plan::CompiledDetectorPlans::compile_with_decoder_plan(
                 &detectors,
@@ -454,6 +455,7 @@ impl CompiledScanner {
         }
         let scanner = Self {
             detector_digest,
+            compiled_plan_digest,
             ac,
             gpu_backends,
             gpu_acquisition_failures,

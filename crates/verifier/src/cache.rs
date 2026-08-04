@@ -170,6 +170,9 @@ impl VerificationCache {
         // expired hit falls through to the eviction path below.
         let entry = self.entries.get(&key)?;
         if now < entry.expires_at {
+            // Profile: a live cache hit is incremental-lookup work; a miss records
+            // no span and falls into the enclosing verification span.
+            let _span = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
             return Some((entry.result.clone(), entry.metadata.clone()));
         }
         drop(entry);
@@ -180,6 +183,8 @@ impl VerificationCache {
             if now >= entry.get().expires_at {
                 entry.remove();
             } else {
+                // Profile: expired-marker race resolved to a live hit, still a cache hit.
+                let _span = keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
                 let entry = entry.get();
                 return Some((entry.result.clone(), entry.metadata.clone()));
             }
@@ -230,6 +235,8 @@ impl VerificationCache {
     ) where
         K: AsRef<str> + Eq + std::hash::Hash,
     {
+        // Profile: verdict persistence is result-merge work.
+        let _span = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
         let key = verification_identity(credential, detector_id, companions);
 
         let insert_count = self.inserts.fetch_add(1, Ordering::Relaxed) + 1;

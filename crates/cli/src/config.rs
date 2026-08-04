@@ -46,6 +46,7 @@ pub(super) fn invalid_config_value(field: &str, value: &str, detail: &str) -> St
 /// Search for `.keyhog.toml` starting from the scan root, walking up to the
 /// filesystem root. Returns `None` when no config file is found.
 pub(crate) fn find_config_file(start: Option<&std::path::Path>) -> Option<PathBuf> {
+    let _discover_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let mut dir = start
         .and_then(|p| {
             if p.is_dir() {
@@ -171,6 +172,8 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         None => return base_config_outcome(),
     };
 
+    // Config file load: read + TOML parse.
+    let load_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let raw = match std::fs::read_to_string(&config_path) {
         Ok(content) => content,
         Err(error) => {
@@ -228,6 +231,10 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     };
 
     tracing::debug!(path = %config_path.display(), "loaded .keyhog.toml");
+    drop(load_span);
+    // Layer merge + validation: every apply_* section folds the parsed file
+    // into args and collects operator-facing validation errors.
+    let _merge_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let mut config_errors = Vec::new();
     let mut trusted_bin_dirs = Vec::new();
     let mut aws_canary_accounts = Vec::new();

@@ -65,7 +65,7 @@ fn decode_recursion_profile_mirror() {
             .scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback)
             .expect("selected backend scan succeeds");
     }
-    let _ = crate::engine::decode_profile_dump();
+    keyhog_scanner::profile_reset();
 
     // Measured pass.
     scanner.clear_fragment_cache();
@@ -78,11 +78,39 @@ fn decode_recursion_profile_mirror() {
     let total_ms = t.elapsed().as_secs_f64() * 1000.0;
 
     let _ = crate::engine::phase2_gate_stats_dump();
-    crate::engine::scan_inner_profile_dump();
     keyhog_scanner::decode::decoder_profile_dump();
-    keyhog_scanner::decode::extract_profile_dump();
-    crate::profile_dump("mirror (parents + decode sub-chunks; see decode% column)");
-    let (parents, subchunks, sub_bytes, gen_ms, scan_ms) = crate::engine::decode_profile_dump();
+    // Generation/rescan wall times are owned by the profile runtime: drain the
+    // stage measurements once, source the decode generation total from the
+    // `decode` leaf and the rescan total from the decode-attributed shares,
+    // then drain the typed counters once for the decode-recursion counts and
+    // the extraction figures.
+    let mut gen_ns = 0;
+    let mut scan_ns = 0;
+    for measurement in keyhog_profile::take_stage_measurements() {
+        if measurement.stage == keyhog_profile::Stage::Decode {
+            gen_ns = measurement.elapsed_ns;
+        }
+        scan_ns += measurement.attributed_ns;
+    }
+    let typed = keyhog_profile::take_typed_metrics();
+    let (extract_calls, extract_bytes, extract_ns) =
+        keyhog_scanner::decode::extract_profile_from_typed(&typed);
+    if extract_calls != 0 || extract_bytes != 0 || extract_ns != 0 {
+        eprintln!(
+            "{}",
+            keyhog_scanner::decode::format_extract_profile(extract_calls, extract_bytes, extract_ns)
+        );
+    }
+    let (parents, subchunks, sub_bytes) =
+        crate::engine::scan_postprocess::decode_recursion_from_typed(&typed);
+    let gen_ms = gen_ns as f64 / 1e6;
+    let scan_ms = scan_ns as f64 / 1e6;
+    eprintln!(
+        "{}",
+        crate::engine::scan_postprocess::format_decode_recursion(
+            parents, subchunks, sub_bytes, gen_ms, scan_ms,
+        )
+    );
     let total_mbps = (bytes16 as f64 / 1e6) / (total_ms / 1e3);
     eprintln!(
         "=== {} 16-KiB chunks ({:.1} MiB) ===",

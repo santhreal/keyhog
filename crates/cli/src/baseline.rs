@@ -88,6 +88,8 @@ impl Baseline {
 
     /// Load a baseline from a JSON file.
     pub(crate) fn load(path: &Path) -> Result<Self> {
+        // Baseline load/parse is Preprocess-stage work.
+        let _span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("reading baseline file {}", path.display()))?;
         let baseline: Baseline = serde_json::from_str(&content).map_err(|e| {
@@ -127,6 +129,8 @@ impl Baseline {
     /// pattern a mid-write `--update-baseline` could leave a half-
     /// written JSON that the next run can't parse.
     pub(crate) fn save(&self, path: &Path) -> Result<()> {
+        // Baseline persistence is Reporting-stage work.
+        let _span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
         let serialized = serde_json::to_vec_pretty(self)
             .with_context(|| format!("serializing baseline for {}", path.display()))?;
         crate::atomic_file::write_bytes(path, &serialized)
@@ -137,6 +141,8 @@ impl Baseline {
     /// Build a new baseline from a slice of findings.
     /// Entries are deduplicated by `(detector_id, credential_hash)`.
     pub(crate) fn from_findings(findings: &[VerifiedFinding]) -> Self {
+        // Entry insertion with sort/dedup is ResultMerge-stage work.
+        let _span = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
         let mut entries: Vec<BaselineEntry> = findings
             .iter()
             .map(|f| BaselineEntry {
@@ -170,6 +176,8 @@ impl Baseline {
     /// Merge new findings into an existing baseline.
     /// New entries are added; existing entries are preserved.
     pub(crate) fn merge(&mut self, findings: &[VerifiedFinding]) {
+        // Merge/update entry insertion is ResultMerge-stage work.
+        let _span = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
         let existing: HashSet<(String, String)> = self
             .entries
             .iter()
@@ -208,6 +216,8 @@ impl Baseline {
     /// O(N) - for hot paths (e.g. filtering a large finding set against a
     /// baseline) prefer `contains_set` + `index_set` to amortize lookups.
     pub(crate) fn contains(&self, finding: &VerifiedFinding) -> bool {
+        // Baseline matching is Suppression-stage work.
+        let _span = keyhog_profile::span(keyhog_profile::Stage::Suppression);
         let hash = baseline_hash_key(&finding.credential_hash);
         self.entries
             .iter()
@@ -230,6 +240,8 @@ impl Baseline {
     /// the baseline. Uses an O(1) HashSet lookup so total cost is O(N) in
     /// the number of findings instead of O(N·M).
     pub(crate) fn filter_new(&self, findings: &[VerifiedFinding]) -> Vec<VerifiedFinding> {
+        // Baseline filtering is Suppression-stage work.
+        let _span = keyhog_profile::span(keyhog_profile::Stage::Suppression);
         let index = self.index_set();
         findings
             .iter()

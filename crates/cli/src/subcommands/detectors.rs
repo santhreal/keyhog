@@ -17,11 +17,13 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 pub(crate) fn run(mut args: DetectorArgs) -> Result<ExitCode> {
+    let _validate_span = keyhog_profile::span(keyhog_profile::Stage::BackendSelect);
     crate::orchestrator_config::validate_explicit_detector_path(
         &args.detectors,
         args.detectors_cli_explicit,
     )?;
     args.detectors = crate::orchestrator_config::auto_discover_detectors(&args.detectors)?;
+    drop(_validate_span);
     if args.fix {
         return run_fix(&args);
     }
@@ -33,7 +35,7 @@ pub(crate) fn run(mut args: DetectorArgs) -> Result<ExitCode> {
 }
 
 fn run_list(args: DetectorArgs) -> Result<()> {
-    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
+    let detectors = load_detector_corpus(&args.detectors)?;
     let source = if args.detectors.exists() {
         format!("{}", args.detectors.display())
     } else {
@@ -126,6 +128,14 @@ fn run_list(args: DetectorArgs) -> Result<()> {
     Ok(())
 }
 
+/// Load the detector corpus from `path` (or the embedded corpus when `path`
+/// is absent). Every detectors-surface load routes here so corpus loading is
+/// profiled as backend selection at exactly one seam.
+pub(crate) fn load_detector_corpus(path: &Path) -> Result<Vec<DetectorSpec>> {
+    let _load_span = keyhog_profile::span(keyhog_profile::Stage::BackendSelect);
+    crate::orchestrator_config::load_detectors_or_embedded(path)
+}
+
 /// Programmatic detector discovery: emits a JSON array on stdout in
 /// schema-stable form. The `policy` object exposes detector-local admission
 /// knobs so automation never has to reconstruct them from scanner defaults or
@@ -143,12 +153,14 @@ fn print_detectors_json(detectors: &[&DetectorSpec]) -> Result<()> {
 
 fn run_audit(args: &DetectorArgs) -> Result<ExitCode> {
     let palette = style::for_stdout();
-    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
+    let detectors = load_detector_corpus(&args.detectors)?;
 
     let mut total_errors = 0usize;
     let mut total_warnings = 0usize;
     let mut affected = 0usize;
 
+    // Corpus-wide validation pass, profiled as backend selection.
+    let _audit_span = keyhog_profile::span(keyhog_profile::Stage::BackendSelect);
     for d in &detectors {
         let issues = validate_detector(d);
         if issues.is_empty() {

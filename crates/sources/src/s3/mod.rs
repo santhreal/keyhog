@@ -157,62 +157,118 @@ fn collect_s3_chunks(
     // Honor the shared HTTP policy (proxy, insecure TLS, UA). Falls back to
     // the per-source default timeout when `http.timeout` is None - keeps the
     // existing behavior for callers that don't override.
+    // Bucket acquisition: client build, endpoint resolution, and auth.
+    let _acquire = crate::profile::acquire_span();
     let client = crate::cloud::blocking_client("S3", http)?;
     let base_url = build_base_url(&bucket, endpoint, http.allow_private_endpoint)?;
     let aws_auth = resolve_s3_auth(&base_url, endpoint, allow_credential_forward)?;
-    let mut continuation_token = None::<String>;
+    drop(_acquire);
     let mut chunks = Vec::new();
     let mut coverage = crate::cloud::CloudListingCoverage::new("s3", "objects", max_objects);
     let fetch_pool = crate::cloud::object_fetch_pool("s3")?;
+
+    // First listing page is fetched inline; every later page prefetches during
+    // the previous page's download batch (`ListingPrefetch`), hiding listing
+    // latency behind the downloads. Page contents, cursor threading, and
+    // coverage accounting are identical to the serial loop.
+    let mut listing = {
+        let _page = crate::profile::walk_span();
+        fetch_s3_listing_page(
+            &client,
+            &base_url,
+            prefix,
+            None,
+            aws_auth.as_ref(),
+            limits.web_response_bytes,
+        )?
+    };
 
     loop {
         if !coverage.has_capacity_or_record(&mut chunks) {
             break;
         }
 
-        let listing = fetch_s3_listing_page(
-            &client,
-            &base_url,
-            prefix,
-            continuation_token.as_deref(),
-            aws_auth.as_ref(),
-            limits.web_response_bytes,
-        )?;
         let (page, reached_limit) = coverage.take_page(listing.contents);
 
-        let page_chunks = download_s3_listing_page(
-            &fetch_pool,
-            &page,
-            &client,
-            &base_url,
-            &bucket,
-            aws_auth.as_ref(),
-            limits.s3_object_bytes,
-        );
-        crate::cloud::push_page_chunks(&mut chunks, page_chunks);
-
-        if reached_limit || !listing.is_truncated {
-            if reached_limit {
-                coverage.record_truncated(
-                    &mut chunks,
-                    "max_objects limit reached within the current S3 listing page",
-                );
-            }
-            break;
-        }
+        // Decide the next cursor BEFORE the download batch so the next listing
+        // page can overlap it. The truncated-page / empty-cursor / max_objects
+        // gaps still record at the exact serial positions (after this page's
+        // chunks are pushed), only the request timing moves earlier.
+        let next_token = if reached_limit || !listing.is_truncated {
+            None
+        } else {
+            crate::cloud::meaningful_continuation_token(
+                listing.next_continuation_token.as_deref(),
+            )
+            .map(str::to_string)
+        };
         // A truncated listing must carry a non-empty NextContinuationToken; an
         // empty/whitespace cursor would restart the listing from the first page
         // (re-downloading the same objects), so normalize it to "exhausted" and
         // record the coverage gap. See `crate::cloud::meaningful_continuation_token`.
-        continuation_token =
-            crate::cloud::meaningful_continuation_token(listing.next_continuation_token.as_deref())
-                .map(str::to_string);
-        if continuation_token.is_none() {
+        let empty_cursor = listing.is_truncated && !reached_limit && next_token.is_none();
+        let prefetch = match next_token {
+            Some(token) if coverage.has_listed_capacity() => {
+                let client = client.clone();
+                let base_url = base_url.clone();
+                let prefix = prefix.map(str::to_string);
+                let aws_auth = aws_auth.clone();
+                let max_response_bytes = limits.web_response_bytes;
+                crate::cloud::ListingPrefetch::spawn(move || {
+                    fetch_s3_listing_page(
+                        &client,
+                        &base_url,
+                        prefix.as_deref(),
+                        Some(&token),
+                        aws_auth.as_ref(),
+                        max_response_bytes,
+                    )
+                })
+            }
+            _ => crate::cloud::ListingPrefetch::none(),
+        };
+
+        // Object downloads: one read span per page batch. Downloaded object
+        // counts record in `push_page_chunks`, the shared cloud sink.
+        let page_chunks = {
+            let _download = crate::profile::read_span();
+            download_s3_listing_page(
+                &fetch_pool,
+                &page,
+                &client,
+                &base_url,
+                &bucket,
+                aws_auth.as_ref(),
+                limits.s3_object_bytes,
+            )
+        };
+        crate::cloud::push_page_chunks(&mut chunks, page_chunks);
+
+        if reached_limit {
+            coverage.record_truncated(
+                &mut chunks,
+                "max_objects limit reached within the current S3 listing page",
+            );
+            break;
+        }
+        if !listing.is_truncated {
+            break;
+        }
+        if empty_cursor {
             coverage.record_truncated(
                 &mut chunks,
                 "S3 listing response was truncated but omitted or emptied NextContinuationToken",
             );
             break;
+        }
+        match prefetch.join() {
+            Some(next_listing) => listing = next_listing?,
+            // Capacity exactly exhausted by this page: the serial loop-top
+            // check recorded the max_objects gap here without fetching again.
+            None => {
+                coverage.has_capacity_or_record(&mut chunks);
+                break;
+            }
         }
     }
 

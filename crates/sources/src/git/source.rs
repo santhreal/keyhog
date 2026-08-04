@@ -1,7 +1,7 @@
 //! Git repository source: scans repository commits and extracts text blobs with
 //! `gix`, stopping once the in-memory byte cap is reached.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::process::ChildStdout;
 
@@ -38,7 +38,42 @@ struct DecodedGitBlob {
     oid: gix::ObjectId,
     filepath: Vec<u8>,
     size_bytes: u64,
-    file_text: String,
+    file_text: keyhog_core::SensitiveString,
+}
+
+/// Decoded text for one unique blob oid, shared by every (oid, path) slot
+/// that references it so duplicate blob reads decode once and fan out cheap
+/// `Arc` clones.
+struct SharedDecodedBlob {
+    size_bytes: u64,
+    file_text: keyhog_core::SensitiveString,
+}
+
+/// Per-oid decode failure, without path identity: the same failure fans out
+/// to every referencing (oid, path) slot, which re-attaches its own path so
+/// per-path skip accounting is unchanged.
+enum GitBlobOidSkipKind {
+    RepositoryOpen(String),
+    ObjectUnreadable(String),
+    Binary,
+}
+
+impl GitBlobOidSkipKind {
+    fn with_identity(&self, oid: gix::ObjectId, filepath: Vec<u8>) -> GitBlobSkip {
+        match self {
+            Self::RepositoryOpen(error) => GitBlobSkip::RepositoryOpen {
+                oid,
+                filepath,
+                error: error.clone(),
+            },
+            Self::ObjectUnreadable(error) => GitBlobSkip::ObjectUnreadable {
+                oid,
+                filepath,
+                error: error.clone(),
+            },
+            Self::Binary => GitBlobSkip::Binary { oid, filepath },
+        }
+    }
 }
 
 struct GitCommitBlobSet {
@@ -86,11 +121,10 @@ enum GitBlobBatchItem {
     Skip(GitBlobSkip),
 }
 
-#[derive(Debug)]
-enum GitBlobDecodeOutcome {
-    Decoded(DecodedGitBlob),
-    Skip(GitBlobSkip),
-}
+/// Minimum unique blobs in one batch before parallel decode pays for its
+/// per-worker `gix::open` and fork/join; below it serial decode on the
+/// already-open handle is strictly cheaper.
+const GIT_PARALLEL_DECODE_MIN_BLOBS: usize = 8;
 
 #[derive(Debug)]
 enum GitBlobSkip {
@@ -214,13 +248,22 @@ impl Source for GitSource {
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
         crate::gate_scan(|| {
+            // Top-level acquisition: repo validation, gix open, `git log`
+            // spawn, tag collection, and the HEAD blob snapshot.
+            let acquire = crate::profile::acquire_span();
             match stream_git_blobs(
                 &self.repo_path,
                 self.max_commits,
                 self.limits,
                 self.respect_default_excludes,
             ) {
-                Ok(iter) => Box::new(iter),
+                Ok(iter) => {
+                    drop(acquire);
+                    Box::new(iter.map(|row| {
+                        crate::profile::record_emitted_chunk(&row);
+                        row
+                    }))
+                }
                 Err(e) => Box::new(std::iter::once(Err(e))),
             }
         })
@@ -423,6 +466,10 @@ fn stream_git_blobs(
     let mut pending_errors: VecDeque<SourceError> = VecDeque::new();
     let mut seen_blob_paths: HashSet<GitBlobPathKey> = HashSet::new();
     let mut seen_commits: HashSet<gix::ObjectId> = HashSet::new();
+    // Tree object ids already walked cleanly this scan; identical subtrees
+    // recur across commits (most of a tree is untouched by any one commit),
+    // so memoizing them prunes nearly all repeated descents.
+    let mut walked_trees: HashSet<gix::ObjectId> = HashSet::new();
     let mut unreachable_objects: Option<UnreachableGitObjects> = None;
     let mut total_bytes = 0usize;
     let mut chunk_count = 0usize;
@@ -486,6 +533,7 @@ fn stream_git_blobs(
                     &repo_handle,
                     id,
                     &mut seen_blob_paths,
+                    &mut walked_trees,
                     respect_default_excludes,
                 ) {
                     Ok(Some(commit_blobs)) => commit_blobs,
@@ -534,6 +582,7 @@ fn stream_git_blobs(
                     &repo_handle,
                     objects,
                     &mut seen_blob_paths,
+                    &mut walked_trees,
                     respect_default_excludes,
                 );
                 pending_errors.extend(blob_metadata.errors);
@@ -570,6 +619,7 @@ fn load_commit_blob_set(
     repo: &gix::Repository,
     id: gix::ObjectId,
     seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    walked_trees: &mut HashSet<gix::ObjectId>,
     respect_default_excludes: bool,
 ) -> Result<Option<GitCommitBlobSet>, SourceError> {
     let commit_id = id.to_string();
@@ -578,6 +628,7 @@ fn load_commit_blob_set(
     // scanned (corrupt object, partial clone missing the tree). Count each
     // as unreadable + warn so the dropped commit is operator-visible rather
     // than a silent `continue` that reads as full history coverage.
+    let _tree_walk = crate::profile::walk_span();
     let obj = match repo.find_object(id) {
         Ok(o) => o,
         Err(error) => {
@@ -609,6 +660,21 @@ fn load_commit_blob_set(
         }
     };
     let author = commit_author_name(&commit, &commit_id)?;
+    // Early-skip: a root tree already walked cleanly this scan (an identical
+    // tree reached through another commit/ref) contributes no new (oid, path)
+    // blob identities, so skip the tree read and the whole walk. `tree_id`
+    // decodes only the commit header, so the skip happens before any blob or
+    // tree object load.
+    if let Ok(root_tree_id) = commit.tree_id() {
+        if walked_trees.contains(&root_tree_id.detach()) {
+            return Ok(Some(GitCommitBlobSet {
+                commit_id,
+                author,
+                blob_metadata: Vec::new(),
+                errors: Vec::new(),
+            }));
+        }
+    }
     let tree = match commit.tree() {
         Ok(t) => t,
         Err(error) => {
@@ -631,12 +697,21 @@ fn load_commit_blob_set(
         repo,
         &tree,
         seen_blob_paths,
+        walked_trees,
         None,
         &mut blob_metadata,
         b"",
         &mut errors,
         respect_default_excludes,
     );
+    // Memoize the root tree only when its walk recorded no error, so a
+    // corrupt subtree keeps re-reporting (and re-attempting) on later commits
+    // exactly as before.
+    if errors.is_empty() {
+        if let Ok(root_tree_id) = commit.tree_id() {
+            walked_trees.insert(root_tree_id.detach());
+        }
+    }
 
     Ok(Some(GitCommitBlobSet {
         commit_id,
@@ -709,15 +784,25 @@ impl GitBlobChunkDecoder<'_> {
                 break;
             }
 
-            let candidates = batch
-                .iter()
-                .filter_map(|item| match item {
-                    GitBlobBatchItem::Candidate(candidate) => Some(candidate.clone()),
-                    GitBlobBatchItem::Skip(_) => None,
-                })
-                .collect::<Vec<_>>();
-            let mut decoded =
-                decode_git_blob_candidates_parallel(self.repo_path, candidates).into_iter();
+            // Blob payload reads (one decode per UNIQUE blob oid in this
+            // batch; duplicate (oid, path) entries fan out the shared decoded
+            // text instead of re-reading and re-inflating the same object).
+            let _blob_read = crate::profile::read_span();
+            let mut unique_candidates: Vec<GitBlobCandidate> = Vec::new();
+            let mut oid_slots: HashMap<gix::ObjectId, usize> = HashMap::new();
+            for item in &batch {
+                if let GitBlobBatchItem::Candidate(candidate) = item {
+                    if !oid_slots.contains_key(&candidate.oid) {
+                        oid_slots.insert(candidate.oid, unique_candidates.len());
+                        unique_candidates.push(candidate.clone());
+                    }
+                }
+            }
+            let outcomes = decode_git_blob_candidates(
+                self.repo,
+                self.repo_path,
+                unique_candidates,
+            );
 
             for item in batch {
                 if super::git_history_cap_status(*total_bytes, *chunk_count, self.limits).is_some()
@@ -730,26 +815,37 @@ impl GitBlobChunkDecoder<'_> {
                         record_git_blob_skip(skip, pending_errors);
                         continue;
                     }
-                    GitBlobBatchItem::Candidate(candidate) => match decoded.next() {
-                        Some(GitBlobDecodeOutcome::Decoded(decoded_blob)) => decoded_blob,
-                        Some(GitBlobDecodeOutcome::Skip(skip)) => {
-                            record_git_blob_skip(skip, pending_errors);
-                            continue;
+                    GitBlobBatchItem::Candidate(candidate) => {
+                        let slot = oid_slots[&candidate.oid];
+                        match &outcomes[slot] {
+                            Some(Ok(shared)) => DecodedGitBlob {
+                                oid: candidate.oid,
+                                filepath: candidate.filepath,
+                                size_bytes: shared.size_bytes,
+                                file_text: shared.file_text.clone(),
+                            },
+                            Some(Err(kind)) => {
+                                record_git_blob_skip(
+                                    kind.with_identity(candidate.oid, candidate.filepath),
+                                    pending_errors,
+                                );
+                                continue;
+                            }
+                            None => {
+                                tracing::warn!(
+                                    %candidate.oid,
+                                    "git blob decode batch lost an outcome; blob NOT scanned"
+                                );
+                                record_git_object_unreadable();
+                                pending_errors.push_back(git_unscanned_object_error(format!(
+                                    "git blob {} at {} lost its decode outcome; blob was not scanned",
+                                    candidate.oid,
+                                    git_blob_path_display(&candidate.filepath)
+                                )));
+                                continue;
+                            }
                         }
-                        None => {
-                            tracing::warn!(
-                                %candidate.oid,
-                                "git blob decode batch lost an outcome; blob NOT scanned"
-                            );
-                            record_git_object_unreadable();
-                            pending_errors.push_back(git_unscanned_object_error(format!(
-                                "git blob {} at {} lost its decode outcome; blob was not scanned",
-                                candidate.oid,
-                                git_blob_path_display(&candidate.filepath)
-                            )));
-                            continue;
-                        }
-                    },
+                    }
                 };
 
                 let chunk = self.chunk_from_decoded_blob(decoded_blob, provenance);
@@ -811,6 +907,10 @@ fn next_git_blob_batch(
     let mut batch = Vec::new();
     let mut batch_bytes = 0u64;
     let mut batch_items = 0usize;
+    // One header read per unique blob oid per batch: duplicate (oid, path)
+    // entries resolve kind/size from the memo instead of re-opening the
+    // object, while still producing their own per-path skip entries.
+    let mut header_memo: HashMap<gix::ObjectId, Result<(Kind, u64), String>> = HashMap::new();
 
     while batch_items < GIT_PARALLEL_BLOB_BATCH_ITEMS && batch_bytes < GIT_PARALLEL_BLOB_BATCH_BYTES
     {
@@ -819,28 +919,31 @@ fn next_git_blob_batch(
         };
         batch_items += 1;
 
-        let header = match repo.find_header(oid) {
-            Ok(header) => header,
+        let header = match header_memo
+            .entry(oid)
+            .or_insert_with(|| repo.find_header(oid).map(|h| (h.kind(), h.size())).map_err(|e| e.to_string()))
+        {
+            Ok(header) => *header,
             Err(error) => {
                 batch.push(GitBlobBatchItem::Skip(GitBlobSkip::HeaderUnreadable {
                     oid,
                     filepath,
-                    error: error.to_string(),
+                    error: error.clone(),
                 }));
                 continue;
             }
         };
 
-        if header.kind() != Kind::Blob {
+        if header.0 != Kind::Blob {
             batch.push(GitBlobBatchItem::Skip(GitBlobSkip::NonBlob {
                 oid,
                 filepath,
-                kind: format!("{:?}", header.kind()),
+                kind: format!("{:?}", header.0),
             }));
             continue;
         }
 
-        let size_bytes = header.size();
+        let size_bytes = header.1;
         if size_bytes > limits.git_blob_bytes {
             batch.push(GitBlobBatchItem::Skip(GitBlobSkip::OverMaxSize {
                 oid,
@@ -862,54 +965,48 @@ fn next_git_blob_batch(
     batch
 }
 
-fn decode_git_blob_candidates_parallel(
+fn decode_git_blob_candidates(
+    repo: &gix::Repository,
     repo_path: &Path,
     candidates: Vec<GitBlobCandidate>,
-) -> Vec<GitBlobDecodeOutcome> {
+) -> Vec<Option<Result<SharedDecodedBlob, GitBlobOidSkipKind>>> {
+    // Small batches (the common case near history tips, where a commit
+    // touches a handful of blobs) decode serially on the already-open
+    // repository handle: the rayon fork/join plus a fresh `gix::open` per
+    // worker costs more than the decode itself there. Large batches keep the
+    // parallel path.
+    if candidates.len() < GIT_PARALLEL_DECODE_MIN_BLOBS {
+        return candidates
+            .into_iter()
+            .map(|candidate| Some(decode_one_git_blob(repo, candidate)))
+            .collect();
+    }
     let repo_path = repo_path.to_path_buf();
     candidates
         .into_par_iter()
         .map_init(
             || gix::open(&repo_path).map_err(|error| error.to_string()),
             |repo_state, candidate| match repo_state {
-                Ok(repo) => decode_git_blob_candidate(repo, candidate),
-                Err(error) => GitBlobDecodeOutcome::Skip(GitBlobSkip::RepositoryOpen {
-                    oid: candidate.oid,
-                    filepath: candidate.filepath,
-                    error: error.clone(),
-                }),
+                Ok(repo) => Some(decode_one_git_blob(repo, candidate)),
+                Err(error) => Some(Err(GitBlobOidSkipKind::RepositoryOpen(error.clone()))),
             },
         )
         .collect()
 }
 
-fn decode_git_blob_candidate(
+fn decode_one_git_blob(
     repo: &gix::Repository,
     candidate: GitBlobCandidate,
-) -> GitBlobDecodeOutcome {
-    let obj = match repo.find_object(candidate.oid) {
-        Ok(object) => object,
-        Err(error) => {
-            return GitBlobDecodeOutcome::Skip(GitBlobSkip::ObjectUnreadable {
-                oid: candidate.oid,
-                filepath: candidate.filepath,
-                error: error.to_string(),
-            });
-        }
-    };
-
+) -> Result<SharedDecodedBlob, GitBlobOidSkipKind> {
+    let obj = repo
+        .find_object(candidate.oid)
+        .map_err(|error| GitBlobOidSkipKind::ObjectUnreadable(error.to_string()))?;
     let Some(file_text) = decode_git_blob(&obj.data) else {
-        return GitBlobDecodeOutcome::Skip(GitBlobSkip::Binary {
-            oid: candidate.oid,
-            filepath: candidate.filepath,
-        });
+        return Err(GitBlobOidSkipKind::Binary);
     };
-
-    GitBlobDecodeOutcome::Decoded(DecodedGitBlob {
-        oid: candidate.oid,
-        filepath: candidate.filepath,
+    Ok(SharedDecodedBlob {
         size_bytes: candidate.size_bytes,
-        file_text,
+        file_text: file_text.into(),
     })
 }
 
@@ -1143,6 +1240,7 @@ fn collect_unreachable_non_commit_blob_metadata(
     repo: &gix::Repository,
     objects: &mut UnreachableGitObjects,
     seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    walked_trees: &mut HashSet<gix::ObjectId>,
     respect_default_excludes: bool,
 ) -> GitBlobMetadataBatch {
     let mut batch = GitBlobMetadataBatch::default();
@@ -1154,6 +1252,7 @@ fn collect_unreachable_non_commit_blob_metadata(
             repo,
             id,
             seen_blob_paths,
+            walked_trees,
             &mut objects.tree_blob_oids,
             &mut batch.metadata,
             &mut batch.errors,
@@ -1181,6 +1280,7 @@ fn collect_unreachable_tree_blob_metadata(
     repo: &gix::Repository,
     tree_id: gix::ObjectId,
     seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    walked_trees: &mut HashSet<gix::ObjectId>,
     tree_blob_oids: &mut HashSet<gix::ObjectId>,
     blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
     errors: &mut Vec<SourceError>,
@@ -1222,6 +1322,7 @@ fn collect_unreachable_tree_blob_metadata(
         repo,
         &tree,
         seen_blob_paths,
+        walked_trees,
         Some(tree_blob_oids),
         blob_metadata,
         b"",
@@ -1262,6 +1363,7 @@ fn collect_tree_blobs_metadata(
     repo: &gix::Repository,
     tree: &gix::Tree<'_>,
     seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    walked_trees: &mut HashSet<gix::ObjectId>,
     tree_blob_oids: Option<&mut HashSet<gix::ObjectId>>,
     blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
     prefix: &[u8],
@@ -1270,10 +1372,12 @@ fn collect_tree_blobs_metadata(
 ) {
     let mut visitor = HistoricalBlobCollector {
         seen_blob_paths,
+        walked_trees,
         tree_blob_oids,
         blob_metadata,
         errors,
         respect_default_excludes,
+        walk_errors: 0,
     };
     if let Err(error) = super::walk_tree_recursive(repo, tree, prefix, &mut visitor) {
         tracing::warn!(
@@ -1334,13 +1438,27 @@ fn collect_head_blob_path_set(
 
 struct HistoricalBlobCollector<'a> {
     seen_blob_paths: &'a mut HashSet<GitBlobPathKey>,
+    walked_trees: &'a mut HashSet<gix::ObjectId>,
     tree_blob_oids: Option<&'a mut HashSet<gix::ObjectId>>,
     blob_metadata: &'a mut Vec<(gix::ObjectId, Vec<u8>)>,
     errors: &'a mut Vec<SourceError>,
     respect_default_excludes: bool,
+    walk_errors: usize,
 }
 
 impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
+    fn subtree_already_collected(&mut self, oid: &gix::ObjectId) -> bool {
+        self.walked_trees.contains(oid)
+    }
+
+    fn note_subtree_collected(&mut self, oid: gix::ObjectId) {
+        self.walked_trees.insert(oid);
+    }
+
+    fn walk_error_count(&self) -> usize {
+        self.walk_errors
+    }
+
     fn accept_path(&mut self, filepath: &[u8]) -> Result<bool, SourceError> {
         if self.respect_default_excludes
             && crate::filesystem::is_default_excluded_path_bytes(filepath)
@@ -1365,6 +1483,7 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
     }
 
     fn handle_entry_error(&mut self, error: String) -> Result<(), SourceError> {
+        self.walk_errors += 1;
         // Law 10: a tree entry that fails to parse (corrupt/truncated tree
         // object) means the blob(s) it would reference are NOT scanned, an
         // UNKNOWN, not a clean tree. Surface loudly + count as unreadable so a
@@ -1385,6 +1504,7 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
         _filepath: &[u8],
         error: String,
     ) -> Result<(), SourceError> {
+        self.walk_errors += 1;
         let path = String::from_utf8_lossy(_filepath);
         tracing::warn!(
             %error,
@@ -1403,6 +1523,7 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
         _filepath: &[u8],
         error: String,
     ) -> Result<(), SourceError> {
+        self.walk_errors += 1;
         let path = String::from_utf8_lossy(_filepath);
         tracing::warn!(
             %error,
@@ -1417,6 +1538,7 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
     }
 
     fn handle_unscanned_entry(&mut self, filepath: &[u8], mode: String) -> Result<(), SourceError> {
+        self.walk_errors += 1;
         let path = String::from_utf8_lossy(filepath);
         tracing::warn!(
             %path,

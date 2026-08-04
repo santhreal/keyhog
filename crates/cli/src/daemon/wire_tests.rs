@@ -107,6 +107,7 @@ async fn daemon_scan_text_roundtrip_carries_matches() {
             path: Some("test.txt".into()),
             text: concat!("AK", "IAQYLPMN5HFIQR7XYA").into(),
             dogfood: false,
+            profile: false,
         },
     )
     .await
@@ -126,6 +127,7 @@ async fn daemon_scan_text_roundtrip_carries_matches() {
             dogfood_detail_events_dropped: 0,
             source_coverage_gaps: Default::default(),
             backend_recovery: RequiredOption::None,
+            profile: RequiredOption::None,
         },
     )
     .await
@@ -152,6 +154,7 @@ fn daemon_wire_v8_requires_every_scan_result_integrity_field() {
         dogfood_detail_events_dropped: 0,
         source_coverage_gaps: SourceCoverageGaps::default(),
         backend_recovery: RequiredOption::None,
+        profile: RequiredOption::None,
     };
     let complete = serde_json::to_value(complete).expect("serialize complete response");
 
@@ -163,6 +166,7 @@ fn daemon_wire_v8_requires_every_scan_result_integrity_field() {
         "static_recovery_status",
         "dogfood_detail_events_dropped",
         "backend_recovery",
+        "profile",
     ] {
         let mut incomplete = complete.clone();
         incomplete
@@ -217,6 +221,7 @@ fn daemon_scan_results_source_coverage_gaps_roundtrip_exactly() {
             recovered_bytes: 32,
             reason: "injected dispatch fault".into(),
         }),
+        profile: RequiredOption::None,
     };
     let encoded = serde_json::to_string(&response).expect("serialize scan results");
     let decoded: Response = serde_json::from_str(&encoded).expect("deserialize scan results");
@@ -279,4 +284,148 @@ async fn daemon_frame_rejects_oversized_length_prefix() {
         err.to_string().contains("exceeds"),
         "oversized frame must be rejected; got {err}"
     );
+}
+
+/// Locks the v12 bump: the profile flag/payload is an incompatible wire
+/// change, so the version constant must move and peers stay refused at the
+/// Hello handshake (client::connect_inner bails on any version mismatch).
+#[test]
+fn daemon_wire_version_is_v12_with_request_profiles() {
+    assert_eq!(WIRE_VERSION, 12);
+}
+
+/// The v12 `profile` opt-in must survive the frame round-trip verbatim on
+/// every request kind that carries it; a dropped flag would silently turn
+/// off per-request profiling on the daemon route.
+#[tokio::test]
+async fn daemon_wire_v12_profile_flag_roundtrips_on_scan_requests() {
+    let requests = [
+        Request::ScanText {
+            path: Some("stdin".into()),
+            text: "payload".into(),
+            dogfood: false,
+            profile: true,
+        },
+        Request::ScanPath {
+            path: "src/main.rs".into(),
+            working_dir: Some("/tmp/project".into()),
+            dogfood: false,
+            profile: true,
+        },
+        Request::MassBegin {
+            dogfood: true,
+            profile: true,
+        },
+        Request::ScanText {
+            path: None,
+            text: "unprofiled".into(),
+            dogfood: false,
+            profile: false,
+        },
+    ];
+    for request in requests {
+        let encoded = serde_json::to_string(&request).expect("serialize request");
+        let decoded: Request = serde_json::from_str(&encoded).expect("deserialize request");
+        let (expected, actual) = match (&request, &decoded) {
+            (
+                Request::ScanText { profile: expected, .. },
+                Request::ScanText { profile: actual, .. },
+            )
+            | (
+                Request::ScanPath { profile: expected, .. },
+                Request::ScanPath { profile: actual, .. },
+            )
+            | (
+                Request::MassBegin { profile: expected, .. },
+                Request::MassBegin { profile: actual, .. },
+            ) => (expected, actual),
+            (sent, got) => panic!("request kind changed across the wire: {sent:?} -> {got:?}"),
+        };
+        assert_eq!(expected, actual, "profile flag must round-trip exactly");
+    }
+}
+
+/// A profiled v12 `ScanResults` must carry the exact request profile payload
+/// (id, wall time, per-stage aggregates, loss counts) across the frame
+/// boundary, and an unprofiled response must serialize `profile` as an
+/// explicit null that deserializes back to `None`, never to a fabricated
+/// zero-valued profile.
+#[tokio::test]
+async fn daemon_wire_v12_scan_results_roundtrips_request_profile() {
+    use crate::daemon::protocol::{ProfileStageMeasurement, RequestProfile};
+
+    let profile = RequestProfile {
+        request_id: "4242-after-00000001-00000000-0000000000000000".into(),
+        wall_time_ns: 1_523_987,
+        stages: vec![
+            ProfileStageMeasurement {
+                stage: "phase1-triggers".into(),
+                calls: 3,
+                elapsed_ns: 981_114,
+            },
+            ProfileStageMeasurement {
+                stage: "entropy".into(),
+                calls: 1,
+                elapsed_ns: 12_500,
+            },
+        ],
+        dropped_span_events: 2,
+        dropped_point_events: 0,
+        dropped_annotations: 1,
+        sampled_out_events: 5,
+    };
+    let response = Response::ScanResults {
+        path: None,
+        matches: vec![],
+        engine_example_suppressions: 0,
+        dogfood_events: vec![],
+        static_recovery_rejections: BTreeMap::new(),
+        static_recovery_status: StaticRecoveryStatus::default(),
+        dogfood_detail_events_dropped: 0,
+        source_coverage_gaps: SourceCoverageGaps::default(),
+        backend_recovery: RequiredOption::None,
+        profile: RequiredOption::Some(profile.clone()),
+    };
+
+    let (mut client, mut server) = tokio::io::duplex(64 * 1024);
+    frame::write_response(&mut server, &response)
+        .await
+        .expect("write profiled ScanResults");
+    let decoded = frame::read_response(&mut client)
+        .await
+        .expect("read response")
+        .expect("ScanResults frame");
+    match decoded {
+        Response::ScanResults { profile: decoded, .. } => {
+            let decoded = decoded.expect("request profile");
+            assert_eq!(decoded, profile, "profile payload must round-trip exactly");
+        }
+        other => panic!("expected ScanResults, got {other:?}"),
+    }
+
+    let unprofiled = Response::ScanResults {
+        path: None,
+        matches: vec![],
+        engine_example_suppressions: 0,
+        dogfood_events: vec![],
+        static_recovery_rejections: BTreeMap::new(),
+        static_recovery_status: StaticRecoveryStatus::default(),
+        dogfood_detail_events_dropped: 0,
+        source_coverage_gaps: SourceCoverageGaps::default(),
+        backend_recovery: RequiredOption::None,
+        profile: RequiredOption::None,
+    };
+    let encoded = serde_json::to_value(&unprofiled).expect("serialize unprofiled response");
+    assert_eq!(
+        encoded["profile"],
+        serde_json::Value::Null,
+        "unprofiled ScanResults must carry an explicit null profile field"
+    );
+    let decoded: Response = serde_json::from_value(encoded).expect("deserialize unprofiled");
+    match decoded {
+        Response::ScanResults { profile, .. } => {
+            assert!(profile.is_none(), "null profile must decode to None");
+        }
+        other => panic!("expected ScanResults, got {other:?}"),
+    }
 }

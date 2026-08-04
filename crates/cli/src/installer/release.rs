@@ -254,6 +254,8 @@ pub(crate) async fn resolve_release_at(
     version: Option<&str>,
     release_api_base: &str,
 ) -> Result<Release> {
+    // Remote release-metadata fetch: source acquisition measured across awaits.
+    keyhog_profile::instrument_future(keyhog_profile::Stage::SourceAcquire, async move {
     let api = release_api_base.trim().trim_end_matches('/');
     if api.is_empty() {
         anyhow::bail!("injected release API base is empty");
@@ -275,8 +277,8 @@ pub(crate) async fn resolve_release_at(
             anyhow::bail!("release tag {tag} is still a draft and cannot be installed");
         }
         validate_exact_response_tag(&tag, &release.tag_name)?;
-        return Ok(release);
-    }
+        Ok(release)
+    } else {
     let url = format!("{api}/repos/{REPO}/releases?per_page=10");
     let response = client.get(&url).send().await.context("query releases")?;
     let bytes = read_limited_response(response, MAX_RELEASE_METADATA_BYTES, "release list").await?;
@@ -293,6 +295,9 @@ pub(crate) async fn resolve_release_at(
         })?;
     validate_latest_response_tag(&release.tag_name)?;
     Ok(release)
+    }
+    })
+    .await
 }
 
 fn release_has_complete_host_bundle(release: &Release) -> bool {
@@ -334,12 +339,15 @@ pub(crate) async fn resolve_and_download_verified_payload_at(
 ) -> Result<Vec<u8>> {
     let release = resolve_release_at(client, version, release_api_base).await?;
     let asset = find_unique_asset(&release, asset_name)?;
-    download_verified_payload(
-        client,
-        &release,
-        asset,
-        MAX_RELEASE_ASSET_BYTES,
-        "release test payload",
+    keyhog_profile::instrument_future(
+        keyhog_profile::Stage::SourceAcquire,
+        download_verified_payload(
+            client,
+            &release,
+            asset,
+            MAX_RELEASE_ASSET_BYTES,
+            "release test payload",
+        ),
     )
     .await
 }
@@ -347,6 +355,8 @@ pub(crate) async fn resolve_and_download_verified_payload_at(
 /// Pick the one platform asset for this host. Runtime accelerator selection is
 /// performed by backend probing and autoroute, not by release filenames.
 pub(crate) fn select_asset(release: &Release) -> Result<&Asset> {
+    // Host-asset planning, profiled as preprocessing.
+    let _plan_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let target = asset_name(std::env::consts::OS, std::env::consts::ARCH).ok_or_else(|| {
         anyhow!(
             "no prebuilt asset for {}-{} (supported: linux-x86_64, macos-aarch64, macos-x86_64, windows-x86_64)",
@@ -372,12 +382,9 @@ pub(crate) async fn download_verified_asset(
     release: &Release,
     asset: &Asset,
 ) -> Result<Vec<u8>> {
-    let bytes = download_verified_payload(
-        client,
-        release,
-        asset,
-        MAX_RELEASE_ASSET_BYTES,
-        "release asset",
+    let bytes = keyhog_profile::instrument_future(
+        keyhog_profile::Stage::SourceAcquire,
+        download_verified_payload(client, release, asset, MAX_RELEASE_ASSET_BYTES, "release asset"),
     )
     .await?;
     if !looks_like_native_executable(&bytes) {
@@ -397,12 +404,15 @@ pub(crate) async fn download_verified_gpu_literal_asset(
     release: &Release,
     asset: &Asset,
 ) -> Result<Vec<u8>> {
-    download_verified_payload(
-        client,
-        release,
-        asset,
-        MAX_RELEASE_ASSET_BYTES,
-        "GPU literal sidecar",
+    keyhog_profile::instrument_future(
+        keyhog_profile::Stage::SourceAcquire,
+        download_verified_payload(
+            client,
+            release,
+            asset,
+            MAX_RELEASE_ASSET_BYTES,
+            "GPU literal sidecar",
+        ),
     )
     .await
 }
@@ -476,6 +486,8 @@ pub(crate) fn verify_release_checksum(
 ) -> Result<()> {
     use sha2::{Digest as _, Sha256};
 
+    // Manifest checksum verification, profiled as preprocessing (check phase).
+    let _verify_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     let text = std::str::from_utf8(checksum_file).context("release checksum is not UTF-8")?;
     let mut fields = text.split_whitespace();
     let expected = fields
@@ -542,6 +554,9 @@ async fn read_limited_response(
 /// its own doctor probes. Uses a unique prefix so it neither collides with a
 /// real detector nor trips example or placeholder suppression.
 pub(crate) fn scan_engine_self_test() -> Result<bool> {
+    // Self-test detector compile + scan: doctor's compute phase, profiled as
+    // preprocessing.
+    let _self_test_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     const PLANTED: &str = "KHDOCTOR_A1b2C3d4E5f6";
     let detector =
         toml::from_str::<DetectorFile>(include_str!("../../data/doctor-self-test-detector.toml"))

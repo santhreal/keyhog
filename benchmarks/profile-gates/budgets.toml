@@ -1,0 +1,64 @@
+# Profiler gate budgets (schema_version 1).
+#
+# Consumed by bench.profile_gates and the `bench profile-gate` command.
+# Ratios are candidate/control (or profiled/unprofiled) medians: 1.0 is
+# parity, and a budget is the highest tolerable ratio. Stage names are the
+# kebab-case Stage labels of the keyhog-profile v2 envelope.
+
+schema_version = 1
+
+[profiler_overhead]
+# Profiled vs unprofiled wall of the same workload; keeps profiler cost
+# gated independently from scanner performance.
+max_ratio = 1.03
+
+[workflow.mirror]
+max_regression_ratio = 1.02
+min_speedup_ratio = 1.0
+
+[workflow.mirror.stages]
+source-walk = 1.05
+source-read = 1.05
+preprocess = 1.05
+decode = 1.05
+entropy = 1.05
+phase1-triggers = 1.05
+hot-patterns = 1.05
+confirmed-patterns = 1.05
+phase2-shared-ac = 1.05
+phase2-anchored-verify = 1.05
+phase2-whole-chunk = 1.05
+generic-detection = 1.05
+suppression = 1.05
+result-merge = 1.05
+reporting = 1.05
+
+[workflow.creddata]
+max_regression_ratio = 1.02
+min_speedup_ratio = 1.0
+
+[workflow.creddata.stages]
+source-read = 1.05
+decode = 1.05
+phase1-triggers = 1.05
+hot-patterns = 1.05
+confirmed-patterns = 1.05
+generic-detection = 1.05
+result-merge = 1.05
+live-verification = 1.10
+reporting = 1.05
+
+[workflow.homefield]
+max_regression_ratio = 1.03
+min_speedup_ratio = 0.0
+
+[workflow.homefield.stages]
+source-walk = 1.05
+source-read = 1.05
+decode = 1.05
+phase1-triggers = 1.05
+hot-patterns = 1.05
+confirmed-patterns = 1.05
+generic-detection = 1.05
+result-merge = 1.05
+reporting = 1.05

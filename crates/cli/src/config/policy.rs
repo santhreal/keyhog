@@ -105,6 +105,9 @@ pub(super) fn resolve_policy_outcome(config: &mut ConfigFile) -> ConfigOutcome {
     // overrides/disables from the repository config and is composed with the
     // active detector specs before scanner compilation.
     if let Some(map) = config.detector.take() {
+        // Config-side detector handling: operator detector policy is validated
+        // here before corpus selection, profiled as backend selection.
+        let _detector_policy_span = keyhog_profile::span(keyhog_profile::Stage::BackendSelect);
         for (id, section) in map {
             if section.enabled == Some(false) && !outcome.disabled_detectors.contains(&id) {
                 outcome.disabled_detectors.push(id.clone());

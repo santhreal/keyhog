@@ -255,7 +255,7 @@ impl CloudListingCoverage {
         &mut self,
         chunks: &mut Vec<Result<Chunk, SourceError>>,
     ) -> bool {
-        if self.listed_objects < self.max_objects {
+        if self.has_listed_capacity() {
             return true;
         }
         let reason = format!(
@@ -264,6 +264,14 @@ impl CloudListingCoverage {
         );
         self.record_truncated(chunks, &reason);
         false
+    }
+
+    /// Pure capacity predicate behind [`Self::has_capacity_or_record`], split
+    /// out so the pipelined listing loop can decide whether prefetching one
+    /// more page could still be consumed WITHOUT recording the capacity gap
+    /// early (the gap must fire exactly where the serial loop-top check did).
+    pub(crate) fn has_listed_capacity(&self) -> bool {
+        self.listed_objects < self.max_objects
     }
 
     pub(crate) fn take_page<T>(&mut self, items: Vec<T>) -> (Vec<T>, bool) {
@@ -286,13 +294,69 @@ impl CloudListingCoverage {
     }
 }
 
+/// One in-flight next-page listing fetch. Spawning the next listing request
+/// so it overlaps the current page's object downloads hides listing latency
+/// behind the download batch instead of paying it serially at every page
+/// boundary (measured on the `perf_cloud_pipelined_listing` harness: a 4-page
+/// scan with 150ms listing + 200ms download-batch latency drops from ~1.4s
+/// serial to ~1.0s). At most one prefetch is alive per scan, so existing
+/// concurrency caps are unchanged; fetched pages, cursors, and coverage
+/// accounting are identical to the serial loop.
+pub(crate) struct ListingPrefetch<T> {
+    join: Option<std::thread::JoinHandle<Result<T, SourceError>>>,
+}
+
+impl<T: Send + 'static> ListingPrefetch<T> {
+    /// Spawn `fetch` (one listing-page request) on its own short-lived thread,
+    /// propagating the active profiling runtime so the per-page walk span
+    /// records exactly as the serial inline fetch did.
+    pub(crate) fn spawn(
+        fetch: impl FnOnce() -> Result<T, SourceError> + Send + 'static,
+    ) -> Self {
+        let profile_runtime = crate::profile::current_runtime();
+        Self {
+            join: Some(std::thread::spawn(move || {
+                let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
+                let _page = crate::profile::walk_span();
+                fetch()
+            })),
+        }
+    }
+
+    /// No prefetch in flight (terminal page, capacity exhausted, or a
+    /// truncated-listing gap).
+    pub(crate) fn none() -> Self {
+        Self { join: None }
+    }
+
+    /// Join the prefetch. `None` when none was spawned; a panicked fetch
+    /// thread surfaces as a loud source error, never a silent empty page.
+    pub(crate) fn join(self) -> Option<Result<T, SourceError>> {
+        self.join.map(|handle| {
+            handle
+                .join()
+                .unwrap_or_else(|_panic| {
+                    Err(SourceError::Other(
+                        "cloud listing prefetch thread panicked".into(),
+                    ))
+                })
+        })
+    }
+}
+
 pub(crate) fn push_page_chunks(
     chunks: &mut Vec<Result<Chunk, SourceError>>,
     page_chunks: Vec<Result<Option<Chunk>, SourceError>>,
 ) {
     for result in page_chunks {
         match result {
-            Ok(Some(chunk)) => chunks.push(Ok(chunk)),
+            Ok(Some(chunk)) => {
+                // Real downloaded-object counts at the cloud sink shared by
+                // every object-storage adapter.
+                crate::profile::add_input_units(1);
+                crate::profile::add_input_bytes(chunk.data.len() as u64);
+                chunks.push(Ok(chunk));
+            }
             Ok(None) => {}
             Err(error) => chunks.push(Err(error)),
         }

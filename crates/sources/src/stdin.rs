@@ -106,7 +106,12 @@ fn one_stdin_chunk(
     result: std::io::Result<String>,
 ) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>>> {
     Box::new(std::iter::once(match result {
-        Ok(data) => Ok(Chunk {
+        Ok(data) => {
+            // Real counts at the adapter boundary: stdin yields exactly one
+            // chunk carrying the buffered payload bytes.
+            crate::profile::add_input_units(1);
+            crate::profile::add_input_bytes(data.len() as u64);
+            Ok(Chunk {
             data: data.into(),
             metadata: ChunkMetadata {
                 base_offset: 0,
@@ -120,7 +125,8 @@ fn one_stdin_chunk(
                 size_bytes: None,
                 decoded_span: None,
             },
-        }),
+            })
+        }
         Err(error) => Err(SourceError::Io(error)),
     }))
 }
@@ -133,6 +139,7 @@ pub(crate) fn read_to_string_limited(
     reader: &mut impl Read,
     max_bytes: usize,
 ) -> std::io::Result<String> {
+    let _acquire = crate::profile::acquire_span();
     let cap = u64::try_from(max_bytes).map_err(|_| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -141,7 +148,12 @@ pub(crate) fn read_to_string_limited(
     })?;
     // Read at most `max_bytes + 1` so oversized stdin is rejected before we
     // hand a giant buffer to the scanner.
+    // stdin has no bounded-queue handoff inside this adapter (the single
+    // chunk is returned synchronously), so backpressure has no span site here;
+    // the CLI-level channel send carries SourceQueueWait instead.
+    let _buffering = crate::profile::read_span();
     let read = crate::capped_read::read_to_cap(reader, cap, None)?;
+    drop(_buffering);
 
     if read.truncated {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);

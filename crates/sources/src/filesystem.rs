@@ -728,6 +728,9 @@ impl Source for FilesystemSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
+        // Top-level acquisition: root validation, include admission, archive
+        // symlink audit, and the directory walk all run under SourceAcquire.
+        let _acquire = crate::profile::acquire_span();
         // Taken before any walk-error recording or reader-pool spawn so a
         // concurrent scan blocks here behind an active counter-asserting test
         // instead of polluting the process-global skip counters. No-op in
@@ -782,6 +785,8 @@ impl Source for FilesystemSource {
             discovery_budget: &mut Option<u64>,
             discovery_limit_reached: &AtomicBool,
         ) -> (Vec<codewalk::FileEntry>, Vec<SourceError>) {
+            // Walking and walk-time filtering (gitignore, default excludes).
+            let _walk = crate::profile::walk_span();
             let mut source_errors = Vec::new();
             let mut entries = Vec::new();
             for result in walker.walk_iter() {
@@ -976,6 +981,11 @@ impl Source for FilesystemSource {
                     )));
                 }
             }
+            // Real discovery counts for the include-restricted admission set.
+            crate::profile::add_input_units(include_entries.len() as u64);
+            crate::profile::add_input_bytes(
+                include_entries.iter().map(|entry| entry.size).sum::<u64>(),
+            );
             Box::new(include_entries.into_iter())
         } else {
             let walker = CodeWalker::new(&self.root, config);
@@ -987,6 +997,11 @@ impl Source for FilesystemSource {
             let (walk_entries, walk_errors) =
                 sorted_entries(walker, &mut discovery_budget, &self.discovery_limit_reached);
             source_errors.extend(walk_errors);
+            // Real discovery counts: walked files and their on-disk bytes.
+            crate::profile::add_input_units(walk_entries.len() as u64);
+            crate::profile::add_input_bytes(
+                walk_entries.iter().map(|entry| entry.size).sum::<u64>(),
+            );
             Box::new(walk_entries.into_iter())
         };
 

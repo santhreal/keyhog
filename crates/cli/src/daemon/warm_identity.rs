@@ -28,6 +28,11 @@ impl WarmBackendReadiness {
         })
     }
 
+    /// The generation string that anchors per-request profile identities.
+    pub(crate) fn daemon_generation(&self) -> &str {
+        &self.daemon_generation
+    }
+
     pub(crate) fn status(&self, scanner: &CompiledScanner) -> WarmBackendStatus {
         let current_identity =
             current_identity(scanner, &self.startup_identity.detector_rules_digest);

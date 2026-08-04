@@ -49,6 +49,7 @@ fn response() -> Response {
         dogfood_detail_events_dropped: 0,
         source_coverage_gaps: Default::default(),
         backend_recovery: RequiredOption::None,
+        profile: RequiredOption::None,
     }
 }
 

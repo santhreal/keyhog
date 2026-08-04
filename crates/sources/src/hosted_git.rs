@@ -88,10 +88,15 @@ pub(crate) fn scan_hosted_repos(
         crate::parallel_fetch::REMOTE_API_FETCH_THREADS,
     )?;
 
-    let per_repo: Vec<Result<Vec<Chunk>, SourceError>> = pool.install(|| {
+    let per_repo: Vec<Result<Vec<Chunk>, SourceError>> = {
+        // Propagate the active profiling runtime into the clone/scan workers
+        // so per-repo clone and walk spans record there.
+        let profile_runtime = crate::profile::current_runtime();
+        pool.install(|| {
         repos
             .par_iter()
             .map(|repo| {
+                let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
                 scan_single_hosted_repo(
                     platform,
                     source_type,
@@ -106,7 +111,8 @@ pub(crate) fn scan_hosted_repos(
                 )
             })
             .collect()
-    });
+        })
+    };
 
     Ok(merge_hosted_repo_results(platform, repos, per_repo))
 }
@@ -556,6 +562,9 @@ fn clone_repo_with_history_mode(
     full_history: bool,
     limits: crate::SourceLimits,
 ) -> Result<(), SourceError> {
+    // Cloning one hosted repo (object fetch over the git protocol) is an
+    // acquisition boundary.
+    let _clone = crate::profile::acquire_span();
     let clone_target = clone_path.to_str().ok_or_else(|| {
         SourceError::Other(format!(
             "{platform}: non-UTF-8 clone path for repo {repo_display_path}"

@@ -11,14 +11,14 @@ mod mark_stats;
 #[cfg(feature = "simd")]
 pub(crate) use mark_stats::record_mark_hs_served;
 pub(crate) use mark_stats::{
-    format_mark_decomposition, phase2_mark_stats, phase2_mark_stats_reset, record_mark_call,
-    record_mark_gate_skip, record_mark_perpattern_work, record_mark_regexset_served, MarkSnapshot,
+    format_mark_decomposition, mark_snapshot_from_typed, record_mark_call, record_mark_gate_skip,
+    record_mark_perpattern_work, record_mark_regexset_served, MarkSnapshot,
 };
+#[cfg(test)]
+pub(crate) use mark_stats::take_mark_stats;
 
 mod hs_mark_timing;
-pub(crate) use hs_mark_timing::{
-    format_hs_mark_split, hs_mark_timing_reset, hs_mark_timing_snapshot, HsMarkSplit,
-};
+pub(crate) use hs_mark_timing::{format_hs_mark_split, hs_mark_split_from_typed, HsMarkSplit};
 #[cfg(feature = "simd")]
 pub(crate) use hs_mark_timing::{record_hs_mark_dropped_ns, record_hs_mark_scan_ns};
 

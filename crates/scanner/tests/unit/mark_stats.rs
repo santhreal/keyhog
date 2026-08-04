@@ -6,21 +6,33 @@
 //! RegexSet-served calls, so the dominant scan cost is diagnosable instead of an
 //! opaque "N calls, M ns/call" aggregate. This suite pins:
 //!   * each `record_*` increments exactly its own counter (no cross-talk),
-//!   * the snapshot reader and reset are exact,
+//!   * the drain reader is exact and destructive (profile-runtime semantics),
 //!   * the derived percentage/total helpers are correct (incl. divide-by-zero
 //!     safety), and
 //!   * the pure `format_mark_decomposition` line the profiler prints is exact.
 //!
-//! Under `cfg(test)` the counters are thread-local, so each `#[test]` (run on its
-//! own libtest thread) owns a private copy, no mutex or serialization needed for
-//! the direct-record tests below. Every test still resets first as a guard
-//! against any thread reuse.
+//! The counters live in the keyhog-profile runtime's typed store, so recording
+//! only happens while a runtime is active on the thread; these tests flip the
+//! per-thread legacy switch (`set_enabled(true)`), which gives each libtest
+//! thread a private store, no mutex or serialization needed for the
+//! direct-record tests below.
 
 use keyhog_scanner::engine::phase2::{
-    format_mark_decomposition, phase2_mark_stats, phase2_mark_stats_reset, record_mark_call,
-    record_mark_gate_skip, record_mark_hs_served, record_mark_perpattern_work,
-    record_mark_regexset_served, MarkSnapshot,
+    format_mark_decomposition, record_mark_call, record_mark_gate_skip, record_mark_hs_served,
+    record_mark_perpattern_work, record_mark_regexset_served, take_mark_stats, MarkSnapshot,
 };
+
+/// Record `f` with the per-thread legacy profile runtime active, then drain the
+/// mark counters. The drain discards anything recorded before the window, so no
+/// separate reset is needed even if libtest ever reuses a thread.
+fn recorded(f: impl FnOnce()) -> MarkSnapshot {
+    let _ = take_mark_stats();
+    keyhog_profile::set_enabled(true);
+    f();
+    let snapshot = take_mark_stats();
+    keyhog_profile::set_enabled(false);
+    snapshot
+}
 
 /// A fully-specified snapshot for the pure helper/format tests (no counter I/O).
 fn snap(calls: u64, gate_skips: u64, perpattern_work: u64, hs: u64, regexset: u64) -> MarkSnapshot {
@@ -38,9 +50,8 @@ fn snap(calls: u64, gate_skips: u64, perpattern_work: u64, hs: u64, regexset: u6
 // ---------------------------------------------------------------------------
 
 #[test]
-fn fresh_snapshot_is_all_zero_after_reset() {
-    phase2_mark_stats_reset();
-    let s = phase2_mark_stats();
+fn fresh_drain_is_all_zero() {
+    let s = take_mark_stats();
     assert_eq!(s.calls, 0);
     assert_eq!(s.gate_skips, 0);
     assert_eq!(s.perpattern_work, 0);
@@ -50,9 +61,7 @@ fn fresh_snapshot_is_all_zero_after_reset() {
 
 #[test]
 fn record_mark_call_increments_only_calls() {
-    phase2_mark_stats_reset();
-    record_mark_call();
-    let s = phase2_mark_stats();
+    let s = recorded(record_mark_call);
     assert_eq!(s.calls, 1, "calls must increment");
     assert_eq!(s.gate_skips, 0);
     assert_eq!(s.perpattern_work, 0);
@@ -62,9 +71,7 @@ fn record_mark_call_increments_only_calls() {
 
 #[test]
 fn record_mark_gate_skip_increments_only_gate_skips() {
-    phase2_mark_stats_reset();
-    record_mark_gate_skip();
-    let s = phase2_mark_stats();
+    let s = recorded(record_mark_gate_skip);
     assert_eq!(s.gate_skips, 1, "gate_skips must increment");
     assert_eq!(s.calls, 0);
     assert_eq!(s.perpattern_work, 0);
@@ -74,9 +81,7 @@ fn record_mark_gate_skip_increments_only_gate_skips() {
 
 #[test]
 fn record_mark_perpattern_work_increments_only_perpattern() {
-    phase2_mark_stats_reset();
-    record_mark_perpattern_work();
-    let s = phase2_mark_stats();
+    let s = recorded(record_mark_perpattern_work);
     assert_eq!(s.perpattern_work, 1, "perpattern_work must increment");
     assert_eq!(s.calls, 0);
     assert_eq!(s.gate_skips, 0);
@@ -86,9 +91,7 @@ fn record_mark_perpattern_work_increments_only_perpattern() {
 
 #[test]
 fn record_mark_hs_served_increments_only_hs() {
-    phase2_mark_stats_reset();
-    record_mark_hs_served();
-    let s = phase2_mark_stats();
+    let s = recorded(record_mark_hs_served);
     assert_eq!(s.hs_served, 1, "hs_served must increment");
     assert_eq!(s.calls, 0);
     assert_eq!(s.gate_skips, 0);
@@ -98,9 +101,7 @@ fn record_mark_hs_served_increments_only_hs() {
 
 #[test]
 fn record_mark_regexset_served_increments_only_regexset() {
-    phase2_mark_stats_reset();
-    record_mark_regexset_served();
-    let s = phase2_mark_stats();
+    let s = recorded(record_mark_regexset_served);
     assert_eq!(s.regexset_served, 1, "regexset_served must increment");
     assert_eq!(s.calls, 0);
     assert_eq!(s.gate_skips, 0);
@@ -110,23 +111,23 @@ fn record_mark_regexset_served_increments_only_regexset() {
 
 #[test]
 fn multiple_records_accumulate_exact_counts() {
-    phase2_mark_stats_reset();
-    for _ in 0..7 {
-        record_mark_call();
-    }
-    for _ in 0..3 {
-        record_mark_gate_skip();
-    }
-    for _ in 0..4 {
-        record_mark_perpattern_work();
-    }
-    for _ in 0..2 {
-        record_mark_hs_served();
-    }
-    for _ in 0..5 {
-        record_mark_regexset_served();
-    }
-    let s = phase2_mark_stats();
+    let s = recorded(|| {
+        for _ in 0..7 {
+            record_mark_call();
+        }
+        for _ in 0..3 {
+            record_mark_gate_skip();
+        }
+        for _ in 0..4 {
+            record_mark_perpattern_work();
+        }
+        for _ in 0..2 {
+            record_mark_hs_served();
+        }
+        for _ in 0..5 {
+            record_mark_regexset_served();
+        }
+    });
     assert_eq!(s.calls, 7);
     assert_eq!(s.gate_skips, 3);
     assert_eq!(s.perpattern_work, 4);
@@ -134,41 +135,45 @@ fn multiple_records_accumulate_exact_counts() {
     assert_eq!(s.regexset_served, 5);
 }
 
+/// The profile runtime's bounded storage drains destructively: a read consumes
+/// the accumulated values, so the reader (the unified profile dump) never
+/// double reports and the next window starts at zero without a separate reset.
 #[test]
-fn reset_zeroes_all_five_counters() {
-    phase2_mark_stats_reset();
-    record_mark_call();
-    record_mark_gate_skip();
-    record_mark_perpattern_work();
-    record_mark_hs_served();
-    record_mark_regexset_served();
-    // Sanity: something was recorded.
-    assert_eq!(phase2_mark_stats().calls, 1);
-    phase2_mark_stats_reset();
-    let s = phase2_mark_stats();
+fn drain_consumes_all_five_counters() {
+    let first = recorded(|| {
+        record_mark_call();
+        record_mark_gate_skip();
+        record_mark_perpattern_work();
+        record_mark_hs_served();
+        record_mark_regexset_served();
+    });
+    assert_eq!(first.calls, 1, "sanity: something was recorded");
+    let second = take_mark_stats();
     assert_eq!(
         (
-            s.calls,
-            s.gate_skips,
-            s.perpattern_work,
-            s.hs_served,
-            s.regexset_served
+            second.calls,
+            second.gate_skips,
+            second.perpattern_work,
+            second.hs_served,
+            second.regexset_served
         ),
         (0, 0, 0, 0, 0),
-        "reset must zero every counter"
+        "a drain must consume every counter"
     );
 }
 
+/// Recording with no active profile runtime must be a silent no-op: the
+/// disabled path is one relaxed atomic load and the drain comes back empty.
 #[test]
-fn snapshot_does_not_reset_on_read() {
-    phase2_mark_stats_reset();
+fn record_without_runtime_is_silent() {
+    let _ = take_mark_stats();
     record_mark_call();
-    let first = phase2_mark_stats();
-    let second = phase2_mark_stats();
-    assert_eq!(first.calls, 1);
+    record_mark_gate_skip();
+    let s = take_mark_stats();
     assert_eq!(
-        second.calls, 1,
-        "reading the snapshot must not reset counters"
+        (s.calls, s.gate_skips),
+        (0, 0),
+        "records with profiling disabled must not land anywhere"
     );
 }
 

@@ -390,7 +390,7 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
 /// the resolved config that actually reaches the engine/postprocess layer, so
 /// `.keyhog.toml`, presets, CLI overrides, and host caps all invalidate routing
 /// together when they change scan cost or candidate volume.
-pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
+fn autoroute_config_hasher(resolved: &ResolvedScanConfig) -> StableHasher {
     let mut h = StableHasher::new("autoroute-config-digest");
     let s = &resolved.scanner;
     h.field_bool("scanner.profile", s.profile);
@@ -554,7 +554,65 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
         resolved.allowlist.max_expires_days,
     );
     hash_source_limits(&mut h, resolved.source_limits);
-    h.finish_u64()
+    h
+}
+/// Stable 64-bit projection used by the persisted autoroute cache schema.
+pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
+    autoroute_config_hasher(resolved).finish_u64()
+}
+
+/// Complete performance-policy identity retained by causal profiles.
+pub(crate) fn profiling_policy_digest(resolved: &ResolvedScanConfig) -> [u8; 32] {
+    autoroute_config_hasher(resolved).finish_256()
+}
+
+/// Complete resolved scan configuration identity, including non-routing policy.
+pub(crate) fn profiling_resolved_config_digest(resolved: &ResolvedScanConfig) -> [u8; 32] {
+    let policy_digest = profiling_policy_digest(resolved);
+    let mut h = StableHasher::new("profile-resolved-config-digest-v1");
+    h.field_bytes("performance_policy_digest", &policy_digest);
+    h.field_bool("autoroute_gpu", resolved.autoroute_gpu);
+    h.field_bool("autoroute_calibration", resolved.autoroute_calibration);
+    h.field_option_path(
+        "autoroute_cache_path",
+        resolved.autoroute_cache_path.as_deref(),
+    );
+    h.field_option_path(
+        "calibration_cache_path",
+        resolved.calibration_cache_path.as_deref(),
+    );
+    h.field_usize("calibration_entry_count", resolved.calibration_entry_count);
+    h.field_u64("calibration_digest", resolved.calibration_digest);
+
+    let report = &resolved.report;
+    h.field_str("report.format", &report.format.to_string());
+    let severity = report.severity.as_ref().map(ToString::to_string);
+    h.field_option_str("report.severity", severity.as_deref());
+    h.field_str("report.dedup", &report.dedup.to_string());
+    h.field_bool("report.verify", report.verify);
+    h.field_bool("report.lockdown", report.lockdown);
+    h.field_bool("report.show_secrets", report.show_secrets);
+    h.field_bool(
+        "report.no_suppress_test_fixtures",
+        report.no_suppress_test_fixtures,
+    );
+    h.field_bool("report.hide_client_safe", report.hide_client_safe);
+
+    let verify = &resolved.verify;
+    h.field_f64_bits("verify.rate", verify.rate);
+    h.field_usize(
+        "verify.max_concurrent_per_service",
+        verify.max_concurrent_per_service,
+    );
+    h.field_u64("verify.timeout_secs", verify.timeout_secs);
+    h.field_option_str("verify.proxy", verify.proxy.as_deref());
+    h.field_bool("verify.insecure_tls", verify.insecure_tls);
+    h.field_bool("verify.allow_script_verify", verify.allow_script_verify);
+    h.field_bool("verify.oob.enabled", verify.oob.enabled);
+    #[cfg(feature = "verify")]
+    h.field_str("verify.oob.server", &verify.oob.server);
+    h.field_u64("verify.oob.timeout_secs", verify.oob.timeout_secs);
+    h.finish_256()
 }
 
 fn hash_strings(h: &mut StableHasher, field: &str, strings: &[String]) {

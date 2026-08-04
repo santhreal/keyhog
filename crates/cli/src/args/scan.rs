@@ -558,9 +558,14 @@ pub struct ScanArgs {
     #[arg(long)]
     pub stream: bool,
 
-    /// Emit low-overhead fixed stage timings, run identity, state transitions, and process resource usage to stderr at scan end.
+    /// Emit low-overhead stage, resource, build, policy, source, and measured workload identity evidence to stderr at scan end.
     #[arg(long)]
     pub profile: bool,
+
+    /// Write the complete causal scan profile as JSON to `PATH` at scan end.
+    /// Implies `--profile`; the artifact is written atomically.
+    #[arg(long, value_name = "PATH")]
+    pub profile_out: Option<std::path::PathBuf>,
 
     /// Emit higher-overhead per-pattern and backend diagnostic timing traces to stderr.
     #[arg(long)]

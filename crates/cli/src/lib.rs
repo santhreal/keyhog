@@ -85,6 +85,16 @@ pub(crate) static INCREMENTAL_CACHE_ERRORS: AtomicUsize = AtomicUsize::new(0);
 /// clean" - that was the prior behavior and would mislead any
 /// caller piping keyhog into CI as a gate.
 pub(crate) static SCANNER_PANICKED: AtomicBool = AtomicBool::new(false);
+static OPERATOR_PROFILE_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Return whether an operator profile must emit signal-safe interruption identity.
+pub fn operator_profile_active() -> bool {
+    OPERATOR_PROFILE_ACTIVE.load(Ordering::Relaxed)
+}
+
+pub(crate) fn set_operator_profile_active(active: bool) {
+    OPERATOR_PROFILE_ACTIVE.store(active, Ordering::Relaxed);
+}
 
 /// Operator-visible scan failure event recorded by the CLI orchestrator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -314,6 +324,10 @@ fn exit_now(code: u8) -> ! {
 }
 
 pub async fn cli_main() -> ExitCode {
+    // Startup/dispatch setup (flag pre-scan + tracing init) is synchronous and
+    // completes before the first `.await`, so the span guard never crosses an
+    // await point in this Send future.
+    let startup_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
     // `env::args()` panics on non-UTF-8 args (Linux allows raw-byte
     // paths). The version check only needs to recognize literal ASCII flags,
     // so inspect args_os(); non-UTF-8 args cannot equal these literals.
@@ -352,6 +366,11 @@ pub async fn cli_main() -> ExitCode {
             // LAW10: no recall impact (a failed signal hook only loses graceful Ctrl-C handling; scan/report exit semantics stay owned by the main task).
             let (scanned, total, findings) = interrupt_counts();
             eprintln!("\nScan interrupted. {scanned}/{total} files scanned. {findings} findings.");
+            if operator_profile_active() {
+                eprintln!(
+                    "profile outcome status=failed coverage=cancelled errors=1 exit=130 interruption=ctrl-c"
+                );
+            }
             std::process::exit(i32::from(exit_codes::EXIT_INTERRUPTED));
         }
     });
@@ -397,6 +416,7 @@ pub async fn cli_main() -> ExitCode {
     }
     let _warn_dedup_summary = log_dedup::WarnDedupSummaryGuard;
 
+    drop(startup_span);
     let cli = args::parse();
 
     if cli.build_version {
@@ -405,7 +425,15 @@ pub async fn cli_main() -> ExitCode {
     }
 
     let command_outcome = match cli.command {
-        Some(args::Command::Scan(args)) => subcommands::scan::run(*args).await,
+        Some(args::Command::Scan(args)) => {
+            let profile_requested = args.profile;
+            set_operator_profile_active(profile_requested);
+            let outcome = subcommands::scan::run(*args).await;
+            if profile_requested {
+                set_operator_profile_active(false);
+            }
+            outcome
+        }
         Some(args::Command::Config(args)) => subcommands::config::run(*args),
         Some(args::Command::ActionReport(args)) => match args.command {
             args::ActionReportCommand::Verify(args) => action_report::verify(args),
@@ -636,4 +664,41 @@ extern crate self as keyhog;
 #[path = "../tests/unit/docs_help_coherence.rs"]
 mod docs_help_coherence;
 pub mod testing;
+
+/// Profiling-instrumentation seams: thin re-exports that let the standalone
+/// profiling integration suite drive crate-internal profiled functions without
+/// spawning the binary. Same pattern as [`testing`]; production behavior is
+/// unchanged (each wrapper forwards to the real profiled path).
+#[doc(hidden)]
+pub mod profiling_test_seams {
+    /// Load the declarative `.keyhogignore.toml` rule suppressor rooted at
+    /// `scan_path` through the profiled loader.
+    pub fn load_rule_suppressor(
+        scan_path: Option<&std::path::Path>,
+    ) -> anyhow::Result<keyhog_core::RuleSuppressor> {
+        crate::orchestrator::load_rule_suppressor(scan_path)
+    }
+
+    /// Evaluate `matches` against the declarative rule suppressor through the
+    /// same profiled filter the watch command applies after scanning.
+    pub fn filter_rule_suppressed(
+        suppressor: &keyhog_core::RuleSuppressor,
+        matches: Vec<keyhog_core::RawMatch>,
+    ) -> Vec<keyhog_core::RawMatch> {
+        crate::subcommands::watch::filter_rule_suppressed(suppressor, matches)
+    }
+
+    /// Load the detector corpus from `path` (or the embedded corpus) through
+    /// the profiled loader the detectors command surfaces share.
+    pub fn load_detector_corpus(
+        path: &std::path::Path,
+    ) -> anyhow::Result<Vec<keyhog_core::DetectorSpec>> {
+        crate::subcommands::detectors::load_detector_corpus(path)
+    }
+
+    /// Run the doctor host hardware probe collection step.
+    pub fn doctor_host_probe() -> &'static keyhog_scanner::hw_probe::HardwareCaps {
+        crate::subcommands::doctor::collect_host_probe()
+    }
+}
 pub(crate) mod value_parsers;

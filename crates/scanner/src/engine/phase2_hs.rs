@@ -132,10 +132,11 @@ impl HsSubEngine {
         match_text: &str,
         scratch: &mut ActivePatternsScratch,
     ) -> std::result::Result<(), String> {
-        // Profile-gated timing split (#68): only take `Instant` when the unified
-        // profiler is on, so the unprofiled hot path pays nothing. Attributes the
-        // HS-served prefilter cost between the SIMD scan and the dropped host loop.
-        let prof = super::profile::enabled();
+        // Profile-gated timing split (#68): only take `Instant` when a profile
+        // runtime is active, so the unprofiled hot path pays nothing. Attributes
+        // the HS-served prefilter cost between the SIMD scan and the dropped
+        // host loop.
+        let prof = keyhog_profile::enabled();
         let hs_to_phase2 = &self.hs_to_phase2;
         let t_scan = if prof { Some(Instant::now()) } else { None };
         self.scanner

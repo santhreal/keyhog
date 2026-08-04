@@ -39,6 +39,131 @@ pub(crate) use ssrf::{
     is_disallowed_web_host, redact_url, resolve_and_screen,
 };
 
+/// Bound on concurrent endpoint fetches inside one [`WebSource`] scan. Eight
+/// workers keep a scan of delayed endpoints near one endpoint's latency while
+/// capping simultaneous connections a single scan opens (measured on the
+/// `perf_web_parallel_fetch` latency harness: 8 delayed endpoints complete in
+/// ~1x endpoint delay instead of ~8x; larger bounds showed no further median
+/// gain once every endpoint had a worker).
+const WEB_FETCH_THREADS: usize = 8;
+
+/// SSRF-pinned clients shared across the endpoints (and redirect hops) of one
+/// `fetch_all` scan, keyed by `(redirect_pin_key, calibration-flag)`. A cached
+/// client already pins its host:port to the screened resolution, so reuse
+/// across same-host endpoints is exactly the per-hop reuse
+/// `send_with_pinned_redirects` already did, extended across URLs: N
+/// endpoints on one host pay one DNS resolve + screen + TLS connector build.
+/// Bounded by the scan's URL count and dropped with the scan.
+///
+/// Acquisition is SINGLE-FLIGHT per key: the first worker needing a key
+/// builds while later workers wait on `BuildSignal`, so N same-host workers
+/// never race to build N duplicate clients (a measured ~300ms storm for 8
+/// same-host endpoints). When the leader's build FAILS, the slot is cleared
+/// and each waiter retries (and constructs) its own build error, so per-URL
+/// skip/error accounting stays identical to the serial fetch.
+#[derive(Default)]
+struct PinnedWebClientCache {
+    slots: std::sync::Mutex<
+        std::collections::HashMap<(String, bool), PinnedWebClientSlot>,
+    >,
+}
+
+enum PinnedWebClientSlot {
+    Building(std::sync::Arc<BuildSignal>),
+    Ready(reqwest::blocking::Client),
+}
+
+impl PinnedWebClientCache {
+    /// Return the shared client for `(pin_key, calibration)`, building it
+    /// single-flight when absent. A build failure clears the slot and is
+    /// returned to the building worker; each waiter then retries as the new
+    /// builder, so every URL on an unbuildable host constructs its own error
+    /// (identical per-URL error accounting to the serial fetch).
+    fn acquire(
+        &self,
+        pin_key: &str,
+        calibration: bool,
+        build: impl FnOnce() -> Result<reqwest::blocking::Client, SourceError>,
+    ) -> Result<reqwest::blocking::Client, SourceError> {
+        let key = (pin_key.to_string(), calibration);
+        let mut build = Some(build);
+        loop {
+            let mut slots = self
+                .slots
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            match slots.get(&key) {
+                Some(PinnedWebClientSlot::Ready(client)) => return Ok(client.clone()),
+                Some(PinnedWebClientSlot::Building(signal)) => {
+                    let signal = signal.clone();
+                    drop(slots);
+                    signal.wait();
+                }
+                None => {
+                    let signal = std::sync::Arc::new(BuildSignal::default());
+                    slots.insert(key.clone(), PinnedWebClientSlot::Building(signal.clone()));
+                    drop(slots);
+                    let build = build.take().expect("builder runs once per slot");
+                    return match build() {
+                        Ok(client) => {
+                            let mut slots = self
+                                .slots
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                            slots.insert(key, PinnedWebClientSlot::Ready(client.clone()));
+                            drop(slots);
+                            signal.finish();
+                            Ok(client)
+                        }
+                        Err(error) => {
+                            let mut slots = self
+                                .slots
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                            slots.remove(&key);
+                            drop(slots);
+                            signal.finish();
+                            Err(error)
+                        }
+                    };
+                }
+            }
+        }
+    }
+}
+
+/// Completion signal for one in-flight pinned-client build; waiters park here
+/// instead of racing a duplicate build.
+#[derive(Default)]
+struct BuildSignal {
+    done: std::sync::Mutex<bool>,
+    cond: std::sync::Condvar,
+}
+
+impl BuildSignal {
+    fn wait(&self) {
+        let mut done = self
+            .done
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        while !*done {
+            done = self
+                .cond
+                .wait(done)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+    }
+
+    fn finish(&self) {
+        let mut done = self
+            .done
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *done = true;
+        self.cond.notify_all();
+    }
+}
+
 /// Web content source that fetches JavaScript, source maps, and WASM from URLs.
 ///
 /// URLs ending in `.wasm` are treated as binary and have strings extracted.
@@ -108,50 +233,101 @@ impl WebSource {
     /// Uses `reqwest::blocking` directly; the blocking client internally manages
     /// its own background runtime, so no dedicated thread wrapper is required.
     ///
-    /// Each URL and redirect hop gets its own client built via
-    /// [`build_web_client`] so the host can be DNS-resolved and pinned
-    /// (DNS-rebinding defense) before that exact request is sent.
+    /// Endpoints are fetched CONCURRENTLY on a bounded rayon pool
+    /// (`WEB_FETCH_THREADS`): a scan of N endpoints used to pay N x (DNS +
+    /// TLS + response latency) serially, so endpoint latency dominated remote
+    /// web scans. Results are collected by index, so chunk order stays the
+    /// configured URL order and per-URL error semantics are unchanged. Each
+    /// URL and redirect hop still gets an SSRF-screened, DNS-pinned client
+    /// via [`build_web_client`]; clients are additionally shared across
+    /// endpoints (and hops) with the same pinned host:port through
+    /// [`PinnedWebClientCache`], so N endpoints on one host pay ONE DNS
+    /// resolve + screen + TLS connector build instead of N.
     fn fetch_all(&self) -> Vec<Result<Chunk, SourceError>> {
         let proxy_in_use = matches!(
             self.http.effective_proxy().as_deref(),
             Some(p) if !matches!(p, "off" | "none" | "")
         );
 
+        // Endpoint acquisition: URL screening plus the HTTP fetch of every
+        // configured endpoint is this adapter's acquisition boundary.
+        let _acquire = crate::profile::acquire_span();
+
+        let pool = match rayon::ThreadPoolBuilder::new()
+            .num_threads(WEB_FETCH_THREADS)
+            .build()
+        {
+            Ok(pool) => pool,
+            // Loud failure, never a silent serial fallback: the operator must
+            // see that the bounded fetch pool could not be built.
+            Err(error) => {
+                return vec![Err(SourceError::Other(format!(
+                    "web: rayon pool build: {error}"
+                )))]
+            }
+        };
+        let shared_clients = PinnedWebClientCache::default();
+        // Propagate the active profiling runtime into the fetch workers so
+        // per-endpoint wire spans and chunk counters record there.
+        let profile_runtime = crate::profile::current_runtime();
+        let per_url: Vec<Vec<Result<Chunk, SourceError>>> = pool.install(|| {
+            use rayon::prelude::*;
+            self.urls
+                .par_iter()
+                .map(|url| {
+                    let _profile_guard =
+                        profile_runtime.as_ref().map(|runtime| runtime.enter());
+                    self.fetch_one(url, proxy_in_use, &shared_clients)
+                })
+                .collect()
+        });
+
         let mut results = Vec::new();
-
-        for url in &self.urls {
-            if let Err(error) = validate_initial_web_url(url) {
-                results.push(Err(error));
-                continue;
-            }
-            let allow_calibration_url = self.allow_autoroute_loopback_calibration
-                && is_autoroute_loopback_calibration_url(url);
-            // SSRF defense (host pre-filter): the verifier already has this
-            // gate via bogon for live verifications; WebSource was the
-            // missing surface. Without it,
-            // `WebSource::new(vec!["http://169.254.169.254/latest/meta-data/iam/..."])`
-            // would fetch the cloud metadata endpoint and extract IAM creds.
-            if is_disallowed_web_host(url) && !allow_calibration_url {
-                let safe_url = redact_url(url);
-                results.push(Err(web_unreadable_error(format!(
-                    "refusing to fetch {safe_url}: host resolves to a private / \
-                     loopback / link-local / metadata-service address - \
-                     WebSource only fetches public URLs"
-                ))));
-                continue;
-            }
-
-            let chunks = fetch_url(
-                &self.http,
-                url,
-                self.limits.web_response_bytes,
-                proxy_in_use,
-                allow_calibration_url,
-            );
+        for chunks in per_url {
             results.extend(chunks);
         }
-
         results
+    }
+
+    /// Validate, SSRF-screen, and fetch one configured URL, recording per-chunk
+    /// emission counters. Runs on a `fetch_all` pool worker.
+    fn fetch_one(
+        &self,
+        url: &str,
+        proxy_in_use: bool,
+        shared_clients: &PinnedWebClientCache,
+    ) -> Vec<Result<Chunk, SourceError>> {
+        if let Err(error) = validate_initial_web_url(url) {
+            return vec![Err(error)];
+        }
+        let allow_calibration_url = self.allow_autoroute_loopback_calibration
+            && is_autoroute_loopback_calibration_url(url);
+        // SSRF defense (host pre-filter): the verifier already has this
+        // gate via bogon for live verifications; WebSource was the
+        // missing surface. Without it,
+        // `WebSource::new(vec!["http://169.254.169.254/latest/meta-data/iam/..."])`
+        // would fetch the cloud metadata endpoint and extract IAM creds.
+        if is_disallowed_web_host(url) && !allow_calibration_url {
+            let safe_url = redact_url(url);
+            return vec![Err(web_unreadable_error(format!(
+                "refusing to fetch {safe_url}: host resolves to a private / \
+                 loopback / link-local / metadata-service address - \
+                 WebSource only fetches public URLs"
+            )))];
+        }
+
+        let chunks = fetch_url(
+            &self.http,
+            url,
+            self.limits.web_response_bytes,
+            proxy_in_use,
+            allow_calibration_url,
+            shared_clients,
+        );
+        for row in &chunks {
+            crate::profile::record_emitted_chunk(row);
+        }
+        chunks
     }
 }
 
@@ -172,7 +348,8 @@ impl Source for WebSource {
             // `reqwest::blocking` must run off the CLI's `#[tokio::main]` thread:
             // dropping its internal runtime inside an async context aborts the
             // process. `fetch_all` is eager, so run it on a scoped std thread that
-            // carries no ambient tokio runtime.
+            // carries no ambient tokio runtime. `collect_on_blocking_thread`
+            // propagates the active profiling runtime onto that thread.
             match crate::blocking_thread::collect_on_blocking_thread("web", || Ok(self.fetch_all()))
             {
                 Ok(all) => Box::new(all.into_iter()),
@@ -199,6 +376,7 @@ fn fetch_url(
     max_response_bytes: usize,
     proxy_in_use: bool,
     allow_autoroute_loopback_calibration_url: bool,
+    shared_clients: &PinnedWebClientCache,
 ) -> Vec<Result<Chunk, SourceError>> {
     if let Err(error) = validate_initial_web_url(url) {
         return vec![Err(error)];
@@ -219,11 +397,14 @@ fn fetch_url(
         )))];
     }
 
+    // HTTP wire capture and response-body streaming for one endpoint.
+    let _wire = crate::profile::read_span();
     let resp = match send_with_pinned_redirects(
         http,
         url,
         proxy_in_use,
         allow_autoroute_loopback_calibration_url,
+        shared_clients,
     ) {
         Ok(r) => r,
         Err(e) => {
@@ -343,43 +524,41 @@ fn send_with_pinned_redirects(
     url: &str,
     proxy_in_use: bool,
     allow_autoroute_loopback_calibration_url: bool,
+    shared_clients: &PinnedWebClientCache,
 ) -> Result<reqwest::blocking::Response, SourceError> {
     let mut current_url = url.to_string();
     let mut allow_current_calibration_url = allow_autoroute_loopback_calibration_url
         && is_autoroute_loopback_calibration_url(&current_url);
-    // Reuse one client (and its TLS config + connection pool) across hops whose
-    // pinned host:port and calibration flag are unchanged, a same-host redirect
-    // (only the path changes) is the common case. Rebuilding per hop paid a fresh
-    // TLS/connector setup up to REDIRECT_LIMIT+1 times per URL (Law 7). A client
-    // is only rebuilt when the target host:port differs, since the SSRF-screened
-    // `resolve_to_addrs` pin is host:port-specific. `Client` clones share the same
-    // inner Arc, so the cached clone reuses the live pool.
-    let mut cached_client: Option<(String, bool, reqwest::blocking::Client)> = None;
+    // Reuse one client (and its TLS config + connection pool) across hops and
+    // endpoints whose pinned host:port and calibration flag are unchanged, a
+    // same-host redirect (only the path changes) and same-host endpoint lists
+    // are the common cases. Rebuilding paid a fresh DNS resolve + screen +
+    // TLS/connector setup up to REDIRECT_LIMIT+1 times per URL, times the URL
+    // count (Law 7). A client is only rebuilt when the target host:port
+    // differs, since the SSRF-screened `resolve_to_addrs` pin is
+    // host:port-specific. `Client` clones share the same inner Arc, so the
+    // cached clone reuses the live pool. Failed builds are not cached: every
+    // URL on an unbuildable host constructs (and counts) its own error,
+    // identical to the serial fetch.
     for hop in 0..=crate::http::REDIRECT_LIMIT {
         let pin_key = redirect_pin_key(&current_url);
-        let reused = match cached_client.as_ref() {
-            Some((key, cal, client))
-                if pin_key.as_deref() == Some(key.as_str())
-                    && *cal == allow_current_calibration_url =>
-            {
-                Some(client.clone())
-            }
-            _ => None,
-        };
-        let client = match reused {
-            Some(client) => client,
-            None => {
-                let client = build_web_client(
-                    http,
-                    &current_url,
-                    proxy_in_use,
-                    allow_current_calibration_url,
-                )?;
-                if let Some(key) = pin_key {
-                    cached_client = Some((key, allow_current_calibration_url, client.clone()));
+        let client = match pin_key {
+            Some(key) => {
+                match shared_clients.acquire(&key, allow_current_calibration_url, || {
+                    build_web_client(http, &current_url, proxy_in_use, allow_current_calibration_url)
+                }) {
+                    Ok(client) => client,
+                    Err(error) => return Err(error),
                 }
-                client
             }
+            // Unparseable URL: force a fresh build so `build_web_client`
+            // surfaces the real parse error rather than reusing a stale client.
+            None => build_web_client(
+                http,
+                &current_url,
+                proxy_in_use,
+                allow_current_calibration_url,
+            )?,
         };
         let resp = client.get(&current_url).send().map_err(|e| {
             let safe_url = redact_url(&current_url);

@@ -81,6 +81,8 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
         Ok(())
     })?;
 
+    // Publication of the outcome.
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     println!(
         "\n{} updated v{current} to {latest}  {dim}{}{reset}",
         style::pass("PASS", &palette),

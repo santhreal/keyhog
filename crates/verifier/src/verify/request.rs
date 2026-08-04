@@ -384,6 +384,8 @@ fn build_pinned_client(
     // decompression/redirect + `no_proxy` + host→addr pin) baked into
     // `base_client`. A build failure is a blocked verifier state, never a
     // license to use an unpinned client.
+    // Profile: TLS/client construction is live-verification setup work.
+    let _span = keyhog_profile::span(keyhog_profile::Stage::LiveVerification);
     crate::build_pinned_verifier_client(host, pinned_addrs, timeout, insecure_tls).map_err(|e| {
         VerificationResult::Error(format!(
             "blocked: DNS pin client build failed ({e}); refusing to \
@@ -431,6 +433,8 @@ pub(crate) fn apply_header_body_templates(
     credential: &str,
     companions: &HashMap<impl CompanionKey, String>,
 ) -> reqwest::RequestBuilder {
+    // Profile: outbound request construction is live-verification work.
+    let _span = keyhog_profile::span(keyhog_profile::Stage::LiveVerification);
     for header in headers {
         let value = interpolate_http_value(&header.value, credential, companions);
         request = request.header(&header.name, &value);
@@ -496,7 +500,10 @@ fn request_for_method(
 pub(crate) async fn execute_request(
     request: reqwest::RequestBuilder,
 ) -> std::result::Result<reqwest::Response, RequestError> {
-    request.send().await.map_err(|e| RequestError {
+    // Profile: the async send is the network seam of live verification.
+    keyhog_profile::instrument_future(keyhog_profile::Stage::LiveVerification, request.send())
+        .await
+        .map_err(|e| RequestError {
         result: if e.is_timeout() {
             VerificationResult::Error(TIMEOUT_ERROR.into())
         } else if e.is_redirect() {

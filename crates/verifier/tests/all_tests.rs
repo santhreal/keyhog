@@ -71,6 +71,8 @@ pub mod regression_sigv4_known_answer;
 pub mod regression_ssrf_screen_matrix;
 #[path = "regression_ssrf_short_form_ip.rs"]
 pub mod regression_ssrf_short_form_ip;
+#[path = "profiling_instrumentation.rs"]
+pub mod profiling_instrumentation;
 #[path = "regression_status_verdict_map.rs"]
 pub mod regression_status_verdict_map;
 #[path = "regression_success_spec_body_json_matcher.rs"]

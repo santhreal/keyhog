@@ -3,8 +3,9 @@
 
 use crate::daemon::frame;
 use crate::daemon::protocol::{
-    BackendRecoveryStatus, MassScanStats, RecoveredInputRangeStatus, Request, Response,
-    SourceCoverageGaps, WarmBackendStatus, MASS_BATCH_BYTES, MASS_BATCH_CHUNKS, WIRE_VERSION,
+    BackendRecoveryStatus, MassScanStats, ProfileStageMeasurement, RecoveredInputRangeStatus,
+    Request, RequestProfile, Response, SourceCoverageGaps, WarmBackendStatus, MASS_BATCH_BYTES,
+    MASS_BATCH_CHUNKS, WIRE_VERSION,
 };
 use crate::daemon::trust;
 use crate::daemon::warm_identity::WarmBackendReadiness;
@@ -118,6 +119,77 @@ pub fn default_socket_path() -> PathBuf {
     p
 }
 
+/// Process-atomic allocator for per-request profile identities. The daemon
+/// generation string (already advertised in `WarmBackendStatus`) scopes the
+/// sequence so ids stay unique across daemon restarts and processes.
+struct RequestIdAllocator {
+    generation: String,
+    sequence: AtomicU64,
+}
+
+impl RequestIdAllocator {
+    fn new(generation: String) -> Self {
+        Self {
+            generation,
+            sequence: AtomicU64::new(0),
+        }
+    }
+
+    fn next(&self) -> String {
+        let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
+        format!("{}-{:016x}", self.generation, sequence)
+    }
+}
+
+/// One isolated profiling runtime for a single profiled daemon request.
+/// Created only when the client asked for a profile; the runtime is entered
+/// on the blocking scan thread and propagates to scanner rayon workers via
+/// `keyhog_profile::current_runtime()`, so concurrent profiled requests never
+/// share measurements.
+struct RequestProfileCapture {
+    request_id: String,
+    runtime: keyhog_profile::Runtime,
+}
+
+impl RequestProfileCapture {
+    fn new(request_id: String) -> Self {
+        Self {
+            request_id,
+            runtime: keyhog_profile::Runtime::new(),
+        }
+    }
+
+    fn enter(&self) -> keyhog_profile::ContextGuard {
+        self.runtime.enter()
+    }
+
+    /// Drain the isolated runtime into a bounded, privacy-safe payload. Runs
+    /// on the scan thread while its context guard is alive so the stage
+    /// counter drain reads this request's runtime, never a peer's.
+    fn finish(self, started: Instant) -> RequestProfile {
+        let stages = keyhog_profile::take_stage_measurements()
+            .into_iter()
+            .map(|measurement| ProfileStageMeasurement {
+                stage: measurement.stage.as_str().to_string(),
+                calls: measurement.calls,
+                elapsed_ns: measurement.elapsed_ns,
+            })
+            .collect();
+        // Span records stay daemon-side; only their exact loss count crosses.
+        let (_spans, dropped_span_events) = self.runtime.take_session_span_records();
+        let (_point_events, _annotations, event_loss) = self.runtime.take_session_typed_events();
+        RequestProfile {
+            request_id: self.request_id,
+            wall_time_ns: u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+            stages,
+            dropped_span_events,
+            dropped_point_events: event_loss.point_events,
+            dropped_annotations: event_loss.annotations,
+            sampled_out_events: event_loss.sampled_out_events,
+        }
+    }
+}
+
 struct ServerState {
     scanner: Arc<CompiledScanner>,
     router: Arc<crate::orchestrator::CachedBackendRouter>,
@@ -132,6 +204,10 @@ struct ServerState {
     backend_recoveries: AtomicU64,
     last_backend_fault: std::sync::Mutex<Option<BackendRecoveryStatus>>,
     warm_backend: WarmBackendReadiness,
+    // Per-request profile identity: the daemon generation string (the same one
+    // `WarmBackendStatus` advertises) plus a process-atomic sequence, so every
+    // profiled scan request is attributable to exactly one response.
+    request_identity: RequestIdAllocator,
     mass_service: bool,
     mass_gpu_primary_required: bool,
     // Fragment reassembly is scanner-owned mutable state. A normal request
@@ -177,6 +253,9 @@ impl ServerState {
             backend_override,
             backend_recoveries: AtomicU64::new(0),
             last_backend_fault: std::sync::Mutex::new(None),
+            request_identity: RequestIdAllocator::new(
+                warm_backend.daemon_generation().to_string(),
+            ),
             warm_backend,
             mass_service: options.mass_service,
             mass_gpu_primary_required: options.mass_gpu_primary_required,
@@ -601,6 +680,7 @@ fn spawn_mass_filesystem_source(
 struct MassSession {
     state: Arc<ServerState>,
     dogfood: bool,
+    profile: bool,
     stats: MassScanStats,
     started_at: Instant,
     filesystem_batches: Option<mpsc::Receiver<MassFilesystemMessage>>,
@@ -678,7 +758,7 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
         }
 
         let response = match request {
-            Request::MassBegin { dogfood } => {
+            Request::MassBegin { dogfood, profile } => {
                 if !state.mass_service {
                     Response::Error {
                         message: "daemon: mass transaction refused because this service was not \
@@ -699,6 +779,7 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
                     mass_session = Some(MassSession {
                         state: state.clone(),
                         dogfood,
+                        profile,
                         stats: MassScanStats::default(),
                         started_at: Instant::now(),
                         filesystem_batches: None,
@@ -713,7 +794,8 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
                         .to_string(),
                 },
                 Some(session) => {
-                    let batch = scan_mass_batch(&state, chunks, session.dogfood).await;
+                    let batch =
+                        scan_mass_batch(&state, chunks, session.dogfood, session.profile).await;
                     session.record(&batch);
                     batch.response
                 }
@@ -767,7 +849,9 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
                 Some(session) => match session.filesystem_batches.as_mut() {
                     Some(receiver) => match receiver.recv().await {
                         Some(MassFilesystemMessage::Batch(chunks)) => {
-                            let batch = scan_mass_batch(&state, chunks, session.dogfood).await;
+                            let batch =
+                                scan_mass_batch(&state, chunks, session.dogfood, session.profile)
+                                    .await;
                             session.record(&batch);
                             batch.response
                         }
@@ -881,12 +965,14 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             path,
             text,
             dogfood,
-        } => scan_text(state, path, text, dogfood).await,
+            profile,
+        } => scan_text(state, path, text, dogfood, profile).await,
         Request::ScanPath {
             path,
             working_dir,
             dogfood,
-        } => scan_path(state, path, working_dir, dogfood).await,
+            profile,
+        } => scan_path(state, path, working_dir, dogfood, profile).await,
         Request::MassBegin { .. }
         | Request::MassBatch { .. }
         | Request::MassFilesystemBegin { .. }
@@ -903,6 +989,7 @@ async fn scan_text(
     path: Option<String>,
     text: String,
     dogfood: bool,
+    profile: bool,
 ) -> Response {
     state.active_scans.fetch_add(1, Ordering::Relaxed);
     let scanner = state.scanner.clone();
@@ -919,6 +1006,7 @@ async fn scan_text(
     if dogfood {
         telemetry.enable_dogfood();
     }
+    let profile_capture = profile.then(|| RequestProfileCapture::new(state.request_identity.next()));
     let _fragment_guard = fragment_scan_lock.lock_owned().await;
     scanner.clear_fragment_cache();
     // Hand the actual scan to a blocking thread - calibrated backend scanning
@@ -926,10 +1014,17 @@ async fn scan_text(
     // large scan would stall the tokio reactor and block every
     // other connection's framing reads.
     let res = tokio::task::spawn_blocking(move || -> Result<_> {
+        let _profile_guard = profile_capture.as_ref().map(RequestProfileCapture::enter);
+        let profile_started = Instant::now();
         let (matches, backend_recovery) = keyhog_scanner::telemetry::with_scan_telemetry(
             &telemetry,
             || -> Result<(Vec<RawMatch>, Option<BackendRecoveryStatus>)> {
                 scanner.clear_fragment_cache();
+                // ScanText constructs its chunk without a source adapter, so
+                // the daemon request is the acquisition boundary for input
+                // accounting.
+                keyhog_profile::add_input_units(1);
+                keyhog_profile::add_input_bytes(text.len() as u64);
                 let chunk = Chunk {
                     data: text.into(),
                     metadata: ChunkMetadata {
@@ -988,14 +1083,15 @@ async fn scan_text(
             },
         )?;
         let telemetry = telemetry.drain();
-        Ok((matches, telemetry, backend_recovery))
+        let profile = profile_capture.map(|capture| capture.finish(profile_started));
+        Ok((matches, telemetry, backend_recovery, profile))
     })
     .await;
     state.active_scans.fetch_sub(1, Ordering::Relaxed);
     state.scans_served.fetch_add(1, Ordering::Relaxed);
 
     match res {
-        Ok(Ok((matches, telemetry, backend_recovery))) => {
+        Ok(Ok((matches, telemetry, backend_recovery, profile))) => {
             if let Some(recovery) = backend_recovery.clone() {
                 if let Err(error) = state.record_backend_recovery(recovery) {
                     return Response::Error {
@@ -1011,6 +1107,7 @@ async fn scan_text(
                 telemetry,
                 SourceCoverageGaps::default(),
                 backend_recovery,
+                profile,
             )
         }
         Ok(Err(e)) => Response::Error {
@@ -1064,6 +1161,7 @@ async fn scan_path(
     path: String,
     working_dir: Option<String>,
     dogfood: bool,
+    profile: bool,
 ) -> Response {
     let resolved = match resolve_scan_target(&path, working_dir.as_deref()) {
         Ok(target) => target,
@@ -1085,6 +1183,7 @@ async fn scan_path(
     if dogfood {
         telemetry.enable_dogfood();
     }
+    let profile_capture = profile.then(|| RequestProfileCapture::new(state.request_identity.next()));
     let _fragment_guard = fragment_scan_lock.lock_owned().await;
     scanner.clear_fragment_cache();
     type ScanOutput = (
@@ -1092,15 +1191,26 @@ async fn scan_path(
         keyhog_scanner::telemetry::ScanTelemetrySnapshot,
         SourceCoverageGaps,
         Option<BackendRecoveryStatus>,
+        Option<RequestProfile>,
     );
     let res = tokio::task::spawn_blocking(move || -> Result<ScanOutput> {
-        let (chunks, source_coverage_gaps) = daemon_scan_path_chunks(&resolved_owned)?;
-        if chunks.iter().all(|chunk| chunk.data.is_empty()) {
-            return Ok((Vec::new(), telemetry.drain(), source_coverage_gaps, None));
-        }
-        let (matches, backend_recovery) = keyhog_scanner::telemetry::with_scan_telemetry(
-            &telemetry,
-            || -> Result<(Vec<RawMatch>, Option<BackendRecoveryStatus>)> {
+        let _profile_guard = profile_capture.as_ref().map(RequestProfileCapture::enter);
+        let profile_started = Instant::now();
+        let scanned = (|| -> Result<
+            (
+                Vec<RawMatch>,
+                keyhog_scanner::telemetry::ScanTelemetrySnapshot,
+                SourceCoverageGaps,
+                Option<BackendRecoveryStatus>,
+            ),
+        > {
+            let (chunks, source_coverage_gaps) = daemon_scan_path_chunks(&resolved_owned)?;
+            if chunks.iter().all(|chunk| chunk.data.is_empty()) {
+                return Ok((Vec::new(), telemetry.drain(), source_coverage_gaps, None));
+            }
+            let (matches, backend_recovery) = keyhog_scanner::telemetry::with_scan_telemetry(
+                &telemetry,
+                || -> Result<(Vec<RawMatch>, Option<BackendRecoveryStatus>)> {
                 let selection =
                     router.choose_with_plan(scanner.as_ref(), backend_override, &chunks)?;
                 let outcome = crate::orchestrator::scan_selected_batch(
@@ -1140,11 +1250,21 @@ async fn scan_path(
                 Ok((per_chunk.into_iter().flatten().collect(), backend_recovery))
             },
         )?;
+            Ok((
+                matches,
+                telemetry.drain(),
+                source_coverage_gaps,
+                backend_recovery,
+            ))
+        })();
+        let (matches, telemetry, source_coverage_gaps, backend_recovery) = scanned?;
+        let profile = profile_capture.map(|capture| capture.finish(profile_started));
         Ok((
             matches,
-            telemetry.drain(),
+            telemetry,
             source_coverage_gaps,
             backend_recovery,
+            profile,
         ))
     })
     .await;
@@ -1152,7 +1272,7 @@ async fn scan_path(
     state.scans_served.fetch_add(1, Ordering::Relaxed);
 
     match res {
-        Ok(Ok((matches, telemetry, source_coverage_gaps, backend_recovery))) => {
+        Ok(Ok((matches, telemetry, source_coverage_gaps, backend_recovery, profile))) => {
             if let Some(recovery) = backend_recovery.clone() {
                 if let Err(error) = state.record_backend_recovery(recovery) {
                     return Response::Error {
@@ -1168,6 +1288,7 @@ async fn scan_path(
                 telemetry,
                 source_coverage_gaps,
                 backend_recovery,
+                profile,
             )
         }
         Ok(Err(e)) => Response::Error {
@@ -1223,6 +1344,7 @@ async fn scan_mass_batch(
     state: &ServerState,
     chunks: Vec<Chunk>,
     dogfood: bool,
+    profile: bool,
 ) -> MassBatchDispatch {
     let (chunk_count, batch_bytes) = match validate_mass_batch(&chunks) {
         Ok(shape) => shape,
@@ -1241,13 +1363,22 @@ async fn scan_mass_batch(
     if dogfood {
         telemetry.enable_dogfood();
     }
+    let profile_capture = profile.then(|| RequestProfileCapture::new(state.request_identity.next()));
     let res = tokio::task::spawn_blocking(move || -> Result<_> {
-        if chunks.iter().all(|chunk| chunk.data.is_empty()) {
-            return Ok((Vec::new(), telemetry.drain(), None, false));
-        }
-        let (matches, backend_recovery, gpu) = keyhog_scanner::telemetry::with_scan_telemetry(
-            &telemetry,
-            || -> Result<(Vec<RawMatch>, Option<BackendRecoveryStatus>, bool)> {
+        let _profile_guard = profile_capture.as_ref().map(RequestProfileCapture::enter);
+        let profile_started = Instant::now();
+        let scanned = (|| -> Result<_> {
+            // Mass batches arrive from the client without a daemon-side source
+            // adapter, so the request is the acquisition boundary for input
+            // accounting.
+            keyhog_profile::add_input_units(chunk_count);
+            keyhog_profile::add_input_bytes(batch_bytes as u64);
+            if chunks.iter().all(|chunk| chunk.data.is_empty()) {
+                return Ok((Vec::new(), telemetry.drain(), None, false));
+            }
+            let (matches, backend_recovery, gpu) = keyhog_scanner::telemetry::with_scan_telemetry(
+                &telemetry,
+                || -> Result<(Vec<RawMatch>, Option<BackendRecoveryStatus>, bool)> {
                 let selection =
                     router.choose_with_plan(scanner.as_ref(), backend_override, &chunks)?;
                 let outcome = crate::orchestrator::scan_selected_batch(
@@ -1291,12 +1422,16 @@ async fn scan_mass_batch(
                 ))
             },
         )?;
-        Ok((matches, telemetry.drain(), backend_recovery, gpu))
+            Ok((matches, telemetry.drain(), backend_recovery, gpu))
+        })();
+        let (matches, telemetry, backend_recovery, gpu) = scanned?;
+        let profile = profile_capture.map(|capture| capture.finish(profile_started));
+        Ok((matches, telemetry, backend_recovery, gpu, profile))
     })
     .await;
 
     match res {
-        Ok(Ok((matches, telemetry, backend_recovery, gpu))) => {
+        Ok(Ok((matches, telemetry, backend_recovery, gpu, profile))) => {
             if let Some(recovery) = backend_recovery.clone() {
                 if let Err(error) = state.record_backend_recovery(recovery) {
                     return MassBatchDispatch::error(format!(
@@ -1311,6 +1446,7 @@ async fn scan_mass_batch(
                     telemetry,
                     SourceCoverageGaps::default(),
                     backend_recovery,
+                    profile,
                 ),
                 chunks: chunk_count,
                 bytes: batch_bytes as u64,
@@ -1330,6 +1466,7 @@ fn scan_results_response(
     telemetry: keyhog_scanner::telemetry::ScanTelemetrySnapshot,
     source_coverage_gaps: SourceCoverageGaps,
     backend_recovery: Option<BackendRecoveryStatus>,
+    profile: Option<RequestProfile>,
 ) -> Response {
     Response::ScanResults {
         path,
@@ -1341,6 +1478,7 @@ fn scan_results_response(
         dogfood_detail_events_dropped: telemetry.dogfood_detail_events_dropped,
         source_coverage_gaps,
         backend_recovery: backend_recovery.into(),
+        profile: profile.into(),
     }
 }
 
@@ -1451,6 +1589,9 @@ fn source_coverage_gaps_since(before: keyhog_sources::SkipCounts) -> SourceCover
 // Sibling file (daemon/server_tests.rs), not server/ subdir.
 #[path = "server_tests.rs"]
 mod server_tests;
+// Sibling file (daemon/request_profile_tests.rs), not server/ subdir.
+#[path = "request_profile_tests.rs"]
+mod request_profile_tests;
 
 #[doc(hidden)]
 pub(crate) mod testing {

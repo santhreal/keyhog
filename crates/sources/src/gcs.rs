@@ -141,40 +141,90 @@ fn collect_gcs_chunks(
     allow_token_forward: bool,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     let bucket = validate_bucket_name(bucket)?;
+    // Bucket acquisition: endpoint validation, client build, and auth.
+    let _acquire = crate::profile::acquire_span();
     let endpoint =
         crate::cloud::validate_cloud_endpoint(endpoint, "GCS", http.allow_private_endpoint, true)?;
     let client = crate::cloud::blocking_client("GCS", http)?;
     let bearer = resolve_gcs_auth(&endpoint, allow_token_forward)?;
-    let mut page_token = None::<String>;
+    drop(_acquire);
     let mut chunks = Vec::new();
     let mut coverage = crate::cloud::CloudListingCoverage::new("gcs", "objects", max_objects);
     let fetch_pool = crate::cloud::object_fetch_pool("gcs")?;
+
+    // First listing page is fetched inline; every later page prefetches during
+    // the previous page's download batch (`ListingPrefetch`), hiding listing
+    // latency behind the downloads. Page contents, cursor threading, and
+    // coverage accounting are identical to the serial loop.
+    let mut listing = {
+        let _page = crate::profile::walk_span();
+        fetch_gcs_listing_page(
+            &client,
+            &endpoint,
+            &bucket,
+            prefix,
+            None,
+            bearer.as_deref(),
+            limits.web_response_bytes,
+        )?
+    };
 
     loop {
         if !coverage.has_capacity_or_record(&mut chunks) {
             break;
         }
 
-        let listing = fetch_gcs_listing_page(
-            &client,
-            &endpoint,
-            &bucket,
-            prefix,
-            page_token.as_deref(),
-            bearer.as_deref(),
-            limits.web_response_bytes,
-        )?;
         let (page, reached_limit) = coverage.take_page(listing.items);
 
-        let page_chunks = download_gcs_listing_page(
-            &fetch_pool,
-            &page,
-            &client,
-            &endpoint,
-            &bucket,
-            bearer.as_deref(),
-            limits.gcs_object_bytes,
-        );
+        // An empty/whitespace `nextPageToken` means the listing is exhausted;
+        // re-requesting with it would restart from page one and re-download
+        // the same objects. See `crate::cloud::meaningful_continuation_token`.
+        // Decided BEFORE the download batch so the next listing page can
+        // overlap it; the max_objects gap still records at the exact serial
+        // position (after this page's chunks are pushed).
+        let next_token = if reached_limit {
+            None
+        } else {
+            crate::cloud::meaningful_continuation_token(listing.next_page_token.as_deref())
+                .map(str::to_string)
+        };
+        let prefetch = match &next_token {
+            Some(token) if coverage.has_listed_capacity() => {
+                let client = client.clone();
+                let endpoint = endpoint.clone();
+                let bucket = bucket.clone();
+                let prefix = prefix.map(str::to_string);
+                let bearer = bearer.clone();
+                let token = token.clone();
+                let max_response_bytes = limits.web_response_bytes;
+                crate::cloud::ListingPrefetch::spawn(move || {
+                    fetch_gcs_listing_page(
+                        &client,
+                        &endpoint,
+                        &bucket,
+                        prefix.as_deref(),
+                        Some(&token),
+                        bearer.as_deref(),
+                        max_response_bytes,
+                    )
+                })
+            }
+            _ => crate::cloud::ListingPrefetch::none(),
+        };
+
+        // Object downloads: one read span per page batch.
+        let page_chunks = {
+            let _download = crate::profile::read_span();
+            download_gcs_listing_page(
+                &fetch_pool,
+                &page,
+                &client,
+                &endpoint,
+                &bucket,
+                bearer.as_deref(),
+                limits.gcs_object_bytes,
+            )
+        };
         crate::cloud::push_page_chunks(&mut chunks, page_chunks);
 
         if reached_limit {
@@ -184,12 +234,17 @@ fn collect_gcs_chunks(
             );
             break;
         }
-        // An empty/whitespace `nextPageToken` means the listing is exhausted;
-        // re-requesting with it would restart from page one and re-download the
-        // same objects. See `crate::cloud::meaningful_continuation_token`.
-        match crate::cloud::meaningful_continuation_token(listing.next_page_token.as_deref()) {
-            Some(token) => page_token = Some(token.to_string()),
-            None => break,
+        if next_token.is_none() {
+            break;
+        }
+        match prefetch.join() {
+            Some(next_listing) => listing = next_listing?,
+            // Capacity exactly exhausted by this page: the serial loop-top
+            // check recorded the max_objects gap here without fetching again.
+            None => {
+                coverage.has_capacity_or_record(&mut chunks);
+                break;
+            }
         }
     }
 

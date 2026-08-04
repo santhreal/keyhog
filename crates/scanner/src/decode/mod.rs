@@ -31,9 +31,11 @@ pub(crate) use base64::{
 };
 pub use hex::{find_hex_strings, hex_decode};
 pub(crate) use pipeline::{
-    bytecount_newlines, decoder_profile_dump, decoder_profile_reset, extract_profile_dump,
-    extract_profile_reset, splice_decoded_payload_at, with_extracted_value_spans,
+    bytecount_newlines, decoder_profile_dump, decoder_profile_reset, splice_decoded_payload_at,
+    with_extracted_value_spans,
 };
+#[cfg(feature = "decode")]
+pub(crate) use pipeline::{extract_profile_from_typed, format_extract_profile};
 pub(crate) use pipeline::{canonical_decode_order_probe_for_test, CompiledDecoderPlan};
 #[cfg(feature = "decode")]
 pub(crate) use pipeline::{decoder_admission, default_decoder_names};

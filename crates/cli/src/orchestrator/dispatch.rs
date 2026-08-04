@@ -176,6 +176,13 @@ impl CoalescedBatchRouter {
             Self::Measured(router) => router.quarantine_recovered_route(selection, recovery),
         }
     }
+
+    fn requested_backend(&self) -> &str {
+        match self {
+            Self::Explicit(backend) => backend.label(),
+            Self::Measured(_) => "auto",
+        }
+    }
 }
 
 impl CoalescedScannerWorker {
@@ -298,6 +305,7 @@ impl CoalescedScannerWorker {
         .map_err(|error| {
             AutorouteRoutingError::selected_backend_dispatch_failed(chosen_backend, error)
         })?;
+        record_profiled_batch_route(batch, self.router.requested_backend(), &selection, &outcome);
         if let Some(recovery) = outcome.recovery.as_ref() {
             self.router
                 .quarantine_recovered_route(&selection, recovery)?;
@@ -405,6 +413,51 @@ pub(crate) struct SelectedBatchScan {
     pub(crate) per_chunk: Vec<Vec<RawMatch>>,
     pub(crate) recovered: bool,
     pub(crate) recovery: Option<keyhog_scanner::BackendRecoveryReceipt>,
+}
+
+pub(crate) fn record_profiled_batch_route(
+    batch: &[Chunk],
+    requested_backend: &str,
+    selection: &BackendSelection,
+    outcome: &SelectedBatchScan,
+) {
+    if !keyhog_profile::enabled() {
+        return;
+    }
+    let workload_key_digest = selection
+        .runtime_route
+        .as_ref()
+        .map(|route| route.workload_key_digest())
+        .unwrap_or_else(|| profiling_explicit_batch_digest(batch));
+    let (completed_backend, recovered_from_backend) = outcome.recovery.as_ref().map_or_else(
+        || (selection.backend.label(), None),
+        |recovery| {
+            (
+                recovery.recovery_backend.label(),
+                Some(recovery.failed_backend.label()),
+            )
+        },
+    );
+    keyhog_profile::record_batch_route(
+        &workload_key_digest,
+        requested_backend,
+        selection.backend.label(),
+        completed_backend,
+        recovered_from_backend,
+    );
+}
+
+fn profiling_explicit_batch_digest(batch: &[Chunk]) -> String {
+    let mut hasher = crate::stable_hash::StableHasher::new("profile-explicit-batch-shape-v1");
+    hasher.field_usize("chunks", batch.len());
+    for (index, chunk) in batch.iter().enumerate() {
+        hasher
+            .field_usize("chunk.index", index)
+            .field_usize("chunk.payload_bytes", chunk.data.len())
+            .field_option_u64("chunk.source_bytes", chunk.metadata.size_bytes)
+            .field_str("chunk.source_type", &chunk.metadata.source_type);
+    }
+    keyhog_core::hex_encode(&hasher.finish_256())
 }
 
 /// Execute one already-selected backend and own its complete recovery contract.
@@ -803,6 +856,15 @@ impl CoalescedBatchProducer {
             }
             finalize_source_outcome(src_chunks, src_errored);
             self.skipped_unchanged += filesystem_source_skipped_unchanged(source.as_ref());
+            // Per-partition workflow evidence: sources are produced strictly
+            // sequentially on this thread, so draining the aggregate input
+            // counters at each source boundary attributes exactly this
+            // source's recorded units/bytes. Gated on the operator profile so
+            // a bare `--perf-trace` run keeps owning the legacy totals.
+            if crate::operator_profile_active() {
+                let (bytes, units) = keyhog_profile::take_input_totals();
+                super::workflow_state::record_source_partition(source.name(), units, bytes);
+            }
         }
 
         self.flush_batch();
@@ -1020,7 +1082,11 @@ impl ScanOrchestrator {
         );
 
         let scanner_worker = self.coalesced_scanner_worker(scanner);
-        let scanner_thread = std::thread::spawn(move || scanner_worker.run(rx));
+        let profile_runtime = keyhog_profile::current_runtime();
+        let scanner_thread = std::thread::spawn(move || {
+            let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+            scanner_worker.run(rx)
+        });
 
         let producer_outcome = CoalescedBatchProducer::new(tx, pipeline_plan, merkle.clone())
             .produce_sources(&sources);
@@ -1046,6 +1112,7 @@ impl ScanOrchestrator {
         skipped_unchanged: usize,
         findings: &[RawMatch],
     ) {
+        super::workflow_state::record_merkle_skipped_unchanged(skipped_unchanged);
         if skipped_unchanged > 0 {
             tracing::info!(
                 skipped = skipped_unchanged,

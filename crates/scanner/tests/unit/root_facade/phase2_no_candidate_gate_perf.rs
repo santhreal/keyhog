@@ -60,9 +60,11 @@ fn mark_matches_gate_path_is_fast() {
     // Ensure the no-candidate gate is ON (the default).
     keyhog_scanner::testing::set_no_candidate_gate(&scanner, Some(true));
 
-    // Warm: reset counters and verify the gate fires on one scan, so the timed
-    // loop starts with the gate path warm.
-    crate::engine::phase2_mark_stats_reset();
+    // Warm: drain any prior counts and verify the gate fires on one scan, so
+    // the timed loop starts with the gate path warm. The mark counters live in
+    // the profile runtime, so recording needs an active runtime on this thread.
+    keyhog_profile::set_enabled(true);
+    let _ = crate::engine::take_mark_stats();
     {
         use keyhog_core::{Chunk, ChunkMetadata};
         let chunk = Chunk {
@@ -74,7 +76,8 @@ fn mark_matches_gate_path_is_fast() {
         };
         let _ = scanner.scan(&chunk);
     }
-    let warm = crate::engine::phase2_mark_stats();
+    let warm = crate::engine::take_mark_stats();
+    keyhog_profile::set_enabled(false);
     let (warm_calls, warm_skips, warm_work) = (warm.calls, warm.gate_skips, warm.perpattern_work);
     assert!(
         warm_calls >= 1,

@@ -63,6 +63,8 @@ static INLINE_COMMENT_MARKERS: std::sync::LazyLock<Vec<String>> = std::sync::Laz
 pub(crate) fn filter_inline_suppressions(matches: Vec<RawMatch>) -> Vec<RawMatch> {
     use std::io::BufRead;
 
+    // Inline suppression matching/evaluation is Suppression-stage work.
+    let _span = keyhog_profile::span(keyhog_profile::Stage::Suppression);
     let mut filtered_matches = Vec::new();
     let mut files_to_matches: HashMap<String, Vec<RawMatch>> = HashMap::new();
     let mut non_file_matches = Vec::new();
@@ -150,6 +152,8 @@ pub(crate) fn filter_inline_suppressions(matches: Vec<RawMatch>) -> Vec<RawMatch
 }
 
 pub(crate) fn attach_inline_suppression_context(chunks: &[Chunk], per_chunk: &mut [Vec<RawMatch>]) {
+    // Inline suppression context parsing is Suppression-stage work.
+    let _span = keyhog_profile::span(keyhog_profile::Stage::Suppression);
     for (chunk_index, matches) in per_chunk.iter_mut().enumerate() {
         let Some(primary_chunk) = chunks.get(chunk_index) else {
             continue;
@@ -164,6 +168,8 @@ pub(crate) fn attach_inline_suppression_context_to_matches(
     chunk: &Chunk,
     matches: &mut [RawMatch],
 ) {
+    // Inline suppression context parsing is Suppression-stage work.
+    let _span = keyhog_profile::span(keyhog_profile::Stage::Suppression);
     for m in matches {
         attach_inline_suppression_context_from_chunk(chunk, m);
     }

@@ -57,6 +57,8 @@ pub(crate) fn write_scan_receipt(
     let format = action_format(&args.format)
         .context("--action-receipt supports only sarif, json, jsonl, or text reports")?;
     validate_semantics(findings, exit_code, status_token(status))?;
+    // Receipt metadata assembly (report digest) and publication are Reporting-stage work.
+    let _span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     let (report_bytes, report_sha256) = digest_regular(report_path)?;
     let body = format!(
         "schema={SCHEMA}\nformat={format}\nfindings={findings}\nreport-bytes={report_bytes}\nreport-sha256={report_sha256}\nscan-status={}\nexit-code={exit_code}\n",

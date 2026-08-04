@@ -197,6 +197,162 @@ pub(crate) fn resolve_scan_roots(requested: &[PathBuf]) -> Result<Vec<PathBuf>> 
     Ok(kept)
 }
 
+fn profile_path(
+    hasher: &mut crate::stable_hash::StableHasher,
+    field: &str,
+    path: &std::path::Path,
+) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        hasher.field_bytes(field, path.as_os_str().as_bytes());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        let mut bytes = Vec::new();
+        for unit in path.as_os_str().encode_wide() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        hasher.field_bytes(field, &bytes);
+    }
+    #[cfg(not(any(unix, windows)))]
+    hasher.field_bytes(field, path.to_string_lossy().as_bytes());
+}
+
+fn profile_paths(
+    hasher: &mut crate::stable_hash::StableHasher,
+    field: &str,
+    paths: impl IntoIterator<Item = PathBuf>,
+) {
+    let mut paths = paths.into_iter().collect::<Vec<_>>();
+    paths.sort_unstable();
+    paths.dedup();
+    hasher.field_usize(&format!("{field}.len"), paths.len());
+    for path in paths {
+        profile_path(hasher, field, &path);
+    }
+}
+
+fn profile_strings(
+    hasher: &mut crate::stable_hash::StableHasher,
+    field: &str,
+    values: impl IntoIterator<Item = String>,
+) {
+    let mut values = values.into_iter().collect::<Vec<_>>();
+    values.sort_unstable();
+    values.dedup();
+    hasher.field_usize(&format!("{field}.len"), values.len());
+    for value in values {
+        hasher.field_str(field, &value);
+    }
+}
+
+/// Hash the exact selected targets without persisting paths, URLs, or credentials.
+pub(crate) fn profiling_source_identity(
+    args: &ScanArgs,
+    sources: &[Box<dyn Source>],
+) -> keyhog_profile::SourceIdentityV2 {
+    let mut target = crate::stable_hash::StableHasher::new("profile-source-target-v1");
+    profile_paths(&mut target, "filesystem.roots", args.scan_roots());
+    target.field_bool("stdin", args.stdin);
+    #[cfg(feature = "binary")]
+    target.field_bool("binary", args.binary);
+
+    #[cfg(feature = "git")]
+    {
+        profile_paths(&mut target, "git.blobs", args.git_blobs.iter().cloned());
+        target.field_option_str("git.diff.base", args.git_diff.as_deref());
+        if args.git_diff.is_some() {
+            profile_path(
+                &mut target,
+                "git.diff.path",
+                args.git_diff_path
+                    .as_deref()
+                    .unwrap_or_else(|| std::path::Path::new(".")),
+            );
+        }
+        profile_paths(&mut target, "git.history", args.git_history.iter().cloned());
+        target.field_bool("git.staged", args.git_staged);
+    }
+
+    #[cfg(feature = "github")]
+    {
+        target.field_option_str("github.org", args.github_org.as_deref());
+        target.field_option_str(
+            "github.collaboration.repository",
+            args.github_collaboration.as_deref(),
+        );
+        if args.github_collaboration.is_some() {
+            target.field_bool("github.collaboration.all", args.github_all);
+            target.field_bool("github.collaboration.issues", args.github_issues);
+            target.field_bool(
+                "github.collaboration.pull_requests",
+                args.github_pull_requests,
+            );
+            target.field_bool("github.collaboration.discussions", args.github_discussions);
+            target.field_bool("github.collaboration.wiki", args.github_wiki);
+            target.field_bool("github.collaboration.gists", args.github_gists);
+        }
+    }
+    #[cfg(feature = "gitlab")]
+    if let Some(group) = args.gitlab_group.as_deref() {
+        target.field_str("gitlab.group", group);
+        target.field_str("gitlab.endpoint", &args.gitlab_endpoint);
+    }
+    #[cfg(feature = "bitbucket")]
+    if let Some(workspace) = args.bitbucket_workspace.as_deref() {
+        target.field_str("bitbucket.workspace", workspace);
+        target.field_str("bitbucket.endpoint", &args.bitbucket_endpoint);
+    }
+    #[cfg(feature = "s3")]
+    if let Some(bucket) = args.s3_bucket.as_deref() {
+        target.field_str("s3.bucket", bucket);
+        target.field_option_str("s3.prefix", args.s3_prefix.as_deref());
+        target.field_option_str("s3.endpoint", args.s3_endpoint.as_deref());
+    }
+    #[cfg(feature = "gcs")]
+    if let Some(bucket) = args.gcs_bucket.as_deref() {
+        target.field_str("gcs.bucket", bucket);
+        target.field_option_str("gcs.prefix", args.gcs_prefix.as_deref());
+        target.field_option_str("gcs.endpoint", args.gcs_endpoint.as_deref());
+    }
+    #[cfg(feature = "azure")]
+    if let Some(container) = args.azure_container_url.as_deref() {
+        target.field_str("azure.container", container);
+        target.field_option_str("azure.prefix", args.azure_prefix.as_deref());
+    }
+    #[cfg(feature = "docker")]
+    target.field_option_str("docker.image", args.docker_image.as_deref());
+    #[cfg(feature = "web")]
+    profile_strings(&mut target, "web.url", args.url.iter().flatten().cloned());
+    profile_strings(
+        &mut target,
+        "dynamic.source",
+        args.source.iter().flatten().cloned(),
+    );
+
+    let target_digest = target.finish_256();
+    let mut partition = crate::stable_hash::StableHasher::new("profile-source-partition-v1");
+    partition.field_bytes("target_digest", &target_digest);
+    partition.field_usize("source_count", sources.len());
+    let adapters = sources
+        .iter()
+        .map(|source| {
+            let name = source.name().to_owned();
+            partition.field_str("adapter", &name);
+            name
+        })
+        .collect();
+    let target_digest = keyhog_core::hex_encode(&target_digest);
+    let partition_digest = keyhog_core::hex_encode(&partition.finish_256());
+    keyhog_profile::SourceIdentityV2::capture(keyhog_profile::SourceIdentityInput {
+        adapters,
+        target_digest: Some(&target_digest),
+        partition_digest: Some(&partition_digest),
+    })
+}
+
 pub(crate) fn build_sources(
     args: &ScanArgs,
     resolved: &ResolvedScanConfig,

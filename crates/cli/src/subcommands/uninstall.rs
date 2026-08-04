@@ -36,6 +36,8 @@ pub(crate) fn run(args: UninstallArgs) -> Result<ExitCode> {
     }
 
     remove_binary(&exe)?;
+    // Publication of the removal outcome.
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
     println!(
         "\n{} removed {}",
         style::pass("PASS", &palette),

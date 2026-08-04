@@ -888,7 +888,7 @@ fn single_and_multi_step_share_http_request_lifecycle_helpers() {
         response.contains("pub(crate) struct HttpResponseBody")
             && response.contains("pub(crate) async fn execute_and_read_response(")
             && response.contains("execute_request(request).await?")
-            && response.contains("read_response_body(response).await?"),
+            && response.contains("read_response_body(response)"),
         "one response helper must own execute + capped-body-read for verifier HTTP steps"
     );
 
