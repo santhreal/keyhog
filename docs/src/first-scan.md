@@ -77,7 +77,7 @@ With `--progress`, stderr starts with the live scanner and routing banner:
 ```text
     K E Y H O G
     ───────────
-    v0.5.52 · secret scanner · 923 detectors
+    v0.5.53 · secret scanner · 923 detectors
     by santh
 
   ⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 923 detectors (5822 patterns) io_uring | backend=simd-regex | gpu=none
@@ -150,7 +150,7 @@ the artifact without scraping console progress.
   "metadata": {
     "scan_id": "0123456789abcdef0123456789abcdef",
     "scan_status": "success",
-    "keyhog_version": "0.5.52",
+    "keyhog_version": "0.5.53",
     "git_hash": "<build-commit>",
     "detector_digest": "923-<digest>",
     "config_digest": "<effective-config-digest>",

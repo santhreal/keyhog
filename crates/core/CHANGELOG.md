@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.53 - 2026-08-04
+
+- Make the coalesced batch pipeline eleven times faster and stop starving the accelerator.
+
 ## 0.5.52 - 2026-08-04
 
 - Refuse a non-default `max_file_size` or `dedup` on `ScanConfig` and name the surface that owns the behaviour, instead of accepting two documented no-op fields that gave a library caller the same scan they would have got by leaving them alone.

@@ -2,6 +2,17 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.53] - 2026-08-04
+
+### Changed
+
+- Make the coalesced batch pipeline eleven times faster and stop starving the accelerator.
+
+### Fixed
+
+- Include both published GitHub Action manifests in the release version transaction, so the minimum version they advertise cannot fall behind the workspace as it did for two releases.
+- Track the accumulating batch's route class and chunk identities as chunks arrive instead of rescanning and rehashing the whole batch for every chunk. The coalesced pipeline's 4,096-chunk batches made that quadratic, which is why an explicit GPU backend measured slower than CPU while the accelerator sat idle.
+
 ## [0.5.52] - 2026-08-04
 
 ### Added

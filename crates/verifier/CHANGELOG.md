@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.53 - 2026-08-04
+
+- Make the coalesced batch pipeline eleven times faster and stop starving the accelerator.
+
 ## 0.5.52 - 2026-08-04
 
 - Refuse configuration fields the scanner cannot honour and check every documented command against the real CLI.

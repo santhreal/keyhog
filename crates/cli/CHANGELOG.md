@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.53 - 2026-08-04
+
+- Include both published GitHub Action manifests in the release version transaction, so the minimum version they advertise cannot fall behind the workspace as it did for two releases.
+- Track the accumulating batch's route class and chunk identities as chunks arrive instead of rescanning and rehashing the whole batch for every chunk. The coalesced pipeline's 4,096-chunk batches made that quadratic, which is why an explicit GPU backend measured slower than CPU while the accelerator sat idle.
+
 ## 0.5.52 - 2026-08-04
 
 - Check every `keyhog` command in the README and the handbook against the compiled command model, so a documented subcommand or long flag that is renamed or removed fails the build instead of failing the reader who types it.
