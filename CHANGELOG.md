@@ -2,6 +2,13 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.64] - 2026-08-04
+
+### Changed
+
+- Remeasure the README evidence panels against the current detector corpus, so the published accuracy, execution-route and daemon figures describe what the scanner does today. The precision preset improves to F1 0.8799 from 0.8784 on the benchmark corpus and the default policy holds at 0.9447.
+- README evidence panels remeasured against the current detector corpus.
+
 ## [0.5.63] - 2026-08-04
 
 ### Changed

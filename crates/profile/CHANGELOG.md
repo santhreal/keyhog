@@ -2,6 +2,10 @@
 
 All notable changes to `keyhog-profile` are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.5.64 - 2026-08-04
+
+- README evidence panels remeasured against the current detector corpus.
+
 ## 0.5.63 - 2026-08-04
 
 - Mailchimp datacenter key routing.
