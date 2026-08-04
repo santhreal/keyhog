@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.59 - 2026-08-04
+
+- Say what diverged when autoroute rejects a backend candidate. The message reported only that findings differed, which blocks the whole calibration and gives an operator nothing to act on; it now names how many records each side produced, how many were unique to each, and up to three of them by detector, file, line and offset. Every field shown is already redacted.
+
 ## 0.5.58 - 2026-08-04
 
 - README evidence panels remeasured against the current binary.

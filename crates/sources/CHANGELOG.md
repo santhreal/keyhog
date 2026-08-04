@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.59 - 2026-08-04
+
+- Token-boundary anchoring and an actionable autoroute parity rejection.
+
 ## 0.5.58 - 2026-08-04
 
 - README evidence panels remeasured against the current binary.

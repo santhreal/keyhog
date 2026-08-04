@@ -2,6 +2,17 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.59] - 2026-08-04
+
+### Changed
+
+- Say what diverged when autoroute rejects a backend candidate. The message reported only that findings differed, which blocks the whole calibration and gives an operator nothing to act on; it now names how many records each side produced, how many were unique to each, and up to three of them by detector, file, line and offset. Every field shown is already redacted.
+- Token-boundary anchoring and an actionable autoroute parity rejection.
+
+### Fixed
+
+- Stop the Africa's Talking detector matching inside a larger identifier. Its anchor accepted a bare `at`/`AT` with nothing in front of it, and `SNAPCHAT_API_KEY=` contains a literal `AT_API_KEY=`, so every Snapchat token was also matched as an Africa's Talking key. Deduplication kept it out of the report, but the extra match blocked GPU autoroute calibration for the whole workload class.
+
 ## [0.5.58] - 2026-08-04
 
 ### Changed

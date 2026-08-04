@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.59 - 2026-08-04
+
+- Stop the Africa's Talking detector matching inside a larger identifier. Its anchor accepted a bare `at`/`AT` with nothing in front of it, and `SNAPCHAT_API_KEY=` contains a literal `AT_API_KEY=`, so every Snapchat token was also matched as an Africa's Talking key. Deduplication kept it out of the report, but the extra match blocked GPU autoroute calibration for the whole workload class.
+
 ## 0.5.58 - 2026-08-04
 
 - README evidence panels remeasured against the current binary.
