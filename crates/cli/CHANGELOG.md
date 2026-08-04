@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.54 - 2026-08-04
+
+- Check every `.keyhog.toml` key and table in the configuration reference against the real config schema, reading the accepted field list out of the schema itself rather than restating it, so a renamed or removed key fails the build instead of failing the reader with an unknown-key error.
+
+- Correct the configuration reference, which advertised a `no_entropy_ml_scoring` key that has never existed. Writing it into `.keyhog.toml` fails closed as an unknown key; the knob is CLI-only.
+- Let the configuration module's no-inline-tests gate accept the sanctioned `#[cfg(test)] #[path]` sibling-module hook, which the blanket attribute ban rejected even though the test code lives outside the source tree.
+
 ## 0.5.53 - 2026-08-04
 
 - Include both published GitHub Action manifests in the release version transaction, so the minimum version they advertise cannot fall behind the workspace as it did for two releases.

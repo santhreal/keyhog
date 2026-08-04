@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.54 - 2026-08-04
+
+- Skip homoglyph variants on chunks that provably contain no confusable glyph.
+
 ## 0.5.53 - 2026-08-04
 
 - Make the coalesced batch pipeline eleven times faster and stop starving the accelerator.

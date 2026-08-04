@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.54 - 2026-08-04
+
+- Report how many phase-two prefilter batches the prefix gate ran versus skipped in `--perf-trace`, which answers whether the prefilter is expensive because every chunk reaches it or because every batch runs.
+
+- Skip homoglyph-variant patterns when the chunk provably contains no confusable glyph, instead of only when it is pure ASCII. Ordinary non-ASCII source text carries accented names, CJK, box drawing, arrows and emoji, none of which a homoglyph variant can match, and it was forcing the full residual pattern set.
+
 ## 0.5.53 - 2026-08-04
 
 - Make the coalesced batch pipeline eleven times faster and stop starving the accelerator.

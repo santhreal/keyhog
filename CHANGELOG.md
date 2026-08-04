@@ -2,6 +2,23 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.54] - 2026-08-04
+
+### Added
+
+- Check every `.keyhog.toml` key and table in the configuration reference against the real config schema, reading the accepted field list out of the schema itself rather than restating it, so a renamed or removed key fails the build instead of failing the reader with an unknown-key error.
+- Report how many phase-two prefilter batches the prefix gate ran versus skipped in `--perf-trace`, which answers whether the prefilter is expensive because every chunk reaches it or because every batch runs.
+
+### Changed
+
+- Skip homoglyph-variant patterns when the chunk provably contains no confusable glyph, instead of only when it is pure ASCII. Ordinary non-ASCII source text carries accented names, CJK, box drawing, arrows and emoji, none of which a homoglyph variant can match, and it was forcing the full residual pattern set.
+- Skip homoglyph variants on chunks that provably contain no confusable glyph.
+
+### Fixed
+
+- Correct the configuration reference, which advertised a `no_entropy_ml_scoring` key that has never existed. Writing it into `.keyhog.toml` fails closed as an unknown key; the knob is CLI-only.
+- Let the configuration module's no-inline-tests gate accept the sanctioned `#[cfg(test)] #[path]` sibling-module hook, which the blanket attribute ban rejected even though the test code lives outside the source tree.
+
 ## [0.5.53] - 2026-08-04
 
 ### Changed

@@ -1,3 +1,0 @@
-category = "Added"
-summary = "Report how many phase-two prefilter batches the prefix gate ran versus skipped in `--perf-trace`, which answers whether the prefilter is expensive because every chunk reaches it or because every batch runs."
-crates = ["scanner"]
