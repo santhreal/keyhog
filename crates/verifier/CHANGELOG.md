@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.65 - 2026-08-04
+
+- Actionable GPU refusal diagnostics.
+
 ## 0.5.64 - 2026-08-04
 
 - README evidence panels remeasured against the current detector corpus.

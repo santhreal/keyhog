@@ -2,6 +2,16 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.65] - 2026-08-04
+
+### Changed
+
+- Actionable GPU refusal diagnostics.
+
+### Fixed
+
+- Tell the operator the truth when a required GPU is unavailable. An explicit `--backend gpu-cuda` also makes GPU mandatory, but the refusal named only `--require-gpu` and advised running without it, sending anyone who used the backend flag looking for a flag they never passed. The message now names the resolved policy, both routes into it, and both ways out.
+
 ## [0.5.64] - 2026-08-04
 
 ### Changed
