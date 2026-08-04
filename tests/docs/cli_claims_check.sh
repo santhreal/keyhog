@@ -14,12 +14,15 @@
 #   --quiet (on `keyhog scan`)                no such flag; the machine output
 #                                             formats are already findings-only
 #
-# This guard asserts that CLI surface confirmed NOT to exist is never claimed
-# as usable in the user docs. It is intentionally a precise denylist rather
-# than a full `--help` diff: a regex sweep over prose mis-attributes neighbour
-# flags (e.g. `cargo test -p keyhog-scanner --lib` is not a keyhog flag), which
-# would make CI non-deterministic. The exhaustive flag cross-check belongs in
-# a binary-driven test (see readme_claims.rs) where --help is ground truth.
+# This guard covers PROSE, where a flag is often named in order to say it does
+# not exist. It is a precise denylist rather than a regex sweep because prose
+# mis-attributes neighbour flags (e.g. `cargo test -p keyhog-scanner --lib` is
+# not a keyhog flag), which would make CI non-deterministic.
+#
+# The exhaustive cross-check now exists and covers FENCED COMMANDS:
+# crates/cli/tests/gate/docs_cli_surface.rs walks every `keyhog …` invocation
+# in README.md and docs/src and checks its subcommand path and long flags
+# against the compiled clap model.
 #
 # If an entry below becomes a real flag, IMPLEMENT it and delete its line here
 # in the same change. Lines that DOCUMENT THE ABSENCE of a flag ("there is no

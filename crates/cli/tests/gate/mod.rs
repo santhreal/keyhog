@@ -3,6 +3,7 @@ mod benchmark_gpu_summary_nonempty;
 mod calibrate_show_flag_parses;
 mod cli_surface_snapshot;
 mod completion_bash_shell_parses;
+mod docs_cli_surface;
 mod daemon_mode_tristate_parses;
 mod daemon_status_action_parses;
 mod detectors_subcommand_parses;

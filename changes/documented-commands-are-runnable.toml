@@ -1,0 +1,3 @@
+category = "Added"
+summary = "Check every `keyhog` command in the README and the handbook against the compiled command model, so a documented subcommand or long flag that is renamed or removed fails the build instead of failing the reader who types it."
+crates = ["cli"]

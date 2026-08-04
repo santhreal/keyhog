@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Correct the system-wide triage example, which showed a `--exclude` flag `scan-system` does not have, and state the bound it actually applies: a total-bytes ceiling plus network filesystems skipped by default."
+crates = ["cli"]

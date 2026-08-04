@@ -808,12 +808,14 @@ and [mass scanning](https://santhreal.github.io/keyhog/guides/mass-scanning.html
 
 ```sh
 sudo keyhog scan-system --space 50G
-sudo keyhog scan-system --include-network --exclude /mnt/backup
+sudo keyhog scan-system --include-network --output system-findings.json
 ```
 
 `scan-system` is a bounded local-host audit, not a replacement for repository or
-cloud inventory partitioning. Review mount, network-filesystem, space-ceiling,
-and privilege behavior before running it. See
+cloud inventory partitioning. It bounds itself by total bytes scanned rather
+than by path: `--space` is the ceiling, and network-mounted filesystems are
+skipped unless you pass `--include-network`. Review mount, network-filesystem,
+space-ceiling, and privilege behavior before running it. See
 [system-wide triage](https://santhreal.github.io/keyhog/guides/system-wide-triage.html).
 
 ## Lock down sensitive local scans
