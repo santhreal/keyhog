@@ -514,3 +514,163 @@ fn a_non_contiguous_source_never_splits() {
     state.push(&routed_chunk("filesystem", "a", "body", true));
     assert!(!state.should_split_before(&routed_chunk("git", "b", "body", true), false));
 }
+
+// --- Parallel coalesced consumer -------------------------------------------
+//
+// The consumer bridges the batch channel onto the global pool, so two pieces
+// of shared state decide whether a scan is trustworthy: the slot holding the
+// scan's terminal routing error, and the iterator that feeds batches to the
+// pool. Both are reachable from several threads and both fail quietly if they
+// are wrong, so they are pinned here rather than only through an end-to-end
+// report comparison.
+
+/// A routing failure recorded before a panic must survive the panic.
+///
+/// `Mutex::lock` returns `Err` once a holder panics. Treating that as "no
+/// error recorded" would let `run` return `Ok` with whatever findings the
+/// surviving batches produced, reporting a partial scan as a clean one. That
+/// is the exact failure mode the fail-closed contract exists to prevent.
+#[test]
+fn a_recorded_routing_error_survives_a_poisoned_slot() {
+    let slot: std::sync::Mutex<Option<AutorouteRoutingError>> = std::sync::Mutex::new(None);
+    *first_routing_error(&slot) =
+        Some(AutorouteRoutingError::unsupported_backend(ScanBackend::GpuMetal));
+
+    let poison = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = slot.lock().expect("uncontended lock");
+        panic!("holder panics while the error is recorded");
+    }));
+    assert!(poison.is_err(), "the test must actually poison the mutex");
+    assert!(slot.is_poisoned(), "the slot must be poisoned for this contract");
+
+    assert!(
+        first_routing_error(&slot).is_some(),
+        "a poisoned slot must still surrender the recorded routing error"
+    );
+}
+
+/// An empty slot reads as empty, so a clean scan is never failed by accident.
+#[test]
+fn an_untouched_routing_slot_reports_no_error() {
+    let slot: std::sync::Mutex<Option<AutorouteRoutingError>> = std::sync::Mutex::new(None);
+    assert!(first_routing_error(&slot).is_none());
+}
+
+/// The bridge must deliver every batch exactly once and in channel order.
+///
+/// `par_bridge` scans batches out of order, but it can only do that with
+/// batches the iterator actually yields. A bridge that dropped, duplicated, or
+/// reordered items would silently change recall, and the timing instrumentation
+/// wrapped around `next` is exactly the kind of code that invites such a bug.
+#[test]
+fn the_timed_bridge_yields_every_batch_once_in_order() {
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<Chunk>>();
+    let sent: Vec<Vec<Chunk>> = (0..5)
+        .map(|index| vec![routed_chunk("filesystem", &format!("f{index}"), "body", true)])
+        .collect();
+    for batch in &sent {
+        tx.send(batch.clone()).expect("send batch");
+    }
+    drop(tx);
+
+    let recv_nanos = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let bridge = TimedBatches {
+        batches: rx.into_iter(),
+        recv_nanos: Arc::clone(&recv_nanos),
+    };
+    let received: Vec<Arc<str>> = bridge
+        .map(|batch| {
+            batch[0]
+                .metadata
+                .path
+                .clone()
+                .expect("fixture chunks carry a path")
+        })
+        .collect();
+
+    let expected: Vec<Arc<str>> = sent
+        .iter()
+        .map(|batch| batch[0].metadata.path.clone().expect("fixture path"))
+        .collect();
+    assert_eq!(received, expected, "every batch, once, in channel order");
+}
+
+/// The bridge charges the time it spends waiting, including the final blocking
+/// read that ends the stream.
+///
+/// `recv_wait` in `--perf-trace` is how you tell a starved consumer from a slow
+/// one. If the instrumentation only counted immediate reads it would report
+/// zero wait on exactly the workloads where the producer is the bottleneck,
+/// which is when the number matters.
+#[test]
+fn the_timed_bridge_charges_time_spent_waiting_for_a_batch() {
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<Chunk>>();
+    let sender = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        let _ = tx.send(vec![routed_chunk("filesystem", "slow", "body", true)]);
+    });
+
+    let recv_nanos = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let batches: Vec<Vec<Chunk>> = TimedBatches {
+        batches: rx.into_iter(),
+        recv_nanos: Arc::clone(&recv_nanos),
+    }
+    .collect();
+    sender.join().expect("sender thread");
+
+    assert_eq!(batches.len(), 1);
+    let waited = std::time::Duration::from_nanos(
+        recv_nanos.load(std::sync::atomic::Ordering::Relaxed),
+    );
+    assert!(
+        waited >= std::time::Duration::from_millis(30),
+        "a 40 ms producer stall must be charged as receive wait, saw {waited:?}"
+    );
+}
+
+/// An explicit backend needs no lock, and the same batch must resolve to the
+/// same backend however many threads ask at once.
+///
+/// Putting the measured router behind a mutex made it easy to accidentally
+/// serialise the explicit path too, or to let selection depend on call order.
+/// Either would turn `--backend cpu` into a throughput cliff or a nondeterministic
+/// route, so both are pinned.
+#[test]
+fn explicit_routing_is_lock_free_and_order_independent() {
+    let router = CoalescedBatchRouter::Explicit(ScanBackend::CpuFallback);
+    let scanner = Arc::new(
+        CompiledScanner::compile(vec![DetectorSpec {
+            id: "explicit-route-test".into(),
+            name: "Explicit Route Test".into(),
+            service: "test".into(),
+            severity: Severity::Medium,
+            patterns: vec![PatternSpec {
+                regex: r"STATIC_SECRET_[0-9]+".into(),
+                ..Default::default()
+            }],
+            ..keyhog_scanner::testing::named_detector_fixture_defaults()
+        }])
+        .expect("compile test detector"),
+    );
+    let batch = vec![routed_chunk("filesystem", "a", "body", true)];
+
+    let chosen: Vec<ScanBackend> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    router
+                        .choose_with_plan(scanner.as_ref(), &batch)
+                        .expect("explicit routing never fails")
+                        .backend
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().expect("join")).collect()
+    });
+
+    assert_eq!(chosen.len(), 8);
+    assert!(
+        chosen.iter().all(|backend| *backend == ScanBackend::CpuFallback),
+        "an explicit backend must be returned to every concurrent caller"
+    );
+}

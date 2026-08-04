@@ -112,6 +112,51 @@ pub(super) fn finalize_source_outcome(src_chunks: usize, src_errored: bool) {
     }
 }
 
+/// One batch's scan result, kept together so the parallel consumer can add the
+/// time to a shared counter and hand the findings straight to `collect`.
+struct ScannedBatch {
+    elapsed: std::time::Duration,
+    findings: Vec<RawMatch>,
+}
+
+/// The batch channel as a `Send` iterator that charges its own blocking time.
+///
+/// `par_bridge` pulls from here under its internal cursor lock, so the measured
+/// wait is the summed time consumer threads spent with no batch to scan, which
+/// is what the `recv_wait` figure in `--perf-trace` has always meant.
+struct TimedBatches {
+    batches: std::sync::mpsc::IntoIter<Vec<Chunk>>,
+    recv_nanos: Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl Iterator for TimedBatches {
+    type Item = Vec<Chunk>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerQueueWait);
+        let waited = std::time::Instant::now();
+        let batch = self.batches.next();
+        self.recv_nanos.fetch_add(
+            waited.elapsed().as_nanos() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        batch
+    }
+}
+
+/// The scan's terminal routing failure, if one has been recorded.
+///
+/// Poisoning must not lose it: an error dropped here would let a partial
+/// finding set be reported as a complete, clean scan.
+fn first_routing_error(
+    slot: &std::sync::Mutex<Option<AutorouteRoutingError>>,
+) -> std::sync::MutexGuard<'_, Option<AutorouteRoutingError>> {
+    match slot.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
 struct CoalescedScannerWorker {
     scanner: Arc<CompiledScanner>,
     router: CoalescedBatchRouter,
@@ -119,9 +164,13 @@ struct CoalescedScannerWorker {
     perf_trace: bool,
 }
 
+/// The measured router is behind a `Mutex` because the consumer scans batches
+/// in parallel. Selection is a short critical section next to a whole-batch
+/// scan, and the explicit variant needs no lock at all, so the common paths
+/// never contend.
 enum CoalescedBatchRouter {
     Explicit(ScanBackend),
-    Measured(MeasuredBackendRouter),
+    Measured(std::sync::Mutex<MeasuredBackendRouter>),
 }
 
 struct CoalescedMeasuredRouterConfig {
@@ -139,7 +188,7 @@ struct CoalescedMeasuredRouterConfig {
 
 impl CoalescedBatchRouter {
     fn choose_with_plan(
-        &mut self,
+        &self,
         scanner: &CompiledScanner,
         batch: &[Chunk],
     ) -> std::result::Result<BackendSelection, AutorouteRoutingError> {
@@ -152,19 +201,30 @@ impl CoalescedBatchRouter {
                 runtime_route: None,
                 autoroute_recovery: None,
             }),
-            Self::Measured(router) => router.choose_with_plan(scanner, None, batch),
+            Self::Measured(router) => Self::lock(router).choose_with_plan(scanner, None, batch),
+        }
+    }
+
+    /// A poisoned router still holds the measurements taken before the panic,
+    /// and dropping them would silently downgrade the persisted decision table.
+    fn lock(
+        router: &std::sync::Mutex<MeasuredBackendRouter>,
+    ) -> std::sync::MutexGuard<'_, MeasuredBackendRouter> {
+        match router.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
         }
     }
 
     fn commit(&mut self) -> std::result::Result<(), AutorouteRoutingError> {
         match self {
             Self::Explicit(_) => Ok(()),
-            Self::Measured(router) => router.commit(),
+            Self::Measured(router) => Self::lock(router).commit(),
         }
     }
 
     fn quarantine_recovered_route(
-        &mut self,
+        &self,
         selection: &BackendSelection,
         recovery: &keyhog_scanner::BackendRecoveryReceipt,
     ) -> std::result::Result<(), AutorouteRoutingError> {
@@ -173,7 +233,7 @@ impl CoalescedBatchRouter {
         }
         match self {
             Self::Explicit(_) => Ok(()),
-            Self::Measured(router) => router.quarantine_recovered_route(selection, recovery),
+            Self::Measured(router) => Self::lock(router).quarantine_recovered_route(selection, recovery),
         }
     }
 
@@ -219,55 +279,101 @@ impl CoalescedScannerWorker {
         );
         Self {
             scanner,
-            router: CoalescedBatchRouter::Measured(router),
+            router: CoalescedBatchRouter::Measured(std::sync::Mutex::new(router)),
             recover_automatic_backend_faults,
             perf_trace,
         }
     }
 
+    /// Scan every delivered batch, many at a time.
+    ///
+    /// This used to be `recv` then scan, one batch after another, and its only
+    /// parallelism was the fork-join `par_iter` inside a single batch. That
+    /// leaves every core idle across each batch boundary, and the boundary is
+    /// frequent: on this repository's sources the pipeline was 1.9x slower than
+    /// the fused path for the same summed core-seconds, purely from lost
+    /// overlap. Bridging the batch channel onto the global pool is the same
+    /// concurrency model the fused consumer already runs, so batch N+1 starts
+    /// while N is still in flight.
+    ///
+    /// Output bytes do not move: findings are canonically ordered downstream,
+    /// which is why the fused path can already be parallel and still emit the
+    /// same file as this one.
     fn run(
         mut self,
         rx: std::sync::mpsc::Receiver<Vec<Chunk>>,
     ) -> std::result::Result<Vec<RawMatch>, AutorouteRoutingError> {
+        use rayon::iter::{ParallelBridge, ParallelIterator};
         let sc_t0 = std::time::Instant::now();
-        let mut scan_dur = std::time::Duration::ZERO;
-        let mut recv_dur = std::time::Duration::ZERO;
-        let mut last_end = std::time::Instant::now();
-        let mut findings: Vec<RawMatch> = Vec::new();
+        let scan_nanos = std::sync::atomic::AtomicU64::new(0);
+        let recv_nanos = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let routing_error: std::sync::Mutex<Option<AutorouteRoutingError>> =
+            std::sync::Mutex::new(None);
+        let profile_runtime = keyhog_profile::current_runtime();
 
-        loop {
-            let batch = {
-                let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerQueueWait);
-                match rx.recv() {
-                    Ok(batch) => batch,
-                    Err(_) => break, // LAW10: receiver-dropped is typed queue EOF; all delivered batches were scanned, so recall is preserved before router commit.
-                }
-            };
-            recv_dur += last_end.elapsed();
-            if !batch.is_empty() {
-                scan_dur += self.scan_nonempty_batch(&batch, &mut findings)?;
-            }
-            last_end = std::time::Instant::now();
+        let findings: Vec<RawMatch> = TimedBatches {
+            batches: rx.into_iter(),
+            recv_nanos: Arc::clone(&recv_nanos),
         }
+        .par_bridge()
+        .flat_map_iter(|batch| {
+            let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+            // A routing failure is terminal for the scan. In-flight batches
+            // finish, later ones do no work, and `run` returns the error, so
+            // no partial finding set can be mistaken for a clean result.
+            if first_routing_error(&routing_error).is_some() {
+                return Vec::new();
+            }
+            if batch.is_empty() {
+                return Vec::new();
+            }
+            match self.scan_nonempty_batch(&batch) {
+                Ok(scanned) => {
+                    scan_nanos.fetch_add(
+                        scanned.elapsed.as_nanos() as u64,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                    scanned.findings
+                }
+                Err(error) => {
+                    let mut slot = first_routing_error(&routing_error);
+                    if slot.is_none() {
+                        *slot = Some(error);
+                    }
+                    Vec::new()
+                }
+            }
+        })
+        .collect();
 
+        if let Some(error) = first_routing_error(&routing_error).take() {
+            return Err(error);
+        }
         self.router.commit()?;
-        self.dump_perf_trace(sc_t0, scan_dur, recv_dur);
+        self.dump_perf_trace(
+            sc_t0,
+            std::time::Duration::from_nanos(scan_nanos.load(std::sync::atomic::Ordering::Relaxed)),
+            std::time::Duration::from_nanos(recv_nanos.load(std::sync::atomic::Ordering::Relaxed)),
+        );
         self.scanner.dump_profile_reports("keyhog scan");
         Ok(findings)
     }
 
     fn scan_nonempty_batch(
-        &mut self,
+        &self,
         batch: &[Chunk],
-        findings: &mut Vec<RawMatch>,
-    ) -> std::result::Result<std::time::Duration, AutorouteRoutingError> {
+    ) -> std::result::Result<ScannedBatch, AutorouteRoutingError> {
         let scan_start = std::time::Instant::now();
         let scanned_count = batch.len();
         let scanned_bytes = batch.iter().map(|chunk| chunk.data.len()).sum::<usize>();
+        let mut findings: Vec<RawMatch> = Vec::new();
         if batch_has_no_scan_bytes(batch) {
             crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
             crate::SCANNED_BYTES.fetch_add(scanned_bytes as u64, Ordering::Relaxed);
-            return Ok(scan_start.elapsed());
+            return Ok(ScannedBatch {
+                elapsed: scan_start.elapsed(),
+                findings,
+            });
         }
         let selection = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::BackendSelect);
@@ -315,14 +421,17 @@ impl CoalescedScannerWorker {
         }
         let _result_merge_span = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
         append_scanned_batch_findings(
-            findings,
+            &mut findings,
             batch,
             outcome.per_chunk,
             scanned_count,
             chose_gpu && !outcome.recovered,
         );
         drop(_result_merge_span);
-        Ok(scan_start.elapsed())
+        Ok(ScannedBatch {
+            elapsed: scan_start.elapsed(),
+            findings,
+        })
     }
 
     fn dump_perf_trace(
