@@ -1,4 +1,9 @@
 //! Shared PDF fixture builders for structured source tests.
+//!
+//! Included both by `tests/support/mod.rs` (the `all_tests` aggregator) and
+//! directly by standalone regression binaries, each of which builds a
+//! different subset of fixtures.
+#![allow(dead_code)]
 
 pub fn minimal_pdf(stream_dict: &str, stream: &[u8]) -> Vec<u8> {
     let mut pdf = format!(

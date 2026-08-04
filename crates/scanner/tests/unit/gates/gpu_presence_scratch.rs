@@ -68,7 +68,11 @@ fn coalesced_gpu_uses_region_presence_not_per_rule_catalog() {
     assert!(
         dispatch_src.contains("scan_gpu_literal_evidence_by_region_resident")
             && resident_src.contains("prepare_resident_fused_scan")
-            && resident_src.contains(".scan_into("),
+            // `scan_into` and `scan_into_timed` are the same resident-pipeline
+            // entry point; the timed spelling is what the profiler lane uses to
+            // read device kernel time. Matching only the untimed name made this
+            // gate fail on a correct migration.
+            && resident_src.contains(".scan_into"),
         "coalesced GPU trigger production must use VYRE's resident fused evidence API"
     );
     assert!(

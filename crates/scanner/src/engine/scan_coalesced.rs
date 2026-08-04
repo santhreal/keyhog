@@ -2,6 +2,7 @@
 // admission gate) on the shared phase-2 tail. SIMD and GPU use it after their
 // trigger pass. Portable builds use it before their phase-2 tail so no-hit
 // chunks are not dropped before anchorless detection.
+#[cfg(any(feature = "simd", feature = "gpu", test))]
 use super::phase2::Phase2AlwaysActiveGpuEvidence;
 use super::scan_filters::*;
 use super::*;
@@ -52,6 +53,11 @@ fn mark_hs_trigger(
 }
 
 impl CompiledScanner {
+    // The coalesced phase-2 tail is only reachable from the SIMD producer
+    // (`scan_coalesced_simd`) and the GPU region-presence producer. A portable
+    // build compiles neither producer, so gate the tail to match rather than
+    // ship code no dispatch can reach.
+    #[cfg(any(feature = "simd", feature = "gpu", test))]
     #[inline]
     fn post_process_coalesced_matches(
         &self,
@@ -66,6 +72,7 @@ impl CompiledScanner {
         }
     }
 
+    #[cfg(any(feature = "simd", feature = "gpu", test))]
     #[inline]
     fn decode_only_coalesced_matches(
         &self,
@@ -514,6 +521,7 @@ impl CompiledScanner {
     /// Shared phase-2 tail for the SIMD coalesced producer and GPU
     /// region-presence producer. Both backends feed identical per-chunk trigger
     /// bitmaps into this owner so findings remain backend-invariant.
+    #[cfg(any(feature = "simd", feature = "gpu", test))]
     pub(crate) fn scan_coalesced_phase2(
         &self,
         chunks: &[keyhog_core::Chunk],
@@ -525,6 +533,7 @@ impl CompiledScanner {
         )
     }
 
+    #[cfg(any(feature = "simd", feature = "gpu", test))]
     fn normalize_coalesced_phase2_triggers(
         &self,
         chunks: &[keyhog_core::Chunk],
@@ -571,6 +580,7 @@ impl CompiledScanner {
     /// always-active prefilter and extraction. Keyword-triggered phase two,
     /// generic, entropy, multiline, decode, normalized text, ML, and recovery
     /// remain under their canonical owners.
+    #[cfg(any(feature = "simd", feature = "gpu", test))]
     pub(crate) fn scan_coalesced_phase2_with_admission(
         &self,
         chunks: &[keyhog_core::Chunk],

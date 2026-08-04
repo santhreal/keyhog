@@ -3,7 +3,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+// The palette is a private CLI module, so the only way to unit-test its
+// TTY/NO_COLOR resolution is to compile the production file into this test
+// binary. Items this file does not call are still live in the CLI itself.
 #[path = "../../src/style.rs"]
+#[allow(dead_code)]
 mod style;
 
 use style::{

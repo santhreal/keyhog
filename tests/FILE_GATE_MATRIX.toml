@@ -2615,6 +2615,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/gpu/evidence.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/engine/phase2_gpu_dfa/resident.rs"
 error = true
 adversarial = true

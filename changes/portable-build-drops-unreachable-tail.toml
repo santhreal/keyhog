@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "Stop compiling the coalesced phase-two tail, its triggered windowed scan, its batched ML scorer, and the GPU peer timing facets into portable builds, which have no producer that can reach them."
+crates = ["scanner"]

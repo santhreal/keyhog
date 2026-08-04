@@ -13,10 +13,16 @@ pub(crate) struct AcquiredGpuPeer {
     pub(crate) backend: Arc<dyn vyre::VyreBackend>,
     pub(crate) device_identity: Option<String>,
     pub(crate) is_software: bool,
+    // Populated and read only by the GPU dispatch path. A build without the
+    // `gpu` feature can never construct a peer, so these facets would be dead
+    // storage in every portable binary.
+    #[cfg(feature = "gpu")]
     pub(crate) resident_timed_dispatch_supported: bool,
     /// PCI vendor id where the backend exposes one; 0 means unknown.
+    #[cfg(feature = "gpu")]
     pub(crate) adapter_vendor: u32,
     /// PCI device id where the backend exposes one; 0 means unknown.
+    #[cfg(feature = "gpu")]
     pub(crate) adapter_device: u32,
 }
 
@@ -129,6 +135,8 @@ impl GpuBackendPeers {
             Err(_) => None, // LAW10: status projection only; initialization_error retains the typed diagnostic and execution logs it before refusing this backend.
         }
     }
+
+    #[cfg(feature = "gpu")]
     pub(crate) fn resident_timed_dispatch_supported(&self, backend: ScanBackend) -> bool {
         self.initialized(backend)
             .is_some_and(|peer| peer.resident_timed_dispatch_supported)

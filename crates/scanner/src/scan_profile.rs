@@ -100,6 +100,9 @@ pub(crate) fn enabled() -> bool {
     DETAILED_ENABLED.load(Relaxed)
 }
 
+// Every reader lives on a coalesced SIMD or GPU dispatch path; the public
+// setter above stays unconditional so benches and the CLI can always call it.
+#[cfg(any(feature = "simd", feature = "gpu", test))]
 pub(crate) fn perf_trace_enabled() -> bool {
     PERF_TRACE_ENABLED.load(Relaxed)
 }

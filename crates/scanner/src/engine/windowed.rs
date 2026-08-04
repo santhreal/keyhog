@@ -1,3 +1,4 @@
+#[cfg(any(feature = "simd", feature = "gpu", test))]
 use super::phase2::Phase2AlwaysActiveGpuEvidence;
 use super::windowed_support::{record_window_match, window_chunk, window_ranges};
 use super::*;
@@ -62,6 +63,9 @@ impl CompiledScanner {
         Ok(all_matches)
     }
 
+    /// Reached only from the coalesced phase-2 tail, which a portable build
+    /// does not compile.
+    #[cfg(any(feature = "simd", feature = "gpu", test))]
     pub(crate) fn scan_windowed_with_triggered(
         &self,
         chunk: &Chunk,

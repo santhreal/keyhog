@@ -333,3 +333,7 @@ pub(crate) fn resident_bytes_snapshot() -> (u64, u64) {
 #[cfg(all(test, feature = "gpu"))]
 #[path = "../../tests/unit/gpu_evidence.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/gpu_evidence_bounded_dedup.rs"]
+mod bounded_dedup_tests;
