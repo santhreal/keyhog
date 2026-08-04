@@ -285,10 +285,6 @@ pub(super) enum WorkloadClassificationError {
         source_type: String,
         path: Option<String>,
     },
-    DecodeSketchSampleBudgetExceeded {
-        minimum_sample_bytes: usize,
-        chunk_count: usize,
-    },
     TooManySourceMixtureEntries {
         entries: usize,
     },
@@ -323,14 +319,6 @@ impl fmt::Display for WorkloadClassificationError {
             } => write!(
                 f,
                 "chunk has invalid source_type {source_type:?}; every autorouted chunk must carry a non-empty source execution class"
-            ),
-            Self::DecodeSketchSampleBudgetExceeded {
-                minimum_sample_bytes,
-                chunk_count,
-            } => write!(
-                f,
-                "autoroute cannot classify decoder work for {chunk_count} chunks within its {}-byte sampling cap: representative coverage requires at least {minimum_sample_bytes} bytes; lower --fused-batch or [scan].fused_batch and recalibrate",
-                AUTOROUTE_DECODE_SAMPLE_BYTES
             ),
             Self::TooManySourceMixtureEntries { entries } => write!(
                 f,
@@ -371,7 +359,7 @@ pub(super) fn workload_key(
         .map(|c| c.metadata.size_bytes.unwrap_or(c.data.len() as u64)) // LAW10: empty/absent => documented numeric default, recall-safe
         .max()
         .unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
-    let decode = decode_workload_sketch(batch, decode_plan)?;
+    let decode = decode_workload_sketch(batch, decode_plan);
     let (
         decode_kind_mask,
         decode_candidate_count_bucket,
@@ -414,6 +402,9 @@ pub(super) fn autoroute_stable_decode_bucket(raw_bucket: u8) -> u8 {
 struct DecodeSamplePlan {
     residual_bytes: u128,
     extra_bytes: u128,
+    /// What the plan may sample in total, so the sketch can assert it stayed
+    /// inside the budget it was actually given rather than a fixed constant.
+    budget_bytes: usize,
 }
 
 impl DecodeSamplePlan {
@@ -428,15 +419,40 @@ impl DecodeSamplePlan {
     }
 }
 
+/// The sampling budget for one batch.
+///
+/// Every admitted chunk gets a floor of `AUTOROUTE_DECODE_MIN_CHUNK_SAMPLE`
+/// bytes so no chunk goes unclassified; `AUTOROUTE_DECODE_SAMPLE_BYTES` is the
+/// budget for the residual sampling layered on top of that floor.
+///
+/// It used to be read as a ceiling on the total, and that made a legal
+/// production batch unclassifiable: the coalesced pipeline packs up to 4,096
+/// chunks, whose floors alone need 786 KiB, so classification failed outright
+/// above roughly 341 non-trivial chunks. Autoroute calibration therefore could
+/// not run through `--batch-pipeline` on any real corpus, and since the GPU
+/// route only runs through that pipeline, GPU could not be calibrated at all.
+///
+/// Raising the floor is a pure extension. A batch whose floors already fit
+/// keeps exactly today's residual budget, so its sketch, its workload key and
+/// every persisted decision are unchanged. A batch that used to fail now gets
+/// floor-only sampling: one bounded window set per chunk, uniform across the
+/// whole batch, and more total sample than any batch that succeeds today.
+/// The cost is bounded by the batch itself, since the floor never exceeds a
+/// chunk's own length.
+fn decode_sample_budget(base_bytes: usize) -> usize {
+    base_bytes.max(AUTOROUTE_DECODE_SAMPLE_BYTES)
+}
+
+#[cfg(test)]
+pub(super) fn decode_sample_budget_for_test(base_bytes: usize) -> usize {
+    decode_sample_budget(base_bytes)
+}
+
 // Every non-short chunk gets three bounded decoder-grammar windows. The
 // remaining fixed budget is divided by bytes, without order or ties.
-fn decode_sample_plan(
-    batch: &[Chunk],
-    decode_plan: DecodeWorkloadPlan,
-) -> Result<DecodeSamplePlan, WorkloadClassificationError> {
+fn decode_sample_plan(batch: &[Chunk], decode_plan: DecodeWorkloadPlan) -> DecodeSamplePlan {
     let mut base_bytes = 0usize;
     let mut residual_bytes = 0u128;
-    let mut chunk_count = 0usize;
 
     for chunk in batch {
         if !decode_plan.admits(chunk) {
@@ -446,33 +462,25 @@ fn decode_sample_plan(
         if len == 0 {
             continue;
         }
-        chunk_count += 1;
         base_bytes = base_bytes.saturating_add(len.min(AUTOROUTE_DECODE_MIN_CHUNK_SAMPLE));
         residual_bytes += (len - len.min(AUTOROUTE_DECODE_MIN_CHUNK_SAMPLE)) as u128;
     }
-    if base_bytes > AUTOROUTE_DECODE_SAMPLE_BYTES {
-        return Err(
-            WorkloadClassificationError::DecodeSketchSampleBudgetExceeded {
-                minimum_sample_bytes: base_bytes,
-                chunk_count,
-            },
-        );
-    }
-    let remaining = AUTOROUTE_DECODE_SAMPLE_BYTES - base_bytes;
-    Ok(DecodeSamplePlan {
+    let remaining = decode_sample_budget(base_bytes) - base_bytes;
+    DecodeSamplePlan {
         residual_bytes,
         extra_bytes: (remaining as u128).min(residual_bytes),
-    })
+        budget_bytes: decode_sample_budget(base_bytes),
+    }
 }
 
 pub(super) fn decode_workload_sketch(
     batch: &[Chunk],
     decode_plan: DecodeWorkloadPlan,
-) -> Result<DecodeAdmissionSketch, WorkloadClassificationError> {
+) -> DecodeAdmissionSketch {
     if !decode_plan.enabled() {
-        return Ok(DecodeAdmissionSketch::NONE);
+        return DecodeAdmissionSketch::NONE;
     }
-    let plan = decode_sample_plan(batch, decode_plan.clone())?;
+    let plan = decode_sample_plan(batch, decode_plan.clone());
     let mut sampled = 0usize;
     let mut sketch = DecodeAdmissionSketch::NONE;
 
@@ -491,8 +499,8 @@ pub(super) fn decode_workload_sketch(
             sketch.merge(decode_plan.sketch(&sampled_chunk));
         });
     }
-    debug_assert!(sampled <= AUTOROUTE_DECODE_SAMPLE_BYTES);
-    Ok(sketch)
+    debug_assert!(sampled <= plan.budget_bytes);
+    sketch
 }
 
 fn for_each_decode_sample_window(bytes: &[u8], quota: usize, mut visit: impl FnMut(&[u8])) {
@@ -519,22 +527,18 @@ fn for_each_decode_sample_window(bytes: &[u8], quota: usize, mut visit: impl FnM
 }
 
 #[cfg(test)]
-pub(super) fn planned_decode_sample_bytes(
-    batch: &[Chunk],
-) -> Result<usize, WorkloadClassificationError> {
-    let plan = decode_sample_plan(batch, DecodeWorkloadPlan::from_limits(1, usize::MAX))?;
-    Ok(batch.iter().map(|chunk| plan.quota(chunk.data.len())).sum())
+pub(super) fn planned_decode_sample_bytes(batch: &[Chunk]) -> usize {
+    let plan = decode_sample_plan(batch, DecodeWorkloadPlan::from_limits(1, usize::MAX));
+    batch.iter().map(|chunk| plan.quota(chunk.data.len())).sum()
 }
 
 #[cfg(test)]
-pub(super) fn planned_decode_sample_quotas(
-    batch: &[Chunk],
-) -> Result<Vec<usize>, WorkloadClassificationError> {
-    let plan = decode_sample_plan(batch, DecodeWorkloadPlan::from_limits(1, usize::MAX))?;
-    Ok(batch
+pub(super) fn planned_decode_sample_quotas(batch: &[Chunk]) -> Vec<usize> {
+    let plan = decode_sample_plan(batch, DecodeWorkloadPlan::from_limits(1, usize::MAX));
+    batch
         .iter()
         .map(|chunk| plan.quota(chunk.data.len()))
-        .collect())
+        .collect()
 }
 
 pub(super) fn source_mixture_key(

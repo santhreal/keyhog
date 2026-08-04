@@ -211,12 +211,7 @@ fn repeated_to_len(seed: &str, len: usize) -> String {
     value
 }
 
-fn decode_workload_sketch(
-    batch: &[Chunk],
-) -> Result<
-    keyhog_scanner::decode::DecodeAdmissionSketch,
-    super::workload::WorkloadClassificationError,
-> {
+fn decode_workload_sketch(batch: &[Chunk]) -> keyhog_scanner::decode::DecodeAdmissionSketch {
     decode_workload_sketch_with_plan(batch, test_decode_workload_plan())
 }
 
@@ -1269,8 +1264,7 @@ fn disabled_or_ineligible_decode_work_contributes_exact_zero() {
         .collect::<Vec<_>>();
     let disabled = DecodeWorkloadPlan::from_limits(0, usize::MAX);
     assert_eq!(
-        decode_workload_sketch_with_plan(&batch, disabled.clone())
-            .expect("disabled decode is classifiable"),
+        decode_workload_sketch_with_plan(&batch, disabled.clone()),
         DecodeAdmissionSketch::NONE,
         "disabled decode must neither consume sample budget nor project work"
     );
@@ -1294,8 +1288,7 @@ fn disabled_or_ineligible_decode_work_contributes_exact_zero() {
 
     let over_limit = DecodeWorkloadPlan::from_limits(1, 8);
     assert_eq!(
-        decode_workload_sketch_with_plan(&batch[..1], over_limit)
-            .expect("over-limit decode workload remains classifiable"),
+        decode_workload_sketch_with_plan(&batch[..1], over_limit),
         DecodeAdmissionSketch::NONE,
         "chunks the scanner cannot decode must not project decoder work"
     );
@@ -1382,12 +1375,8 @@ fn workload_decode_sketch_samples_late_chunks_and_file_tails() {
     ];
     let late_encoded = vec![test_chunk(" ".repeat(128 * 1024)), test_chunk(encoded)];
     assert!(
-        decode_workload_sketch(&late_encoded)
-            .expect("late encoded batch classifies")
-            .candidate_bytes()
-            > decode_workload_sketch(&late_plain)
-                .expect("late plain batch classifies")
-                .candidate_bytes(),
+        decode_workload_sketch(&late_encoded).candidate_bytes()
+            > decode_workload_sketch(&late_plain).candidate_bytes(),
         "a decode-heavy late chunk must not be hidden by earlier plain bytes"
     );
 }
@@ -1399,8 +1388,8 @@ fn decode_sketch_sample_plan_is_bounded_and_represents_short_chunks() {
         .iter()
         .map(|&len| test_chunk("x".repeat(len)))
         .collect::<Vec<_>>();
-    let quotas = planned_decode_sample_quotas(&batch).expect("sample plan fits");
-    let sampled = planned_decode_sample_bytes(&batch).expect("sample plan fits");
+    let quotas = planned_decode_sample_quotas(&batch);
+    let sampled = planned_decode_sample_bytes(&batch);
 
     assert_eq!(sampled, quotas.iter().sum::<usize>());
     assert!(sampled <= 64 * 1024, "sample plan read {sampled} bytes");
@@ -1422,28 +1411,76 @@ fn decode_sketch_does_not_join_candidates_across_sample_windows() {
         .map(|_| test_chunk("A".repeat(23)))
         .collect::<Vec<_>>();
     assert_eq!(
-        decode_workload_sketch(&fragments)
-            .expect("fragment batch classifies")
-            .candidate_count(),
+        decode_workload_sketch(&fragments).candidate_count(),
         1_000,
         "each real 23-byte base64 candidate must remain distinct across sample windows"
     );
 }
 
+/// A batch too large for the fixed residual budget classifies on floors alone,
+/// rather than failing the whole scan.
+///
+/// `AUTOROUTE_DECODE_SAMPLE_BYTES` is the budget for residual sampling on top
+/// of each chunk's floor, but it was enforced as a ceiling on the total, so a
+/// batch of more than roughly 341 non-trivial chunks could not be classified at
+/// all. The coalesced pipeline packs up to 4,096, which made autoroute
+/// calibration impossible through `--batch-pipeline` on any real corpus and
+/// therefore made the GPU route, which runs only through that pipeline,
+/// impossible to calibrate.
 #[test]
-fn workload_decode_sketch_fails_closed_when_representative_sampling_cannot_fit() {
+fn workload_decode_sketch_classifies_a_batch_larger_than_the_residual_budget() {
     let batch = (0..911)
         .map(|_| test_chunk("x".repeat(72)))
         .collect::<Vec<_>>();
-    let error = workload_key(&batch, 902)
-        .expect_err("autoroute must reject an under-represented decoder-work sample")
-        .to_string();
+    let quotas = planned_decode_sample_quotas(&batch);
+
     assert!(
-        error.contains("65536-byte sampling cap")
-            && error.contains("lower --fused-batch")
-            && error.contains("recalibrate"),
-        "sampling-budget failure must be explicit and actionable: {error}"
+        quotas.iter().sum::<usize>() > 64 * 1024,
+        "this batch must exceed the fixed residual budget for the contract to mean anything"
     );
+    assert!(
+        quotas.iter().all(|&quota| quota == 72),
+        "every chunk keeps its full floor, so none goes unclassified"
+    );
+    workload_key(&batch, 902).expect("a full production-sized batch must classify");
+}
+
+/// A batch the size the coalesced pipeline actually produces classifies.
+///
+/// 4,096 chunks is `COALESCED_BATCH_CHUNK_LIMIT`, so this is the exact shape a
+/// `--batch-pipeline` scan asks autoroute to key. If it cannot be classified,
+/// calibration cannot cover the shape production runs.
+#[test]
+fn workload_key_classifies_a_full_coalesced_batch() {
+    let batch = (0..4_096)
+        .map(|index| test_chunk(format!("chunk {index} {}", "x".repeat(512))))
+        .collect::<Vec<_>>();
+    workload_key(&batch, 902).expect("a full coalesced batch must classify");
+}
+
+/// Raising the floor must not move a single existing decision.
+///
+/// The residual budget feeds `extra_bytes`, which feeds every chunk's quota,
+/// which feeds the sketch, which feeds the workload key that persisted
+/// autoroute decisions are stored under. Any change for a batch that already
+/// fit would silently invalidate every calibrated cache in the field, so the
+/// budget must be exactly the old constant right up to the boundary.
+#[test]
+fn the_sample_budget_is_unchanged_for_every_batch_that_already_fit() {
+    for base in [0usize, 1, 72, 4_096, 64 * 1024 - 1, 64 * 1024] {
+        assert_eq!(
+            super::workload::decode_sample_budget_for_test(base),
+            64 * 1024,
+            "a batch whose floors need {base} bytes must keep the original budget"
+        );
+    }
+    for base in [64 * 1024 + 1, 786_432] {
+        assert_eq!(
+            super::workload::decode_sample_budget_for_test(base),
+            base,
+            "a batch whose floors exceed the residual budget samples exactly its floors"
+        );
+    }
 }
 
 #[test]
