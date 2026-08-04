@@ -2,6 +2,16 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.66] - 2026-08-04
+
+### Added
+
+- Explain in the backends guide what the GPU actually does for a whole-tree scan, with measured numbers. The documented 8 MiB crossover covers one window through the matching kernel; a repository scan is a different workload, where confirmation runs on the CPU either way and the GPU route measures about 9 percent slower at both 63 MiB and 251 MiB. An operator picking a backend for a repository can now see that before choosing.
+
+### Changed
+
+- Whole-tree GPU guidance in the backends guide.
+
 ## [0.5.65] - 2026-08-04
 
 ### Changed

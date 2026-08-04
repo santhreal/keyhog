@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.66 - 2026-08-04
+
+- Whole-tree GPU guidance in the backends guide.
+
 ## 0.5.65 - 2026-08-04
 
 - Tell the operator the truth when a required GPU is unavailable. An explicit `--backend gpu-cuda` also makes GPU mandatory, but the refusal named only `--require-gpu` and advised running without it, sending anyone who used the backend flag looking for a flag they never passed. The message now names the resolved policy, both routes into it, and both ways out.

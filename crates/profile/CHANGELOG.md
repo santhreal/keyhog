@@ -2,6 +2,10 @@
 
 All notable changes to `keyhog-profile` are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.5.66 - 2026-08-04
+
+- Whole-tree GPU guidance in the backends guide.
+
 ## 0.5.65 - 2026-08-04
 
 - Actionable GPU refusal diagnostics.
