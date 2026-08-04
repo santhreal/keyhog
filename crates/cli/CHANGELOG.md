@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.51 - 2026-08-04
+
+- Assert JSON, JSONL, and SARIF stay completely parseable and ANSI-free across all sixteen hostile environment profiles, including CLICOLOR_FORCE, an unset HOME, an unwritable working directory, a missing TMPDIR, and a rejected backend request.
+
+- Derive the subcommand help matrix from the compiled command model instead of a hand-kept list that had already drifted past `config` and `bloom-diagnostic`, and pin the advertised menu so a removal or rename stays a reviewed change.
+
+- Fall back to the honest legacy identity gaps when a causal profile's detector, configuration, or source enrichment is absent, instead of panicking while rendering the report at the end of a completed scan.
+- Run the 1,202-cell product-reliability matrix in CI and drive it on the portable scalar backend, so hostile-environment exit-code, output-format, and installer contracts can no longer rot unexecuted or fail closed on a Hyperscan-free build.
+- Check the default-exclusion policy flag at each source factory call rather than at the first mention of a source name anywhere in the file, which reported a missing flag on a call that passes it.
+
 ## 0.5.50 - 2026-08-02
 
 - Add low-overhead causal run profiling with fixed scanner stages, state transitions, process resource measurements, and explicit source and backend identity while keeping per-pattern diagnostics behind --perf-trace.

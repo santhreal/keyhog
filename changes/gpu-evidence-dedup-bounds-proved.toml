@@ -1,3 +1,0 @@
-category = "Added"
-summary = "Prove the bounded accelerator-evidence dedup set refuses and counts every record past capacity, keeps dedup rejection separate from loss, and saturates its loss counter instead of wrapping to zero under sustained overflow."
-crates = ["scanner"]

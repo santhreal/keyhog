@@ -2,6 +2,10 @@
 
 All notable changes to `keyhog-profile` are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.5.51 - 2026-08-04
+
+- Make the portable phase-two prefilter two to three times faster and repair ten red gates.
+
 ## 0.5.50 - 2026-08-02
 
 - Add low-overhead causal run profiling with fixed scanner stages, state transitions, process resource measurements, and explicit source and backend identity while keeping per-pattern diagnostics behind --perf-trace.

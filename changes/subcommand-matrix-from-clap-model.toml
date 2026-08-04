@@ -1,3 +1,0 @@
-category = "Changed"
-summary = "Derive the subcommand help matrix from the compiled command model instead of a hand-kept list that had already drifted past `config` and `bloom-diagnostic`, and pin the advertised menu so a removal or rename stays a reviewed change."
-crates = ["cli"]

@@ -2,6 +2,32 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.51] - 2026-08-04
+
+### Added
+
+- Prove the bounded accelerator-evidence dedup set refuses and counts every record past capacity, keeps dedup rejection separate from loss, and saturates its loss counter instead of wrapping to zero under sustained overflow.
+- Assert JSON, JSONL, and SARIF stay completely parseable and ANSI-free across all sixteen hostile environment profiles, including CLICOLOR_FORCE, an unset HOME, an unwritable working directory, a missing TMPDIR, and a rejected backend request.
+
+### Changed
+
+- Report accelerator evidence dedup overflow on the `keyhog::gpu` tracing target with its exact running loss count, replacing a counter that no caller read.
+- Compile each phase-two always-active matcher variant when a chunk selects it instead of building all four for every batch up front, which removed a 1.4 second stall that the first decoded sub-chunk of any scan charged to every scan worker.
+- Prove a phase-two batch is empty with the DFA-backed match test before asking which patterns matched, since reporting the matching set has no lazy-DFA path and forced a full PikeVM pass over every batch on every chunk.
+- Stop compiling the coalesced phase-two tail, its triggered windowed scan, its batched ML scorer, and the GPU peer timing facets into portable builds, which have no producer that can reach them.
+- Assert source-instrumentation tests see no coverage errors instead of silently discarding error rows while collecting chunks, so a profiled adapter that starts failing shows up as a failure rather than a smaller chunk count.
+- Derive the subcommand help matrix from the compiled command model instead of a hand-kept list that had already drifted past `config` and `bloom-diagnostic`, and pin the advertised menu so a removal or rename stays a reviewed change.
+- Make the portable phase-two prefilter two to three times faster and repair ten red gates.
+
+### Fixed
+
+- Fall back to the honest legacy identity gaps when a causal profile's detector, configuration, or source enrichment is absent, instead of panicking while rendering the report at the end of a completed scan.
+- Run the 1,202-cell product-reliability matrix in CI and drive it on the portable scalar backend, so hostile-environment exit-code, output-format, and installer contracts can no longer rot unexecuted or fail closed on a Hyperscan-free build.
+- Check the default-exclusion policy flag at each source factory call rather than at the first mention of a source name anywhere in the file, which reported a missing flag on a call that passes it.
+- Match source-ownership gates on the arguments and constructs they exist to protect rather than on exact indentation, closure parameter names, or a function name a rename had already changed.
+- Fail closed with a source error when the single-flight pinned web client builder is missing, instead of panicking inside the client cache and ending the scan.
+- Resolve a candidate's whole assignment value from the start of its own line rather than from the start of the chunk. Quote and escape state reset at every line break, so the previous walk reread the entire preceding chunk for every candidate and was quadratic in candidates per chunk.
+
 ## [0.5.50] - 2026-08-02
 
 ### Added

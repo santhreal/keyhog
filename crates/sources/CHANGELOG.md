@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.51 - 2026-08-04
+
+- Assert source-instrumentation tests see no coverage errors instead of silently discarding error rows while collecting chunks, so a profiled adapter that starts failing shows up as a failure rather than a smaller chunk count.
+
+- Match source-ownership gates on the arguments and constructs they exist to protect rather than on exact indentation, closure parameter names, or a function name a rename had already changed.
+- Fail closed with a source error when the single-flight pinned web client builder is missing, instead of panicking inside the client cache and ending the scan.
+
 ## 0.5.50 - 2026-08-02
 
 - Publish a patch release to crates.io after every successful main CI run, with automatic version and changelog updates and no signing or release-asset gates.

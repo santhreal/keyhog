@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Match source-ownership gates on the arguments and constructs they exist to protect rather than on exact indentation, closure parameter names, or a function name a rename had already changed."
-crates = ["sources"]

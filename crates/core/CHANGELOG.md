@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.51 - 2026-08-04
+
+- Make the portable phase-two prefilter two to three times faster and repair ten red gates.
+
 ## 0.5.50 - 2026-08-02
 
 - Publish patch releases to crates.io through short-lived OIDC trusted publishing and bind deterministic six-crate integrity receipts to the exact workspace lockfile and commit.

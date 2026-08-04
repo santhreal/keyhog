@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.51 - 2026-08-04
+
+- Make the portable phase-two prefilter two to three times faster and repair ten red gates.
+
 ## 0.5.50 - 2026-08-02
 
 - Publish a patch release to crates.io after every successful main CI run, with automatic version and changelog updates and no signing or release-asset gates.

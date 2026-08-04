@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Fail closed with a source error when the single-flight pinned web client builder is missing, instead of panicking inside the client cache and ending the scan."
-crates = ["sources"]
