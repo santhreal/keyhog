@@ -33,12 +33,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // external integration targets. Its `#[cfg(test)]` sections are facade
     // wiring, not source-local behavioral test suites.
     "testing.rs",
-    // The Hyperscan scratch pool keeps private thread-local scratch state. The
-    // remaining co-located test reads that private TLS count to prove scanner
-    // drop evicts retained scratches; external tests cover oversubscription
-    // through the narrow `testing` facade instead of keeping that larger
-    // concurrency regression in production source.
-    "simd/backend/scan.rs",
     // The detector-catalog helper `bundled_detector_ids` is a `#[cfg(test)]`
     // `pub(crate)` corpus loader, deliberately not part of the crate's public API,
     // so an external `tests/` target cannot reach it. Its co-located tests pin the
@@ -100,11 +94,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // predicates have no public surface, so their exact near-miss boundaries, the
     // recall-load-bearing part (can only be pinned in-module).
     "context/placeholder.rs",
-    // `detector_ids.rs` pins that every corpus-backed `pub(crate)` id const names a
-    // real embedded detector and that synthetic ids stay ABSENT from the TOML
-    // corpus, the same crate-private catalog-integrity white-box as
-    // `detector_catalog.rs`, driving `bundled_detector_ids` directly.
-    "detector_ids.rs",
     // `engine/mod.rs` co-locates compile-time `Send`/`Sync` assertions over the
     // private `CompiledScanner` plus the private `MAX_INNER_LOOP_ITERS` /
     // deadline-cadence hot-loop invariants. Compile-time trait asserts are
