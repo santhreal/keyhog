@@ -1,7 +1,10 @@
 # CI integration
 
 Add KeyHog in two stages: make findings visible with a durable report, then
-turn new findings into a merge gate. The recipes below keep scanning,
+turn new findings into a merge gate. Most repositories already contain
+credentials, so start at
+[Fail only on new secrets](#fail-only-on-new-secrets) for the complete path
+from a first scan to a passing gate. The provider recipes below keep scanning,
 enforcement, and report retention explicit so a missing upload or unsupported
 source cannot look like a clean run.
 
@@ -13,12 +16,107 @@ refs build the portable profile from their checked-out source and require
 | Workflow | Recommended scan | Boundary |
 |---|---|---|
 | Developer commit | `keyhog hook install` | Scans exact staged blobs before the commit. |
-| Pull-request checkout | `keyhog scan . --baseline <FILE>` | Scans the checked-out tree and suppresses only reviewed baseline findings. |
+| Pull-request checkout | `keyhog scan . --baseline <FILE>` | Scans the checked-out tree and suppresses only reviewed baseline findings. See [Fail only on new secrets](#fail-only-on-new-secrets). |
 | Pull-request changes only | `keyhog scan --git-diff <BASE>` | Scans changed lines relative to the selected base. This is narrower than the checkout. |
 | Main branch commit additions | `keyhog scan --git-history .` | Scans added patch lines from reachable commits present in the checkout, bounded by `max_commits`. |
 | Complete reachable blob gate | `keyhog scan --git-blobs .` | Scans deduplicated reachable blobs when patch additions are not complete enough. |
 | Release verification | `keyhog scan --git-history . --git-blobs . --verify` | Adds live checks for eligible detectors. Unverifiable findings remain unverified, and verification sends credential-derived requests to providers. |
 | Large scheduled inventory | Partitioned repository or cloud scopes | Keeps ownership, coverage, reports, and retries independent. |
+
+## Fail only on new secrets
+
+This is the usual adoption path for a repository that already holds credentials
+you cannot rotate today. The findings that exist now stay visible in a committed
+baseline. Only findings added after that point fail the build.
+
+### 1. Create and commit the baseline
+
+Run this once, on a clean local checkout of the branch CI scans:
+
+```sh
+keyhog scan . --create-baseline .keyhog-baseline.json
+```
+
+The command writes the file, prints no findings, and exits `0`. Read the file
+before committing it. Every entry is a credential you are choosing to accept.
+
+```sh
+git add .keyhog-baseline.json
+git commit -m "chore: add KeyHog baseline"
+```
+
+### 2. Gate the build
+
+```sh
+keyhog scan . --baseline .keyhog-baseline.json --format json-envelope --output keyhog.json
+```
+
+Exit `0` means no new findings. Exit `1` means a credential is present that the
+baseline does not list. Exit `13` means the scan could not cover its input; a
+baseline never suppresses that, so do not read it as clean. Keep `keyhog.json`
+on every outcome. The [generic shell wrapper](#generic-shell) is the portable
+way to retain the report and the exact exit code together.
+
+### 3. Respond when the gate fires
+
+A failing gate means someone added a credential. Remove it from the code and
+rotate it at the provider. When the finding is a reviewed exception instead,
+pick the narrowest surface:
+
+- One exact value in one path: add a `[[suppress]]` rule to
+  `.keyhogignore.toml`.
+- A credential the team accepts everywhere: run
+  `keyhog scan . --update-baseline .keyhog-baseline.json` locally, review the
+  diff, and commit it.
+
+Never run `--update-baseline` inside CI. A job that rewrites its own baseline
+accepts every secret it finds. The flag also still reports the new findings and
+still exits `1`, so it cannot turn a red job green.
+
+### Monorepos: one baseline or several
+
+A baseline entry matches on the detector and the credential value, never on the
+path. One root baseline therefore covers every partition, and moving code
+between partitions never fires the gate. Choose by who reviews exceptions, not
+by how matching works:
+
+| Situation | Use |
+|---|---|
+| One security team reviews every exception | A single `.keyhog-baseline.json` at the repository root |
+| Each team reviews its own exceptions | One baseline per partition, stored beside that partition's code |
+
+Per-partition baselines have one consequence worth knowing. A credential
+accepted in `services/api` is reported again when the same value appears in
+`services/web`, because that job loads a different file. That is usually what
+you want.
+
+Run each partition as its own job so a failure names an owner:
+
+```yaml
+strategy:
+  fail-fast: false
+  matrix:
+    partition: [services/api, services/web]
+steps:
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  - name: Scan partition
+    env:
+      PARTITION: ${{ matrix.partition }}
+    shell: bash
+    run: |
+      keyhog scan "$PARTITION" \
+        --baseline "$PARTITION/.keyhog-baseline.json" \
+        --format json-envelope \
+        --output "keyhog-${PARTITION//\//-}.json"
+```
+
+`fail-fast: false` keeps the other partitions running after one fails, so a
+single leak does not hide the rest. Give each partition its own
+`--incremental-cache` path and cache key if you enable incremental scanning.
+
+For what a baseline matches, how to retire an entry after rotation, and how to
+compare two baselines, see
+[Baselines](../suppressions.md#baselines-suppress-what-already-existed).
 
 ## CI speed and concurrency
 
@@ -99,15 +197,16 @@ findings that should remain visible but not block adoption:
   exclusion; broad globs can hide real coverage.
 - Put finding-specific exceptions in `.keyhogignore` or
   `.keyhogignore.toml`, preferably with reason, expiry, and approval metadata.
-- Commit a baseline when introducing KeyHog to an existing repository. Do not
-  regenerate it automatically in CI; review baseline changes like code.
 - Never convert a source failure or coverage gap into an exclusion. KeyHog uses
   distinct nonzero exit semantics for invalid configuration, system failures,
   unavailable required GPU execution, and incomplete sources.
 
-For a monorepo, keep one root policy when ownership is shared. When teams need
-independent gates, run explicit subdirectory jobs with their own reports and
-baselines; do not hide one team's paths behind another team's ignore file.
+An exclusion decides which bytes are read. A baseline decides which findings
+count as new. Reach for an exclusion only when the content should not be
+scanned at all; otherwise use
+[Fail only on new secrets](#fail-only-on-new-secrets). In a monorepo, never
+hide one team's paths behind another team's ignore file. Give each team its own
+subdirectory job with its own report.
 
 ## GitLab CI
 

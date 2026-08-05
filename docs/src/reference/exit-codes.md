@@ -176,6 +176,14 @@ On other supported platforms, the Ctrl-C task uses the same code.
 
 ## Findings cannot be forced to zero
 
-KeyHog has no `--exit-zero` flag. To accept a known finding, suppress it through
-the reviewed `.keyhogignore` workflow. The next scan then computes its exit from
-the remaining unsuppressed findings and coverage state.
+KeyHog has no `--exit-zero` flag. Accept a known finding through a reviewed
+suppression instead. The next scan then computes its exit from the remaining
+unsuppressed findings and coverage state. Choose by scope:
+
+- Findings that predate adoption: record them once in a committed baseline. See
+  [Fail only on new secrets](../workflows/ci.md#fail-only-on-new-secrets).
+- One reviewed value, path, or detector: use `.keyhogignore` or
+  `.keyhogignore.toml`. See [Suppressions](../suppressions.md).
+
+Exit `13` cannot be suppressed. Coverage is a property of the input, not of the
+findings, so fix the source, permission, ref, or limit instead.

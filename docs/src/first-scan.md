@@ -70,18 +70,7 @@ complete.
 
 ## What you get out of it
 
-Human-readable output includes a redacted finding and a summary:
-
-With `--progress`, stderr starts with the live scanner and routing banner:
-
-```text
-    K E Y H O G
-    ───────────
-    v0.5.68 · secret scanner · 923 detectors
-    by santh
-
-  ⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 923 detectors (5822 patterns) io_uring | backend=simd-regex | gpu=none
-```
+Findings go to stdout as redacted boxes followed by a summary:
 
 ```text
 ┌    CRITICAL ─── GitHub Classic PAT
@@ -94,12 +83,26 @@ With `--progress`, stderr starts with the live scanner and routing banner:
 1 secret found · 1 unverified
 ```
 
-The banner is written to stderr only when stderr is a terminal. Pass
-`--progress` to include the current host's CPU/GPU labels, scanner engine,
-compiled pattern count, selected backend, and GPU engagement result. Findings
-go to stdout unless you use `--output`. Each finding gives you the detector,
-redacted credential, location, confidence when measured, and remediation
-guidance.
+Each finding gives you the detector, the redacted credential, the location,
+the confidence when it was measured, and remediation guidance. Use `--output`
+to write the report to a file instead of stdout.
+
+Add `--progress` when you need to see which engine ran the scan. It writes a
+banner to stderr before the findings:
+
+```text
+    K E Y H O G
+    ───────────
+    v0.5.68 · secret scanner · 923 detectors
+    by santh
+
+  ⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 923 detectors (5822 patterns) io_uring | backend=simd-regex | gpu=none
+```
+
+The banner reports this host's CPU and GPU labels, the scanner engine, the
+compiled pattern count, the selected backend, and the GPU engagement result.
+KeyHog writes it only when stderr is a terminal, so a redirected log or a CI
+capture never contains it.
 
 ## Default suppressions
 
@@ -222,8 +225,19 @@ editor backup files. The canonical behavior and opt-out are documented under
 
 ## Going further
 
-Once the basic scan works:
+A first scan of a real repository usually reports credentials that were already
+there. Decide what to do with them before you wire KeyHog into anything:
 
+- Rotate what you can. A leaked credential in the working tree is also in Git
+  history.
+- Record the rest once with `--create-baseline`, then gate on new findings
+  only. See
+  [Fail only on new secrets](./workflows/ci.md#fail-only-on-new-secrets).
+
+Then continue with:
+
+- [Suppressions and baselines](./suppressions.md) - allowlists, inline
+  directives, per-detector floors, and what a baseline does and does not match.
 - [Output formats](./output-formats.md) - JSON, SARIF, plain text.
 - [Verification](./verification.md) - `--verify` makes API calls to
   confirm credentials are live; a dead credential is downgraded one

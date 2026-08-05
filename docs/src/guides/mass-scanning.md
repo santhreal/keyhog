@@ -242,10 +242,43 @@ benefit.
 
 ## Report aggregation
 
-Aggregate only after every partition has a terminal envelope. Preserve the
-partition identity, source inventory, resolved policy, coverage state, finding
-count, and exit code. JSON and JSONL legacy formats contain findings only;
-`json-envelope` and `jsonl-envelope` are the recommended machine contracts for
-mass scans because they carry terminal coverage and identity. Never concatenate
-JSON arrays or merge findings before deduplicating with the partition and
-location identity.
+Aggregate only after every partition has a terminal envelope. One clean
+partition never cancels another partition's coverage gap or error.
+
+Read every report at once:
+
+```bash
+cat keyhog-results/*.json | jq -s '{
+  partitions: length,
+  findings: (map(.findings | length) | add),
+  coverage_gaps: (map(.coverage_gap_summary | length) | add),
+  incomplete: [ .[] | select(.scan_status != "success") | .metadata.targets[0] ]
+}'
+```
+
+```json
+{
+  "partitions": 2,
+  "findings": 1,
+  "coverage_gaps": 0,
+  "incomplete": []
+}
+```
+
+Act on `incomplete` first. A partition listed there did not cover its input, so
+its finding count proves nothing. Fix the cause, rerun that partition alone,
+and replace only its report. The `findings` total is trustworthy once
+`incomplete` is empty.
+
+The envelope carries coverage state, not the process exit code, so keep
+`status.tsv` beside the reports. The wrapper in
+[Local partitions](#local-partitions) already exits nonzero when any partition
+did; `status.tsv` is what tells a reviewer which partition produced which raw
+code, because one aggregate exit code cannot express two different failures.
+
+Preserve the partition identity, source inventory, resolved policy, coverage
+state, finding count, and exit code. JSON and JSONL legacy formats contain
+findings only; `json-envelope` and `jsonl-envelope` are the recommended machine
+contracts for mass scans because they carry terminal coverage and identity.
+Never concatenate JSON arrays or merge findings before deduplicating with the
+partition and location identity.

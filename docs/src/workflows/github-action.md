@@ -92,6 +92,12 @@ A baseline suppresses findings it already contains. New findings still fail the
 job. Review baseline changes like source changes. Do not regenerate the baseline
 inside CI.
 
+An entry matches on the detector and the credential value, never on the file
+path. Moving or renaming a baselined file keeps it suppressed, and copying the
+same credential into a new file keeps it suppressed too. See
+[Baselines](../suppressions.md#baselines-suppress-what-already-existed) for the
+complete matching rules and how to retire an entry after rotation.
+
 For an advisory rollout, set `fail-on-findings: 'false'`. Ordinary findings then
 remain visible without blocking the job. A verified-live credential and every
 operational failure still fail.
@@ -129,6 +135,20 @@ Keep a category unchanged when the partition remains the same. Use a different
 category for every KeyHog scan in the same job. A category contains 1 to 64
 lowercase letters, digits, dots, underscores, or dashes, and it starts and ends
 with a letter or digit.
+
+Add `baseline` per partition when each team reviews its own exceptions:
+
+```yaml
+  - uses: santhreal/keyhog@v0
+    with:
+      path: ${{ matrix.path }}
+      analysis-category: ${{ matrix.category }}
+      baseline: ${{ matrix.path }}/.keyhog-baseline.json
+```
+
+One root baseline works just as well when a single team reviews every
+exception, because matching ignores the path. Choose by ownership. The
+[CI guide](./ci.md#monorepos-one-baseline-or-several) compares both layouts.
 
 ## Select detection policy
 

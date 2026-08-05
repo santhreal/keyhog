@@ -152,6 +152,11 @@ keyhog scan . --create-baseline .keyhog-baseline.json     # snapshot existing fi
 keyhog scan . --baseline .keyhog-baseline.json            # then report only NEW findings
 ```
 
+Commit the first file. An entry matches on the detector and the credential
+value, not on the path, so moving a baselined secret does not fail the gate but
+rotating it does. The complete CI path, including monorepo partitions, is
+[Fail only on new secrets](./workflows/ci.md#fail-only-on-new-secrets).
+
 ## Approve one exact fixture finding
 
 Append a detector, path, and credential hash to the same rule:

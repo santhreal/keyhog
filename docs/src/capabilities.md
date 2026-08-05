@@ -159,7 +159,7 @@ status.
 | Output | Use | Chapter |
 |---|---|---|
 | Eleven formats | `text`, `json`, `json-envelope`, `jsonl`, `jsonl-envelope`, `sarif`, `csv`, `github-annotations`, `gitlab-sast`, `html`, `junit` | [Output formats](./output-formats.md) |
-| Baselines | accept known findings once; only new secrets fail future scans | [CI integration](./workflows/ci.md) |
+| Baselines | accept known findings once, then fail only on new secrets; entries match the detector and credential value, never the path | [Fail only on new secrets](./workflows/ci.md#fail-only-on-new-secrets) |
 | Exit codes | stable codes for clean, findings, and error so scripts branch reliably | [Exit codes](./reference/exit-codes.md) |
 
 ## How KeyHog protects the secrets it reads

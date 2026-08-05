@@ -37,7 +37,7 @@ matches (before dedup/verify); later ones act on resolved findings.
 | 9 | Inline `keyhog:ignore` (and aliases) | the line itself | raw match | in-source |
 | 10 | `.keyhogignore.toml` `[[suppress]]` rules | composable predicate | resolved finding | file |
 | 11 | `--hide-client-safe` | client-safe tier | resolved finding | flag |
-| 12 | Baseline (`--baseline` / `--update-baseline`) | finding identity | resolved finding | flag |
+| 12 | Baseline (`--baseline` / `--update-baseline`) | detector id + credential hash, never the path | resolved finding | flag |
 
 Everything is wired through `filter_and_resolve` (raw stage) and the run loop
 (resolved stage), so the `--daemon` route and every output format apply the
@@ -215,13 +215,114 @@ own source tree.
 
 ### Baselines: suppress what already existed
 
-Record the current findings, then on later runs report only *new* ones:
+A baseline is a JSON file listing findings you have already reviewed. Later
+scans report only the findings that are not in it. Adopt one in two commands:
 
 ```sh
-keyhog scan . --create-baseline .keyhog-baseline.json   # snapshot, report nothing
-keyhog scan . --baseline .keyhog-baseline.json          # report only new findings
-keyhog scan . --update-baseline .keyhog-baseline.json   # report new AND fold them in
+keyhog scan . --create-baseline .keyhog-baseline.json
+keyhog scan . --baseline .keyhog-baseline.json
 ```
+
+`--create-baseline` writes the file, prints no findings, and exits `0`. The
+second command reports only new findings, so an unchanged repository exits `0`
+and a newly committed credential exits `1`. Commit the file and review changes
+to it like code.
+
+#### What counts as a new finding
+
+A baseline entry is keyed on one pair: the detector ID and the SHA-256 of the
+credential value. `file_path` and `line` are written for human review. Neither
+one takes part in matching.
+
+```json
+{
+  "version": 1,
+  "created": "2026-08-04T09:12:33.104882731+00:00",
+  "entries": [
+    {
+      "detector_id": "github-classic-pat",
+      "credential_hash": "sha256:94b9b7f8b35f61bbec1125726f7a794010497975d7f69ce6d0dcb43b7a5913db",
+      "file_path": "/home/dev/service/app.env",
+      "line": 1
+    }
+  ]
+}
+```
+
+That key decides every outcome:
+
+| Change in the repository | Result |
+|---|---|
+| The credential moves to another line or another file | Still suppressed |
+| The tree is checked out at a different path, or the file is renamed | Still suppressed |
+| The same credential is copied into a second file | Still suppressed, in both places |
+| The credential is rotated to a new value | Reported as new |
+| A different credential appears in a baselined file | Reported as new |
+| A second detector matches the same value | Reported as new, under that detector ID |
+
+Plan for the third row. A baseline accepts a credential value, not a location.
+If someone copies a baselined key into a new service, the gate stays silent.
+Rotate anything you are not willing to accept everywhere, and keep the baseline
+small enough that a reviewer can read it.
+
+`file_path` is an absolute path from the machine that wrote the file. Generate
+the baseline from one place so a committed baseline does not churn with each
+developer's checkout directory.
+
+#### Accept new findings after review
+
+`--update-baseline` folds new findings into the file and still reports them:
+
+```sh
+keyhog scan . --update-baseline .keyhog-baseline.json
+```
+
+The scan prints each new finding and exits `1`, exactly as `--baseline` does.
+Updating the file does not change the exit code. Run this locally once you have
+reviewed the findings and decided to accept them, then commit the result. Never
+run it in CI: a job that rewrites its own baseline accepts every secret it
+finds.
+
+KeyHog never removes an entry. After you rotate a credential, delete its entry
+by hand or regenerate the file with `--create-baseline`. A stale entry keeps
+suppressing the old value indefinitely.
+
+#### Compare two baselines
+
+`keyhog diff` reports what changed between two baseline files, which is how you
+review a proposed baseline update:
+
+```sh
+keyhog scan . --create-baseline proposed.json
+keyhog diff .keyhog-baseline.json proposed.json
+```
+
+```text
+keyhog diff
+
+  PASS 0 new   PASS 0 removed   = 2 unchanged
+
+UNCHANGED entropy-api-key @ /home/dev/service/sub/other.env:2
+UNCHANGED github-classic-pat @ /home/dev/service/app.env:1
+PASS no new or unverified live-risk findings
+```
+
+Add `--json` to gate on the result in CI, or `--hide-unchanged` when only the
+changes matter. Run `keyhog diff --help` for every option.
+
+#### What a baseline does not do
+
+- It does not exclude bytes from scanning. Use a `path:` rule in
+  `.keyhogignore` when a tree should not be read at all.
+- It does not suppress a coverage gap. A scan with unreadable or truncated
+  input still reports the gap, and a gap with no findings still exits `13`.
+- It is not a shared allowlist. Matching ignores the path, so one file would
+  work across several repositories, and that is exactly the problem: one team's
+  accepted credential would silently pass another team's gate. Keep one
+  reviewed set per repository.
+
+For a complete CI gate built on a baseline, see
+[Fail only on new secrets](./workflows/ci.md#fail-only-on-new-secrets).
 
 ---
 

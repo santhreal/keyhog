@@ -130,9 +130,13 @@ keyhog scan . --create-baseline .keyhog-baseline.json
 keyhog scan . --baseline .keyhog-baseline.json --format json-envelope --output keyhog.json
 ```
 
-The first command snapshots reviewed findings. Commit that file, then use the
-second command to report only new finding identities. Changed credentials and
-incomplete coverage remain visible.
+The first command snapshots reviewed findings and exits `0` without printing
+them. Commit that file, then use the second command to report only new finding
+identities. A baseline entry matches on the detector and the credential value,
+never on the file path, so moving a recorded secret does not fail the gate but
+rotating it does. Changed credentials and incomplete coverage remain visible.
+The complete path, including monorepo partitions, is [Fail only on new
+secrets](https://santhreal.github.io/keyhog/workflows/ci.html#fail-only-on-new-secrets).
 
 For the next scan, use the [recipes
 cookbook](https://santhreal.github.io/keyhog/recipes.html) or the copyable
@@ -923,7 +927,7 @@ lists every command, flag, generated default, and exit status. Use
 - **Bug / missed secret / false positive?** File an issue with the
   redacted credential shape and detector id; each report becomes a
   permanent test fixture under
-  [`tests/contracts/`](./crates/scanner/tests/contracts/).
+  [`crates/scanner/tests/contracts/`](./crates/scanner/tests/contracts/).
 - **Release behavior?** Every successful `main` CI run increments the patch
   version, generates changelogs, and publishes all six crates to crates.io.
   Add an optional fragment under [`changes/`](./changes/) for a precise note.

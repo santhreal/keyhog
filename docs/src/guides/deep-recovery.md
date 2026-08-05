@@ -1,40 +1,55 @@
 # Deep recovery
 
-Use `--deep` when recall matters more than routine scan cost. For a
-multi-backend installation, calibrate the deep policy before relying on
+Git history keeps a credential after you delete it from the working tree. Scan
+that history explicitly. A filesystem scan never includes it.
+
+```bash
+keyhog scan --git-history . --format json-envelope --output history.json
+```
+
+`--git-history` scans the lines added by commits reachable from the current
+checkout, bounded by `--max-commits` and by the ancestry the clone contains.
+Run it in CI only after a full checkout: `actions/checkout` clones one commit
+by default, so an unmodified job scans one commit and reports nothing. See
+[failure modes](../workflows/ci.md#failure-modes-worth-knowing).
+
+Choose the Git boundary before changing anything else:
+
+| Boundary | Command | Covers |
+|---|---|---|
+| Added lines in reachable commits | `keyhog scan --git-history .` | Patch additions from the ancestry present in the checkout. |
+| Every reachable blob | `keyhog scan --git-blobs .` | Deduplicated blobs reachable from the repository. Use it when patch additions are not complete enough for the policy. |
+| Both | `keyhog scan --git-history . --git-blobs .` | The recursive recovery workflow. Use it for a release or incident review. |
+
+None of these scan unreachable deleted objects, sibling repositories, provider
+organizations, cloud buckets, or mounted filesystems. Run those boundaries as
+separate jobs and preserve their reports and statuses.
+
+Deep Git scans run in process. A warm daemon does not accelerate history or
+blob traversal.
+
+## Add the deep preset
+
+Use `--deep` when recall matters more than routine scan cost, such as an
+incident review or a release gate:
+
+```bash
+keyhog scan --deep --git-history . --git-blobs . --daemon=off \
+  --format json-envelope --output deep-history.json
+```
+
+For a multi-backend installation, calibrate the deep policy before relying on
 automatic routing:
 
 ```bash
 keyhog calibrate-autoroute --policy deep
-keyhog scan . --deep --format json-envelope --output deep.json
 keyhog config --effective --deep
 ```
 
 A normal installation already calibrates every preset. Re-run the first command
 after changing the binary, host, driver, or routing-relevant configuration. The
-last command prints the resolved policy. Record it with benchmark or incident
+second command prints the resolved policy. Record it with benchmark or incident
 results.
-
-
-Choose both the detection policy and the Git boundary:
-
-```bash
-# Current working tree only.
-keyhog scan . --deep --format json-envelope --output deep-tree.json
-
-# Reachable commit additions and every reachable blob.
-keyhog scan --deep --git-history . --git-blobs . --daemon=off \
-  --format json-envelope --output deep-history.json
-```
-
-The second command is the recursive Git recovery workflow. It combines patch
-additions with deduplicated reachable blobs, then applies the deep detection
-policy to those sources. It does not scan unreachable deleted objects, sibling
-repositories, provider organizations, cloud buckets, or mounted filesystems.
-Run those boundaries as separate jobs and preserve their reports and statuses.
-
-Deep Git scans run in process. A warm daemon does not accelerate history or
-blob traversal.
 
 When a report is written as `json-envelope`, `jsonl-envelope`, or `html`, its
 metadata contains a `resolved_scan` manifest. The manifest records the selected
