@@ -1190,7 +1190,16 @@ impl ScanOrchestrator {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
             if !detectors_path.exists() && requested_detector_mode.is_none() {
                 let policy = execution_pack_policy_for_args(&args);
-                match crate::execution_pack_install::load_installed_detector_execution_pack(policy) {
+                let pack_backend = match effective_config.backend_override {
+                    Some(keyhog_scanner::hw_probe::ScanBackend::SimdCpu) => {
+                        keyhog_scanner::execution_pack::ExecutionPackBackend::Simd
+                    }
+                    _ => keyhog_scanner::execution_pack::ExecutionPackBackend::Cpu,
+                };
+                match crate::execution_pack_install::load_installed_detector_execution_pack_for_backend(
+                    policy,
+                    pack_backend,
+                ) {
                     Ok(installed) => {
                         let embedded_count = installed.ir.detectors().len();
                         let detectors = installed.ir.into_detectors();
@@ -1361,15 +1370,23 @@ impl ScanOrchestrator {
         };
         let scanner = {
             let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
-            let _backend_span = keyhog_profile::span(keyhog_profile::Stage::BackendInit);
-            let compiled = if disabled_detectors.is_empty()
-                && matches!(
-                    gpu_init_policy,
-                    GpuInitPolicy::SelectedBackend(
-                        keyhog_scanner::hw_probe::ScanBackend::CpuFallback
+            let packed_route_matches = detector_execution_pack.as_ref().is_some_and(|pack| {
+                matches!(
+                    (pack.identity().backend, gpu_init_policy),
+                    (
+                        keyhog_scanner::execution_pack::ExecutionPackBackend::Cpu,
+                        GpuInitPolicy::SelectedBackend(
+                            keyhog_scanner::hw_probe::ScanBackend::CpuFallback
+                        )
+                    ) | (
+                        keyhog_scanner::execution_pack::ExecutionPackBackend::Simd,
+                        GpuInitPolicy::SelectedBackend(
+                            keyhog_scanner::hw_probe::ScanBackend::SimdCpu
+                        )
                     )
                 )
-            {
+            });
+            let compiled = if disabled_detectors.is_empty() && packed_route_matches {
                 match detector_execution_pack.as_ref() {
                     Some(pack) => CompiledScanner::compile_shared_from_execution_pack_with_tuning(
                         Arc::clone(&detectors),

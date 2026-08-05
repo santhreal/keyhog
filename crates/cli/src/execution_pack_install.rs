@@ -127,10 +127,12 @@ pub(crate) fn load_installed_execution_pack(
     authenticate_manifest_pack(&directory, &manifest, row, &signing_key)
 }
 
-pub(crate) fn load_installed_detector_execution_pack(
+
+pub(crate) fn load_installed_detector_execution_pack_for_backend(
     policy: ExecutionPackPolicy,
+    backend: ExecutionPackBackend,
 ) -> Result<InstalledDetectorExecutionPack> {
-    let pack = load_installed_execution_pack(policy, ExecutionPackBackend::Cpu)?;
+    let pack = load_installed_execution_pack(policy, backend)?;
     let ir_bytes = pack
         .section(ExecutionPackSectionKind::DetectorIr)
         .context("installed execution pack has no detector IR section")?;
