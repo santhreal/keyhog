@@ -98,6 +98,15 @@ impl CompiledScanner {
         pack: &crate::execution_pack::ExecutionPack,
         tuning_config: &ScannerTuningConfig,
     ) -> Result<Self> {
+        Self::compile_from_execution_pack_with_tuning_and_detectors(pack, tuning_config)
+            .map(|(scanner, _detectors)| scanner)
+    }
+
+    /// Construct a tuned scanner and return the exact shared detector corpus decoded from it.
+    pub fn compile_from_execution_pack_with_tuning_and_detectors(
+        pack: &crate::execution_pack::ExecutionPack,
+        tuning_config: &ScannerTuningConfig,
+    ) -> Result<(Self, Arc<[DetectorSpec]>)> {
         use crate::execution_pack::ExecutionPackSectionKind as Section;
 
         let identity = pack.identity();
@@ -159,12 +168,13 @@ impl CompiledScanner {
             &detectors,
         )
         .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
-        Self::compile_shared_with_state_source(
-            detectors,
+        let scanner = Self::compile_shared_with_state_source(
+            Arc::clone(&detectors),
             GpuInitPolicy::SelectedBackend(execution_backend(identity.backend)),
             tuning_config,
             Some(state),
-        )
+        )?;
+        Ok((scanner, detectors))
     }
 
     fn compile_shared_with_state_source(

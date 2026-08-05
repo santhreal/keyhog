@@ -227,11 +227,29 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     let (_directory, pack) = mapped_pack(&detectors, None);
     let before =
         keyhog_scanner::execution_pack::matcher_sections::compile_state_builder_invocations();
-    let packed = CompiledScanner::compile_from_execution_pack(&pack)
+    let (packed, decoded_detectors) =
+        CompiledScanner::compile_from_execution_pack_with_tuning_and_detectors(
+            &pack,
+            &Default::default(),
+        )
         .expect("compile directly from mapped execution pack");
     assert_eq!(
         keyhog_scanner::execution_pack::matcher_sections::compile_state_builder_invocations(),
         before
+    );
+    assert_eq!(
+        decoded_detectors
+            .iter()
+            .map(|detector| detector.id.as_str())
+            .collect::<Vec<_>>(),
+        detectors
+            .iter()
+            .map(|detector| detector.id.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        decoded_detectors[0].patterns[0].regex,
+        detectors[0].patterns[0].regex
     );
     let input = chunk(
         "account=tenant_7\ntoken=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHORLESS-CD34",
