@@ -10,12 +10,13 @@
 //! trees it is a fifth of the run: 0.24 s of a 1.14 s scan over 15,000 files.
 //! Swapping in `codewalk`'s parallel walker cuts that to 0.098 s and the whole
 //! scan to 1.07 s with byte-identical reports, and it was tried and reverted.
-//! `walk_parallel` spawns a detached thread that keeps walking after its
-//! receiver is dropped, so any caller that stops consuming early leaves a
-//! thread recording unreadable-entry skips into the process-global coverage
-//! counters. That surfaced as a sibling test seeing two unreadable gaps where
-//! it planted one, and it would be a live coverage-accounting bug, not only a
-//! test artifact. KH-1587 holds the measurement and that constraint.
+//! A sibling test then saw two unreadable coverage gaps where it plants one.
+//! It passes in isolation and under `--test-threads=1`, and fails only under
+//! the default parallel harness, so something about the parallel walk disturbs
+//! the process-global skip counters across concurrent tests. The mechanism is
+//! not understood, and unreadable entries are a fail-closed recall surface, so
+//! the change is not shipped on a theory. KH-1587 holds the measurement, the
+//! ruled-out explanations, and what a future attempt has to prove.
 //!
 //! These pin what any future attempt has to preserve: the same set, exactly
 //! once, in sorted order, whatever the walk does underneath.
