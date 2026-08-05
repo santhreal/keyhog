@@ -1,9 +1,12 @@
-//! Safe `open`, buffered read, and whole-file mmap. All paths route
+//! Safe `open`, buffered read, and bounded whole-file read. All paths route
 //! through [`open_file_safe`] which refuses to follow symlinks (a
 //! scan tricked into reading `~/.aws/credentials` is a real attack
 //! we already saw in the wild).
+//!
+//! Nothing here maps a file. `read_file_whole_capped` documents why: a
+//! file-backed mapping cannot be read race-free, and a concurrent truncation
+//! turns into `SIGBUS`, which kills the scan with no report at all.
 
-use memmap2::MmapOptions;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -14,7 +17,6 @@ use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
 pub(in crate::filesystem) enum BufferedFileRead {
     Text(String),
     Bytes(Vec<u8>),
-    Mmap(memmap2::Mmap),
 }
 
 const MAX_EXACT_SIZED_READ_PREALLOC_BYTES: u64 = 16 * 1024 * 1024;
@@ -177,7 +179,7 @@ pub(in crate::filesystem) fn read_file_safe(
     // The previous implementation built an `IoUring::new(1)` per file, which
     // amortizes badly: ring setup + teardown is dominated by the syscalls
     // around the actual read for any file under ~1 GB. Plain buffered read
-    // (and the `mmap` path used by `read_file_mmap`) outperformed it on the
+    // (and the whole-file read path) outperformed it on the
     // standard corpus; see the internal design notes sources finding.
     // io_uring belongs in a shared batched owner with benchmark proof, not as
     // per-file ring setup in this hot-path read.
@@ -278,14 +280,36 @@ fn buffered_read_exceeded_cap_message(size_hint: u64, cap: u64) -> String {
     }
 }
 
-pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileRead> {
+/// Read a whole file into an owned buffer, bounded and truncation-safe.
+///
+/// This used to `mmap` the file and hand the mapping upward. It does not any
+/// more, and the reason is a crash, not a preference: there is no race-free way
+/// to read through a file-backed mapping. `ftruncate` by any other process
+/// invalidates the page-cache pages past the new EOF, and the next touch of the
+/// mapping raises `SIGBUS`, which kills the process outright. No handler, no
+/// report, no findings for the rest of the scan. Reproduced on a plain
+/// `keyhog scan <file>` against a file another thread was truncating: 1 of 6
+/// trials at 128 KiB and 4 of 6 at 800 KiB died by signal 7.
+///
+/// That is not an exotic input. `scan-system` walks live filesystems where logs
+/// rotate, so one rotating file could destroy a whole-system scan. `read(2)`
+/// cannot fault: a truncation is just a short read, and growth is extra bytes we
+/// scan. The cost is one owned copy, which this path was paying anyway (see
+/// `read_file_buffered`: the mmap path could never move its backing store into
+/// the decoded `String`, so it always copied).
+///
+/// The safety properties of the old path are all kept: one symlink-resistant
+/// `open_file_safe` (which also holds the advisory `LOCK_SH`), a post-open
+/// re-stat that refuses a file grown past `MMAP_TOCTOU_SANITY_CAP_BYTES` between
+/// the walker's stat and here, and that same hard ceiling on the read itself.
+pub(in crate::filesystem) fn read_file_whole_capped(path: &Path) -> Option<BufferedFileRead> {
     let mut file = match open_file_safe(path) {
         Ok(f) => f,
         Err(error) => {
             tracing::warn!(
                 path = %path.display(),
                 %error,
-                "cannot open file for mmap; skipping"
+                "cannot open file for whole-file read; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             return None;
@@ -294,9 +318,9 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
 
     // Post-open re-stat: defeat the walker-stat-then-write race where
     // an attacker grows the file to multi-GiB between the walker's
-    // size check and our mmap. The walker's max_file_size is the
+    // size check and our read. The walker's max_file_size is the
     // user-configurable budget; this constant is a HARD ceiling on
-    // any mmap-based read regardless of user config.
+    // any whole-file read regardless of user config.
     let meta = match file.metadata() {
         Ok(meta) => meta,
         Err(error) => {
@@ -309,13 +333,13 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
             return None;
         }
     };
-    let live_size_hint = Some(meta.len());
-    if meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES {
+    let live_size = meta.len();
+    if live_size > MMAP_TOCTOU_SANITY_CAP_BYTES {
         tracing::warn!(
             path = %path.display(),
-            live_size = meta.len(),
+            live_size,
             cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
-            "refusing to mmap file: live size exceeds sanity cap (likely TOCTOU growth)"
+            "refusing whole-file read: live size exceeds sanity cap (likely TOCTOU growth)"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return None;
@@ -324,113 +348,59 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
     // the advisory `LOCK_SH` on this fd, and a shared lock we already hold blocks
     // any new exclusive lock, so a re-request could only re-confirm the lock we
     // own (a redundant syscall whose "locked by another process" failure branch
-    // was dead). The lock stays held for `file`'s lifetime, which spans the mmap
+    // was dead). The lock stays held for `file`'s lifetime, which spans the read
     // below. ONE owner of the flock guard: `open_file_safe`. Contract pinned by
     // `externally_exclusive_locked_file_is_refused_by_open_and_mmap`.
 
-    // SAFETY: the mapping is read-only, the `File` lives through the mapping
-    // call, and we decode the bytes immediately without storing the mmap past
-    // this function. Do not pass the earlier stat length into mmap: if the file
-    // shrank between stat and map, a stale explicit length can create a range
-    // past live EOF and SIGBUS when read. Map the kernel's current file length,
-    // then enforce the hard cap before touching bytes.
-    let mmap = match unsafe { MmapOptions::new().map(&file) } {
-        Ok(m) => m,
-        Err(error) => {
-            tracing::warn!(
-                path = %path.display(),
-                %error,
-                "cannot mmap file; falling back to buffered read"
-            );
-            // Same OOM guard as the locked-file fallback above: cap the buffered
-            // read at the TOCTOU sanity ceiling so an mmap failure does not become
-            // an unbounded `read_to_end` of a TOCTOU-grown file.
-            // (KH-GAP-OOM-mmap-fallback)
-            match crate::capped_read::read_to_cap(
-                &mut file,
-                MMAP_TOCTOU_SANITY_CAP_BYTES,
-                live_size_hint,
-            ) {
-                Ok(read) => {
-                    if read.truncated {
-                        tracing::warn!(
-                            path = %path.display(),
-                            cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
-                            "file grew beyond mmap fallback sanity cap while reading"
-                        );
-                        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-                        return None;
-                    }
-                    return Some(match decode_text_file_owned_or_bytes(read.bytes) {
-                        Ok(text) => BufferedFileRead::Text(text),
-                        Err(bytes) => BufferedFileRead::Bytes(bytes),
-                    });
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        path = %path.display(),
-                        %error,
-                        "cannot read file after mmap failure; skipping"
-                    );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    return None;
-                }
-            }
-        }
-    };
-    let mapped_len = match u64::try_from(mmap.len()) {
-        Ok(len) => len,
-        Err(error) => {
-            tracing::warn!(
-                path = %path.display(),
-                mapped_len = mmap.len(),
-                %error,
-                "cannot represent mapped file length for mmap sanity cap; skipping"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            return None;
-        }
-    };
-    if mapped_len > MMAP_TOCTOU_SANITY_CAP_BYTES {
+    // Tell the kernel we will read this fd sequentially front-to-back, not
+    // randomly. posix_fadvise(SEQUENTIAL) doubles the readahead window and
+    // stops prefetching past the end. Free perf on Linux, no-op elsewhere.
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::io::AsRawFd;
+        // SAFETY: posix_fadvise on a valid open descriptor; the hint is
+        // advisory and any failure (EINVAL on tmpfs/procfs) is non-fatal.
+        unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_SEQUENTIAL) };
+    }
+
+    // Reserve the post-open size so the common case is one allocation, then read
+    // to EOF with the hard cap as the ceiling. A file that SHRANK under us simply
+    // ends the read early; a file that GREW contributes its extra bytes up to the
+    // cap. Neither outcome can fault, which is the whole point of not mapping it.
+    let capacity = usize::try_from(live_size.min(MMAP_TOCTOU_SANITY_CAP_BYTES))
+        .unwrap_or(usize::MAX); // LAW10: unreachable on real platforms; a Vec length cannot exceed usize::MAX.
+    let mut bytes = Vec::with_capacity(capacity);
+    // Read one byte past the cap so crossing it is detectable rather than
+    // silently indistinguishable from a file that is exactly cap bytes long.
+    let read_limit = MMAP_TOCTOU_SANITY_CAP_BYTES.saturating_add(1);
+    if let Err(error) = (&mut file).take(read_limit).read_to_end(&mut bytes) {
         tracing::warn!(
             path = %path.display(),
-            live_size = mapped_len,
+            %error,
+            "cannot read file; skipping"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        return None;
+    }
+    if bytes.len() as u64 > MMAP_TOCTOU_SANITY_CAP_BYTES {
+        tracing::warn!(
+            path = %path.display(),
             cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
-            "refusing to mmap file: mapped length exceeds sanity cap (likely TOCTOU growth)"
+            "file grew beyond the whole-file read sanity cap while reading"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return None;
     }
 
-    // Tell the kernel we will read this mmap sequentially front-to-back,
-    // not randomly. madvise(SEQUENTIAL) disables LRU protection on the
-    // pages so they can be evicted faster (we won't re-read them) and
-    // bumps readahead. Free perf on Linux/macOS, no-op elsewhere.
-    #[cfg(unix)]
-    {
-        // SAFETY: madvise on a valid memory range returned by mmap; failure
-        // is non-fatal - we ignore the return code.
-        unsafe {
-            libc::madvise(
-                mmap.as_ptr() as *mut libc::c_void,
-                mmap.len(),
-                libc::MADV_SEQUENTIAL,
-            );
-        }
-    }
-
-    let result = match super::decode::decode_text_file(&mmap) {
-        Some(text) => BufferedFileRead::Text(text),
-        None => BufferedFileRead::Mmap(mmap),
-    };
-
     #[cfg(unix)]
     {
         use std::os::unix::io::AsRawFd;
-        let fd = file.as_raw_fd();
         // SAFETY: Simple advisory unlock FFI call.
-        unsafe { libc::flock(fd, libc::LOCK_UN) };
+        unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
     }
 
-    Some(result)
+    Some(match decode_text_file_owned_or_bytes(bytes) {
+        Ok(text) => BufferedFileRead::Text(text),
+        Err(bytes) => BufferedFileRead::Bytes(bytes),
+    })
 }

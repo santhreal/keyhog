@@ -11,6 +11,16 @@ mod blocking_thread;
 mod capped_read;
 mod compression_limits;
 mod decode;
+#[cfg(any(
+    feature = "azure",
+    feature = "s3",
+    feature = "gcs",
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket"
+))]
+mod endpoint_screen;
 mod factory;
 mod limits;
 mod magic;
@@ -36,12 +46,10 @@ mod process_excerpt;
 mod safe_read;
 mod skip;
 pub(crate) mod timeouts;
-#[cfg(any(
-    feature = "web",
-    feature = "github",
-    feature = "gitlab",
-    feature = "bitbucket"
-))]
+// Unconditional: the always-on HAR expander tags every chunk with its captured
+// request URL, which routinely carries `?access_token=` / userinfo, so the
+// redaction owner has to exist even in a no-network feature build. The
+// reqwest-dependent half of the module is gated inside it.
 mod url_redaction;
 
 /// Shared HTTP-client policy (proxy, TLS, UA) used by every source
