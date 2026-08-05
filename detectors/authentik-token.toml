@@ -17,10 +17,12 @@ regex = '''(?:^|[^A-Za-z0-9_])(?:AUTHENTIK[_\-\s]*TOKEN|AUTHENTIK[_\-\s]*API[_\-
 description = "Authentik API token with context anchor"
 group = 1
 
-[[detector.patterns]]
-regex = "(?:^|[^A-Za-z0-9_])Authorization:\\s*Bearer\\s+([a-zA-Z0-9]{40,})"
-description = "Authentik Bearer token in Authorization header"
-group = 1
+# The bare `Authorization: Bearer <40+ alnum>` header carries NO authentik
+# evidence and is owned by the `bearer-authorization` detector. Keeping it here
+# made authentik claim any provider's bearer token: measured on
+# benchmarks/corpora/homefield it attributed 3 non-authentik tokens
+# (particleio x2, grafana) against 1 real authentik hit, and it also stole
+# `bearer-authorization`'s own inline test_positive.
 
 # NOTE: live verification disabled. `{service}` was single-brace and
 # never resolved. kimi-wave3 §1.

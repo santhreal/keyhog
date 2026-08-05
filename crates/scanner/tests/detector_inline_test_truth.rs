@@ -247,7 +247,9 @@ fn anchored_generic_service_detectors_remain_named_through_resolution() {
         })
         .map(|detector| detector.id.as_str())
         .collect();
-    assert_eq!(anchored_generic_ids.len(), 5);
+    // basic-auth-credentials, bearer-authorization, cli-password-flag,
+    // oauth-client-secret, sql-password, url-credentials.
+    assert_eq!(anchored_generic_ids.len(), 6);
 
     let mut checked = 0usize;
     for case in cases {
@@ -283,8 +285,9 @@ fn anchored_generic_service_detectors_remain_named_through_resolution() {
         checked += 1;
     }
     assert_eq!(
-        checked, 5,
-        "each anchored generic-service detector has one inline positive"
+        checked, 7,
+        "every anchored generic-service detector's inline positives are checked \
+         (oauth-client-secret ships two, the rest one each)"
     );
 }
 

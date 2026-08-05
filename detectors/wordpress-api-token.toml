@@ -12,11 +12,30 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.2999999999999998, named_anchor_floor = 0.55, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8, post_match = { placeholder_multiplier = 0.05, minimum_byte_diversity = 0.1, low_diversity_multiplier = 0.1, maximum_repeat_ratio = 0.8, degenerate_run_min_length = 10, degenerate_repeat_multiplier = 0.1, fixture_path_multiplier = 0.5, ml_context_reapply_below = 0.95 } }
 keywords = ["wordpress", "WORDPRESS", "wpcom", "WPCOM_TOKEN"]
 
+# The `access[_\-\s]*token` alternative carried NO WordPress evidence, so this
+# detector claimed any OAuth2 access token. Measured on
+# benchmarks/corpora/homefield it attributed 12 non-WordPress tokens (intercom,
+# instagram, facebook x2, jfrog, spotify, ...) to WordPress and 0 real ones.
+# WordPress.com tokens are opaque with no prefix, so `access_token` is only
+# attributable when `wordpress`/`wpcom` names the owner nearby.
 [[detector.patterns]]
-regex = '''(?:wordpress|WORDPRESS|wpcom|WPCOM|access[_\-\s]*token)[=:\s"\']+([a-zA-Z0-9_%\-]{50,})'''
-description = "WordPress.com OAuth2 access token with context anchor"
+regex = '''(?i)(?:wordpress|wpcom)[=:\s"\']+([a-zA-Z0-9_%\-]{50,})'''
+description = "WordPress.com OAuth2 access token in a WordPress-named assignment"
 group = 1
 
+[[detector.patterns]]
+regex = '''(?is)(?:wordpress|wpcom).{0,256}access[_\-\s]*token[=:\s"\']+([a-zA-Z0-9_%\-]{50,})'''
+description = "WordPress.com OAuth2 access token following WordPress evidence"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?is)access[_\-\s]*token[=:\s"\']+([a-zA-Z0-9_%\-]{50,}).{0,256}(?:wordpress|wpcom)'''
+description = "WordPress.com OAuth2 access token preceding WordPress evidence"
+group = 1
+
+# The separator-soup fixture is kept (it pins the `[=:\s"']+` run), but it now
+# carries the `wpcom` owner anchor. The old fixture was a bare `access-token`
+# with no vendor evidence, i.e. the defect above expressed as a test.
 [[detector.tests]]
-test_positive = "access-token '    : \"  '     =   : =     =  '' =     '  '\" '=    \" \" =:  lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"
-test_negative = "access-token '    : \"  '     =   : =     =  '' =     '  '\" '=    \" \" =:  YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+test_positive = "wpcom access-token '    : \"  '     =   : =     =  '' =     '  '\" '=    \" \" =:  lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"
+test_negative = "wpcom access-token '    : \"  '     =   : =     =  '' =     '  '\" '=    \" \" =:  YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"

@@ -1,0 +1,58 @@
+# Docs: https://developers.facebook.com/docs/facebook-login/guides/access-tokens
+# Format: `EAA` prefix followed by a long base64url-ish run (user, page and
+#   long-lived Graph API access tokens all share the prefix)
+# Verify: GET https://graph.facebook.com/me with access_token returns 200 if valid
+# Prefix: EAA
+#
+# Why this detector:
+#   `facebook-oauth-secret` only owns the 32-hex `FACEBOOK_CLIENT_SECRET` app
+#   secret. The Graph API ACCESS token is a different credential with a
+#   distinctive `EAA` literal prefix and no owner in the corpus. All three
+#   Facebook access-token ground-truth files in benchmarks/corpora/homefield were
+#   attributed to `wordpress-api-token`, which owned an anchor-free
+#   `access_token=` pattern; two of them (`fb_access_token: "EAAC..."` and
+#   `FACEBOOK_ACCESS_TOKEN=EAAC...`) were reported ONLY through that wrong
+#   detector, so anchoring WordPress to its own evidence would have dropped them
+#   entirely. The `EAA` prefix at a token boundary is the attributable evidence.
+
+[detector]
+id = "facebook-access-token"
+name = "Facebook Graph API Access Token"
+service = "facebook"
+severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.2999999999999998, named_anchor_floor = 0.55, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8, post_match = { placeholder_multiplier = 0.05, minimum_byte_diversity = 0.1, low_diversity_multiplier = 0.1, maximum_repeat_ratio = 0.8, degenerate_run_min_length = 10, degenerate_repeat_multiplier = 0.1, fixture_path_multiplier = 0.5, ml_context_reapply_below = 0.95 } }
+keywords = ["EAA", "facebook", "FACEBOOK", "graph.facebook.com"]
+
+[[detector.patterns]]
+# `(?:^|[^A-Za-z0-9])` keeps `EAA` at a token boundary so the prefix cannot be
+# matched INSIDE an unrelated base64 run. The `{40,}` floor keeps short
+# `EAA`-initial words out.
+#
+# `(?-i)` is REQUIRED, not decorative: detector patterns are compiled
+# case-insensitively by default, so without it this pattern matched the
+# lowercase `eaa...` prefix of sha256 image digests
+# (`nginx@sha256:eaa35988c9b3...`) and produced 3 false positives on
+# benchmarks/corpora/mirror negatives plus 1 on homefield. Facebook issues the
+# prefix in uppercase; sha256 digests are lowercase hex.
+regex = '''(?-i)(?:^|[^A-Za-z0-9])(EAA[A-Za-z0-9]{40,})'''
+description = "Facebook Graph API access token (EAA prefix)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://graph.facebook.com/me"
+allowed_domains = ["graph.facebook.com"]
+
+[detector.verify.auth]
+type = "query"
+param = "access_token"
+field = "match"
+
+[detector.verify.success]
+status = 200
+policy = "status_with_error_backstop"
+
+[[detector.tests]]
+test_positive = 'fb_access_token: "EAACEdEose0cBAMZD123456789abcdefghijklmnopqrstuvwxyz"'
+test_negative = 'fb_access_token: "EAAshort"'

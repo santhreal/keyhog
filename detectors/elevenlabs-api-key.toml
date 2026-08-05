@@ -1,5 +1,5 @@
 # Docs: https://elevenlabs.io/docs/quickstart
-# Format: sk_ prefix followed by 32 alphanumeric characters
+# Format: sk_ prefix followed by 48 lowercase hex characters (32 hex is legacy)
 # Verify: GET /v1/user with xi-api-key header returns 200 if valid
 # Prefix: sk_
 
@@ -11,10 +11,23 @@ severity = "high"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.2999999999999998, named_anchor_floor = 0.55, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8, post_match = { placeholder_multiplier = 0.05, minimum_byte_diversity = 0.1, low_diversity_multiplier = 0.1, maximum_repeat_ratio = 0.8, degenerate_run_min_length = 10, degenerate_repeat_multiplier = 0.1, fixture_path_multiplier = 0.5, ml_context_reapply_below = 0.95 } }
 keywords = ["sk_", "ELEVENLABS"]
+# Exact ElevenLabs hex shape outranks the broad `sk_[a-zA-Z0-9]{30,50}` prefix
+# class owned by `klaviyo-api-key`, which otherwise labels ElevenLabs keys
+# Klaviyo (3 of 3 ElevenLabs ground-truth files in
+# benchmarks/corpora/homefield were attributed to Klaviyo).
+resolution_priority = 1
 
 [[detector.patterns]]
-regex = 'sk_[a-f0-9]{32}'
-description = "ElevenLabs API key (sk_ prefix)"
+# ElevenLabs now issues `sk_` + 48 hex; the 32-hex form is the legacy shape.
+# All three ElevenLabs ground-truth samples in benchmarks/corpora/homefield are
+# 48 hex, so the 32-only form could not match the format it ships today.
+# The leading `[^A-Za-z0-9_]` boundary stops `sk_` matching INSIDE a longer
+# underscore-delimited token: without it this pattern claimed the LangSmith key
+# `lsv2_sk_<32 hex>_<10 hex>` from `langsmith-api-key`. The trailing
+# `[^a-f0-9]|$` keeps the capture whole-value instead of a hex prefix.
+regex = '''(?:^|[^A-Za-z0-9_])(sk_[a-f0-9]{48}|sk_[a-f0-9]{32})(?:[^a-f0-9]|$)'''
+description = "ElevenLabs API key (sk_ prefix, 48-hex current or 32-hex legacy)"
+group = 1
 
 [detector.verify]
 method = "GET"
@@ -33,3 +46,9 @@ policy = "status_with_error_backstop"
 [[detector.tests]]
 test_positive = "sk_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
 test_negative = "sk_short"
+
+# Current 48-hex issue format, and the LangSmith twin that must NOT be claimed
+# here: `sk_` inside `lsv2_sk_...` belongs to `langsmith-api-key`.
+[[detector.tests]]
+test_positive = "sk_2a30e5a0d39d5f2c5f6a9d2f95cd016049a6323985479bfd"
+test_negative = "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"
