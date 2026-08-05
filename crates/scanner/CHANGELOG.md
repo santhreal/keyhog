@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.67 - 2026-08-05
+
+- Filesystem enumeration-order contract.
+
 ## 0.5.66 - 2026-08-04
 
 - Whole-tree GPU guidance in the backends guide.

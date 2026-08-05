@@ -2,6 +2,16 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.67] - 2026-08-05
+
+### Added
+
+- Pin that filesystem enumeration yields every file exactly once, in sorted path order, identically across repeated walks. Batch composition follows enumeration order and autoroute keys its persisted decisions by batch shape, so a walk that varied run to run would make a calibrated cache miss on replay. The property was implicit; it is now asserted over twenty walks of the same tree.
+
+### Changed
+
+- Filesystem enumeration-order contract.
+
 ## [0.5.66] - 2026-08-04
 
 ### Added

@@ -1,3 +1,0 @@
-category = "Added"
-summary = "Pin that filesystem enumeration yields every file exactly once, in sorted path order, identically across repeated walks. Batch composition follows enumeration order and autoroute keys its persisted decisions by batch shape, so a walk that varied run to run would make a calibrated cache miss on replay. The property was implicit; it is now asserted over twenty walks of the same tree."
-crates = ["sources"]

@@ -117,7 +117,7 @@ keyhog:
   stage: test
   image: rust:1.89-bookworm
   before_script:
-    - cargo install --locked --version '=0.5.66' keyhog
+    - cargo install --locked --version '=0.5.67' keyhog
   script:
     # Exits non-zero on findings, which fails the job and gates the MR.
     - ~/.local/bin/keyhog scan . --format gitlab-sast --output gl-sast-report.json
@@ -149,7 +149,7 @@ jobs:
       - run:
           name: Install keyhog
           command: |
-            cargo install --locked --version '=0.5.66' keyhog
+            cargo install --locked --version '=0.5.67' keyhog
             echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> $BASH_ENV
       - run:
           name: Scan repo
@@ -176,7 +176,7 @@ steps:
   - name: keyhog
     image: rust:1.89-bookworm
     commands:
-      - cargo install --locked --version '=0.5.66' keyhog
+      - cargo install --locked --version '=0.5.67' keyhog
       - |
         printf '{"schema_version":{"major":1,"minor":7},"scan_status":"failed","coverage_gap_summary":[],"findings":[]}\n' > keyhog.json
         scan_status=0
@@ -244,7 +244,7 @@ Use a dedicated artifact path so the report survives a finding exit:
 steps:
   - label: ":mag: keyhog secret scan"
     command: |
-      cargo install --locked --version '=0.5.66' keyhog
+      cargo install --locked --version '=0.5.67' keyhog
       keyhog scan . --severity high --format json-envelope --output keyhog.json
     artifact_paths:
       - keyhog.json
@@ -263,7 +263,7 @@ pipeline {
         stage('keyhog') {
             steps {
                 sh '''
-                    cargo install --locked --version '=0.5.66' keyhog
+                    cargo install --locked --version '=0.5.67' keyhog
                     keyhog scan . --severity high --format json-envelope --output keyhog.json
                 '''
             }
@@ -282,7 +282,7 @@ pipeline {
 Manual CI installation can pin one exact crates.io version:
 
 ```sh
-cargo install --locked --version '=0.5.66' keyhog
+cargo install --locked --version '=0.5.67' keyhog
 ```
 
 Review the release before changing the version. GitHub Action code and scanner
