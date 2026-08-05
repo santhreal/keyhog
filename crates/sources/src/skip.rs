@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread::ThreadId;
 
 /// How many files the filesystem walker skipped because they exceeded
 /// the active `--max-file-size` cap. Bumped once per skipped entry
@@ -275,71 +276,148 @@ pub fn reset_skipped_over_max_size() {
 // in one process, so a counter-asserting test (`reset → scan → read`) can
 // otherwise observe another test's increments.
 //
-// Every source scan takes a shared lease for its lifetime. A counter-asserting
-// test takes the exclusive lease for its reset→scan→read window, while its own
-// scan bypasses the shared lease through the thread-local flag below. Taking the
-// shared lease even before the first exclusive scope is essential: an optional
-// "armed" fast path lets an already-running unleased scan increment counters
-// after the first exclusive scope begins.
-static SCAN_GATE: RwLock<()> = RwLock::new(());
-thread_local! {
-    static IN_EXCLUSIVE_SCAN_SCOPE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+// The gate is scan-scoped, NOT thread-scoped. A scan's recording work does not
+// all happen on the thread that called `chunks()`: the filesystem reader crew
+// records binary / over-max-size / unreadable skips from its own threads, and
+// those threads outlive the returned iterator whenever a consumer stops early
+// (`take`, `next`, `find`, an early `break`, or a panicking test). The previous
+// design keyed the bypass off a thread-local and released the lease when the
+// iterator dropped, so a reader thread could bump a counter after its own scan
+// had ended and land the increment inside the NEXT counter-asserting test's
+// window. That reproduced as `snappy_random_bytes_no_panic` observing
+// `unreadable=2` where it plants one.
+//
+// So a lease is a clonable token, not a lock guard: whoever does recording work
+// for a scan holds a clone, and the scan counts as in-flight until the last
+// clone drops. An exclusive scope waits for every in-flight scan to finish and
+// then blocks new ones. The scope owner's OWN scan is admitted immediately
+// (otherwise the asserting test would wait on itself) and stays counted, so the
+// next exclusive scope still waits for its reader crew to drain.
+static SCAN_GATE: ScanGate = ScanGate {
+    state: Mutex::new(GateState {
+        active_scans: 0,
+        exclusive_owner: None,
+        exclusive_waiters: 0,
+    }),
+    changed: Condvar::new(),
+};
+
+struct ScanGate {
+    state: Mutex<GateState>,
+    changed: Condvar,
+}
+
+struct GateState {
+    /// Scans whose recording work has not finished yet.
+    active_scans: usize,
+    /// Thread that holds the exclusive scope, if any.
+    exclusive_owner: Option<ThreadId>,
+    /// Threads blocked in `enter_exclusive_scan_scope`. New scans yield to them
+    /// so a busy test binary cannot starve a counter-asserting test, which is
+    /// the writer preference the previous `RwLock` provided.
+    exclusive_waiters: usize,
+}
+
+impl ScanGate {
+    /// Lock the gate state, recovering the inner value on poison.
+    ///
+    /// LAW10: a panicking test must not cascade into every later scan; the
+    /// recovered state still serializes correctly because every mutation of it
+    /// is a single infallible field update.
+    fn lock(&self) -> std::sync::MutexGuard<'_, GateState> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 }
 
 /// Exclusive scan scope held by a counter-asserting test for its whole
 /// reset→scan→read window. Serializes against every other gated scan and
-/// against other exclusive scopes. Dropping it releases the scan gate.
+/// against other exclusive scopes. Dropping it reopens the scan gate.
 pub struct ScanCounterScope {
-    // Field order matters: `Drop for ScanCounterScope` runs first (clearing the
-    // thread-local), then this field drops, releasing the write lock.
-    _write: RwLockWriteGuard<'static, ()>,
+    _not_send: std::marker::PhantomData<*const ()>,
 }
 
 impl Drop for ScanCounterScope {
     fn drop(&mut self) {
-        IN_EXCLUSIVE_SCAN_SCOPE.with(|in_scope| in_scope.set(false));
+        let mut state = SCAN_GATE.lock();
+        state.exclusive_owner = None;
+        drop(state);
+        SCAN_GATE.changed.notify_all();
     }
 }
 
-/// Enter an exclusive scan scope. Blocks until every in-flight gated scan has
-/// finished and no other exclusive scope is held. Recovers the inner guard on
-/// poison so one panicking test does not cascade.
+/// Enter an exclusive scan scope. Blocks until every in-flight scan has
+/// finished recording and no other exclusive scope is held.
 pub(crate) fn enter_exclusive_scan_scope() -> ScanCounterScope {
-    let write = SCAN_GATE
-        .write()
-        // LAW10: recover the inner guard after a panicking test; the recovered
-        // guard still preserves counter-isolation serialization.
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    IN_EXCLUSIVE_SCAN_SCOPE.with(|in_scope| in_scope.set(true));
-    ScanCounterScope { _write: write }
-}
-
-/// Read lease held for the lifetime of one scan. `None` only when the current
-/// thread already holds the exclusive scope, because the asserting test's own
-/// scan must not block on its write lease.
-pub(crate) struct ScanReadLease {
-    _lease: Option<RwLockReadGuard<'static, ()>>,
-}
-
-/// Acquire a scan read lease before any recording work (eager walk errors or
-/// reader-pool spawn), then retain it for the complete iterator lifetime.
-pub(crate) fn acquire_scan_read_lease() -> ScanReadLease {
-    if IN_EXCLUSIVE_SCAN_SCOPE.with(|in_scope| in_scope.get()) {
-        return ScanReadLease { _lease: None };
+    let mut state = SCAN_GATE.lock();
+    state.exclusive_waiters += 1;
+    while state.exclusive_owner.is_some() || state.active_scans > 0 {
+        state = SCAN_GATE
+            .changed
+            .wait(state)
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
     }
+    state.exclusive_waiters -= 1;
+    state.exclusive_owner = Some(std::thread::current().id());
+    ScanCounterScope {
+        _not_send: std::marker::PhantomData,
+    }
+}
+
+/// One scan's registration in the gate. Deregisters when the last clone drops,
+/// which is what makes the gate wait for a reader crew rather than for the
+/// thread that spawned it.
+struct ActiveScan;
+
+impl Drop for ActiveScan {
+    fn drop(&mut self) {
+        let mut state = SCAN_GATE.lock();
+        state.active_scans = state.active_scans.saturating_sub(1);
+        let idle = state.active_scans == 0;
+        drop(state);
+        if idle {
+            SCAN_GATE.changed.notify_all();
+        }
+    }
+}
+
+/// Lease proving one scan is registered with the gate.
+///
+/// Clone it into every thread that records skip events for that scan. `Send`
+/// and `Sync`, unlike the `RwLockReadGuard` this replaced, precisely so the
+/// reader crew can hold it.
+#[derive(Clone)]
+pub(crate) struct ScanReadLease {
+    _active: Arc<ActiveScan>,
+}
+
+/// Acquire a scan lease before any recording work (eager walk errors or
+/// reader-pool spawn), then keep it alive for as long as anything records.
+pub(crate) fn acquire_scan_read_lease() -> ScanReadLease {
+    let mut state = SCAN_GATE.lock();
+    let me = std::thread::current().id();
+    // The scope owner's own scan is admitted immediately: it is the scan the
+    // asserting test is measuring, and blocking it would deadlock the test
+    // against its own scope. Everyone else waits out the scope, and also waits
+    // behind a pending scope so exclusive entry cannot starve.
+    while state.exclusive_owner.is_some_and(|owner| owner != me)
+        || (state.exclusive_owner.is_none() && state.exclusive_waiters > 0)
+    {
+        state = SCAN_GATE
+            .changed
+            .wait(state)
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+    }
+    state.active_scans += 1;
     ScanReadLease {
-        _lease: Some(
-            SCAN_GATE
-                .read()
-                // LAW10: recover the inner guard after a panicking test; the
-                // recovered guard still serializes scans.
-                .unwrap_or_else(|poisoned| poisoned.into_inner()),
-        ),
+        _active: Arc::new(ActiveScan),
     }
 }
 
 pub(crate) fn scan_gate_exclusive_available_for_test() -> bool {
-    SCAN_GATE.try_write().is_ok()
+    let state = SCAN_GATE.lock();
+    state.exclusive_owner.is_none() && state.active_scans == 0
 }
 
 struct LeasedScanIter<'a, T> {
@@ -354,25 +432,23 @@ impl<T> Iterator for LeasedScanIter<'_, T> {
     }
 }
 
-/// Bind an already-acquired lease to a built iterator so the lease lives for the
-/// whole scan (covers lazy reader-pool recording during iteration).
+/// Bind an already-acquired lease to a built iterator so the lease lives at
+/// least as long as the consumer keeps pulling (covers lazy recording on the
+/// consuming thread). Threads that outlive the iterator hold their own clone.
 pub(crate) fn attach_scan_lease<'a, T: 'a>(
     lease: ScanReadLease,
     inner: Box<dyn Iterator<Item = T> + 'a>,
 ) -> Box<dyn Iterator<Item = T> + 'a> {
-    if lease._lease.is_some() {
-        Box::new(LeasedScanIter {
-            _lease: lease,
-            inner,
-        })
-    } else {
-        inner
-    }
+    Box::new(LeasedScanIter {
+        _lease: lease,
+        inner,
+    })
 }
 
 /// Acquire a lease, run an (often eager) iterator builder under it, then keep
 /// the lease bound to the result. The single-call form for sources whose
-/// `chunks()` body is one expression. A no-op in production.
+/// `chunks()` body is one expression and whose recording all happens on the
+/// consuming thread.
 pub(crate) fn gate_scan<'a, T: 'a>(
     build: impl FnOnce() -> Box<dyn Iterator<Item = T> + 'a>,
 ) -> Box<dyn Iterator<Item = T> + 'a> {
