@@ -3,12 +3,21 @@ use super::compile_helpers::build_hot_pattern_slots;
 #[cfg(all(target_os = "linux", feature = "gpu"))]
 use super::compile_helpers::surface_cuda_acquisition_failure;
 use super::*;
+use crate::compiler::compiler_build::CompileState;
 
 impl CompiledScanner {
-    /// Compile detector specs into a [`CompiledScanner`] using the process-wide
-    /// runtime GPU policy and default tuning. The common entry point.
+    /// Compile the deterministic scalar library route. Hardware autoroute is an
+    /// installer/runtime concern and must select a route before construction.
     pub fn compile(detectors: Vec<DetectorSpec>) -> Result<Self> {
-        Self::compile_with_gpu_policy(detectors, GpuInitPolicy::FromRuntimePolicy)
+        Self::compile_for_backend(detectors, crate::hw_probe::ScanBackend::CpuFallback)
+    }
+
+    /// Compile only the backend selected before scanner construction.
+    pub fn compile_for_backend(
+        detectors: Vec<DetectorSpec>,
+        backend: crate::hw_probe::ScanBackend,
+    ) -> Result<Self> {
+        Self::compile_with_gpu_policy(detectors, GpuInitPolicy::SelectedBackend(backend))
     }
 
     /// Compile with an explicit [`GpuInitPolicy`] (overriding the runtime
@@ -31,8 +40,143 @@ impl CompiledScanner {
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
     ) -> Result<Self> {
-        super::validation::validate_detector_corpus(&detectors)
-            .map_err(crate::error::ScanError::Config)?;
+        Self::compile_shared_with_gpu_policy_and_tuning(
+            detectors.into(),
+            gpu_policy,
+            tuning_config,
+        )
+    }
+
+    /// Compile from shared detector ownership without cloning the corpus.
+    pub fn compile_shared_with_gpu_policy_and_tuning(
+        detectors: Arc<[DetectorSpec]>,
+        gpu_policy: GpuInitPolicy,
+        tuning_config: &ScannerTuningConfig,
+    ) -> Result<Self> {
+        Self::compile_shared_with_state_source(detectors, gpu_policy, tuning_config, None)
+    }
+
+    /// Construct a scanner from the canonical matcher graph compiled into an execution pack.
+    pub fn compile_from_packed_matchers(
+        detectors: Vec<DetectorSpec>,
+        matchers: &crate::execution_pack::CompiledRouteMatcherSections,
+    ) -> Result<Self> {
+        Self::compile_shared_from_packed_matchers_with_tuning(
+            detectors.into(),
+            matchers,
+            &ScannerTuningConfig::default(),
+        )
+    }
+
+    /// Construct a tuned scanner without rebuilding detector routing or homoglyph state.
+    pub fn compile_shared_from_packed_matchers_with_tuning(
+        detectors: Arc<[DetectorSpec]>,
+        matchers: &crate::execution_pack::CompiledRouteMatcherSections,
+        tuning_config: &ScannerTuningConfig,
+    ) -> Result<Self> {
+        let state = matchers
+            .decode_compile_state(&detectors)
+            .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+        let backend = execution_backend(matchers.backend);
+        Self::compile_shared_with_state_source(
+            detectors,
+            GpuInitPolicy::SelectedBackend(backend),
+            tuning_config,
+            Some(state),
+        )
+    }
+
+    /// Construct a scanner directly from borrowed sections of a mapped execution pack.
+    pub fn compile_from_execution_pack(
+        pack: &crate::execution_pack::ExecutionPack,
+    ) -> Result<Self> {
+        Self::compile_from_execution_pack_with_tuning(pack, &ScannerTuningConfig::default())
+    }
+
+    /// Construct a tuned scanner directly from borrowed sections of a mapped execution pack.
+    pub fn compile_from_execution_pack_with_tuning(
+        pack: &crate::execution_pack::ExecutionPack,
+        tuning_config: &ScannerTuningConfig,
+    ) -> Result<Self> {
+        use crate::execution_pack::ExecutionPackSectionKind as Section;
+
+        let identity = pack.identity();
+        let section = |kind| {
+            pack.section(kind).ok_or_else(|| {
+                crate::error::ScanError::Config(format!(
+                    "execution pack is missing required {kind} section"
+                ))
+            })
+        };
+        let detector_ir_bytes = section(Section::DetectorIr)?;
+        let detector_ir = crate::execution_pack::CanonicalDetectorExecutionIr::decode(
+            detector_ir_bytes,
+        )
+        .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+        if detector_ir.digest() != identity.detector_digest {
+            return Err(crate::error::ScanError::Config(
+                "execution pack DetectorIr identity does not match its header".to_owned(),
+            ));
+        }
+        let backend_program = section(Section::BackendProgram)?;
+        if *blake3::hash(backend_program).as_bytes() != identity.backend_digest {
+            return Err(crate::error::ScanError::Config(
+                "execution pack BackendProgram identity does not match its header".to_owned(),
+            ));
+        }
+        match identity.backend {
+            crate::execution_pack::ExecutionPackBackend::Cpu => {
+                crate::execution_pack::ScalarCpuExecutionProgram::decode(
+                    backend_program,
+                    detector_ir.digest(),
+                )
+                .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+            }
+            crate::execution_pack::ExecutionPackBackend::Simd => {
+                #[cfg(feature = "simd")]
+                crate::execution_pack::HyperscanSimdExecutionProgram::decode(
+                    backend_program,
+                    detector_ir.digest(),
+                )
+                .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+                #[cfg(not(feature = "simd"))]
+                return Err(crate::error::ScanError::Config(
+                    "execution pack selects SIMD but this scanner was built without SIMD support"
+                        .to_owned(),
+                ));
+            }
+            crate::execution_pack::ExecutionPackBackend::GpuCuda
+            | crate::execution_pack::ExecutionPackBackend::GpuWgpu
+            | crate::execution_pack::ExecutionPackBackend::GpuMetal => {}
+        }
+        let detectors: Arc<[DetectorSpec]> = detector_ir.into_detectors().into();
+        let state = crate::execution_pack::matcher_sections::decode_compile_state_sections(
+            identity.backend,
+            section(Section::LiteralIndex)?,
+            section(Section::RegexPrograms)?,
+            section(Section::SuppressionPolicy)?,
+            identity.detector_digest,
+            &detectors,
+        )
+        .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+        Self::compile_shared_with_state_source(
+            detectors,
+            GpuInitPolicy::SelectedBackend(execution_backend(identity.backend)),
+            tuning_config,
+            Some(state),
+        )
+    }
+
+    fn compile_shared_with_state_source(
+        detectors: Arc<[DetectorSpec]>,
+        gpu_policy: GpuInitPolicy,
+        tuning_config: &ScannerTuningConfig,
+        packed_state: Option<CompileState>,
+    ) -> Result<Self> {
+        if packed_state.is_none() {
+            super::validation::validate_detector_corpus(&detectors)
+                .map_err(crate::error::ScanError::Config)?;
+        }
         crate::entropy::policy::validate_feature_compatibility(&detectors)
             .map_err(crate::error::ScanError::Config)?;
         let decoder_plan = Arc::new(crate::decode::CompiledDecoderPlan::snapshot().map_err(
@@ -41,7 +185,10 @@ impl CompiledScanner {
         // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
         #[cfg(not(feature = "simd"))]
         let _tuning_config = tuning_config;
-        let mut state = build_compile_state(&detectors)?;
+        let mut state = match packed_state {
+            Some(state) => state,
+            None => build_compile_state(&detectors)?,
+        };
         // Build the canonical detector execution plan before any backend
         // projection. Backends consume only derived matcher inputs from this
         // owner and never reinterpret detector TOML independently.
@@ -125,7 +272,16 @@ impl CompiledScanner {
         let gpu_disabled = match gpu_policy {
             GpuInitPolicy::FromRuntimePolicy => crate::gpu::gpu_disabled_by_policy(),
             GpuInitPolicy::ForceEnabled => false,
+            GpuInitPolicy::SelectedBackend(backend) => !backend.is_gpu(),
             GpuInitPolicy::ForceDisabled => true,
+        };
+        let selected_backend = match gpu_policy {
+            GpuInitPolicy::SelectedBackend(backend) => Some(backend),
+            _ => None,
+        };
+        let selected_gpu = match gpu_policy {
+            GpuInitPolicy::SelectedBackend(backend) if backend.is_gpu() => Some(backend),
+            _ => None,
         };
         if gpu_disabled {
             let disabled_by_policy = matches!(gpu_policy, GpuInitPolicy::ForceDisabled);
@@ -145,23 +301,26 @@ impl CompiledScanner {
         let (gpu_backends, gpu_acquisition_failures) = if !gpu_disabled {
             let mut peers = GpuBackendPeers::default();
             let mut failures = Vec::new();
+            let probe_cuda = selected_gpu.is_none_or(|backend| backend == crate::hw_probe::ScanBackend::GpuCuda);
+            let probe_wgpu = selected_gpu.is_none_or(|backend| backend == crate::hw_probe::ScanBackend::GpuWgpu);
+            let probe_metal = selected_gpu.is_none_or(|backend| backend == crate::hw_probe::ScanBackend::GpuMetal);
             #[cfg(not(target_os = "linux"))]
-            failures.push(GpuBackendAcquisitionFailure {
+            if probe_cuda { failures.push(GpuBackendAcquisitionFailure {
                 backend: "cuda",
                 diagnostic: format!(
                     "native CUDA peer acquisition is unavailable on {}; use WGPU or a supported Linux CUDA host",
                     std::env::consts::OS
                 ),
-            });
+            }); }
             #[cfg(not(target_os = "macos"))]
-            failures.push(GpuBackendAcquisitionFailure {
+            if probe_metal { failures.push(GpuBackendAcquisitionFailure {
                 backend: "metal",
                 diagnostic: format!(
                     "native Metal peer acquisition is unavailable on {}; use WGPU or a macOS host",
                     std::env::consts::OS
                 ),
-            });
-            {
+            }); }
+            if probe_cuda {
                 #[cfg(target_os = "linux")]
                 {
                     match super::types::probe_cuda_peer() {
@@ -197,13 +356,15 @@ impl CompiledScanner {
                     }
                 }
             }
-            if let Some(probe) = crate::gpu::gpu_adapter_probe() {
-                peers.wgpu_available = true;
-                peers.wgpu_device_identity = Some(probe.device_identity.clone());
-                peers.wgpu_runtime_identity = Some(probe.runtime_identity.clone());
-                peers.wgpu_is_software = probe.is_software;
+            if probe_wgpu || probe_metal { if let Some(probe) = crate::gpu::gpu_adapter_probe() {
+                if probe_wgpu {
+                    peers.wgpu_available = true;
+                    peers.wgpu_device_identity = Some(probe.device_identity.clone());
+                    peers.wgpu_runtime_identity = Some(probe.runtime_identity.clone());
+                    peers.wgpu_is_software = probe.is_software;
+                }
                 #[cfg(target_os = "macos")]
-                {
+                if probe_metal {
                     peers.metal_available = true;
                     peers.metal_device_identity = Some(probe.device_identity.clone());
                     peers.metal_runtime_identity = Some(format!(
@@ -213,18 +374,18 @@ impl CompiledScanner {
                     ));
                     tracing::debug!(target: "keyhog::routing", "native Metal peer identity probed");
                 }
-                tracing::debug!(target: "keyhog::routing", "WGPU peer identity probed");
+                if probe_wgpu { tracing::debug!(target: "keyhog::routing", "WGPU peer identity probed"); }
             } else {
-                failures.push(GpuBackendAcquisitionFailure {
+                if probe_wgpu { failures.push(GpuBackendAcquisitionFailure {
                     backend: "wgpu",
                     diagnostic: "WGPU adapter census found no adapters".to_string(),
-                });
+                }); }
                 #[cfg(target_os = "macos")]
-                failures.push(GpuBackendAcquisitionFailure {
+                if probe_metal { failures.push(GpuBackendAcquisitionFailure {
                     backend: "metal",
                     diagnostic: "native Metal adapter census found no adapters".to_string(),
-                });
-            }
+                }); }
+            } }
             (peers, failures)
         } else {
             (GpuBackendPeers::default(), Vec::new())
@@ -247,8 +408,11 @@ impl CompiledScanner {
         // materializes its database lazily; rejected rows then retain their
         // exact detector-owned literals in the recovery prefilter.
         #[cfg(feature = "simd")]
-        let simd_compile_plan =
-            build_simd_compile_plan(&state.ac_map, &state.ac_literals, tuning_config);
+        let simd_compile_plan = if selected_backend.is_none_or(|backend| backend == crate::hw_probe::ScanBackend::SimdCpu) {
+            build_simd_compile_plan(&state.ac_map, &state.ac_literals, tuning_config)
+        } else {
+            None
+        };
         #[cfg(feature = "simd")]
         let simd_candidate_available = simd_compile_plan.is_some();
 
@@ -454,6 +618,7 @@ impl CompiledScanner {
             }
         }
         let scanner = Self {
+            selected_backend,
             detector_digest,
             compiled_plan_digest,
             ac,
@@ -490,7 +655,6 @@ impl CompiledScanner {
             structural_confirmed_patterns,
             structural_phase2_patterns,
             same_prefix_patterns,
-            phase2_keyword_ac,
             phase2_keyword_to_patterns,
             phase2_keyword_count,
             phase2_always_anchor_literal_count,
@@ -515,8 +679,11 @@ impl CompiledScanner {
             #[cfg(feature = "simdsieve")]
             hot_pattern_slots,
             config: ScannerConfig::default(),
-            alphabet_screen,
-            bigram_bloom,
+            route_classification: Arc::new(crate::engine::phase1_admission::RouteClassificationPlan {
+                alphabet_screen,
+                bigram_bloom,
+                phase2_keyword_ac,
+            }),
             fragment_cache: crate::fragment_cache::FragmentCache::new(1000),
         };
 
@@ -534,6 +701,28 @@ impl CompiledScanner {
     pub fn with_tuning_config(self, config: ScannerTuningConfig) -> Self {
         self.tuning.apply_config(&config);
         self
+    }
+}
+
+fn execution_backend(
+    backend: crate::execution_pack::ExecutionPackBackend,
+) -> crate::hw_probe::ScanBackend {
+    match backend {
+        crate::execution_pack::ExecutionPackBackend::Cpu => {
+            crate::hw_probe::ScanBackend::CpuFallback
+        }
+        crate::execution_pack::ExecutionPackBackend::Simd => {
+            crate::hw_probe::ScanBackend::SimdCpu
+        }
+        crate::execution_pack::ExecutionPackBackend::GpuCuda => {
+            crate::hw_probe::ScanBackend::GpuCuda
+        }
+        crate::execution_pack::ExecutionPackBackend::GpuWgpu => {
+            crate::hw_probe::ScanBackend::GpuWgpu
+        }
+        crate::execution_pack::ExecutionPackBackend::GpuMetal => {
+            crate::hw_probe::ScanBackend::GpuMetal
+        }
     }
 }
 

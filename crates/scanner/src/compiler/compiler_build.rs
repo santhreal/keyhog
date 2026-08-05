@@ -9,6 +9,15 @@ use super::compiler_prefix::{
 };
 
 use super::compiler_compile::{compile_detector_companions, compile_pattern};
+thread_local! {
+    static BUILD_COMPILE_STATE_INVOCATIONS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
+pub(crate) fn build_compile_state_invocations() -> usize {
+    BUILD_COMPILE_STATE_INVOCATIONS.get()
+}
+
 
 pub(crate) struct CompileState {
     pub(crate) ac_literals: Vec<String>,
@@ -118,6 +127,7 @@ fn append_ac_pattern(
 pub(crate) const MIN_HOMOGLYPH_PREFIX_LEN: usize = 3;
 
 pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
+    BUILD_COMPILE_STATE_INVOCATIONS.set(BUILD_COMPILE_STATE_INVOCATIONS.get() + 1);
     use rayon::prelude::*;
 
     // De-duplicate identical regex strings BEFORE compilation. The 888-
