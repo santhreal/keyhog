@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.68 - 2026-08-05
+
+- Move two large co-located test suites out of scanner source files and into the tests tree, shrinking `detector_ids.rs` from 414 lines to 127 and the Hyperscan scratch backend from 767 to 341. Both keep running against the crate-private state they exist to check, and both leave the inline-test allowlist, so the allowlist now names two fewer permanent exceptions.
+
 ## 0.5.67 - 2026-08-05
 
 - Filesystem enumeration-order contract.

@@ -2,6 +2,10 @@
 
 All notable changes to `keyhog-profile` are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.5.68 - 2026-08-05
+
+- Scanner source files freed of large co-located test suites.
+
 ## 0.5.67 - 2026-08-05
 
 - Filesystem enumeration-order contract.
