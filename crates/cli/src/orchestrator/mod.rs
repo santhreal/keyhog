@@ -4,7 +4,7 @@ mod allowlist;
 pub(crate) use allowlist::load_rule_suppressor;
 mod dispatch;
 pub(crate) use dispatch::{
-    automatic_backend_recovery_allowed, record_completed_backend_recovery,
+    automatic_backend_recovery_allowed, canonical_source_classes, record_completed_backend_recovery,
     record_completed_remote_autoroute_state_recovery, scan_selected_batch,
     AutorouteMeasurementReceipt, AutorouteStateRecovery, BackendRecoveryPlan,
     COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB,
@@ -330,7 +330,11 @@ pub(crate) use dispatch::{
     autoroute_engine_identity, autoroute_executable_identity, autoroute_gpu_artifact_identity,
     CachedBackendRouter,
 };
-pub(crate) use dispatch::{inspect_autoroute_cache, AutorouteReadiness, StagedAutorouteCache};
+pub(crate) use dispatch::{
+    bind_autoroute_cache_to_execution_packs, inspect_autoroute_cache,
+    load_execution_pack_generation_binding, AutorouteReadiness,
+    StagedAutorouteCache,
+};
 pub(crate) use streaming::{scan_streaming_source, StreamingSourceEvent};
 
 fn resolved_default_autoroute_config() -> ResolvedScanConfig {
@@ -1025,13 +1029,29 @@ pub(crate) fn scanner_panic_notice_for_test(panicked: bool) -> Option<String> {
     reporting::scanner_panic_notice(panicked)
 }
 
+fn execution_pack_policy_for_args(
+    args: &ScanArgs,
+) -> keyhog_scanner::execution_pack::ExecutionPackPolicy {
+    use keyhog_scanner::execution_pack::ExecutionPackPolicy;
+    if args.fast {
+        ExecutionPackPolicy::Fast
+    } else if args.deep {
+        ExecutionPackPolicy::Deep
+    } else if args.precision {
+        ExecutionPackPolicy::Precision
+    } else {
+        ExecutionPackPolicy::Default
+    }
+}
+
 pub(crate) struct ScanOrchestrator {
     pub(crate) args: ScanArgs,
-    pub(crate) detectors: Vec<DetectorSpec>,
+    pub(crate) detectors: Arc<[DetectorSpec]>,
     pub(crate) detector_spec_hash: [u8; 32],
     pub(crate) detector_rules_digest: String,
     pub(crate) detector_corpus_digest: String,
     pub(crate) detector_corpus_provenance: DetectorCorpusProvenance,
+    _detector_execution_pack: Option<keyhog_scanner::execution_pack::ExecutionPack>,
     pub(crate) scanner: Arc<CompiledScanner>,
     pub(crate) signatures: std::collections::HashSet<Arc<str>>,
     pub(crate) test_fixture_suppressions: crate::test_fixture_suppressions::TestFixtureSuppressions,
@@ -1049,10 +1069,31 @@ pub(crate) struct ScanOrchestrator {
     /// Optional receipt sink for the calibration command's exact persisted
     /// workload keys. Normal scans never install one.
     autoroute_measurement_observer: Option<dispatch::AutorouteMeasurementObserver>,
+    /// Explicit CLI profiling starts before config resolution and scanner compilation.
+    early_profile_session: Option<keyhog_profile::Session>,
+    early_profile_build: Option<std::thread::JoinHandle<keyhog_profile::BuildIdentityV2>>,
 }
 
 impl ScanOrchestrator {
     pub(crate) fn new(mut args: ScanArgs) -> Result<Self> {
+        let early_profile_session = if args.profile || args.profile_out.is_some() {
+            let identity = keyhog_profile::RunIdentity::new(
+                env!("CARGO_PKG_VERSION"),
+                "pending-detector-corpus",
+                "pending-config",
+                "pending-source",
+                "orchestrator-construction",
+                "pending-backend-policy",
+            );
+            let session = keyhog_profile::Session::start(identity).map_err(anyhow::Error::new)?;
+            crate::set_operator_profile_active(true);
+            Some(session)
+        } else {
+            None
+        };
+        let early_profile_build = early_profile_session
+            .as_ref()
+            .map(|_| std::thread::spawn(run::profiler_build_identity));
         // Resolve the GPU runtime policy from the operator's explicit flags and
         // publish it BEFORE anything downstream can call `probe_hardware()`.
         // `probe_hardware()` is memoised and runs `gpu_probe()` on its first
@@ -1129,24 +1170,87 @@ impl ScanOrchestrator {
             );
         }
 
-        let hw = keyhog_scanner::hw_probe::probe_hardware();
+        let hw = {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::BackendAcquire);
+            keyhog_scanner::hw_probe::probe_hardware()
+        };
         let worker_threads = configure_threads(args.threads, hw.physical_cores)?;
         args.threads = Some(worker_threads);
         effective_config.threads = Some(worker_threads);
 
-        let requested_detector_mode = args.detectors_mode.map(Into::into);
-        validate_detector_mode_selection(args.detectors_cli_explicit, requested_detector_mode)?;
-        validate_explicit_detector_path(&args.detectors, args.detectors_cli_explicit)?;
-        let detectors_path = auto_discover_detectors(&args.detectors)?;
-        let loaded_corpus = load_effective_detector_corpus(
-            &detectors_path,
-            requested_detector_mode,
-            !args.lockdown,
-        )
-        .context("loading effective detector corpus")?;
+        let (requested_detector_mode, detectors_path) = {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorValidate);
+            let requested_detector_mode = args.detectors_mode.map(Into::into);
+            validate_detector_mode_selection(args.detectors_cli_explicit, requested_detector_mode)?;
+            validate_explicit_detector_path(&args.detectors, args.detectors_cli_explicit)?;
+            let detectors_path = auto_discover_detectors(&args.detectors)?;
+            (requested_detector_mode, detectors_path)
+        };
+        let (loaded_corpus, detector_execution_pack) = {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
+            if !detectors_path.exists() && requested_detector_mode.is_none() {
+                let policy = execution_pack_policy_for_args(&args);
+                match crate::execution_pack_install::load_installed_detector_execution_pack(policy) {
+                    Ok(installed) => {
+                        let embedded_count = installed.ir.detectors().len();
+                        let detectors = installed.ir.into_detectors();
+                        (
+                            crate::orchestrator_config::LoadedDetectorCorpus {
+                                detectors,
+                                schema_version: keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
+                                provenance: DetectorCorpusProvenance {
+                                    mode: "embedded",
+                                    source: format!(
+                                        "authenticated execution pack {}",
+                                        installed.pack.path().display()
+                                    ),
+                                    embedded_count,
+                                    custom_count: 0,
+                                },
+                            },
+                            Some(installed.pack),
+                        )
+                    }
+                    Err(error) if cfg!(debug_assertions)
+                        && std::env::var_os("KEYHOG_REQUIRE_EXECUTION_PACKS").is_none() =>
+                    {
+                        tracing::warn!(
+                            error = %error,
+                            "debug build has no matching installed execution pack; parsing embedded detectors for development only"
+                        );
+                        (
+                            load_effective_detector_corpus(
+                                &detectors_path,
+                                requested_detector_mode,
+                                !args.lockdown,
+                            )
+                            .context("loading effective detector corpus")?,
+                            None,
+                        )
+                    }
+                    Err(error) => {
+                        return Err(error).context(
+                            "loading authenticated detector execution pack; run a verified install or self-update",
+                        );
+                    }
+                }
+            } else {
+                (
+                    load_effective_detector_corpus(
+                        &detectors_path,
+                        requested_detector_mode,
+                        !args.lockdown,
+                    )
+                    .context("loading effective detector corpus")?,
+                    None,
+                )
+            }
+        };
         let detector_corpus_schema_version = loaded_corpus.schema_version;
         let detector_corpus_provenance = loaded_corpus.provenance;
         let mut detectors = loaded_corpus.detectors;
+        let detector_validation_span =
+            keyhog_profile::span(keyhog_profile::Stage::DetectorValidate);
 
         // Apply `[detector.<id>] enabled = false` from .keyhog.toml: drop the
         // disabled detectors from the corpus so they never compile or fire.
@@ -1242,35 +1346,59 @@ impl ScanOrchestrator {
         // autoroute performance identity, a confidence-floor change can alter
         // emitted findings and must invalidate stored scan results.
         let detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
+        drop(detector_validation_span);
 
-        let gpu_init_policy = gpu_init_policy_for_args(
-            &args,
-            effective_config.autoroute_cache_path.as_deref(),
-            effective_config.autoroute_gpu,
-            effective_config.autoroute_calibration,
-        );
-        let scanner = Arc::new(
-            CompiledScanner::compile_with_gpu_policy_and_tuning(
-                detectors.clone(),
-                gpu_init_policy,
-                &effective_config.scanner_tuning,
+        let detectors: Arc<[DetectorSpec]> = detectors.into();
+
+        let gpu_init_policy = {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackSelect);
+            gpu_init_policy_for_args(
+                &args,
+                effective_config.autoroute_cache_path.as_deref(),
+                effective_config.autoroute_gpu,
+                effective_config.autoroute_calibration,
             )
-            .with_context(|| format!("compiling scanner from {} detector specs", detectors.len()))?
-            .with_config(effective_config.engine_scanner_config())
-            .with_tuning_config(effective_config.scanner_tuning.clone()),
-        );
+        };
+        let scanner = {
+            let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
+            let _backend_span = keyhog_profile::span(keyhog_profile::Stage::BackendInit);
+            let compiled = if disabled_detectors.is_empty()
+                && matches!(
+                    gpu_init_policy,
+                    GpuInitPolicy::SelectedBackend(
+                        keyhog_scanner::hw_probe::ScanBackend::CpuFallback
+                    )
+                )
+            {
+                match detector_execution_pack.as_ref() {
+                    Some(pack) => CompiledScanner::compile_shared_from_execution_pack_with_tuning(
+                        Arc::clone(&detectors),
+                        pack,
+                        &effective_config.scanner_tuning,
+                    ),
+                    None => CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
+                        Arc::clone(&detectors),
+                        gpu_init_policy,
+                        &effective_config.scanner_tuning,
+                    ),
+                }
+            } else {
+                CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
+                    Arc::clone(&detectors),
+                    gpu_init_policy,
+                    &effective_config.scanner_tuning,
+                )
+            };
+            Arc::new(
+                compiled
+                    .with_context(|| {
+                        format!("materializing scanner from {} detector specs", detectors.len())
+                    })?
+                    .with_config(effective_config.engine_scanner_config())
+                    .with_tuning_config(effective_config.scanner_tuning.clone()),
+            )
+        };
 
-        // Detector regexes are validated and seeded during scanner construction;
-        // `warm()` now primarily pays regex DFA/transition-cache first-touch and
-        // generated/plain fallback regex work in parallel. The earlier `is_dir`
-        // gate was meant to keep one-shot single-file/stdin startup fast, but it
-        // backfired: a single-file scan then paid that first-touch work serially
-        // on the hot path (~340ms measured), strictly slower than the parallel
-        // `warm()` a directory scan got. Single file, stdin, pre-commit hooks
-        // and editor integrations all hit that worst case. `warm()` is
-        // idempotent and a no-op for already-warmed patterns, so warming
-        // unconditionally parallelizes work the first scan would otherwise pay.
-        scanner.warm();
 
         let signatures = collect_detector_signatures(&detectors);
 
@@ -1286,6 +1414,7 @@ impl ScanOrchestrator {
             detector_rules_digest,
             detector_corpus_digest,
             detector_corpus_provenance,
+            _detector_execution_pack: detector_execution_pack,
             scanner,
             signatures,
             test_fixture_suppressions,
@@ -1293,6 +1422,8 @@ impl ScanOrchestrator {
             detector_min_confidence,
             effective_config,
             autoroute_measurement_observer: None,
+            early_profile_session,
+            early_profile_build,
         })
     }
 
@@ -1416,17 +1547,20 @@ impl ScanOrchestrator {
         };
         Self {
             args,
-            detectors,
+            detectors: detectors.into(),
             detector_spec_hash,
             detector_rules_digest,
             detector_corpus_provenance,
             detector_corpus_digest,
+            _detector_execution_pack: None,
             scanner,
             signatures,
             test_fixture_suppressions,
             disabled_detectors: std::collections::HashSet::new(),
             detector_min_confidence: std::collections::HashMap::new(),
             autoroute_measurement_observer: None,
+            early_profile_session: None,
+            early_profile_build: None,
             effective_config: ResolvedScanConfig {
                 backend_override: Some(keyhog_scanner::ScanBackend::SimdCpu),
                 batch_pipeline,
@@ -1560,15 +1694,7 @@ fn backend_name_gpu_policy(name: Option<&str>) -> Option<GpuInitPolicy> {
 }
 
 fn backend_gpu_policy(backend: keyhog_scanner::ScanBackend) -> GpuInitPolicy {
-    match backend {
-        keyhog_scanner::ScanBackend::GpuCuda
-        | keyhog_scanner::ScanBackend::GpuMetal
-        | keyhog_scanner::ScanBackend::GpuWgpu => GpuInitPolicy::ForceEnabled,
-        keyhog_scanner::ScanBackend::SimdCpu | keyhog_scanner::ScanBackend::CpuFallback => {
-            GpuInitPolicy::ForceDisabled
-        }
-        _ => GpuInitPolicy::FromRuntimePolicy,
-    }
+    GpuInitPolicy::SelectedBackend(backend)
 }
 
 fn filesystem_auto_scan_cannot_route_gpu(args: &ScanArgs) -> bool {
