@@ -3,6 +3,35 @@ use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::{Component, Path};
 
+/// Hard ceiling on the number of tar entries KeyHog will walk in one docker
+/// archive or layer.
+///
+/// The `docker_tar_total_bytes` bomb guard sums `entry_size`, so it only bounds
+/// archives whose entries carry PAYLOAD. A tar built purely from directory or
+/// zero-length entries adds 0 to that sum on every iteration, so the byte guard
+/// never trips no matter how many entries arrive. Layers are gzip/zstd streams,
+/// so the header run itself decompresses with high amplification (a ~4 MB gzip
+/// expands to 2M entries, ~229x), and each entry costs a `mkdir`/`create`
+/// syscall under `unpack_in`. That is inode exhaustion and an effective hang
+/// from a tiny input, so entry COUNT needs its own cap alongside the byte cap.
+///
+/// This is a safety invariant rather than an operator knob (a real image layer
+/// is orders of magnitude below it), so it stays a compiled constant instead of
+/// a `SourceLimits` field, which is where the tunable BYTE caps live.
+const MAX_DOCKER_TAR_ENTRIES: usize = 500_000;
+
+/// Coverage-gap error for an archive that exceeded [`MAX_DOCKER_TAR_ENTRIES`].
+///
+/// Law 10: entries past the cap are NOT scanned, so this is surfaced and
+/// counted rather than silently truncating the walk.
+fn docker_archive_entry_count_error(archive_kind: &str) -> SourceError {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+    SourceError::Other(format!(
+        "docker archive {archive_kind} exceeds the {MAX_DOCKER_TAR_ENTRIES}-entry cap \
+         (likely a tar-header bomb); remaining entries were not scanned"
+    ))
+}
+
 #[derive(Default)]
 pub(super) struct DockerExtractReport {
     errors: Vec<SourceError>,
@@ -145,7 +174,10 @@ fn validate_extracted_tree_with_limits<R: Read>(
     limits: crate::SourceLimits,
 ) -> Result<(), SourceError> {
     let mut cumulative_bytes: u64 = 0;
-    for entry in archive.entries().map_err(SourceError::Io)? {
+    for (entry_index, entry) in archive.entries().map_err(SourceError::Io)?.enumerate() {
+        if entry_index >= MAX_DOCKER_TAR_ENTRIES {
+            return Err(docker_archive_entry_count_error("extracted tree"));
+        }
         let entry = entry.map_err(SourceError::Io)?;
         let path = entry.path().map_err(SourceError::Io)?;
         let size = entry.header().entry_size().map_err(SourceError::Io)?;
@@ -181,7 +213,10 @@ fn validate_docker_archive_plan<R: Read>(
     enforce_per_file_cap: bool,
 ) -> Result<(), SourceError> {
     let mut cumulative_bytes: u64 = 0;
-    for entry in archive.entries().map_err(SourceError::Io)? {
+    for (entry_index, entry) in archive.entries().map_err(SourceError::Io)?.enumerate() {
+        if entry_index >= MAX_DOCKER_TAR_ENTRIES {
+            return Err(docker_archive_entry_count_error("plan"));
+        }
         let entry = entry.map_err(SourceError::Io)?;
         let path = entry.path().map_err(SourceError::Io)?;
         let size = entry.header().entry_size().map_err(SourceError::Io)?;
@@ -215,7 +250,10 @@ fn extract_docker_archive_entries<R: Read>(
 ) -> Result<DockerExtractReport, SourceError> {
     let mut cumulative_bytes: u64 = 0;
     let mut report = DockerExtractReport::default();
-    for entry in archive.entries().map_err(SourceError::Io)? {
+    for (entry_index, entry) in archive.entries().map_err(SourceError::Io)?.enumerate() {
+        if entry_index >= MAX_DOCKER_TAR_ENTRIES {
+            return Err(docker_archive_entry_count_error("entry stream"));
+        }
         let mut entry = entry.map_err(SourceError::Io)?;
         let path = entry.path().map_err(SourceError::Io)?.into_owned();
         let size = entry.header().entry_size().map_err(SourceError::Io)?;
