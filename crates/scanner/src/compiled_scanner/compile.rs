@@ -109,6 +109,36 @@ impl CompiledScanner {
     ) -> Result<(Self, Arc<[DetectorSpec]>)> {
         use crate::execution_pack::ExecutionPackSectionKind as Section;
 
+        let detector_ir_bytes = pack.section(Section::DetectorIr).ok_or_else(|| {
+            crate::error::ScanError::Config(
+                "execution pack is missing required detector-ir section".to_owned(),
+            )
+        })?;
+        let detector_ir =
+            crate::execution_pack::CanonicalDetectorExecutionIr::decode(detector_ir_bytes)
+                .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+        if detector_ir.digest() != pack.identity().detector_digest {
+            return Err(crate::error::ScanError::Config(
+                "execution pack DetectorIr identity does not match its header".to_owned(),
+            ));
+        }
+        let detectors: Arc<[DetectorSpec]> = detector_ir.into_detectors().into();
+        let scanner = Self::compile_shared_from_execution_pack_with_tuning(
+            Arc::clone(&detectors),
+            pack,
+            tuning_config,
+        )?;
+        Ok((scanner, detectors))
+    }
+
+    /// Construct from a mapped pack while retaining an already decoded shared detector corpus.
+    pub fn compile_shared_from_execution_pack_with_tuning(
+        detectors: Arc<[DetectorSpec]>,
+        pack: &crate::execution_pack::ExecutionPack,
+        tuning_config: &ScannerTuningConfig,
+    ) -> Result<Self> {
+        use crate::execution_pack::ExecutionPackSectionKind as Section;
+
         let identity = pack.identity();
         let section = |kind| {
             pack.section(kind).ok_or_else(|| {
@@ -117,12 +147,7 @@ impl CompiledScanner {
                 ))
             })
         };
-        let detector_ir_bytes = section(Section::DetectorIr)?;
-        let detector_ir = crate::execution_pack::CanonicalDetectorExecutionIr::decode(
-            detector_ir_bytes,
-        )
-        .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
-        if detector_ir.digest() != identity.detector_digest {
+        if *blake3::hash(section(Section::DetectorIr)?).as_bytes() != identity.detector_digest {
             return Err(crate::error::ScanError::Config(
                 "execution pack DetectorIr identity does not match its header".to_owned(),
             ));
@@ -137,7 +162,7 @@ impl CompiledScanner {
             crate::execution_pack::ExecutionPackBackend::Cpu => {
                 crate::execution_pack::ScalarCpuExecutionProgram::decode(
                     backend_program,
-                    detector_ir.digest(),
+                    identity.detector_digest,
                 )
                 .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
             }
@@ -145,7 +170,7 @@ impl CompiledScanner {
                 #[cfg(feature = "simd")]
                 crate::execution_pack::HyperscanSimdExecutionProgram::decode(
                     backend_program,
-                    detector_ir.digest(),
+                    identity.detector_digest,
                 )
                 .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
                 #[cfg(not(feature = "simd"))]
@@ -158,7 +183,6 @@ impl CompiledScanner {
             | crate::execution_pack::ExecutionPackBackend::GpuWgpu
             | crate::execution_pack::ExecutionPackBackend::GpuMetal => {}
         }
-        let detectors: Arc<[DetectorSpec]> = detector_ir.into_detectors().into();
         let state = crate::execution_pack::matcher_sections::decode_compile_state_sections(
             identity.backend,
             section(Section::LiteralIndex)?,
@@ -168,13 +192,12 @@ impl CompiledScanner {
             &detectors,
         )
         .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
-        let scanner = Self::compile_shared_with_state_source(
-            Arc::clone(&detectors),
+        Self::compile_shared_with_state_source(
+            detectors,
             GpuInitPolicy::SelectedBackend(execution_backend(identity.backend)),
             tuning_config,
             Some(state),
-        )?;
-        Ok((scanner, detectors))
+        )
     }
 
     fn compile_shared_with_state_source(

@@ -251,12 +251,28 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
         decoded_detectors[0].patterns[0].regex,
         detectors[0].patterns[0].regex
     );
+    let before_shared =
+        keyhog_scanner::execution_pack::matcher_sections::compile_state_builder_invocations();
+    let shared = CompiledScanner::compile_shared_from_execution_pack_with_tuning(
+        std::sync::Arc::clone(&decoded_detectors),
+        &pack,
+        &Default::default(),
+    )
+    .expect("compile from the already decoded shared detector corpus");
+    assert_eq!(
+        keyhog_scanner::execution_pack::matcher_sections::compile_state_builder_invocations(),
+        before_shared
+    );
     let input = chunk(
         "account=tenant_7\ntoken=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHORLESS-CD34",
     );
     assert_eq!(
         packed.scan(&input).expect("scan packed route"),
         ordinary.scan(&input).expect("scan ordinary route")
+    );
+    assert_eq!(
+        shared.scan(&input).expect("scan shared packed route"),
+        ordinary.scan(&input).expect("rescan ordinary route")
     );
 }
 
