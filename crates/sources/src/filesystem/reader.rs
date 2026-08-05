@@ -24,7 +24,28 @@ pub(super) const DEFAULT_WINDOW_OVERLAP: usize = 128 * 1024;
 /// small fraction of the host's cores, not as a fraction of the scan pool.
 const MAX_READER_THREADS: usize = 4;
 
-type EntryBatch = (usize, Vec<Result<Chunk, SourceError>>);
+/// Flush threshold, in bytes of chunk text, for one streamed slice of a single
+/// walk entry. A large file enters the scanner as hundreds of `window_size`
+/// windows; at 1 MiB this makes every full-size window its own part, so a
+/// window reaches the scan pool as soon as it is decoded instead of after the
+/// whole file has been read. Small files stay a single part (one send per
+/// entry, exactly as before) because their total text is far below this.
+const READER_PART_FLUSH_BYTES: usize = 1024 * 1024;
+
+/// Flush threshold, in chunk count, for one streamed slice of a walk entry.
+/// Bounds the other shape: an archive or decode path that yields thousands of
+/// individually tiny chunks would otherwise never trip the byte threshold.
+const READER_PART_FLUSH_CHUNKS: usize = 64;
+
+/// One ordered slice of a single walk entry's chunks:
+/// `(seq, part, is_last, chunks)`.
+///
+/// `seq` orders entries against each other (the walk order) and `part` orders
+/// slices within one entry, so the reorder thread reconstructs exactly the
+/// chunk order a single-threaded walk would have produced. `is_last` marks the
+/// final part of an entry and is what lets the reorder thread know it may
+/// advance to `seq + 1`; it is sent even when the trailing part is empty.
+type EntryBatch = (usize, usize, bool, Vec<Result<Chunk, SourceError>>);
 type EntryBatchSender = std::sync::mpsc::SyncSender<EntryBatch>;
 
 struct ReaderCursor {
@@ -66,6 +87,14 @@ pub(super) fn spawn_chunk_producer(
     window_overlap: usize,
     respect_default_excludes: bool,
     reader_threads: Option<NonZeroUsize>,
+    // This scan's counter-isolation lease. Every reader thread holds a clone
+    // for its whole lifetime because `process_entry` records skip events from
+    // these threads, and the crew outlives the returned `Receiver` whenever a
+    // consumer stops early. Without the clone those increments land after the
+    // scan is considered finished and pollute the next counter-asserting test
+    // (KH-1587). Inert in production, where nothing ever takes the exclusive
+    // scope.
+    scan_lease: crate::skip::ScanReadLease,
 ) -> std::sync::mpsc::Receiver<Result<Chunk, SourceError>> {
     let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Chunk, SourceError>>(64);
     let (entry_tx, entry_rx) = std::sync::mpsc::sync_channel::<EntryBatch>(64);
@@ -83,10 +112,16 @@ pub(super) fn spawn_chunk_producer(
     std::thread::spawn(move || {
         let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
         let mut next_seq = 0usize;
-        let mut pending: BTreeMap<usize, Vec<Result<Chunk, SourceError>>> = BTreeMap::new();
-        for (seq, chunks) in entry_rx {
-            pending.insert(seq, chunks);
-            while let Some(chunks) = pending.remove(&next_seq) {
+        let mut next_part = 0usize;
+        // Keyed by `(seq, part)` so a large entry can be forwarded slice by
+        // slice as its parts arrive, while entries that finished out of order
+        // still wait their turn. Holding a whole entry here was what made the
+        // reorder buffer grow with the largest file in the walk.
+        let mut pending: BTreeMap<(usize, usize), (bool, Vec<Result<Chunk, SourceError>>)> =
+            BTreeMap::new();
+        for (seq, part, is_last, chunks) in entry_rx {
+            pending.insert((seq, part), (is_last, chunks));
+            while let Some((is_last, chunks)) = pending.remove(&(next_seq, next_part)) {
                 for chunk in chunks {
                     let send_result = {
                         let _queue_wait = crate::profile::queue_wait_span();
@@ -96,7 +131,12 @@ pub(super) fn spawn_chunk_producer(
                         return;
                     }
                 }
-                next_seq += 1;
+                if is_last {
+                    next_seq += 1;
+                    next_part = 0;
+                } else {
+                    next_part += 1;
+                }
             }
         }
     });
@@ -105,7 +145,12 @@ pub(super) fn spawn_chunk_producer(
     let run_reader = move |cursor: Arc<Mutex<ReaderCursor>>,
                            tx: EntryBatchSender,
                            merkle: Option<Arc<MerkleIndex>>,
-                           skipped: Arc<AtomicUsize>| {
+                           skipped: Arc<AtomicUsize>,
+                           scan_lease: crate::skip::ScanReadLease| {
+        // Held for the whole thread body: every `return` below (cursor end,
+        // consumer gone, send failure) drops it, and the scan stops counting as
+        // in-flight only once the last reader thread has done so.
+        let _scan_lease = scan_lease;
         let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
         loop {
             let item = {
@@ -126,15 +171,49 @@ pub(super) fn spawn_chunk_producer(
             let (seq, entry) = match item {
                 CursorItem::Entry(seq, entry) => (seq, entry),
                 CursorItem::Error(seq, error) => {
-                    let _ = tx.send((seq, vec![Err(error)])); // LAW10: receiver closed means scan consumer already stopped; otherwise ordered SourceError is surfaced
+                    let _ = tx.send((seq, 0, true, vec![Err(error)])); // LAW10: receiver closed means scan consumer already stopped; otherwise ordered SourceError is surfaced
                     return;
                 }
                 CursorItem::End => return,
             };
 
-            let mut chunks = Vec::new();
+            // Stream this entry's chunks to the reorder thread in bounded
+            // parts instead of collecting the entire entry first. Collecting
+            // meant a 300 MiB file materialised all ~343 of its 1 MiB windows
+            // into one `Vec` before a single chunk was sent: peak RSS grew with
+            // the file size (a large enough file simply OOMs), and the whole
+            // scan pool sat idle through the read because the fused consumer
+            // had nothing to take. Parts are keyed `(seq, part)`, so the chunk
+            // order the consumer observes is byte-for-byte the old order.
+            let mut part = 0usize;
+            let mut part_bytes = 0usize;
+            let mut chunks: Vec<Result<Chunk, SourceError>> = Vec::new();
+            let mut consumer_gone = false;
             let mut emit = |chunk: Result<Chunk, SourceError>| {
+                part_bytes = part_bytes.saturating_add(match &chunk {
+                    Ok(chunk) => chunk.data.len(),
+                    Err(_) => 0,
+                });
                 chunks.push(chunk);
+                if part_bytes < READER_PART_FLUSH_BYTES
+                    && chunks.len() < READER_PART_FLUSH_CHUNKS
+                {
+                    return true;
+                }
+                let send_result = {
+                    let _queue_wait = crate::profile::queue_wait_span();
+                    tx.send((seq, part, false, std::mem::take(&mut chunks)))
+                };
+                part += 1;
+                part_bytes = 0;
+                // Returning false stops `process_entry` mid-file once the
+                // consumer is gone. The old always-true closure kept reading
+                // and decoding an entire large file into a `Vec` nobody would
+                // ever receive.
+                if send_result.is_err() {
+                    consumer_gone = true;
+                    return false;
+                }
                 true
             };
             let entry_path = entry.path.clone();
@@ -154,9 +233,14 @@ pub(super) fn spawn_chunk_producer(
             })) {
                 chunks.push(Err(process_entry_panic_error(seq, &entry_path, payload)));
             }
+            if consumer_gone {
+                return;
+            }
+            // Always send the closing part, even empty: `is_last` is what
+            // releases the reorder thread to move on to `seq + 1`.
             let send_result = {
                 let _queue_wait = crate::profile::queue_wait_span();
-                tx.send((seq, chunks))
+                tx.send((seq, part, true, chunks))
             };
             if send_result.is_err() {
                 return;
@@ -171,10 +255,11 @@ pub(super) fn spawn_chunk_producer(
         let tx = entry_tx.clone();
         let merkle = merkle.clone();
         let skipped = skipped.clone();
+        let scan_lease = scan_lease.clone();
         let run_reader = run_reader.clone();
         match std::thread::Builder::new()
             .name(format!("keyhog-reader-{i}"))
-            .spawn(move || run_reader(cursor, tx, merkle, skipped))
+            .spawn(move || run_reader(cursor, tx, merkle, skipped, scan_lease))
         {
             Ok(_) => spawned += 1,
             Err(error) => {
@@ -205,10 +290,11 @@ pub(super) fn spawn_chunk_producer(
         let tx_fb = entry_tx.clone();
         let merkle_fb = merkle.clone();
         let skipped_fb = skipped.clone();
+        let scan_lease_fb = scan_lease.clone();
         let run_reader_fb = run_reader.clone();
         if std::thread::Builder::new()
             .name("keyhog-reader-fallback".to_string())
-            .spawn(move || run_reader_fb(cursor_fb, tx_fb, merkle_fb, skipped_fb))
+            .spawn(move || run_reader_fb(cursor_fb, tx_fb, merkle_fb, skipped_fb, scan_lease_fb))
             .is_err()
         {
             eprintln!(
@@ -216,6 +302,8 @@ pub(super) fn spawn_chunk_producer(
             );
             let _send_result = entry_tx.send((
                 0,
+                0,
+                true,
                 vec![Err(SourceError::Other(
                     "failed to spawn any filesystem reader thread; no files were scanned"
                         .to_string(),

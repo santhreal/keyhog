@@ -31,6 +31,78 @@ pub(in crate::filesystem) enum WindowedMmapOutcome {
     Fallback(File),
 }
 
+/// Host page size, queried once. `MADV_DONTNEED` only acts on whole pages, so
+/// the release prefix below has to be rounded with the real value rather than
+/// an assumed 4 KiB (a 16 KiB-page host would reject every misaligned call).
+#[cfg(unix)]
+fn page_size() -> usize {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static CACHED: AtomicUsize = AtomicUsize::new(0);
+    let cached = CACHED.load(Ordering::Relaxed);
+    if cached != 0 {
+        return cached;
+    }
+    // SAFETY: `sysconf` is thread-safe and takes no pointers.
+    let probed = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    let size = usize::try_from(probed).unwrap_or(0).max(1);
+    CACHED.store(size, Ordering::Relaxed);
+    size
+}
+
+/// Releases the pages of a windowed mapping the slicer has already walked past.
+///
+/// The slicer moves strictly front-to-back and never revisits a byte below the
+/// current window's start, but the pages it has read stay resident for the
+/// lifetime of the mapping, so peak RSS grew with the *file* size: scanning one
+/// 300 MiB file kept all 300 MiB of mapped pages live on top of the decoded
+/// window text. `MADV_DONTNEED` drops the resident copy of a read-only private
+/// file mapping; the bytes remain readable (a later access re-faults them from
+/// the file), so this can only change residency, never what gets scanned.
+///
+/// `released_upto` tracks the high-water mark so each page is advised exactly
+/// once, keeping this O(file) rather than O(windows x file).
+#[cfg(unix)]
+struct MappedPrefixReleaser {
+    base: *mut libc::c_void,
+    released_upto: usize,
+}
+
+#[cfg(unix)]
+impl MappedPrefixReleaser {
+    fn new(mmap: &memmap2::Mmap) -> Self {
+        Self {
+            base: mmap.as_ptr() as *mut libc::c_void,
+            released_upto: 0,
+        }
+    }
+
+    /// `dead_below` is the offset of the next window's first byte: everything
+    /// under it is finished with.
+    fn release_below(&mut self, dead_below: usize) {
+        let page = page_size();
+        // Round DOWN: the partial page containing `dead_below` still holds
+        // bytes the next window reads.
+        let aligned = dead_below - (dead_below % page);
+        if aligned <= self.released_upto {
+            return;
+        }
+        let len = aligned - self.released_upto;
+        // SAFETY: `released_upto` starts at 0 and only ever advances to a
+        // page-aligned offset, so `base + released_upto` is a page-aligned
+        // address inside the live mapping owned by the caller, and
+        // `released_upto + len == aligned` stays within it. Advisory only: a
+        // failure leaves the pages resident, which is merely the old behaviour.
+        unsafe {
+            libc::madvise(
+                self.base.add(self.released_upto),
+                len,
+                libc::MADV_DONTNEED,
+            );
+        }
+        self.released_upto = aligned;
+    }
+}
+
 /// Memory-map `path` and slice it into overlapping `window_size`-byte
 /// windows with `overlap` bytes shared between consecutive windows. The
 /// previous flow allocated a 64 MiB heap working buffer per big file
@@ -219,7 +291,23 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
         }
     }
 
-    for_each_window(&mmap, window_size, overlap, |window| emit(Ok(window)));
+    // Release each window's pages as the slicer leaves them behind, so a
+    // multi-hundred-MiB file costs one window of residency instead of its whole
+    // length. On non-unix the closure is a no-op and behaviour is unchanged.
+    #[cfg(unix)]
+    let mut releaser = MappedPrefixReleaser::new(&mmap);
+    for_each_window(
+        &mmap,
+        window_size,
+        overlap,
+        |window| emit(Ok(window)),
+        |dead_below| {
+            #[cfg(unix)]
+            releaser.release_below(dead_below);
+            #[cfg(not(unix))]
+            let _ = dead_below;
+        },
+    );
 
     #[cfg(unix)]
     {
@@ -270,18 +358,30 @@ pub(in crate::filesystem) fn slice_into_windows(
             .len()
             .div_ceil(window_size.saturating_sub(overlap).max(1)),
     );
-    for_each_window(bytes, window_size, overlap, |window| {
-        out.push(window);
-        true
-    });
+    for_each_window(
+        bytes,
+        window_size,
+        overlap,
+        |window| {
+            out.push(window);
+            true
+        },
+        // Pure in-memory slicing owns no mapping to release.
+        |_dead_below| {},
+    );
     out
 }
 
+/// `on_advance(dead_below)` fires each time the cursor moves forward, naming the
+/// offset below which no later window can read. The mmap path uses it to hand
+/// those pages back so residency tracks the window, not the file; the pure
+/// slicer ignores it.
 fn for_each_window(
     bytes: &[u8],
     window_size: usize,
     overlap: usize,
     mut emit: impl FnMut(FileWindow) -> bool,
+    mut on_advance: impl FnMut(usize),
 ) -> bool {
     assert!(window_size > overlap, "window must exceed overlap");
     if bytes.is_empty() {
@@ -320,6 +420,10 @@ fn for_each_window(
         let next = offset + stride;
         base_line += bytecount_newlines(&bytes[offset..next]);
         offset = next;
+        // `offset` is the next window's first byte, so nothing below it will be
+        // read again: this window's non-overlapping stride is now dead. The
+        // overlap region stays mapped precisely because the next window reads it.
+        on_advance(offset);
     }
     true
 }

@@ -87,6 +87,7 @@ pub(crate) fn reader_panic_rows_for_test() -> Vec<Result<Chunk, SourceError>> {
         reader::DEFAULT_WINDOW_OVERLAP,
         true,
         NonZeroUsize::new(1),
+        crate::acquire_scan_read_lease(),
     );
     rx.into_iter().collect()
 }
@@ -245,6 +246,17 @@ fn archive_symlink_error(path: &Path) -> SourceError {
         )
     };
     SourceError::Other(message)
+}
+
+/// Worker threads for the parallel directory walk. Enumeration is metadata-bound
+/// (`readdir` + `stat` + gitignore matching), so it scales with cores well past
+/// the point where reads saturate the device. Capped so a many-core host does
+/// not spawn a walker thread per core for a tiny tree.
+fn walk_thread_count() -> usize {
+    std::thread::available_parallelism()
+        .map(NonZeroUsize::get)
+        .unwrap_or(1)
+        .clamp(1, 8)
 }
 
 fn collect_walk_archive_symlink_errors(
@@ -789,7 +801,7 @@ impl Source for FilesystemSource {
             let _walk = crate::profile::walk_span();
             let mut source_errors = Vec::new();
             let mut entries = Vec::new();
-            for result in walker.walk_iter() {
+            for result in walker.walk_parallel(walk_thread_count()) {
                 match result {
                     Ok(entry) => {
                         if let Some(remaining) = discovery_budget {
@@ -1022,6 +1034,7 @@ impl Source for FilesystemSource {
             window_overlap,
             respect_default_excludes,
             reader_threads,
+            scan_lease.clone(),
         );
         crate::attach_scan_lease(
             scan_lease,

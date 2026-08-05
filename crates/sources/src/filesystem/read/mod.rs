@@ -32,7 +32,8 @@ pub(in crate::filesystem) use decode::decode_text_file_owned_or_bytes;
 pub(in crate::filesystem) use decode::looks_binary_prefix;
 pub(crate) use raw::open_file_safe;
 pub(super) use raw::{
-    read_file_buffered, read_file_mmap, read_file_prefix_safe, read_file_safe, BufferedFileRead,
+    read_file_buffered, read_file_prefix_safe, read_file_safe, read_file_whole_capped,
+    BufferedFileRead,
 };
 pub(super) use window::{for_each_file_windowed_mmap, WindowedMmapOutcome};
 
@@ -59,8 +60,11 @@ pub(crate) fn read_file_safe_capped_for_test(
     raw::read_file_safe(path, cap)
 }
 
+/// Exercise the bounded whole-file read path (formerly a whole-file `mmap`; see
+/// `raw::read_file_whole_capped` for why the mapping is gone) and return its
+/// decoded text, or `None` when the path was refused or is not text.
 pub(crate) fn read_file_mmap_for_test(path: &std::path::Path) -> Option<String> {
-    match raw::read_file_mmap(path) {
+    match raw::read_file_whole_capped(path) {
         Some(raw::BufferedFileRead::Text(text)) => Some(text),
         _ => None,
     }
