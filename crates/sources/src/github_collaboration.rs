@@ -1,4 +1,4 @@
-//! Bounded GitHub issue, pull request, discussion, wiki, and gist source.
+//! Bounded GitHub issue, pull request, discussion, wiki, gist, and release source.
 
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -25,11 +25,17 @@ pub struct GitHubCollaborationSelection {
     pub discussions: bool,
     pub wiki: bool,
     pub gists: bool,
+    pub releases: bool,
 }
 
 impl GitHubCollaborationSelection {
     pub fn is_empty(self) -> bool {
-        !(self.issues || self.pull_requests || self.discussions || self.wiki || self.gists)
+        !(self.issues
+            || self.pull_requests
+            || self.discussions
+            || self.wiki
+            || self.gists
+            || self.releases)
     }
 }
 
@@ -87,7 +93,7 @@ impl GitHubCollaborationSource {
 
     fn collect_chunks(&self) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
         // Collaboration acquisition: client build and the selected surface
-        // collections (issues, pull requests, discussions, wiki, gists).
+        // collections (issues, pull requests, discussions, wiki, gists, releases).
         let _acquire = crate::profile::acquire_span();
         let client = build_client(&self.token, &self.http)?;
         let mut api = GitHubApi::new(
@@ -123,6 +129,11 @@ impl GitHubCollaborationSource {
         if self.selection.gists {
             collect_surface("gists", &mut output, |chunks| {
                 self.collect_gists(&mut api, &mut budget, &mut seen, chunks)
+            });
+        }
+        if self.selection.releases {
+            collect_surface("releases", &mut output, |chunks| {
+                self.collect_releases(&mut api, &mut budget, &mut seen, chunks)
             });
         }
         Ok(output)
@@ -561,6 +572,66 @@ impl GitHubCollaborationSource {
             if let Some(gap) = comments_gap {
                 return Err(gap);
             }
+        }
+        if let Some(gap) = page_gap {
+            return Err(gap);
+        }
+        Ok(())
+    }
+
+    /// Release notes are operator-authored free text on the same footing as an
+    /// issue body, and the "upgrade steps" section of a release is a documented
+    /// place for a real credential to be pasted. A DRAFT release is not present
+    /// in the repository tree at all, so no clone-based source can ever see it;
+    /// `/releases` returns drafts and prereleases to an authenticated caller,
+    /// which is exactly the unpolished text worth scanning.
+    ///
+    /// SCOPE: release asset BYTES are not fetched. `/releases/assets/{id}`
+    /// answers with a 302 to a `*.githubusercontent.com` origin and this client
+    /// runs `redirect: none` by policy, so following it would carry the
+    /// operator's GitHub token to a different origin. Each asset's name and
+    /// label are appended to the release text instead, so an asset is never
+    /// absent from the scanned record; its payload is outside this surface's
+    /// contract rather than an enumerated input that was silently dropped.
+    fn collect_releases(
+        &self,
+        api: &mut GitHubApi<'_>,
+        budget: &mut ContentBudget,
+        seen: &mut HashSet<String>,
+        chunks: &mut Vec<Chunk>,
+    ) -> Result<(), GitHubGap> {
+        let path = format!("/repos/{}/{}/releases", self.owner, self.repo);
+        let (releases, page_gap): (Vec<Release>, _) = api.pages("releases", &path, "");
+        for release in releases {
+            // A draft release has no `published_at`; `created_at` is then the
+            // only timestamp GitHub exposes for it.
+            let revision_time = release
+                .published_at
+                .as_deref()
+                .unwrap_or(&release.created_at);
+            let revision = revision_identity(&release.node_id, revision_time);
+            let title = release.name.as_deref().unwrap_or(&release.tag_name);
+            let mut text = join_title_body(title, release.body.as_deref());
+            for asset in &release.assets {
+                text.push('\n');
+                text.push_str(&asset.name);
+                if let Some(label) = asset.label.as_deref().filter(|label| !label.is_empty()) {
+                    text.push('\n');
+                    text.push_str(label);
+                }
+            }
+            push_text_chunk(
+                chunks,
+                seen,
+                budget,
+                "releases",
+                format!("release:{revision}"),
+                self.provenance(&format!("releases/{}", release.id)),
+                &revision,
+                release.author.as_ref().map(|actor| actor.login.as_str()),
+                revision_time,
+                text,
+            )?;
         }
         if let Some(gap) = page_gap {
             return Err(gap);
@@ -1115,6 +1186,26 @@ struct PullRequest {
     body: Option<String>,
     user: Option<Actor>,
     updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct Release {
+    id: u64,
+    node_id: String,
+    tag_name: String,
+    name: Option<String>,
+    body: Option<String>,
+    author: Option<Actor>,
+    created_at: String,
+    published_at: Option<String>,
+    #[serde(default)]
+    assets: Vec<ReleaseAsset>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseAsset {
+    name: String,
+    label: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

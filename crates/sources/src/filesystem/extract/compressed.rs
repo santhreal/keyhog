@@ -9,7 +9,8 @@ use keyhog_core::{Chunk, SourceError};
 use std::path::Path;
 
 /// The single-stream compression format of a `.gz` / `.zst` / `.lz4` / `.sz` /
-/// `.bz2` / `.xz` (or `.tgz`) file, inferred from its extension.
+/// `.bz2` / `.xz` (or `.tgz`) file, inferred from its extension or, when the
+/// name carries no recognized extension, from the stream's own frame header.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum CompressedFormat {
     Gzip,
@@ -39,6 +40,36 @@ impl CompressedFormat {
         } else if ext.eq_ignore_ascii_case("bz2") {
             Some(CompressedFormat::Bzip2)
         } else if ext.eq_ignore_ascii_case("xz") {
+            Some(CompressedFormat::Xz)
+        } else {
+            None
+        }
+    }
+
+    /// The format of a stream identified by its OWN leading bytes.
+    ///
+    /// Every signature matched here is a fixed frame header at offset 0, so this
+    /// decides what the bytes ARE rather than what the name claims. It exists
+    /// because inferring the format from the member NAME alone loses the payload
+    /// of every compressed stream that carries no recognized extension, and that
+    /// naming is the norm rather than the exception: an OCI/Docker image layer is
+    /// stored under its digest (`layer`, `blob`, `sha256_<hex>`), rotated logs and
+    /// backups drop the suffix, and build outputs ship as `payload` / `data`.
+    /// Such a member used to fall through to the printable-strings leaf, where
+    /// compressed bytes hold no 8-char printable run, so a secret in the payload
+    /// was reported clean with NO coverage gap (Law 10 silent false clean).
+    fn from_magic(bytes: &[u8]) -> Option<Self> {
+        if crate::magic::starts_with_gzip(bytes) {
+            Some(CompressedFormat::Gzip)
+        } else if crate::magic::starts_with_zstd_frame(bytes) {
+            Some(CompressedFormat::Zstd)
+        } else if crate::magic::starts_with_lz4_frame(bytes) {
+            Some(CompressedFormat::Lz4)
+        } else if crate::magic::starts_with_snappy_frame(bytes) {
+            Some(CompressedFormat::Snappy)
+        } else if crate::magic::has_bzip2_header(bytes) {
+            Some(CompressedFormat::Bzip2)
+        } else if crate::magic::starts_with_xz_stream(bytes) {
             Some(CompressedFormat::Xz)
         } else {
             None
@@ -454,22 +485,37 @@ fn analyze_tex_package(tar_bytes: &[u8]) -> super::tex_package::TexPackageAnalys
     builder.finish()
 }
 
-pub(super) fn entry_is_embedded_tar(entry_name: &str, content: &[u8]) -> bool {
-    let has_tar_ext = Path::new(entry_name)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("tar"));
-    has_tar_ext && looks_like_tar(content)
+/// True when an archive MEMBER is itself a tar container.
+///
+/// Decided by the tar signature in the member's own bytes (`ustar` at offset
+/// 257), NOT by a `.tar` name. Requiring the extension lost every embedded tar
+/// that follows the dominant naming convention for one: an OCI/Docker image
+/// layer is stored as `<digest>`, `layer`, or `blobs/sha256/<hex>` with no
+/// suffix, so the whole file list inside it was leaf-scanned as printable
+/// strings and a secret in any of those files was a silent clean (Law 10).
+pub(super) fn entry_is_embedded_tar(content: &[u8]) -> bool {
+    looks_like_tar(content)
 }
 
-/// Return the single-stream compression format of a tar/zip MEMBER whose name
-/// carries a recognized compressed extension (`.gz` / `.tgz` / `.zst` / `.lz4`
-/// / `.sz` / `.bz2` / `.xz`). A member with such an extension must be
-/// decompressed and its true bytes scanned -- routing the compressed bytes to
-/// the printable-strings path SILENTLY loses a secret in the payload (Law 10).
-pub(super) fn compressed_member_format(entry_name: &str) -> Option<CompressedFormat> {
-    let ext = Path::new(entry_name).extension().and_then(|e| e.to_str())?;
-    CompressedFormat::from_ext(ext)
+/// Return the single-stream compression format of a tar/zip MEMBER, from a
+/// recognized compressed extension (`.gz` / `.tgz` / `.zst` / `.lz4` / `.sz` /
+/// `.bz2` / `.xz`) or, failing that, from the member's own frame header. A
+/// member in either class must be decompressed and its true bytes scanned --
+/// routing compressed bytes to the printable-strings path SILENTLY loses a
+/// secret in the payload (Law 10).
+///
+/// The extension is consulted FIRST so a named member keeps exactly the format
+/// it always resolved to (`.tgz` stays gzip) and the magic probe only decides
+/// cases that previously had no decision at all.
+pub(super) fn compressed_member_format(
+    entry_name: &str,
+    content: &[u8],
+) -> Option<CompressedFormat> {
+    Path::new(entry_name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .and_then(CompressedFormat::from_ext)
+        .or_else(|| CompressedFormat::from_magic(content))
 }
 
 /// Decompress a compressed archive MEMBER in memory and scan its TRUE bytes:

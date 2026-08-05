@@ -411,7 +411,7 @@ pub(super) fn emit_archive_content_with_tex_provenance(
     provenance: Option<&super::tex_package::TexMemberProvenance>,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
-    if entry_is_embedded_openpack_archive(entry_name, &content) {
+    if entry_is_embedded_openpack_archive(&content) {
         let nested_display = format!("{archive_display}//{entry_name}");
         if nested_depth >= MAX_NESTED_ARCHIVE_DEPTH {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
@@ -434,7 +434,7 @@ pub(super) fn emit_archive_content_with_tex_provenance(
     // A tar member inside this zip (`bundle.zip//layer.tar`, the dominant
     // docker/helm layout) must be untarred so a secret in the tarball is found,
     // not leaf-scanned as printable strings -- which silently missed it (Law 10).
-    if super::compressed::entry_is_embedded_tar(entry_name, &content) {
+    if super::compressed::entry_is_embedded_tar(&content) {
         let nested_display = format!("{archive_display}//{entry_name}");
         if nested_depth >= MAX_NESTED_ARCHIVE_DEPTH {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
@@ -460,7 +460,7 @@ pub(super) fn emit_archive_content_with_tex_provenance(
     // were routed to the printable-strings path and a secret in the payload was
     // a SILENT false-clean (Law 10). Bounded by depth + the shared zip-bomb
     // budget; every drop is surfaced and counted.
-    if let Some(format) = super::compressed::compressed_member_format(entry_name) {
+    if let Some(format) = super::compressed::compressed_member_format(entry_name, &content) {
         let nested_display = format!("{archive_display}//{entry_name}");
         if nested_depth >= MAX_NESTED_ARCHIVE_DEPTH {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
@@ -493,20 +493,23 @@ pub(super) fn emit_archive_content_with_tex_provenance(
     )
 }
 
-fn entry_is_embedded_openpack_archive(entry_name: &str, content: &[u8]) -> bool {
-    let has_openpack_ext = Path::new(entry_name)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(is_openpack_archive_ext);
-    has_openpack_ext && crate::magic::starts_with_zip_container_prefix(content)
+/// True when a member of ANY archive is itself a zip-family (openpack) container.
+///
+/// Decided by the zip local-file/end-of-central-directory signature in the
+/// member's own bytes, NOT by a `.zip`/`.jar`/`.apk`/... name. Requiring the
+/// extension lost every zip stored under a digest or a bare name (`bundle`,
+/// `sha256_<hex>`), whose entries were then leaf-scanned as printable strings --
+/// and DEFLATE-compressed entry bytes hold no printable run, so a secret inside
+/// was a silent clean (Law 10). The signature is a fixed 4-byte header at offset
+/// 0, so this is a decision about what the bytes ARE, not a speculative probe.
+fn entry_is_embedded_openpack_archive(content: &[u8]) -> bool {
+    crate::magic::starts_with_zip_container_prefix(content)
 }
 
-/// True when a member of ANY archive is itself a zip-family (openpack) container
-/// (`.zip` / `.jar` / `.war` / ... with the local-file-header magic). Exposed so
-/// the tar extractor can recurse into a zip nested in a tar, symmetric with the
-/// zip extractor already recursing into a tar nested in a zip.
-pub(super) fn member_is_embedded_zip(entry_name: &str, content: &[u8]) -> bool {
-    entry_is_embedded_openpack_archive(entry_name, content)
+/// Exposed so the tar extractor can recurse into a zip nested in a tar,
+/// symmetric with the zip extractor already recursing into a tar nested in a zip.
+pub(super) fn member_is_embedded_zip(content: &[u8]) -> bool {
+    entry_is_embedded_openpack_archive(content)
 }
 
 /// Recurse into a zip-family MEMBER discovered inside another archive (e.g.

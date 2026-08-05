@@ -13,7 +13,17 @@ pub(crate) const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE: u32 = 0x0605_4b50;
 pub(crate) const ZIP_LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x0403_4b50;
 pub(crate) const ZIP_LOCAL_FILE_PREFIX: &[u8] = b"PK\x03\x04";
 pub(crate) const ZSTD_FRAME_MAGIC: &[u8] = b"\x28\xb5\x2f\xfd";
+pub(crate) const XZ_STREAM_MAGIC: &[u8] = b"\xfd7zXZ\x00";
+pub(crate) const LZ4_FRAME_MAGIC: &[u8] = b"\x04\x22\x4d\x18";
+pub(crate) const SNAPPY_FRAME_MAGIC: &[u8] = b"\xff\x06\x00\x00sNaPpY";
 pub(crate) const WASM_MAGIC: &[u8; 4] = b"\x00asm";
+/// Container families recognized by signature that the archive-MEMBER dispatcher
+/// has no in-memory extractor for. Named so the member path can report an
+/// uncovered region instead of leaf-scanning container bytes, whose compressed
+/// payload holds no printable run and therefore reads as a clean member.
+pub(crate) const SEVEN_ZIP_PREFIX: &[u8] = b"7z\xbc\xaf\x27\x1c";
+pub(crate) const RAR_PREFIX: &[u8] = b"Rar!\x1a\x07";
+pub(crate) const UNIX_AR_PREFIX: &[u8] = b"!<arch>\n";
 
 pub(crate) const UNAMBIGUOUS_BINARY_PREFIXES: &[&[u8]] = &[
     PDF_PREFIX,
@@ -27,9 +37,9 @@ pub(crate) const UNAMBIGUOUS_BINARY_PREFIXES: &[&[u8]] = &[
     b"\xca\xfe\xba\xbe",   // Java .class (universal Mach-O collision)
     GZIP_PREFIX,           // gzip (.gz)
     ZSTD_FRAME_MAGIC,      // zstd (.zst)
-    b"\xfd7zXZ\x00",       // xz (.xz)
-    b"7z\xbc\xaf\x27\x1c", // 7z (.7z)
-    b"Rar!\x1a\x07",       // RAR
+    XZ_STREAM_MAGIC,       // xz (.xz)
+    SEVEN_ZIP_PREFIX,      // 7z (.7z)
+    RAR_PREFIX,            // RAR
     b"GIF87a",             // GIF
     b"GIF89a",             // GIF
     b"\xff\xd8\xff",       // JPEG (any variant)
@@ -37,7 +47,7 @@ pub(crate) const UNAMBIGUOUS_BINARY_PREFIXES: &[&[u8]] = &[
     b"OggS",               // Ogg container
     b"fLaC",               // FLAC
     WASM_MAGIC,            // WebAssembly module
-    b"!<arch>\n",          // Unix `ar` archives (.a, .deb)
+    UNIX_AR_PREFIX,        // Unix `ar` archives (.a, .deb)
 ];
 
 #[inline]
@@ -45,6 +55,32 @@ pub(crate) fn has_unambiguous_binary_prefix(bytes: &[u8]) -> bool {
     UNAMBIGUOUS_BINARY_PREFIXES
         .iter()
         .any(|header| bytes.starts_with(header))
+}
+
+/// The container family of `bytes` when it is one the archive-MEMBER dispatcher
+/// recognizes but cannot descend into.
+///
+/// `tar`, the zip family, and the single-stream compressed formats are all
+/// handled in memory by `emit_archive_member`. These three are not: their
+/// extractors need a seekable file on disk, so an embedded one is a container
+/// whose contents were NOT scanned. Naming the family lets the member path
+/// surface that as an uncovered region rather than fall through to the
+/// printable-strings leaf, which finds no printable run in compressed container
+/// bytes and so reports the member clean (Law 10 silent false clean).
+///
+/// Signature-only, at offset 0, over a prefix the caller already holds: this
+/// never speculatively feeds bytes to an extractor.
+#[inline]
+pub(crate) fn uninterpreted_container_format(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(SEVEN_ZIP_PREFIX) {
+        Some("7z")
+    } else if bytes.starts_with(RAR_PREFIX) {
+        Some("RAR")
+    } else if bytes.starts_with(UNIX_AR_PREFIX) {
+        Some("ar/deb")
+    } else {
+        None
+    }
 }
 
 #[inline]
@@ -96,6 +132,21 @@ pub(crate) fn starts_with_gzip(bytes: &[u8]) -> bool {
 #[inline]
 pub(crate) fn starts_with_zstd_frame(bytes: &[u8]) -> bool {
     bytes.starts_with(ZSTD_FRAME_MAGIC)
+}
+
+#[inline]
+pub(crate) fn starts_with_xz_stream(bytes: &[u8]) -> bool {
+    bytes.starts_with(XZ_STREAM_MAGIC)
+}
+
+#[inline]
+pub(crate) fn starts_with_lz4_frame(bytes: &[u8]) -> bool {
+    bytes.starts_with(LZ4_FRAME_MAGIC)
+}
+
+#[inline]
+pub(crate) fn starts_with_snappy_frame(bytes: &[u8]) -> bool {
+    bytes.starts_with(SNAPPY_FRAME_MAGIC)
 }
 
 #[inline]

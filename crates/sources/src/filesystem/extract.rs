@@ -203,7 +203,7 @@ pub(super) fn chunk_from_extracted_entry(
                     "archive/compressed entry is not decodable text; scanning printable strings"
                 );
                 Some(Ok(Chunk {
-                    data: crate::strings::join_sensitive_strings(&strings, "\n"),
+                    data: crate::strings::join_printable_runs(&strings),
                     metadata: ChunkMetadata {
                         source_type: binary_source_type.into(),
                         path: Some(entry_path.into()),
@@ -251,6 +251,20 @@ fn emit_archive_leaf_member(
     provenance: Option<&tex_package::TexMemberProvenance>,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
+    if let Some(format) = crate::magic::uninterpreted_container_format(&content) {
+        // LAW10: the member IS a container of a family this in-memory dispatcher
+        // has no extractor for, so its entries were NOT scanned. Falling straight
+        // through to the printable-strings leaf below would report the member
+        // clean, because compressed container bytes hold no printable run. Record
+        // the uncovered region first, then still leaf-scan what is readable.
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        if !emit(Err(SourceError::Other(format!(
+            "embedded {format} container '{member_display}' has no in-memory extractor; its entries were not scanned"
+        )))) {
+            return false;
+        }
+    }
+
     if let (Some(provenance), Ok(text)) = (provenance, std::str::from_utf8(&content)) {
         if !emit_tex_comment_chunks(text, member_display, provenance, emit) {
             return false;
@@ -274,6 +288,42 @@ fn emit_archive_leaf_member(
     ) {
         Some(chunk) => emit(chunk),
         None => true,
+    }
+}
+
+/// The canonical container extension implied by an extensionless file's OWN
+/// leading bytes.
+///
+/// [`process_entry`] routes containers by extension, so a file with no extension
+/// reached no extractor at all. Every signature matched here is a fixed frame
+/// header at offset 0 (plus tar's `ustar` at 257), read from a bounded prefix the
+/// caller already holds, so this decides what the bytes ARE. It never runs an
+/// extractor speculatively, and every returned extension routes to a branch that
+/// already enforces the per-entry size cap, the total-uncompressed bomb budget,
+/// and [`MAX_NESTED_ARCHIVE_DEPTH`].
+fn container_extension_from_prefix(head: &[u8]) -> Option<&'static str> {
+    if crate::magic::starts_with_gzip(head) {
+        Some("gz")
+    } else if crate::magic::starts_with_zstd_frame(head) {
+        Some("zst")
+    } else if crate::magic::starts_with_lz4_frame(head) {
+        Some("lz4")
+    } else if crate::magic::starts_with_snappy_frame(head) {
+        Some("sz")
+    } else if crate::magic::has_bzip2_header(head) {
+        Some("bz2")
+    } else if crate::magic::starts_with_xz_stream(head) {
+        Some("xz")
+    } else if crate::magic::starts_with_zip_container_prefix(head) {
+        Some("zip")
+    } else if head.starts_with(crate::magic::SEVEN_ZIP_PREFIX) {
+        Some("7z")
+    } else if head.starts_with(crate::magic::RAR_PREFIX) {
+        Some("rar")
+    } else if compressed::looks_like_tar(head) {
+        Some("tar")
+    } else {
+        None
     }
 }
 
@@ -332,12 +382,12 @@ fn emit_archive_member_with_tex_provenance(
     provenance: Option<&tex_package::TexMemberProvenance>,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
-    let is_tar = compressed::entry_is_embedded_tar(entry_name, &content);
-    let is_zip = !is_tar && archive::member_is_embedded_zip(entry_name, &content);
+    let is_tar = compressed::entry_is_embedded_tar(&content);
+    let is_zip = !is_tar && archive::member_is_embedded_zip(&content);
     let compressed_format = if is_tar || is_zip {
         None
     } else {
-        compressed::compressed_member_format(entry_name)
+        compressed::compressed_member_format(entry_name, &content)
     };
 
     if (is_tar || is_zip || compressed_format.is_some()) && nested_depth >= MAX_NESTED_ARCHIVE_DEPTH
@@ -473,7 +523,7 @@ pub(super) fn process_entry(
     let live_metadata = file_live_metadata(&path);
     let file_size = live_metadata.map_or(entry.size, |meta| meta.size_bytes);
     let live_mtime_ns = live_metadata.and_then(|meta| meta.mtime_ns);
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+    let mut ext = path.extension().and_then(|e| e.to_str()).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
 
     let image_kind = match image_metadata::probe_kind(&path, ext) {
         Ok(kind) => kind,
@@ -570,9 +620,23 @@ pub(super) fn process_entry(
         if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
             // LAW10: failed prefix probe leaves binary hint false; the full safe read path below is the loud, recall-preserving path that still surfaces unreadable files.
             let head = &buf[..n];
-            if read::looks_binary_prefix(head) {
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                return;
+            match container_extension_from_prefix(head) {
+                // The file has NO extension but its own bytes ARE a container, so
+                // adopt the extension the dispatcher below already routes, and the
+                // container reaches the same extractor under the same per-entry,
+                // bomb-ratio and depth caps as its named twin. Without this the
+                // `looks_binary_prefix` arm ended the scan right here and the
+                // container's entire contents went unread, recorded only as a
+                // generic binary skip with no sign a container was there. That
+                // naming is the normal case for the highest-value target: an
+                // OCI/Docker layer blob is `blobs/sha256/<hex>` on disk, in a
+                // registry cache, or in an extracted `docker save` (Law 10).
+                Some(sniffed) => ext = sniffed,
+                None if read::looks_binary_prefix(head) => {
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                    return;
+                }
+                None => {}
             }
         }
     }
@@ -979,7 +1043,7 @@ pub(super) fn process_entry(
     }
 
     let content_source = if file_size >= MMAP_THRESHOLD {
-        read::read_file_mmap(&path)
+        read::read_file_whole_capped(&path)
     } else {
         read::read_file_buffered(&path, file_size)
     };
@@ -1001,25 +1065,7 @@ pub(super) fn process_entry(
                 "file is not valid text; scanning printable strings only"
             );
             (
-                crate::strings::join_sensitive_strings(&strings, "\n"),
-                "filesystem:binary-strings",
-            )
-        }
-        Some(read::BufferedFileRead::Mmap(mmap)) => {
-            let strings = crate::strings::extract_printable_strings(
-                &mmap,
-                crate::strings::MIN_PRINTABLE_STRING_LEN,
-            );
-            if strings.is_empty() {
-                record_binary_without_printable_strings(&display_path(&path));
-                return;
-            }
-            tracing::info!(
-                path = %path.display(),
-                "file is not valid text; scanning mmap-backed printable strings only"
-            );
-            (
-                crate::strings::join_sensitive_strings(&strings, "\n"),
+                crate::strings::join_printable_runs(&strings),
                 "filesystem:binary-strings",
             )
         }
