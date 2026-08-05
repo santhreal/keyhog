@@ -1,4 +1,4 @@
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[test]
 fn http_proxy_off_preserved() {
     let cfg = keyhog_sources::http::HttpClientConfig {

@@ -199,3 +199,116 @@ fn multi_root_suppressor_selects_longest_prefix_root() {
         "sibling path must pick the parent root suppressor"
     );
 }
+
+/// A directory that appears in a watched tree must contribute every regular
+/// file it already contains. inotify reports one event for the directory and
+/// none for its contents, so without this walk `mv secrets/ watched/` was a
+/// silent false clean: the watcher stayed healthy and printed nothing.
+#[test]
+fn appearing_directory_contributes_its_existing_files_recursively() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let root = temp.path().join("moved_in");
+    std::fs::create_dir_all(root.join("nested/deeper")).expect("tree");
+    std::fs::write(root.join("top.txt"), "top").expect("write");
+    std::fs::write(root.join("nested/deep.txt"), "deep").expect("write");
+    std::fs::write(root.join("nested/deeper/deepest.txt"), "deepest").expect("write");
+
+    let skip_dirs = SkipDirPolicy::load().expect("skip policy");
+    let mut out = Vec::new();
+    collect_directory_files(&root, &skip_dirs, &mut out, "hint");
+
+    let mut names: Vec<String> = out
+        .iter()
+        .map(|path| {
+            path.strip_prefix(&root)
+                .expect("under root")
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect();
+    names.sort();
+    assert_eq!(
+        names,
+        vec![
+            "nested/deep.txt".to_string(),
+            "nested/deeper/deepest.txt".to_string(),
+            "top.txt".to_string(),
+        ]
+    );
+}
+
+/// The walk must not leave the watched tree through a symlinked directory, and
+/// must honor the same component skip policy the event path applies.
+#[test]
+fn appearing_directory_walk_skips_symlinked_dirs_and_skipped_components() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let outside = temp.path().join("outside");
+    std::fs::create_dir_all(&outside).expect("outside");
+    std::fs::write(outside.join("escaped.txt"), "escaped").expect("write");
+
+    let root = temp.path().join("appeared");
+    std::fs::create_dir_all(root.join("node_modules/pkg")).expect("tree");
+    std::fs::write(root.join("kept.txt"), "kept").expect("write");
+    std::fs::write(root.join("node_modules/pkg/dep.js"), "dep").expect("write");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside, root.join("link")).expect("symlink");
+
+    let skip_dirs = SkipDirPolicy::load().expect("skip policy");
+    let mut out = Vec::new();
+    collect_directory_files(&root, &skip_dirs, &mut out, "hint");
+
+    let names: Vec<String> = out
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec!["kept.txt".to_string()]);
+}
+
+/// A path `keyhog scan` also declines to read must not be charged to the
+/// consecutive-failure budget. Counting them exited the watcher after a handful
+/// of ordinary symlinks, so a vendored link farm became an outage.
+#[test]
+#[cfg(unix)]
+fn symlink_read_failure_is_policy_skip_not_engine_failure() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let target = temp.path().join("target.txt");
+    std::fs::write(&target, "secret").expect("write");
+    let link = temp.path().join("link.txt");
+    std::os::unix::fs::symlink(&target, &link).expect("symlink");
+
+    let error = read_watched_file(&link, keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES)
+        .expect_err("O_NOFOLLOW must refuse a symlink");
+    assert_eq!(
+        read_error_outcome(&link, &error),
+        WatchScanOutcome::PolicySkip
+    );
+}
+
+/// A file that exists, is in policy, and still cannot be read IS a coverage
+/// loss, so it must keep counting toward the failure budget.
+#[test]
+fn unreadable_regular_file_stays_an_engine_failure() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let path = temp.path().join("regular.txt");
+    std::fs::write(&path, "content").expect("write");
+    let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+    assert_eq!(
+        read_error_outcome(&path, &denied),
+        WatchScanOutcome::EngineFailure
+    );
+}
+
+/// An oversized file is a documented policy skip shared with `keyhog scan`, not
+/// a scanner fault: a directory of large artifacts must not exit the watcher.
+#[test]
+fn oversize_file_is_policy_skip() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let path = temp.path().join("big.bin");
+    std::fs::write(&path, vec![b'a'; 4096]).expect("write");
+    let error = read_watched_file(&path, 16).expect_err("cap must reject");
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert_eq!(
+        read_error_outcome(&path, &error),
+        WatchScanOutcome::PolicySkip
+    );
+}

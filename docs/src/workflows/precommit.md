@@ -25,6 +25,43 @@ If `keyhog` is missing from `PATH`, the hook blocks the commit because the
 security scan did not run. Install KeyHog, fix `PATH`, or remove
 `.git/hooks/pre-commit` if the repository should not be protected.
 
+### What the installed hook does not catch
+
+Read this before you rely on the hook. `--fast` keeps named and multiline
+pattern matching and drops decode, entropy, and ML work. A credential written
+in plain text is blocked. A credential that is only Base64-encoded is not.
+Stage a file whose sole credential is Base64-encoded and the commit succeeds:
+
+```text
+$ git commit -m "add config"
+No secrets detected in the scanned files.
+[main 8f56830] add config
+ 1 file changed, 1 insertion(+)
+```
+
+The default policy decodes that file and reports the credential. Check any
+staged change the hook passed:
+
+```sh
+keyhog scan --git-staged
+```
+
+Treat the hook as a fast first gate, not as the control that protects the
+branch. Keep a default-policy scan in CI, where the cost is paid once per push
+rather than once per commit. See
+[Fail only on new secrets](./ci.md#fail-only-on-new-secrets).
+
+`keyhog hook install` has no policy option. To run the full policy locally,
+write the hook yourself:
+
+```sh
+printf '#!/usr/bin/env bash\nexec keyhog scan --git-staged\n' > .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+That hook blocks the Base64 case. It costs more time on every commit, and
+`keyhog hook uninstall` will not remove it because it carries no KeyHog marker.
+
 ### `pre-commit` framework
 
 This repository's hook uses `language: system`. Follow the
@@ -131,8 +168,9 @@ If a pre-commit scan feels slow:
   one regular file. The default staged-file hook uses the in-process
   orchestrator because git source expansion, baseline policy, and
   verification are not daemon work.
-- `--fast` selects the documented reduced-cost scan policy. Keep the full scan
-  in CI so decoded, entropy, and deeper paths remain covered.
+- `--fast` is already what the installed hook uses, so there is no speed left
+  to gain there. The cost of that choice is in
+  [what the installed hook does not catch](#what-the-installed-hook-does-not-catch).
 
 ## Uninstall
 

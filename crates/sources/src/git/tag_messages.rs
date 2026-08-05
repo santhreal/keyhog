@@ -33,18 +33,18 @@ pub(crate) fn collect_reachable_tag_messages(
     let mut tags = VecDeque::new();
     let mut line_buf = Vec::new();
     loop {
-        let consumed =
+        let record =
             super::read_capped_line(&mut reader, &mut line_buf, super::GIT_PLUMBING_LINE_BYTES)
                 .map_err(SourceError::Io)?;
-        if consumed == 0 {
+        if record.consumed == 0 {
             break;
         }
-        if consumed > super::GIT_PLUMBING_LINE_BYTES {
+        if record.content > super::GIT_PLUMBING_LINE_BYTES {
             return Err(super::git_output_line_truncated_error(
                 "git tag source",
                 "tag ref line",
                 super::GIT_PLUMBING_LINE_BYTES,
-                consumed,
+                record.content,
             ));
         }
         let line = String::from_utf8_lossy(&line_buf);

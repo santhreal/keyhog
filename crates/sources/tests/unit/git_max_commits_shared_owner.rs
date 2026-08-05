@@ -1,6 +1,6 @@
 //! Contract for the `max_commits_limit` shared owner that both `GitSource` and
 //! `GitHistorySource` route their `with_max_commits` builder through (reached via
-//! the `SourceTestApi` facade). Migrated out of inline `#[cfg(test)]` blocks in
+//! the `TestApi` facade). Migrated out of inline `#[cfg(test)]` blocks in
 //! `src/git/source.rs` and `src/git/history.rs` to satisfy the sources folder
 //! contract (`git_source_no_inline_tests` + `git_history_no_inline_tests`).
 //!
@@ -9,7 +9,7 @@
 //! valid explicit "scan no commits" cap (`git log --max-count 0`), never clamped
 //! to `None` (unlimited).
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 #[test]
 fn git_source_routes_max_commits_through_the_shared_owner() {

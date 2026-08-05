@@ -41,6 +41,7 @@
 //! Most single-file modules are one responsibility each; the multi-file engine
 //! is the exception and carries its own internal map in `engine::mod`.
 
+#![doc = include_str!("../README.md")]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![allow(clippy::too_many_arguments)]
 
@@ -170,6 +171,8 @@ pub(crate) mod bigram_bloom;
 // The fast Shannon-entropy primitives (scalar dispatcher + AVX-512 / AVX2-SSE2 /
 // NEON SIMD impls) now live UNDER `entropy/` (entropy::fast / ::avx512 /
 // ::fast_x86 / ::fast_neon) (one home for all entropy code. See `entropy/mod.rs`).
+/// Tier-B hex-digest widths and the digest-fragment boundary policy.
+pub(crate) mod hex_digest_policy;
 pub(crate) mod homoglyph;
 /// JWT structural validation and anomaly detection.
 pub mod jwt;

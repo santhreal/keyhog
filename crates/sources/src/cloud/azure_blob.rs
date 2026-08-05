@@ -133,10 +133,11 @@ fn collect_azure_blob_chunks(
     limits: crate::SourceLimits,
     http: &crate::http::HttpClientConfig,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
-    let container_url = validate_container_url(container_url, http.allow_private_endpoint)?;
+    let (container_url, screened) =
+        validate_container_url(container_url, http.allow_private_endpoint)?;
     // Container acquisition: URL validation and client build.
     let _acquire = crate::profile::acquire_span();
-    let client = crate::cloud::blocking_client("Azure Blob", http)?;
+    let client = crate::cloud::blocking_client("Azure Blob", http, screened.as_ref())?;
     drop(_acquire);
     let mut chunks = Vec::new();
     let mut coverage = crate::cloud::CloudListingCoverage::new("azure_blob", "blobs", max_objects);
@@ -228,10 +229,18 @@ fn fetch_azure_blob_listing_page(
 ) -> Result<AzureListResponse, SourceError> {
     let list_url = azure_list_url(container_url, prefix, marker);
     let response = client.get(list_url.clone()).send().map_err(|error| {
+        // The container URL is operator-supplied and, for a private container,
+        // carries the SAS token whose `sig=` IS the credential. Both operands
+        // leak it unredacted otherwise: `{list_url}` directly, and `{error}`
+        // through `reqwest::Error`'s `" for url (<url>)"` suffix.
+        let safe_url = crate::url_redaction::redact_url(list_url.as_str()).into_owned();
         crate::cloud::record_unreadable_listing_skip(
             "Azure Blob",
             "blobs",
-            format!("failed to list blobs at {list_url}: {error}"),
+            format!(
+                "failed to list blobs at {safe_url}: {}",
+                crate::url_redaction::redact_http_error(error)
+            ),
         )
     })?;
     if !response.status().is_success() {
@@ -338,11 +347,17 @@ fn fetch_azure_blob_chunk(
     let display_path = azure_blob_display_path(container_url, name)?;
     let url = azure_blob_url(container_url, name);
     let response = client.get(url).send().map_err(|error| {
+        // `{error}` carries the blob URL, which inherits the container URL's
+        // SAS `sig=`. `display_path` is the SAS-free `azblob://host/...` form,
+        // so it stays as the operator-facing identity.
         crate::cloud::record_unreadable_object_skip(
             "Azure blob",
             "blob",
             &display_path,
-            format!("download failed for {name}: {error}"),
+            format!(
+                "download failed for {name}: {}",
+                crate::url_redaction::redact_http_error(error)
+            ),
         )
     })?;
     let Some(object_text) = crate::cloud::read_text_object_body(
@@ -449,14 +464,18 @@ fn azure_blob_display_path(
     Ok(format!("azblob://{host}/{container_path}/{name}"))
 }
 
-fn validate_container_url(raw: &str, allow_private: bool) -> Result<reqwest::Url, SourceError> {
-    let parsed = crate::cloud::parse_http_endpoint(raw, "Azure Blob container URL", allow_private)?;
+fn validate_container_url(
+    raw: &str,
+    allow_private: bool,
+) -> Result<(reqwest::Url, Option<crate::endpoint_screen::ScreenedEndpoint>), SourceError> {
+    let (parsed, screened) =
+        crate::cloud::parse_http_endpoint(raw, "Azure Blob container URL", allow_private)?;
     if parsed.path().trim_matches('/').is_empty() {
         return Err(SourceError::Other(
             "invalid Azure Blob container URL: path must include the container".into(),
         ));
     }
-    Ok(parsed)
+    Ok((parsed, screened))
 }
 
 #[cfg(test)]

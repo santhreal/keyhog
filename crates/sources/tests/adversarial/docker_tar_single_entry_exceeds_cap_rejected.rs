@@ -3,7 +3,7 @@
 #[cfg(feature = "docker")]
 use keyhog_sources::skip_counts;
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[cfg(feature = "docker")]
 fn write_layer_tar(path: &std::path::Path, entries: &[(&str, &[u8])]) {
     let file = std::fs::File::create(path).expect("create tar");

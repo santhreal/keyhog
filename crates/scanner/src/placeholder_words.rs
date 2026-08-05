@@ -59,12 +59,36 @@ struct DocMarkerSection {
     marker_substrings: Vec<String>,
 }
 
+/// A substring that marks a decoy only for values shorter than the bound.
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct LengthGatedSubstring {
+    substring: String,
+    max_length_exclusive: usize,
+}
+
+/// A prefixed shape that is a decoy when it also ends with one of `suffixes`
+/// or contains one of `substrings`.
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct CompoundShape {
+    prefix: String,
+    #[serde(default)]
+    suffixes: Vec<String>,
+    #[serde(default)]
+    substrings: Vec<String>,
+}
+
 #[derive(serde::Deserialize, Default)]
 struct EntropyMarkerSection {
     #[serde(default)]
     ci_substrings: Vec<String>,
     #[serde(default)]
     exact_values: Vec<String>,
+    #[serde(default)]
+    structural_bytes: Vec<String>,
+    #[serde(default)]
+    length_gated_substrings: Vec<LengthGatedSubstring>,
+    #[serde(default)]
+    compound_shapes: Vec<CompoundShape>,
 }
 
 /// All placeholder / doc-marker / entropy-marker vocabularies parsed once from the
@@ -82,6 +106,9 @@ pub(crate) struct PlaceholderVocab {
     marker_substrings: Vec<String>,
     entropy_ci_substrings: Vec<String>,
     entropy_exact_values: Vec<String>,
+    entropy_structural_bytes: Vec<u8>,
+    entropy_length_gated: Vec<LengthGatedSubstring>,
+    entropy_compound_shapes: Vec<CompoundShape>,
 }
 
 static VOCAB: LazyLock<PlaceholderVocab> = LazyLock::new(|| {
@@ -112,6 +139,21 @@ static VOCAB: LazyLock<PlaceholderVocab> = LazyLock::new(|| {
                 !vocab.entropy_exact_values.is_empty(),
                 "rules/placeholder_words.toml [entropy_markers].exact_values is empty; \
                  refusing to run without entropy-marker exact-value suppression truth"
+            );
+            assert!(
+                !vocab.entropy_structural_bytes.is_empty(),
+                "rules/placeholder_words.toml [entropy_markers].structural_bytes is empty; \
+                 refusing to run without structural-placeholder suppression truth"
+            );
+            assert!(
+                !vocab.entropy_length_gated.is_empty(),
+                "rules/placeholder_words.toml [entropy_markers].length_gated_substrings is \
+                 empty; refusing to run without length-gated placeholder suppression truth"
+            );
+            assert!(
+                !vocab.entropy_compound_shapes.is_empty(),
+                "rules/placeholder_words.toml [entropy_markers].compound_shapes is empty; \
+                 refusing to run without compound-shape placeholder suppression truth"
             );
             vocab
         }
@@ -198,23 +240,36 @@ pub(crate) fn bytes_contain_entropy_placeholder_marker(bytes: &[u8]) -> bool {
     {
         return true;
     }
-    // Category 2: length-gated substring (bespoke rule, not a list. `secret_key`
-    // counts as a decoy ONLY for short values; a long value merely containing it is
-    // a real secret and must not be suppressed).
-    if crate::ascii_ci::ci_find(bytes, b"secret_key") && bytes.len() < 20 {
+    // Category 2: length-gated substrings (Tier-B
+    // `[[entropy_markers.length_gated_substrings]]`). `secret_key` counts as a
+    // decoy ONLY for short values; a long value merely containing it is a real
+    // secret and must not be suppressed.
+    if VOCAB.entropy_length_gated.iter().any(|rule| {
+        bytes.len() < rule.max_length_exclusive
+            && crate::ascii_ci::ci_find(bytes, rule.substring.as_bytes())
+    }) {
         return true;
     }
-    // Category 3: compound prefix+suffix (bespoke rule, an `AKIA…` shape whose body
-    // ends `EXAMPLE` or carries the `1234567890` sequential filler is a docs decoy).
-    if crate::ascii_ci::starts_with_ignore_ascii_case(bytes, b"AKIA")
-        && (crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b"EXAMPLE")
-            || crate::ascii_ci::ci_find(bytes, b"1234567890"))
+    // Category 3: compound prefix+suffix/substring shapes (Tier-B
+    // `[[entropy_markers.compound_shapes]]`). An `AKIA…` shape whose body ends
+    // `EXAMPLE` or carries the `1234567890` sequential filler is a docs decoy.
+    if VOCAB.entropy_compound_shapes.iter().any(|shape| {
+        crate::ascii_ci::starts_with_ignore_ascii_case(bytes, shape.prefix.as_bytes())
+            && (shape.suffixes.iter().any(|suffix| {
+                crate::ascii_ci::ends_with_ignore_ascii_case(bytes, suffix.as_bytes())
+            }) || shape
+                .substrings
+                .iter()
+                .any(|needle| crate::ascii_ci::ci_find(bytes, needle.as_bytes())))
+    }) {
+        return true;
+    }
+    // Category 4: structural placeholder bytes (Tier-B
+    // `[entropy_markers].structural_bytes`). `<...>` marks a fill-in-the-blank.
+    if bytes
+        .iter()
+        .any(|byte| VOCAB.entropy_structural_bytes.contains(byte))
     {
-        return true;
-    }
-    // Category 4: structural angle-bracket presence (bespoke rule. `<...>` marks a
-    // fill-in-the-blank placeholder).
-    if bytes.contains(&b'<') || bytes.contains(&b'>') {
         return true;
     }
     // Category 5: whole-value EXACT, case-sensitive (Tier-B
@@ -338,6 +393,10 @@ pub(crate) fn parse_vocab(raw: &str) -> Result<PlaceholderVocab, String> {
         validate_markers(parsed.entropy_markers.ci_substrings, "entropy ci_substring")?;
     let entropy_exact_values =
         validate_markers(parsed.entropy_markers.exact_values, "entropy exact_value")?;
+    let entropy_structural_bytes =
+        validate_structural_bytes(parsed.entropy_markers.structural_bytes)?;
+    let entropy_length_gated = validate_length_gated(parsed.entropy_markers.length_gated_substrings)?;
+    let entropy_compound_shapes = validate_compound_shapes(parsed.entropy_markers.compound_shapes)?;
 
     Ok(PlaceholderVocab {
         words,
@@ -345,7 +404,92 @@ pub(crate) fn parse_vocab(raw: &str) -> Result<PlaceholderVocab, String> {
         marker_substrings,
         entropy_ci_substrings,
         entropy_exact_values,
+        entropy_structural_bytes,
+        entropy_length_gated,
+        entropy_compound_shapes,
     })
+}
+
+/// Each structural entry is exactly one ASCII byte, matched by presence. An
+/// empty input list is allowed here (permissive for partial test TOMLs); the
+/// bundled-file loader fails closed on an empty list.
+fn validate_structural_bytes(raw: Vec<String>) -> Result<Vec<u8>, String> {
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::with_capacity(raw.len());
+    for entry in raw {
+        let bytes = entry.as_bytes();
+        let [byte] = bytes else {
+            return Err(format!(
+                "structural_bytes entry {entry:?} must be exactly one ASCII character"
+            ));
+        };
+        if !byte.is_ascii() {
+            return Err(format!("structural_bytes entry {entry:?} must be ASCII"));
+        }
+        if !seen.insert(*byte) {
+            return Err(format!("duplicate structural_bytes entry {entry:?}"));
+        }
+        out.push(*byte);
+    }
+    Ok(out)
+}
+
+/// A length-gated rule needs a non-empty substring and a bound strictly above
+/// the substring's own length; a bound at or below it can never fire, which
+/// would be a silently dead rule.
+fn validate_length_gated(
+    raw: Vec<LengthGatedSubstring>,
+) -> Result<Vec<LengthGatedSubstring>, String> {
+    let mut seen = BTreeSet::new();
+    for rule in &raw {
+        if rule.substring.is_empty() {
+            return Err("length_gated_substrings substring must not be empty".to_string());
+        }
+        if rule.max_length_exclusive <= rule.substring.len() {
+            return Err(format!(
+                "length_gated_substrings {:?} has max_length_exclusive {} at or below its own \
+                 length {}; the rule could never fire",
+                rule.substring,
+                rule.max_length_exclusive,
+                rule.substring.len()
+            ));
+        }
+        if !seen.insert(rule.substring.clone()) {
+            return Err(format!(
+                "duplicate length_gated_substrings substring {:?}",
+                rule.substring
+            ));
+        }
+    }
+    Ok(raw)
+}
+
+/// A compound shape needs a non-empty prefix and at least one suffix or
+/// substring; a bare prefix would suppress every credential of that class.
+fn validate_compound_shapes(raw: Vec<CompoundShape>) -> Result<Vec<CompoundShape>, String> {
+    let mut seen = BTreeSet::new();
+    for shape in &raw {
+        if shape.prefix.is_empty() {
+            return Err("compound_shapes prefix must not be empty".to_string());
+        }
+        if shape.suffixes.is_empty() && shape.substrings.is_empty() {
+            return Err(format!(
+                "compound_shapes {:?} needs at least one suffix or substring; a bare prefix \
+                 would suppress every credential carrying it",
+                shape.prefix
+            ));
+        }
+        if shape.suffixes.iter().chain(&shape.substrings).any(String::is_empty) {
+            return Err(format!(
+                "compound_shapes {:?} suffix/substring entries must not be empty",
+                shape.prefix
+            ));
+        }
+        if !seen.insert(shape.prefix.clone()) {
+            return Err(format!("duplicate compound_shapes prefix {:?}", shape.prefix));
+        }
+    }
+    Ok(raw)
 }
 
 /// Validate one marker vocabulary (lowercase-in-file, non-empty, ASCII with

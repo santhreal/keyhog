@@ -1,4 +1,4 @@
-//! Contract for `url_redaction::redact_url` (reached via the `SourceTestApi`
+//! Contract for `url_redaction::redact_url` (reached via the `TestApi`
 //! facade), the function that strips `user:password@` userinfo from a URL before
 //! it is printed in an error or log line (engineering standard: never log
 //! secrets).
@@ -12,7 +12,7 @@
 //! and prove an `@` outside the authority (path / query / fragment) is never
 //! mistaken for a userinfo separator (no over-redaction).
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 fn redact(url: &str) -> String {
     TestApi.redact_url(url)

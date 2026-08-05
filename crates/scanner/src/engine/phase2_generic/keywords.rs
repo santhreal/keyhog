@@ -369,114 +369,15 @@ pub(crate) fn compact_keyword_ends_with(
     suffix_index == 0
 }
 
+// The keyword cases live in `tests/unit/phase2_generic_keywords_cases.rs`,
+// kept in-crate by the `#[path]` include because they pin private keyword
+// tables rather than any public surface.
 #[cfg(test)]
-mod position_line_mapping_tests {
-    use super::collect_generic_keyword_lines_from_positions;
+#[path = "../../../tests/unit/phase2_generic_keywords_cases.rs"]
+mod position_line_mapping_tests;
 
-    #[test]
-    fn maps_positions_to_line_indexes_sorted_deduped() {
-        // Three lines starting at byte 0, 10, 25.
-        let line_offsets = [0usize, 10, 25];
-        let positions = [0u32, 5, 10, 24, 25, 30];
-        let mut out = Vec::new();
-        collect_generic_keyword_lines_from_positions(&line_offsets, &positions, &mut out);
-        assert_eq!(out, vec![0, 1, 2]);
-    }
-
-    #[test]
-    fn positions_within_one_line_dedup_to_that_line() {
-        let line_offsets = [0usize, 10, 25];
-        let positions = [10u32, 12, 20, 24];
-        let mut out = Vec::new();
-        collect_generic_keyword_lines_from_positions(&line_offsets, &positions, &mut out);
-        assert_eq!(out, vec![1]);
-    }
-
-    #[test]
-    fn empty_line_offsets_yields_empty() {
-        let mut out = vec![7, 8, 9];
-        collect_generic_keyword_lines_from_positions(&[], &[3u32], &mut out);
-        assert!(out.is_empty());
-    }
-}
-
+// The table suite lives in `tests/unit/phase2_generic_keyword_tables.rs`,
+// kept in-crate by the `#[path]` include for the same reason.
 #[cfg(test)]
-mod strong_anchor_tests {
-    use super::{
-        encoded_text_secret_anchors, is_strong_keyword_anchored_encoded_text_secret,
-        parse_encoded_text_secret_anchors,
-    };
-
-    // base64 of "ThisIsAPlaintextSecretValueForTests" (decodes to printable ASCII).
-    const PRINTABLE_B64: &str = "VGhpc0lzQVBsYWludGV4dFNlY3JldFZhbHVlRm9yVGVzdHM=";
-
-    #[test]
-    fn encoded_text_secret_anchor_vocab_is_the_expected_list() {
-        assert_eq!(
-            encoded_text_secret_anchors(),
-            &[
-                "password",
-                "passwd",
-                "pwd",
-                "passphrase",
-                "token",
-                "secret",
-                "credential",
-            ]
-        );
-    }
-
-    // ── is_strong_keyword_anchored_encoded_text_secret ─────────────────────
-
-    #[test]
-    fn list_only_anchor_lifts_encoded_printable_text() {
-        // `credential` earns the lift ONLY via the migrated Tier-B anchor list (it
-        // has no `key`/`secret`/`token` suffix), so this exercises the list path.
-        assert!(is_strong_keyword_anchored_encoded_text_secret(
-            "credential",
-            PRINTABLE_B64
-        ));
-        // `password` (a list anchor AND a suffix) also lifts.
-        assert!(is_strong_keyword_anchored_encoded_text_secret(
-            "passphrase",
-            PRINTABLE_B64
-        ));
-    }
-
-    #[test]
-    fn non_anchor_keyword_does_not_lift_encoded_text() {
-        // Adversarial twin: same decodable value, but the key is not a credential
-        // anchor (no lift).
-        assert!(!is_strong_keyword_anchored_encoded_text_secret(
-            "hostname",
-            PRINTABLE_B64
-        ));
-    }
-
-    #[test]
-    fn dotted_or_short_values_short_circuit_before_decode() {
-        // A `.` in the value (JWT-like segmenting) and a sub-24-char value both bail
-        // before the decode check, regardless of anchor.
-        assert!(!is_strong_keyword_anchored_encoded_text_secret(
-            "password",
-            "aGVsbG8.d29ybGQ="
-        ));
-        assert!(!is_strong_keyword_anchored_encoded_text_secret(
-            "password", "c2hvcnQ="
-        ));
-    }
-
-    #[test]
-    fn encoded_text_secret_anchor_parser_round_trips_and_validates() {
-        let out = parse_encoded_text_secret_anchors(
-            "[encoded_text_secret_anchors]\nanchors = [\"token\", \"secret\"]\n",
-        )
-        .unwrap();
-        assert_eq!(out, vec!["token", "secret"]);
-        assert!(parse_encoded_text_secret_anchors(
-            "[encoded_text_secret_anchors]\nanchors = [\"Token\"]\n"
-        )
-        .unwrap_err()
-        .contains("lowercase"));
-    }
-}
+#[path = "../../../tests/unit/phase2_generic_keyword_tables.rs"]
+mod strong_anchor_tests;

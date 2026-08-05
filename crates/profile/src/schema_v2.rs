@@ -6,13 +6,18 @@ use serde::{Deserialize, Serialize};
 
 pub const PROFILE_SCHEMA_V2: &str = "keyhog-profile";
 pub const PROFILE_SCHEMA_V2_MAJOR: u16 = 2;
-pub const PROFILE_SCHEMA_V2_MINOR: u16 = 7;
+pub const PROFILE_SCHEMA_V2_MINOR: u16 = 8;
 pub const PROFILE_ENVELOPE_V2_VERSION: u16 = 1;
 pub const CAUSAL_PROFILE_V2_VERSION: u16 = 8;
 pub const CAUSAL_IDENTITY_V2_VERSION: u16 = 1;
 pub const EVENT_SCHEMA_VERSION: u16 = 7;
 pub const METRIC_REGISTRY_VERSION: u16 = 6;
 pub const EXPORTER_VERSION: u16 = 1;
+pub const STAGE_CONCURRENCY_V2_VERSION: u16 = 1;
+pub const WORKER_OCCUPANCY_V2_VERSION: u16 = 1;
+pub const CACHE_EFFECTIVENESS_V2_VERSION: u16 = 1;
+pub const INDEXED_COUNTER_V2_VERSION: u16 = 1;
+pub const RETRY_RECORD_V2_VERSION: u16 = 1;
 
 /// Why a v2 evidence field has no measured value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -434,6 +439,101 @@ pub struct WorkerImbalanceV2 {
     pub workers: Vec<WorkerLoadV2>,
 }
 
+/// Wall-clock occupancy of one micro-function across every worker.
+///
+/// `window_ns` is the span from the first start to the last end of any call to
+/// this micro-function, so `elapsed_ns / window_ns` is the average number of
+/// workers inside it while it was running. A stage whose concurrency is near
+/// one ran serially even when the pool was large.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StageConcurrencyV2 {
+    pub version: u16,
+    pub metric_id: crate::MetricId,
+    pub macro_stage_id: crate::MacroStageId,
+    pub calls: u64,
+    /// Summed inclusive time across every call on every worker.
+    pub elapsed_ns: u64,
+    /// First start to last end across every worker, relative to session start.
+    pub window_ns: u64,
+    pub first_start_ns: u64,
+    pub last_end_ns: u64,
+    /// Workers that recorded at least one call.
+    pub worker_count: u64,
+    /// Largest single-worker contribution to `elapsed_ns`.
+    pub max_worker_elapsed_ns: u64,
+    /// `elapsed_ns / window_ns` in thousandths; 1000 means strictly serial.
+    pub concurrency_milli: u64,
+    /// Time inside calls the caller explicitly declared serial.
+    pub declared_serial_ns: u64,
+    pub declared_serial_calls: u64,
+    /// Bytes the caller attributed to this micro-function.
+    pub bytes: u64,
+}
+
+/// Busy, blocked, and idle time for one worker across the whole session.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkerOccupancyRowV2 {
+    pub version: u16,
+    pub worker_id: u64,
+    /// Time inside outermost non-blocked spans; nested spans are not counted twice.
+    pub busy_ns: u64,
+    /// Time inside outermost blocked-wait spans.
+    pub blocked_ns: u64,
+    /// Outermost spans entered by this worker.
+    pub calls: u64,
+}
+
+/// Pool-wide busy versus idle accounting merged from every worker shard.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkerOccupancyV2 {
+    pub version: u16,
+    /// Workers that registered a counter shard, busy or not.
+    pub worker_count: u64,
+    /// Workers that recorded at least one outermost span.
+    pub active_worker_count: u64,
+    pub busy_ns: u64,
+    pub blocked_ns: u64,
+    pub calls: u64,
+    pub busiest_busy_ns: u64,
+    pub median_busy_ns: u64,
+    pub workers: Vec<WorkerOccupancyRowV2>,
+}
+
+/// Hit and miss counts for one reuse cache.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CacheEffectivenessV2 {
+    pub version: u16,
+    pub cache: crate::CacheId,
+    pub hits: u64,
+    pub misses: u64,
+    /// `hits / (hits + misses)` in parts per million.
+    pub hit_rate_ppm: u64,
+}
+
+/// Retry attempts recorded for one cause.
+///
+/// `attempts` counts every attempt, not every operation that was eventually
+/// retried, so a path that retries a thousand times reads as a thousand.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RetryRecordV2 {
+    pub version: u16,
+    pub cause: crate::RetryCause,
+    pub attempts: u64,
+}
+
+/// One indexed counter family, summed per slot across every worker.
+///
+/// The caller owns the slot labels. `slots` is always
+/// [`crate::INDEXED_COUNTER_SLOTS`] long so two runs diff positionally.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct IndexedCounterRecordV2 {
+    pub version: u16,
+    pub counter: crate::IndexedCounterId,
+    pub slots: Vec<u64>,
+    /// Records addressed to a slot outside the fixed range, never folded in.
+    pub dropped_out_of_range: u64,
+}
+
 /// Blocked wait time attributed separately from runnable execution for one stage.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BlockedWaitRecordV2 {
@@ -551,6 +651,30 @@ pub struct CausalProfileV2 {
     pub typed_metrics: Vec<TypedMetricRecordV2>,
     #[serde(default)]
     pub latency_distributions: Vec<LatencyDistributionV2>,
+    /// Wall-clock occupancy per micro-function; empty on profiles before 2.8.
+    #[serde(default)]
+    pub stage_concurrency: Vec<StageConcurrencyV2>,
+    /// Per-worker busy and blocked time; absent on profiles before 2.8.
+    #[serde(default)]
+    pub worker_occupancy: Option<WorkerOccupancyV2>,
+    /// Queue depth high-water evidence; empty on profiles before 2.8.
+    #[serde(default)]
+    pub queue_depths: Vec<QueueDepthV2>,
+    /// Per-stage blocked wait time; empty on profiles before 2.8.
+    #[serde(default)]
+    pub blocked_waits: Vec<BlockedWaitRecordV2>,
+    /// Reuse-cache hit rates; empty on profiles before 2.8.
+    #[serde(default)]
+    pub caches: Vec<CacheEffectivenessV2>,
+    /// Indexed counter families; empty on profiles before 2.8.
+    #[serde(default)]
+    pub indexed_counters: Vec<IndexedCounterRecordV2>,
+    /// Retry attempts by cause; empty on profiles before 2.8.
+    #[serde(default)]
+    pub retries: Vec<RetryRecordV2>,
+    /// Derived bottleneck analysis; absent on profiles before 2.8.
+    #[serde(default)]
+    pub insight: Option<crate::insight::RunInsightV2>,
     pub events: EventStreamV2,
     /// CPU hardware evidence collected across the run.
     #[serde(default = "legacy_gap")]
@@ -698,6 +822,14 @@ impl CausalProfileV2 {
             resources,
             typed_metrics: Vec::new(),
             latency_distributions: Vec::new(),
+            stage_concurrency: Vec::new(),
+            worker_occupancy: None,
+            queue_depths: Vec::new(),
+            blocked_waits: Vec::new(),
+            caches: Vec::new(),
+            indexed_counters: Vec::new(),
+            retries: Vec::new(),
+            insight: None,
             events: EventStreamV2 {
                 version: 3,
                 availability: legacy_gap(),

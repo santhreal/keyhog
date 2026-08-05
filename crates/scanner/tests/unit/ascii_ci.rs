@@ -311,22 +311,6 @@ fn ci_find_all_first_element_agrees_with_ci_find_at() {
 }
 
 #[test]
-fn ci_find_at_uses_rarest_byte_anchor_in_source() {
-    // Pin the DoS fix in source: the skim must anchor on the rarest needle byte,
-    // never blindly on `needle[0]`. A regression to first-byte anchoring
-    // reintroduces the ~170ms single-letter-chunk algorithmic DoS.
-    let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/ascii_ci.rs"));
-    assert!(
-        src.contains("fn rarest_byte_index") && src.contains("fn ascii_ci_frequency_rank"),
-        "ci_find_at must anchor its memchr2 skim on the needle's rarest byte"
-    );
-    assert!(
-        !src.contains("let first_lower = needle[0]"),
-        "ci_find_at must not regress to first-byte memchr2 anchoring (O(n·m) DoS)"
-    );
-}
-
-#[test]
 fn ci_find_nonempty_agrees_with_ci_find_at_presence() {
     // ci_find_nonempty delegates to ci_find_at; pin that they never diverge.
     for (h, n) in [

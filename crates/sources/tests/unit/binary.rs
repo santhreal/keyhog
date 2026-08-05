@@ -1,7 +1,7 @@
 #[cfg(feature = "binary")]
 use keyhog_core::Source;
 #[cfg(feature = "binary")]
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 #[cfg(feature = "binary")]
 #[test]

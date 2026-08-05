@@ -1,4 +1,4 @@
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[test]
 fn sources_cap_oracle_14() {
     let cap = TestApi.max_buffered_read_bytes();

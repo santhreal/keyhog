@@ -43,6 +43,26 @@ pub struct DetectorArgs {
     /// unless `--fix` is also set.
     #[arg(long, requires = "fix")]
     pub dry_run: bool,
+    /// Print the generated mechanism manifest: which recovery mechanisms each
+    /// detector actually declares.
+    ///
+    /// KeyHog advertises regex matching, structural validation, entropy
+    /// scoring, BPE token efficiency, decode recovery, companion
+    /// confirmation, live verification, and detector-owned suppression, but
+    /// nothing in the product will tell you which of those a given detector
+    /// uses. This does, and it derives every answer from the loaded corpus:
+    /// each mechanism is a predicate over detector TOML fields and the field
+    /// that made it active is reported as its evidence, so there is no
+    /// per-detector table in Rust to drift.
+    ///
+    /// A mechanism KeyHog cannot express yet is reported as unavailable with
+    /// the reason rather than omitted, because a missing row cannot be told
+    /// apart from "no detector uses this".
+    ///
+    /// Pairs with `--search` to scope the manifest, and with `--format json`
+    /// for the machine-readable document. Does not scan.
+    #[arg(long, conflicts_with_all = ["audit", "fix", "verbose"])]
+    pub mechanisms: bool,
     /// Output format for the detector listing. `text` (default) is the grouped,
     /// human-readable summary; `json` emits the structured detector array. This
     /// is the canonical flag, it matches `scan --format` so the

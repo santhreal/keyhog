@@ -5,6 +5,7 @@
 
 use crate::args::DaemonArgs;
 use crate::daemon::client;
+use crate::daemon::control;
 use crate::daemon::protocol::{response_kind, Request, Response};
 use crate::daemon::server::{self, default_socket_path};
 use crate::style;
@@ -93,22 +94,23 @@ async fn start(
 
 async fn stop(socket: Option<PathBuf>) -> Result<ExitCode> {
     let socket = socket.unwrap_or_else(default_socket_path); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
-                                                             // `connect_any_version`, not `connect`: a daemon left running across a
-                                                             // `keyhog update` reports an older keyhog version, and the whole point of
-                                                             // `daemon stop` is to clear exactly that stale daemon. The strict
-                                                             // version-gated `connect` (used by the scan route) would REFUSE to talk to
-                                                             // it, stranding the stale process; `stop` must still be able to shut it down.
-    let mut conn = keyhog_profile::instrument_future(
+                                                            // `connect_any_version`, not `connect`: a daemon left running across a
+                                                            // `keyhog update` reports an older keyhog version, and the whole point of
+                                                            // `daemon stop` is to clear exactly that stale daemon. The strict
+                                                            // version-gated `connect` (used by the scan route) would REFUSE to talk to
+                                                            // it, stranding the stale process; `stop` must still be able to shut it down.
+    let connected = keyhog_profile::instrument_future(
         keyhog_profile::Stage::Preprocess,
         client::connect_any_version(&socket),
     )
-    .await
-    .with_context(|| {
-        format!(
-            "daemon stop: no daemon at {} (already stopped?)",
-            socket.display()
-        )
-    })?;
+    .await;
+    let mut conn = match connected {
+        Ok(conn) => conn,
+        // The typed handshake failed. That does not mean nothing is running:
+        // an older-wire or otherwise unreadable daemon still owns the socket
+        // and still has to be stoppable (KH-552, KH-641).
+        Err(typed_error) => return stop_over_control_channel(&socket, typed_error).await,
+    };
     match conn.round_trip(&Request::Shutdown).await? {
         Response::Shutdown => {
             // Shutdown receipt publication.
@@ -127,23 +129,68 @@ async fn stop(socket: Option<PathBuf>) -> Result<ExitCode> {
     }
 }
 
+/// Stop a daemon this build cannot complete a typed handshake with.
+///
+/// Only reached after [`client::connect_any_version`] failed. It re-establishes
+/// the connection over the version-independent administration channel, which
+/// reads the reply envelope instead of the typed DTO, so a prior-wire daemon
+/// remains stoppable. Absence stays absence: if nothing is listening, this
+/// reports that and never claims a live peer was stopped.
+async fn stop_over_control_channel(
+    socket: &std::path::Path,
+    typed_error: anyhow::Error,
+) -> Result<ExitCode> {
+    let (mut channel, identity) = match control::ControlChannel::connect(socket).await {
+        Ok(connected) => connected,
+        Err(error) if error.is_absent() => {
+            return Err(error.into_error().context(format!(
+                "daemon stop: no daemon at {} (already stopped?)",
+                socket.display()
+            )));
+        }
+        Err(error) => {
+            anyhow::bail!(
+                "daemon stop: a daemon at {} is live but {} over both the scan wire ({typed_error:#}) \
+                 and the administration channel ({error}). Its socket was left untouched; stop the \
+                 process through the service manager that started it.",
+                socket.display(),
+                error.kind(),
+            );
+        }
+    };
+    channel.shutdown().await.map_err(|error| {
+        error.into_error().context(format!(
+            "daemon stop: the live daemon at {} ({identity}) refused administration shutdown; \
+             its socket was left untouched",
+            socket.display()
+        ))
+    })?;
+    let _report_span = keyhog_profile::span(keyhog_profile::Stage::Reporting);
+    eprintln!(
+        "keyhog daemon stopped over the administration channel: it is not scan-compatible with \
+         this build ({identity}; {typed_error:#})"
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
 async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
     let socket = socket.unwrap_or_else(default_socket_path); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
                                                              // `connect_any_version`: `status` is diagnostic, an operator inspecting a
                                                              // daemon left running across an upgrade NEEDS to see it (so they can decide
                                                              // to restart it), not get a refusal. The strict version-gated `connect`
                                                              // would hide the very stale daemon the operator is trying to find.
-    let mut conn = keyhog_profile::instrument_future(
+    let connected = keyhog_profile::instrument_future(
         keyhog_profile::Stage::Preprocess,
         client::connect_any_version(&socket),
     )
-    .await
-    .with_context(|| {
-        format!(
-            "daemon status: no daemon at {} (start one with `keyhog daemon start`)",
-            socket.display()
-        )
-    })?;
+    .await;
+    let mut conn = match connected {
+        Ok(conn) => conn,
+        // A failed typed handshake used to be reported as "no daemon", so a
+        // live wire-incompatible or malformed peer looked identical to an empty
+        // socket path and the operator had nothing to act on (KH-641).
+        Err(typed_error) => return status_over_control_channel(&socket, typed_error).await,
+    };
     // Surface staleness LOUDLY: a daemon left running across a `keyhog update`
     // serves an OLDER detector corpus. The scan route already refuses it
     // (`connect` fails closed), but an operator running `status` must SEE that
@@ -309,4 +356,44 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
             response_kind(&other)
         ),
     }
+}
+
+/// Report on a daemon this build cannot complete a typed handshake with.
+///
+/// Absence and a live incompatible peer are different operator situations and
+/// get different verdicts and exits: nothing running is an error naming the
+/// missing daemon, while a live peer is named with the identity the stable
+/// administration channel could read, so the operator knows a process is still
+/// holding the socket and can stop it (KH-641, KH-552).
+async fn status_over_control_channel(
+    socket: &std::path::Path,
+    typed_error: anyhow::Error,
+) -> Result<ExitCode> {
+    let (_channel, identity) = match control::ControlChannel::connect(socket).await {
+        Ok(connected) => connected,
+        Err(error) if error.is_absent() => {
+            return Err(error.into_error().context(format!(
+                "daemon status: no daemon at {} (start one with `keyhog daemon start`)",
+                socket.display()
+            )));
+        }
+        Err(error) => {
+            anyhow::bail!(
+                "daemon status: a daemon at {} is live but {} over both the scan wire \
+                 ({typed_error:#}) and the administration channel ({error}). Stop it with \
+                 `keyhog daemon stop`, or through the service manager that started it.",
+                socket.display(),
+                error.kind(),
+            );
+        }
+    };
+    let palette = style::for_stderr();
+    eprintln!(
+        "{} a live daemon at {} is not scan-compatible with this build ({identity}; \
+         {typed_error:#}). Scans will not route to it: `--daemon=auto` runs in process and \
+         `--daemon=on` fails. Clear it with `keyhog daemon stop`.",
+        style::warn("WARN", &palette),
+        socket.display()
+    );
+    Ok(ExitCode::from(crate::exit_codes::EXIT_HEALTH_FAILURE))
 }

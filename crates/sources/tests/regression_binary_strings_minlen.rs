@@ -7,9 +7,10 @@
 //! real operator path: write a byte blob to a file, scan it with a strings-only
 //! `BinarySource` (via the `testing` facade, so Ghidra is never consulted and
 //! the result is host-independent), and read the `binary:strings` chunk whose
-//! body is the extracted runs joined by `\n`. No extracted run can contain a
-//! `\n` (newline is neither graphic nor space/tab, so it always breaks a run),
-//! therefore splitting the body on `\n` recovers the exact run list.
+//! body is the extracted runs joined by `TestApi.printable_run_separator()`.
+//! No extracted run can contain any separator byte (none of them is graphic,
+//! space, or tab), therefore splitting the body on the separator recovers the
+//! exact run list.
 //!
 //! The bytes written here are never a valid ELF/PE/Mach-O/archive magic, so
 //! goblin's section pass returns `None` and the only emitted chunk is the
@@ -27,18 +28,17 @@
 #![cfg(feature = "binary")]
 
 use keyhog_core::{Chunk, Source, SourceError};
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 /// Scan `bytes` as a strings-only binary and return every row (chunks + errors).
-fn source_rows(bytes: &[u8]) -> Vec<Result<Chunk, SourceError>> {
-    let dir = tempfile::tempdir().expect("create tempdir");
+fn source_rows(bytes: &[u8]) -> Vec<Result<Chunk, SourceError>> {let dir = tempfile::tempdir().expect("create tempdir");
     let path = dir.path().join("fixture.bin");
     std::fs::write(&path, bytes).expect("write fixture bytes");
     // `dir` stays alive until end of fn; `.chunks().collect()` reads the file now.
-    TestApi.binary_strings_only(path.clone()).chunks().collect()
-}
+    TestApi.binary_strings_only(path.clone()).chunks().collect()}
 
-/// The exact extracted-run list: the `binary:strings` chunk body split on `\n`.
+/// The exact extracted-run list: the `binary:strings` chunk body split on the
+/// run separator.
 fn extracted_runs(bytes: &[u8]) -> Vec<String> {
     let rows = source_rows(bytes);
     let mut lines = Vec::new();
@@ -46,7 +46,7 @@ fn extracted_runs(bytes: &[u8]) -> Vec<String> {
         if let Ok(chunk) = row {
             if chunk.metadata.source_type.as_ref() == "binary:strings" {
                 let body = chunk.data.as_str().to_owned();
-                for line in body.split('\n') {
+                for line in body.split(TestApi.printable_run_separator()) {
                     lines.push(line.to_string());
                 }
             }

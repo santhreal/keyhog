@@ -316,11 +316,22 @@ impl CompiledScanner {
             // Coalesced SIMD bypasses `scan_inner`, so it owns the same scanner
             // telemetry events. Logical profiler input is recorded once by the
             // shared successful coalesced-dispatch boundary above.
+            //
+            // `record_decode_size_decline` MUST stay paired with
+            // `record_file_scanned` here and at every other site. It was
+            // originally only in `scan_inner`, which made the decode-oversize
+            // coverage gap BACKEND-DEPENDENT: on `crates/` the cpu-fallback
+            // route reported one declined chunk and the coalesced SIMD route
+            // reported none, for byte-identical findings. The gap is a property
+            // of the chunk and the configured cap, never of the route that
+            // scanned it, so an operator must not lose the warning by having
+            // autoroute pick a different backend.
             for chunk in chunks {
                 crate::telemetry::record_file_scanned(chunk.data.len());
+                self.record_decode_size_decline(chunk);
             }
             let triggers = {
-                let _g = profile::span(profile::P::Phase1Triggers);
+                let _g = profile::span(keyhog_profile::Stage::Phase1Triggers);
                 self.compute_coalesced_triggers(chunks, prefilter, admission_plan)
                     .map_err(crate::error::ScanError::Simd)?
             };
@@ -597,8 +608,12 @@ impl CompiledScanner {
         use rayon::prelude::*;
 
         let triggers = self.normalize_coalesced_phase2_triggers(chunks, triggers, route);
-        let perf_trace = super::profile::perf_trace_enabled();
-        let phase2_start = perf_trace.then(std::time::Instant::now);
+        // No stopwatch here. The phase-2 region below is the profiler's phase-2
+        // leaves, and the seam rescan that follows is `Stage::BoundaryScan`,
+        // opened inside `boundary::scan_chunk_boundaries_with_route`. Two
+        // private `Instant`s used to time both and print a `perf-trace
+        // scan_coalesced_phase2` line that no other output could be reconciled
+        // against.
         let telemetry = crate::telemetry::capture_scan_telemetry();
         let recovery_receipts = crate::gpu::capture_recovery_receipts();
         let profile_runtime = keyhog_profile::current_runtime();
@@ -768,7 +783,7 @@ impl CompiledScanner {
                     scan_states.push(state);
                 }
             }
-            let _g = profile::span(profile::P::Ml);
+            let _g = profile::span(keyhog_profile::Stage::MachineLearning);
             self.apply_ml_batch_scores_across(&mut scan_states)?;
             for (output_index, state) in output_indices.into_iter().zip(scan_states) {
                 outputs[output_index].matches = state.into_matches();
@@ -797,17 +812,7 @@ impl CompiledScanner {
             })
             .collect::<crate::error::Result<Vec<_>>>()?;
 
-        let phase2_elapsed = phase2_start.map(|t| t.elapsed());
-        let boundary_start = perf_trace.then(std::time::Instant::now);
         super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route)?;
-        if perf_trace {
-            eprintln!(
-                "perf-trace scan_coalesced_phase2: chunks={} p2={:.3}s boundary={:.3}s",
-                chunks.len(),
-                phase2_elapsed.map_or(0.0, |d| d.as_secs_f64()),
-                boundary_start.map_or(0.0, |t| t.elapsed().as_secs_f64())
-            );
-        }
         Ok(results)
     }
 }

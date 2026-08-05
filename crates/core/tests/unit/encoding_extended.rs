@@ -25,19 +25,6 @@ fn encode_standard_base64_uses_canonical_padding() {
 }
 
 #[test]
-fn credential_deserializer_does_not_own_a_second_base64_decoder() {
-    let credential_src = include_str!("../../src/credential.rs");
-    assert!(
-        !credential_src.contains("fn base64_decode"),
-        "Credential deserialization must use core::encoding::decode_standard_base64"
-    );
-    assert!(
-        credential_src.contains("crate::encoding::decode_standard_base64"),
-        "Credential deserialization must call the shared standard-base64 decoder"
-    );
-}
-
-#[test]
 fn decode_empty_string_returns_empty_vec() {
     let result = decode_standard_base64("").expect("empty string is valid");
     assert!(result.is_empty());

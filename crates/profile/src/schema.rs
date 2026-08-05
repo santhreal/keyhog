@@ -53,11 +53,17 @@ pub enum Stage {
     BackendSelect,
     ResultMerge,
     ScannerQueueWait,
+    /// Timing a probe scan to choose a backend, not scanning for credentials.
+    AutorouteCalibration,
+    /// Rescanning the seam between adjacent chunks so a match spanning the
+    /// boundary is not lost. Separated from the phase-2 leaves it sits inside
+    /// because seam work grows with chunk count, not with input size.
+    BoundaryScan,
 }
 
 impl Stage {
     /// Every stage in stable wire order.
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 27] = [
         Self::SourceAcquire,
         Self::SourceWalk,
         Self::SourceRead,
@@ -83,6 +89,8 @@ impl Stage {
         Self::BackendSelect,
         Self::ResultMerge,
         Self::ScannerQueueWait,
+        Self::AutorouteCalibration,
+        Self::BoundaryScan,
     ];
 
     #[inline]
@@ -91,13 +99,44 @@ impl Stage {
     }
 
     /// Stable metric identifier shared by wire records and runtime storage.
+    ///
+    /// Named explicitly rather than derived from position, so a metric can be
+    /// appended to the registry without silently re-pointing a stage.
     pub const fn metric_id(self) -> MetricId {
-        METRICS[self as usize].id
+        match self {
+            Self::SourceAcquire => MetricId::SourceAcquire,
+            Self::SourceWalk => MetricId::SourceWalk,
+            Self::SourceRead => MetricId::SourceRead,
+            Self::Preprocess => MetricId::Preprocess,
+            Self::Phase1Triggers => MetricId::Phase1Triggers,
+            Self::BackendDispatch => MetricId::BackendDispatch,
+            Self::HotPatterns => MetricId::HotPatterns,
+            Self::ConfirmedPatterns => MetricId::ConfirmedPatterns,
+            Self::Phase2Prefilter => MetricId::Phase2Prefilter,
+            Self::Phase2KeywordAc => MetricId::Phase2KeywordAc,
+            Self::Phase2SharedAc => MetricId::Phase2SharedAc,
+            Self::Phase2AnchoredVerify => MetricId::Phase2AnchoredVerify,
+            Self::Phase2WholeChunk => MetricId::Phase2WholeChunk,
+            Self::GenericDetection => MetricId::GenericDetection,
+            Self::Entropy => MetricId::Entropy,
+            Self::MachineLearning => MetricId::MachineLearning,
+            Self::Decode => MetricId::Decode,
+            Self::Suppression => MetricId::Suppression,
+            Self::LiveVerification => MetricId::LiveVerification,
+            Self::Reporting => MetricId::Reporting,
+            Self::SourceQueueWait => MetricId::SourceQueueWait,
+            Self::IncrementalLookup => MetricId::IncrementalLookup,
+            Self::BackendSelect => MetricId::BackendSelect,
+            Self::ResultMerge => MetricId::ResultMerge,
+            Self::ScannerQueueWait => MetricId::ScannerQueueWait,
+            Self::AutorouteCalibration => MetricId::AutorouteCalibration,
+            Self::BoundaryScan => MetricId::BoundaryScan,
+        }
     }
 
     /// Stable text label used by human reports.
     pub const fn as_str(self) -> &'static str {
-        METRICS[self as usize].name
+        METRICS[self.metric_id() as usize].name
     }
 
     /// Stable macro-stage identifier that owns this micro-function.
@@ -122,7 +161,9 @@ impl Stage {
             | Self::Decode
             | Self::IncrementalLookup
             | Self::BackendSelect
-            | Self::ScannerQueueWait => MacroStageId::Scan,
+            | Self::ScannerQueueWait
+            | Self::AutorouteCalibration
+            | Self::BoundaryScan => MacroStageId::Scan,
             Self::Suppression | Self::ResultMerge => MacroStageId::Resolve,
             Self::LiveVerification => MacroStageId::Verify,
             Self::Reporting => MacroStageId::Report,

@@ -1,7 +1,7 @@
 //! Duplicate-ZIP fallback must bound attacker-declared allocation sizes by the
 //! actual file length before allocating central-directory or entry data buffers.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use std::io::Write;
 
 #[test]

@@ -1,6 +1,6 @@
 //! R5-T http adversarial: public https example.com allowed.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[cfg(feature = "web")]
 #[test]
 fn r5t_web_accepts_public_https_example() {

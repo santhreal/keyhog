@@ -167,7 +167,6 @@ impl ScanOrchestrator {
         let routing_error = Arc::new(Mutex::new(None));
 
         let skipped_unchanged = Arc::new(AtomicUsize::new(0));
-        let sc_t0 = Instant::now();
 
         // Bridge the source's `!Send` chunk iterator into a `Send` channel of
         // BATCHES that the global pool consumes via `par_bridge`. Reusing
@@ -213,6 +212,15 @@ impl ScanOrchestrator {
                 .as_ref()
                 .map(keyhog_profile::Runtime::enter);
             let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(fused_batch);
+            // Running text size of `batch`. The cut below is byte-aware as well
+            // as count-aware because `fused_batch` alone describes wildly
+            // different amounts of memory per regime: 32 chunks is ~128 KiB of
+            // small source files but ~32 MiB of 1 MiB large-file windows. Every
+            // bound between here and the workers is counted in CHUNKS (channel
+            // depth `fused_depth`, plus one batch resident per worker), so on a
+            // large file those counts described over a gigabyte of headroom and
+            // handed out only ~11 work units for a 300 MiB file on 32 cores.
+            let mut batch_bytes = 0usize;
             let mut route_state = super::BatchRouteState::default();
             'sources: for source in &sources {
                 let source_keeps_chunk_identities_contiguous =
@@ -250,20 +258,25 @@ impl ScanOrchestrator {
                             tx.send(std::mem::take(&mut batch))
                         };
                         route_state.clear();
+                        batch_bytes = 0;
                         if send_result.is_err() {
                             break 'sources;
                         }
                         batch = Vec::with_capacity(fused_batch);
                     }
                     route_state.push(&c);
+                    batch_bytes = batch_bytes.saturating_add(c.data.len());
                     batch.push(c);
-                    if batch.len() >= fused_batch {
+                    if batch.len() >= fused_batch
+                        || batch_bytes >= crate::orchestrator_config::FUSED_BATCH_BYTES
+                    {
                         let send_result = {
                             let _profile_span =
                                 keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
                             tx.send(std::mem::take(&mut batch))
                         };
                         route_state.clear();
+                        batch_bytes = 0;
                         if send_result.is_err() {
                             break 'sources;
                         }
@@ -531,18 +544,12 @@ impl ScanOrchestrator {
             }
         }
 
-        if self.effective_config.scanner.perf_trace {
-            eprintln!(
-                "perf-trace scan_sources_fused: wall={:.2}s findings={} scanned={} fused_batch={} fused_depth={}",
-                sc_t0.elapsed().as_secs_f64(),
-                findings.len(),
-                crate::SCANNED_CHUNKS.load(Ordering::Relaxed),
-                fused_batch,
-                fused_depth,
-            );
-        }
-        // Same operator-facing profiler drain as the streaming path. Scanner
-        // owns the profiling switch; fused dispatch only requests the report.
+        // Same operator-facing profiler drain as the streaming path. The
+        // profiler owns the measurement switch and the wall clock; fused
+        // dispatch only requests the report. A private `Instant` used to time
+        // this region and print its own `perf-trace scan_sources_fused` line;
+        // the wall it measured is the scan wall the profiler already records,
+        // and the rest of that line was resolved config, not measurement.
         self.scanner.dump_profile_reports("keyhog scan");
 
         progress_done.store(true, Ordering::Relaxed);

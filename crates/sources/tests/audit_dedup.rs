@@ -66,7 +66,7 @@
 
 #![cfg(feature = "web")]
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use std::net::{IpAddr, Ipv4Addr};
 
 /// AUD-dedup-1: Carrier-Grade NAT (100.64.0.0/10) must be refused.

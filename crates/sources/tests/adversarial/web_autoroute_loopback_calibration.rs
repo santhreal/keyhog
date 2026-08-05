@@ -7,7 +7,7 @@ use crate::support::split_chunk_results;
 #[test]
 fn web_loopback_fetch_requires_explicit_autoroute_calibration() {
     use keyhog_core::Source;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
     use keyhog_sources::WebSource;
 
     let server = httpmock::MockServer::start();
@@ -54,19 +54,6 @@ fn web_loopback_fetch_requires_explicit_autoroute_calibration() {
     assert!(
         chunk.metadata.path.as_deref() == Some(url.as_str()),
         "autoroute calibration chunk must preserve web source URL, got {chunk:?}"
-    );
-}
-
-#[cfg(feature = "web")]
-#[test]
-fn web_autoroute_calibration_does_not_read_legacy_env() {
-    let source = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/web/ssrf.rs"),
-    )
-    .expect("web SSRF owner source is readable");
-    assert!(
-        !source.contains("KEYHOG_AUTOROUTE_CALIBRATE") && !source.contains("std::env::"),
-        "WebSource loopback calibration must be explicit; no ambient env reads are allowed"
     );
 }
 

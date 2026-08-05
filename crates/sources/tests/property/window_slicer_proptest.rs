@@ -1,4 +1,4 @@
-//! Property tier for `slice_into_windows` (reached via the `SourceTestApi`
+//! Property tier for `slice_into_windows` (reached via the `TestApi`
 //! facade), the overlapping-window slicer the large-file mmap scan path
 //! delegates its boundary arithmetic to. The fixed-vector unit twins
 //! (`tests/unit/a5_lr2/read_slice_*`) pin only the window COUNT for three hand
@@ -33,7 +33,7 @@
 //! feeding an inverted pair would test the panic, not the arithmetic.
 //! Base build: the slicer facade needs no cargo feature.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use proptest::prelude::*;
 
 /// A valid `(window_size, overlap)` pair with `1 <= overlap < window_size`.

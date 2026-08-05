@@ -47,6 +47,8 @@ fn render(findings: &[VerifiedFinding]) -> String {
             color: false,
             example_suppressions: 0,
             dogfood_active: false,
+            covered_nothing: false,
+            path_policy_suppressions: 0,
         },
         findings,
     )

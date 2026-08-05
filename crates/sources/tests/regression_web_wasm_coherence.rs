@@ -2,7 +2,7 @@
 
 use keyhog_core::Source;
 use keyhog_sources::skip_counts;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use std::sync::{Mutex, MutexGuard};
 
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());

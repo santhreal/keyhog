@@ -70,29 +70,7 @@ pub(crate) fn looks_like_public_reference_selector(value: &str) -> bool {
     count >= 1 && rest.is_empty()
 }
 
-#[derive(serde::Deserialize)]
-struct PublicWords {
-    words: Vec<String>,
-}
-
-fn parse_public_words(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<PublicWords>(raw)
-        .map(|parsed| parsed.words)
-        .map_err(|error| error.to_string())
-}
-
-static PUBLIC_WORDS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_public_words(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/public-words.toml"
-    ))) {
-        Ok(words) => words,
-        Err(error) => panic!(
-            "rules/public-words.toml is invalid: {error}. \
-             Fix the bundled Tier-B public words list."
-        ),
-    }
-});
+crate::tier_b_list::tier_b_vec!(PUBLIC_WORDS, "public-words.toml", words);
 
 #[derive(serde::Deserialize)]
 struct PublicShapeLists {

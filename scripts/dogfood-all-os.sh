@@ -34,7 +34,7 @@ PROFILE="${PROFILE:-release-fast}"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-8}"
 ALLOW_OS_SKIP="${ALLOW_OS_SKIP:-0}"
 SSH=(ssh -o BatchMode=yes -o "ConnectTimeout=${CONNECT_TIMEOUT}")
-NFS_TREE="/media/mukund-thiru/SanthData/Santh/software/keyhog"
+NFS_TREE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ALL=(work-linux santhserver macbook win)
 
 # --- per-machine config -----------------------------------------------------

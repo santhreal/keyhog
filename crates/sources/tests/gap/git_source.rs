@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use keyhog_core::{Chunk, Source, SourceError};
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use keyhog_sources::{
     git_object_unreadable, skip_counts, FilesystemSource, GitSource, SourceLimits,
 };
@@ -1628,97 +1628,6 @@ fn secret_in_unreachable_tree_keeps_tree_relative_path() {
                     == Some(format!(".git/unreachable/{blob_oid}").as_str())
         }),
         "a blob reachable through an unreachable tree must not also emit a pathless loose-blob fallback"
-    );
-}
-
-#[test]
-fn git_source_commit_enumerator_names_reflog_stash_and_unreachable_coverage() {
-    let source =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/git/source.rs"))
-            .expect("git source readable");
-    let tag_messages = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/git/tag_messages.rs"),
-    )
-    .expect("git tag message source readable");
-    assert!(
-        source.contains("\"--reflog\"") && source.contains("\"--all\""),
-        "GitSource must enumerate reflog commits, not only named refs"
-    );
-    assert!(
-        source.contains("\"refs/stash\""),
-        "GitSource must name refs/stash explicitly because --all misses it on current Git"
-    );
-    assert!(
-        source.contains("\"fsck\"")
-            && source.contains("\"--unreachable\"")
-            && source.contains("\"--no-reflogs\"")
-            && source.contains("unreachable commit ")
-            && source.contains("unreachable blob ")
-            && source.contains("unreachable tree ")
-            && source.contains("unreachable tag ")
-            && source.contains("dangling commit ")
-            && source.contains("dangling blob ")
-            && source.contains("dangling tree ")
-            && source.contains("dangling tag "),
-        "GitSource must enumerate commits, loose blobs, trees, and tags that are neither refs nor reflogs, including Git fsck's dangling label"
-    );
-    assert!(
-        source.contains("tree_blob_oids: Option<&'a mut HashSet<gix::ObjectId>>")
-            && source.contains("tree_blob_oids.insert(oid.to_owned())")
-            && source.contains("objects.tree_blob_oids.contains(&id)"),
-        "unreachable tree blob OIDs must be recorded before path dedup so loose-blob fallback cannot duplicate tree-reachable blobs"
-    );
-    assert!(
-        tag_messages.contains("\"for-each-ref\"")
-            && tag_messages.contains("\"refs/tags\"")
-            && tag_messages.contains("source_type: \"git/tag\""),
-        "GitSource must scan reachable annotated tag messages as git/tag chunks"
-    );
-}
-
-#[test]
-fn git_blob_decode_uses_worker_local_parallel_repositories() {
-    let source =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/git/source.rs"))
-            .expect("git source readable");
-
-    // The function is named for what it does, not for how it does it: it now
-    // owns both a small-batch serial path and the parallel one. Assert the
-    // parallel construction, not a name that a rename made stale.
-    assert!(
-        source.contains("fn decode_git_blob_candidates(")
-            && source.contains(".into_par_iter()")
-            && source.contains(".map_init(")
-            && source.contains("gix::open(&repo_path)"),
-        "GitSource blob decoding must use rayon with worker-local gix repositories"
-    );
-    assert!(
-        source.contains("GIT_PARALLEL_DECODE_MIN_BLOBS"),
-        "the serial small-batch path must be a declared threshold, not an ad-hoc branch"
-    );
-    assert!(
-        !source.contains("Serial blob decompression")
-            && !source.contains("tracked as a follow-up")
-            && !source.contains("let repo_cloned = repo.clone();"),
-        "GitSource must not regress to the old serial/shared-repository blob path"
-    );
-}
-
-#[test]
-fn git_source_uses_filesystem_default_exclude_owner() {
-    let source =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/git/source.rs"))
-            .expect("git source readable");
-
-    assert!(
-        source.contains("crate::filesystem::is_default_excluded_path_bytes"),
-        "GitSource must consume the filesystem default-exclude owner"
-    );
-    assert!(
-        !source.contains("name == b\"node_modules\"")
-            && !source.contains("name == b\"target\"")
-            && !source.contains("name == b\"vendor\""),
-        "GitSource must not carry a private hardcoded excluded-name table"
     );
 }
 

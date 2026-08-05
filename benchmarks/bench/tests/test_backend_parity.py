@@ -503,15 +503,17 @@ def test_fused_autoroute_calibration_cache_replay_matches_simd(tmp_path):
     )
 
 
-def test_fused_autoroute_inconclusive_timing_fails_closed(tmp_path):
+def test_fused_autoroute_overlapping_timing_publishes_a_dead_heat_route(tmp_path):
     binary = _autoroute_fixture_binary()
     root = tmp_path / "noisy-fused-fixture"
     _write_fused_autoroute_fixture(root)
     cache = tmp_path / "autoroute.json"
 
-    # Negative twin: candidate execution and parity remain real, while injected
-    # distinct-median, overlapping-interval trials model a noisy host. No route
-    # may be forced or published from that evidence.
+    # Twin of the separated case: candidate execution and parity remain real,
+    # while injected distinct-median, overlapping-interval trials model a noisy
+    # host. Nothing is proved faster, so the route is not proved; it is still
+    # decided, durably, and labelled as the dead heat it is. Refusing to decide
+    # left the workload paying scalar correctness recovery on every later scan.
     completed = subprocess.run(
         [
             binary,
@@ -533,17 +535,95 @@ def test_fused_autoroute_inconclusive_timing_fails_closed(tmp_path):
         env={**os.environ, **_autoroute_timing_fixture_env("overlapping-v1")},
     )
 
-    detail = completed.stderr
-    assert completed.returncode == 2, detail
-    assert completed.stdout == ""
-    assert "autoroute calibration did not persist a routing decision" in detail
-    assert (
-        "calibration timing is inconclusive: neither one exact route nor one backend "
-        "with its compiled default plan is confidence-supported at 95%"
-    ) in detail
-    assert "rerun `keyhog calibrate-autoroute`" in detail
-    assert "explicit `--backend` only for a diagnostic scan" in detail
-    assert not cache.exists(), "inconclusive calibration must publish no routing cache"
+    # Measured, not assumed: `--autoroute-calibrate` exits 0 even on a tree
+    # with findings, while the identical scan without it exits 1. Same input,
+    # same single finding written by both arms. That asymmetry is not this
+    # test's subject, but it is asserted exactly so that changing it announces
+    # itself here instead of being absorbed by a loose `!= 2`.
+    assert completed.returncode == 0, completed.stderr
+    assert cache.exists(), "an unseparated measurement must still persist a route"
+
+    inspected = subprocess.run(
+        [binary, "backend", "--autoroute", "--autoroute-cache", str(cache), "--json"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert inspected.returncode == 0, inspected.stderr
+    decisions = [
+        decision
+        for config in json.loads(inspected.stdout)["configs"]
+        for decision in config["decisions"]
+    ]
+    assert decisions, f"inspection must expose the persisted decisions; json={inspected.stdout}"
+    for decision in decisions:
+        assert decision["confidence_separated"] is False, decision
+        assert (
+            decision["selection_basis"] == "unseparated-dead-heat-lowest-complexity-backend"
+        ), decision
+        assert decision["backend"] == "cpu-fallback", (
+            "a dead heat must resolve to the lowest-complexity measured backend; "
+            f"decision={decision}"
+        )
+
+    replayed = subprocess.run(
+        [
+            binary,
+            "scan",
+            "--backend",
+            "auto",
+            "--daemon=off",
+            "--no-config",
+            "--format",
+            "json",
+            "--autoroute-cache",
+            str(cache),
+            str(root),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert replayed.returncode == 1, replayed.stderr
+    # `--format json` emits a bare findings array, not an envelope, so there is
+    # no scan_status field to read here. Recovery is observed where the product
+    # actually reports it, on stderr.
+    findings = json.loads(replayed.stdout)
+    assert isinstance(findings, list) and findings, (
+        "the replay must really scan and really report; an empty or non-list "
+        f"document would make the recovery assertion below vacuous: {replayed.stdout[:200]}"
+    )
+    assert "autoroute state is invalid" not in replayed.stderr, (
+        "a persisted dead-heat route must be consumed as a calibrated route, "
+        f"not through scalar correctness recovery; stderr={replayed.stderr}"
+    )
+
+    # Control for the negative assertion above: the identical scan with no
+    # cache must produce that exact marker, so a green result proves the
+    # cache was consumed rather than proving the marker never appears.
+    uncalibrated = subprocess.run(
+        [
+            binary,
+            "scan",
+            "--backend",
+            "auto",
+            "--daemon=off",
+            "--no-config",
+            "--format",
+            "json",
+            "--autoroute-cache",
+            str(tmp_path / "absent-autoroute.json"),
+            str(root),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert uncalibrated.returncode == 1, uncalibrated.stderr
+    assert "autoroute state is invalid" in uncalibrated.stderr, (
+        "the recovery probe must be able to see recovery when it happens, "
+        f"otherwise the assertion above is vacuous; stderr={uncalibrated.stderr}"
+    )
 
 
 def test_fused_autoroute_timing_fixture_requires_authorization(tmp_path):

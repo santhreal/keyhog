@@ -1,7 +1,7 @@
 #![cfg(feature = "web")]
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 fn loopback_source(url: String) -> keyhog_sources::WebSource {
     TestApi.web_source_with_autoroute_loopback_calibration(vec![url], true)

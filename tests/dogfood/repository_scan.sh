@@ -57,6 +57,17 @@ case "$format" in
     ;;
 esac
 
+# The absence of FAIL lines is a NEGATIVE claim, so it is only worth anything
+# if the trace could have carried one. An empty or missing trace makes this
+# grep return "no failures" and the lane pass while having examined nothing,
+# which is the same success-equals-failure shape the dogfood lanes exist to
+# catch. Require the input to exist and be non-empty first.
+if [[ ! -s "$trace" ]]; then
+  echo "dogfood trace is empty or missing at $trace; the coverage check below" >&2
+  echo "would pass without examining anything. Refusing to report success." >&2
+  exit 1
+fi
+
 if grep -q '^FAIL ' "$trace"; then
   echo "dogfood coverage failure for backend=$backend" >&2
   grep '^FAIL ' "$trace" >&2

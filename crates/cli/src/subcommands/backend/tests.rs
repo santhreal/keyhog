@@ -4,6 +4,13 @@
 //! module's classification predicates via `use super::*`.
 
 use super::*;
+// The self-test report types and the two exit codes it names moved to
+// `backend/self_test.rs` when the subcommand split by responsibility, and the
+// hardware capability struct comes from the scanner probe rather than from the
+// parent module's import list. Name them here instead of relying on whatever
+// `backend.rs` happens to import.
+use crate::exit_codes::{EXIT_BACKEND_SELF_TEST_FAILED, EXIT_SUCCESS};
+use keyhog_scanner::hw_probe::HardwareCaps;
 
 #[test]
 fn tier_b_gpu_lowering_gap_data_drives_classification() {

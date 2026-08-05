@@ -35,15 +35,15 @@ findings and report. A partial scan is not a clean scan.
 | Scan staged content | `keyhog scan --git-staged` or `keyhog hook install` | Exact blobs in the Git index. It does not scan unstaged working-tree bytes. |
 | Gate a pull-request checkout | [GitHub Action](./workflows/github-action.md) or `keyhog scan .` | The checked-out tree. Add a committed baseline when existing findings should remain visible without blocking adoption. |
 | Gate only pull-request changes | `keyhog scan --git-diff <base>` | Changed lines relative to the selected base. This is narrower than scanning the checkout. |
-| Scan reachable commit additions | `keyhog scan --git-history .` | Added lines from reachable commit patches, bounded by `max_commits` and the ancestry present in the checkout. |
-| Scan every reachable Git blob | `keyhog scan --git-blobs .` | Deduplicated blobs reachable from the repository. Use it when patch additions are not complete enough for the policy. |
+| Scan reachable commit additions | `keyhog scan --git-history .` | Added lines from reachable commit patches, bounded by `max_commits` and the ancestry present in the checkout. A credential on a branch this checkout never had, or one left behind by `git commit --amend`, is missed with no coverage gap. |
+| Scan every reachable Git blob | `keyhog scan --git-blobs .` | Deduplicated blobs reachable from the repository, including dangling blobs, amended-away commits, stashes, notes, annotated tag messages, and packed refs. Use it when patch additions are not complete enough for the policy. |
 | Verify a release | `keyhog scan --git-history . --git-blobs . --verify` | Reachable additions and blobs, plus live checks for eligible detectors. Verification sends credential-derived requests to provider endpoints. |
 | Scan a Git provider or cloud inventory | `--github-org`, `--gitlab-group`, `--bitbucket-workspace`, `--s3-bucket`, `--gcs-bucket`, or `--azure-container-url` | One provider inventory. Partition larger estates into independent jobs with separate reports and exit codes. |
 | Scan GitHub collaboration content | `--github-collaboration` | Issues, pull requests, discussions, wikis, and gists selected by the collaboration workflow. |
 | Audit a host | `keyhog scan-system` | Eligible local mounted filesystems and discovered Git histories under one space ceiling. |
 | Reuse a warm scanner on Unix | Start `keyhog daemon start`, then scan one file or bounded stdin | Eligible single-file or stdin requests only. Directories, Git, remote, cloud, verification, baselines, presets, and most policy overrides remain in process. |
 | Monitor local directories | `keyhog watch <path>...` | A foreground filesystem-event loop with an in-process scanner. |
-| Inspect a native executable or firmware image | `keyhog scan --binary app.bin` | Printable strings and native object sections. Complete values that satisfy a named detector's explicit credential shape remain findings. Short prefix fragments and generic assignment-shaped strings stay suppressed without source context. |
+| Inspect a native executable or firmware image | `keyhog scan --binary app.bin` | Printable strings and native object sections. A plain directory scan does not cover binaries: it records each one as a `binary (extension or content sniff)` coverage gap and still exits `0`, and `--no-default-excludes` does not change that, so you must ask for `--binary`. The flag needs a build with the `binary` feature; the default crates.io install has it and the lean `ci` feature does not. Complete values that satisfy a named detector's explicit credential shape remain findings. Short prefix fragments and generic assignment-shaped strings stay suppressed without source context. |
 
 Read [Your first scan](./first-scan.md) for a local repository,
 [CI secret scanning](./workflows/ci.md) for direct CI jobs, and
@@ -54,7 +54,7 @@ partitioning and coverage.
 
 | Policy | Command | Resolved behavior |
 |---|---|---|
-| Default | `keyhog scan .` | Decode depth 10, ML enabled, and entropy evidence for eligible structured candidates. Generic source-file entropy discovery is off. The global confidence floor is 0.40 unless detector policy owns a different floor. |
+| Default | `keyhog scan .` | Decode depth 10, ML enabled, and entropy evidence for eligible structured candidates. Decoding is capped at `--decode-size-limit`, 512K by default, applied per chunk rather than per file. Generic source-file entropy discovery is off. The global confidence floor is 0.40 unless detector policy owns a different floor. |
 | Fast preset | `keyhog scan . --fast` | Named regex and multiline matching remain. Decode, entropy discovery, and ML are off in the base preset. An explicit compatible option such as `--decode-depth 2` can refine it. |
 | Deep preset | `keyhog scan . --deep` | Source-file entropy and comment scanning at full confidence, heuristic evidence beside entropy ML, decode depth 10, and prepared decode chunks up to 1 MiB. |
 | Precision preset | `keyhog scan . --precision` | Entropy discovery and the relaxed keyword bridge are off, ML remains on for eligible candidates, decode depth is 1, and every confidence floor is at least 0.85. |
@@ -65,6 +65,50 @@ refine them; a precision confidence override may raise but never lower 0.85.
 Lockdown refuses fast and other completeness-reducing switches, and always runs
 in process. See [Configuration](./reference/configuration.md#presets) and
 [Hardening](./hardening.md#lockdown-mode).
+
+### The default decode cap can hide an encoded credential
+
+Decide this one before you trust a clean result on a repository with large
+files. A Base64-encoded credential in a chunk above `--decode-size-limit` is
+never decoded, so it is never reported. The scan exits `0`:
+
+```text
+file size    keyhog scan <file>                       with --deep
+400K         1 finding, exit 1, status success        1 finding, exit 1
+510K         1 finding, exit 1, status success        1 finding, exit 1
+520K         0 findings, exit 0, status partial       1 finding, exit 1
+600K         0 findings, exit 0, status partial       1 finding, exit 1
+```
+
+The miss is reported, but only in the envelope. `coverage_gap_summary` carries
+`scanner decode-through declined by --decode-size-limit`, and `scan_status`
+becomes `partial`. The exit code stays `0`, so a CI gate that branches on the
+exit code alone passes over a real credential. Gate on the gap reason, not the
+exit code.
+
+Position in the file governs this, not size. The cap applies per chunk, and a
+file is read in 1 MiB windows, so only the short tail window of a large file
+can fall under the 512K limit. An encoded credential in the interior of any
+file above about 1 MiB is never decoded, at any file size:
+
+```text
+2000K file, payload at end of file       1 finding, exit 1
+2000K file, payload in the middle        0 findings, exit 0
+3000K file, payload at end of file       1 finding, exit 1
+3000K file, payload in the middle        0 findings, exit 0
+```
+
+That is also why the size table above looks erratic: planting at the end of the
+file tests the one position that can still succeed, and the tail window's size
+rises and falls as the file grows. Do not infer a safe file size from a fixture
+that passed, and do not build a regression fixture that plants at the end.
+
+Either preset choice restores it. `--deep` raises the ceiling as part of its
+policy, and `--decode-size-limit 4M` raises it without changing anything else:
+
+```sh
+keyhog scan . --decode-size-limit 4M
+```
 
 ## Choose an execution route
 

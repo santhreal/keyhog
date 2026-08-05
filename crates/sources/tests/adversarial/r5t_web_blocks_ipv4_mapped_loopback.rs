@@ -1,6 +1,6 @@
 //! R5-T http adversarial: blocks IPv4-mapped loopback.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[cfg(feature = "web")]
 #[test]
 fn r5t_web_blocks_ipv4_mapped_loopback() {

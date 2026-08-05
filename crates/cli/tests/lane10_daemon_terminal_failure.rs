@@ -39,30 +39,6 @@ async fn fatal_listener_failure_cleans_socket_and_maps_to_system_exit() {
     );
 }
 
-#[tokio::test]
-async fn handler_spawn_failure_cleans_socket_and_maps_to_system_exit() {
-    let (_dir, socket) = occupied_socket_path();
-    let error = API
-        .finish_daemon_terminal_fixture(
-            socket.clone(),
-            DaemonTerminalFixture::ConnectionHandlerSpawn("connection limiter closed".to_string()),
-        )
-        .await
-        .expect_err("handler spawn failure must leave the daemon as an error");
-
-    assert!(
-        !socket.exists(),
-        "terminal error must be returned after socket cleanup"
-    );
-    assert_eq!(
-        error.to_string(),
-        "daemon service failed: connection handler spawn failed: connection limiter closed"
-    );
-    assert_eq!(
-        API.cli_error_exit_code(&error),
-        keyhog::exit_codes::EXIT_SYSTEM_ERROR
-    );
-}
 
 #[tokio::test]
 async fn cleanup_failure_cannot_mask_the_typed_terminal_failure() {

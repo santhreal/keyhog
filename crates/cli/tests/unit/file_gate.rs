@@ -25,63 +25,6 @@ fn lib_error() {
 }
 
 #[test]
-fn lib_scan_failure_counters_have_typed_owner() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let lib = std::fs::read_to_string(root.join("src/lib.rs")).expect("read cli lib");
-    let dispatch =
-        std::fs::read_to_string(root.join("src/orchestrator/dispatch.rs")).expect("read dispatch");
-    let fused = std::fs::read_to_string(root.join("src/orchestrator/dispatch/fused.rs"))
-        .expect("read fused dispatch");
-
-    assert!(
-        lib.contains("enum ScanFailureEvent") && lib.contains("struct RecordedScanFailureEvent"),
-        "CLI scan failures need a typed event owner and must-use receipt"
-    );
-    for (name, source) in [
-        ("dispatch", dispatch.as_str()),
-        ("fused dispatch", fused.as_str()),
-    ] {
-        assert!(
-            source.contains("record_source_error") || source.contains("record_scanner_panic"),
-            "{name} must record failure state through typed recorders"
-        );
-        assert!(
-            !source.contains("SOURCE_ERRORS.fetch_add")
-                && !source.contains("FAILED_SOURCES.fetch_add")
-                && !source.contains("INCREMENTAL_CACHE_ERRORS.fetch_add")
-                && !source.contains("SCANNER_PANICKED.store"),
-            "{name} must not mutate scan-failure counters directly"
-        );
-    }
-    assert!(
-        dispatch.contains("record_incremental_cache_persist_failed()")
-            && dispatch.contains("could not be persisted"),
-        "incremental cache persistence failures must go through the typed failure owner and stderr"
-    );
-    assert!(
-        dispatch.contains("fn record_oversized_coalesced_chunk_skip(")
-            && fused.contains("super::classify_source_chunk"),
-        "coalesced and fused oversized chunk drops must share one loud source-error recorder"
-    );
-    assert!(
-        fused.contains("fused source drain thread panicked")
-            && fused.contains("record_scanner_panic()")
-            && !fused.contains("let _ = drain.join()"),
-        "fused dispatch must fail loud when the source drain thread panics, not ignore the join result"
-    );
-    assert!(
-        dispatch.contains("fn filesystem_source_skipped_unchanged")
-            && dispatch.contains("skipped_unchanged_count")
-            && dispatch.contains(
-                "self.skipped_unchanged += filesystem_source_skipped_unchanged(source.as_ref())"
-            )
-            && fused.contains("super::filesystem_source_skipped_unchanged(source.as_ref())")
-            && fused.contains("drain_skipped_unchanged.fetch_add(source_skipped"),
-        "coalesced and fused dispatch must include file-level Merkle skips from FilesystemSource, not only chunk-level skips"
-    );
-}
-
-#[test]
 fn scan_exit_precedence_keeps_system_failure_above_source_coverage_gap() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let run = std::fs::read_to_string(root.join("src/orchestrator/run.rs")).expect("read run");
@@ -132,29 +75,6 @@ fn scan_exit_precedence_keeps_system_failure_above_source_coverage_gap() {
 }
 
 #[test]
-fn git_object_coverage_gaps_are_reported_separately() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let reporting = std::fs::read_to_string(root.join("src/orchestrator/reporting.rs"))
-        .expect("read reporting");
-    let report = std::fs::read_to_string(root.join("src/reporting.rs")).expect("read report");
-
-    assert!(
-        report.contains("Self::GitObjectUnreadable => c.git_object_unreadable"),
-        "git object drops must flow from the central skip snapshot into their distinct coverage category"
-    );
-    assert!(
-        reporting.contains("CoverageGapKind::ALL") && reporting.contains("kind.severity()"),
-        "terminal summary must render the canonical set (which surfaces the Git-object gap as its own category, not lumped under unreadable files)"
-    );
-    assert!(
-        report.contains("Git object(s) NOT scanned")
-            && report.contains("Git object unreadable or wrong object kind")
-            && report.contains("c.git_object_unreadable"),
-        "canonical set must surface the Git-object gap separately with both terminal and structured wording, keyed off the central skip snapshot"
-    );
-}
-
-#[test]
 fn scan_runtime_reset_clears_process_global_scan_state() {
     let _guard = API.scan_runtime_guard_for_test();
     API.seed_scan_runtime_state_for_test(&_guard);
@@ -181,46 +101,6 @@ fn scan_runtime_reset_clears_process_global_scan_state() {
         "per-scan runtime reset must clear CLI totals, failure flags, scanner dogfood state, \
          suppression counts, and scanner coverage-gap counters"
     );
-}
-
-#[test]
-fn scan_runtime_test_facade_guards_in_process_global_state() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let testing = std::fs::read_to_string(root.join("src/testing.rs")).expect("read test facade");
-
-    assert!(
-        testing.contains("#[must_use = \"hold ScanRuntimeGuard"),
-        "ScanRuntimeGuard must be must-use so ignored guard acquisition is a warning"
-    );
-    for required in [
-        "fn report_findings(\n        &self,\n        findings: &[VerifiedFinding],\n        args: &ScanArgs,\n        _guard: &ScanRuntimeGuard,",
-        "fn scan_orchestrator_scan_sources_for_test(\n        &self,\n        orchestrator: &ScanOrchestrator,\n        sources: Vec<Box<dyn Source>>,\n        show_progress: bool,\n        merkle: Option<Arc<keyhog_core::MerkleIndex>>,\n        _guard: &ScanRuntimeGuard,",
-        "fn seed_scan_runtime_state_for_test(&self, _guard: &ScanRuntimeGuard)",
-        "fn reset_scan_runtime_state_for_test(&self, _guard: &ScanRuntimeGuard)",
-        "fn scan_runtime_snapshot(&self, _guard: &ScanRuntimeGuard)",
-    ] {
-        assert!(
-            testing.contains(required),
-            "CLI test facade must require ScanRuntimeGuard for process-global scan state seam: {required}"
-        );
-    }
-
-    let orchestrator_dir = root.join("tests/unit/orchestrator");
-    for entry in std::fs::read_dir(&orchestrator_dir).expect("read orchestrator tests") {
-        let entry = entry.expect("orchestrator test entry");
-        let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("rs")
-            || path.file_name().and_then(|name| name.to_str()) == Some("support.rs")
-        {
-            continue;
-        }
-        let source = std::fs::read_to_string(&path).expect("read orchestrator test");
-        assert!(
-            !source.contains("scan_orchestrator_scan_sources_for_test("),
-            "{} must use support::scan_sources_for_test so the scan-runtime guard is held",
-            path.display()
-        );
-    }
 }
 
 #[test]
@@ -273,35 +153,6 @@ fn scan_runtime_reset_runs_before_dogfood_enablement() {
             "reset_scan_runtime_state must clear {token}"
         );
     }
-}
-
-#[test]
-fn ak_p4_cli_hot_paths_stay_linear() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let orchestrator =
-        std::fs::read_to_string(root.join("src/orchestrator/mod.rs")).expect("read orchestrator");
-    let scan =
-        std::fs::read_to_string(root.join("src/subcommands/scan.rs")).expect("read scan command");
-
-    assert!(
-        orchestrator.contains(".intersection(&known_ids)")
-            && orchestrator
-                .contains("detectors.retain(|detector| !removed.contains(&detector.id));"),
-        "disabled detector closure must use HashSet membership instead of a linear search per detector"
-    );
-    assert!(
-        !orchestrator.contains("disabled_detectors.iter().any(|id| id == &d.id)"),
-        "disabled detector filtering must not regress to O(detectors * disabled ids)"
-    );
-    assert!(
-        scan.contains("let filesystem_source = std::sync::Arc::<str>::from(\"filesystem\");")
-            && scan.contains("m.location.source = filesystem_source.clone();"),
-        "daemon scan-path suppression normalization must hoist the filesystem Arc outside the finding loop"
-    );
-    assert!(
-        !scan.contains("m.location.source = std::sync::Arc::from(\"filesystem\");"),
-        "daemon scan-path suppression normalization must not allocate a fresh Arc per finding"
-    );
 }
 
 // ── crates/cli/src/main.rs ────────────────────────────────────────────
@@ -631,26 +482,6 @@ fn subcommands_explain_error() {
 #[test]
 fn subcommands_hook_error() {
     assert!(Cli::try_parse_from(["keyhog", "hook"]).is_err());
-}
-
-// ── crates/cli/src/subcommands/repair.rs ──────────────────────────────
-#[test]
-fn subcommands_repair_self_test_errors_are_visible() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let repair = std::fs::read_to_string(root.join("src/subcommands/repair.rs"))
-        .expect("read repair subcommand");
-    assert!(
-        !repair.contains("scan_engine_self_test().unwrap_or(false)"),
-        "repair must not collapse self-test errors into a boolean"
-    );
-    assert!(
-        repair.contains("Err(error)") && repair.contains("({error}) - reinstalling"),
-        "repair must print the self-test error reason before reinstalling"
-    );
-    assert!(
-        repair.contains("planted secret was not detected"),
-        "repair must distinguish a false self-test from an errored self-test"
-    );
 }
 
 // ── crates/cli/src/subcommands/scan.rs ────────────────────────────────

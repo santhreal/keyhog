@@ -235,71 +235,91 @@ thread_local! {
     static THREAD_DECODERS: RefCell<Vec<Arc<dyn Decoder>>> = RefCell::new(Vec::new());
 }
 
-/// Per-decoder wall-time profiler (measurement only). Enabled by the single
-/// scanner profiler switch (`keyhog scan --profile`) so profiling has one runtime
-/// owner instead of one env knob per pass. Records which decoder dominates
-/// decode generation. Zero-cost unset.
+/// Per-decoder wall-time profiler (measurement only). Gated on the single
+/// process-wide measurement level owned by `keyhog_profile`, at the diagnostic
+/// step, because it costs a clock read per decoder call. Records which decoder
+/// dominates decode generation. Zero-cost when the level is below diagnostic.
 pub(super) fn profile_enabled() -> bool {
-    crate::scan_profile::enabled()
+    crate::scan_profile::diagnostic()
 }
 
-/// Fixed number of per-decoder profiler slots. The `DECODER_NS` / `DECODER_PRODUCED`
-/// accumulators and every index/clamp into them share this one capacity. There
-/// are 14 default decoders today, so the cap carries headroom; a decoder past
-/// slot `MAX_PROFILED_DECODERS` is simply not profiled (`record_decoder_run`
-/// drops it), the `decoder_registry_within_profiler_capacity` gap test guards
-/// the default set against silently outgrowing this.
-const MAX_PROFILED_DECODERS: usize = 16;
+/// Fixed number of per-decoder profiler slots, owned by the profile registry.
+/// There are 14 default decoders today, so the cap carries headroom. A decoder
+/// past the last slot is not folded into the last one: `add_indexed_counter`
+/// counts it into the drained record's `dropped_out_of_range`, so
+/// misattribution can never be silent. The
+/// `decoder_registry_within_profiler_capacity` gap test guards the default set
+/// against outgrowing the cap.
+const MAX_PROFILED_DECODERS: usize = keyhog_profile::INDEXED_COUNTER_SLOTS;
 
-static DECODER_NS: [std::sync::atomic::AtomicU64; MAX_PROFILED_DECODERS] = {
-    const Z: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    [Z; MAX_PROFILED_DECODERS]
-};
-
-/// Sub-chunks EMITTED per decoder (pre-dedup/screen). The sub-chunk COUNT - not
-/// gen time - is what drives the dominant decode-rescan + per-sub-chunk fixed
-/// phase-1 cost, so this isolates which decoders to gate with a sound prune.
-static DECODER_PRODUCED: [std::sync::atomic::AtomicU64; MAX_PROFILED_DECODERS] = {
-    const Z: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    [Z; MAX_PROFILED_DECODERS]
-};
-
+/// Charge one decoder run to the profiler.
+///
+/// The storage is the profile runtime's indexed counter family. The scanner
+/// used to hold two `[AtomicU64; 16]` arrays plus its own dump and its own
+/// reset here, which was the last measurement store outside `keyhog-profile`.
+/// Labels stay here because the profiler never needs the decoder's name: it
+/// counts slots, and this module knows slot `i` is `decoders[i].name()`.
 pub(super) fn record_decoder_run(
     decoder_index: usize,
     elapsed: std::time::Duration,
     produced: usize,
 ) {
-    if decoder_index >= MAX_PROFILED_DECODERS {
+    let Ok(slot) = u16::try_from(decoder_index) else {
         return;
-    }
-    use std::sync::atomic::Ordering::Relaxed;
-    DECODER_NS[decoder_index].fetch_add(elapsed.as_nanos() as u64, Relaxed);
-    DECODER_PRODUCED[decoder_index].fetch_add(produced as u64, Relaxed);
+    };
+    keyhog_profile::add_indexed_counter(
+        keyhog_profile::IndexedCounterId::DecoderElapsedNs,
+        slot,
+        u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
+    );
+    keyhog_profile::add_indexed_counter(
+        keyhog_profile::IndexedCounterId::DecoderSubchunksEmitted,
+        slot,
+        produced as u64,
+    );
 }
 
-/// Print and reset the accumulated per-decoder times (paired with registry
-/// names). Folded into the unified scanner profile dump.
+/// Print the accumulated per-decoder times and emission counts, paired with
+/// registry names. Folded into the unified scanner profile dump. The drain is
+/// the profile runtime's, so there is no scanner-side reset to keep in step.
 pub(crate) fn decoder_profile_dump() {
-    use std::sync::atomic::Ordering::Relaxed;
+    let Some(runtime) = keyhog_profile::current_runtime() else {
+        return;
+    };
+    let mut elapsed_ns = [0_u64; MAX_PROFILED_DECODERS];
+    let mut emitted = [0_u64; MAX_PROFILED_DECODERS];
+    let mut dropped = 0_u64;
+    for record in runtime.take_session_indexed_counters() {
+        let target = match record.counter {
+            keyhog_profile::IndexedCounterId::DecoderElapsedNs => &mut elapsed_ns,
+            keyhog_profile::IndexedCounterId::DecoderSubchunksEmitted => &mut emitted,
+        };
+        for (slot, value) in record.slots.iter().enumerate().take(MAX_PROFILED_DECODERS) {
+            target[slot] = *value;
+        }
+        dropped = dropped.max(record.dropped_out_of_range);
+    }
+
     let decoders = active_decoders();
-    let names: Vec<&str> = decoders.iter().map(|d| d.name()).collect();
-    let mut rows: Vec<(String, f64)> = (0..names.len().min(MAX_PROFILED_DECODERS))
-        .map(|i| {
-            (
-                names[i].to_string(),
-                DECODER_NS[i].swap(0, Relaxed) as f64 / 1e6,
-            )
-        })
+    let named = decoders.len().min(MAX_PROFILED_DECODERS);
+    let mut rows: Vec<(&str, f64)> = (0..named)
+        .map(|i| (decoders[i].name(), elapsed_ns[i] as f64 / 1e6))
         .collect();
     rows.sort_by(|a, b| b.1.total_cmp(&a.1));
-    let total: f64 = rows.iter().map(|r| r.1).sum();
-    let mut prod: Vec<(String, u64)> = (0..names.len().min(MAX_PROFILED_DECODERS))
-        .map(|i| (names[i].to_string(), DECODER_PRODUCED[i].swap(0, Relaxed)))
-        .collect();
+    let total: f64 = rows.iter().map(|row| row.1).sum();
+    let mut prod: Vec<(&str, u64)> = (0..named).map(|i| (decoders[i].name(), emitted[i])).collect();
     prod.sort_by(|a, b| b.1.cmp(&a.1));
-    let prod_total: u64 = prod.iter().map(|r| r.1).sum();
-    if total == 0.0 && prod_total == 0 {
+    let prod_total: u64 = prod.iter().map(|row| row.1).sum();
+    if total == 0.0 && prod_total == 0 && dropped == 0 {
         return;
+    }
+    if dropped != 0 {
+        // Never print a table that silently omits work. A nonzero drop means a
+        // decoder registered past the fixed slot range and its time is in
+        // neither row below.
+        eprintln!(
+            "  ⚠ {dropped} per-decoder record(s) addressed a slot past {MAX_PROFILED_DECODERS} and are absent from both tables below"
+        );
     }
     eprintln!("=== per-decoder decode_chunk time ===");
     for (name, ms) in &rows {
@@ -317,16 +337,6 @@ pub(crate) fn decoder_profile_dump() {
         eprintln!("  {name:<18}: {n:>8} ({pct:>5.1}%)");
     }
     eprintln!("  {:<18}: {prod_total:>8}", "TOTAL");
-}
-
-pub(crate) fn decoder_profile_reset() {
-    use std::sync::atomic::Ordering::Relaxed;
-    for slot in &DECODER_NS {
-        slot.store(0, Relaxed);
-    }
-    for slot in &DECODER_PRODUCED {
-        slot.store(0, Relaxed);
-    }
 }
 
 fn default_decoders() -> Vec<RegisteredDecoder> {

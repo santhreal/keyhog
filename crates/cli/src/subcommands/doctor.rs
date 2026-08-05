@@ -498,9 +498,28 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
     // `backend --autoroute`; doctor only decides how that state affects its
     // aggregate health report.
     println!("\n{bold}autoroute{reset}");
-    let autoroute_cache = crate::autoroute_cache_path::resolve_autoroute_cache_path(None)
-        .ok() // LAW10: reporting-only doctor cache-path resolve; display default, recall-safe
-        .flatten();
+    // Without an explicit path this reports the platform default, which is not
+    // the file a project-configured scan uses. `--autoroute-cache` takes the
+    // same value as `scan --autoroute-cache` and `[system].autoroute_cache`, so
+    // doctor and `backend --autoroute` can be pointed at one exact file, and
+    // the resolved path is printed either way rather than left implicit.
+    let autoroute_cache = match crate::autoroute_cache_path::resolve_autoroute_cache_path(
+        args.autoroute_cache.as_deref(),
+    ) {
+        Ok(Some(path)) => {
+            println!("  cache path     {dim}{}{reset}", path.display());
+            Some(path)
+        }
+        Ok(None) => {
+            println!("  cache path     {dim}(disabled){reset}");
+            None
+        }
+        Err(error) => {
+            healthy = false;
+            println!("  cache path     {red}INVALID{reset}  {dim}{error}{reset}");
+            None
+        }
+    };
     let autoroute = crate::orchestrator::inspect_autoroute_cache(autoroute_cache.as_deref());
     let readiness = autoroute.readiness();
     match readiness {

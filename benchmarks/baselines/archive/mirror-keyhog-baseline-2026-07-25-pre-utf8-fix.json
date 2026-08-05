@@ -3717,7 +3717,7 @@
       "detector_corpus_digest": "beab12386a58fa89b33be34088bb5b1372b220c9f16cd1c6be0c93b2d8927691",
       "detector_corpus_embedded_count": "0",
       "detector_corpus_mode": "replace",
-      "detector_corpus_source": "/home/mukund-thiru/.cache/keyhog/benchmark-detector-snapshots-v1/4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf/detectors",
+      "detector_corpus_source": "/home/${USER}/.cache/keyhog/benchmark-detector-snapshots-v1/4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf/detectors",
       "entropy_bpe_max_bytes_per_token": "2.2",
       "entropy_bpe_override": "unset",
       "entropy_enabled": "true",

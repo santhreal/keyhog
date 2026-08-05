@@ -12,7 +12,7 @@ mod support;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::io::Write;
 use std::sync::Mutex;

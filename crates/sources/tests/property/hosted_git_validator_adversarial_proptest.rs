@@ -1,5 +1,5 @@
 //! Adversarial property tier for the hosted-git input validators (reached via
-//! the `SourceTestApi` facade). These are the crown-jewel security gates of the
+//! the `TestApi` facade). These are the crown-jewel security gates of the
 //! github/gitlab/bitbucket org-scan flows:
 //!
 //!   * `validate_repo_name`: a repo/segment name is joined onto a temp dir
@@ -27,7 +27,7 @@
 //! gitlab/bitbucket flows use, so this covers the shared core logic. Runs in the
 //! all-features `--test all_tests` CI step (gated at `property/mod.rs`).
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use proptest::prelude::*;
 
 /// Characters OUTSIDE the repo-name alphabet `[A-Za-z0-9._-]`, each of which

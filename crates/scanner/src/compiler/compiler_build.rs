@@ -189,19 +189,22 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                     else {
                         continue;
                     };
-                    let compiled_homoglyph_regex = regex::Regex::new(&full_homoglyph_regex)
-                        .map(std::sync::Arc::new)
-                        .map_err(|source| ScanError::RegexCompile {
+                    // Validate the generated source now (an invalid rewrite is
+                    // a build-invariant breach and must be loud here, not a
+                    // first-use never-match), but drop the build: homoglyph
+                    // variants are the rarest patterns in the corpus and
+                    // retaining ~200 KB of compiled state per variant is the
+                    // startup-RSS cost `LazyRegex` exists to avoid.
+                    regex::Regex::new(&full_homoglyph_regex).map_err(|source| {
+                        ScanError::RegexCompile {
                             detector_id: detector.id.clone(),
                             index: pattern_index,
                             source,
-                        })?;
+                        }
+                    })?;
                     homoglyph_variants.push(CompiledPattern {
                         detector_index,
-                        regex: LazyRegex::plain_compiled(
-                            full_homoglyph_regex,
-                            compiled_homoglyph_regex,
-                        ),
+                        regex: LazyRegex::plain(full_homoglyph_regex),
                         group: pattern.group,
                         client_safe: pattern.client_safe,
                         weak_anchor: pattern.weak_anchor,

@@ -154,8 +154,10 @@ never a lucky fastest trial. The selected route's 95% confidence interval must
 lie below every other eligible execution route. Phase-two localization plans
 are distinct routes even when they use the same backend, so overlapping
 same-backend timings are inconclusive rather than permission to choose the
-lowest median. Any route overlap produces no autoroute decision.
-Autoroute inspection prints this selection basis.
+lowest median. Overlap that separates nothing at all resolves to the
+lowest-complexity backend inside the fastest route's own 95% upper bound,
+reported as a dead heat rather than as a proved win. Autoroute inspection
+prints this selection basis.
 
 `scan_coalesced_with_backend` already includes extraction, decode, built-in
 suppression, confidence, and scanner postprocessing. Autoroute parity therefore

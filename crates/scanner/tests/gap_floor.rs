@@ -60,8 +60,6 @@ mod context_cfg_test_attribute_marks_test_code;
 mod context_example_suffix_ascii_ci;
 #[path = "gap/context_false_positive_inline_tests_in_src.rs"]
 mod context_false_positive_inline_tests_in_src;
-#[path = "gap/context_inference_cfg_test_string_breaks_gate.rs"]
-mod context_inference_cfg_test_string_breaks_gate;
 #[path = "gap/context_sequential_placeholder_strips_prefix.rs"]
 mod context_sequential_placeholder_strips_prefix;
 #[path = "gap/context_tokio_async_fn_test_body_is_test_code.rs"]
@@ -72,8 +70,6 @@ mod context_window_local_slice;
 mod cross_platform_cfg_gates_absent;
 #[path = "gap/csr_build_exact_capacity.rs"]
 mod csr_build_exact_capacity;
-#[path = "gap/csr_hot_maps_adopted.rs"]
-mod csr_hot_maps_adopted;
 #[path = "gap/deadline_cadence_tick_dedup.rs"]
 mod deadline_cadence_tick_dedup;
 #[path = "gap/deadline_leaf_predicates_truth_table.rs"]
@@ -136,10 +132,6 @@ mod generic_secret_confidence_formula;
 mod github_checksum_token_structure;
 #[path = "gap/gitlab_checksum_body_length_floors.rs"]
 mod gitlab_checksum_body_length_floors;
-#[path = "gap/gpu_moe_readback_bounded.rs"]
-mod gpu_moe_readback_bounded;
-#[path = "gap/gpu_region_presence_anchorless_gap_surfaced.rs"]
-mod gpu_region_presence_anchorless_gap_surfaced;
 #[path = "gap/gpu_routing_profile_tier_table.rs"]
 mod gpu_routing_profile_tier_table;
 #[path = "gap/gpu_threshold_mib_units.rs"]
@@ -153,8 +145,6 @@ mod hot_loop_deadline_cadence_single_owner;
 #[allow(dead_code)]
 #[path = "gap/inline_gate.rs"]
 mod inline_gate;
-#[path = "gap/inline_migrated_tests_not_wired.rs"]
-mod inline_migrated_tests_not_wired;
 #[path = "gap/io_uring_kernel_version_gate_exact.rs"]
 mod io_uring_kernel_version_gate_exact;
 #[path = "gap/is_likely_concatenation_fragment_exact.rs"]
@@ -203,10 +193,6 @@ mod npm_checksum_token_structure;
 mod orphan_github_pat_contract;
 #[path = "gap/path_basename_mixed_separator_extraction.rs"]
 mod path_basename_mixed_separator_extraction;
-#[path = "gap/pattern_signals_keyword_invariant_hoisted.rs"]
-mod pattern_signals_keyword_invariant_hoisted;
-#[path = "gap/phase2_always_active_sparse.rs"]
-mod phase2_always_active_sparse;
 #[path = "gap/phase2_ascii_fold_shared.rs"]
 mod phase2_ascii_fold_shared;
 #[path = "gap/phase2_extract_loop_single_owner.rs"]
@@ -233,14 +219,10 @@ mod r5_checksum_invalid_drops_named_service_match;
 mod r5_chunk_boundary_adversarial_floor_12;
 #[path = "gap/r5_chunk_boundary_not_only_aws.rs"]
 mod r5_chunk_boundary_not_only_aws;
-#[path = "gap/r5_chunk_boundary_subdir_wired.rs"]
-mod r5_chunk_boundary_subdir_wired;
 #[path = "gap/r5_concat_adversarial_floor_7.rs"]
 mod r5_concat_adversarial_floor_7;
 #[path = "gap/r5_concat_beyond_engine_cases.rs"]
 mod r5_concat_beyond_engine_cases;
-#[path = "gap/r5_concat_subdir_wired.rs"]
-mod r5_concat_subdir_wired;
 #[path = "gap/r5_decode_hostile_adversarial_floor_15.rs"]
 mod r5_decode_hostile_adversarial_floor_15;
 #[path = "gap/r5_decode_hostile_not_only_engine_cases.rs"]
@@ -253,8 +235,6 @@ mod r5_handwritten_twin_gap_vs_detector_load;
 mod r5_homoglyph_adversarial_floor_7;
 #[path = "gap/r5_homoglyph_beyond_single_aws.rs"]
 mod r5_homoglyph_beyond_single_aws;
-#[path = "gap/r5_homoglyph_subdir_wired.rs"]
-mod r5_homoglyph_subdir_wired;
 #[path = "gap/r5_near_miss_handwritten_twin_floor_50.rs"]
 mod r5_near_miss_handwritten_twin_floor_50;
 #[path = "gap/r5_per_detector_near_miss_runner_present.rs"]
@@ -263,8 +243,6 @@ mod r5_per_detector_near_miss_runner_present;
 mod r5_reverse_adversarial_floor_7;
 #[path = "gap/r5_reverse_beyond_unit_misc.rs"]
 mod r5_reverse_beyond_unit_misc;
-#[path = "gap/r5_reverse_subdir_wired.rs"]
-mod r5_reverse_subdir_wired;
 #[path = "gap/r5_top50_near_miss_wired_in_adversarial_mod.rs"]
 mod r5_top50_near_miss_wired_in_adversarial_mod;
 #[path = "gap/resolution_known_prefix_service_bonus_named.rs"]

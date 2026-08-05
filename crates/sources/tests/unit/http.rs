@@ -1,7 +1,7 @@
 #![cfg(any(feature = "web", feature = "github", feature = "slack", feature = "s3"))]
 
 use keyhog_sources::http::HttpClientConfig;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 #[test]
 fn http_client_config_effective_proxy_honors_explicit_off() {

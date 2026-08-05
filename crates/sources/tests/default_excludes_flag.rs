@@ -6,7 +6,7 @@
 mod support;
 
 use keyhog_core::{Chunk, Source};
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{skip_counts, FilesystemSource};
 use rars::{rar15_40, ArchiveVersion, FeatureSet};
 use std::fs;

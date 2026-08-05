@@ -23,9 +23,11 @@ pub use crate::gpu_literal_artifacts::{
     gpu_literal_artifact_cache_dir, GpuLiteralArtifact, GpuLiteralArtifacts,
 };
 pub use crate::hw_probe::{probe_hardware, select_backend, HardwareCaps, ScanBackend};
-pub use crate::scan_profile::{
-    dump as profile_dump, reset as profile_reset, set_perf_trace_enabled, set_profile_enabled,
-};
+// The measurement switch is the profiler's, re-exported so a `keyhog-scanner`
+// consumer never has to reach past the scanner for it, and never gets a second
+// scanner-owned switch that can disagree with it.
+pub use crate::scan_profile::{dump as profile_dump, reset as profile_reset};
+pub use keyhog_profile::{detail as profile_detail, set_detail as set_profile_detail, Detail};
 pub use crate::types::{
     regex_dfa_limit_default, set_regex_dfa_limit, ScanExecutionRoute, ScannerConfig,
     ScannerTuningConfig,

@@ -21,7 +21,6 @@ pub enum DaemonTerminalFixture {
     CleanShutdown,
     AcceptLoopPanic,
     FatalAccept(std::io::Error),
-    ConnectionHandlerSpawn(String),
 }
 
 static SCAN_RUNTIME_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -241,6 +240,7 @@ pub trait CliTestApi {
     fn select_release_asset_name(&self, tag_name: &str, asset_names: &[&str]) -> Result<String>;
     fn parse_semver(&self, tag: &str) -> Option<(u64, u64, u64)>;
     fn is_newer(&self, current: &str, latest: &str) -> bool;
+    fn release_channel_state(&self, current: &str, latest: &str) -> &'static str;
     fn looks_like_native_executable(&self, bytes: &[u8]) -> bool;
     fn looks_like_native_executable_for_os(&self, bytes: &[u8], os: &str) -> bool;
     fn verify_release_signature(&self, data: &[u8], signature: &str) -> Result<()>;
@@ -809,6 +809,13 @@ impl CliTestApi for TestApi {
     }
     fn is_newer(&self, current: &str, latest: &str) -> bool {
         crate::installer::is_newer(current, latest)
+    }
+    fn release_channel_state(&self, current: &str, latest: &str) -> &'static str {
+        match crate::installer::classify_channel(current, latest) {
+            crate::installer::ReleaseChannelState::UpdateAvailable => "update-available",
+            crate::installer::ReleaseChannelState::OnNewestAsset => "on-newest-asset",
+            crate::installer::ReleaseChannelState::ChannelBehind => "channel-behind",
+        }
     }
     fn looks_like_native_executable(&self, bytes: &[u8]) -> bool {
         crate::installer::looks_like_native_executable(bytes)

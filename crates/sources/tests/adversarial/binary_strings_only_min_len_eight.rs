@@ -6,7 +6,7 @@ use crate::support::split_chunk_results;
 #[test]
 fn binary_strings_only_min_len_eight() {
     use keyhog_core::Source;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
 
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("tiny.bin");

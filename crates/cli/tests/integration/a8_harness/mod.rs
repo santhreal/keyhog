@@ -1,4 +1,3 @@
-pub mod all_tests_declares_gate_module;
 pub mod file_gate_matrix_exists;
 pub mod file_gate_matrix_has_current_rows;
 pub mod file_gate_matrix_has_one_sixty_seven_rows;

@@ -4,8 +4,12 @@ A suppression removes a match that you have reviewed and accepted. Use the
 narrowest rule that describes the exception. A path-wide or detector-wide rule
 can hide a different credential later.
 
-KeyHog has two kinds of suppression:
+KeyHog has three layers, and only the last two are suppression:
 
+- The directory walker, which decides whether a file is read at all. See
+  [Files the walker never reads](#files-the-walker-never-reads) below. This
+  layer is the one that surprises people, because a file it drops produces no
+  finding and no detector ever sees it.
 - Operator surfaces that you configure, such as allowlists, inline directives,
   per-detector floors, and baselines.
 - Always-on shape and path heuristics. These remove shapes that are not
@@ -18,6 +22,62 @@ KeyHog has two kinds of suppression:
 > before scanning, so `[suppress]` fails loudly instead of creating a silent
 > no-op. Use the surfaces below instead. Per-detector control lives under
 > `[detector.<id>]`; hash/path/detector allowlisting lives in `.keyhogignore`.
+
+## Files the walker never reads
+
+A directory scan skips some files before detection starts. Put a credential in
+`vendor/lib/conf.env` and `keyhog scan .` exits `0`:
+
+```text
+  No secrets detected in the scanned files.
+```
+
+```text
+WARN 1 file(s) skipped by the DEFAULT exclusion policy (lock files, minified/bundled assets, vendored and build-output trees). Pass `--no-default-excludes` to scan them.
+```
+
+The warning goes to stderr and the exit code stays `0`, so a CI job that reads
+only stdout and the exit status sees a clean scan.
+
+A path is skipped when any segment of it, at any depth, is one of these names:
+
+```text
+.git  node_modules  target  .cache  __pycache__  .venv  venv  .tox
+dist  build  out  .next  .nuxt  vendor  swagger  swagger-ui
+```
+
+`services/out/conf.env` and `app/dist/conf.env` are both skipped. The list also
+covers lock files, editor backups, and filenames containing `.min.` or
+`.bundle.`. The shipped list is `crates/sources/rules/default_excludes.toml`.
+
+Decide whether that list matches your repository. Go and PHP projects keep
+dependencies in `vendor/`. Java and many JavaScript projects build into
+`build/`, `dist/`, or `out/`, and some teams keep hand-written code in a
+directory that happens to carry one of those names. Scan everything with:
+
+```sh
+keyhog scan . --no-default-excludes
+```
+
+To scan one excluded tree without disabling the list, name it directly:
+
+```sh
+keyhog scan vendor/
+```
+
+Minified and vendored paths get a second rule that runs after matching, not
+just at the walker. A finding in `.min.js`, `.bundle.js`, `.min.css`, or under
+a vendored tree is dropped by default, because random bytes in a third-party
+bundle collide with credential shapes often. The drop is counted and reported
+as its own coverage-gap row naming how many matches were dropped, and
+`--no-default-excludes` turns off this rule as well as the walker skip:
+
+```sh
+keyhog scan dist/ --no-default-excludes
+```
+
+Build tooling inlines API keys into frontend bundles, so treat a nonzero count
+on that row as worth one rerun rather than as noise.
 
 ## Where each surface fires
 
@@ -53,6 +113,30 @@ For a directory scan, KeyHog loads `.keyhogignore` and
 file's parent directory. Source modes without a filesystem scan path use the
 current directory. `[allowlist].file` in `.keyhog.toml` replaces the discovered
 line-based `.keyhogignore`; it does not replace `.keyhogignore.toml`.
+
+That last rule has a sharp edge. `keyhog scan --stdin` has no scan path, so it
+picks up whatever `.keyhogignore` sits in the directory you happen to be
+standing in, and applies it to input that has nothing to do with that
+repository:
+
+```sh
+cd ~/work/some-repo
+kubectl get secret app -o yaml | keyhog scan --stdin
+```
+
+A credential whose hash that repository has allowlisted is reported when you
+run the same pipe from `/tmp`, and silently dropped when you run it from the
+checkout. Exit `0`, empty report, and nothing saying an allowlist was
+consulted.
+
+Only `hash:` entries can do this. A `path:` rule needs a path to match, and a
+pipe has none. So the size of the risk is the number of live hash entries in
+that file, not its total length, and the values most likely to be listed are
+vendor-docs examples, fixture shapes, and documentation credentials, which is
+exactly the class that also turns up in somebody else's real configuration.
+
+Run piped scans from a directory with no `.keyhogignore`, or pass `--config`
+with a `.keyhog.toml` whose `[allowlist].file` names the policy you intend.
 
 Within `.keyhogignore`, every active line is an alternative. Within one
 `.keyhogignore.toml` table, predicates use AND. Separate tables use OR. The two
@@ -204,6 +288,12 @@ Pass `--no-suppress-test-fixtures` to see them fire (useful when validating that
 a detector still matches the canonical shape). The same flag also disables the
 self-scan test-data path filter (#3), which only ever applies inside keyhog's
 own source tree.
+
+Surface #3 leaves no coverage-gap row. Its drops are recorded only as dogfood
+telemetry, so a credential planted under `detectors/`, `tests/`, `fixtures/`,
+or `benches/` inside a keyhog checkout comes back clean with no gap and no
+warning. Pass `--no-suppress-test-fixtures` for any scan of keyhog's own tree
+that has to be trustworthy.
 
 ### Confidence and severity floors
 
@@ -388,7 +478,10 @@ policy or turn a CI or localization path into a blanket exclusion.
 Vendored and minified classes include `node_modules/`, specific static or
 vendored asset pairs, WordPress trees, recognized Rails legacy vendored assets,
 `*.min.js`, `*.bundle.js`, and `*.min.css`. A bare `vendor/` directory is not a
-blanket exclusion. CI classes include GitHub Actions, GitLab CI, CircleCI,
+blanket exclusion at this layer, but the directory walker drops it earlier, so
+a `vendor/` credential is still absent from a plain `keyhog scan .`. See
+[Files the walker never reads](#files-the-walker-never-reads).
+CI classes include GitHub Actions, GitLab CI, CircleCI,
 `Jenkinsfile`, Travis, Azure Pipelines, and Bitbucket Pipelines. Localization
 classes include locale, i18n, l10n, translation, and language directories plus
 gettext files. Secret-scanner paths match shipped scanner-name markers.

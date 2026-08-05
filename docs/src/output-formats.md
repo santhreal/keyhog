@@ -178,6 +178,47 @@ from older KeyHog versions may omit it; the HTML projection displays that state
 as `not recorded` rather than inventing an identifier. `resolved_scan` is
 omitted only for library-created reports that have no resolved CLI scan policy.
 
+### Cross-file correlation
+
+Schema minor `9` adds an optional `correlations` array after `findings`. It is
+present only when the scan ran with `--correlate`; without the flag the key is
+absent, not empty, and the rest of the report is unchanged. Correlation never
+adds, drops, reorders, or edits a finding, so a `--correlate` run and a default
+run produce the same `findings` array.
+
+Each entry joins several findings into one credential risk:
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | `value_reuse` (one credential digest at several file paths, crossing detector boundaries) or `split_composite` (a provider credential whose halves are separate detectors placed in different files of one directory) |
+| `severity` | Strongest member severity, raised to the composite's declared severity when the policy declares a higher one |
+| `confidence` | Strongest member confidence lifted by the policy bonus, clamped to the configured ceiling |
+| `strongest_member_confidence` | What the best single member scored before the lift, so the added evidence is auditable |
+| `scope` | Directory the composite parts share; absent for `value_reuse`, which is scan-wide |
+| `members` | Contributing findings with `detector_id`, `credential_hash`, `role`, and the locations inside the scope |
+| `locations` | Union of every member location, sorted by path then line |
+| `impact` | What the correlation means operationally |
+
+`value_reuse` is not the same as `additional_locations`. Per-detector dedup
+folds repeats of ONE detector into a finding's `additional_locations`; it never
+crosses detectors, so one value matched as two different detector ids in two
+files stays two unrelated findings until correlation joins them.
+
+Which providers have composite halves is Tier-B data in
+`crates/core/data/credential-correlation.toml`, not a hardcoded list. A
+composite is reported only when a directory holds exactly one candidate
+credential for each required part and no single file holds them all: an
+ambiguous directory yields nothing rather than a guess, and a pair that already
+shares a file is left to the detector's own companion match.
+
+```sh
+keyhog scan . --correlate --format json-envelope \
+  | jq '.correlations[] | {kind, severity, confidence, title, files: .file_count}'
+```
+
+`--format text` renders the same groups as a `Correlated credentials` block
+above the results summary. Every other format is untouched by the flag.
+
 ### Status and process exit are separate contracts
 
 Machine consumers must read the status carried by a metadata-bearing artifact.
@@ -201,6 +242,31 @@ Legacy `json` and `jsonl` contain findings only. They cannot distinguish a
 complete zero-finding scan from an incomplete one. Use `json-envelope`,
 `jsonl-envelope`, SARIF, CSV with its CLI preamble, GitLab SAST, or JUnit when
 that distinction controls a gate.
+
+### `scan_status` alone is not a gate
+
+Scanning any ordinary repository reports `"scan_status":"partial"`, because the
+default walker skips `.git/` and `node_modules/` and each skipped file counts
+as a coverage gap. Branch on the `coverage_gap_summary` reasons rather than on
+the status.
+
+A scan that read nothing is a third case. `--exclude-paths '**'`, a
+`.keyhogignore` containing `path:**`, and an empty stdin stream all read zero
+source bytes. That now exits `13` and carries a `scan covered nothing` gap row,
+and the text report says so instead of `No secrets detected`. Assert it anyway
+in any gate whose input path can change, because the assertion is cheap and it
+names the problem in the job log:
+
+```sh
+keyhog scan . --format json-envelope --output keyhog.json
+jq -e '.metadata.source_bytes_scanned > 0' keyhog.json
+```
+
+That command exits `1` when the scan read nothing.
+
+[Tell a real clean from a skipped input](./reference/coverage-truth.md) owns
+the complete rule, including what each counter means and the shipped cases
+where a clean scan is wrong.
 
 ## `--format csv`
 
@@ -410,14 +476,26 @@ An empty scan still emits both header and summary. A stream without the final
 summary is interrupted and must not be treated as complete; concatenated
 streams are split at the next header. Importers must validate both records
 before accepting the stream. This is better than `--format json-envelope` for
-streaming consumers that want to start processing before the scan finishes:
+streaming consumers that want to start processing before the scan finishes.
+
+Retain the stream while you consume it, so you can check the summary the rule
+above requires:
 
 ```sh
 keyhog scan /huge/monorepo --format jsonl-envelope \
-  | while read line; do
-      echo "$line" | jq -r 'select(.record_type == null) | .location.file_path'
-    done
+  | tee keyhog.jsonl \
+  | jq -r 'select(.record_type == null) | .location.file_path'
+
+jq -e 'select(.record_type == "summary")
+       | .scan_status == "success" or .scan_status == "complete_after_recovery"' \
+  keyhog.jsonl
 ```
+
+The second command exits nonzero when the summary is missing or reports an
+incomplete scan: `jq -e` returns `4` when the summary record is absent
+entirely, and `1` when it is present but the status is not one of those two. A
+consumer that reads only the finding lines and stops cannot tell a finished
+scan from a truncated one, because the finding records look identical in both.
 
 ## Combining with `--verify`
 

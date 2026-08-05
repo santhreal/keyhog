@@ -47,25 +47,37 @@ impl CompiledScanner {
         // expensive (O(K x |chunk|) keyword scan + path AC). Computed at most
         // once, on the first surviving match (same contract as extract.rs).
         let signals = OnceCell::<(bool, bool)>::new();
-        // Fail closed in the LazyLock init (see `AnchoredRegex::compile`): a build
-        // failure of the anchored verifier PANICS rather than returning `None`, so
-        // `get()` here can never silently drop this pattern's matches (Law 10). The
-        // former `let Some(..) else { return }` was the recall-losing swallow this
-        // sweep removed, a build bug now aborts loudly instead of degrading recall
-        // invisibly on the anchored fast path (which has no whole-chunk fallback).
-        let no_context_re = anchored_re.get();
-        let mut no_context_locs = no_context_re.capture_locations();
-        // Compile the left-context variant only when some candidate position is > 0
-        // and therefore actually needs the synthetic preceding character; otherwise
-        // it is never consulted. `None` here means "not needed", NOT a swallowed
-        // compile failure (that path panics in the init above).
-        let left_context_re = if positions.iter().any(|&(_, pos)| pos > 0) {
-            Some(anchored_re.get_with_left_context())
-        } else {
-            None
-        };
-        let mut left_context_locs = left_context_re.map(|re| re.capture_locations());
+        // Build ONLY what a candidate position actually consults. A candidate at
+        // byte 0 reads the plain `\A` verifier; every other candidate reads the
+        // left-context variant, and a chunk almost never has a candidate at 0.
+        // Compiling the no-context verifier eagerly therefore built a whole
+        // second regex per eligible pattern that nothing read, and allocated its
+        // capture buffer again on every call. Both variants stay fail-closed:
+        // `AnchoredRegex::get*` PANICS on a build-invariant breach rather than
+        // returning `None`, so a skipped compile here is "no candidate needs it",
+        // never a swallowed failure (Law 10).
+        let mut needs_no_context = false;
+        let mut needs_left_context = false;
+        for &(_, pos) in positions {
+            if pos == 0 {
+                needs_no_context = true;
+            } else {
+                needs_left_context = true;
+            }
+        }
         let group = entry.group;
+        // Capture slots are read only for a grouped pattern. A plain pattern
+        // takes the whole match, which `find` yields off the lazy DFA without
+        // running the capture engine or allocating a slot buffer at all.
+        let wants_captures = group.is_some();
+        let no_context_re = needs_no_context.then(|| anchored_re.get());
+        let left_context_re = needs_left_context.then(|| anchored_re.get_with_left_context());
+        let mut no_context_locs = no_context_re
+            .filter(|_| wants_captures)
+            .map(|re| re.capture_locations());
+        let mut left_context_locs = left_context_re
+            .filter(|_| wants_captures)
+            .map(|re| re.capture_locations());
         // Mirror the whole-chunk cursor: next match must start at-or-after this.
         let mut next_allowed: usize = 0;
         // Same per-pattern hard cap + deadline cadence as extract.rs's inner
@@ -100,20 +112,34 @@ impl CompiledScanner {
             };
             let left_context_len = pos - context_start;
             let use_left_context = left_context_len > 0;
-            let (re, locs) = if use_left_context {
-                let Some(re) = left_context_re else {
-                    continue;
-                };
-                let Some(locs) = left_context_locs.as_mut() else {
-                    continue;
-                };
-                (re, locs)
+            let Some(re) = (if use_left_context {
+                left_context_re
             } else {
-                (no_context_re, &mut no_context_locs)
+                no_context_re
+            }) else {
+                continue;
             };
             let slice = &search_text[context_start..];
-            let Some(whole) = re.captures_read(locs, slice) else {
-                continue;
+            // Grouped pattern: fill the slot buffer, the group branch below
+            // reads it. Plain pattern: `find` returns the identical leftmost
+            // whole match without the capture engine.
+            let whole = match if use_left_context {
+                left_context_locs.as_mut()
+            } else {
+                no_context_locs.as_mut()
+            } {
+                Some(locs) => {
+                    let Some(whole) = re.captures_read(locs, slice) else {
+                        continue;
+                    };
+                    whole
+                }
+                None => {
+                    let Some(whole) = re.find(slice) else {
+                        continue;
+                    };
+                    whole
+                }
             };
             // `\A` guarantees a hit starts at slice offset 0. For non-zero
             // candidate positions the anchored regex consumes exactly one real
@@ -139,6 +165,13 @@ impl CompiledScanner {
             // extract_grouped_matches; for plain patterns, the whole match.
             let (credential, credential_start, credential_end): (&str, usize, usize) = match group {
                 Some(group) => {
+                    let Some(locs) = (if use_left_context {
+                        left_context_locs.as_ref()
+                    } else {
+                        no_context_locs.as_ref()
+                    }) else {
+                        continue;
+                    };
                     let groups_total = locs.len();
                     let Some((mut cs, mut ce)) = locs.get(group) else {
                         continue;

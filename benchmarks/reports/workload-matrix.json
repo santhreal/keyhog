@@ -1,0 +1,798 @@
+{
+  "meta": {
+    "binary": {
+      "path": "/tmp/kh-ref-bin/keyhog",
+      "sha256": "e4f4fcc96c748e1485112438840f70f97eca151ed62b979085b9a59d610433fb",
+      "bytes": 49721328,
+      "mtime": "2026-08-04T21:46:28",
+      "version": "KeyHog v0.5.68"
+    },
+    "root": "/media/mukund-thiru/SanthData/keyhog-wm",
+    "scale": 1.0,
+    "cores": 32,
+    "loadavg": "52.0, 65.9, 95.7",
+    "reps": 5,
+    "controls": {
+      "positive_findings": 1,
+      "negative_findings": 0
+    },
+    "generated_at": "2026-08-04T23:08:29"
+  },
+  "results": {
+    "many_small": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 4.57,
+        "wall_min_s": 4.47,
+        "wall_max_s": 6.06,
+        "cpu_pct": 663.0,
+        "peak_rss_kib": 658284,
+        "exit_code": 1,
+        "signal": null,
+        "timed_out": false,
+        "findings": 1,
+        "canary": 1,
+        "canary_max": 1,
+        "scan_status": "success",
+        "coverage_gaps": [],
+        "bytes_scanned": 307200084,
+        "chunks_scanned": 3000,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "",
+        "mutations": null,
+        "exit_codes_seen": [
+          1
+        ],
+        "findings_seen": [
+          1
+        ]
+      },
+      "verdict": "OK",
+      "notes": [],
+      "facts": {
+        "bytes": 307200000,
+        "canary_copies": 1,
+        "files": 3000,
+        "regime": "many_small",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "one_large": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 4.79,
+        "wall_min_s": 3.71,
+        "wall_max_s": 5.54,
+        "cpu_pct": 497.0,
+        "peak_rss_kib": 1135724,
+        "exit_code": 1,
+        "signal": null,
+        "timed_out": false,
+        "findings": 1,
+        "canary": 1,
+        "canary_max": 1,
+        "scan_status": "success",
+        "coverage_gaps": [],
+        "bytes_scanned": 359399508,
+        "chunks_scanned": 343,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "",
+        "mutations": null,
+        "exit_codes_seen": [
+          1
+        ],
+        "findings_seen": [
+          1
+        ]
+      },
+      "verdict": "OK",
+      "notes": [],
+      "facts": {
+        "bytes": 314572884,
+        "canary_copies": 1,
+        "files": 1,
+        "regime": "one_large",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "encoded_midfile": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 1.54,
+        "wall_min_s": 1.29,
+        "wall_max_s": 2.64,
+        "cpu_pct": 192.0,
+        "peak_rss_kib": 544492,
+        "exit_code": 1,
+        "signal": null,
+        "timed_out": false,
+        "findings": 1,
+        "canary": 1,
+        "canary_max": 1,
+        "scan_status": "success",
+        "coverage_gaps": [],
+        "bytes_scanned": 4784302,
+        "chunks_scanned": 6,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "",
+        "mutations": null,
+        "exit_codes_seen": [
+          1
+        ],
+        "findings_seen": [
+          1
+        ],
+        "canary_suppressed_reason": null
+      },
+      "verdict": "LOUD MISS",
+      "notes": [
+        "found 1 of 2 planted canary copies.",
+        "the scan refused to report success (exit 1)."
+      ],
+      "facts": {
+        "canary_copies": 2,
+        "control": "reachable.log must be found; interior.log is the defect",
+        "encoding": "one base64 layer, assignment-anchored",
+        "files": 2,
+        "interior_bytes": 4194421,
+        "reachable_bytes": 65593,
+        "regime": "encoded_midfile",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "over_max_size": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 1.75,
+        "wall_min_s": 1.31,
+        "wall_max_s": 2.04,
+        "cpu_pct": 165.0,
+        "peak_rss_kib": 515948,
+        "exit_code": 1,
+        "signal": null,
+        "timed_out": false,
+        "findings": 1,
+        "canary": 1,
+        "canary_max": 1,
+        "scan_status": "partial",
+        "coverage_gaps": [
+          {
+            "reason": "source emitted error rows (requested input was not fully scanned)",
+            "count": 1
+          },
+          {
+            "reason": "exceeded --max-file-size",
+            "count": 1
+          }
+        ],
+        "bytes_scanned": 84,
+        "chunks_scanned": 1,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "2026-08-05T06:02:13.991369Z  WARN skipping file: size exceeds --max-file-size cap path=/media/mukund-thiru/SanthData/keyhog-wm/over_max_size/over-cap.log size_bytes=113246208 max_size=104857600\n2026-08-05T06:02:13.991616Z  WARN source: failed to read source: failed to scan filesystem file '/media/mukund-thiru/SanthData/keyhog-wm/over_max_size/over-cap.log': size 113246208 exceeds --max-file-size cap 104857600; file was not scanned. Fix: adjust the source settings or input so KeyHog can read plain text safely\nFAIL 1 source error row(s) emitted: requested input was NOT fully scanned. Inspect the source errors above and rerun affected inputs.\nWARN 1 file(s) skipped: exceeded --max-file-size. Re-scan with a larger cap to include them.\n",
+        "mutations": null,
+        "exit_codes_seen": [
+          1
+        ],
+        "findings_seen": [
+          1
+        ],
+        "canary_suppressed_reason": "entropy_below_floor"
+      },
+      "verdict": "LOUD MISS",
+      "notes": [
+        "found 1 of 2 planted canary copies.",
+        "a `--dogfood` probe of this corpus reports a canary-shaped credential suppressed by `entropy_below_floor`. That proves a suppression gate is active on this input; it does not by itself prove the MISSING copy went that way rather than never being read. Compare bytes scanned.",
+        "the scan refused to report success (exit 1)."
+      ],
+      "facts": {
+        "bytes": 113246208,
+        "canary_copies": 2,
+        "default_cap": 104857600,
+        "files": 2,
+        "over_cap_by": 8388608,
+        "regime": "over_max_size",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "one_long_line": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 2.07,
+        "wall_min_s": 1.78,
+        "wall_max_s": 3.47,
+        "cpu_pct": 234.0,
+        "peak_rss_kib": 588792,
+        "exit_code": 1,
+        "signal": null,
+        "timed_out": false,
+        "findings": 1,
+        "canary": 1,
+        "canary_max": 1,
+        "scan_status": "success",
+        "coverage_gaps": [],
+        "bytes_scanned": 59899975,
+        "chunks_scanned": 58,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "",
+        "mutations": null,
+        "exit_codes_seen": [
+          1
+        ],
+        "findings_seen": [
+          1
+        ]
+      },
+      "verdict": "OK",
+      "notes": [],
+      "facts": {
+        "bytes": 52428871,
+        "canary_copies": 1,
+        "files": 1,
+        "lines": 1,
+        "regime": "one_long_line",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "deep_nest": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 49.79,
+        "wall_min_s": 37.69,
+        "wall_max_s": 50.14,
+        "cpu_pct": 90.0,
+        "peak_rss_kib": 511644,
+        "exit_code": 13,
+        "signal": null,
+        "timed_out": false,
+        "findings": 0,
+        "canary": 0,
+        "canary_max": 0,
+        "scan_status": "partial",
+        "coverage_gaps": [
+          {
+            "reason": "source emitted error rows (requested input was not fully scanned)",
+            "count": 2
+          },
+          {
+            "reason": "unreadable (permission denied or I/O error)",
+            "count": 2
+          }
+        ],
+        "bytes_scanned": 32,
+        "chunks_scanned": 1,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d: File name too long (os error 36). Fix: verify ignore rules, symlink handling, and walk configuration values.; entry was not scanned. Fix: adjust the source settings or input so KeyHog can read plain text safely\nFAIL 2 source error row(s) emitted: requested input was NOT fully scanned. Inspect the source errors above and rerun affected inputs.\nFAIL 2 file(s) NOT scanned: unreadable (permission denied or I/O error). These were NOT checked for secrets.\nerror: input coverage was incomplete (see coverage warnings above). Not reporting \"clean\": some requested bytes were not scanned.\n",
+        "mutations": null,
+        "exit_codes_seen": [
+          13
+        ],
+        "findings_seen": [
+          0
+        ],
+        "canary_suppressed_reason": null
+      },
+      "verdict": "LOUD MISS",
+      "notes": [
+        "found 0 of 1 planted canary copies.",
+        "the scan refused to report success (exit 13)."
+      ],
+      "facts": {
+        "canary_copies": 1,
+        "depth": 4096,
+        "files": 2,
+        "regime": "deep_nest",
+        "requested_depth": 4096,
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "flat_many": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 8.53,
+        "wall_min_s": 5.83,
+        "wall_max_s": 16.12,
+        "cpu_pct": 208.0,
+        "peak_rss_kib": 597044,
+        "exit_code": 1,
+        "signal": null,
+        "timed_out": false,
+        "findings": 1,
+        "canary": 1,
+        "canary_max": 1,
+        "scan_status": "success",
+        "coverage_gaps": [],
+        "bytes_scanned": 10800030,
+        "chunks_scanned": 200000,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "",
+        "mutations": null,
+        "exit_codes_seen": [
+          1
+        ],
+        "findings_seen": [
+          1
+        ]
+      },
+      "verdict": "OK",
+      "notes": [],
+      "facts": {
+        "canary_copies": 1,
+        "files": 200000,
+        "flat": true,
+        "regime": "flat_many",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "binary_reject": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 0.78,
+        "wall_min_s": 0.67,
+        "wall_max_s": 1.6,
+        "cpu_pct": 282.0,
+        "peak_rss_kib": 484644,
+        "exit_code": 0,
+        "signal": null,
+        "timed_out": false,
+        "findings": 0,
+        "canary": 0,
+        "canary_max": 0,
+        "scan_status": "partial",
+        "coverage_gaps": [
+          {
+            "reason": "binary (extension or content sniff)",
+            "count": 2000
+          }
+        ],
+        "bytes_scanned": 40,
+        "chunks_scanned": 1,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "WARN 2000 file(s) skipped: detected as binary (extension or content sniff) and not scanned as text.\n",
+        "mutations": null,
+        "exit_codes_seen": [
+          0
+        ],
+        "findings_seen": [
+          0
+        ],
+        "canary_suppressed_reason": null
+      },
+      "verdict": "QUIET CLEAN",
+      "notes": [
+        "found 0 of 1 planted canary copies.",
+        "exit 0 despite an admitted coverage gap, so a CI gate on the exit code passes over the missed credential."
+      ],
+      "facts": {
+        "bytes": 262144000,
+        "canary_copies": 1,
+        "canary_in": "binary file",
+        "files": 2001,
+        "regime": "binary_reject",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "symlink_cycle": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 0.74,
+        "wall_min_s": 0.56,
+        "wall_max_s": 0.91,
+        "cpu_pct": 303.0,
+        "peak_rss_kib": 519752,
+        "exit_code": 1,
+        "signal": null,
+        "timed_out": false,
+        "findings": 1,
+        "canary": 1,
+        "canary_max": 1,
+        "scan_status": "success",
+        "coverage_gaps": [],
+        "bytes_scanned": 103,
+        "chunks_scanned": 2,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "",
+        "mutations": null,
+        "exit_codes_seen": [
+          1
+        ],
+        "findings_seen": [
+          1
+        ]
+      },
+      "verdict": "OK",
+      "notes": [],
+      "facts": {
+        "canary_copies": 1,
+        "canary_in": "real/plain.env",
+        "cycles": 2,
+        "links": 73,
+        "regime": "symlink_cycle",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "no_extension": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 0.97,
+        "wall_min_s": 0.89,
+        "wall_max_s": 1.05,
+        "cpu_pct": 254.0,
+        "peak_rss_kib": 521560,
+        "exit_code": 1,
+        "signal": null,
+        "timed_out": false,
+        "findings": 1,
+        "canary": 1,
+        "canary_max": 1,
+        "scan_status": "success",
+        "coverage_gaps": [],
+        "bytes_scanned": 437,
+        "chunks_scanned": 12,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "",
+        "mutations": null,
+        "exit_codes_seen": [
+          1
+        ],
+        "findings_seen": [
+          1
+        ]
+      },
+      "verdict": "OK",
+      "notes": [],
+      "facts": {
+        "canary_copies": 1,
+        "canary_in": "blob",
+        "files": 12,
+        "regime": "no_extension",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "encoding_mixed": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 0.98,
+        "wall_min_s": 0.94,
+        "wall_max_s": 1.55,
+        "cpu_pct": 245.0,
+        "peak_rss_kib": 644372,
+        "exit_code": 1,
+        "signal": null,
+        "timed_out": false,
+        "findings": 7,
+        "canary": 7,
+        "canary_max": 7,
+        "scan_status": "success",
+        "coverage_gaps": [],
+        "bytes_scanned": 794,
+        "chunks_scanned": 8,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "",
+        "mutations": null,
+        "exit_codes_seen": [
+          1
+        ],
+        "findings_seen": [
+          7
+        ],
+        "canary_suppressed_reason": "native_binary_strings"
+      },
+      "verdict": "LOUD MISS",
+      "notes": [
+        "found 7 of 8 planted canary copies.",
+        "a `--dogfood` probe of this corpus reports a canary-shaped credential suppressed by `native_binary_strings`. That proves a suppression gate is active on this input; it does not by itself prove the MISSING copy went that way rather than never being read. Compare bytes scanned.",
+        "the scan refused to report success (exit 1)."
+      ],
+      "facts": {
+        "canary_copies": 8,
+        "canary_encodings": [
+          "utf-8",
+          "utf-8 with BOM",
+          "utf-16le with BOM",
+          "utf-16be with BOM",
+          "latin-1 comment then ascii canary",
+          "shift-jis comment then ascii canary",
+          "invalid utf-8 around an ascii canary",
+          "utf-8 then utf-16le then ascii canary in one file"
+        ],
+        "canary_in": "every file except none; all 8 carry it",
+        "files": 8,
+        "regime": "encoding_mixed",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "sparse": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 0.94,
+        "wall_min_s": 0.72,
+        "wall_max_s": 1.11,
+        "cpu_pct": 295.0,
+        "peak_rss_kib": 673552,
+        "exit_code": 0,
+        "signal": null,
+        "timed_out": false,
+        "findings": 0,
+        "canary": 0,
+        "canary_max": 0,
+        "scan_status": "partial",
+        "coverage_gaps": [
+          {
+            "reason": "binary (extension or content sniff)",
+            "count": 1
+          }
+        ],
+        "bytes_scanned": 166,
+        "chunks_scanned": 2,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "2026-08-05T06:08:12.891040Z  WARN binary content yielded no printable strings; NOT scanned path=\"/media/mukund-thiru/SanthData/keyhog-wm/sparse/sparse-hole.log\"\nWARN 1 file(s) skipped: detected as binary (extension or content sniff) and not scanned as text.\n",
+        "mutations": null,
+        "exit_codes_seen": [
+          0
+        ],
+        "findings_seen": [
+          0
+        ],
+        "canary_suppressed_reason": "native_binary_strings"
+      },
+      "verdict": "QUIET CLEAN",
+      "notes": [
+        "found 0 of 2 planted canary copies.",
+        "a `--dogfood` probe of this corpus reports a canary-shaped credential suppressed by `native_binary_strings`. That proves a suppression gate is active on this input; it does not by itself prove the MISSING copy went that way rather than never being read. Compare bytes scanned.",
+        "exit 0 despite an admitted coverage gap, so a CI gate on the exit code passes over the missed credential."
+      ],
+      "facts": {
+        "apparent_each": 67108864,
+        "canary_copies": 2,
+        "detail": {
+          "sparse-head.log": {
+            "allocated": 4096,
+            "apparent": 67108864
+          },
+          "sparse-hole.log": {
+            "allocated": 0,
+            "apparent": 67108864
+          },
+          "sparse-tail.log": {
+            "allocated": 4096,
+            "apparent": 67108948
+          }
+        },
+        "files": 3,
+        "regime": "sparse",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "size_changing": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 1.08,
+        "wall_min_s": 0.47,
+        "wall_max_s": 1.96,
+        "cpu_pct": 355.0,
+        "peak_rss_kib": 621856,
+        "exit_code": 0,
+        "signal": "SIGBUS",
+        "timed_out": false,
+        "findings": 0,
+        "canary": 0,
+        "canary_max": 2,
+        "scan_status": null,
+        "coverage_gaps": [],
+        "bytes_scanned": null,
+        "chunks_scanned": null,
+        "envelope_written": false,
+        "envelope_state": "not written",
+        "panic": false,
+        "stderr_tail": "",
+        "mutations": {
+          "appends": 199,
+          "truncations": 199
+        },
+        "exit_codes_seen": [
+          0,
+          1
+        ],
+        "findings_seen": [
+          0,
+          1,
+          2
+        ],
+        "canary_suppressed_reason": "entropy_below_floor"
+      },
+      "verdict": "PANIC",
+      "notes": [
+        "killed by SIGBUS in at least one repetition, so the whole scan's report was lost."
+      ],
+      "facts": {
+        "canary_copies": 2,
+        "files": 3,
+        "mutated_during_scan": [
+          "grow.log",
+          "shrink.log"
+        ],
+        "regime": "size_changing",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "empty_dir": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 0.44,
+        "wall_min_s": 0.41,
+        "wall_max_s": 0.44,
+        "cpu_pct": 432.0,
+        "peak_rss_kib": 476936,
+        "exit_code": 0,
+        "signal": null,
+        "timed_out": false,
+        "findings": 0,
+        "canary": 0,
+        "canary_max": 0,
+        "scan_status": "success",
+        "coverage_gaps": [],
+        "bytes_scanned": 0,
+        "chunks_scanned": 0,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "",
+        "mutations": null,
+        "exit_codes_seen": [
+          0
+        ],
+        "findings_seen": [
+          0
+        ]
+      },
+      "verdict": "OK",
+      "notes": [],
+      "facts": {
+        "canary_copies": 0,
+        "canary_in": null,
+        "files": 0,
+        "regime": "empty_dir",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    },
+    "unreadable_dir": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 0.51,
+        "wall_min_s": 0.47,
+        "wall_max_s": 1.0,
+        "cpu_pct": 373.0,
+        "peak_rss_kib": 484316,
+        "exit_code": 13,
+        "signal": null,
+        "timed_out": false,
+        "findings": 0,
+        "canary": 0,
+        "canary_max": 0,
+        "scan_status": "partial",
+        "coverage_gaps": [
+          {
+            "reason": "source emitted error rows (requested input was not fully scanned)",
+            "count": 3
+          },
+          {
+            "reason": "unreadable (permission denied or I/O error)",
+            "count": 3
+          }
+        ],
+        "bytes_scanned": 16,
+        "chunks_scanned": 1,
+        "envelope_written": true,
+        "envelope_state": "ok",
+        "panic": false,
+        "stderr_tail": "2026-08-05T06:08:26.515777Z  WARN failed to read directory during archive-symlink audit dir=/media/mukund-thiru/SanthData/keyhog-wm/unreadable_dir/locked error=Permission denied (os error 13)\n2026-08-05T06:08:26.516198Z  WARN skipping unreadable filesystem entry; scan continues error=walk builder error: /media/mukund-thiru/SanthData/keyhog-wm/unreadable_dir/locked: IO error for operation on /media/mukund-thiru/SanthData/keyhog-wm/unreadable_dir/locked: Permission denied (os error 13). Fix: verify ignore rules, symlink handling, and walk configuration values.\n2026-08-05T06:08:26.516213Z  WARN skipping unreadable filesystem entry; scan continues error=I/O error: Permission denied (os error 13). Fix: verify the path exists, is readable, and that the current process has permission to walk it.\n2026-08-05T06:08:26.516385Z  WARN source: failed to read source: failed to inspect filesystem directory '/media/mukund-thiru/SanthData/keyhog-wm/unreadable_dir/locked': Permission denied (os error 13); directory was not scanned. Fix: adjust the source settings or input so KeyHog can read plain text safely\n2026-08-05T06:08:26.516389Z  WARN source: failed to read source: failed to inspect filesystem entry: walk builder error: /media/mukund-thiru/SanthData/keyhog-wm/unreadable_dir/locked: IO error for operation on /media/mukund-thiru/SanthData/keyhog-wm/unreadable_dir/locked: Permission denied (os error 13). Fix: verify ignore rules, symlink handling, and walk configuration values.; entry was not scanned. Fix: adjust the source settings or input so KeyHog can read plain text safely\n2026-08-05T06:08:26.516390Z  WARN source: failed to read source: failed to inspect filesystem entry: I/O error: Permission denied (os error 13). Fix: verify the path exists, is readable, and that the current process has permission to walk it.; entry was not scanned. Fix: adjust the source settings or input so KeyHog can read plain text safely\nFAIL 3 source error row(s) emitted: requested input was NOT fully scanned. Inspect the source errors above and rerun affected inputs.\nFAIL 3 file(s) NOT scanned: unreadable (permission denied or I/O error). These were NOT checked for secrets.\nerror: input coverage was incomplete (see coverage warnings above). Not reporting \"clean\": some requested bytes were not scanned.\n",
+        "mutations": null,
+        "exit_codes_seen": [
+          13
+        ],
+        "findings_seen": [
+          0
+        ]
+      },
+      "verdict": "PARTIAL",
+      "notes": [
+        "every canary copy was found, but part of the input was not scanned."
+      ],
+      "facts": {
+        "canary_copies": 0,
+        "canary_in": "locked/secret.env + unreadable.env",
+        "files": 3,
+        "regime": "unreadable_dir",
+        "scale": 1.0,
+        "stamp_version": 2,
+        "unreadable_dirs": 1,
+        "unreadable_files": 1
+      }
+    },
+    "all_sources_fail": {
+      "agg": {
+        "reps": 5,
+        "wall_s": 0.44,
+        "wall_min_s": 0.42,
+        "wall_max_s": 0.46,
+        "cpu_pct": 439.0,
+        "peak_rss_kib": 476276,
+        "exit_code": 13,
+        "signal": null,
+        "timed_out": false,
+        "findings": 0,
+        "canary": 0,
+        "canary_max": 0,
+        "scan_status": null,
+        "coverage_gaps": [],
+        "bytes_scanned": null,
+        "chunks_scanned": null,
+        "envelope_written": false,
+        "envelope_state": "not written",
+        "panic": false,
+        "stderr_tail": "2026-08-05T06:08:28.992469Z  WARN skipping file: size exceeds --max-file-size cap path=/media/mukund-thiru/SanthData/keyhog-wm/all_sources_fail/only-over-cap.log size_bytes=113246208 max_size=104857600\n2026-08-05T06:08:28.992561Z  WARN source: failed to read source: failed to scan filesystem file '/media/mukund-thiru/SanthData/keyhog-wm/all_sources_fail/only-over-cap.log': size 113246208 exceeds --max-file-size cap 104857600; file was not scanned. Fix: adjust the source settings or input so KeyHog can read plain text safely\nerror: a requested scan source failed to read and produced no data (see the warnings above). Not reporting \"clean\": that scan did not run. Check the repository path, ref, token, or URL and re-run.\n",
+        "mutations": null,
+        "exit_codes_seen": [
+          13
+        ],
+        "findings_seen": [
+          0
+        ],
+        "canary_suppressed_reason": null
+      },
+      "verdict": "NO REPORT",
+      "notes": [
+        "the machine-readable envelope requested with `-o` was not written, so a pipeline reading it gets nothing to act on.",
+        "the scan did exit 13, so a shell sees the failure even though no artifact describes it."
+      ],
+      "facts": {
+        "bytes": 113246208,
+        "canary_at_offset": 0,
+        "canary_copies": 1,
+        "default_cap": 104857600,
+        "files": 1,
+        "regime": "all_sources_fail",
+        "scale": 1.0,
+        "stamp_version": 2
+      }
+    }
+  }
+}

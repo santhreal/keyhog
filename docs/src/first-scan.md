@@ -34,9 +34,10 @@ You should see a `GitHub Classic PAT` finding with the credential rendered as
 `ghp_...K7n2`, followed by `keyhog exit code: 1`. <!-- keyhog:ignore detector=entropy-token --> File paths, timing, host
 capabilities, and detector counts vary by installation.
 
-KeyHog redacts credential values in terminal, JSON, JSONL, CSV, SARIF, and HTML
-output by default. `--show-secrets` deliberately prints plaintext and can leak
-it into logs, artifacts, or scrollback. Do not use that flag for routine scans.
+KeyHog redacts credential values by default in every output format, including
+the `--output` file, not only the terminal. `--show-secrets` deliberately
+prints plaintext and can leak it into logs, artifacts, or scrollback. Do not
+use that flag for routine scans, and never in CI.
 
 Now scan your repository:
 
@@ -93,10 +94,10 @@ banner to stderr before the findings:
 ```text
     K E Y H O G
     ───────────
-    v0.5.68 · secret scanner · 923 detectors
+    v0.5.68 · secret scanner · 925 detectors
     by santh
 
-  ⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 923 detectors (5822 patterns) io_uring | backend=simd-regex | gpu=none
+  ⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 925 detectors (5822 patterns) io_uring | backend=simd-regex | gpu=none
 ```
 
 The banner reports this host's CPU and GPU labels, the scanner engine, the
@@ -142,20 +143,23 @@ objects. `entropy` and `confidence` are included when the detection
 path measured them; otherwise they are omitted. A present entropy value is
 Shannon bits-per-byte evidence, not a confidence score and not a claim that
 entropy alone caused the finding.
+Minor `9` adds the optional `correlations` array, emitted only when the scan
+ran with [`--correlate`](./reference/cli.md); the key is absent, not empty,
+otherwise. See [Output formats](./output-formats.md#cross-file-correlation).
 The `source_bytes_scanned` and `source_chunks_scanned` counters are the exact
 workload consumed by the scanner, so an importer can calculate throughput from
 the artifact without scraping console progress.
 
 ```json
 {
-  "schema_version": {"major": 1, "minor": 8},
+  "schema_version": {"major": 1, "minor": 10},
   "scan_status": "success",
   "metadata": {
     "scan_id": "0123456789abcdef0123456789abcdef",
     "scan_status": "success",
     "keyhog_version": "0.5.68",
     "git_hash": "<build-commit>",
-    "detector_digest": "923-<digest>",
+    "detector_digest": "925-<digest>",
     "config_digest": "<effective-config-digest>",
     "resolved_scan": {
       "schema_version": 1,
@@ -170,7 +174,7 @@ the artifact without scraping console progress.
     "targets": ["."],
     "source_chunks_scanned": 1,
     "source_bytes_scanned": 128,
-    "detector_count": 923
+    "detector_count": 925
   },
   "coverage_gap_summary": [],
   "findings": [
@@ -218,10 +222,22 @@ keyhog scan --stdin < staging.env       # from stdin (CI: cat | keyhog)
 keyhog scan . --exclude-paths 'docs/*'  # exclude a glob
 ```
 
-Common patterns the default walk **already** skips include `.git/`,
-`node_modules/`, `__pycache__/`, vendored/build output, minified assets, and
-editor backup files. The canonical behavior and opt-out are documented under
-[path suppressions](./suppressions.md#path-based).
+The default walk skips a file when any segment of its path is one of these
+directory names, at any depth:
+
+```text
+.git  node_modules  target  .cache  __pycache__  .venv  venv  .tox
+dist  build  out  .next  .nuxt  vendor  swagger  swagger-ui
+```
+
+It also skips lock files, editor backups, and filenames containing `.min.` or
+`.bundle.`. A skipped file produces a `WARN` line on stderr and no finding, and
+the scan still exits `0`. Check that list against your repository before you
+trust a clean result: `build/`, `dist/`, `out/`, and `vendor/` hold real source
+in some projects. Scan them with `keyhog scan . --no-default-excludes`, which
+also stops the scanner discarding findings inside minified and vendored
+bundles, or name one tree directly with `keyhog scan vendor/`. See
+[files the walker never reads](./suppressions.md#files-the-walker-never-reads).
 
 ## Going further
 

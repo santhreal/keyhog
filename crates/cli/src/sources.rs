@@ -501,6 +501,7 @@ pub(crate) fn build_sources(
             discussions: args.github_all || args.github_discussions,
             wiki: args.github_all || args.github_wiki,
             gists: args.github_all || args.github_gists,
+            releases: args.github_all || args.github_releases,
         };
         sources.push(Box::new(
             keyhog_sources::GitHubCollaborationSource::new(repository, token, selection)?
@@ -561,11 +562,8 @@ pub(crate) fn build_sources(
 
     #[cfg(feature = "s3")]
     if let Some(bucket) = &args.s3_bucket {
-        if args.allow_s3_credential_forward {
-            eprintln!(
-                "warning: --allow-s3-credential-forward is active; ambient AWS credentials may be sent to the configured non-AWS S3 endpoint"
-            );
-        }
+        // Same as GCS below: `s3::resolve_s3_auth` owns the credential-forwarding
+        // consent notice, so both source entry paths surface it identically.
         let s3_prefix = match args.s3_prefix.as_deref() {
             Some(prefix) => prefix,
             None => "",
@@ -591,11 +589,11 @@ pub(crate) fn build_sources(
 
     #[cfg(feature = "gcs")]
     if let Some(bucket) = &args.gcs_bucket {
-        if args.allow_gcs_token_forward {
-            eprintln!(
-                "warning: --allow-gcs-token-forward is active; ambient GCS bearer tokens may be sent to the configured non-Google GCS endpoint"
-            );
-        }
+        // The consent notice for token forwarding lives in the GCS source, at the
+        // point the ambient token is actually carried to a non-Google endpoint
+        // (`gcs::gcs_bearer_token`). Warning here as well would make the
+        // dedicated-flag path louder than the equivalent `--source gcs:...` path
+        // and would fire on flag presence even when nothing is forwarded.
         let gcs_prefix = match args.gcs_prefix.as_deref() {
             Some(prefix) => prefix,
             None => "",

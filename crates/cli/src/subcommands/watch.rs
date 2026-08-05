@@ -7,15 +7,26 @@
 //!
 //! Architecture:
 //!   1. Compile a `CompiledScanner` once.
-//!   2. Walk the path with `notify::recommended_watcher` (inotify on Linux,
-//!      FSEvents on macOS, ReadDirectoryChangesW on Windows).
-//!   3. On `Modify` or `Create` events: read the file, build a Chunk, select
-//!      the persisted calibrated backend, scan, and print findings to stdout.
-//!   4. Block on the channel forever; Ctrl-C exits cleanly.
+//!   2. Register every resolved root with `notify::recommended_watcher`
+//!      (inotify on Linux, FSEvents on macOS, ReadDirectoryChangesW on
+//!      Windows).
+//!   3. Reconcile each root: scan what is already on disk, THEN print the
+//!      readiness banner, so `watching:` means covered rather than merely
+//!      subscribed (KH-505).
+//!   4. On `Modify` or `Create` events: expand the event into concrete files,
+//!      read each one, build a Chunk, select the persisted calibrated backend,
+//!      scan, and print findings to stdout.
+//!   5. On `Remove` of a watched root: exit loudly. The kernel discarded that
+//!      watch, so continuing would report a clean tree nobody is watching.
+//!   6. Block on the channel otherwise; Ctrl-C exits cleanly.
 //!
-//! No batching, no orchestrator: a single saved file is the natural scan
-//! unit for an editor workflow. If the user wants a directory-wide rescan
-//! they can always invoke `keyhog scan` separately.
+//! One file is the natural scan unit for an editor workflow, but it is NOT the
+//! only unit the filesystem hands us. A directory that appears in the tree
+//! (`mv`, `cp -r`, `tar -xf`) arrives as ONE event with no events for the files
+//! it already contained, so [`WatchSession::expand_event_paths`] walks that
+//! subtree instead of dropping it. Startup reconciliation and the event loop
+//! both dispatch through [`WatchSession::scan_paths`], the single place a
+//! watched path meets the scan pipeline.
 
 use crate::args::WatchArgs;
 use crate::orchestrator::load_rule_suppressor;
@@ -42,6 +53,24 @@ const DEDUP_PRUNE_INTERVAL: usize = 128;
 /// Hard cap on dedup map entries. When exceeded, drop oldest keys via FIFO
 /// order (O(1) amortized per insert) instead of scanning every entry (KH-1311).
 const DEDUP_MAX_ENTRIES: usize = 4096;
+/// Hard cap on files enumerated for ONE directory-appearance event
+/// (`reconcile_directory`). A directory moved into a watched tree is scanned
+/// eagerly because inotify never reports the files it already contained; the
+/// cap keeps one `mv` of a huge tree from stalling the event loop. Exceeding it
+/// is reported LOUDLY, never truncated silently, because the untouched
+/// remainder is a recall loss.
+const WATCH_DIR_RECONCILE_MAX_FILES: usize = 10_000;
+/// Hard cap on directory depth walked for one directory-appearance event.
+/// Bounds the work a deliberately deep tree can force onto the event loop.
+const WATCH_DIR_RECONCILE_MAX_DEPTH: usize = 64;
+/// How many one-second checks to give a removed watched root before declaring
+/// coverage unrecoverable. A root is more often replaced than deleted, so the
+/// watcher waits rather than throwing away a working session; the bound stops
+/// it parking forever on a root that is genuinely gone. This is supervision
+/// over an operator action, NOT a retry of a failed call.
+const WATCH_ROOT_REESTABLISH_ATTEMPTS: usize = 30;
+/// Interval between those checks.
+const WATCH_ROOT_REESTABLISH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// FNV-1a 64-bit offset basis and prime for the cheap pre-scan raw-content
 /// filter. The post-scan finding identity uses the framed stable hasher because
@@ -153,21 +182,6 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
         );
     }
 
-    if !args.quiet {
-        eprintln!(
-            "\u{1F441}  keyhog watch (\u{2630} {} detectors compiled)",
-            detector_count
-        );
-        eprintln!("    workers: {}", scan_runtime.worker_threads());
-        // One status line per watched root so the operator can confirm every
-        // tree the watcher is actually monitoring, not just the first.
-        for root in &watch_roots {
-            eprintln!("    watching: {}", root.display());
-        }
-        eprintln!("    Ctrl-C to exit");
-        eprintln!();
-    }
-
     let (tx, rx) = channel::<notify::Result<Event>>();
     let notify_channel_closed_for_callback = AtomicBool::new(false);
     let roots_hint_for_callback = roots_hint.clone();
@@ -217,12 +231,48 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
         })?;
     }
 
-    // Per-path dedupe state: last (scan time, content hash) seen for a path.
-    // notify fires Create then Modify for a single new-file write, which
-    // without this would print every finding twice (KH-GAP-109).
-    let mut recently_scanned = WatchDedupeState::default();
     let skip_dirs = SkipDirPolicy::load()?;
-    let mut consecutive_scan_failures = 0usize;
+    let mut session = WatchSession {
+        scan_runtime: &scan_runtime,
+        watch_roots: &watch_roots,
+        rule_suppressors: &rule_suppressors,
+        skip_dirs: &skip_dirs,
+        roots_hint: &roots_hint,
+        max_file_size,
+        max_consecutive_failures,
+        // Per-path dedupe state: last (scan time, content hash) seen for a
+        // path. notify fires Create then Modify for a single new-file write,
+        // which without this would print every finding twice (KH-GAP-109).
+        recently_scanned: WatchDedupeState::default(),
+        consecutive_scan_failures: 0,
+    };
+
+    // KH-505: the watches are live but nothing has looked at what is ALREADY in
+    // the tree, including anything written during detector compilation and
+    // registration. Reconcile each root before declaring readiness, so
+    // "watching:" means the current tree is covered and not merely that future
+    // events will arrive. The dedup layer collapses the overlap with any event
+    // that fires for the same file during this walk.
+    for root in &watch_roots {
+        let mut initial = Vec::new();
+        collect_directory_files(root, &skip_dirs, &mut initial, &roots_hint);
+        session.scan_paths(initial)?;
+    }
+
+    if !args.quiet {
+        eprintln!(
+            "\u{1F441}  keyhog watch (\u{2630} {} detectors compiled)",
+            detector_count
+        );
+        eprintln!("    workers: {}", scan_runtime.worker_threads());
+        // One status line per watched root so the operator can confirm every
+        // tree the watcher is actually monitoring, not just the first.
+        for root in &watch_roots {
+            eprintln!("    watching: {}", root.display());
+        }
+        eprintln!("    Ctrl-C to exit");
+        eprintln!();
+    }
 
     for event in rx {
         let event = match event {
@@ -248,53 +298,289 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
                 continue;
             }
         };
+        // A watched root that disappears takes its inotify watch with it. The
+        // process would otherwise stay alive holding ZERO watch descriptors,
+        // printing nothing, which is indistinguishable from "the tree is
+        // clean" - the worst outcome in this product. Discarding the session
+        // is not the answer either: a root is routinely replaced rather than
+        // deleted (`rm -rf build && mkdir build`, a checkout that swaps a
+        // directory, a deploy). Re-establish coverage instead, and reconcile
+        // the subtree on return so anything written while we were blind is
+        // scanned rather than quietly skipped.
+        if matches!(event.kind, EventKind::Remove(_)) {
+            if let Some(lost) = event
+                .paths
+                .iter()
+                .find(|path| watch_roots.iter().any(|root| root == *path))
+                .cloned()
+            {
+                reestablish_watched_root(
+                    &mut watcher,
+                    &lost,
+                    &skip_dirs,
+                    &roots_hint,
+                    &mut session,
+                )?;
+            }
+            continue;
+        }
         let interesting = matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_));
         if !interesting {
             continue;
         }
 
-        for path in event.paths {
-            // Skip directories and common build/IDE artifacts that produce
-            // a flood of irrelevant events.
-            if path.is_dir() || should_skip(&path, &skip_dirs) {
+        // Expand this event into the concrete files to scan, then hand them to
+        // the one shared dispatch.
+        let pending = session.expand_event_paths(event.paths);
+        session.scan_paths(pending)?;
+    }
+    Ok(())
+}
+
+/// Wait for a removed watched root to come back, re-register its filesystem
+/// watch, and rescan the subtree.
+///
+/// Deliberately NOT a retry: nothing keyhog did failed. The operator's tree
+/// changed, and a root is far more often replaced than deleted, so this is a
+/// supervision loop over an external action rather than a second attempt at a
+/// fallible call. It stays bounded by [`WATCH_ROOT_REESTABLISH_ATTEMPTS`] so a
+/// genuinely deleted root still terminates the process loudly instead of
+/// leaving it parked forever pretending to watch.
+///
+/// The reconciliation on return is the half that matters. Between the removal
+/// and the new registration nothing was observed, so the subtree is walked and
+/// rescanned; without that, recovery would silently manufacture the very
+/// coverage gap the exit was there to prevent.
+fn reestablish_watched_root(
+    watcher: &mut notify::RecommendedWatcher,
+    root: &std::path::Path,
+    skip_dirs: &SkipDirPolicy,
+    roots_hint: &str,
+    session: &mut WatchSession<'_>,
+) -> Result<()> {
+    let palette = style::for_stderr();
+    eprintln!(
+        "{} keyhog watch: watched root {} was removed; its filesystem watch is gone and \
+         changes under that path are NOT being observed. Waiting up to {}s for it to \
+         return.",
+        style::warn("WARN", &palette),
+        root.display(),
+        WATCH_ROOT_REESTABLISH_ATTEMPTS,
+    );
+    for _ in 0..WATCH_ROOT_REESTABLISH_ATTEMPTS {
+        std::thread::sleep(WATCH_ROOT_REESTABLISH_INTERVAL);
+        if !root.is_dir() {
+            continue;
+        }
+        // Register BEFORE reconciling, so a file written during the walk
+        // arrives as an event instead of falling between the two steps.
+        if let Err(error) = watcher.watch(root, RecursiveMode::Recursive) {
+            eprintln!(
+                "{} keyhog watch: {} returned but its watch could not be re-registered \
+                 ({error}); still not observed.",
+                style::warn("WARN", &palette),
+                root.display(),
+            );
+            continue;
+        }
+        let mut pending = Vec::new();
+        collect_directory_files(root, skip_dirs, &mut pending, roots_hint);
+        let reconciled = pending.len();
+        session.scan_paths(pending)?;
+        eprintln!(
+            "{} keyhog watch: {} is being watched again; rescanned {reconciled} file(s) \
+             to cover the gap while it was missing.",
+            style::warn("OK", &palette),
+            root.display(),
+        );
+        return Ok(());
+    }
+    anyhow::bail!(
+        "keyhog watch: watched root {root} did not return within {secs}s; its filesystem \
+         watch is gone and changes under that path cannot be observed. Exiting rather than \
+         reporting a clean tree that is not being watched. Recreate the path and restart \
+         watch, or run `keyhog scan {roots_hint}`.",
+        root = root.display(),
+        secs = WATCH_ROOT_REESTABLISH_ATTEMPTS,
+    );
+}
+
+/// The live state of one `keyhog watch` session plus the single place a
+/// watched path meets the scan pipeline.
+///
+/// Both the startup reconciliation and the event loop call
+/// [`WatchSession::scan_paths`], so read policy, suppression, dedup, and the
+/// consecutive-failure budget cannot drift between "files that were already
+/// there" and "files that changed later".
+struct WatchSession<'a> {
+    scan_runtime: &'a DefaultScanRuntime,
+    watch_roots: &'a [PathBuf],
+    rule_suppressors: &'a HashMap<PathBuf, RuleSuppressor>,
+    skip_dirs: &'a SkipDirPolicy,
+    roots_hint: &'a str,
+    max_file_size: u64,
+    max_consecutive_failures: usize,
+    recently_scanned: WatchDedupeState,
+    consecutive_scan_failures: usize,
+}
+
+impl WatchSession<'_> {
+    /// Turn the raw paths of one filesystem event into the concrete files to
+    /// scan.
+    ///
+    /// A DIRECTORY that appears in the tree (`mv dir watched/`, `cp -r`, an
+    /// extracted archive) is the one shape inotify cannot describe: the kernel
+    /// reports a single MOVED_TO/CREATE for the directory and NEVER an event
+    /// for the files it already contained, so every one of them stayed
+    /// unscanned forever. The recursive backend also registers a watch for a
+    /// newly created directory only after the fact, losing any file written
+    /// into it before that registration. Enumerating the subtree here closes
+    /// both holes: files already present are found by this walk, files written
+    /// afterwards arrive as ordinary events, and dedup collapses the overlap.
+    fn expand_event_paths(&self, paths: Vec<PathBuf>) -> Vec<PathBuf> {
+        let mut pending = Vec::with_capacity(paths.len());
+        for path in paths {
+            if should_skip(&path, self.skip_dirs) {
                 continue;
             }
-            let rule_suppressor = rule_suppressor_for_path(&path, &watch_roots, &rule_suppressors);
-            match scan_file(
-                &scan_runtime,
+            if path.is_dir() {
+                collect_directory_files(&path, self.skip_dirs, &mut pending, self.roots_hint);
+            } else {
+                pending.push(path);
+            }
+        }
+        pending
+    }
+
+    fn scan_paths(&mut self, pending: Vec<PathBuf>) -> Result<()> {
+        for path in pending {
+            let rule_suppressor =
+                rule_suppressor_for_path(&path, self.watch_roots, self.rule_suppressors);
+            let outcome = scan_file(
+                self.scan_runtime,
                 rule_suppressor,
                 &path,
-                max_file_size,
-                &mut recently_scanned,
-            ) {
-                Ok(WatchScanOutcome::Ok) => {
-                    consecutive_scan_failures = 0;
-                }
-                Ok(WatchScanOutcome::EngineFailure) => {
-                    consecutive_scan_failures = consecutive_scan_failures.saturating_add(1);
-                    if consecutive_scan_failures >= max_consecutive_failures {
+                self.max_file_size,
+                &mut self.recently_scanned,
+            )
+            .with_context(|| format!("scan changed path {}", path.display()))?;
+            match outcome {
+                WatchScanOutcome::Ok => self.consecutive_scan_failures = 0,
+                // A path `keyhog scan` would not scan either (symlink, FIFO,
+                // socket, device, over max-file-size). Surfaced, but NOT a
+                // scanner fault: charging it to the failure budget let a
+                // perfectly ordinary symlink farm (node_modules/.bin, vendored
+                // links) kill the watcher outright.
+                WatchScanOutcome::PolicySkip => {}
+                WatchScanOutcome::EngineFailure => {
+                    self.consecutive_scan_failures = self.consecutive_scan_failures.saturating_add(1);
+                    let failures = self.consecutive_scan_failures;
+                    let limit = self.max_consecutive_failures;
+                    if failures >= limit {
                         anyhow::bail!(
-                            "keyhog watch: {consecutive_scan_failures} consecutive per-file \
-                             scan failures (limit {max_consecutive_failures}); exiting so a \
-                             wedged scanner cannot silently drop secrets under editor saves \
-                             (KH-1334). Fix the scanner fault and restart watch, or run \
-                             `keyhog scan {roots_hint}` for a full rescan."
+                            "keyhog watch: {failures} consecutive per-file scan failures \
+                             (limit {limit}); exiting so a wedged scanner cannot silently \
+                             drop secrets under editor saves (KH-1334). Fix the scanner \
+                             fault and restart watch, or run `keyhog scan {}` for a full \
+                             rescan.",
+                            self.roots_hint
                         );
                     }
                 }
-                Err(e) => {
-                    return Err(e).with_context(|| format!("scan changed path {}", path.display()));
-                }
             }
         }
+        Ok(())
     }
-    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WatchScanOutcome {
     Ok,
+    /// The path is one `keyhog scan` would not scan either: a symlink, a
+    /// special file, or a file over the max-file-size cap. Surfaced to the
+    /// operator, but deliberately not charged to the consecutive-failure
+    /// budget, which exists to catch a *wedged scanner*, not routine policy.
+    PolicySkip,
     EngineFailure,
+}
+
+/// Enumerate the regular files under a directory that just appeared in a
+/// watched tree, so they reach the same per-file scan an ordinary event would.
+///
+/// Bounded by [`WATCH_DIR_RECONCILE_MAX_FILES`] and
+/// [`WATCH_DIR_RECONCILE_MAX_DEPTH`]; hitting either is announced LOUDLY with
+/// the one-shot rescan command, because the unenumerated remainder is a real
+/// recall loss and a silent truncation here would be a false clean. Symlinked
+/// directories are never followed: `keyhog scan` does not traverse them either,
+/// and following one would walk straight out of the watched root.
+fn collect_directory_files(
+    dir: &std::path::Path,
+    skip_dirs: &SkipDirPolicy,
+    out: &mut Vec<PathBuf>,
+    roots_hint: &str,
+) {
+    let start = out.len();
+    let mut stack: Vec<(PathBuf, usize)> = vec![(dir.to_path_buf(), 0)];
+    let mut truncated: Option<&'static str> = None;
+    while let Some((current, depth)) = stack.pop() {
+        if depth > WATCH_DIR_RECONCILE_MAX_DEPTH {
+            truncated = Some("directory depth");
+            continue;
+        }
+        let entries = match std::fs::read_dir(&current) {
+            Ok(entries) => entries,
+            // A directory that vanished mid-walk is a benign race. Any other
+            // error means files we cannot even enumerate went unscanned.
+            Err(error) => {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    let palette = style::for_stderr();
+                    eprintln!(
+                        "{} keyhog watch: could not list {} ({}); files under it were NOT scanned",
+                        style::warn("WARN", &palette),
+                        current.display(),
+                        error.kind()
+                    );
+                }
+                continue;
+            }
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if should_skip(&path, skip_dirs) {
+                continue;
+            }
+            // `file_type` on the DirEntry does not follow symlinks, so a
+            // symlinked directory is classified as a symlink and dropped here
+            // rather than traversed.
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                stack.push((path, depth + 1));
+            } else if file_type.is_file() {
+                if out.len() - start >= WATCH_DIR_RECONCILE_MAX_FILES {
+                    truncated = Some("file count");
+                    break;
+                }
+                out.push(path);
+            }
+        }
+        if truncated == Some("file count") {
+            break;
+        }
+    }
+    if let Some(limit) = truncated {
+        let palette = style::for_stderr();
+        eprintln!(
+            "{} keyhog watch: {} appeared in a watched tree and exceeded the {limit} limit \
+             ({} files enumerated, max {}); the remainder was NOT scanned. Run \
+             `keyhog scan {roots_hint}` for full coverage of that path.",
+            style::warn("WARN", &palette),
+            dir.display(),
+            out.len() - start,
+            WATCH_DIR_RECONCILE_MAX_FILES,
+        );
+    }
 }
 
 /// Resolve the requested watch roots into the canonical directory set the
@@ -376,6 +662,35 @@ fn read_watched_file(path: &std::path::Path, max_file_size: u64) -> std::io::Res
     keyhog_sources::read_file_safe_bytes(path, max_file_size)
 }
 
+/// Classify a guarded-read failure as routine policy or a scanner fault.
+///
+/// The consecutive-failure budget (KH-1334) exists to kill a watcher whose
+/// SCANNER is wedged, so it must only count faults. A symlink, a FIFO, a
+/// socket, a device node, or a file over the size cap is a path `keyhog scan`
+/// declines to read as well: charging those to the budget meant six symlinks
+/// created in a row terminated the watcher with exit 2, turning ordinary
+/// repository layout into an outage. Permission and I/O errors stay faults,
+/// because those are files that exist, are in policy, and went unscanned.
+fn read_error_outcome(path: &std::path::Path, error: &std::io::Error) -> WatchScanOutcome {
+    // `read_file_safe_bytes` opens `O_NOFOLLOW`, so a symlink fails with the
+    // platform's ELOOP. `ErrorKind::FilesystemLoop` is still unstable, so ask
+    // the filesystem directly instead of matching a raw errno: one `lstat`, on
+    // the error path only, and it behaves the same on every platform.
+    if path
+        .symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_symlink())
+    {
+        return WatchScanOutcome::PolicySkip;
+    }
+    match error.kind() {
+        // `read_file_safe_bytes` contract: special file (FIFO/socket/device).
+        std::io::ErrorKind::InvalidInput => WatchScanOutcome::PolicySkip,
+        // `read_file_safe_bytes` contract: over the effective size cap.
+        std::io::ErrorKind::InvalidData => WatchScanOutcome::PolicySkip,
+        _ => WatchScanOutcome::EngineFailure,
+    }
+}
+
 /// Longest-prefix root match for multi-root watch (KH-1433). Falls back to the
 /// first root's suppressor when a path is outside every watched tree (TOCTOU
 /// move / external path); never panics.
@@ -423,20 +738,26 @@ fn scan_file(
         Ok(b) => b,
         Err(error) => {
             // A file that VANISHED between the inotify event and our read is a
-            // benign race (nothing to scan), stay quiet. Any OTHER error
-            // (permission denied, I/O failure) means a file that EXISTS went
-            // unscanned: surface it loudly so the recall loss is never silent.
-            if error.kind() != std::io::ErrorKind::NotFound {
-                let palette = style::for_stderr();
-                eprintln!(
-                    "{} keyhog watch: could not read {} ({}); it was NOT scanned",
-                    style::warn("WARN", &palette),
-                    path.display(),
-                    error.kind()
-                );
-                return Ok(WatchScanOutcome::EngineFailure);
+            // benign race (nothing to scan), stay quiet.
+            if error.kind() == std::io::ErrorKind::NotFound {
+                return Ok(WatchScanOutcome::Ok);
             }
-            return Ok(WatchScanOutcome::Ok);
+            let outcome = read_error_outcome(path, &error);
+            let palette = style::for_stderr();
+            let reason = match outcome {
+                // Same disposition `keyhog scan` gives this path, so say so:
+                // an operator chasing a missing finding needs to know the file
+                // is out of policy, not that the watcher is broken.
+                WatchScanOutcome::PolicySkip => "; `keyhog scan` skips it too",
+                _ => "",
+            };
+            eprintln!(
+                "{} keyhog watch: could not read {} ({}); it was NOT scanned{reason}",
+                style::warn("WARN", &palette),
+                path.display(),
+                error.kind()
+            );
+            return Ok(outcome);
         }
     };
 

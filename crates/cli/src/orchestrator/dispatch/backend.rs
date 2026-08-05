@@ -54,7 +54,8 @@ use self::routing::{
     direct_backend_selection, resolve_persisted_route, AutorouteRuntimeClass, RuntimeRouteFault,
 };
 pub(crate) use self::routing::{
-    AutorouteRoutingError, AutorouteStateRecovery, BackendRecoveryPlan, BackendSelection,
+    AutorouteRoutingError, AutorouteRoutingErrorKind, AutorouteStateRecovery, BackendRecoveryPlan,
+    BackendSelection,
     RuntimeRouteIdentity,
 };
 use self::runtime_health::{
@@ -62,10 +63,14 @@ use self::runtime_health::{
     RuntimeHealthIdentity,
 };
 use self::store::{
-    autoroute_cache_file_presence, load_autoroute_cache, save_autoroute_cache,
+    autoroute_cache_file_presence, load_autoroute_cache, record_bucket_miss,
+    record_calibration_reuse, record_hit, record_miss, save_autoroute_cache, AutorouteCacheMiss,
     AutorouteCacheSaveOutcome,
 };
-pub(crate) use self::store::{inspect_autoroute_cache, AutorouteReadiness, StagedAutorouteCache};
+pub(crate) use self::store::{
+    inspect_autoroute_cache, render_missing_buckets, render_summary as render_cache_summary,
+    snapshot as autoroute_cache_stats, AutorouteReadiness, StagedAutorouteCache,
+};
 pub(crate) use self::workload::{source_route_class, SourceRouteClass};
 use self::workload::{measurement_shape_evidence, render_workload_key, workload_key, WorkloadKey};
 use keyhog_core::Chunk;
@@ -109,6 +114,14 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
     hasher.finish_u64()
 }
 
+// v51: the resolved-config digest no longer hashes whether a calibration
+// excluded an eligible GPU. The persisted host generation already carries that
+// exactly, through `eligible_backends` and the full GPU device/runtime/driver
+// identity, so hashing it again could only produce false misses, and on any
+// host or build with no GPU candidate it produced one on every single run: a
+// calibration wrote under a digest no scan would ever request. v50 caches hold
+// decisions keyed by the old digest and are superseded on the version gate,
+// which gives a clear "older schema" message instead of a config mismatch.
 // v50: workload identity records exact phase-2 keyword-trigger density
 // (triggered chunks, bytes, and hit count) so calibration rows cannot alias
 // batches with equal byte/chunk/source buckets but radically different
@@ -175,7 +188,7 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 50;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 51;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -220,6 +233,32 @@ pub(crate) struct CachedBackendRouter {
     runtime_faults: Mutex<HashMap<WorkloadKey, RuntimeRouteFault>>,
     runtime_health: Option<RuntimeHealthIdentity>,
     recovery_announced: AtomicBool,
+}
+
+/// Name why a bucket lookup could not be answered, in the order an operator has
+/// to fix the causes in.
+///
+/// A rejected cache and an uncalibrated bucket both end in the same scalar
+/// recovery, and before this distinction existed they were indistinguishable in
+/// aggregate. They call for opposite actions: a rejected cache means the
+/// persisted evidence does not belong to this binary, host, corpus or config
+/// and recalibrating the bucket would not help, while an absent bucket means
+/// the cache is valid and simply does not cover this workload yet.
+fn lookup_miss_cause(
+    cache_path: &Option<PathBuf>,
+    cache_load_error: &Option<String>,
+    bucket_present: bool,
+) -> AutorouteCacheMiss {
+    if cache_load_error.is_some() {
+        return AutorouteCacheMiss::CacheRejected;
+    }
+    if cache_path.is_none() {
+        return AutorouteCacheMiss::NoCacheConfigured;
+    }
+    if bucket_present {
+        return AutorouteCacheMiss::RuntimeClassUnproved;
+    }
+    AutorouteCacheMiss::BucketAbsent
 }
 
 impl CachedBackendRouter {
@@ -349,6 +388,7 @@ impl CachedBackendRouter {
         ) {
             Ok(key) => key,
             Err(error) => {
+                record_miss(AutorouteCacheMiss::WorkloadUnclassified);
                 let reason = AutorouteRoutingError::incomplete_workload_evidence(error).to_string();
                 let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
                 return Ok(autoroute_state_recovery_selection(
@@ -363,6 +403,7 @@ impl CachedBackendRouter {
             Ok(faults) => faults.get(&key).cloned(),
             // LAW10: loud operator error; poisoned route-health state enters explicit recovery and surfaces its repair message.
             Err(_) => {
+                record_miss(AutorouteCacheMiss::HealthUnavailable);
                 let reason = "autoroute runtime route-health state is unavailable after an internal panic; its persisted route cannot be trusted until KeyHog is restarted and `keyhog calibrate-autoroute` succeeds".to_string();
                 let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
                 return Ok(autoroute_state_recovery_selection(
@@ -374,6 +415,7 @@ impl CachedBackendRouter {
             }
         };
         if let Some(fault) = fault {
+            record_bucket_miss(AutorouteCacheMiss::RouteQuarantined, &key);
             let reason =
                 AutorouteRoutingError::runtime_route_unhealthy(&key, self.runtime_class, &fault)
                     .to_string();
@@ -394,6 +436,14 @@ impl CachedBackendRouter {
         ) {
             Ok(route) => route,
             Err(error) => {
+                record_bucket_miss(
+                    lookup_miss_cause(
+                        &self.cache_path,
+                        &self.cache_load_error,
+                        self.decisions.contains_key(&key),
+                    ),
+                    &key,
+                );
                 let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
                 return Ok(autoroute_state_recovery_selection(
                     scanner,
@@ -433,6 +483,7 @@ impl CachedBackendRouter {
                         })
                 });
             if let Err(reason) = identity_check {
+                record_bucket_miss(AutorouteCacheMiss::PeerIdentityChanged, &key);
                 let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
                 return Ok(autoroute_state_recovery_selection(
                     scanner,
@@ -442,6 +493,7 @@ impl CachedBackendRouter {
                 ));
             }
         }
+        record_hit();
         Ok(BackendSelection {
             backend: route.backend,
             phase1_plan: Some(phase1_plan),
@@ -614,6 +666,7 @@ impl MeasuredBackendRouter {
         ) {
             Ok(key) => key,
             Err(error) if !self.calibration_mode => {
+                record_miss(AutorouteCacheMiss::WorkloadUnclassified);
                 let reason = AutorouteRoutingError::incomplete_workload_evidence(error).to_string();
                 let announce = !std::mem::replace(&mut self.recovery_announced, true);
                 return Ok(autoroute_state_recovery_selection(
@@ -629,6 +682,7 @@ impl MeasuredBackendRouter {
         };
         if !self.calibration_mode {
             if let Some(fault) = self.runtime_faults.get(&key) {
+                record_bucket_miss(AutorouteCacheMiss::RouteQuarantined, &key);
                 let reason = AutorouteRoutingError::runtime_route_unhealthy(
                     &key,
                     AutorouteRuntimeClass::OneShot,
@@ -653,6 +707,11 @@ impl MeasuredBackendRouter {
             None
         };
         if let Some(route) = self.reusable_decision_route(&key, measurement_shape.as_ref()) {
+            if self.calibration_mode {
+                record_calibration_reuse();
+            } else {
+                record_hit();
+            }
             return Ok(BackendSelection {
                 backend: route.backend,
                 phase1_plan: Some(phase1_plan),
@@ -685,6 +744,14 @@ impl MeasuredBackendRouter {
             ) {
                 Ok(route) => route,
                 Err(error) => {
+                    record_bucket_miss(
+                        lookup_miss_cause(
+                            &self.cache_path,
+                            &self.cache_load_error,
+                            self.decisions.contains_key(&key),
+                        ),
+                        &key,
+                    );
                     let announce = !std::mem::replace(&mut self.recovery_announced, true);
                     return Ok(autoroute_state_recovery_selection(
                         scanner,
@@ -694,6 +761,7 @@ impl MeasuredBackendRouter {
                     ));
                 }
             };
+            record_hit();
             return Ok(BackendSelection {
                 backend: route.backend,
                 phase1_plan: Some(phase1_plan),

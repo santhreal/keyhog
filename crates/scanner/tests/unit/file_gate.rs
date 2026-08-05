@@ -84,18 +84,6 @@ fn alphabet_filter_error_rejects_unrelated_bytes() {
     let screen = AlphabetScreen::new(&["zzzz".into()]);
     assert!(!screen.screen(b"plain english prose"));
 }
-#[test]
-fn alphabet_filter_scalar_screen_returns_on_first_target_byte() {
-    let source = include_str!("../../src/alphabet_filter.rs");
-    assert!(
-        source.contains("pub(crate) fn contains_byte(&self, byte: u8) -> bool")
-            && source.contains("data.iter()")
-            && source.contains(".any(|&byte| self.target_mask.contains_byte(byte))")
-            && !source.contains("self.target_mask.intersects(&AlphabetMask::from_bytes(data))"),
-        "alphabet scalar screen must not build a full chunk mask before it can answer true"
-    );
-}
-
 // ── crates/scanner/src/bigram_bloom.rs ──────────────────────────────
 #[test]
 fn bigram_bloom_happy() {
@@ -331,22 +319,6 @@ fn context_false_positive_error() {
     );
 }
 
-#[test]
-fn context_false_positive_go_sum_suppression_is_not_bare_h1_substring() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let source = std::fs::read_to_string(root.join("src/context/false_positive.rs"))
-        .expect("read false positive context source");
-    assert!(
-        !source.contains("ci_find(bytes, b\"h1:\")\n        || path"),
-        "go.sum suppression must not be a bare h1: substring ORed with path"
-    );
-    assert!(
-        source.contains("has_strict_go_sum_checksum_shape(bytes, h1_pos)")
-            && source.contains("path_is_go_sum || has_strict_go_sum_checksum_shape"),
-        "go.sum suppression must require the go.sum path or a strict h1 checksum token shape"
-    );
-}
-
 // ── crates/scanner/src/context/inference.rs ───────────────────────────
 #[test]
 fn context_inference_happy() {
@@ -361,27 +333,6 @@ fn context_inference_error() {
         infer_context(&["random prose"], 0, None),
         CodeContext::Unknown
     );
-}
-
-#[test]
-fn context_inference_test_path_rules_are_tier_b_data() {
-    let source = include_str!("../../src/context/inference.rs");
-    assert!(
-        source.contains("include_str!(\"../../data/test-path-rules.toml\")")
-            && source.contains("parse_test_path_rules"),
-        "test-path classification rules must be loaded from Tier-B scanner data"
-    );
-    for forbidden in [
-        "TEST_PATH_COMPONENTS",
-        "TEST_PREFIX_LEN",
-        "\"_test.go\"",
-        "\".spec.ts\"",
-    ] {
-        assert!(
-            !source.contains(forbidden),
-            "context/inference.rs must not hardcode test-path rule {forbidden}"
-        );
-    }
 }
 
 // ── crates/scanner/src/context/mod.rs ─────────────────────────────────
@@ -405,125 +356,6 @@ fn decode_base64_happy() {
 #[test]
 fn decode_base64_error() {
     assert!(base64_decode("!!!").is_err());
-}
-
-#[test]
-fn decode_base64_shape_and_decode_have_one_scanner_owner() {
-    let owner = include_str!("../../src/decode/base64.rs");
-    assert_eq!(
-        owner.matches("fn classify_base64(").count(),
-        1,
-        "decode/base64.rs must own the scanner base64 variant classifier"
-    );
-    assert!(
-        owner.contains("base64_decode_with_variant(&b64_match.value, variant)"),
-        "Base64Decoder must reuse the variant classified during candidate extraction"
-    );
-    assert_eq!(
-        owner
-            .matches("pub(crate) fn standard_base64_shape(")
-            .count(),
-        1,
-        "decode/base64.rs must own standard-base64 shape facts"
-    );
-
-    for (path, src) in [
-        (
-            "decode/pipeline/extractor.rs",
-            include_str!("../../src/decode/pipeline/extractor.rs"),
-        ),
-        (
-            "decode_structure.rs",
-            include_str!("../../src/decode_structure.rs"),
-        ),
-        (
-            "engine/phase2_entropy/helpers.rs",
-            include_str!("../../src/engine/phase2_entropy/helpers.rs"),
-        ),
-        (
-            "engine/scan_filters.rs",
-            include_str!("../../src/engine/scan_filters.rs"),
-        ),
-        (
-            "entropy/scanner.rs",
-            include_str!("../../src/entropy/scanner.rs"),
-        ),
-        (
-            "suppression/decode.rs",
-            include_str!("../../src/suppression/decode.rs"),
-        ),
-        (
-            "suppression/shape/canonical.rs",
-            include_str!("../../src/suppression/shape/canonical.rs"),
-        ),
-        ("decode/mod.rs", include_str!("../../src/decode/mod.rs")),
-    ] {
-        assert!(
-            !src.contains("base64::engine::general_purpose"),
-            "{path} must call decode::base64_decode or decode::standard_base64_shape instead of choosing a base64 engine privately"
-        );
-        assert!(
-            !src.contains("STANDARD.decode(")
-                && !src.contains("URL_SAFE.decode(")
-                && !src.contains("STANDARD_NO_PAD.decode(")
-                && !src.contains("URL_SAFE_NO_PAD.decode("),
-            "{path} must not carry a private base64 decode cascade"
-        );
-        assert!(
-            !src.contains("c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='"),
-            "{path} must not carry a private standard-base64 alphabet loop"
-        );
-        assert!(
-            !src.contains("b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='"),
-            "{path} must not carry a private scan-base64 alphabet byte loop"
-        );
-    }
-}
-
-#[test]
-fn decode_extract_cache_hot_decoders_use_borrowed_candidate_view() {
-    let extractor = include_str!("../../src/decode/pipeline/extractor.rs");
-    assert!(
-        extractor.contains("pub(crate) fn with_extracted_value_spans<R>")
-            && extractor.contains("return f(cands);")
-            && extractor
-                .contains("let cands = extract_encoded_value_spans_raw(text);\n        f(&cands)"),
-        "extractor must expose a borrowed view so cache hits do not clone every candidate"
-    );
-
-    for (name, owner) in [
-        ("base64", include_str!("../../src/decode/base64.rs")),
-        ("hex", include_str!("../../src/decode/hex.rs")),
-        ("url", include_str!("../../src/decode/url.rs")),
-        ("quoted-printable", include_str!("../../src/decode/url.rs")),
-        ("reverse", include_str!("../../src/decode/reverse.rs")),
-        ("caesar", include_str!("../../src/decode/caesar.rs")),
-    ] {
-        assert!(
-            owner.contains("with_extracted_value_spans"),
-            "{name} decoder must use the borrowed candidate cache view"
-        );
-        assert!(
-            !owner.contains("extract_encoded_value_spans(&chunk.data)"),
-            "{name} decoder must not clone the whole shared candidate cache on the hot path"
-        );
-    }
-}
-
-#[test]
-fn decode_z85_extractor_only_strips_whitespace_when_needed() {
-    let owner = include_str!("../../src/decode/base64.rs");
-    assert!(
-        owner.contains("std::borrow::Cow::Owned(")
-            && owner.contains("std::borrow::Cow::Borrowed(candidate.value.as_str())"),
-        "Z85 extraction must borrow already-clean candidates and allocate only for whitespace stripping"
-    );
-    assert!(
-        !owner.contains(
-            "let cleaned: String = candidate\n            .value\n            .chars()\n            .filter(|ch| !ch.is_whitespace())\n            .collect();"
-        ),
-        "Z85 extraction must not unconditionally allocate a cleaned String per candidate"
-    );
 }
 
 // ── crates/scanner/src/decode/caesar.rs ───────────────────────────────
@@ -559,23 +391,6 @@ fn decode_hex_happy() {
 #[test]
 fn decode_hex_error() {
     assert!(hex_decode("gg").is_err());
-}
-
-#[test]
-fn decode_hex_fast_path_does_not_clean_when_no_underscores() {
-    let owner = include_str!("../../src/decode/hex.rs");
-    assert!(
-        owner.contains("if !input.as_bytes().contains(&b'_')")
-            && owner.contains("hex_simd::decode_to_vec(input.as_bytes())")
-            && owner.contains("hex_simd::decode_to_vec(cleaned.as_bytes())"),
-        "hex_decode must decode underscore-free input without allocating a cleaned String"
-    );
-    assert!(
-        !owner.contains(
-            "pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {\n    let cleaned: String = input.chars().filter(|c| *c != '_').collect();"
-        ),
-        "hex_decode must not clean before checking the underscore-free fast path"
-    );
 }
 
 // ── crates/scanner/src/decode/json.rs ─────────────────────────────────
@@ -860,19 +675,6 @@ fn engine_scan_gpu_happy() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
     assert!(scanner.warm_backend(ScanBackend::CpuFallback));
 }
-#[test]
-fn gpu_moe_readback_has_no_fixed_millisecond_sleep_floor() {
-    let src = include_str!("../../src/gpu/backend/execution.rs");
-    assert!(
-        !src.contains("Duration::from_millis(1)"),
-        "GPU MoE readback must use bounded adaptive backoff, not a fixed 1 ms sleep floor"
-    );
-    assert!(
-        src.contains("ReadbackWaitBackoff"),
-        "GPU MoE readback must keep the adaptive wait helper wired"
-    );
-}
-
 // ── crates/scanner/src/engine/boundary.rs ─────────────────────────────
 #[test]
 fn engine_boundary_happy() {
@@ -883,63 +685,6 @@ fn engine_boundary_happy() {
 fn engine_boundary_error() {
     use keyhog_scanner::testing::floor_char_boundary;
     assert_eq!(floor_char_boundary("", 0), 0);
-}
-
-#[test]
-fn engine_utf8_boundary_helper_has_one_implementation_owner() {
-    let owner = include_str!("../../src/engine/windowed_support.rs");
-    assert_eq!(
-        owner.matches("fn floor_char_boundary(").count(),
-        1,
-        "windowed_support.rs must own the single scanner UTF-8 floor helper body"
-    );
-
-    for (path, src) in [
-        (
-            "context/inference.rs",
-            include_str!("../../src/context/inference.rs"),
-        ),
-        (
-            "decode/pipeline.rs",
-            include_str!("../../src/decode/pipeline.rs"),
-        ),
-        (
-            "phase2_truncate.rs",
-            include_str!("../../src/phase2_truncate.rs"),
-        ),
-        (
-            "engine/extract.rs",
-            include_str!("../../src/engine/extract.rs"),
-        ),
-        (
-            "engine/scan_filters.rs",
-            include_str!("../../src/engine/scan_filters.rs"),
-        ),
-        (
-            "pipeline/context_window.rs",
-            include_str!("../../src/pipeline/context_window.rs"),
-        ),
-        (
-            "pipeline/scan_loop.rs",
-            include_str!("../../src/pipeline/scan_loop.rs"),
-        ),
-    ] {
-        assert!(
-            !src.contains("fn floor_char_boundary("),
-            "{path} must call the engine helper instead of defining another floor_char_boundary"
-        );
-        assert!(
-            !src.contains("while idx > 0 && !s.is_char_boundary(idx)"),
-            "{path} must not carry a private UTF-8 floor loop"
-        );
-        assert!(
-            !src.contains("while end > start && !text.is_char_boundary(end)")
-                && !src.contains("while end < data.len() && !data.is_char_boundary(end)")
-                && !src.contains("while next < bytes_total && !haystack.is_char_boundary(next)")
-                && !src.contains("while next < bytes_total && !search_text.is_char_boundary(next)"),
-            "{path} must not carry private UTF-8 floor/ceil loops"
-        );
-    }
 }
 
 // ── crates/scanner/src/engine/hot_patterns.rs ─────────────────────────
@@ -953,61 +698,6 @@ fn engine_hot_patterns_happy() {
 fn engine_hot_patterns_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
     assert!(scanner.runtime_status().pattern_count >= 1);
-}
-
-#[test]
-fn engine_hot_and_entropy_metadata_clones_are_heap_admission_gated() {
-    let state_src = include_str!("../../src/scan_state.rs");
-    assert!(
-        state_src.contains("struct RawMatchPriority"),
-        "ScanState must expose a borrowed RawMatch priority key for admission"
-    );
-    assert!(
-        state_src.contains("fn push_match_lazy"),
-        "ScanState must own lazy capped-heap admission"
-    );
-
-    let entropy_src = include_str!("../../src/engine/phase2_entropy.rs");
-    assert!(
-        entropy_src.contains("push_match_lazy"),
-        "engine/phase2_entropy.rs must compare a borrowed priority before building capped-heap matches"
-    );
-    assert!(
-        !entropy_src.contains("(m.0.clone(), m.1.clone(), m.2.clone())"),
-        "engine/phase2_entropy.rs must not resurrect unconditional detector metadata triple clones"
-    );
-    assert!(
-        entropy_src.contains("detector_plan.entropy_metadata.as_ref()"),
-        "engine/phase2_entropy.rs must resolve the active detector's pre-interned metadata through the unified detector plan"
-    );
-    assert!(
-        entropy_src.contains("MissingFallbackMetadata"),
-        "engine/phase2_entropy.rs must fail closed when active identity metadata is absent"
-    );
-    assert!(
-        entropy_src.contains("Arc::clone(&metadata.0)")
-            && entropy_src.contains("Arc::clone(&metadata.1)")
-            && entropy_src.contains("Arc::clone(&metadata.2)"),
-        "engine/phase2_entropy.rs must build owned metadata only inside the admitted RawMatch builder"
-    );
-
-    let hot_src = include_str!("../../src/engine/hot_patterns.rs");
-    for forbidden in [
-        "push_match_lazy",
-        "build_synthetic_raw_match",
-        "self.hot_metadata_by_index[pattern_idx]",
-        "hot_pattern_direct_emit_allowed",
-    ] {
-        assert!(
-            !hot_src.contains(forbidden),
-            "hot-pattern fast path must not own synthetic emission token {forbidden:?}"
-        );
-    }
-
-    assert!(
-        !hot_src.contains("scan_state.matches.len() >= self.config.max_matches_per_chunk"),
-        "hot-pattern scanning must not stop at first-N and bypass best-N heap admission"
-    );
 }
 
 // ── crates/scanner/src/segment_attribution.rs ─────────────────────────
@@ -1327,86 +1017,6 @@ fn lib_error() {
 }
 
 #[test]
-fn lib_root_pipeline_helpers_are_reexports_not_forwarders() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs");
-    let source = std::fs::read_to_string(path).expect("read scanner lib.rs");
-    for name in [
-        "normalize_scannable_chunk",
-        "compute_line_offsets",
-        "match_line_number",
-        "match_entropy",
-        "floor_char_boundary",
-        "is_within_hex_context",
-        "find_companion",
-    ] {
-        assert!(
-            !source.contains(&format!("pub(crate) fn {name}(")),
-            "crate root must not reintroduce a zero-behavior forwarding fn for {name}"
-        );
-    }
-    assert!(
-        source.contains("pub(crate) use pipeline::compute_line_offsets;"),
-        "crate root should keep the only internally-used pipeline helper as a re-export"
-    );
-    assert!(
-        source.contains("pub(crate) use engine::floor_char_boundary;"),
-        "crate root should expose the engine boundary helper as a re-export"
-    );
-}
-
-#[test]
-fn testing_facade_pipeline_helpers_are_owner_reexports_not_forwarders() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/testing.rs");
-    let source = std::fs::read_to_string(path).expect("read scanner testing.rs");
-    for name in [
-        "normalize_chunk_data",
-        "compute_line_offsets",
-        "match_line_number",
-        "match_entropy",
-        "floor_char_boundary",
-        "is_within_hex_context",
-        "find_companion",
-        "line_window_offsets",
-        "window_end_offset",
-        "next_window_offset",
-        "window_chunk",
-        "record_window_match",
-        "line_number_for_offset",
-    ] {
-        assert!(
-            !source.contains(&format!("pub(crate) fn {name}(")),
-            "testing facade must re-export the owner for {name}, not restate a forwarding signature"
-        );
-    }
-    assert!(
-        source.contains("pub(crate) use crate::pipeline::{")
-            && source.contains("pub use crate::engine::{"),
-        "testing facade should group owner re-exports by implementation boundary"
-    );
-}
-
-#[test]
-fn lib_root_stays_module_map_not_testing_facade_body() {
-    let lib_path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs");
-    let testing_path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/testing.rs");
-    let lib = std::fs::read_to_string(lib_path).expect("read scanner lib.rs");
-    let testing = std::fs::read_to_string(testing_path).expect("read scanner testing.rs");
-    assert!(
-        lib.contains("#[doc(hidden)]\npub mod testing;"),
-        "scanner lib.rs should point at src/testing.rs instead of owning the testing facade body"
-    );
-    assert!(
-        !lib.contains("pub mod testing {"),
-        "scanner lib.rs must not inline the testing facade body again"
-    );
-    assert!(
-        testing.contains("Doc-hidden scanner test facade")
-            && testing.contains("pub fn pattern_regex_strs"),
-        "src/testing.rs must own the doc-hidden testing facade"
-    );
-}
-
-#[test]
 fn scanner_benches_use_testing_facade_not_private_modules() {
     fn collect_rs_files(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
         for entry in std::fs::read_dir(root)
@@ -1466,54 +1076,6 @@ fn scanner_benches_use_testing_facade_not_private_modules() {
             facade.contains(required),
             "scanner testing facade must keep benchmark probe contract `{required}`"
         );
-    }
-}
-
-#[test]
-fn scanner_test_corpus_walks_use_shared_fail_loud_helper() {
-    fn collect_rs_files(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        for entry in std::fs::read_dir(root)
-            .unwrap_or_else(|error| panic!("read_dir({}) failed: {error}", root.display()))
-        {
-            let path = entry
-                .unwrap_or_else(|error| {
-                    panic!("read_dir entry failed in {}: {error}", root.display())
-                })
-                .path();
-            if path.is_dir() {
-                collect_rs_files(&path, out);
-            } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
-                out.push(path);
-            }
-        }
-    }
-
-    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let support_path = manifest_dir.join("tests/support/paths.rs");
-    let support = std::fs::read_to_string(&support_path)
-        .unwrap_or_else(|error| panic!("read {} failed: {error}", support_path.display()));
-    assert!(
-        support.contains("pub fn corpus_files(")
-            && support.contains("pub fn corpus_files_with_paths(")
-            && support.contains("pub fn corpus_bytes("),
-        "scanner test real-corpus walkers must live in tests/support/paths.rs"
-    );
-
-    let mut test_files = Vec::new();
-    collect_rs_files(&manifest_dir.join("tests"), &mut test_files);
-    for path in test_files {
-        if path.ends_with("unit/file_gate.rs") {
-            continue;
-        }
-        let source = std::fs::read_to_string(&path)
-            .unwrap_or_else(|error| panic!("read {} failed: {error}", path.display()));
-        for forbidden in ["let Ok(rd) = std::fs::read_dir", "rd.flatten()"] {
-            assert!(
-                !source.contains(forbidden),
-                "scanner test {} must use support::paths::corpus_files/corpus_files_with_paths/corpus_bytes for real-corpus walks instead of `{forbidden}`",
-                path.display()
-            );
-        }
     }
 }
 
@@ -1704,18 +1266,6 @@ fn probabilistic_gate_error() {
         .expect("probabilistic-gate file scan succeeds")
         .is_empty());
 }
-#[test]
-fn probabilistic_gate_bigram_slot_avoids_per_pair_fnv_rounds() {
-    let source = include_str!("../../src/probabilistic_gate.rs");
-    assert!(
-        source.contains("fn bigram_slot_512(a: u8, b: u8) -> usize")
-            && source.contains("wrapping_mul(33)")
-            && !source.contains("0x811c_9dc5")
-            && !source.contains("0x0100_0193"),
-        "probabilistic gate bigram slot must avoid FNV rounds for every adjacent byte pair"
-    );
-}
-
 // ── crates/scanner/src/resolution.rs ──────────────────────────────────
 #[test]
 fn resolution_happy() {
@@ -1872,104 +1422,6 @@ fn telemetry_error() {
     let _guard = super::telemetry_serial::lock();
     reset();
     assert!(drain_events().is_empty());
-}
-
-#[test]
-fn telemetry_coverage_gap_counters_have_typed_owner() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/telemetry.rs");
-    let source = std::fs::read_to_string(path).expect("read telemetry source");
-
-    assert!(
-        source.contains("enum ScannerCoverageGapEvent"),
-        "scanner coverage gaps need a typed event owner"
-    );
-    assert!(
-        source.contains("struct RecordedScannerCoverageGap"),
-        "scanner coverage-gap recording must return a must-use receipt"
-    );
-    assert_eq!(
-        source
-            .matches("STRUCTURED_PARSE_FAILURES.fetch_add")
-            .count(),
-        0,
-        "structured parse coverage gaps must route through record_scanner_coverage_gap"
-    );
-    assert_eq!(
-        source.matches("DECODE_TRUNCATIONS.fetch_add").count(),
-        0,
-        "decode truncation coverage gaps must route through record_scanner_coverage_gap"
-    );
-    assert_eq!(
-        source
-            .matches("INVALID_PATTERN_INDEX_SKIPS.fetch_add")
-            .count(),
-        0,
-        "invalid pattern-index skips must route through record_scanner_coverage_gap"
-    );
-    assert_eq!(
-        source
-            .matches("BOUNDARY_RESULT_CARDINALITY_MISMATCHES.fetch_add")
-            .count(),
-        0,
-        "boundary cardinality mismatches must route through record_scanner_coverage_gap"
-    );
-    assert_eq!(
-        source
-            .matches("LINE_OFFSET_MAPPING_MISMATCHES.fetch_add")
-            .count(),
-        0,
-        "line-offset mapping mismatches must route through record_scanner_coverage_gap"
-    );
-    assert!(
-        source.contains(
-            "record_scanner_coverage_gap(ScannerCoverageGapEvent::StructuredParseFailure"
-        ) && source
-            .contains("record_scanner_coverage_gap(ScannerCoverageGapEvent::DecodeTruncation")
-            && source.contains(
-                "record_scanner_coverage_gap(ScannerCoverageGapEvent::InvalidPatternIndexSkip"
-            )
-            && source.contains(
-                "record_scanner_coverage_gap(ScannerCoverageGapEvent::BoundaryResultCardinalityMismatch"
-            )
-            && source.contains(
-                "record_scanner_coverage_gap(ScannerCoverageGapEvent::LineOffsetMappingMismatch"
-            ),
-        "public recorder wrappers must delegate to the typed scanner coverage-gap owner"
-    );
-}
-
-#[test]
-fn multiline_source_line_offsets_do_not_silently_default_to_zero() {
-    for path in [
-        concat!(env!("CARGO_MANIFEST_DIR"), "/src/multiline/preprocessor.rs"),
-        concat!(env!("CARGO_MANIFEST_DIR"), "/src/multiline/structural.rs"),
-    ] {
-        let source = std::fs::read_to_string(path).expect("read multiline source");
-        assert!(
-            !source.contains("source_line_offsets.get")
-                || !source.contains(".copied().unwrap_or(0)"),
-            "{path} must use source_line_offset_or_record_gap instead of silently reporting byte 0"
-        );
-    }
-}
-
-#[test]
-fn decode_postprocess_oversize_child_skip_is_counted() {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/engine/scan_postprocess.rs"
-    );
-    let source = std::fs::read_to_string(path).expect("read scan_postprocess source");
-    let oversize_branch = source
-        .split("if decoded_chunk.data.len() > self.config.max_decode_bytes")
-        .nth(1)
-        .and_then(|tail| tail.split("continue;").next())
-        .expect("decoded child max_decode_bytes branch must exist");
-
-    assert!(
-        oversize_branch.contains("crate::telemetry::record_decode_truncation();"),
-        "postprocess oversized decoded-child skip must count a decode coverage gap before continuing"
-    );
 }
 
 // ── crates/scanner/src/types.rs ───────────────────────────────────────

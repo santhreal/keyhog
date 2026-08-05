@@ -20,7 +20,7 @@
 #[test]
 fn web_scan_serializes_behind_exclusive_counter_scope() {
     use keyhog_core::Source;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
     use std::sync::mpsc;
     use std::time::Duration;
 

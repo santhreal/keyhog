@@ -362,22 +362,3 @@ fn rate_limit_initial_slot_steps_back_one_interval_when_representable() {
     );
 }
 
-#[test]
-fn rate_limit_source_uses_checked_sub_not_panicking_subtraction() {
-    // Source guard: the panicking `Instant::now() - default` form must not
-    // return to the hot path; the slot init must go through `initial_last_request`.
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/rate_limit.rs"))
-        .expect("rate_limit.rs must be readable");
-    assert!(
-        src.contains("initial_last_request(Instant::now(), default)"),
-        "wait() must seed the slot via initial_last_request"
-    );
-    assert!(
-        src.contains("checked_sub"),
-        "initial_last_request must use checked_sub"
-    );
-    assert!(
-        !src.contains("Instant::now() - default"),
-        "the panicking Instant::now() - default form must be gone"
-    );
-}

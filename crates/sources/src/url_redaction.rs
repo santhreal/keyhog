@@ -130,6 +130,40 @@ pub(crate) fn redact_url(url: &str) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
+/// Format a `reqwest` error for operator-visible output with its request URL
+/// masked by [`redact_url`].
+///
+/// `reqwest::Error`'s own `Display` appends `" for url (<url>)"` with the URL
+/// serialized as reqwest recorded it (`reqwest-0.12.28/src/error.rs:267`).
+/// Reqwest lifts `user:password@` userinfo into an `Authorization` header
+/// before recording that URL, so userinfo does not survive there, but the QUERY
+/// does: an Azure SAS `sig=`, an `?access_token=`, an `X-Amz-Signature`.
+/// Formatting the raw error therefore re-leaks exactly what the call site just
+/// masked, so a site that prints `redact_url(url)` next to `{error}` publishes
+/// the credential anyway. Every transport error that reaches an operator MUST
+/// go through here instead of `{error}`: the reqwest-supplied suffix is
+/// stripped with `without_url` and re-attached in the same shape from the
+/// redacted URL, so the diagnostic keeps naming its target. An error with no
+/// recorded URL, and a URL with nothing sensitive in it, both format exactly as
+/// reqwest would.
+#[cfg(any(
+    feature = "azure",
+    feature = "s3",
+    feature = "gcs",
+    feature = "slack",
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket"
+))]
+pub(crate) fn redact_http_error(error: reqwest::Error) -> String {
+    let Some(url) = error.url().cloned() else {
+        return error.to_string();
+    };
+    let redacted = redact_url(url.as_str()).into_owned();
+    format!("{} for url ({redacted})", error.without_url())
+}
+
 #[cfg(test)]
 #[path = "../tests/unit/url_redaction.rs"]
 mod tests;

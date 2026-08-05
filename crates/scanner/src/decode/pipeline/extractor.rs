@@ -59,9 +59,6 @@ impl ExtractedValue {
         (self.start, self.end)
     }
 }
-fn extract_prof_enabled() -> bool {
-    keyhog_profile::enabled()
-}
 
 thread_local! {
     /// Per-BFS-item shared WHOLE-CHUNK candidate cache. `decode_chunk` primes
@@ -126,19 +123,7 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
         keyhog_profile::CounterId::DecodeExtractBytes,
         text.len() as u64,
     );
-    let _prof = extract_prof_enabled().then(std::time::Instant::now);
-    let _guard = ExtractTimer(_prof);
-    struct ExtractTimer(Option<std::time::Instant>);
-    impl Drop for ExtractTimer {
-        fn drop(&mut self) {
-            if let Some(t) = self.0 {
-                keyhog_profile::add_counter(
-                    keyhog_profile::CounterId::DecodeExtractNs,
-                    t.elapsed().as_nanos() as u64,
-                );
-            }
-        }
-    }
+    let _extract = keyhog_profile::counter_span(keyhog_profile::CounterId::DecodeExtractNs);
     let mut values = Vec::new();
     // Base64 block accumulator - collected in the SAME pass as quoted/assigned values.
     let mut b64_block = String::new();

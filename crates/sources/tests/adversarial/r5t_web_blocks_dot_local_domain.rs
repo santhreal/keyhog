@@ -1,6 +1,6 @@
 //! R5-T http adversarial: blocks *.local domains.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[cfg(feature = "web")]
 #[test]
 fn r5t_web_blocks_dot_local_domain() {

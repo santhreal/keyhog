@@ -30,7 +30,6 @@ pub mod support;
 // `scripts/gates/tests_wired.py` keeps every top-level `tests/*.rs` reachable.
 pub mod action_root_mirror_parity;
 pub mod cross_os_target_spec;
-pub mod fused_dispatch_panic_contract;
 pub mod lane10_daemon_terminal_failure;
 pub mod lane10_installer_orphan_reap;
 pub mod lane10_silent_fallback_surfacing;

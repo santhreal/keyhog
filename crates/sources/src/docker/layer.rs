@@ -1,4 +1,4 @@
-use super::archive::unpack_layer_archive;
+use super::archive::{unpack_layer_archive, DockerUnpackBudget};
 use super::metadata::manifest_layer_archives as find_manifest_layer_archives;
 use super::{create_private_directory_all, DockerScanWorkspace};
 use keyhog_core::{Chunk, Source, SourceError};
@@ -11,6 +11,7 @@ pub(super) fn collect_docker_layer_chunks(
     image: &str,
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
+    budget: &DockerUnpackBudget,
 ) -> Vec<Result<Chunk, SourceError>> {
     let layer_archives = match find_layer_archives(workspace.root_path(), limits) {
         Ok(layer_archives) => layer_archives,
@@ -24,6 +25,7 @@ pub(super) fn collect_docker_layer_chunks(
             &layer_tar,
             limits,
             respect_default_excludes,
+            budget,
         ) {
             Ok(layer_rows) => rows.extend(layer_rows),
             Err(error) => rows.push(Err(error)),
@@ -124,11 +126,19 @@ fn scan_docker_layer(
     layer_tar: &Path,
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
+    budget: &DockerUnpackBudget,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     let layer_name = docker_layer_name(layer_tar, workspace.root_path());
     let layer_dir = workspace.layer_dir(&layer_name);
     create_private_directory_all(&layer_dir)?;
-    let error_rows = unpack_layer_archive(layer_tar, &layer_dir, limits)?.into_rows();
+    // A cap that trips mid-unpack must NOT discard what already landed on disk.
+    // Entries written before the refusal are real scannable content, so the
+    // failure becomes a gap ROW carried alongside those findings instead of a
+    // `?` that throws the whole layer away unscanned.
+    let error_rows = match unpack_layer_archive(layer_tar, &layer_dir, limits, budget) {
+        Ok(report) => report.into_rows(),
+        Err(error) => vec![Err(error)],
+    };
     let mut rows = Vec::new();
 
     match rewrite_layer_chunks(

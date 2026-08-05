@@ -71,10 +71,18 @@ session key. There is no remote RSA decryption oracle exposed by KeyHog.
 **Risk:** `LruCache::iter_mut()` invalidates an internal pointer
 (detectable by Miri's Stacked Borrows checker).
 
-**Why not applicable:** `crates/scanner/src/multiline/fragment_cache.rs`
-uses `lru::LruCache::get_or_insert_mut()` and `cluster.iter_mut()` on
-its own `Vec<SecretFragment>`, not on `LruCache::iter_mut()`. The
-unsound API isn't called.
+**Why not applicable:** the unsound API is `LruCache::iter_mut()`, and no
+KeyHog crate calls it. Every `lru` consumer in the tree is enumerated here so
+this rationale can be rechecked mechanically:
+
+- `crates/scanner/src/fragment_cache.rs` - sharded
+  `Mutex<LruCache<String, Vec<SecretFragment>>>`, reached through
+  `get_or_insert_mut_ref`; the `iter_mut()` calls in that file are on its own
+  `Vec<SecretFragment>` cluster, not on the cache.
+- `crates/scanner/src/compiler/compiler_compile.rs` - sharded
+  `Mutex<LruCache<String, Arc<Regex>>>` compiled-regex cache.
+- `crates/scanner/src/entropy/bpe.rs` - thread-local
+  `LruCache<u64, TokenCountCacheEntry>` token-count cache.
 
 #### RUSTSEC-2024-0436 - `paste 1.0.15` unmaintained
 

@@ -33,8 +33,14 @@ fn only_inconclusive_timing_failures_are_retryable() {
         "cache decision has no confidence-supported daemon route across every measured point"
     )));
     assert!(retryable_inconclusive_calibration(&anyhow::anyhow!(
-        "calibration timing is inconclusive: intervals overlap"
+        "calibration timing does not resolve one route: the measured points disagree"
     )));
+    assert!(
+        !retryable_inconclusive_calibration(&anyhow::anyhow!(
+            "calibration timing is inconclusive: intervals overlap"
+        )),
+        "overlapping intervals now resolve to a dead-heat route instead of failing"
+    );
     assert!(!retryable_inconclusive_calibration(&anyhow::anyhow!(
         "autoroute cache path is not writable"
     )));

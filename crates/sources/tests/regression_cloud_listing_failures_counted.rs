@@ -3,7 +3,7 @@
 mod support;
 
 use keyhog_core::{Chunk, Source, SourceError};
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 // The whole file is `#![cfg(any(azure, gcs, s3))]` and all three providers'
 // tests below assert skip-count deltas, so these are used under every enabled
 // variant, the import must NOT be narrowed to `azure` alone (that made

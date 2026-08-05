@@ -32,6 +32,57 @@ fn docker_archive_entry_count_error(archive_kind: &str) -> SourceError {
     ))
 }
 
+/// Remaining unpack budget shared by EVERY tar in one image.
+///
+/// `docker_tar_total_bytes` was enforced with a fresh accumulator per tar, so
+/// it bounded one tar and nothing bounded their SUM. An image is an outer tar
+/// plus one tar per layer, and Docker permits 127 layers, so the 8 GiB default
+/// admitted ~1 TiB of unpacking per image with every individual check passing
+/// and no operator knob that said otherwise. Measured on a 2-layer image:
+/// `--limit-docker-tar-total-bytes 5104B` unpacked 5104 + 4161 + 4096 = 13361
+/// bytes with no truncation, because each tar restarted the count at zero.
+///
+/// One cell, decremented across every tar in the image, makes the declared cap
+/// mean what its name says. `AtomicU64` rather than `&mut` so layers may be
+/// walked concurrently without threading a lock through the unpack path.
+pub(super) struct DockerUnpackBudget {
+    remaining: std::sync::atomic::AtomicU64,
+}
+
+impl DockerUnpackBudget {
+    pub(super) fn new(total_bytes: u64) -> Self {
+        Self {
+            remaining: std::sync::atomic::AtomicU64::new(total_bytes),
+        }
+    }
+
+    /// Charge `bytes` against the image budget. `false` means the image-scoped
+    /// ceiling is spent and the caller must stop unpacking.
+    fn charge(&self, bytes: u64) -> bool {
+        use std::sync::atomic::Ordering;
+        self.remaining
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |left| {
+                left.checked_sub(bytes)
+            })
+            .is_ok()
+    }
+
+    /// Bytes still available to this image across all remaining tars.
+    fn remaining(&self) -> u64 {
+        self.remaining.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
+/// Coverage-gap error for an image that exhausted [`DockerUnpackBudget`].
+fn docker_image_budget_error(path: &Path, total_bytes: u64) -> SourceError {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+    SourceError::Other(format!(
+        "docker image unpack exceeded the {total_bytes}-byte image-wide budget at entry '{}' \
+         (likely zip-bomb); remaining entries were not scanned",
+        path.display()
+    ))
+}
+
 #[derive(Default)]
 pub(super) struct DockerExtractReport {
     errors: Vec<SourceError>,
@@ -55,24 +106,31 @@ pub(super) fn unpack_tar(
     archive_path: &Path,
     destination: &Path,
     limits: crate::SourceLimits,
+    budget: &DockerUnpackBudget,
 ) -> Result<DockerExtractReport, SourceError> {
     let file = File::open(archive_path).map_err(SourceError::Io)?;
-    unpack_open_tar(file, destination, limits, false)
+    unpack_open_tar(file, destination, limits, false, budget)
 }
 
 pub(super) fn unpack_layer_archive(
     archive_path: &Path,
     destination: &Path,
     limits: crate::SourceLimits,
+    budget: &DockerUnpackBudget,
 ) -> Result<DockerExtractReport, SourceError> {
     let mut file = File::open(archive_path).map_err(SourceError::Io)?;
     let encoding = layer_archive_encoding(&mut file)?;
     file.rewind().map_err(SourceError::Io)?;
 
     match encoding {
-        LayerArchiveEncoding::RawTar => unpack_open_tar(file, destination, limits, true),
+        LayerArchiveEncoding::RawTar => unpack_open_tar(file, destination, limits, true, budget),
         LayerArchiveEncoding::GzipTar => {
-            validate_tar_reader(flate2::read::MultiGzDecoder::new(&mut file), limits, true)?;
+            validate_tar_reader(
+                flate2::read::MultiGzDecoder::new(&mut file),
+                limits,
+                true,
+                budget,
+            )?;
 
             file.rewind().map_err(SourceError::Io)?;
             unpack_tar_reader(
@@ -80,6 +138,7 @@ pub(super) fn unpack_layer_archive(
                 destination,
                 limits,
                 true,
+                budget,
             )
         }
         LayerArchiveEncoding::ZstdTar => {
@@ -90,7 +149,7 @@ pub(super) fn unpack_layer_archive(
                     limits.docker_tar_total_bytes,
                 ))
                 .map_err(SourceError::Io)?;
-            validate_tar_reader(validation_reader, limits, true)?;
+            validate_tar_reader(validation_reader, limits, true, budget)?;
 
             file.rewind().map_err(SourceError::Io)?;
             let mut extract_reader =
@@ -100,7 +159,7 @@ pub(super) fn unpack_layer_archive(
                     limits.docker_tar_total_bytes,
                 ))
                 .map_err(SourceError::Io)?;
-            unpack_tar_reader(extract_reader, destination, limits, true)
+            unpack_tar_reader(extract_reader, destination, limits, true, budget)
         }
     }
 }
@@ -115,7 +174,7 @@ pub(super) fn validate_tar_archive_with_total_cap(
         docker_tar_total_bytes: total_cap,
         ..crate::SourceLimits::default()
     };
-    validate_extracted_tree_with_limits(&mut archive, limits)
+    validate_extracted_tree_with_limits(&mut archive, limits, &DockerUnpackBudget::new(total_cap))
 }
 
 fn unpack_open_tar(
@@ -123,21 +182,28 @@ fn unpack_open_tar(
     destination: &Path,
     limits: crate::SourceLimits,
     enforce_per_file_cap: bool,
+    budget: &DockerUnpackBudget,
 ) -> Result<DockerExtractReport, SourceError> {
     let mut validation_archive = tar::Archive::new(&mut file);
-    validate_docker_archive_plan(&mut validation_archive, limits, enforce_per_file_cap)?;
+    validate_docker_archive_plan(
+        &mut validation_archive,
+        limits,
+        enforce_per_file_cap,
+        budget,
+    )?;
 
     file.rewind().map_err(SourceError::Io)?;
-    unpack_tar_reader(&mut file, destination, limits, enforce_per_file_cap)
+    unpack_tar_reader(&mut file, destination, limits, enforce_per_file_cap, budget)
 }
 
 fn validate_tar_reader(
     reader: impl Read,
     limits: crate::SourceLimits,
     enforce_per_file_cap: bool,
+    budget: &DockerUnpackBudget,
 ) -> Result<(), SourceError> {
     let mut archive = tar::Archive::new(reader);
-    validate_docker_archive_plan(&mut archive, limits, enforce_per_file_cap)
+    validate_docker_archive_plan(&mut archive, limits, enforce_per_file_cap, budget)
 }
 
 fn unpack_tar_reader(
@@ -145,9 +211,10 @@ fn unpack_tar_reader(
     destination: &Path,
     limits: crate::SourceLimits,
     enforce_per_file_cap: bool,
+    budget: &DockerUnpackBudget,
 ) -> Result<DockerExtractReport, SourceError> {
     let mut archive = tar::Archive::new(reader);
-    extract_docker_archive_entries(&mut archive, destination, limits, enforce_per_file_cap)
+    extract_docker_archive_entries(&mut archive, destination, limits, enforce_per_file_cap, budget)
 }
 
 enum LayerArchiveEncoding {
@@ -172,6 +239,7 @@ fn layer_archive_encoding(file: &mut File) -> Result<LayerArchiveEncoding, Sourc
 fn validate_extracted_tree_with_limits<R: Read>(
     archive: &mut tar::Archive<R>,
     limits: crate::SourceLimits,
+    budget: &DockerUnpackBudget,
 ) -> Result<(), SourceError> {
     let mut cumulative_bytes: u64 = 0;
     for (entry_index, entry) in archive.entries().map_err(SourceError::Io)?.enumerate() {
@@ -192,8 +260,12 @@ fn validate_extracted_tree_with_limits<R: Read>(
             ));
         }
 
+        // Checked against what the IMAGE has left, not against the per-tar cap,
+        // so a later layer cannot restart the count at zero. Validation only
+        // reads the budget; `extract_docker_archive_entries` is the single site
+        // that spends it, otherwise the two passes over one tar double-charge.
         cumulative_bytes = cumulative_bytes.saturating_add(size);
-        if cumulative_bytes > limits.docker_tar_total_bytes {
+        if cumulative_bytes > budget.remaining() {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
             return Err(SourceError::Other(format!(
                 "docker archive cumulative size exceeds {} bytes at entry '{}' \
@@ -211,6 +283,7 @@ fn validate_docker_archive_plan<R: Read>(
     archive: &mut tar::Archive<R>,
     limits: crate::SourceLimits,
     enforce_per_file_cap: bool,
+    budget: &DockerUnpackBudget,
 ) -> Result<(), SourceError> {
     let mut cumulative_bytes: u64 = 0;
     for (entry_index, entry) in archive.entries().map_err(SourceError::Io)?.enumerate() {
@@ -224,7 +297,7 @@ fn validate_docker_archive_plan<R: Read>(
         validate_docker_archive_entry(&path, file_type)?;
 
         cumulative_bytes = cumulative_bytes.saturating_add(size);
-        if cumulative_bytes > limits.docker_tar_total_bytes {
+        if cumulative_bytes > budget.remaining() {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
             return Err(SourceError::Other(format!(
                 "docker archive cumulative size exceeds {} bytes at entry '{}' \
@@ -247,8 +320,8 @@ fn extract_docker_archive_entries<R: Read>(
     destination: &Path,
     limits: crate::SourceLimits,
     enforce_per_file_cap: bool,
+    budget: &DockerUnpackBudget,
 ) -> Result<DockerExtractReport, SourceError> {
-    let mut cumulative_bytes: u64 = 0;
     let mut report = DockerExtractReport::default();
     for (entry_index, entry) in archive.entries().map_err(SourceError::Io)?.enumerate() {
         if entry_index >= MAX_DOCKER_TAR_ENTRIES {
@@ -259,15 +332,14 @@ fn extract_docker_archive_entries<R: Read>(
         let size = entry.header().entry_size().map_err(SourceError::Io)?;
         validate_docker_archive_entry(&path, entry.header().entry_type())?;
 
-        cumulative_bytes = cumulative_bytes.saturating_add(size);
-        if cumulative_bytes > limits.docker_tar_total_bytes {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
-            return Err(SourceError::Other(format!(
-                "docker archive cumulative size exceeds {} bytes at entry '{}' \
-                 (likely zip-bomb)",
+        // The one site that SPENDS the image budget. Every tar in the image
+        // draws from the same cell, so 127 layers can no longer each unpack a
+        // full `docker_tar_total_bytes`.
+        if !budget.charge(size) {
+            return Err(docker_image_budget_error(
+                &path,
                 limits.docker_tar_total_bytes,
-                path.display(),
-            )));
+            ));
         }
 
         if enforce_per_file_cap

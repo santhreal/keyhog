@@ -1,4 +1,4 @@
-//! Contract for `web::redirect_pin_key` (reached via the `SourceTestApi`
+//! Contract for `web::redirect_pin_key` (reached via the `TestApi`
 //! facade), the function that derives the connection-reuse pin key for a web
 //! redirect hop. Migrated out of an inline `#[cfg(test)]` block in
 //! `src/web.rs` to satisfy the sources folder contract (`web_no_inline_tests`).
@@ -8,7 +8,7 @@
 //! different host OR port forces a rebuild (the pin carries the port). An
 //! unparseable URL yields no pin key.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 #[test]
 fn same_host_different_path_shares_one_pin_key() {

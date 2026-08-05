@@ -100,7 +100,14 @@ zstd = "=0.13.3"
 lz4_flex = "=0.11.6"
 snap = "=1.1.1"
 bzip2 = "=0.5.2"
-xz2 = "=0.1.7"
+# `static` is not an optimization, it removes non-determinism from the shipped
+# artifact. `lzma-sys` links the system liblzma whenever `pkg_config` finds one
+# and compiles it from source otherwise, so the same commit produces a binary
+# with or without `NEEDED liblzma.so.5` depending on whether the build host had
+# liblzma-dev. The published v0.5.47 `keyhog-linux-x86_64` has no such entry
+# while a local HEAD build does. Every other bundled codec (bzip2, zstd,
+# brotli, flate2) already vendors. Measured cost of pinning it: +110,328 bytes.
+xz2 = { version = "=0.1.7", features = ["static"] }
 sevenz-rust2 = { version = "=0.20.2", default-features = false }
 
 # Git

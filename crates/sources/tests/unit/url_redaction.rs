@@ -113,3 +113,54 @@ fn valueless_sensitive_key_is_left_alone() {
     assert_eq!(got, "https://host/x?token");
     assert!(matches!(got, Cow::Borrowed(_)));
 }
+
+/// `reqwest::Error`'s `Display` re-appends the request URL, so a call site that
+/// prints `redact_url(url)` beside `{error}` republishes the very credential it
+/// just masked. `redact_http_error` is the boundary that stops that: it must
+/// keep the error text and the host (the diagnostic is useless without them)
+/// while masking sensitive query values.
+///
+/// Measured, not assumed: reqwest lifts `user:password@` userinfo out of the
+/// URL into an `Authorization` header before recording the URL on the error, so
+/// the userinfo half never reaches `Display`. The QUERY half does, which is the
+/// half that carries an Azure SAS `sig=`, an `?access_token=`, and an
+/// `X-Amz-Signature`. The precondition assertion below fails loudly if a future
+/// reqwest stops leaking it, at which point this helper can be retired.
+#[cfg(any(
+    feature = "azure",
+    feature = "s3",
+    feature = "gcs",
+    feature = "slack",
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket"
+))]
+#[test]
+fn http_error_display_no_longer_carries_query_credentials() {
+    // Port 1 on loopback refuses immediately, so this is a deterministic
+    // transport error that reqwest tags with the request URL.
+    let url = "http://127.0.0.1:1/list?comp=list&sig=AbCdSecretSignature";
+    let error = reqwest::blocking::Client::new()
+        .get(url)
+        .send()
+        .expect_err("connecting to 127.0.0.1:1 must fail");
+    assert!(
+        error.to_string().contains("AbCdSecretSignature"),
+        "precondition: reqwest's own Display leaks the SAS signature; got {error}"
+    );
+
+    let redacted = super::redact_http_error(error);
+    assert!(
+        !redacted.contains("AbCdSecretSignature"),
+        "query credential leaked: {redacted}"
+    );
+    assert!(
+        redacted.contains("for url (http://127.0.0.1:1/list?comp=list&sig=***)"),
+        "the masked URL must still name the target and its benign params: {redacted}"
+    );
+    assert!(
+        redacted.starts_with("error sending request"),
+        "the reqwest error text must survive: {redacted}"
+    );
+}

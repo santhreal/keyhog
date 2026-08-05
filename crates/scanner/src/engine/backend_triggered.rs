@@ -30,7 +30,7 @@ impl CompiledScanner {
         {
             let mut scan_state = scan_state;
             if !crate::deadline::expired(deadline) {
-                let _g = profile::span(profile::P::Ml);
+                let _g = profile::span(keyhog_profile::Stage::MachineLearning);
                 self.apply_ml_batch_scores(&mut scan_state)?;
             }
             Ok(scan_state.into_matches())
@@ -66,7 +66,7 @@ impl CompiledScanner {
 
         // Unified profiler; phase-2 capture has its own internal sub-spans.
         {
-            let _g = profile::span(profile::P::Hot);
+            let _g = profile::span(keyhog_profile::Stage::HotPatterns);
             #[cfg(feature = "simdsieve")]
             self.scan_hot_patterns_fast(
                 &prepared.preprocessed.text,
@@ -82,8 +82,17 @@ impl CompiledScanner {
             return scan_state;
         }
 
-        let raw_text_unchanged =
-            prepared.preprocessed.text.as_bytes() == prepared.chunk.data.as_bytes();
+        // Pointer identity IS the passthrough case: preprocessing borrowed the
+        // chunk buffer unchanged, which every plain-ASCII chunk takes. Settle it
+        // in O(1) there instead of making the dominant chunk pay a whole-buffer
+        // `memcmp` to learn what its own pointer already proves. Different
+        // buffers still fall through to the byte compare, so the answer is the
+        // same in every case.
+        let raw_text_unchanged = std::ptr::eq(
+            prepared.preprocessed.text.as_ptr(),
+            prepared.chunk.data.as_ptr(),
+        ) && prepared.preprocessed.text.len() == prepared.chunk.data.len()
+            || prepared.preprocessed.text.as_bytes() == prepared.chunk.data.as_bytes();
         let normalized_triggered;
         let triggered_patterns = if raw_text_unchanged {
             triggered_patterns
@@ -131,7 +140,7 @@ impl CompiledScanner {
         // holds for phase-2 capture because those detectors are self-contained at the
         // decoded credential itself.
         if expanded_patterns.iter().any(|&w| w != 0) {
-            let _g = profile::span(profile::P::Confirmed);
+            let _g = profile::span(keyhog_profile::Stage::ConfirmedPatterns);
             // Walk only set bits instead of testing every pattern slot.
             let set_bits: usize = expanded_patterns
                 .iter()
@@ -217,7 +226,7 @@ impl CompiledScanner {
         }
 
         {
-            let _g = profile::span(profile::P::Generic);
+            let _g = profile::span(keyhog_profile::Stage::GenericDetection);
             self.scan_generic_assignments(
                 &prepared.preprocessed,
                 line_offsets,
@@ -235,7 +244,7 @@ impl CompiledScanner {
 
         #[cfg(feature = "entropy")]
         {
-            let _g = profile::span(profile::P::Entropy);
+            let _g = profile::span(keyhog_profile::Stage::Entropy);
             self.scan_entropy_fallback(
                 &prepared.preprocessed,
                 line_offsets,
@@ -283,7 +292,7 @@ impl CompiledScanner {
         text: &str,
         backend: ScanBackend,
     ) -> crate::error::Result<Vec<u64>> {
-        let _g = profile::span(profile::P::Phase1Triggers);
+        let _g = profile::span(keyhog_profile::Stage::Phase1Triggers);
         match backend {
             ScanBackend::GpuCuda | ScanBackend::GpuMetal | ScanBackend::GpuWgpu => {
                 self.collect_triggered_patterns_gpu(text, backend)

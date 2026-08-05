@@ -116,6 +116,11 @@ fn stream_git_history_chunks(
     respect_default_excludes: bool,
 ) -> Result<impl Iterator<Item = Result<Chunk, SourceError>>, SourceError> {
     let repo_arg = super::validate_repo_path(repo_path)?;
+    // Truncated ancestry is a coverage gap, not a clean scan. One `shallow`
+    // file stat on the way in; see `record_shallow_history_gap`.
+    if let Ok(repo) = gix::open(std::path::Path::new(&repo_arg)) {
+        super::record_shallow_history_gap(&repo, "git history source (--git-history)");
+    }
     let mut command = super::git_command()?;
     command.args([
         "-C",
@@ -197,15 +202,15 @@ fn stream_git_history_chunks(
             line_buf.clear();
             let line =
                 match super::read_capped_line(&mut reader, &mut line_buf, limits.git_line_bytes) {
-                    Ok(n) if n > limits.git_line_bytes => {
+                    Ok(record) if record.content > limits.git_line_bytes => {
                         return Some(Err(super::git_output_line_truncated_error(
                             "git history source",
                             "unified diff line",
                             limits.git_line_bytes,
-                            n,
+                            record.content,
                         )));
                     }
-                    Ok(0) => {
+                    Ok(record) if record.consumed == 0 => {
                         if let (Some(commit), Some(author), Some(date), Some(path)) = (
                             &current_commit,
                             &current_author,

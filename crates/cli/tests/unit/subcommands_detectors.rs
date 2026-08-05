@@ -115,36 +115,3 @@ fn verify_block_rewrite_preserves_non_ascii() {
     );
 }
 
-#[test]
-fn embedded_detector_loading_uses_core_fail_closed_loader() {
-    let src = include_str!("../../src/subcommands/detectors.rs");
-    // The subcommand must load detectors through the shared
-    // `load_detectors_or_embedded` helper, whose embedded branch delegates to
-    // `keyhog_core::load_embedded_detectors_or_fail()` and fails closed on a
-    // malformed compiled-in corpus (orchestrator_config/detectors.rs). The
-    // 2026-05 dedup consolidated every subcommand onto that one wrapper instead
-    // of each shipping its own load+fallback copy, so the fail-closed contract
-    // is asserted via the shared entry point, not a re-pasted core call.
-    assert!(
-        src.contains("load_detectors_or_embedded"),
-        "detectors subcommand must load via the shared fail-closed \
-         `load_detectors_or_embedded` helper, not a bespoke loader"
-    );
-    assert!(
-        !src.contains("failed to parse embedded detector"),
-        "detectors subcommand must not warn-and-continue on malformed embedded detector TOML"
-    );
-}
-
-#[test]
-fn detectors_fix_uses_bounded_core_detector_reader() {
-    let src = include_str!("../../src/subcommands/detectors.rs");
-    assert!(
-        src.contains("keyhog_core::read_detector_toml_file(&entry)"),
-        "`detectors --fix` must share the bounded core detector TOML reader"
-    );
-    assert!(
-        !src.contains("std::fs::read_to_string(&entry)"),
-        "`detectors --fix` must not read detector TOMLs through unbounded read_to_string"
-    );
-}

@@ -1,6 +1,6 @@
 use keyhog_core::testing as core_testing;
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use keyhog_sources::FilesystemSource;
 use std::fs;
 use std::sync::Arc;

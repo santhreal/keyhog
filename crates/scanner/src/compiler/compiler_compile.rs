@@ -285,10 +285,28 @@ pub(crate) fn compile_pattern(
             index: pattern_index,
             reason,
         })?;
-    let regex = shared_regex(spec.regex.as_str()).map_err(|source| ScanError::RegexCompile {
-        detector_id: detector_id.to_string(),
-        index: pattern_index,
-        source,
+    // Validate the source by building it exactly as the scan path will
+    // (`shared_regex_compile` = the same case-insensitive / CRLF / size-limit
+    // builder `LazyRegex::get` uses), so a malformed or oversized pattern from
+    // the embedded corpus or a user `--detectors` overlay is still rejected
+    // loudly here, before a scan can start.
+    //
+    // The build is deliberately NOT retained. Seeding every corpus pattern's
+    // compiled `Regex` held one NFA / one-pass-DFA / Teddy-prefilter state
+    // machine per declared pattern, companion and generated homoglyph variant
+    // resident for the whole process (~450 MB measured over the embedded
+    // corpus's 1,709 patterns and 178 companions) even when the scan touched
+    // eleven bytes. Phase-1 literal gating means a real scan reaches a small
+    // fraction of the corpus, and `LazyRegex` rebuilds exactly those, once
+    // each, through the shared process-wide regex cache. `shared_regex_compile`
+    // (not `shared_regex`) keeps this throwaway validation build out of that
+    // cache so the cache holds only patterns a scan actually used.
+    let validated = shared_regex_compile(spec.regex.as_str()).map_err(|source| {
+        ScanError::RegexCompile {
+            detector_id: detector_id.to_string(),
+            index: pattern_index,
+            source,
+        }
     })?;
     // Validate the declared capture group is a real index in THIS regex.
     // `captures_len()` counts the implicit whole-match group 0 plus every
@@ -304,7 +322,7 @@ pub(crate) fn compile_pattern(
     // mis-scanned. (The embedded corpus is held clean by
     // detector_capture_group_integrity.rs; this also covers user overlays.)
     if let Some(group) = spec.group {
-        let captures_len = regex.captures_len();
+        let captures_len = validated.captures_len();
         if group >= captures_len {
             return Err(ScanError::CaptureGroupOutOfRange {
                 detector_id: detector_id.to_string(),
@@ -314,9 +332,10 @@ pub(crate) fn compile_pattern(
             });
         }
     }
+    drop(validated);
     Ok(CompiledPattern {
         detector_index,
-        regex: LazyRegex::detector_compiled(spec.regex.as_str(), regex),
+        regex: LazyRegex::detector(spec.regex.as_str()),
         group: spec.group,
         client_safe: spec.client_safe,
         weak_anchor: spec.weak_anchor,

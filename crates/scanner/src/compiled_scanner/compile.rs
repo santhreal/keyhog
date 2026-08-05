@@ -525,8 +525,7 @@ impl CompiledScanner {
 
     /// Apply a custom configuration to the compiled scanner.
     pub fn with_config(mut self, config: ScannerConfig) -> Self {
-        profile::set_profile_enabled(config.profile);
-        profile::set_perf_trace_enabled(config.perf_trace);
+        keyhog_profile::set_detail(config.profile_detail());
         self.config = config;
         self
     }

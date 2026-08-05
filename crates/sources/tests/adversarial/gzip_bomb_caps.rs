@@ -7,7 +7,7 @@
 use super::support::assert_compressed_error;
 use crate::support::split_chunk_results;
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::fs;
 

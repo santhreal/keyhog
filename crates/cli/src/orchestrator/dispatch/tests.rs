@@ -573,10 +573,8 @@ fn the_timed_bridge_yields_every_batch_once_in_order() {
     }
     drop(tx);
 
-    let recv_nanos = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let bridge = TimedBatches {
         batches: rx.into_iter(),
-        recv_nanos: Arc::clone(&recv_nanos),
     };
     let received: Vec<Arc<str>> = bridge
         .map(|batch| {
@@ -598,10 +596,12 @@ fn the_timed_bridge_yields_every_batch_once_in_order() {
 /// The bridge charges the time it spends waiting, including the final blocking
 /// read that ends the stream.
 ///
-/// `recv_wait` in `--perf-trace` is how you tell a starved consumer from a slow
+/// `Stage::ScannerQueueWait` is how you tell a starved consumer from a slow
 /// one. If the instrumentation only counted immediate reads it would report
 /// zero wait on exactly the workloads where the producer is the bottleneck,
-/// which is when the number matters.
+/// which is when the number matters. The bridge used to carry a private
+/// `AtomicU64` timing this same interval one line below the span; the span is
+/// now the only clock, so this test reads the profiler.
 #[test]
 fn the_timed_bridge_charges_time_spent_waiting_for_a_batch() {
     let (tx, rx) = std::sync::mpsc::channel::<Vec<Chunk>>();
@@ -610,21 +610,25 @@ fn the_timed_bridge_charges_time_spent_waiting_for_a_batch() {
         let _ = tx.send(vec![routed_chunk("filesystem", "slow", "body", true)]);
     });
 
-    let recv_nanos = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    keyhog_profile::set_detail(keyhog_profile::Detail::Stages);
+    keyhog_profile::reset();
     let batches: Vec<Vec<Chunk>> = TimedBatches {
         batches: rx.into_iter(),
-        recv_nanos: Arc::clone(&recv_nanos),
     }
     .collect();
     sender.join().expect("sender thread");
+    let waited_ns: u64 = keyhog_profile::take_stage_measurements()
+        .into_iter()
+        .filter(|row| row.stage == keyhog_profile::Stage::ScannerQueueWait)
+        .map(|row| row.elapsed_ns)
+        .sum();
+    keyhog_profile::set_detail(keyhog_profile::Detail::Off);
 
     assert_eq!(batches.len(), 1);
-    let waited = std::time::Duration::from_nanos(
-        recv_nanos.load(std::sync::atomic::Ordering::Relaxed),
-    );
+    let waited = std::time::Duration::from_nanos(waited_ns);
     assert!(
         waited >= std::time::Duration::from_millis(30),
-        "a 40 ms producer stall must be charged as receive wait, saw {waited:?}"
+        "a 40 ms producer stall must be charged as scanner-queue wait, saw {waited:?}"
     );
 }
 

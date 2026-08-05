@@ -29,7 +29,15 @@ impl CompiledScanner {
     pub(crate) fn gpu_matcher(&self) -> Option<&vyre_libs::scan::GpuLiteralSet> {
         self.gpu_matcher
             .get_or_init(|| {
-                let started = std::time::Instant::now();
+                // Decision-driving: autoroute folds this cold cost into the
+                // first calibration trial and persists it, so it must be
+                // measured whether or not profiling is on. `decision_timer`
+                // guarantees that and records the same interval into the
+                // profiler when a runtime is current, so the number that picks
+                // the backend is the number an operator reads.
+                let cold = keyhog_profile::decision_timer(
+                    keyhog_profile::Stage::AutorouteCalibration,
+                );
                 let Some(literals) = &self.gpu_literals else {
                     return None;
                 };
@@ -41,7 +49,8 @@ impl CompiledScanner {
                     }
                 };
                 if matcher.is_some() {
-                    let elapsed = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+                    let elapsed =
+                        u64::try_from(cold.finish().as_nanos()).unwrap_or(u64::MAX);
                     self.autoroute_gpu_shared_cold_ns
                         .store(elapsed.max(1), std::sync::atomic::Ordering::Release);
                 }

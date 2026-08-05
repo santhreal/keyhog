@@ -51,7 +51,7 @@ fn zero_count_categories_are_filtered_out() {
         1,
         "only the single non-zero category may appear, got {summary:?}"
     );
-    assert_eq!(count_for(&summary, "exceeded --max-file-size"), Some(4));
+    assert_eq!(count_for(&summary, "exceeded a configured size cap (--max-file-size or the matching --limit-*-bytes)"), Some(4));
 }
 
 // ── source-walker categories ─────────────────────────────────────────────────
@@ -62,7 +62,7 @@ fn over_max_size_surfaces() {
         over_max_size: 7,
         ..Default::default()
     }));
-    assert_eq!(count_for(&s, "exceeded --max-file-size"), Some(7));
+    assert_eq!(count_for(&s, "exceeded a configured size cap (--max-file-size or the matching --limit-*-bytes)"), Some(7));
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn archive_truncated_surfaces() {
         archive_truncated: 6,
         ..Default::default()
     }));
-    assert_eq!(count_for(&s, "archive extraction truncated"), Some(6));
+    assert_eq!(count_for(&s, "extraction truncated by an unpack budget"), Some(6));
 }
 
 #[test]
@@ -159,6 +159,103 @@ fn git_lfs_pointer_surfaces() {
         ..Default::default()
     }));
     assert_eq!(count_for(&s, "Git-LFS pointer"), Some(2));
+}
+
+// ── silent-clean categories ──────────────────────────────────────────────────
+//
+// These two families were the difference between "no secrets here" and "I did
+// not look". Both are regression-locked from the reproduced defects.
+
+/// A finding the scanner matched and then dropped for its path must surface a
+/// count, not disappear. The whole defect was that `app.min.js` findings left
+/// no trace anywhere.
+#[test]
+fn vendored_path_suppressions_surface_with_their_count() {
+    let s = coverage_gap_summary(&CoverageCounts {
+        vendored_path_suppressions: 3,
+        ..Default::default()
+    });
+    assert_eq!(count_for(&s, "vendored/minified path policy"), Some(3));
+}
+
+/// The vendored-path drop is WARN: the bytes WERE covered, and the operator can
+/// reverse the drop with a flag. A `node_modules` tree would otherwise force
+/// exit 13 on every ordinary scan.
+#[test]
+fn vendored_path_suppression_is_warn_not_fail() {
+    assert_eq!(
+        CoverageGapKind::VendoredPathSuppressed.severity(),
+        CoverageSeverity::Warn
+    );
+    assert_eq!(
+        CoverageCounts {
+            vendored_path_suppressions: 9,
+            ..Default::default()
+        }
+        .fail_class_total(),
+        0,
+        "a recoverable precision drop must not flip a scan to the incomplete exit"
+    );
+}
+
+/// Zero bytes read with no skip recorded: nothing was there to scan.
+#[test]
+fn nothing_scanned_no_input_surfaces_and_fails_closed() {
+    let counts = CoverageCounts {
+        nothing_scanned_no_input: true,
+        ..Default::default()
+    };
+    let s = coverage_gap_summary(&counts);
+    assert_eq!(
+        count_for(&s, "no skip was counted"),
+        Some(1)
+    );
+    assert_eq!(
+        CoverageGapKind::NothingScannedNoInput.severity(),
+        CoverageSeverity::Fail
+    );
+    assert_eq!(
+        counts.fail_class_total(),
+        1,
+        "a scan that examined nothing must reach the incomplete exit"
+    );
+}
+
+/// Zero bytes read with skips recorded: policy hid everything. Different
+/// operator problem, different remedy, so a different row.
+#[test]
+fn nothing_scanned_all_skipped_is_a_distinct_row() {
+    let counts = CoverageCounts {
+        nothing_scanned_all_skipped: true,
+        ..Default::default()
+    };
+    let s = coverage_gap_summary(&counts);
+    assert_eq!(count_for(&s, "every candidate was skipped"), Some(1));
+    assert_eq!(
+        count_for(&s, "no skip was counted"),
+        None,
+        "the two nothing-scanned causes must never be reported together"
+    );
+    assert_eq!(counts.fail_class_total(), 1);
+}
+
+/// The negative that keeps the fix from becoming a new false alarm: a scan that
+/// read bytes and skipped some by policy stays WARN-only, so exit 0.
+#[test]
+fn excluded_files_alone_do_not_reach_the_incomplete_exit() {
+    let counts = with_skip(SkipCounts {
+        excluded: 18,
+        ..Default::default()
+    });
+    assert_eq!(
+        counts.fail_class_total(),
+        0,
+        "policy exclusions on a scan that read bytes must stay exit 0"
+    );
+    assert!(
+        !counts.covered_nothing(),
+        "a default snapshot has not proved the scan covered nothing"
+    );
 }
 
 // ── source errors + scanner telemetry ────────────────────────────────────────
@@ -354,25 +451,36 @@ fn all_ones() -> CoverageCounts {
             git_lfs_pointer: 1,
         },
         source_errors: 1,
+        batches_not_routed: 1,
         scanner_structured_parse_failures: 1,
         scanner_structured_oversize_skips: 1,
         scanner_decode_truncations: 1,
+        scanner_decode_oversize_skips: 1,
         scanner_invalid_pattern_index_skips: 1,
         scanner_boundary_cardinality_mismatches: 1,
         scanner_line_offset_mismatches: 1,
+        scanner_chunk_deadline_aborts: 1,
+        scanner_binary_strings_named_exclusions: 1,
         binary_degraded: 1,
         binary_unreadable: 1,
+        vendored_path_suppressions: 1,
+        // Production sets at most one of these (a scan either found no input
+        // or skipped everything it found). Both are set here because this
+        // fixture's job is to prove every kind has a distinct reason string.
+        nothing_scanned_no_input: true,
+        nothing_scanned_all_skipped: true,
     }
 }
 
 #[test]
 fn every_category_surfaces_when_all_counters_are_nonzero() {
     let s = coverage_gap_summary(&all_ones());
-    // 11 skip fields + source_errors + 6 scanner telemetry + 2 binary = 20.
+    // 11 skip fields + source_errors + batches_not_routed + 9 scanner
+    // telemetry + 2 binary + vendored-path suppression + 2 nothing-scanned = 27.
     assert_eq!(
         s.len(),
-        20,
-        "every one of the 20 coverage-gap categories must surface, got {} ({s:?})",
+        27,
+        "every one of the 27 coverage-gap categories must surface, got {} ({s:?})",
         s.len()
     );
 }
@@ -410,7 +518,7 @@ fn surfaced_count_equals_input_count() {
         ..Default::default()
     }));
     assert_eq!(
-        count_for(&s, "exceeded --max-file-size"),
+        count_for(&s, "exceeded a configured size cap (--max-file-size or the matching --limit-*-bytes)"),
         Some(42),
         "the surfaced count must be the exact input count, not a boolean/clamp"
     );
@@ -424,11 +532,11 @@ fn surfaced_count_equals_input_count() {
 // gap on one surface but not the other is a Law-10 false-clean.
 
 #[test]
-fn all_has_twenty_kinds() {
+fn all_has_twenty_seven_kinds() {
     assert_eq!(
         CoverageGapKind::ALL.len(),
-        20,
-        "the canonical coverage-gap set must have exactly 20 categories"
+        27,
+        "the canonical coverage-gap set must have exactly 27 categories"
     );
 }
 
@@ -503,8 +611,10 @@ fn warn_severity_set_is_exact() {
         Excluded,
         ScannerStructuredOversizeSkip,
         ScannerDecodeTruncation,
+        ScannerDecodeOversizeSkip,
         ScannerInvalidPatternIndexSkip,
         ScannerBoundaryCardinalityMismatch,
+        ScannerBinaryStringsNamedExclusion,
     ] {
         assert_eq!(
             kind.severity(),
@@ -515,11 +625,18 @@ fn warn_severity_set_is_exact() {
 }
 
 /// Locks out leaving a coverage-gap kind unclassified after adding a new
-/// fail-closed category to the canonical 20-kind partition.
+/// fail-closed category to the canonical 27-kind partition.
 #[test]
 fn severity_partition_totals_all_kinds() {
-    // 13 FAIL + 7 WARN = 20. ScannerLineOffsetMismatch is fail-closed because
-    // wrong source coordinates make the reported finding incomplete.
+    // 17 FAIL + 10 WARN = 27. ScannerLineOffsetMismatch is fail-closed because
+    // wrong source coordinates make the reported finding incomplete, and
+    // ScannerChunkDeadlineAbort because the chunk's tail was never matched.
+    // Both NothingScanned kinds are fail-closed because a scan that read no
+    // bytes has proved nothing. BatchNotRouted is fail-closed because the
+    // batch's bytes reached the scanner and were then never scanned at all.
+    // VendoredPathSuppressed and ScannerBinaryStringsNamedExclusion are WARN:
+    // the bytes were covered and the drop is a precision trade the operator
+    // can inspect.
     let fail = CoverageGapKind::ALL
         .iter()
         .filter(|k| k.severity() == CoverageSeverity::Fail)
@@ -528,8 +645,8 @@ fn severity_partition_totals_all_kinds() {
         .iter()
         .filter(|k| k.severity() == CoverageSeverity::Warn)
         .count();
-    assert_eq!(fail, 13, "expected 13 FAIL categories, got {fail}");
-    assert_eq!(warn, 7, "expected 7 WARN categories, got {warn}");
+    assert_eq!(fail, 17, "expected 17 FAIL categories, got {fail}");
+    assert_eq!(warn, 10, "expected 10 WARN categories, got {warn}");
     assert_eq!(fail + warn, CoverageGapKind::ALL.len());
     assert_eq!(
         CoverageGapKind::fail_class_kinds().count(),
@@ -715,5 +832,5 @@ fn both_surfaces_cover_the_identical_kind_set() {
         summary.len(),
         "the human and SARIF surfaces must cover the identical set of kinds"
     );
-    assert_eq!(rendered, 20, "all 20 kinds render on the all_ones snapshot");
+    assert_eq!(rendered, 27, "all 27 kinds render on the all_ones snapshot");
 }

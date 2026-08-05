@@ -22,23 +22,32 @@ pub enum SpecError {
     #[error(
         "failed to read detector path {path}: {source}. Fix: check the detector path exists and that the file is readable TOML"
     )]
+    /// A detector path could not be read.
     ReadFile {
+        /// Detector path that failed to read.
         path: String,
+        /// Underlying I/O error.
         source: std::io::Error,
     },
     #[error(
         "invalid TOML in detector {path}: {source}. Fix: repair the TOML syntax in the detector file"
     )]
+    /// A detector file is not valid TOML.
     InvalidToml {
+        /// Detector file that failed to parse.
         path: PathBuf,
+        /// Underlying TOML error.
         source: toml::de::Error,
     },
     #[error(
         "invalid detector corpus manifest {path}: {source}. Fix: set `schema_version` \
          to an integer supported by this keyhog binary and remove misspelled manifest fields"
     )]
+    /// A directory `corpus.toml` manifest is not valid TOML.
     InvalidCorpusManifest {
+        /// Manifest file that failed to parse.
         path: PathBuf,
+        /// Underlying TOML error.
         source: toml::de::Error,
     },
     #[error(
@@ -46,10 +55,15 @@ pub enum SpecError {
          supports schema {current} and bounded forward compatibility through schema \
          {max_forward}. Fix: use a compatible detector corpus or update keyhog"
     )]
+    /// A corpus declares a schema outside this binary's compatibility window.
     UnsupportedCorpusSchema {
+        /// Manifest that declared the schema.
         path: PathBuf,
+        /// Schema version the corpus declared.
         found: u32,
+        /// Schema version this binary owns.
         current: u32,
+        /// Highest schema this binary may inspect additively.
         max_forward: u32,
     },
     #[error(
@@ -61,12 +75,19 @@ pub enum SpecError {
          Compatibility detail:\n{detail}\nFix: update keyhog to load the complete \
          detector corpus"
     )]
+    /// A newer corpus uses fields this binary cannot interpret, so loading it would silently drop recall.
     ForwardIncompatibleCorpus {
+        /// Detector directory that was rejected.
         dir: String,
+        /// Forward schema the corpus declared.
         declared_schema: u32,
+        /// Schema version this binary owns.
         supported_schema: u32,
+        /// Number of detector files this binary could not interpret.
         skipped_count: usize,
+        /// Total detector files in the directory.
         total: usize,
+        /// Per-file compatibility detail.
         detail: String,
     },
     #[error(
@@ -77,9 +98,13 @@ pub enum SpecError {
          Fix: repair the named TOML(s) under `detectors/` (the toml error names the \
          line/column) and rebuild keyhog so build.rs re-embeds a valid set."
     )]
+    /// The compiled-in detector corpus failed to parse, which is a build bug.
     EmbeddedCorpusCorrupt {
+        /// Number of embedded detectors that failed to parse.
         failed_count: usize,
+        /// Total embedded detectors.
         total: usize,
+        /// Per-detector parse detail.
         detail: String,
     },
     #[error(
@@ -90,10 +115,15 @@ pub enum SpecError {
          Offending detector(s):\n{detail}\nFix: repair the named TOML file(s) \
          or add at least one valid `*.toml` detector spec, then rerun the scan."
     )]
+    /// A detector directory produced a partial corpus, which would silently drop recall.
     DetectorCorpusRejected {
+        /// Detector directory that was rejected.
         dir: String,
+        /// Number of detector files that failed to load or gate.
         failed_count: usize,
+        /// Total detector files considered.
         total: usize,
+        /// Per-file failure detail.
         detail: String,
     },
 }

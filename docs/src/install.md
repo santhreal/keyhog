@@ -14,6 +14,34 @@ binary directory. This is usually `$HOME/.cargo/bin` on Linux and macOS, or
 `%USERPROFILE%\.cargo\bin` on Windows. Add that directory to `PATH` if your
 shell cannot find `keyhog`.
 
+## Platform support
+
+`cargo install` builds KeyHog from source for the host you run it on. Every
+target your Rust toolchain can build is supported, including Linux arm64 and
+Windows arm64.
+
+Prebuilt binary assets are a separate, older channel with a narrower matrix.
+That channel only ever published four assets:
+
+| OS | Architecture | Asset | Hyperscan | GPU |
+|---|---|---|---|---|
+| Linux | x86_64 | `keyhog-linux-x86_64` | yes, dynamic `libhs.so.5` | yes |
+| macOS | aarch64 | `keyhog-macos-aarch64` | no | yes |
+| macOS | x86_64 | `keyhog-macos-x86_64` | no | yes |
+| Windows | x86_64 | `keyhog-windows-x86_64.exe` | no | yes |
+
+The assets do not all carry the same backends. Only the Linux asset links
+Hyperscan, and it links it dynamically, so that host needs the Hyperscan
+runtime package before the binary will start. `install.sh` names the package
+when the library is missing. The other three run the pure-Rust CPU scanner and
+need no native runtime. Findings do not depend on the backend, but the fastest
+route does, so a host without Hyperscan has fewer routes to choose from.
+
+There is no Linux arm64 asset and no Windows arm64 asset, and none is planned.
+`install.sh`, `install.ps1`, `keyhog update`, and `keyhog repair` refuse those
+hosts by name rather than download a binary that cannot run. Use `cargo
+install` on an arm64 Linux or Windows host.
+
 ## Install Rust
 
 KeyHog requires Rust 1.89 or newer. Install Rust with
@@ -111,6 +139,49 @@ cargo install --locked keyhog \
 
 The `ci` feature supports filesystem and standard-input scans. It omits remote
 source providers, live verification, and accelerator backends.
+
+## Which build your workload needs
+
+Source providers are compile-time features. A flag that its feature did not
+build is not hidden or ignored: it is absent from the command line, so the
+command exits `2` with `error: unexpected argument`. That is loud, and it is
+the reason to pick the right build before you script against it.
+
+| Workload | Flag | Feature | In `portable` (the default) | In `ci` |
+|---|---|---|:---:|:---:|
+| Working tree, single file | positional path | always built | yes | yes |
+| Standard input | `--stdin` | always built | yes | yes |
+| Archives and nested archives | positional path | always built | yes | yes |
+| Watch changed files | `keyhog watch` | always built | yes | yes |
+| Git history, blobs, diff, staged | `--git-history`, `--git-blobs`, `--git-diff`, `--git-staged` | `git` | yes | no |
+| Container images | `--docker-image` | `docker` | yes | no |
+| S3 buckets | `--s3-bucket` | `s3` | yes | no |
+| GCS buckets | `--gcs-bucket` | `gcs` | yes | no |
+| Azure Blob containers | `--azure-container-url` | `azure` | yes | no |
+| GitHub orgs and collaboration surfaces | `--github-org`, `--github-collaboration` | `github` | yes | no |
+| GitLab groups | `--gitlab-group` | `gitlab` | yes | no |
+| Bitbucket workspaces | `--bitbucket-workspace` | `bitbucket` | yes | no |
+| URLs, source maps, WASM | `--url` | `web` | yes | no |
+| Native binaries and firmware | `--binary` | `binary` | yes | no |
+| Live credential verification | `--verify` | `verify` | yes | no |
+
+The `ci` build covers the filesystem and standard-input workloads and nothing
+else. That is the point of it: a checked-out tree is what a CI job scans, and
+dropping the rest removes the network and native dependencies. Add back only
+what you need:
+
+```sh
+cargo install --locked keyhog --no-default-features --features ci,git
+```
+
+Check what your installed build has before you script against it:
+
+```sh
+keyhog scan --help
+```
+
+A workload whose flag is missing from that output is not available in your
+build. Reinstall with its feature rather than working around the error.
 
 ## Build the checked-out source
 

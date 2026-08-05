@@ -506,3 +506,184 @@ fn does_not_recurse_on_its_own_output() {
         .expect("bounded recursive-guard decode should succeed")
         .is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Equivalent spellings of the SAME constant program.
+//
+// Each of these was previously dropped in silence: the file contains a
+// recoverable credential, the scan reported nothing, and no coverage gap said
+// so. Recognizing one spelling of `const`, `fromCharCode`, `'base64'`,
+// `'utf8'`, `'aes-256-cbc'`, or `Buffer.from` is a recall hole, not a safety
+// boundary. The negatives below are the boundary: the operand must still be a
+// constant nobody writes to.
+// ---------------------------------------------------------------------------
+
+/// `let` and `var` bind the same constant as `const`. The occurrence check
+/// (declaration plus exactly one use) is what proves immutability here, and it
+/// is keyword-independent.
+#[test]
+fn recovers_xor_through_let_and_var_bindings() {
+    for keyword in ["let", "var"] {
+        let source = xor_program(false, true).replace("const ", &format!("{keyword} "));
+        assert_single_spliced_recovery(&decode(source));
+    }
+}
+
+/// A binding written to after its declaration is no longer a constant, so it
+/// must recover nothing regardless of the keyword.
+#[test]
+fn rejects_xor_binding_reassigned_after_declaration() {
+    for mutation in ["_d = [1, 2, 3];", "_d[0] = 1;", "_d.push(1);"] {
+        let source = xor_program(false, true).replace("return String", &format!("{mutation} return String"));
+        assert!(
+            decode(source).is_empty(),
+            "a written-to binding must fail closed; mutation was {mutation}"
+        );
+    }
+}
+
+/// `String.fromCodePoint` is `String.fromCharCode` for every scalar this
+/// grammar can produce, because the operands are XOR results of two byte
+/// arrays and every code point is therefore below 0x100.
+#[test]
+fn recovers_xor_through_from_code_point() {
+    let source = xor_program(false, true).replace("fromCharCode", "fromCodePoint");
+    assert_single_spliced_recovery(&decode(source));
+}
+
+/// Node's `toString()` defaults to UTF-8 and treats `utf8`, `utf-8`, and any
+/// casing of either as the same encoding; `Buffer.from`'s encoding argument is
+/// case-insensitive too.
+#[test]
+fn recovers_encoded_arrays_through_every_node_encoding_spelling() {
+    for (from, to) in [
+        (".toString('utf8')", ".toString()"),
+        (".toString('utf8')", ".toString('utf-8')"),
+        (".toString('utf8')", ".toString('UTF-8')"),
+        ("'base64')", "'BASE64')"),
+        ("'base64')", "'Base64')"),
+    ] {
+        let source = xor_program(true, true).replace(from, to);
+        assert_single_spliced_recovery(&decode(source));
+    }
+}
+
+/// The deprecated `new Buffer(literal, encoding)` constructor is still
+/// executable and denotes the same bytes as `Buffer.from`.
+#[test]
+fn recovers_encoded_arrays_through_legacy_buffer_constructor() {
+    let source = xor_program(true, true).replace("Buffer.from(", "new Buffer(");
+    assert_single_spliced_recovery(&decode(source));
+}
+
+/// An interpolation-free backtick literal is the same value as the quoted
+/// form. A literal carrying `${...}` depends on evaluation and must not
+/// produce a plaintext.
+#[test]
+fn recovers_raw_template_literals_and_rejects_interpolated_ones() {
+    let raw = xor_program(true, true).replace('\'', "`");
+    assert_single_spliced_recovery(&decode(raw));
+
+    let interpolated = xor_program(true, true).replace(".toString('utf8')", ".toString(`utf${x}8`)");
+    assert!(
+        decode(interpolated).is_empty(),
+        "an interpolated encoding label must fail closed"
+    );
+}
+
+/// `createDecipheriv` normalizes its algorithm name, so `AES-256-CBC` is the
+/// same call as `aes-256-cbc` and must recover identically.
+#[test]
+fn recovers_bound_aes_through_uppercase_algorithm_name() {
+    let source = concat!(
+        "const key = Buffer.from(\"75aa41b547fb2b20b1c35bf524115e077c7d5dd5c173271fe67c03c2d781192d\", 'HEX'); ",
+        "const iv = Buffer.from(\"667daed70df5f3b0c37d48833c330c1c\", 'Hex'); ",
+        "const payload = Buffer.from(\"X1VL9YbGVjOgjoQWE2fjtUL63C7dbUU9DXwze8i9Ejb9yqL5UEABmPYwofE18q5J\", 'BASE64'); ",
+        "const decipher = crypto.createDecipheriv('AES-256-CBC', key, iv); ",
+        "return Buffer.concat([decipher.update(payload), decipher.final()]).toString('utf8');",
+    );
+    assert_single_spliced_recovery(&decode(source.to_string()));
+}
+
+/// A plain string literal key/payload is the same constant the join form
+/// spells the long way, so the inline AES grammar must recover both.
+#[test]
+fn recovers_inline_aes_from_plain_string_literals() {
+    let source = concat!(
+        "const _key = \"75aa41b547fb2b20b1c35bf524115e077c7d5dd5c173271fe67c03c2d781192d\"; ",
+        "const _payload = \"X1VL9YbGVjOgjoQWE2fjtUL63C7dbUU9DXwze8i9Ejb9yqL5UEABmPYwofE18q5J\"; ",
+        "const _dec = crypto.createDecipheriv('aes-256-cbc', ",
+        "Buffer.from(_key, 'hex'), Buffer.from(\"667daed70df5f3b0c37d48833c330c1c\", 'hex')); ",
+        "return Buffer.concat([_dec.update(Buffer.from(_payload, 'base64')), ",
+        "_dec.final()]).toString('utf8');",
+    );
+    assert_single_spliced_recovery(&decode(source.to_string()));
+}
+
+/// Admitting `new Buffer` must not admit its ALLOCATION overload: every call
+/// site in the grammar requires a quoted first argument, so a size
+/// constructor cannot bind anything.
+#[test]
+fn rejects_legacy_buffer_size_constructor() {
+    let source = concat!(
+        "const key = new Buffer(\"75aa41b547fb2b20b1c35bf524115e077c7d5dd5c173271fe67c03c2d781192d\", 'hex'); ",
+        "const iv = new Buffer(\"667daed70df5f3b0c37d48833c330c1c\", 'hex'); ",
+        "const payload = new Buffer(4096); ",
+        "const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv); ",
+        "return Buffer.concat([decipher.update(payload), decipher.final()]).toString('utf8');",
+    );
+    assert!(decode(source.to_string()).is_empty());
+}
+
+/// One AES program that recovers on its own, used to prove whether a budget
+/// another grammar already spent is shared or private.
+const AES_TAIL: &str = concat!(
+    "const key = Buffer.from(\"75aa41b547fb2b20b1c35bf524115e077c7d5dd5c173271fe67c03c2d781192d\", 'hex'); ",
+    "const iv = Buffer.from(\"667daed70df5f3b0c37d48833c330c1c\", 'hex'); ",
+    "const payload = Buffer.from(\"X1VL9YbGVjOgjoQWE2fjtUL63C7dbUU9DXwze8i9Ejb9yqL5UEABmPYwofE18q5J\", 'base64'); ",
+    "const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv); ",
+    "return Buffer.concat([decipher.update(payload), decipher.final()]).toString('utf8');",
+);
+
+/// `count` XOR expressions that MATCH the grammar and recover nothing: each
+/// one costs an attempt without producing a plaintext, which is exactly how a
+/// hostile file would drain the allowance.
+fn xor_decoys(count: usize) -> String {
+    let mut program = String::from("const _z0 = [1, 2]; const _z1 = [3, 4]; ");
+    for index in 0..count {
+        program.push_str(&format!(
+            "String.fromCharCode(...d{index}.map((b, i) => b ^ k{index}[i % k{index}.length])); "
+        ));
+    }
+    program
+}
+
+/// The whole point of a shared budget: decoys in one grammar must be able to
+/// exhaust the allowance for another. Under the old per-grammar counters the
+/// AES tail recovered no matter how many XOR attempts preceded it, so one file
+/// could buy three times the advertised 64 operations.
+#[test]
+fn static_operation_budget_is_shared_across_grammars() {
+    let inside = format!("{}{AES_TAIL}", xor_decoys(63));
+    assert_single_spliced_recovery(&decode(inside));
+
+    let boundary = format!("{}{AES_TAIL}", xor_decoys(64));
+    assert!(
+        decode(boundary).is_empty(),
+        "64 XOR attempts must consume the whole per-source allowance, leaving the AES \
+         expression unevaluated; recovering it would prove the budgets are still private"
+    );
+}
+
+/// The boundary is inclusive: the operation that lands exactly on the ceiling
+/// is granted, so a source sitting on the limit still recovers its last
+/// plaintext.
+#[test]
+fn static_operation_budget_grants_the_boundary_operation() {
+    let mut budget = StaticOperationBudget::new(3);
+    assert!(budget.take());
+    assert!(budget.take());
+    assert!(budget.take(), "the third of three must be granted");
+    assert!(!budget.take(), "the fourth must be refused");
+    assert!(!budget.take(), "refusal is stable, not one-shot");
+}

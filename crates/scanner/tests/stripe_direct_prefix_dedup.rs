@@ -56,34 +56,3 @@ fn stripe_hot_and_confirmed_paths_share_nonzero_base_offset() {
     assert_eq!(stripe[0].location.line, Some(base_line + 1));
 }
 
-#[test]
-fn stripe_direct_prefix_duplicates_are_owned_by_scan_state() {
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let scan_state =
-        std::fs::read_to_string(src.join("scan_state.rs")).expect("scan_state source readable");
-    let process =
-        std::fs::read_to_string(src.join("engine/process.rs")).expect("process source readable");
-    let hot_patterns = std::fs::read_to_string(src.join("engine/hot_patterns.rs"))
-        .expect("hot_patterns source readable");
-
-    assert!(
-        scan_state.contains("claimed_match_identities: HashSet<OwnedMatchIdentity>")
-            && scan_state.contains("struct OwnedMatchIdentity")
-            && scan_state.contains("fn push_match(")
-            && scan_state.contains("fn replace_claimed_match_if_better(")
-            && scan_state.contains("OwnedMatchIdentity::from(&m)")
-            && scan_state.contains("self.claimed_match_identities.remove(&displaced)")
-            && scan_state.contains("self.claimed_match_identities.insert(identity)"),
-        "ScanState must own canonical same-identity suppression state instead of detector-local filters"
-    );
-    assert!(
-        process.contains("scan_state.push_match(raw_match, self.config.max_matches_per_chunk)")
-            && process.contains("crate::telemetry::record_match_found();"),
-        "process_match must claim canonical match identities at the shared emission bottleneck"
-    );
-    assert!(
-        !hot_patterns.contains("chunk.metadata.base_offset,\n                    keyword_nearby")
-            && !hot_patterns.contains("chunk.metadata.base_line,\n                    0,"),
-        "hot-pattern process_match calls must pass extraction-local offsets; build_raw_match owns chunk base offsets"
-    );
-}

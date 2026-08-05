@@ -9,6 +9,7 @@
 #   make mirror            # generate the 15k synthetic mirror corpus if absent
 #   make ioc-recovery-corpus  # generate the 4,368-file P0-P12 recovery corpus
 #   make ioc-recovery         # compare all four KeyHog presets on recovery phases
+#   make ioc-recovery-axes    # score value/certificate/detector/span/mechanism axes
 #   make agentre-corpus       # verify sources and build the pinned Linux binaries
 #   make leakage-audit        # prove train/calibration/sealed-test split isolation
 #   make creddata          # fetch, repair, and validate pinned Samsung/CredData
@@ -51,6 +52,8 @@ OUT              ?= results
 ANALYZE_TOP      ?= 15
 IOC_RECOVERY_SAMPLES ?= 336
 IOC_RECOVERY_OUT ?= results-ioc-recovery
+IOC_RECOVERY_MODE ?= deep
+IOC_RECOVERY_AXES_OUT ?= results-ioc-recovery/axes.json
 CREDDATA_JOBS ?= 8
 LEAKAGE_MANIFEST ?=
 LEAKAGE_CONTENT_ROOT ?=
@@ -113,6 +116,16 @@ ioc-recovery-corpus:
 ioc-recovery: ioc-recovery-corpus
 	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus ioc-recovery \
 		--scanners keyhog --matrix mode --out "$(IOC_RECOVERY_OUT)" --require-available
+
+# Five independent exact axes (value, certificate, detector family, span,
+# mechanism) over the phase, holdout, and metamorphic fixture classes. Runs with
+# --dedup none because the corpus reuses one value across all thirteen phases of
+# a sample, and the default credential dedup would collapse P1-P12 into whichever
+# phase the walker reached first.
+ioc-recovery-axes: ioc-recovery-corpus
+	@test -n "$(KEYHOG_BIN)" || { echo "KEYHOG_BIN is required for the recovery axes" >&2; exit 2; }
+	cd $(BENCH_DIR) && $(PY) -m bench.ioc_recovery_axes --keyhog "$(KEYHOG_BIN)" \
+		--mode "$(IOC_RECOVERY_MODE)" --out "$(IOC_RECOVERY_AXES_OUT)"
 
 agentre-corpus:
 	cd $(BENCH_DIR) && $(PY) -m bench.agentre_build --ensure

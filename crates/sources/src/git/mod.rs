@@ -100,6 +100,84 @@ pub(crate) fn record_git_object_unreadable() {
     let _event = crate::record_skip_event(crate::SourceSkipEvent::GitObjectUnreadable);
 }
 
+/// Count the commits a SHALLOW clone is missing, and record them as a coverage
+/// gap so a truncated history can never be reported as a clean scan.
+///
+/// `git clone --depth N` (and `actions/checkout`, which fetches one commit by
+/// default) writes a `shallow` file listing the graft-boundary commits. A
+/// boundary commit object still names its real parents; those parent objects
+/// were simply never fetched. Every commit behind that boundary, and every
+/// blob only those commits introduced, is absent from the clone. A credential
+/// that was committed and later removed lives exactly there.
+///
+/// Before this existed, `--git-history` / `--git-blobs` on a depth-1 clone
+/// exited 0 with `scan_status: success` and an EMPTY coverage-gap summary,
+/// while a full clone of the same repository reported the deleted credential:
+/// a structured false clean, the one outcome Law 10 forbids.
+///
+/// The gap is the set of PARENT ids named by boundary commits that are not in
+/// the object database. That is exactly "a Git object referenced by repository
+/// metadata that was not scanned", so it reuses
+/// [`record_git_object_unreadable`] and needs no new category. Counting absent
+/// parents rather than boundary commits also keeps the root-commit case clean:
+/// `git clone --depth 1` of a single-commit repository writes a `shallow` file
+/// whose one entry is the root commit, which has no parents and hides nothing,
+/// so that scan stays a genuine success.
+///
+/// The count is a LOWER BOUND (one absent parent hides a whole ancestry); the
+/// warning says so instead of implying it measures the missing history.
+///
+/// A non-shallow repository pays one `shallow` file stat and nothing else.
+pub(crate) fn record_shallow_history_gap(repo: &gix::Repository, source_label: &str) {
+    if !repo.is_shallow() {
+        return;
+    }
+    let boundary = match repo.shallow_commits() {
+        Ok(Some(commits)) => commits,
+        // `is_shallow` saw a non-empty `shallow` file that will not parse.
+        // History is truncated by an unknown amount and the boundary cannot be
+        // enumerated, so report the honest floor of one unscanned object.
+        Ok(None) | Err(_) => {
+            warn_shallow_history(source_label, 1);
+            record_git_object_unreadable();
+            return;
+        }
+    };
+    let mut absent_parents: std::collections::HashSet<gix::ObjectId> =
+        std::collections::HashSet::new();
+    for boundary_id in boundary.iter() {
+        let Ok(commit) = repo.find_commit(*boundary_id) else {
+            // The boundary commit itself is unreadable: that alone is a
+            // referenced-but-unscanned object.
+            absent_parents.insert(*boundary_id);
+            continue;
+        };
+        for parent in commit.parent_ids() {
+            let parent = parent.detach();
+            if !repo.has_object(parent) {
+                absent_parents.insert(parent);
+            }
+        }
+    }
+    if absent_parents.is_empty() {
+        return;
+    }
+    warn_shallow_history(source_label, absent_parents.len());
+    for _ in 0..absent_parents.len() {
+        record_git_object_unreadable();
+    }
+}
+
+fn warn_shallow_history(source_label: &str, absent_parents: usize) {
+    eprintln!(
+        "keyhog: WARNING: {source_label} was pointed at a SHALLOW repository. \
+         {absent_parents} parent commit(s) named at the graft boundary are not in this clone, \
+         so an unknown amount of history, and every blob only those commits contain, was NOT \
+         scanned. A credential that was committed and later removed will NOT be found here. \
+         Fix: `git fetch --unshallow` (or `actions/checkout` with `fetch-depth: 0`), then rescan."
+    );
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GitHistoryCap {
     TotalBytes { total: usize, cap: usize },
@@ -314,16 +392,32 @@ impl Drop for GitChild {
     }
 }
 
+/// One capped record read: how much came off the stream, and how much of that
+/// is the record itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CappedRecord {
+    /// Bytes taken from the reader, including the terminating delimiter when
+    /// one was present. `0` means EOF, mirroring `BufRead::read_until` so call
+    /// sites branch the same.
+    pub(crate) consumed: usize,
+    /// Record bytes excluding the terminating delimiter. The cap applies to
+    /// THIS, so a record whose content is exactly `max` bytes fits, matching
+    /// every other KeyHog byte cap (1024 bytes of stdin fit
+    /// `--limit-stdin-bytes 1024B`). Charging the delimiter against the cap
+    /// rejected an exactly-at-cap line one byte early, and made the verdict on
+    /// identical content depend on whether it was the last line of the stream.
+    pub(crate) content: usize,
+}
+
 /// Read one line (through the trailing `\n`) into `buf`, capping buffered bytes
 /// at `max`. If the line exceeds `max`, the first `max` bytes are kept (still
 /// scanned) and the overflow is consumed and discarded so the stream stays
-/// newline-aligned. Returns total bytes consumed from `reader` (0 == EOF),
-/// mirroring `BufRead::read_until`'s contract so call sites branch the same.
+/// newline-aligned.
 pub(crate) fn read_capped_line<R: std::io::BufRead>(
     reader: &mut R,
     buf: &mut Vec<u8>,
     max: usize,
-) -> std::io::Result<usize> {
+) -> std::io::Result<CappedRecord> {
     read_capped_record(reader, buf, max, b'\n')
 }
 
@@ -331,22 +425,30 @@ pub(crate) fn read_capped_line<R: std::io::BufRead>(
 /// record is always consumed so a caller can report the oversized record and
 /// continue from the next exact boundary without allocating attacker-sized
 /// Git output.
+///
+/// Retention still stops at `max` bytes, so an exactly-at-cap record keeps all
+/// `max` content bytes and drops only its delimiter; callers already strip or
+/// trim that delimiter (`strip_record_delimiter`, `trim_diff_line_bytes`).
 pub(crate) fn read_capped_record<R: std::io::BufRead>(
     reader: &mut R,
     buf: &mut Vec<u8>,
     max: usize,
     delimiter: u8,
-) -> std::io::Result<usize> {
+) -> std::io::Result<CappedRecord> {
     buf.clear();
     let mut consumed = 0usize;
     loop {
         let available = match reader.fill_buf() {
-            Ok(b) => b,
-            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(e),
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
         };
         if available.is_empty() {
-            return Ok(consumed); // EOF
+            // EOF without a delimiter: every consumed byte is record content.
+            return Ok(CappedRecord {
+                consumed,
+                content: consumed,
+            });
         }
         let boundary = memchr::memchr(delimiter, available);
         let take = boundary.map_or(available.len(), |i| i + 1);
@@ -357,7 +459,10 @@ pub(crate) fn read_capped_record<R: std::io::BufRead>(
         reader.consume(take);
         consumed += take;
         if boundary.is_some() {
-            return Ok(consumed);
+            return Ok(CappedRecord {
+                consumed,
+                content: consumed - 1,
+            });
         }
     }
 }
@@ -522,8 +627,9 @@ mod capped_line_tests {
         let mut r = Cursor::new(data);
         let mut buf = Vec::new();
 
-        let n = read_capped_line(&mut r, &mut buf, 10).unwrap();
-        assert_eq!(n, 101, "consumed all 100 bytes + the newline");
+        let record = read_capped_line(&mut r, &mut buf, 10).unwrap();
+        assert_eq!(record.consumed, 101, "consumed all 100 bytes + the newline");
+        assert_eq!(record.content, 100, "the newline is not record content");
         assert_eq!(
             buf.len(),
             10,
@@ -531,24 +637,70 @@ mod capped_line_tests {
         );
         assert!(buf.iter().all(|&b| b == b'x'));
 
-        let n2 = read_capped_line(&mut r, &mut buf, 10).unwrap();
-        assert_eq!(n2, 5);
+        let next = read_capped_line(&mut r, &mut buf, 10).unwrap();
+        assert_eq!(next.consumed, 5);
+        assert_eq!(next.content, 4);
         assert_eq!(
             &buf[..],
             b"next\n",
             "stream stayed aligned; next line intact"
         );
 
-        assert_eq!(read_capped_line(&mut r, &mut buf, 10).unwrap(), 0, "EOF");
+        assert_eq!(
+            read_capped_line(&mut r, &mut buf, 10).unwrap().consumed,
+            0,
+            "EOF"
+        );
     }
 
     #[test]
     fn yields_final_line_without_trailing_newline() {
         let mut r = Cursor::new(b"abc".to_vec());
         let mut buf = Vec::new();
-        assert_eq!(read_capped_line(&mut r, &mut buf, 100).unwrap(), 3);
+        let record = read_capped_line(&mut r, &mut buf, 100).unwrap();
+        assert_eq!(record.consumed, 3);
+        assert_eq!(
+            record.content, 3,
+            "no delimiter to discount at end of stream"
+        );
         assert_eq!(&buf[..], b"abc");
-        assert_eq!(read_capped_line(&mut r, &mut buf, 100).unwrap(), 0);
+        assert_eq!(
+            read_capped_line(&mut r, &mut buf, 100).unwrap().consumed,
+            0
+        );
+    }
+
+    #[test]
+    fn a_line_whose_content_is_exactly_the_cap_is_not_over_cap() {
+        // The cap counts record content, not the delimiter. Charging the
+        // newline rejected an exactly-at-cap line one byte early, and made the
+        // same content pass or fail depending only on whether a delimiter
+        // followed it. Every other KeyHog byte cap admits exactly-at-cap input.
+        let mut data = vec![b'x'; 10];
+        data.push(b'\n');
+        let mut with_newline = Cursor::new(data);
+        let mut buf = Vec::new();
+        let terminated = read_capped_line(&mut with_newline, &mut buf, 10).unwrap();
+        assert_eq!(terminated.consumed, 11);
+        assert_eq!(terminated.content, 10);
+        assert!(
+            terminated.content <= 10,
+            "10 content bytes fit a 10-byte cap"
+        );
+        assert_eq!(buf.len(), 10, "all 10 content bytes are retained");
+
+        // Identical content with no trailing delimiter must reach the same verdict.
+        let mut bare = Cursor::new(vec![b'x'; 10]);
+        let unterminated = read_capped_line(&mut bare, &mut buf, 10).unwrap();
+        assert_eq!(unterminated.content, terminated.content);
+
+        // One content byte past the cap is still over.
+        let mut over_data = vec![b'x'; 11];
+        over_data.push(b'\n');
+        let mut over = Cursor::new(over_data);
+        let record = read_capped_line(&mut over, &mut buf, 10).unwrap();
+        assert_eq!(record.content, 11);
+        assert!(record.content > 10, "11 content bytes exceed a 10-byte cap");
     }
 }
 

@@ -175,7 +175,7 @@ impl CompiledScanner {
                     let mut cands = cell.borrow_mut();
                     let mut candidates_are_full_text_offsets = false;
                     {
-                        let _g = super::profile::span(super::profile::P::Phase2SharedAc);
+                        let _g = super::profile::span(keyhog_profile::Stage::Phase2SharedAc);
                         if localize_keyword_anchors {
                             anchor_idx.collect_candidates(
                                 scan_text,
@@ -221,7 +221,7 @@ impl CompiledScanner {
                     // Candidates are sorted by (pattern, pos); verify each
                     // pattern's contiguous run together so its per-pattern
                     // signal cache is built at most once.
-                    let _verify_g = super::profile::span(super::profile::P::Phase2AnchoredVerify);
+                    let _verify_g = super::profile::span(keyhog_profile::Stage::Phase2AnchoredVerify);
                     this.verify_anchored_candidates(
                         anchor_idx,
                         &cands[..],
@@ -252,7 +252,7 @@ impl CompiledScanner {
                     ANCHOR_CANDIDATES.with(|cell| {
                         let mut cands = cell.borrow_mut();
                         {
-                            let _g = super::profile::span(super::profile::P::Phase2SharedAc);
+                            let _g = super::profile::span(keyhog_profile::Stage::Phase2SharedAc);
                             anchor_idx.collect_plain_candidates(
                                 scan_text,
                                 pattern_is_live,
@@ -265,7 +265,7 @@ impl CompiledScanner {
                             }
                         }
                         {
-                            let _g = super::profile::span(super::profile::P::Phase2AnchoredVerify);
+                            let _g = super::profile::span(keyhog_profile::Stage::Phase2AnchoredVerify);
                             this.verify_anchored_candidates(
                                 anchor_idx,
                                 &cands[..],
@@ -282,7 +282,7 @@ impl CompiledScanner {
                         }
                     });
                     {
-                        let _g = super::profile::span(super::profile::P::Phase2WholeChunk);
+                        let _g = super::profile::span(keyhog_profile::Stage::Phase2WholeChunk);
                         for &idx in anchor_idx.plain_always_mark() {
                             if crate::deadline::expired(deadline) {
                                 break;
@@ -317,7 +317,7 @@ impl CompiledScanner {
 
                 // Active patterns with no required-literal anchor: whole-chunk
                 // (windowed to the focus cursor when focus-restricting).
-                let _wholechunk_g = super::profile::span(super::profile::P::Phase2WholeChunk);
+                let _wholechunk_g = super::profile::span(keyhog_profile::Stage::Phase2WholeChunk);
                 for (tested, &index) in scratch.active.iter().enumerate() {
                     if localize_keyword_anchors && anchor_idx.is_eligible(index) {
                         continue;

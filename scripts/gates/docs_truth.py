@@ -226,18 +226,13 @@ def version_truth_issues(text: str, rel: str, expected_version: str) -> list[str
 def truth_issues() -> list[str]:
     issues: list[str] = []
     expected_version = workspace_version()
-    expected_count = detector_count()
+    issues.extend(corpus_claim_issues())
     expected_license = workspace_license()
     for path in canonical_paths():
         text = path.read_text(errors="replace")
         rel = path.relative_to(REPO).as_posix()
         issues.extend(version_truth_issues(text, rel, expected_version))
         for lineno, line in enumerate(text.splitlines(), 1):
-            for count in re.findall(r"\b(\d+)\s+detectors\b", line, re.I):
-                if int(count) != expected_count:
-                    issues.append(
-                        f"{rel}:{lineno}: stale detector count {count}; expected {expected_count}"
-                    )
             for label, pattern in STALE_PATTERNS:
                 if pattern.search(line):
                     issues.append(f"{rel}:{lineno}: {label}: {line.strip()}")
@@ -278,7 +273,211 @@ def truth_issues() -> list[str]:
     return issues
 
 
+def entropy_mode_counts(detectors_dir: pathlib.Path | None = None) -> dict[str, int]:
+    """Count `entropy_mode` values, excluding the directory-level corpus manifest.
+
+    Takes a directory so `--self-test` can prove the read against a synthetic
+    corpus. Without that, the gate check and `--sync-counts` share one
+    derivation, and a green gate would only mean the two agree with each other.
+    """
+    modes: dict[str, int] = {}
+    pattern = re.compile(r'entropy_mode\s*=\s*"([a-z]+)"')
+    root = detectors_dir or REPO / "detectors"
+    for path in root.glob("*.toml"):
+        if not path.is_file() or path.name == DETECTOR_CORPUS_MANIFEST_FILE:
+            continue
+        for mode in pattern.findall(path.read_text(errors="replace")):
+            modes[mode] = modes.get(mode, 0) + 1
+    return modes
+
+
+def corpus_claims() -> list[tuple[str, re.Pattern[str], int, bool]]:
+    """Every numeric docs claim the detector corpus owns.
+
+    Each entry is a label, a pattern whose group 1 is the number, the value that
+    number must equal, and whether the claim applies inside a code fence.
+    `--sync-counts` rewrites group 1; the gate reports a mismatch. Adding a claim
+    here makes it both checked and repairable, so a corpus change never leaves a
+    stale number behind in prose, a sample envelope, or the banner art.
+
+    Prose claims are exempt inside fences because a fence can hold real program
+    output for a smaller corpus, such as `Loaded 1 detectors` from a
+    single-detector custom directory. Sample-envelope field claims are the
+    opposite: they only ever appear inside a fence, so they are checked there.
+    """
+    total = detector_count()
+    entropy = entropy_mode_counts()
+    return [
+        (
+            "detector count",
+            # Explicit noun phrases only. A loose "N <word> detectors" match
+            # rewrites unrelated prose such as "Phase-2 generic detectors".
+            re.compile(
+                r"\b(\d+)(?=\s+(?:service-specific\s+|embedded\s+|shipped\s+|"
+                r"built-in\s+|loaded\s+|secret\s+)?detectors\b)",
+                re.I,
+            ),
+            total,
+            False,
+        ),
+        ("sample detector_count", re.compile(r'(?<="detector_count":\s)(\d+)'), total, True),
+        (
+            "sample detector_digest",
+            re.compile(r'(?<="detector_digest":\s")(\d+)(?=-)'),
+            total,
+            True,
+        ),
+        (
+            "entropy channels disabling ML",
+            re.compile(r"\b(\d+)(?= of \d+ entropy channels disable ML)"),
+            entropy.get("disabled", 0),
+            False,
+        ),
+        (
+            "entropy channel total",
+            re.compile(r"(?<= of )(\d+)(?= entropy channels disable ML)"),
+            total,
+            False,
+        ),
+    ]
+
+
+def claim_lines(text: str):
+    """Yield `(lineno, line, rewritable, fenced)` for corpus-claim scanning.
+
+    A benchmark panel records a measurement pinned to the binary and detector
+    set it was taken with. Rewriting a count in there would falsify recorded
+    evidence, so corpus claims never look inside one. `fenced` lets a claim opt
+    out of code blocks, which hold sample output rather than live claims.
+    """
+    inside_bench = False
+    inside_fence = False
+    for lineno, line in enumerate(text.splitlines(), 1):
+        marker = BENCH_MARKER.match(line)
+        if marker:
+            inside_bench = marker.group(1) == "start"
+            yield lineno, line, False, inside_fence
+            continue
+        if line.lstrip().startswith("```"):
+            inside_fence = not inside_fence
+            yield lineno, line, False, True
+            continue
+        yield lineno, line, not inside_bench, inside_fence
+
+
+def corpus_claim_issues() -> list[str]:
+    issues: list[str] = []
+    claims = corpus_claims()
+    for path in canonical_paths():
+        rel = path.relative_to(REPO).as_posix()
+        for lineno, line, checked, fenced in claim_lines(
+            path.read_text(errors="replace")
+        ):
+            if not checked:
+                continue
+            for label, pattern, expected, in_fence in claims:
+                if fenced and not in_fence:
+                    continue
+                for found in pattern.findall(line):
+                    if int(found) != expected:
+                        issues.append(
+                            f"{rel}:{lineno}: stale {label} {found}; expected {expected}"
+                        )
+    return issues
+
+
+def sync_detector_counts() -> int:
+    """Rewrite every corpus-owned number in canonical docs to the live value.
+
+    A detector add or removal otherwise breaks this gate for every canonical
+    page, the Action README, the sample envelopes, and the banner art at once,
+    and each site has to be edited by hand. The corpus is the single source of
+    truth, so make one command carry it everywhere the gate already checks.
+    """
+    claims = corpus_claims()
+    superseded: set[str] = set()
+    changed: dict[str, list[str]] = {}
+    for path in canonical_paths():
+        text = path.read_text(errors="replace")
+        touched: list[str] = []
+        lines: list[str] = []
+        for _, line, rewritable, fenced in claim_lines(text):
+            if rewritable:
+                for label, pattern, expected, in_fence in claims:
+                    if fenced and not in_fence:
+                        continue
+                    def replace(match: re.Match[str], expected: int = expected) -> str:
+                        if match.group(1) != str(expected):
+                            superseded.add(match.group(1))
+                        return str(expected)
+
+                    after = pattern.sub(replace, line)
+                    if after != line:
+                        touched.append(label)
+                    line = after
+            lines.append(line)
+        updated = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+        if updated != text:
+            path.write_text(updated)
+            changed[path.relative_to(REPO).as_posix()] = touched
+    if changed:
+        print(f"synced {len(changed)} file(s):")
+        for rel, labels in changed.items():
+            print(f"  {rel}: {', '.join(sorted(set(labels)))}")
+    else:
+        print("every corpus-owned number in canonical docs is already current.")
+    if superseded:
+        review = review_occurrences(superseded)
+        print(
+            f"\nreview: the superseded value(s) {', '.join(sorted(superseded))} "
+            "still appear where no rule owns them."
+        )
+        for line in review:
+            print(f"  {line}")
+        if not review:
+            print("  none")
+    return 0
+
+
+def review_occurrences(values: set[str]) -> list[str]:
+    """Report standalone occurrences of a superseded count no rule rewrote."""
+    hits: list[str] = []
+    patterns = [(value, re.compile(rf"\b{re.escape(value)}\b")) for value in values]
+    for path in canonical_paths():
+        rel = path.relative_to(REPO).as_posix()
+        for lineno, line in enumerate(
+            path.read_text(errors="replace").splitlines(), 1
+        ):
+            for value, pattern in patterns:
+                if pattern.search(line):
+                    hits.append(f"{rel}:{lineno}: {value}: {line.strip()[:120]}")
+    return hits
+
+
 def self_test() -> int:
+    """Prove this gate's own derivations, not just its agreement with itself.
+
+    Do not delete these fixtures as redundant with a normal gate run. The gate
+    check and `--sync-counts` call the SAME derivation functions, so a green
+    gate proves the two agree, not that the number is right. And `--sync-counts`
+    does not merely report: it WRITES corpus-derived numbers into README, every
+    `docs/src` page, the Action README, and the banner art in one command. These
+    fixtures are the only independent evidence standing between a bad derivation
+    and a repository full of confidently wrong numbers that the check then
+    confirms as correct.
+
+    Every assertion here has been shown to fail under a deliberate defect, so
+    none of it is untested ceremony. Removing the corpus-manifest exclusion from
+    `entropy_mode_counts`, loosening the detector-count phrase back to
+    `N <word> detectors` (which once rewrote "Phase-2 generic detectors" to
+    "Phase-925"), dropping the `<!-- BENCH: -->` guard, and dropping code-fence
+    tracking each turn this function red. If you change a derivation, re-run
+    that mutation check rather than trusting a green.
+
+    The claims most likely to be wrong are the inherited ones. A sentence that
+    has been nearly right for a long time is more dangerous than a new mistake,
+    because nobody feels responsible for re-checking it.
+    """
     expected = workspace_version()
     count = detector_count()
     bad = f"site/config.html keyhog v0.0.0 with {count + 1} detectors picks the fastest backend"
@@ -313,10 +512,22 @@ def self_test() -> int:
     )
     with tempfile.TemporaryDirectory(prefix=".docs-truth-detectors-", dir=REPO) as raw:
         detectors = pathlib.Path(raw)
-        (detectors / "detector.toml").write_text("[detector]\n")
-        (detectors / DETECTOR_CORPUS_MANIFEST_FILE).write_text("[corpus]\n")
-        (detectors / "ignored.txt").write_text("not a detector\n")
-        detector_manifest_excluded = detector_count(detectors) == 1
+        (detectors / "detector.toml").write_text(
+            '[detector]\nml = { entropy_mode = "disabled" }\n'
+        )
+        (detectors / "owner.toml").write_text(
+            '[detector]\nml = { entropy_mode = "authoritative" }\n'
+        )
+        # The manifest and non-TOML files must not contribute to either count.
+        (detectors / DETECTOR_CORPUS_MANIFEST_FILE).write_text(
+            '[corpus]\nentropy_mode = "disabled"\n'
+        )
+        (detectors / "ignored.txt").write_text('entropy_mode = "disabled"\n')
+        detector_manifest_excluded = detector_count(detectors) == 2
+        entropy_counts_derived = entropy_mode_counts(detectors) == {
+            "disabled": 1,
+            "authoritative": 1,
+        }
     canonical_license = f"License: {workspace_license()}."
     license_detected = canonical_license == "License: MIT OR Apache-2.0." and (
         canonical_license in "License: MIT OR Apache-2.0.".splitlines()
@@ -326,6 +537,38 @@ def self_test() -> int:
         HOSTED_TOKEN_ARG.search(line)
         for _, line in fenced_lines("```bash\nkeyhog scan --github-token secret\n```\n")
     )
+    count_pattern = next(
+        pattern for label, pattern, *_ in corpus_claims() if label == "detector count"
+    )
+    count_phrases_detected = (
+        count_pattern.findall("KeyHog compiles 923 detectors") == ["923"]
+        and count_pattern.findall("**923 service-specific detectors**") == ["923"]
+        and count_pattern.findall("923 embedded detectors") == ["923"]
+        # Unrelated prose must never be rewritten as a corpus claim.
+        and count_pattern.findall("Phase-2 generic detectors participate") == []
+    )
+    scanned = [
+        (line, rewritable, fenced)
+        for _, line, rewritable, fenced in claim_lines(
+            "923 detectors\n"
+            "<!-- BENCH:mirror:start -->\n"
+            "923 detectors\n"
+            "<!-- BENCH:mirror:end -->\n"
+            "```text\n"
+            "Loaded 1 detectors\n"
+            "```\n"
+            "923 detectors\n"
+        )
+    ]
+    # A benchmark panel is never rewritable. Sample output inside a fence is
+    # rewritable but marked fenced, so a prose-only claim skips it.
+    bench_guarded = [
+        line for line, rewritable, fenced in scanned if rewritable and not fenced
+    ] == ["923 detectors", "923 detectors"]
+    fence_marked = any(
+        line == "Loaded 1 detectors" and fenced for line, _, fenced in scanned
+    )
+
     detected = (
         stale_detected
         and slug_detected
@@ -333,6 +576,10 @@ def self_test() -> int:
         and license_detected
         and token_arg_detected
         and detector_manifest_excluded
+        and entropy_counts_derived
+        and count_phrases_detected
+        and bench_guarded
+        and fence_marked
     )
     print("self-test PASS" if detected else "self-test FAIL", file=sys.stderr)
     return 0 if detected else 1
@@ -341,6 +588,8 @@ def self_test() -> int:
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return self_test()
+    if "--sync-counts" in argv:
+        return sync_detector_counts()
     issues = truth_issues()
     if issues:
         print(f"FAIL - {len(issues)} documentation truth issue(s):", file=sys.stderr)

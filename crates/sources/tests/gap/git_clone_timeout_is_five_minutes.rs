@@ -1,7 +1,7 @@
 //! GitHub org shallow clone budget must be centralized in timeouts.rs.
 
 #[cfg(feature = "github")]
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[cfg(feature = "github")]
 #[test]
 fn git_clone_timeout_is_five_minutes() {

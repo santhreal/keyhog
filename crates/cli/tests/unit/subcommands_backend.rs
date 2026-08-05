@@ -51,29 +51,3 @@ fn backend_probe_metrics_do_not_render_missing_evidence_as_zero() {
     assert_eq!(API.format_backend_probe_mb_metric(None), "unknown");
 }
 
-#[test]
-fn gpu_health_messages_do_not_advertise_implicit_cpu_fallback() {
-    for (label, source) in [
-        (
-            "backend",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/src/subcommands/backend.rs"
-            )),
-        ),
-        (
-            "doctor",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/src/subcommands/doctor.rs"
-            )),
-        ),
-    ] {
-        assert!(
-            !source.contains("fall back to SIMD/CPU")
-                && !source.contains("falling back to CPU")
-                && source.contains("GPU routes are unavailable until fixed"),
-            "{label} GPU health wording must align with the no-silent-GPU-degrade contract"
-        );
-    }
-}

@@ -31,7 +31,7 @@
 mod support;
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use support::split_chunk_results;
 
 /// A syntactically valid GCS bucket name (3-222 chars, lowercase/digit/dash,

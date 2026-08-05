@@ -1,7 +1,7 @@
 //! Docker tar entries with `..` path components must be rejected pre-unpack.
 
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[cfg(feature = "docker")]
 #[test]
 fn docker_tar_dotdot_path_rejected() {

@@ -1,5 +1,5 @@
 use keyhog_core::{Chunk, SourceError};
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 // The fixture carries a real-SHAPE GitHub classic PAT so the request chunk
 // exercises the Authorization-header path. The 36-char token body is split
@@ -47,9 +47,7 @@ fn expand_har(
     bytes: &[u8],
     path_str: &str,
     max_size: u64,
-) -> Option<Vec<Result<Chunk, SourceError>>> {
-    TestApi.expand_har(bytes, path_str, max_size)
-}
+) -> Option<Vec<Result<Chunk, SourceError>>> {TestApi.expand_har(bytes, path_str, max_size)}
 
 #[test]
 fn try_expand_har_splits_request_and_response() {
@@ -245,14 +243,10 @@ fn wrapped_base64_response_body_is_decoded_before_scanning() {
 }
 
 #[test]
-fn compact_base64_text_preserves_non_ascii_noise() {
-    let compacted = TestApi.compact_har_base64_text("ab\né\tcd");
+fn compact_base64_text_preserves_non_ascii_noise() {let compacted = TestApi.compact_har_base64_text("ab\né\tcd");
     assert_eq!(
-        compacted.as_str(),
-        "abécd",
-        "base64 whitespace compaction must not byte-cast and corrupt non-ASCII text"
-    );
-}
+        compacted.as_str(), "abécd", "base64 whitespace compaction must not byte-cast and corrupt non-ASCII text"
+    );}
 
 #[test]
 fn base64_decoded_invalid_utf8_response_body_is_scanned_lossy() {
@@ -412,4 +406,42 @@ fn har_cookie_redirect_and_comments_are_rendered() {
     assert!(response.data.contains("refresh=response_cookie_secret_123"));
     assert!(response.data.contains("redirect_secret_123"));
     assert!(response.data.contains("response_comment_secret_123"));
+}
+
+/// A captured request URL carries the credential in its query or its userinfo
+/// far more often than not, and the HAR expander turns that URL into the chunk
+/// path, i.e. the `file_path` of every finding in the entry, which text, JSON,
+/// SARIF, CSV, HTML, and JUnit all print verbatim. Redacting the credential
+/// value while leaving the path in the report is the whole point of the
+/// reporting boundary, so the URL is masked where the path is minted. The
+/// request/response BODY is deliberately untouched: that is the material being
+/// scanned.
+#[test]
+fn credential_bearing_request_url_is_masked_in_the_chunk_path() {
+    let har = format!(
+        r#"{{"log":{{"entries":[{{"request":{{"method":"GET","url":"https://svcuser:hunter2@api.example.com/v1/me?access_token={GHP_TOKEN}","headers":[]}},"response":{{"status":200,"headers":[],"content":{{"size":1,"mimeType":"text/plain","text":"ok"}}}}}}]}}}}"#
+    );
+    let chunks = expand_har(har.as_bytes(), "capture.har", 10 * 1024 * 1024)
+        .expect("fixture should parse")
+        .into_iter()
+        .map(|chunk| chunk.expect("chunk ok"))
+        .collect::<Vec<_>>();
+    assert_eq!(chunks.len(), 2, "one request + one response chunk");
+    for chunk in &chunks {
+        let path = chunk.metadata.path.as_deref().expect("chunk path");
+        assert_eq!(
+            path, "capture.har#https://***@api.example.com/v1/me?access_token=***",
+            "chunk path must carry the masked URL"
+        );
+        assert!(!path.contains("hunter2"), "userinfo leaked into path: {path}");
+        assert!(
+            !path.contains(GHP_TOKEN),
+            "query credential leaked into path: {path}"
+        );
+    }
+    assert!(
+        chunks[0].data.contains(GHP_TOKEN),
+        "the request line is scanned content and must keep the raw URL so the \
+         credential is still DETECTED, only the report path is masked"
+    );
 }

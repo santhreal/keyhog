@@ -12,11 +12,7 @@ fn guard_enforces_byte_and_entry_caps() {
     std::fs::create_dir(&root).expect("clone root");
     std::fs::write(root.join("payload"), b"0123456789").expect("payload");
 
-    let bytes = clone_materialization_cap(CloneMaterializationGuard {
-        root: &root,
-        byte_cap: 9,
-        entry_cap: 10,
-    })
+    let bytes = clone_materialization_cap(CloneMaterializationGuard::new(&root, 9, 10))
     .expect("materialization observation");
     assert_eq!(
         bytes,
@@ -26,21 +22,13 @@ fn guard_enforces_byte_and_entry_caps() {
         })
     );
     assert_eq!(
-        clone_materialization_cap(CloneMaterializationGuard {
-            root: &root,
-            byte_cap: 10,
-            entry_cap: 1,
-        })
+        clone_materialization_cap(CloneMaterializationGuard::new(&root, 10, 1))
         .expect("exact-cap observation"),
         None,
         "materialization exactly at both configured maxima remains valid"
     );
 
-    let entries = clone_materialization_cap(CloneMaterializationGuard {
-        root: &root,
-        byte_cap: usize::MAX,
-        entry_cap: 0,
-    })
+    let entries = clone_materialization_cap(CloneMaterializationGuard::new(&root, usize::MAX, 0))
     .expect("materialization observation");
     assert_eq!(
         entries,
@@ -98,11 +86,7 @@ fn guard_does_not_follow_symlinks() {
     symlink(&outside, root.join("link")).expect("symlink");
 
     let cap = outside.as_os_str().len() + 1;
-    let result = clone_materialization_cap(CloneMaterializationGuard {
-        root: &root,
-        byte_cap: cap,
-        entry_cap: 1,
-    })
+    let result = clone_materialization_cap(CloneMaterializationGuard::new(&root, cap, 1))
     .expect("materialization observation");
     assert_eq!(
         result, None,
@@ -135,11 +119,7 @@ fn cap_kills_and_reaps_the_child() {
         None,
         None,
         Duration::from_secs(5),
-        CloneMaterializationGuard {
-            root: &root,
-            byte_cap: 9,
-            entry_cap: 10,
-        },
+        CloneMaterializationGuard::new(&root, 9, 10),
     );
     let error = match result {
         Err(error) => error,

@@ -18,7 +18,7 @@
 #![cfg(any(feature = "s3", feature = "gcs", feature = "azure"))]
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use std::time::{Duration, Instant};
 
 const PAGES: usize = 4;

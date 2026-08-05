@@ -244,14 +244,23 @@ pub(crate) struct AutorouteCandidateReceiptInspection {
     pub(crate) evidence_digest: String,
 }
 
+/// Names the evidence the persisted route rests on, so an operator reading
+/// inspection can tell a proved win from an unresolvable one.
 fn selection_basis(
+    confidence_separated: bool,
     exact_plan_confidence: bool,
     selected_plain_localizer: bool,
     selected_keyword_localizer: bool,
     default_plain_localizer: bool,
     default_keyword_localizer: bool,
 ) -> &'static str {
-    if exact_plan_confidence {
+    if !confidence_separated {
+        // No peer interval was separated from the selected route's. The route
+        // is the lowest-complexity backend inside the fastest route's own 95%
+        // bound, which is a decision the evidence permits rather than one it
+        // proves.
+        "unseparated-dead-heat-lowest-complexity-backend"
+    } else if exact_plan_confidence {
         "exact-plan-paired-95pct-confidence"
     } else if selected_plain_localizer == default_plain_localizer
         && selected_keyword_localizer == default_keyword_localizer
@@ -668,6 +677,7 @@ fn inspect_autoroute_cache_for_build(
                 route_timings: route_timing_inspections(primary),
                 confidence_separated,
                 selection_basis: selection_basis(
+                    confidence_separated,
                     exact_plan_confidence,
                     one_shot_route.phase2_plain_localizer,
                     one_shot_route.phase2_keyword_localizer,
@@ -680,6 +690,7 @@ fn inspect_autoroute_cache_for_build(
                 daemon_phase2_keyword_localizer: daemon_route.phase2_keyword_localizer,
                 daemon_confidence_separated,
                 daemon_selection_basis: selection_basis(
+                    daemon_confidence_separated,
                     daemon_exact_plan_confidence,
                     daemon_route.phase2_plain_localizer,
                     daemon_route.phase2_keyword_localizer,

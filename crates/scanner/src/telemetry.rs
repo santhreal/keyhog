@@ -465,6 +465,14 @@ static STRUCTURED_OVERSIZE_SKIPS: AtomicUsize = AtomicUsize::new(0);
 /// still scanned, but secrets only reachable after an omitted recursive decode
 /// layer may be missed, so the CLI must surface this as a coverage gap.
 static DECODE_TRUNCATIONS: AtomicUsize = AtomicUsize::new(0);
+/// A chunk carried decode candidates (`decoder_admission` would have admitted
+/// it) but exceeded `max_decode_bytes`, so decode-through never ran on it at
+/// all. Distinct from `DECODE_TRUNCATIONS`, which counts decode work that
+/// started and was cut short: here the whole pass was declined up front. The raw
+/// bytes are still scanned, but nothing base64/hex/URL-encoded inside the chunk
+/// is recovered, so lowering `--decode-size-limit` used to drop findings with no
+/// operator-visible signal at all.
+static DECODE_OVERSIZE_SKIPS: AtomicUsize = AtomicUsize::new(0);
 #[cfg(test)]
 thread_local! {
     static THREAD_DECODE_TRUNCATIONS: std::cell::Cell<usize> =
@@ -484,6 +492,13 @@ static LINE_OFFSET_MAPPING_MISMATCHES: AtomicUsize = AtomicUsize::new(0);
 /// detection and post-processing stage for that chunk.
 static CHUNK_DEADLINE_ABORTS: AtomicUsize = AtomicUsize::new(0);
 
+/// Named-detector matches dropped by the binary-strings noise gate because the
+/// match carried no structural proof (KH-1064). Not a source skip: the bytes
+/// were scanned and a detector did fire, but the finding was withheld. It is
+/// counted so a zero-finding binary scan can still say what it excluded
+/// instead of reporting an unqualified clean.
+static BINARY_STRINGS_NAMED_EXCLUSIONS: AtomicUsize = AtomicUsize::new(0);
+
 /// Scanner coverage gap recorded when a scanner-owned transform did not run to
 /// full coverage. These are not source skips: raw bytes still flow through the
 /// scanner, but structured/decode-only secrets may be missed.
@@ -492,23 +507,27 @@ pub(crate) enum ScannerCoverageGapEvent {
     StructuredParseFailure,
     StructuredOversizeSkip,
     DecodeTruncation,
+    DecodeOversizeSkip,
     InvalidPatternIndexSkip,
     BoundaryResultCardinalityMismatch,
     LineOffsetMappingMismatch,
     ChunkDeadlineAbort,
+    BinaryStringsNamedExclusion,
 }
 
 impl ScannerCoverageGapEvent {
     /// Every variant, so the per-scan reset owner (`reset_for_scan`) can zero the
     /// full coverage-gap counter set without a new gap counter ever being forgotten.
-    pub(crate) const ALL: [Self; 7] = [
+    pub(crate) const ALL: [Self; 9] = [
         Self::StructuredParseFailure,
         Self::StructuredOversizeSkip,
         Self::DecodeTruncation,
+        Self::DecodeOversizeSkip,
         Self::InvalidPatternIndexSkip,
         Self::BoundaryResultCardinalityMismatch,
         Self::LineOffsetMappingMismatch,
         Self::ChunkDeadlineAbort,
+        Self::BinaryStringsNamedExclusion,
     ];
 
     pub(crate) fn counter(self) -> &'static AtomicUsize {
@@ -516,10 +535,12 @@ impl ScannerCoverageGapEvent {
             Self::StructuredParseFailure => &STRUCTURED_PARSE_FAILURES,
             Self::StructuredOversizeSkip => &STRUCTURED_OVERSIZE_SKIPS,
             Self::DecodeTruncation => &DECODE_TRUNCATIONS,
+            Self::DecodeOversizeSkip => &DECODE_OVERSIZE_SKIPS,
             Self::InvalidPatternIndexSkip => &INVALID_PATTERN_INDEX_SKIPS,
             Self::BoundaryResultCardinalityMismatch => &BOUNDARY_RESULT_CARDINALITY_MISMATCHES,
             Self::LineOffsetMappingMismatch => &LINE_OFFSET_MAPPING_MISMATCHES,
             Self::ChunkDeadlineAbort => &CHUNK_DEADLINE_ABORTS,
+            Self::BinaryStringsNamedExclusion => &BINARY_STRINGS_NAMED_EXCLUSIONS,
         }
     }
 
@@ -528,10 +549,12 @@ impl ScannerCoverageGapEvent {
             Self::StructuredParseFailure => "structured_parse_failures",
             Self::StructuredOversizeSkip => "structured_oversize_skips",
             Self::DecodeTruncation => "decode_truncations",
+            Self::DecodeOversizeSkip => "decode_oversize_skips",
             Self::InvalidPatternIndexSkip => "invalid_pattern_index_skips",
             Self::BoundaryResultCardinalityMismatch => "boundary_result_cardinality_mismatches",
             Self::LineOffsetMappingMismatch => "line_offset_mapping_mismatches",
             Self::ChunkDeadlineAbort => "chunk_deadline_aborts",
+            Self::BinaryStringsNamedExclusion => "binary_strings_named_exclusions",
         }
     }
 }
@@ -607,6 +630,22 @@ pub(crate) fn record_scanner_coverage_gap(
 // Global static dogfood capability flag for fast opt-in checking (KH-120)
 static DOGFOOD_ENABLED: AtomicBool = AtomicBool::new(false);
 
+/// Findings dropped by the vendored/minified PATH suppression
+/// (`suppression::path_filter::looks_like_vendored_minified_path`).
+///
+/// This is a PRECISION policy, not a coverage boundary: the bytes were read and
+/// matched, then the finding was thrown away because of where the file sits. A
+/// dropped finding that nobody counts is a silent miss, and minified frontend
+/// bundles are one of the places a build pipeline most often inlines a real API
+/// key. The CLI reports this counter as its own coverage-gap row so the operator
+/// sees that findings existed and learns the flag that surfaces them.
+static VENDORED_PATH_SUPPRESSIONS: AtomicUsize = AtomicUsize::new(0);
+
+/// Whether the vendored/minified path suppression applies at all. On by default
+/// (vendored trees are noisy); `--no-default-excludes` turns it off, because a
+/// flag that says it disables exclusions must disable every one of them.
+static VENDORED_PATH_SUPPRESSION_ENABLED: AtomicBool = AtomicBool::new(true);
+
 fn cell() -> &'static Telemetry {
     static CELL: OnceLock<Telemetry> = OnceLock::new();
     CELL.get_or_init(Telemetry::default)
@@ -623,6 +662,30 @@ pub fn is_dogfood_enabled() -> bool {
         return enabled;
     }
     DOGFOOD_ENABLED.load(Ordering::Relaxed)
+}
+
+/// Enable or disable the vendored/minified path suppression for this process.
+///
+/// Call AFTER [`reset_for_scan`], which restores the default. The suppression is
+/// consulted on every surviving finding, so the read below is a relaxed atomic
+/// load and nothing more.
+pub fn set_vendored_path_suppression(enabled: bool) {
+    VENDORED_PATH_SUPPRESSION_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+/// Whether the vendored/minified path suppression is currently applied.
+pub fn vendored_path_suppression_enabled() -> bool {
+    VENDORED_PATH_SUPPRESSION_ENABLED.load(Ordering::Relaxed)
+}
+
+/// Record one finding dropped because its path is a vendored/minified bundle.
+pub(crate) fn record_vendored_path_suppression() {
+    VENDORED_PATH_SUPPRESSIONS.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Findings dropped by the vendored/minified path suppression this scan.
+pub fn vendored_path_suppression_count() -> usize {
+    VENDORED_PATH_SUPPRESSIONS.load(Ordering::Relaxed)
 }
 
 /// Record one example/placeholder suppression. The default path is only the
@@ -997,6 +1060,23 @@ pub fn decode_truncation_count() -> usize {
     THREAD_DECODE_TRUNCATIONS.with(|count| count.get())
 }
 
+/// Record that a chunk carrying decode candidates was denied decode-through
+/// entirely because it exceeded `max_decode_bytes`.
+///
+/// Callers MUST establish that the chunk would otherwise have been admitted
+/// (`decoder_admission != Impossible` and `max_decode_depth > 0`); counting
+/// every oversize chunk would be false-loud on the overwhelming majority that
+/// contain no encoded content at all.
+pub(crate) fn record_decode_oversize_skip() {
+    let _receipt = record_scanner_coverage_gap(ScannerCoverageGapEvent::DecodeOversizeSkip);
+}
+
+/// Count of decode-candidate-bearing chunks denied decode-through this scan for
+/// exceeding `max_decode_bytes` (`--decode-size-limit`).
+pub fn decode_oversize_skip_count() -> usize {
+    DECODE_OVERSIZE_SKIPS.load(Ordering::Relaxed)
+}
+
 /// Record that compiled pattern-index side data referenced an out-of-range
 /// pattern and the affected expansion/admission edge had to be skipped.
 pub(crate) fn record_invalid_pattern_index_skip() {
@@ -1037,6 +1117,18 @@ pub(crate) fn record_chunk_deadline_abort() {
 /// Count of chunks that stopped before full coverage because their deadline elapsed.
 pub fn chunk_deadline_abort_count() -> usize {
     CHUNK_DEADLINE_ABORTS.load(Ordering::Relaxed)
+}
+
+/// Record a named-detector match withheld by the binary-strings noise gate.
+pub(crate) fn record_binary_strings_named_exclusion() {
+    let _receipt =
+        record_scanner_coverage_gap(ScannerCoverageGapEvent::BinaryStringsNamedExclusion);
+}
+
+/// Count of named-detector matches withheld from binary-derived chunks this
+/// scan for lack of structural proof.
+pub fn binary_strings_named_exclusion_count() -> usize {
+    BINARY_STRINGS_NAMED_EXCLUSIONS.load(Ordering::Relaxed)
 }
 
 /// Count of synthetic multiline/structured mapping attribution mismatches this
@@ -1239,6 +1331,8 @@ pub fn reset_for_scan() {
     SKIPPED_FILES.store(0, Ordering::Relaxed);
     TOTAL_MATCHES.store(0, Ordering::Relaxed);
     GPU_DISPATCHES.store(0, Ordering::Relaxed);
+    VENDORED_PATH_SUPPRESSIONS.store(0, Ordering::Relaxed);
+    VENDORED_PATH_SUPPRESSION_ENABLED.store(true, Ordering::Relaxed);
     for gap in ScannerCoverageGapEvent::ALL {
         gap.counter().store(0, Ordering::Relaxed);
     }

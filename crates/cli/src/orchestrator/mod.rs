@@ -335,7 +335,16 @@ pub(crate) use streaming::{scan_streaming_source, StreamingSourceEvent};
 
 fn resolved_default_autoroute_config() -> ResolvedScanConfig {
     let mut resolved = resolved_scan_config_for_scanner(keyhog_scanner::ScannerConfig::default());
-    resolved.threads = Some(rayon::current_num_threads());
+    // NOT `rayon::current_num_threads()`. That call CREATES Rayon's global
+    // registry as a side effect, and this function runs on every daemon client
+    // connect (warm_identity::client_identity) purely to compute an identity
+    // digest. Claiming the pool there made the `--daemon=auto` in-process
+    // fallback impossible: the retry could no longer build a KeyHog-owned pool,
+    // so an incompatible or crashed daemon turned a scan into exit 2 with no
+    // findings, right after the CLI announced the fallback. The helper reports
+    // the same width without creating anything, so the digest is unchanged and
+    // the `--daemon=mass` policy gate still matches the resolved scan config.
+    resolved.threads = Some(crate::orchestrator_config::keyhog_worker_threads());
     resolved
 }
 

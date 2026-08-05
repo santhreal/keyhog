@@ -371,9 +371,12 @@ fn calibration_block(seed: &str) -> Vec<u8> {
     block.into_bytes()
 }
 
+/// A measurement whose intervals merely overlap now resolves to a dead-heat
+/// route instead of failing, so what remains retryable is a measurement that
+/// produced no usable timing at all or whose points disagree about the backend.
 fn retryable_inconclusive_calibration(error: &anyhow::Error) -> bool {
     let diagnostic = format!("{error:#}");
-    diagnostic.contains("calibration timing is inconclusive")
+    diagnostic.contains("calibration timing does not resolve one route")
         || diagnostic.contains("no confidence-supported one-shot route")
         || diagnostic.contains("no confidence-supported daemon route")
 }

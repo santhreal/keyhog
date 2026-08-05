@@ -50,38 +50,14 @@ const MIN_PRIVATE_KEY_B64_LINE_LEN: usize = 16;
 /// (a coincidental 26) and must NOT be folded into this constant.
 pub(crate) const ALPHABET_LEN: u8 = 26;
 
-#[derive(serde::Deserialize)]
-struct ProgramSourceCodeExtensions {
-    extensions: Vec<String>,
-}
-
-/// Program/source extensions where source-like identifier density makes
-/// Caesar-decoding pure noise. Matched against the suffix of
-/// `chunk.metadata.path` after ASCII-lowercasing and slash normalization.
-/// Parse the bundled Tier-B program-source-extension list. Returns an error
-/// rather than panicking so the `PROGRAM_SOURCE_CODE_EXTENSIONS` owner below is
-/// the single fail-closed site (the `no_unwrap_expect` gate bans `expect`).
-fn parse_program_source_extensions(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<ProgramSourceCodeExtensions>(raw)
-        .map(|parsed| parsed.extensions)
-        .map_err(|error| error.to_string())
-}
-
-/// Program/source extensions where source-like identifier density makes
-/// Caesar-decoding pure noise. Matched against the suffix of
-/// `chunk.metadata.path` after ASCII-lowercasing and slash normalization.
-static PROGRAM_SOURCE_CODE_EXTENSIONS: LazyLock<Vec<String>> = LazyLock::new(|| {
-    match parse_program_source_extensions(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/program-source-extensions.toml"
-    ))) {
-        Ok(extensions) => extensions,
-        Err(error) => panic!(
-            "rules/program-source-extensions.toml is invalid: {error}. \
-             Fix the bundled Tier-B metadata file list."
-        ),
-    }
-});
+crate::tier_b_list::tier_b_vec!(
+    /// Program/source extensions where source-like identifier density makes
+    /// Caesar-decoding pure noise. Matched against the suffix of
+    /// `chunk.metadata.path` after ASCII-lowercasing and slash normalization.
+    PROGRAM_SOURCE_CODE_EXTENSIONS,
+    "program-source-extensions.toml",
+    extensions
+);
 
 #[derive(serde::Deserialize)]
 struct CaesarNoiseLists {

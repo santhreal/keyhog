@@ -65,17 +65,36 @@ remain tied, KeyHog chooses the compiled default when it is among the tied
 leaders. Otherwise, it chooses a stable typed plan from that tied set. The
 chosen plan's interval must remain below every plan on each peer backend.
 Inspection reports `peer-separated-compiled-default-plan` or
-`peer-separated-statistically-tied-plan`. All other overlaps are inconclusive
-and are rejected.
+`peer-separated-statistically-tied-plan`.
+
+When nothing separates, the measurement is resolved rather than discarded. A
+route stays in contention unless some peer is proved faster, meaning that
+peer's whole 95% interval lies below the route's own. Among the routes still in
+contention, only those whose median falls inside the fastest route's own 95%
+upper bound are eligible, so a route can never win on a wide error bar while
+its central tendency is measurably worse. The eligible set is then ordered by
+backend complexity, `cpu-fallback` before `simd-regex` before the GPU peers,
+because when nothing is proved faster the backend that needs no accelerator
+bring-up and always runs is the honest choice, and it is the same choice on
+every rerun of the same evidence. Inspection reports
+`unseparated-dead-heat-lowest-complexity-backend` and `confidence_separated`
+stays `false`, so a permitted decision is never presented as a proved one.
+
+This matters on real trees. Calibrating `benchmarks/corpora/homefield` measured
+`cpu-fallback` at 4.507 s [3.08, 11.49] against `gpu-wgpu` at 4.462 s
+[4.40, 4.92], with every interval overlapping every other. Refusing to decide
+left the workload with no persisted route at all, so every later scan of it ran
+through scalar correctness recovery: the slowest outcome reachable from a
+measurement whose entire content is that the backends are indistinguishable.
 
 Calibration records 7 normalized timing trials per route. A warm trial repeats
 short candidate executions until their combined timing reaches 10 ms. It stops
 after 1,024 executions and records the per-execution average. This keeps
 scheduler resolution from dominating small workloads without extending large
 workloads. Accelerator evidence retains one real cold dispatch. Steady and warm
-rounds rotate route order so host drift is shared across peers. If confidence
-still overlaps, calibration stops with host-load guidance plus every route's
-median and 95% interval instead of spending unbounded install time or guessing.
+rounds rotate route order so host drift is shared across peers. Overlap that
+survives the rotation is resolved as a dead heat rather than spending unbounded
+install time or guessing.
 
 Because the decision is *measured*, it must be recorded before `--backend auto`
 (the default) can claim a fastest route. A fresh install has no decisions yet,
@@ -182,9 +201,20 @@ by default; override with `--autoroute-cache <path>` or
 `[system].autoroute_cache`).
 
 Canonical calibration admits every eligible execution class. The low-level
-`scan --no-autoroute-gpu --autoroute-calibrate` diagnostic deliberately writes
-under a noncanonical config identity; its CPU-only evidence cannot overwrite a
-normal all-candidate decision.
+`scan --no-autoroute-gpu --autoroute-calibrate` diagnostic measures a CPU-only
+candidate set, and that evidence cannot overwrite or be replayed by a normal
+all-candidate decision. The isolation lives in the persisted host generation,
+not in the config digest. A host generation records the eligible backend census
+plus the complete GPU device, runtime, driver, and batch-limit identity, and a
+scan replays a row only when that whole profile compares equal, so a CPU-only
+measurement is invisible to a scan that admits a GPU.
+
+The resolved config digest deliberately does not record whether a calibration
+excluded a GPU. Recording it there was a guaranteed miss on every host and
+build with no GPU candidate, because the exclusion is vacuous but the digest
+still differed: calibration wrote decisions under a key no scan would ever
+request, and the immediately following identical scan reported a config
+mismatch and completed through scalar correctness recovery.
 
 Startup reports every available GPU peer without creating execution devices or
 pipelines. Calibration acquires each peer when its candidate is measured and
@@ -219,6 +249,60 @@ second host preserves the first host's evidence, and recalibrating either host
 merges only that host's workload rows. A scan replays only the generation whose
 complete host identity matches the live machine. JSON inspection exposes the
 stable `host_identity` digest used to distinguish those generations.
+
+### Reading the cache hit rate
+
+Every automatic scan prints one line on stderr saying what the cache did:
+
+```text
+INFO autoroute cache: 100.0% hit (2 hit / 2 lookup(s))
+```
+
+One lookup is one batch asking the cache for its route. A hit means the batch
+ran on a persisted, measured-correct backend without benchmarking anything. A
+miss means the batch completed through scalar correctness recovery instead,
+which is not an autoroute decision.
+
+The line prints in every output mode, including `--format json -o <file>`. That
+is the shape CI and calibration harnesses use, and it used to suppress the whole
+routing summary.
+
+A scan with any miss names the cause and the repair:
+
+```text
+WARN autoroute cache: 0.0% hit (0 hit / 2 lookup(s)); every byte was still
+scanned, this costs speed not coverage; miss causes: cache-rejected=2;
+2 distinct uncalibrated bucket(s); repair: the cache belongs to a different
+build, host, detector corpus or scan config; recalibrate this exact
+configuration (recalibrating one bucket will not help)
+```
+
+Read the miss cause before you recalibrate. The causes call for different
+actions:
+
+| cause | meaning |
+|---|---|
+| `no-cache-configured` | no autoroute cache path resolved for this scan |
+| `cache-rejected` | the cache belongs to a different build, host, corpus, or config; recalibrating one bucket will not help |
+| `workload-unclassified` | the batch could not be bucketed, so no calibration can cover it |
+| `bucket-absent` | the cache is valid and does not cover this workload yet |
+| `runtime-class-unproved` | the bucket exists without a route proved for this runtime class |
+| `route-quarantined` | a persisted route faulted at runtime and was quarantined |
+| `route-health-unavailable` | route-health state could not be read, so no persisted route is trusted |
+| `gpu-peer-identity-changed` | the GPU peer changed since calibration |
+
+A miss costs speed, never coverage. Every byte is still scanned. This line is
+not a coverage gap, and a 0% hit rate does not mean the scan was incomplete;
+see [Coverage truth](coverage-truth.md) for the signals that do mean that.
+
+Run with `-v` to list every distinct uncalibrated bucket under the
+`keyhog::routing` target, most expensive first. One recalibration can then be
+planned to cover all of them, rather than learning about one bucket per run.
+
+Under `--profile`, the same outcomes appear in the standard cache family as
+`autoroute-decision` (a scan reusing a persisted route) and
+`autoroute-calibration` (a calibration reusing evidence instead of measuring
+again), with hits, misses, and `hit_rate_ppm` in the `--profile-out` JSON.
 
 ### Cache schema compatibility
 
@@ -488,8 +572,8 @@ meanings:
 | `sample_bytes_min`, `sample_bytes_max`, `sample_chunks_min`, `sample_chunks_max` | Exact measured envelope covered by the class. |
 | `measured_points` | Complete point-by-point projection: exact sample size, `measurement_generator`, `payload_digest`, `measurement_shape_digest`, timestamp, one-shot and daemon execution-plan winners, confidence status, every route timing, and every parity receipt. Use this array to distinguish same-sized probes and diagnose crossover behavior. |
 | `sample_bytes`, `sample_chunks`, `route_timings` | Concise size projection plus the complete generic route-timing array for the first point after sorting by bytes, chunks, then measurement-shape digest. Each timing identifies the backend, both localization choices, one-shot time, and warm time when applicable. `measured_points` is authoritative. |
-| `confidence_separated` | Whether one-shot evidence supports the route at every measured point, either as an exact paired-plan winner or as a statistically tied plan separated from every peer backend plan. |
-| `selection_basis` | `exact-plan-paired-95pct-confidence`, `peer-separated-compiled-default-plan`, or `peer-separated-statistically-tied-plan`. Inconclusive evidence is rejected instead of appearing as a routable decision. |
+| `confidence_separated` | Whether one-shot evidence proves the route at every measured point, either as an exact paired-plan winner or as a statistically tied plan separated from every peer backend plan. `false` means the route is the dead-heat resolution of a measurement that separated nothing. |
+| `selection_basis` | `exact-plan-paired-95pct-confidence`, `peer-separated-compiled-default-plan`, `peer-separated-statistically-tied-plan`, or `unseparated-dead-heat-lowest-complexity-backend`. The last one names a decision the evidence permits rather than one it proves, and always pairs with `confidence_separated: false`. |
 | `selected_margin_ns` | Smallest one-shot representative-time margin to the next eligible route across all measured points; `null` when there is no peer route. |
 | `daemon_backend`, `daemon_phase2_plain_localizer`, `daemon_phase2_keyword_localizer` | Backend and both phase-two localization choices derived for a ready persistent daemon from warm evidence. |
 | `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts, also aggregated conservatively across every measured point. |

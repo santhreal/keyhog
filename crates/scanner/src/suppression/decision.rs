@@ -13,55 +13,10 @@ use super::shape::{
     looks_like_truncated_uuid_v4_suffix, HASH_ALGO_INTEGRITY_LABELS, HIGH_ENTROPY_BASE64_CUTOFF,
     RFC7519_EXAMPLE_JWT_PREFIX,
 };
+use crate::tier_b_list::{tier_b_vec, EXAMPLE_PATH_COMPONENTS};
 use crate::{adjudicate::StageId, context};
 
-#[derive(serde::Deserialize)]
-struct FakeSequences {
-    sequences: Vec<String>,
-}
-
-fn parse_fake_sequences(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<FakeSequences>(raw)
-        .map(|parsed| parsed.sequences)
-        .map_err(|error| error.to_string())
-}
-
-static FAKE_SEQUENCES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_fake_sequences(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/fake-sequences.toml"
-    ))) {
-        Ok(sequences) => sequences,
-        Err(error) => panic!(
-            "rules/fake-sequences.toml is invalid: {error}. \
-             Fix the bundled Tier-B fake sequences list."
-        ),
-    }
-});
-
-#[derive(serde::Deserialize)]
-struct ExamplePathComponents {
-    components: Vec<String>,
-}
-
-fn parse_example_path_components(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<ExamplePathComponents>(raw)
-        .map(|parsed| parsed.components)
-        .map_err(|error| error.to_string())
-}
-
-static EXAMPLE_PATH_COMPONENTS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_example_path_components(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/example-path-components.toml"
-    ))) {
-        Ok(components) => components,
-        Err(error) => panic!(
-            "rules/example-path-components.toml is invalid: {error}. \
-             Fix the bundled Tier-B example path components list."
-        ),
-    }
-});
+tier_b_vec!(FAKE_SEQUENCES, "fake-sequences.toml", sequences);
 
 #[inline]
 fn suppress(reason: &'static str) -> Option<StageId> {

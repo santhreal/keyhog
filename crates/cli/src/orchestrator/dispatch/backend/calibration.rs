@@ -13,8 +13,9 @@
 
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::ScanBackend;
+use keyhog_scanner::telemetry::ScannerCoverageSnapshot;
 use keyhog_scanner::{CompiledScanner, Phase1AdmissionPlan};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
     canonical_match_differences, canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
@@ -67,8 +68,9 @@ fn apply_test_timing_fixture(
                 vec![trial_ns; AUTOROUTE_CALIBRATION_TRIALS]
             }
             // Distinct medians with overlapping intervals model noisy host
-            // evidence. They cannot use the exact-peer-tie rule and must leave
-            // calibration without a publishable winner.
+            // evidence. Nothing separates, so calibration resolves the dead
+            // heat to the lowest-complexity backend and records that the route
+            // is permitted by the evidence rather than proved by it.
             "overlapping-v1" => {
                 if AUTOROUTE_CALIBRATION_TRIALS != 7 {
                     return Err(AutorouteRoutingError::calibration_not_persisted(
@@ -122,9 +124,25 @@ pub(super) fn calibrate_fastest_correct_backend(
         phase2_plain_localizer: false,
         phase2_keyword_localizer: false,
     };
-    let reference_matches =
-        establish_scalar_reference(scanner, sample, admission_plan, reference_route)?;
+    let reference = establish_scalar_reference(scanner, sample, admission_plan, reference_route)?;
+    let reference_coverage = reference.coverage;
+    let reference_matches = reference.matches;
     let reference_key = canonical_matches(&reference_matches);
+    if !reference_coverage.is_empty() {
+        // Calibration continues over a coverage shape every candidate must
+        // reproduce, so the comparison stays sound. It is still an operator
+        // fact: the persisted route was measured on a sample that this resolved
+        // configuration does not fully cover, and the real scan will not cover
+        // it either.
+        eprintln!(
+            "keyhog: WARNING: autoroute calibration sample {} is not fully covered by this scan \
+             configuration ({}); every candidate must reproduce exactly this coverage, and the \
+             persisted route therefore describes only the bytes this configuration actually \
+             scans",
+            keyhog_core::hex_encode(&measurement_shape.shape_digest),
+            render_coverage_gaps(reference_coverage)
+        );
+    }
 
     let candidate_backends = eligible_backend_labels
         .iter()
@@ -182,6 +200,7 @@ pub(super) fn calibrate_fastest_correct_backend(
         &candidate_routes,
         &reference_key,
         admission_plan,
+        reference_coverage,
     )?;
     let route_timings = route_timings_with_cold_cost(scanner, measured_routes)?;
     #[cfg(any(test, feature = "ci-lean"))]
@@ -213,10 +232,11 @@ pub(super) fn calibrate_fastest_correct_backend(
     );
     let Some(resolved) = decision.resolved_routing_route() else {
         return Err(AutorouteRoutingError::calibration_not_persisted(format!(
-            "calibration timing is inconclusive: neither one exact route nor one backend with its compiled default plan is confidence-supported at 95%; reduce competing host load and rerun calibration; evidence: {}",
+            "calibration timing does not resolve one route: the measured points disagree about which backend to run, or no candidate produced usable timing evidence; reduce competing host load and rerun calibration; evidence: {}",
             decision.confidence_diagnostic(false),
         )));
     };
+    let confidence_separated = decision.has_confidence_supported_route();
     decision.backend = resolved.backend.label().to_string();
     decision.phase2_plain_localizer = resolved.phase2_plain_localizer;
     decision.phase2_keyword_localizer = resolved.phase2_keyword_localizer;
@@ -227,6 +247,12 @@ pub(super) fn calibrate_fastest_correct_backend(
         backend = resolved.backend.label(),
         phase2_plain_localizer = resolved.phase2_plain_localizer,
         phase2_keyword_localizer = resolved.phase2_keyword_localizer,
+        confidence_separated,
+        selection_basis = if confidence_separated {
+            "peer-separated-95pct-confidence"
+        } else {
+            "unseparated-dead-heat-lowest-complexity-backend"
+        },
         sample_chunks = sample.len(),
         sample_bytes,
         keyword_trigger_chunks = ?keyword_triggers.map(|summary| summary.keyword_trigger_chunks),
@@ -334,12 +360,13 @@ fn establish_scalar_reference(
     sample: &[Chunk],
     admission_plan: Option<&Phase1AdmissionPlan>,
     route: MeasuredRoute,
-) -> Result<Vec<Vec<keyhog_core::RawMatch>>, AutorouteRoutingError> {
+) -> Result<CalibrationTrialOutcome, AutorouteRoutingError> {
     // Establish the canonical finding set outside the rotated timed plan. The
     // always-present scalar engine is independent of optional accelerator
-    // compilation and therefore remains the correctness oracle.
+    // compilation and therefore remains the correctness oracle. It also fixes
+    // the coverage shape every candidate must reproduce exactly.
     scanner.clear_fragment_cache();
-    let reference = scan_calibration_backend(scanner, sample, route, admission_plan)?;
+    let reference = scan_calibration_backend(scanner, sample, route, admission_plan, None)?;
     scanner.clear_fragment_cache();
     Ok(reference)
 }
@@ -358,6 +385,7 @@ fn measure_candidate_routes(
     routes: &[MeasuredRoute],
     reference_key: &[CanonicalMatch<'_>],
     admission_plan: Option<&Phase1AdmissionPlan>,
+    reference_coverage: ScannerCoverageSnapshot,
 ) -> Result<Vec<(MeasuredRoute, BackendTimingEvidence)>, AutorouteRoutingError> {
     if routes.is_empty() {
         return Err(AutorouteRoutingError::calibration_not_persisted(
@@ -386,11 +414,19 @@ fn measure_candidate_routes(
                 reference_key,
                 admission_plan,
                 1,
+                reference_coverage,
             )?);
         } else {
             // LAW10: only the warm-up timing value is discarded; trial errors propagate through `?` and abort calibration.
-            let _ =
-                measure_candidate_trial(scanner, sample, *route, reference_key, admission_plan, 0)?;
+            let _ = measure_candidate_trial(
+                scanner,
+                sample,
+                *route,
+                reference_key,
+                admission_plan,
+                0,
+                reference_coverage,
+            )?;
         }
     }
     for (route, _) in measurements
@@ -398,7 +434,15 @@ fn measure_candidate_routes(
         .filter(|(route, _)| route.backend.is_gpu())
     {
         // LAW10: only the warm-up timing value is discarded; trial errors propagate through `?` and abort calibration.
-        let _ = measure_candidate_trial(scanner, sample, *route, reference_key, admission_plan, 0)?;
+        let _ = measure_candidate_trial(
+            scanner,
+            sample,
+            *route,
+            reference_key,
+            admission_plan,
+            0,
+            reference_coverage,
+        )?;
     }
 
     // Rotate the route order every round. Sequentially measuring all trials for
@@ -419,6 +463,7 @@ fn measure_candidate_routes(
                 reference_key,
                 admission_plan,
                 trial,
+                reference_coverage,
             )?);
         }
     }
@@ -446,6 +491,7 @@ fn measure_candidate_trial(
     reference_key: &[CanonicalMatch<'_>],
     admission_plan: Option<&Phase1AdmissionPlan>,
     trial: usize,
+    reference_coverage: ScannerCoverageSnapshot,
 ) -> Result<Duration, AutorouteRoutingError> {
     let backend = route.backend;
     let reported_trial = trial.max(1);
@@ -456,16 +502,23 @@ fn measure_candidate_trial(
 
     loop {
         scanner.clear_fragment_cache();
-        let started = Instant::now();
-        let matches = scan_calibration_backend(scanner, sample, route, admission_plan)?;
-        total = total.saturating_add(started.elapsed());
+        let trial_timer =
+            keyhog_profile::decision_timer(keyhog_profile::Stage::AutorouteCalibration);
+        let outcome = scan_calibration_backend(
+            scanner,
+            sample,
+            route,
+            admission_plan,
+            Some(reference_coverage),
+        )?;
+        total = total.saturating_add(trial_timer.finish());
         repetitions += 1;
 
         validate_calibration_candidate_matches(
             scanner,
             backend,
             reported_trial,
-            &matches,
+            &outcome.matches,
             reference_key,
         )?;
 
@@ -580,7 +633,7 @@ pub(super) fn calibration_candidate_parity_result(
     let trial_key = canonical_matches(matches);
     let only_in_reference = canonical_match_differences(reference_key, &trial_key, PARITY_EXAMPLES);
     let only_in_trial = canonical_match_differences(&trial_key, reference_key, PARITY_EXAMPLES);
-    Err(AutorouteRoutingError::candidate_backend_rejected(
+    Err(AutorouteRoutingError::candidate_findings_diverged(
         backend,
         &format!(
             "candidate findings diverged from the scalar reference: \
@@ -613,8 +666,9 @@ fn scan_calibration_backend(
     sample: &[Chunk],
     route: MeasuredRoute,
     admission_plan: Option<&Phase1AdmissionPlan>,
-) -> Result<Vec<Vec<keyhog_core::RawMatch>>, AutorouteRoutingError> {
-    let coverage_before = keyhog_scanner::telemetry::ScannerCoverageSnapshot::capture();
+    expected_coverage: Option<ScannerCoverageSnapshot>,
+) -> Result<CalibrationTrialOutcome, AutorouteRoutingError> {
+    let coverage_before = ScannerCoverageSnapshot::capture();
     let outcome = scanner
         .scan_coalesced_with_backend_admission_route_and_recovery(
             sample,
@@ -629,13 +683,67 @@ fn scan_calibration_backend(
                 format!("calibration dispatch failed: {error}"),
             )
         })?;
-    let coverage_gaps = keyhog_scanner::telemetry::ScannerCoverageSnapshot::capture()
-        .saturating_delta(coverage_before);
-    if !coverage_gaps.is_empty() {
-        return Err(AutorouteRoutingError::candidate_backend_rejected(
-            route.backend,
-            format!("calibration trial had incomplete scanner coverage: {coverage_gaps:?}"),
-        ));
+    let coverage = ScannerCoverageSnapshot::capture().saturating_delta(coverage_before);
+    // What makes a coverage gap disqualifying is that ONE candidate covered
+    // less than its peers, because then its time is not a time for the same
+    // work. A gap every candidate reproduces identically is a property of the
+    // sample under this resolved configuration, not a degraded backend: a
+    // deterministic ceiling such as `max_decode_bytes` is part of the config
+    // digest, so the real scan will skip exactly the same bytes and the
+    // measurement describes exactly the work it will do.
+    //
+    // Rejecting on any nonzero gap threw away complete, valid calibrations.
+    // Measured: `crates/` ran a full 346-second sweep across eight workload
+    // buckets and persisted nothing, because one probe batch held a chunk over
+    // the decode ceiling and the very first reference trial was refused. Every
+    // later scan of that tree then routed through scalar correctness recovery,
+    // which is the slowest outcome available.
+    //
+    // The two directions of a difference are not equally informative, and only
+    // one of them is a fact.
+    //
+    // A candidate ABOVE the reference on any counter definitely ran that
+    // counter and definitely skipped more, so it covered less than the oracle
+    // it is being timed against. That is a refusal.
+    //
+    // A candidate BELOW the reference is ambiguous, because an absent counter
+    // and a real zero are the same value. It can mean the candidate expanded
+    // content the reference declined, or it can mean the candidate never
+    // reached the site that records a skip, and the two backends admit and
+    // chunk through different phase-1 paths. Refusing on that direction
+    // compares instrument coverage rather than byte coverage, and it is what
+    // stopped `crates/` calibrating on a signal with no observable output
+    // difference: `--backend cpu-fallback` and `--backend simd-regex` return
+    // byte-identical findings on that tree. Match parity against the scalar
+    // reference is already proved separately, per trial, so this direction is
+    // reported and recorded rather than treated as proof. It becomes a refusal
+    // once the scanner records an explicit zero for a decode path that ran and
+    // skipped nothing, which is the change that makes absent and zero
+    // distinguishable.
+    if let Some(expected) = expected_coverage {
+        if !coverage.saturating_delta(expected).is_empty() {
+            return Err(AutorouteRoutingError::candidate_findings_diverged(
+                route.backend,
+                format!(
+                    "calibration trial skipped more than the scalar reference \
+                     (reference gaps {}; this candidate {}), so it covered less than the \
+                     oracle it is timed against",
+                    render_coverage_gaps(expected),
+                    render_coverage_gaps(coverage),
+                ),
+            ));
+        }
+        if coverage != expected {
+            eprintln!(
+                "keyhog: WARNING: autoroute calibration candidate {} reported fewer coverage \
+                 gaps than the scalar reference (reference {}; this candidate {}); findings \
+                 parity against the reference is proved separately, but this candidate's \
+                 timing may not measure the same work",
+                route.backend.label(),
+                render_coverage_gaps(expected),
+                render_coverage_gaps(coverage),
+            );
+        }
     }
     if let Some(recovery) = outcome.recovery {
         return Err(AutorouteRoutingError::candidate_backend_rejected(
@@ -649,7 +757,23 @@ fn scan_calibration_backend(
             ),
         ));
     }
-    Ok(outcome.matches)
+    Ok(CalibrationTrialOutcome {
+        matches: outcome.matches,
+        coverage,
+    })
+}
+
+/// One candidate scan plus the coverage shape it produced.
+struct CalibrationTrialOutcome {
+    matches: Vec<Vec<keyhog_core::RawMatch>>,
+    coverage: ScannerCoverageSnapshot,
+}
+
+fn render_coverage_gaps(coverage: ScannerCoverageSnapshot) -> String {
+    if coverage.is_empty() {
+        return "none".to_string();
+    }
+    format!("{coverage:?}")
 }
 
 fn current_unix_time_ms() -> Result<u128, std::time::SystemTimeError> {

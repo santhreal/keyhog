@@ -3,7 +3,7 @@
 fn web_transport_error_is_counted_unreadable() {
     use keyhog_core::Source;
     use keyhog_sources::skip_counts;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
     use std::net::TcpListener;
 
     let _guard = TestApi.skip_counter_guard();
@@ -47,7 +47,7 @@ fn web_transport_error_is_counted_unreadable() {
 fn web_malformed_redirect_is_counted_unreadable() {
     use keyhog_core::Source;
     use keyhog_sources::skip_counts;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
 
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
@@ -91,7 +91,7 @@ fn web_malformed_redirect_is_counted_unreadable() {
 fn web_unsupported_redirect_scheme_is_counted_unreadable() {
     use keyhog_core::Source;
     use keyhog_sources::skip_counts;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
 
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
@@ -135,7 +135,7 @@ fn web_unsupported_redirect_scheme_is_counted_unreadable() {
 fn web_unsupported_initial_scheme_is_counted_unreadable() {
     use keyhog_core::Source;
     use keyhog_sources::skip_counts;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
     use keyhog_sources::WebSource;
 
     let _guard = TestApi.skip_counter_guard();
@@ -176,7 +176,7 @@ fn web_unsupported_initial_scheme_is_counted_unreadable() {
 fn web_initial_disallowed_host_is_counted_unreadable() {
     use keyhog_core::Source;
     use keyhog_sources::skip_counts;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
     use keyhog_sources::WebSource;
 
     let _guard = TestApi.skip_counter_guard();
@@ -213,7 +213,7 @@ fn web_initial_disallowed_host_is_counted_unreadable() {
 fn web_private_redirect_target_is_counted_unreadable() {
     use keyhog_core::Source;
     use keyhog_sources::skip_counts;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
 
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
@@ -258,7 +258,7 @@ fn web_private_redirect_target_is_counted_unreadable() {
 fn web_dns_failure_is_counted_unreadable() {
     use keyhog_core::Source;
     use keyhog_sources::skip_counts;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
     use keyhog_sources::WebSource;
 
     let _guard = TestApi.skip_counter_guard();

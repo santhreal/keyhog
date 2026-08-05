@@ -47,11 +47,29 @@ fn all_formats() -> Vec<ReportFormat> {
             color: false,
             example_suppressions: 0,
             dogfood_active: false,
+            covered_nothing: false,
+            path_policy_suppressions: 0,
         },
         ReportFormat::Text {
             color: true,
             example_suppressions: 2,
             dogfood_active: true,
+            covered_nothing: false,
+            path_policy_suppressions: 0,
+        },
+        ReportFormat::Text {
+            color: false,
+            example_suppressions: 0,
+            dogfood_active: false,
+            covered_nothing: true,
+            path_policy_suppressions: 0,
+        },
+        ReportFormat::Text {
+            color: false,
+            example_suppressions: 3,
+            dogfood_active: false,
+            covered_nothing: false,
+            path_policy_suppressions: 3,
         },
         ReportFormat::Json,
         ReportFormat::JsonEnvelope {
@@ -288,6 +306,8 @@ fn color_free_text_report_has_no_raw_escape_byte() {
             color: false,
             example_suppressions: 0,
             dogfood_active: false,
+            covered_nothing: false,
+            path_policy_suppressions: 0,
         },
         &[f],
     );

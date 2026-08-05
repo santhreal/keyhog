@@ -5,10 +5,11 @@
 //! `extract_printable_strings` is `pub(crate)`, so an external integration test
 //! cannot call it directly. Instead we drive the real operator path: write a
 //! byte blob to a file, scan it with a strings-only `BinarySource`, and read the
-//! `binary:strings` chunk whose body is the extracted runs joined by `\n`
-//! (`join_sensitive_strings(&strings, "\n")`). No extracted run ever contains a
-//! `\n` (newline is neither graphic nor space/tab, so it always breaks a run),
-//! therefore splitting that body on `\n` recovers the exact run list.
+//! `binary:strings` chunk whose body is the extracted runs joined by
+//! `TestApi.printable_run_separator()` (`join_printable_runs`). No extracted
+//! run can contain any separator byte (none of them is graphic, space, or
+//! tab), therefore splitting that body on the separator recovers the exact
+//! run list.
 //!
 //! `MIN_STRING_LEN` is hard-wired to 8 on this path, so every threshold
 //! assertion below pins the 7-drop / 8-keep boundary at that value.
@@ -17,24 +18,23 @@
 //! valid ones, embedded-NUL run splitting (single + multiple), space/tab kept
 //! inside a run, newline / control / high-byte delimiters, UTF-16LE wide-string
 //! recovery + its below-threshold drop, the pure-ASCII no-wide-duplication twin,
-//! ASCII-before-wide ordering, the all-below-threshold source-error path, and
+//! file-order run emission, the all-below-threshold source-error path, and
 //! the emitted chunk's `source_type`.
 
 #![cfg(feature = "binary")]
 
 use keyhog_core::{Chunk, Source, SourceError};
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 /// Scan `bytes` as a strings-only binary and return every row (chunks + errors).
-fn source_rows(bytes: &[u8]) -> Vec<Result<Chunk, SourceError>> {
-    let dir = tempfile::tempdir().expect("create tempdir");
+fn source_rows(bytes: &[u8]) -> Vec<Result<Chunk, SourceError>> {let dir = tempfile::tempdir().expect("create tempdir");
     let path = dir.path().join("fixture.bin");
     std::fs::write(&path, bytes).expect("write fixture bytes");
     // `dir` stays alive until end of fn; `.chunks().collect()` reads the file now.
-    TestApi.binary_strings_only(path.clone()).chunks().collect()
-}
+    TestApi.binary_strings_only(path.clone()).chunks().collect()}
 
-/// The exact extracted-run list: the `binary:strings` chunk body split on `\n`.
+/// The exact extracted-run list: the `binary:strings` chunk body split on the
+/// run separator.
 fn extracted_runs(bytes: &[u8]) -> Vec<String> {
     let rows = source_rows(bytes);
     let mut lines = Vec::new();
@@ -42,7 +42,7 @@ fn extracted_runs(bytes: &[u8]) -> Vec<String> {
         if let Ok(chunk) = row {
             if chunk.metadata.source_type.as_ref() == "binary:strings" {
                 let body = chunk.data.as_str().to_owned();
-                for line in body.split('\n') {
+                for line in body.split(TestApi.printable_run_separator()) {
                     lines.push(line.to_string());
                 }
             }
@@ -174,17 +174,62 @@ fn wide_run_below_threshold_dropped_ascii_run_kept() {
 }
 
 #[test]
-fn ascii_runs_precede_wide_runs_in_output() {
-    // extract_printable_strings appends the ASCII pass first, then the UTF-16LE
-    // pass, so ordering is deterministic: ASCII "PLAINTEXTRUN" (12) then wide
-    // "WIDERUNX" (8).
-    let runs = extracted_runs(b"\xFFPLAINTEXTRUN\xFFW\x00I\x00D\x00E\x00R\x00U\x00N\x00X\x00");
+fn earlier_ascii_run_stays_before_a_later_wide_run() {
+    // KH-942: runs come back in the order they occur in the bytes, not sorted
+    // by value. The ASCII run starts at offset 1 and the wide run after it, so
+    // file order emits ASCII first while a value sort would emit "AWIDERUNX"
+    // first. Mutation-checked: restoring the predecessor's alphabetical sort
+    // reddens this.
+    let runs = extracted_runs(b"\xFFZPLAINTEXTRUN\xFFA\x00W\x00I\x00D\x00E\x00R\x00U\x00N\x00X\x00");
     assert_eq!(
         runs,
-        vec!["PLAINTEXTRUN".to_string(), "WIDERUNX".to_string()]
+        vec!["ZPLAINTEXTRUN".to_string(), "AWIDERUNX".to_string()]
     );
-    assert_eq!(runs[0], "PLAINTEXTRUN");
-    assert_eq!(runs[1], "WIDERUNX");
+}
+
+#[test]
+fn later_ascii_run_stays_after_an_earlier_wide_run() {
+    // The value-sorted predecessor emitted "AAAAAAAA" before "zzzzzzzz"
+    // regardless of position. File order must follow the bytes: the wide run
+    // starts at offset 1, the ASCII run after it. The twin above covers the
+    // other encoding order, so neither can pass on an accident of collation.
+    let runs = extracted_runs(b"\xFFz\x00z\x00z\x00z\x00z\x00z\x00z\x00z\x00\xFFAAAAAAAA\xFF");
+    assert_eq!(runs, vec!["zzzzzzzz".to_string(), "AAAAAAAA".to_string()]);
+}
+
+#[test]
+fn a_repeated_literal_is_kept_once_per_occurrence() {
+    // KH-942: the value-sorted predecessor deduplicated globally, so a
+    // credential compiled into a binary twice, once in .rodata and once in a
+    // debug string table, collapsed to a single occurrence and the second
+    // offset was unrecoverable.
+    let runs = extracted_runs(b"\xFFREPEATED_RUN\xFFfiller-a\xFFREPEATED_RUN\xFF");
+    assert_eq!(
+        runs,
+        vec![
+            "REPEATED_RUN".to_string(),
+            "filler-a".to_string(),
+            "REPEATED_RUN".to_string()
+        ]
+    );
+}
+
+#[test]
+fn a_whitespace_separator_class_cannot_bridge_two_runs() {
+    // KH-942: the runs were joined with a bare "\n", so a detector pattern
+    // whose separator class includes whitespace matched a keyword ending one
+    // run against a value opening the next. The run separator must not be
+    // matchable by `\s`, by `\S`, or by the default `.`.
+    let separator = TestApi.printable_run_separator();
+    assert!(
+        separator.contains('\0'),
+        "a `\\s`-class pattern bridges any all-whitespace separator; got {separator:?}"
+    );
+    assert!(
+        separator.starts_with('\n') && separator.ends_with('\n'),
+        "a `\\S`-class or `.` pattern bridges any separator without a newline on \
+         both sides; got {separator:?}"
+    );
 }
 
 #[test]

@@ -40,7 +40,12 @@ pub(super) fn compile_gpu_literal_set(
     let literal_refs: Vec<&[u8]> = literals.iter().map(|v| v.as_slice()).collect();
     let cache_key =
         super::gpu_cache::gpu_matcher_cache_key_with_prefix(cache_prefix, &literal_refs);
-    let started = std::time::Instant::now();
+    // Compiling the literal set is backend preparation, so it is charged to the
+    // profiler's backend-dispatch stage. `gpu_matcher` resolves this lazily
+    // OUTSIDE the region-dispatch span, so without this span the compile was
+    // invisible to a profile and readable only as an `elapsed_ms` field on a
+    // debug log line.
+    let _compile_span = keyhog_profile::span(keyhog_profile::Stage::BackendDispatch);
     let matcher = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         match super::gpu_cache::gpu_matcher_cache_dir() {
             Ok(cache_dir) => vyre_libs::scan::cached_load_or_compile(&cache_dir, &cache_key, || {
@@ -63,7 +68,6 @@ pub(super) fn compile_gpu_literal_set(
         target: "keyhog::routing",
         patterns = literal_refs.len(),
         cache_prefix,
-        elapsed_ms = started.elapsed().as_millis() as u64,
         "GpuLiteralSet ready (warm cache or compiled)"
     );
     Ok(matcher)

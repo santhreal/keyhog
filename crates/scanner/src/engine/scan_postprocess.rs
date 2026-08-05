@@ -44,8 +44,11 @@ impl CompiledScanner {
         if crate::deadline::expired(deadline) {
             return Ok(());
         }
-        let pp_start = tracing::enabled!(target: "keyhog::routing", tracing::Level::DEBUG)
-            .then(std::time::Instant::now);
+        // No stopwatch here. This region is inclusive of the `Stage::Decode`
+        // span opened below and of the phase-2 leaves the resolution tail
+        // re-enters, so its wall was never an addend of anything. It also used
+        // to be gated on a tracing LEVEL rather than on the measurement switch,
+        // which made `tracing` a second place that decided whether to measure.
         self.scan_cross_chunk_fragments(chunk, matches, deadline, route)?;
         if crate::deadline::expired(deadline) {
             return Ok(());
@@ -58,7 +61,7 @@ impl CompiledScanner {
             // inside the rescans below. The counts/bytes are typed counters in
             // the same runtime (no-ops when no runtime is active).
             let decoded_chunks = {
-                let _g = super::profile::span(super::profile::P::Decode);
+                let _g = super::profile::span(keyhog_profile::Stage::Decode);
                 crate::decode::decode_chunk_with_policy(
                     chunk,
                     self.detector_plans.decode_transforms(),
@@ -192,7 +195,6 @@ impl CompiledScanner {
             target: "keyhog::routing",
             chunk_bytes = chunk.data.len(),
             matches = matches.len(),
-            elapsed_ms = pp_start.map_or(0, |t| t.elapsed().as_millis() as u64),
             "post_process_matches_inner done",
         );
         Ok(())

@@ -215,8 +215,13 @@ macro_rules! shared_http_policy {
         let builder = match cfg.effective_proxy().as_deref() {
             Some("off") | Some("none") | Some("") | None => builder.no_proxy(),
             Some(url) => {
-                let proxy = reqwest::Proxy::all(url)
-                    .map_err(|e| format!("invalid --proxy URL {url:?}: {e}"))?;
+                // A proxy URL routinely carries `http://user:password@host:port`.
+                // `{url:?}` printed that verbatim into an operator-visible error
+                // (and, through the CLI, into stderr and CI logs).
+                let proxy = reqwest::Proxy::all(url).map_err(|e| {
+                    let safe_url = crate::url_redaction::redact_url(url);
+                    format!("invalid --proxy URL {safe_url:?}: {e}")
+                })?;
                 builder.proxy(proxy)
             }
         };

@@ -15,6 +15,33 @@ fn format_optional_path<P: AsRef<std::path::Path>>(path: Option<P>, unset_label:
     }
 }
 
+/// Emit one `limit_* = …` row for `config --effective`.
+///
+/// Every [`keyhog_sources::SourceLimits`] field exists on every build, but a
+/// limit whose source backend is not compiled in has no `--limit-…` flag
+/// (`args/limits.rs` gates each one) and its `.keyhog.toml` key is rejected
+/// with "requires the `<feature>` feature in this keyhog build"
+/// (`config/limits.rs`). Printing that field's compiled default as if it were
+/// in force told the operator a cap governs a path this binary cannot even
+/// reach. The row stays, so the inventory of declared limits is identical on
+/// every build, and carries the same feature name the config loader rejects
+/// the key with.
+fn push_limit(
+    out: &mut String,
+    name: &str,
+    available: bool,
+    feature: &str,
+    value: impl std::fmt::Display,
+) {
+    if available {
+        out.push_str(&format!("{name} = {value}\n"));
+    } else {
+        out.push_str(&format!(
+            "{name} = unavailable (requires the `{feature}` feature in this keyhog build)\n"
+        ));
+    }
+}
+
 /// Render the resolved scan config as a stable, human + machine readable block
 /// for `keyhog config --effective`. It answers "what will actually run?" in one
 /// place: the resolved engine config AND the post-scan floors, so a test (or an
@@ -201,64 +228,116 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     );
     out.push_str(&format!("incremental_cache = {incremental_cache}\n"));
     let limits = resolved.source_limits;
-    out.push_str(&format!("limit_stdin_bytes = {}\n", limits.stdin_bytes));
-    out.push_str(&format!(
-        "limit_web_response_bytes = {}\n",
-        limits.web_response_bytes
-    ));
-    out.push_str(&format!(
-        "limit_s3_object_bytes = {}\n",
-        limits.s3_object_bytes
-    ));
-    out.push_str(&format!(
-        "limit_gcs_object_bytes = {}\n",
-        limits.gcs_object_bytes
-    ));
-    out.push_str(&format!(
-        "limit_azure_blob_bytes = {}\n",
-        limits.azure_blob_bytes
-    ));
-    out.push_str(&format!(
-        "limit_cloud_max_objects = {}\n",
-        limits.cloud_max_objects
-    ));
-    out.push_str(&format!(
-        "limit_docker_tar_entry_bytes = {}\n",
-        limits.docker_tar_entry_bytes
-    ));
-    out.push_str(&format!(
-        "limit_docker_image_config_bytes = {}\n",
-        limits.docker_image_config_bytes
-    ));
-    out.push_str(&format!(
-        "limit_docker_tar_total_bytes = {}\n",
-        limits.docker_tar_total_bytes
-    ));
-    out.push_str(&format!(
-        "limit_git_line_bytes = {}\n",
-        limits.git_line_bytes
-    ));
-    out.push_str(&format!(
-        "limit_git_total_bytes = {}\n",
-        limits.git_total_bytes
-    ));
-    out.push_str(&format!(
-        "limit_git_blob_bytes = {}\n",
-        limits.git_blob_bytes
-    ));
-    out.push_str(&format!("limit_git_chunks = {}\n", limits.git_chunk_count));
-    out.push_str(&format!(
-        "limit_hosted_git_pages = {}\n",
-        limits.hosted_git_pages
-    ));
-    out.push_str(&format!(
-        "limit_binary_read_bytes = {}\n",
-        limits.binary_read_bytes
-    ));
-    out.push_str(&format!(
-        "limit_binary_decompiled_bytes = {}\n",
-        limits.binary_decompiled_bytes
-    ));
+    push_limit(&mut out, "limit_stdin_bytes", true, "", limits.stdin_bytes);
+    push_limit(
+        &mut out,
+        "limit_web_response_bytes",
+        cfg!(feature = "web"),
+        "web",
+        limits.web_response_bytes,
+    );
+    push_limit(
+        &mut out,
+        "limit_s3_object_bytes",
+        cfg!(feature = "s3"),
+        "s3",
+        limits.s3_object_bytes,
+    );
+    push_limit(
+        &mut out,
+        "limit_gcs_object_bytes",
+        cfg!(feature = "gcs"),
+        "gcs",
+        limits.gcs_object_bytes,
+    );
+    push_limit(
+        &mut out,
+        "limit_azure_blob_bytes",
+        cfg!(feature = "azure"),
+        "azure",
+        limits.azure_blob_bytes,
+    );
+    push_limit(
+        &mut out,
+        "limit_cloud_max_objects",
+        cfg!(any(feature = "s3", feature = "gcs", feature = "azure")),
+        "s3/gcs/azure",
+        limits.cloud_max_objects,
+    );
+    push_limit(
+        &mut out,
+        "limit_docker_tar_entry_bytes",
+        cfg!(feature = "docker"),
+        "docker",
+        limits.docker_tar_entry_bytes,
+    );
+    push_limit(
+        &mut out,
+        "limit_docker_image_config_bytes",
+        cfg!(feature = "docker"),
+        "docker",
+        limits.docker_image_config_bytes,
+    );
+    push_limit(
+        &mut out,
+        "limit_docker_tar_total_bytes",
+        cfg!(feature = "docker"),
+        "docker",
+        limits.docker_tar_total_bytes,
+    );
+    push_limit(
+        &mut out,
+        "limit_git_line_bytes",
+        cfg!(feature = "git"),
+        "git",
+        limits.git_line_bytes,
+    );
+    push_limit(
+        &mut out,
+        "limit_git_total_bytes",
+        cfg!(feature = "git"),
+        "git",
+        limits.git_total_bytes,
+    );
+    push_limit(
+        &mut out,
+        "limit_git_blob_bytes",
+        cfg!(feature = "git"),
+        "git",
+        limits.git_blob_bytes,
+    );
+    push_limit(
+        &mut out,
+        "limit_git_chunks",
+        cfg!(feature = "git"),
+        "git",
+        limits.git_chunk_count,
+    );
+    push_limit(
+        &mut out,
+        "limit_hosted_git_pages",
+        cfg!(any(
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket"
+        )),
+        "github/gitlab/bitbucket",
+        limits.hosted_git_pages,
+    );
+    push_limit(
+        &mut out,
+        "limit_binary_read_bytes",
+        cfg!(feature = "binary"),
+        "binary",
+        limits.binary_read_bytes,
+    );
+    push_limit(
+        &mut out,
+        "limit_binary_decompiled_bytes",
+        cfg!(feature = "binary"),
+        "binary",
+        limits.binary_decompiled_bytes,
+    );
     out.push_str(&format!("scan_comments = {}\n", s.scan_comments));
     out.push_str(&format!(
         "unicode_normalization = {}\n",
@@ -495,21 +574,35 @@ fn autoroute_config_hasher(resolved: &ResolvedScanConfig) -> StableHasher {
     h.field_option_usize("reader_threads", resolved.reader_threads);
     h.field_usize("fused_batch", resolved.fused_batch);
     h.field_option_usize("fused_depth", resolved.fused_depth);
+    // Compiled-in companion to `fused_batch`: batches are cut on bytes as well
+    // as chunk count, and that changes the (byte-total, chunk-count) workload
+    // key autoroute measures against. Hashing the constant means changing it
+    // invalidates persisted calibration rather than replaying a decision
+    // measured under different batching.
+    h.field_usize("fused_batch_bytes", super::runtime::FUSED_BATCH_BYTES);
     h.field_str(
         "gpu_runtime_policy",
         &resolved.gpu_runtime_policy.to_string(),
     );
-    // Canonical calibration admits every eligible peer and must share the
-    // normal auto-scan identity, including when GPU wins. A low-level
-    // calibration that excludes an otherwise eligible GPU is intentionally
-    // noncanonical. When the resolved runtime policy disables GPU, a CPU-only
-    // candidate set is complete and must replay under the matching normal scan.
-    h.field_bool(
-        "calibration.excludes_gpu_candidates",
-        resolved.autoroute_calibration
-            && !resolved.autoroute_gpu
-            && resolved.gpu_runtime_policy != keyhog_scanner::gpu::GpuRuntimePolicy::Disabled,
-    );
+    // Whether a calibration deliberately excluded an otherwise eligible GPU is
+    // NOT hashed here, because the persisted host generation already carries
+    // it exactly. `AutorouteHostProfile` records `eligible_backends` plus the
+    // full GPU device, runtime, driver and batch-limit identity, all derived
+    // from the same `gpu_participates` term, and a cache row only loads when
+    // that whole profile compares equal. A CPU-only calibration therefore
+    // cannot replay under a scan that admits a GPU: it fails on host identity.
+    //
+    // Hashing it here as well was not merely redundant, it was a guaranteed
+    // miss. The predicate was true whenever `--autoroute-calibrate` ran without
+    // `--autoroute-gpu` under a non-disabled GPU policy, including on hosts and
+    // builds with no GPU candidate at all, where the "exclusion" is vacuous and
+    // the host profiles are byte-identical. Those runs wrote every decision
+    // under a config digest no scan would ever request, so the immediately
+    // following identical scan reported a config mismatch and completed through
+    // scalar correctness recovery. Measured on this tree: calibrating
+    // `crates/core/src` without `--autoroute-gpu` persisted under config digest
+    // 6f1448b21763f30e while the very next identical scan asked for
+    // b3a30e4526ff5e41.
     h.field_option_usize("regex_dfa_limit", resolved.regex_dfa_limit);
     h.field_option_usize("gpu_batch_input_limit", resolved.gpu_batch_input_limit);
     h.field_option_usize("source_policy.max_file_size", resolved.max_file_size);

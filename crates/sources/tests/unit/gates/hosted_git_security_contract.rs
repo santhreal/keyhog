@@ -8,6 +8,37 @@ fn source(path: impl AsRef<Path>) -> String {
         .unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
 }
 
+/// The whole `hosted_git` module: parent file first, then every submodule in
+/// sorted order.
+///
+/// These contracts name behavior that belongs to the module, not to one file.
+/// Reading only `src/hosted_git.rs` meant that moving the child-process
+/// lifetime into `src/hosted_git/process.rs` stopped covering the askpass and
+/// kill-and-reap contracts while the gate still reported on the parent, which
+/// is the failure a source-text gate exists to prevent. Reading the directory
+/// keeps it pointed at the code wherever a later split puts it.
+fn module_source() -> String {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/hosted_git");
+    let mut children: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|error| panic!("read_dir {}: {error}", dir.display()))
+        .map(|entry| {
+            entry
+                .unwrap_or_else(|error| panic!("read_dir {} entry: {error}", dir.display()))
+                .path()
+        })
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("rs"))
+        .collect();
+    assert!(
+        !children.is_empty(),
+        "src/hosted_git/ must hold the module's submodules; an empty listing means this gate is \
+         reading the wrong path and every assertion below would pass vacuously"
+    );
+    children.sort();
+    let mut parts = vec![source("src/hosted_git.rs")];
+    parts.extend(children.into_iter().map(source));
+    parts.join("\n")
+}
+
 fn without_line_comments(source: &str) -> String {
     source
         .lines()
@@ -18,7 +49,7 @@ fn without_line_comments(source: &str) -> String {
 
 #[test]
 fn hosted_git_windows_askpass_does_not_expand_raw_prompt_with_percent_vars() {
-    let hosted_git = source("src/hosted_git.rs");
+    let hosted_git = module_source();
     assert!(
         hosted_git.contains("setlocal EnableExtensions EnableDelayedExpansion")
             && hosted_git.contains(r#"set \"prompt=%~1\""#)
@@ -36,7 +67,7 @@ fn hosted_git_windows_askpass_does_not_expand_raw_prompt_with_percent_vars() {
 
 #[test]
 fn hosted_git_clone_origin_and_wait_cleanup_contracts_stay_wired() {
-    let hosted_git = source("src/hosted_git.rs");
+    let hosted_git = module_source();
     assert!(
         hosted_git.contains("validate_clone_url_for_origin(")
             && hosted_git.contains("outside expected clone origin")

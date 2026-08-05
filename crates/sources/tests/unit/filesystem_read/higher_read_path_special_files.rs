@@ -1,7 +1,7 @@
 //! Special-file safety for the read entry points above `open_file_safe`.
 
 use super::super::support::{make_fifo, symlink_to, within_timeout, write_regular};
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use std::path::Path;
 
 const CAP: u64 = 1 << 20;

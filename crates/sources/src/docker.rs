@@ -127,8 +127,25 @@ fn collect_docker_chunks(
     let mut rows = Vec::new();
     // Archive unpack + metadata enumeration walk the exported image layout.
     let _enumerate = crate::profile::walk_span();
-    let mut error_rows =
-        archive::unpack_tar(&archive_path, workspace.root_path(), limits)?.into_rows();
+    // ONE budget for the whole image: the outer tar and every layer tar draw
+    // from this cell, so `docker_tar_total_bytes` bounds the image rather than
+    // resetting per tar.
+    let unpack_budget = archive::DockerUnpackBudget::new(limits.docker_tar_total_bytes);
+    // Never discard what already unpacked. A refused entry (entry-count cap,
+    // per-entry cap, image budget) aborts the REST of the outer tar, but the
+    // layers already written are real scannable content, so the refusal becomes
+    // a gap row carried alongside them rather than a `?` that drops the whole
+    // image. These caps are deliberate one-shot refusals of hostile input and
+    // are never retried; retrying a bomb is how a DoS defense becomes a DoS.
+    let mut error_rows = match archive::unpack_tar(
+        &archive_path,
+        workspace.root_path(),
+        limits,
+        &unpack_budget,
+    ) {
+        Ok(report) => report.into_rows(),
+        Err(error) => vec![Err(error)],
+    };
 
     match find_archive_metadata_chunks(workspace.root_path(), &image, limits) {
         Ok(chunks) => {
@@ -157,9 +174,13 @@ fn collect_docker_chunks(
     // boundary; per-layer reads record through the inner FilesystemSource.
     drop(_enumerate);
     let _layer_walk = crate::profile::walk_span();
-    for row in
-        layer::collect_docker_layer_chunks(&workspace, &image, limits, respect_default_excludes)
-    {
+    for row in layer::collect_docker_layer_chunks(
+        &workspace,
+        &image,
+        limits,
+        respect_default_excludes,
+        &unpack_budget,
+    ) {
         match row {
             Ok(chunk) => rows.push(Ok(chunk)),
             Err(error) => error_rows.push(Err(error)),
@@ -434,7 +455,14 @@ pub(crate) fn unpack_layer_archive_for_test(
     archive_path: &Path,
     destination: &Path,
 ) -> Result<Vec<SourceError>, SourceError> {
-    archive::unpack_layer_archive(archive_path, destination, crate::SourceLimits::default())
+    archive::unpack_layer_archive(
+        archive_path,
+        destination,
+        crate::SourceLimits::default(),
+        &archive::DockerUnpackBudget::new(
+            crate::SourceLimits::default().docker_tar_total_bytes,
+        ),
+    )
         .map(archive::DockerExtractReport::into_errors)
 }
 
@@ -447,7 +475,12 @@ pub(crate) fn unpack_layer_archive_with_total_cap_for_test(
         docker_tar_total_bytes: total_cap,
         ..crate::SourceLimits::default()
     };
-    archive::unpack_layer_archive(archive_path, destination, limits)
+    archive::unpack_layer_archive(
+        archive_path,
+        destination,
+        limits,
+        &archive::DockerUnpackBudget::new(limits.docker_tar_total_bytes),
+    )
         .map(archive::DockerExtractReport::into_errors)
 }
 
@@ -460,7 +493,12 @@ pub(crate) fn unpack_layer_archive_with_entry_cap_for_test(
         docker_tar_entry_bytes: entry_cap,
         ..crate::SourceLimits::default()
     };
-    archive::unpack_layer_archive(archive_path, destination, limits)
+    archive::unpack_layer_archive(
+        archive_path,
+        destination,
+        limits,
+        &archive::DockerUnpackBudget::new(limits.docker_tar_total_bytes),
+    )
         .map(archive::DockerExtractReport::into_errors)
 }
 
@@ -475,7 +513,12 @@ pub(crate) fn unpack_layer_archive_with_caps_for_test(
         docker_tar_total_bytes: total_cap,
         ..crate::SourceLimits::default()
     };
-    archive::unpack_layer_archive(archive_path, destination, limits)
+    archive::unpack_layer_archive(
+        archive_path,
+        destination,
+        limits,
+        &archive::DockerUnpackBudget::new(limits.docker_tar_total_bytes),
+    )
         .map(archive::DockerExtractReport::into_errors)
 }
 
@@ -488,8 +531,35 @@ pub(crate) fn unpack_image_archive_with_entry_cap_for_test(
         docker_tar_entry_bytes: entry_cap,
         ..crate::SourceLimits::default()
     };
-    archive::unpack_tar(archive_path, destination, limits)
+    archive::unpack_tar(
+        archive_path,
+        destination,
+        limits,
+        &archive::DockerUnpackBudget::new(limits.docker_tar_total_bytes),
+    )
         .map(archive::DockerExtractReport::into_errors)
+}
+
+/// Unpack several layer tars through ONE image-scoped budget, the way a real
+/// multi-layer image does, so the image-wide ceiling can be exercised without a
+/// docker daemon. Returns the error rows from every tar in order.
+pub(crate) fn unpack_layers_with_shared_budget_for_test(
+    archives: &[(&Path, &Path)],
+    total_cap: u64,
+) -> Result<Vec<SourceError>, SourceError> {
+    let limits = crate::SourceLimits {
+        docker_tar_total_bytes: total_cap,
+        ..crate::SourceLimits::default()
+    };
+    let budget = archive::DockerUnpackBudget::new(total_cap);
+    let mut errors = Vec::new();
+    for (archive_path, destination) in archives {
+        errors.extend(
+            archive::unpack_layer_archive(archive_path, destination, limits, &budget)?
+                .into_errors(),
+        );
+    }
+    Ok(errors)
 }
 
 pub(crate) fn rewrite_layer_chunks_for_test<I>(

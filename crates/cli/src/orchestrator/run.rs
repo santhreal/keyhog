@@ -2,7 +2,8 @@
 
 use super::allowlist::{load_allowlist, load_rule_suppressor};
 use super::reporting::{
-    dump_dogfood_trace, report_completion_summary, report_skip_summary, TickerGuard,
+    dump_dogfood_trace, report_autoroute_cache_summary, report_completion_summary,
+    report_skip_summary, TickerGuard,
 };
 use super::ScanOrchestrator;
 use crate::baseline::Baseline;
@@ -25,27 +26,52 @@ pub(super) struct ScanOutcome {
     pub(super) has_new_entries: bool,
     pub(super) incremental_cache_failed: bool,
     pub(super) source_coverage_incomplete: bool,
+    /// A requested source produced ZERO chunks and errored: not a gap in the
+    /// coverage of input we read, but input we never read at all. Tracked
+    /// separately from `source_coverage_incomplete` so the exit code cannot
+    /// depend on whether that total failure also happened to raise a
+    /// FAIL-class coverage gap.
+    pub(super) total_source_failure: bool,
+    /// The autoroute decision cache could not be written. Never discards
+    /// findings; it exists so `--autoroute-calibrate` cannot report success
+    /// when persisting that decision WAS the requested operation.
+    pub(super) autoroute_persist_failed: bool,
 }
 
 /// Resolve scan terminal state with reliability failures ahead of findings.
 ///
-/// Autoroute calibration is a measurement command and returns success once its
-/// routing evidence was persisted, except that a scanner panic still makes the
-/// measurement untrustworthy. For ordinary scans, a panic outranks live or
-/// unverified findings, then finding states outrank cache and coverage errors
-/// because the caller already has actionable credential evidence to preserve.
+/// A panic outranks everything: the run's state is unreliable. Then findings,
+/// because the caller has actionable credential evidence to preserve, and that
+/// includes a CALIBRATING run. Calibration is a side effect of a scan, not a
+/// different operation, so it must not mask the scan's verdict. It used to
+/// return success unconditionally, which made
+/// `keyhog scan --autoroute-calibrate <tree> && echo clean` print "clean" on a
+/// tree with leaks: the report named the credential and the exit code said
+/// nothing was wrong. That is the documented first-run command in our own
+/// installers, so the one scan most likely to be wired into a gate was the one
+/// that could not fail it.
+///
+/// Below findings, calibration is still allowed to report success on an
+/// incomplete sample, because its workload is a deliberately partial
+/// measurement rather than a claim about the tree. What it may NOT do is
+/// report success when persisting the decision failed, since that was the
+/// requested operation.
 pub(super) fn resolve_scan_exit(outcome: ScanOutcome) -> u8 {
-    if outcome.autoroute_calibration && !outcome.scanner_panicked {
-        EXIT_SUCCESS
-    } else if outcome.scanner_panicked {
+    if outcome.scanner_panicked {
         EXIT_SCANNER_PANIC
     } else if outcome.has_live_credentials {
         EXIT_LIVE_CREDENTIALS
     } else if outcome.has_new_entries {
         EXIT_FINDINGS
-    } else if outcome.incremental_cache_failed {
+    } else if outcome.autoroute_calibration {
+        if outcome.autoroute_persist_failed {
+            EXIT_SYSTEM_ERROR
+        } else {
+            EXIT_SUCCESS
+        }
+    } else if outcome.incremental_cache_failed || outcome.autoroute_persist_failed {
         EXIT_SYSTEM_ERROR
-    } else if outcome.source_coverage_incomplete {
+    } else if outcome.source_coverage_incomplete || outcome.total_source_failure {
         EXIT_SOURCE_FAILED
     } else {
         EXIT_SUCCESS
@@ -632,6 +658,15 @@ impl OperatorProfile {
             let (spans, dropped_events) = runtime.take_session_span_records();
             let latency_distributions = runtime.take_session_latency_distributions();
             let (point_events, annotations, event_loss) = runtime.take_session_typed_events();
+            // These five read the same per-worker shards `session.finish`
+            // drains, so they must run while the session is still alive.
+            let stage_concurrency = runtime.take_session_stage_concurrency();
+            let worker_occupancy = runtime.take_session_worker_occupancy();
+            let queue_depths = runtime.take_session_queue_depths();
+            let blocked_waits = runtime.take_session_blocked_waits();
+            let cache_effectiveness = runtime.take_session_cache_effectiveness();
+            let indexed_counters = runtime.take_session_indexed_counters();
+            let retries = runtime.take_session_retries();
             // Verifier cache hits are only observable as IncrementalLookup
             // spans nested under LiveVerification; count them before the
             // forest moves into the event stream.
@@ -652,6 +687,13 @@ impl OperatorProfile {
             let mut causal = keyhog_profile::CausalProfileV2::from_v1_with_build(profile, build);
             causal.typed_metrics = typed_metrics;
             causal.latency_distributions = latency_distributions;
+            causal.stage_concurrency = stage_concurrency;
+            causal.worker_occupancy = Some(worker_occupancy);
+            causal.queue_depths = queue_depths;
+            causal.blocked_waits = blocked_waits;
+            causal.caches = cache_effectiveness;
+            causal.indexed_counters = indexed_counters;
+            causal.retries = retries;
             causal.events = keyhog_profile::EventStreamV2 {
                 version: keyhog_profile::EVENT_SCHEMA_VERSION,
                 availability: keyhog_profile::Evidence::recorded(true),
@@ -680,6 +722,12 @@ impl OperatorProfile {
             if let Some(source) = self.source.take() {
                 causal.identity.source = source;
             }
+            // Lead with the conclusion. The span-by-span report below is the
+            // evidence for it, and an operator who only reads the first line
+            // still learns what limited the run.
+            let insight = keyhog_profile::RunInsightV2::derive(&causal);
+            eprint!("{}", insight.render_summary());
+            causal.insight = Some(insight);
             eprint!("{report}");
             // Workflow-state identity: the in-process orchestrator only runs
             // with the daemon route off (daemon-routed scans are served by
@@ -1024,6 +1072,15 @@ impl ScanOrchestrator {
     pub async fn run(mut self) -> Result<std::process::ExitCode> {
         crate::reset_scan_runtime_state();
         super::workflow_state::reset_workflow_state();
+        // `--no-default-excludes` disables EVERY default exclusion, not just the
+        // walker's. The vendored/minified path suppression used to survive the
+        // flag, so the walker read `app.min.js` and reported its bytes as
+        // scanned while the scanner threw away the `sk_live_` key inside it. The
+        // flag now means what it says. This must run after
+        // `reset_scan_runtime_state`, which restores the default.
+        keyhog_scanner::telemetry::set_vendored_path_suppression(
+            !self.args.no_default_excludes,
+        );
         let start = Instant::now();
         let wall_start = chrono::Utc::now();
         let stderr_is_tty = std::io::stderr().is_terminal();
@@ -1229,14 +1286,19 @@ impl ScanOrchestrator {
             // which calibrated backend the dispatcher will select. Prewarm only
             // explicit diagnostic overrides; automatic backends initialize when
             // the cache-backed router resolves the first real batch.
-            let warm_started = Instant::now();
-            let warmed = self.scanner.warm_backend(preferred);
-            let warm_ms = warm_started.elapsed().as_millis();
+            // The prewarm dispatches to the backend once, so its cost belongs
+            // to the profiler's backend-dispatch stage. It used to carry a
+            // private `Instant` whose only consumer was the `elapsed_ms` field
+            // of this debug line, which meant prewarm time was measurable only
+            // by turning on a log target and never appeared in a profile.
+            let warmed = {
+                let _warm_span = keyhog_profile::span(keyhog_profile::Stage::BackendDispatch);
+                self.scanner.warm_backend(preferred)
+            };
             tracing::debug!(
                 target: "keyhog::routing",
                 backend = preferred.label(),
                 warmed,
-                elapsed_ms = warm_ms as u64,
                 "backend warmed"
             );
         } else {
@@ -1411,33 +1473,36 @@ impl ScanOrchestrator {
             .collect();
         drop(_suppression_span);
 
-        // KH-GAP-096: if a requested source failed ENTIRELY, produced zero
-        // chunks AND errored (e.g. --git-history / --git-diff on a non-repo or
-        // bad ref, --github-org with a bad token, an unreachable --url), and
-        // there are no findings, the requested scan never ran. Do NOT fall
-        // through to "no findings, all clean" + exit 0: a CI gate would read
-        // that as a clean tree when nothing was scanned. Fail closed with a
-        // diagnostic. A partial failure (some files unreadable in a tree that
-        // still produced chunks) does NOT trip this, that source produced
-        // data, so FAILED_SOURCES stays 0, nor does a failed source that runs
-        // alongside another source which DID surface findings (exit 1 wins).
-        if findings.is_empty()
-            && crate::FAILED_SOURCES.load(std::sync::atomic::Ordering::Relaxed) > 0
-        {
+        // KH-GAP-096: a requested source that failed ENTIRELY, producing zero
+        // chunks AND erroring (e.g. --git-history / --git-diff on a non-repo or
+        // bad ref, --github-org with a bad token, an unreachable --url, or a
+        // tree whose every entry was unreadable or over a cap), means the scan
+        // did not cover what was asked of it. That must NOT read as "no
+        // findings, all clean" + exit 0: a CI gate would take it for a clean
+        // tree when nothing was examined.
+        //
+        // It must equally NOT discard the run. This used to return here, ahead
+        // of report emission, so `-o out.json` produced NO FILE AT ALL: not an
+        // empty envelope, not a gap row, nothing. Our loudest failure was the
+        // only one with no machine-readable output, so a CI job could not tell
+        // "we could not scan your input" from "the tool never ran", and the
+        // shipped generic-shell and Drone recipes pre-seeded an empty envelope
+        // purely to work around it. The verdict belongs in the exit code; the
+        // reason belongs in the report. Both are now always produced.
+        //
+        // A partial failure (some entries unreadable in a tree that still
+        // produced chunks) does not set FAILED_SOURCES at all, and a failed
+        // source running alongside one that DID surface findings still exits 1,
+        // because `resolve_scan_exit` ranks findings above coverage.
+        let total_source_failure =
+            crate::FAILED_SOURCES.load(std::sync::atomic::Ordering::Relaxed) > 0;
+        if total_source_failure && findings.is_empty() {
             eprintln!(
                 "error: a requested scan source failed to read and produced no data (see the \
-                 warnings above). Not reporting \"clean\": that scan did not run. Check the \
-                 repository path, ref, token, or URL and re-run."
+                 warnings above). Not reporting \"clean\": that scan did not run. A report is \
+                 still written, stating what was not covered and why. Check the repository \
+                 path, ref, token, or URL and re-run."
             );
-            operator_profile.finish_recorded(
-                EXIT_SOURCE_FAILED,
-                &findings,
-                None,
-                crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed),
-                true,
-                self.effective_config.report.verify,
-            );
-            return Ok(std::process::ExitCode::from(EXIT_SOURCE_FAILED));
         }
 
         if show_progress {
@@ -1457,16 +1522,21 @@ impl ScanOrchestrator {
         }
 
         // Reliability outcomes gate baseline mutation (KH-504 / KH-1352).
-        // Panic, incremental-cache failure, or FAIL-class coverage gaps must
-        // not mint a "successful" baseline. Deliberate WARN skips (binary,
-        // over-max-size) do not poison baseline writes.
+        // Panic, incremental-cache failure, FAIL-class coverage gaps, or a
+        // source that produced nothing at all must not mint a "successful"
+        // baseline. Deliberate WARN skips (binary, over-max-size) do not
+        // poison baseline writes.
         let scanner_panicked = crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed);
         let incremental_cache_failed =
             crate::INCREMENTAL_CACHE_ERRORS.load(std::sync::atomic::Ordering::Relaxed) > 0;
         let source_coverage_incomplete = source_coverage_incomplete();
         let baseline_coverage_failed = baseline_coverage_untrustworthy();
-        let baseline_untrustworthy =
-            scanner_panicked || incremental_cache_failed || baseline_coverage_failed;
+        let autoroute_persist_failed =
+            crate::AUTOROUTE_PERSIST_ERRORS.load(std::sync::atomic::Ordering::Relaxed) > 0;
+        let baseline_untrustworthy = scanner_panicked
+            || incremental_cache_failed
+            || baseline_coverage_failed
+            || total_source_failure;
 
         if let Some(ref path) = self.args.create_baseline {
             if baseline_untrustworthy {
@@ -1477,6 +1547,8 @@ impl ScanOrchestrator {
                     has_new_entries: false,
                     incremental_cache_failed,
                     source_coverage_incomplete: baseline_coverage_failed,
+                    total_source_failure,
+                    autoroute_persist_failed,
                 });
                 eprintln!(
                     "error: refusing --create-baseline: scan is untrustworthy \
@@ -1547,6 +1619,8 @@ impl ScanOrchestrator {
                     has_new_entries: false,
                     incremental_cache_failed,
                     source_coverage_incomplete: baseline_coverage_failed,
+                    total_source_failure,
+                    autoroute_persist_failed,
                 });
                 eprintln!(
                     "error: refusing --update-baseline: scan is untrustworthy \
@@ -1650,6 +1724,24 @@ impl ScanOrchestrator {
             guard.stop();
         }
         if let Err(error) = report_result {
+            // Exit 3, not 13, and say so. "We could not scan your input" and
+            // "we scanned it and could not write the answer down" need opposite
+            // responses (fix the input versus fix the output path), and after
+            // the always-emit change they would otherwise share one signature:
+            // non-zero exit, no report on disk. The exit code separates them;
+            // this line names the path so an operator does not have to infer it.
+            match self.args.output.as_deref() {
+                Some(path) => eprintln!(
+                    "error: the scan completed but its report could not be written to {}: \
+                     {error}. The findings above were produced and then lost at the output \
+                     step; this is an output-path failure, not a coverage failure.",
+                    path.display()
+                ),
+                None => eprintln!(
+                    "error: the scan completed but its report could not be emitted: {error}. \
+                     This is an output failure, not a coverage failure."
+                ),
+            }
             let coverage_counts = crate::reporting::CoverageCounts::current();
             let mut outcome = profiler_outcome_identity(
                 EXIT_SYSTEM_ERROR,
@@ -1681,6 +1773,13 @@ impl ScanOrchestrator {
         } else {
             report_skip_summary(false);
         }
+        // Autoroute cache state is status, not decoration, so it is reported in
+        // both modes. `--format json -o <file>` takes the non-progress branch,
+        // and that is the exact shape CI and calibration harnesses run.
+        report_autoroute_cache_summary(
+            show_progress && progress_ansi,
+            self.effective_config.backend_override.is_some(),
+        );
         dump_dogfood_trace();
 
         tracing::info!(
@@ -1696,6 +1795,8 @@ impl ScanOrchestrator {
             has_new_entries,
             incremental_cache_failed,
             source_coverage_incomplete,
+            total_source_failure,
+            autoroute_persist_failed,
         });
         crate::action_report::write_scan_receipt(
             &self.args,
@@ -1703,7 +1804,9 @@ impl ScanOrchestrator {
             exit,
             report_metadata.scan_status,
         )?;
-        if exit == EXIT_SOURCE_FAILED {
+        // The total-source-failure case already printed its own, more specific
+        // diagnostic before the report was written, so do not restate it.
+        if exit == EXIT_SOURCE_FAILED && !total_source_failure {
             eprintln!(
                 "error: input coverage was incomplete (see coverage warnings above). Not \
                  reporting \"clean\": some requested bytes were not scanned."

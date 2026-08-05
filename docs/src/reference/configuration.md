@@ -154,6 +154,85 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 | Binary strings bytes | 64 MiB | `[limits].binary_read_bytes` | `--limit-binary-read-bytes` |
 | Ghidra output bytes | 50 MiB | `[limits].binary_decompiled_bytes` | `--limit-binary-decompiled-bytes` |
 
+Every one of these caps is exact and inclusive. A cap of `N` bytes admits an
+input of exactly `N` bytes and refuses `N + 1`. A cap of `N` items admits
+exactly `N` items.
+
+```console
+$ printf 'x%.0s' $(seq 1024) | keyhog scan --stdin --limit-stdin-bytes 1024B
+$ printf 'x%.0s' $(seq 1024) | keyhog scan --stdin --limit-stdin-bytes 1023B
+error: stdin exceeds 1023 byte limit
+```
+
+### Which source honors which limit
+
+A limit belongs to one source class. `--limit-git-blob-bytes` does not bound a
+cloud object, and `--max-file-size` does not bound a git blob. Set the cap that
+matches the input you are scanning.
+
+| Limit | Applies to |
+|---|---|
+| `--max-file-size` | Filesystem files, and every member extracted from an archive, compressed stream, or document on the filesystem |
+| `--limit-stdin-bytes` | `--stdin` only |
+| `--limit-web-response-bytes` | `--url` responses, and every cloud and hosted-git API response body (listings included) |
+| `--limit-s3-object-bytes` / `--limit-gcs-object-bytes` / `--limit-azure-blob-bytes` | One object body from that store |
+| `--limit-cloud-max-objects` | Objects listed from one S3, GCS, or Azure container |
+| `--limit-docker-tar-entry-bytes` | One entry in the image tar or in any layer tar |
+| `--limit-docker-image-config-bytes` | Image config, manifest, and index JSON |
+| `--limit-docker-tar-total-bytes` | Cumulative unpacked bytes for the WHOLE image, summed across the image tar and every layer tar. A budget that covers the largest layer is not enough if the layers together exceed it |
+| `--limit-git-line-bytes` | One line of git plumbing output, counting the line and not its newline |
+| `--limit-git-total-bytes` | Aggregate bytes a `--git-history`, `--git-diff`, or `--git-staged` scan emits. Checked between chunks, so the last chunk may carry the total past the budget |
+| `--limit-git-blob-bytes` | One blob object under `--git-blobs` and `--git-staged`. Under `--git-history` and `--git-diff` the same value is the flush size for one diff hunk, so lowering it splits chunks instead of dropping content |
+| `--limit-git-chunks` | Chunks a history, diff, or staged scan emits |
+| `--limit-hosted-git-pages` | Listing pages per GitHub org, GitLab group, Bitbucket workspace, or Slack channel walk |
+| `--limit-binary-read-bytes` | Bytes read from one binary for strings extraction under `--binary` |
+| `--limit-binary-decompiled-bytes` | Ghidra decompiled output accepted for parsing |
+
+Two derived caps have no flag and follow `--max-file-size`. Archive and
+compressed-stream extraction stops at four times the per-file cap, so the
+default 100 MiB file cap allows 400 MiB of expansion per container. A CRX
+package additionally refuses any entry whose compression ratio exceeds 1000.
+
+### What you see when a limit is exceeded
+
+Exceeding a limit is never silent. Input a cap excluded is recorded as a
+coverage gap, not dropped, because a scan that quietly read less than you asked
+for reports a clean that was never measured.
+
+You get, in every case: a `WARN` naming the input, its measured size, and the
+cap; a source error row in the report; and a non-zero exit. When the cap
+excluded every requested input, the run refuses to report a result at all.
+
+```console
+$ keyhog scan --git-blobs . --limit-git-blob-bytes 64B
+WARN git blob exceeds the per-blob size cap; NOT scanned oid=037d4125 size=65 cap=64
+WARN source: failed to access git source: git blob 037d4125 at c1.txt exceeds
+     per-blob size cap (65 bytes > 64 bytes); blob was not scanned
+FAIL 2 source error row(s) emitted: requested input was NOT fully scanned.
+```
+
+A count of zero is refused up front rather than accepted as a scan of nothing.
+`--limit-cloud-max-objects 0`, `--limit-git-chunks 0`, and
+`--limit-hosted-git-pages 0` all fail at argument parsing.
+
+A hosted-git listing that does not fit its page budget is the one case that
+refuses even a partial result. Repositories the listing never reached would
+otherwise be reported clean, so the whole source fails instead.
+
+### Availability in this build
+
+Each limit needs its source backend compiled in. `keyhog config --effective`
+lists every limit on every build, and marks the ones this binary cannot reach:
+
+```console
+$ keyhog config --effective | grep limit_binary
+limit_binary_read_bytes = unavailable (requires the `binary` feature in this keyhog build)
+limit_binary_decompiled_bytes = unavailable (requires the `binary` feature in this keyhog build)
+```
+
+An unavailable limit has no CLI flag, and its `.keyhog.toml` key is rejected
+with the same feature name rather than accepted and ignored.
+
 > Library note: `ScanConfig::max_file_size` and `ScanConfig::dedup` are scan
 > pipeline settings, not regex-engine settings. The CLI applies them through
 > the filesystem source and final deduplication stage; `FilesystemSource::new`

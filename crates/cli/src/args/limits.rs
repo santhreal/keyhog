@@ -44,7 +44,8 @@ pub struct SourceLimitArgs {
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
     pub limit_docker_image_config_bytes: Option<usize>,
 
-    /// Maximum cumulative bytes allowed while unpacking a Docker/OCI layer tar.
+    /// Maximum cumulative bytes unpacked for one Docker/OCI image, summed
+    /// across the image tar and every layer tar.
     #[cfg(feature = "docker")]
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
     pub limit_docker_tar_total_bytes: Option<usize>,

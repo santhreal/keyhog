@@ -1,6 +1,6 @@
 schema_version = 1
 measured_at = "2026-07-10"
-host = "mukund-linux-main"
+host = "work-linux-main"
 cpu = "AMD Ryzen 9 9950X 16-Core Processor"
 host_threads = 32
 gpu = "NVIDIA GeForce RTX 5090"

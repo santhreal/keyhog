@@ -79,6 +79,18 @@ pub(crate) static FAILED_SOURCES: AtomicUsize = AtomicUsize::new(0);
 /// a scan. Findings are still reported, but a clean scan with a failed cache
 /// write must not exit 0: the requested stateful speed path was not honored.
 pub(crate) static INCREMENTAL_CACHE_ERRORS: AtomicUsize = AtomicUsize::new(0);
+/// Number of times the autoroute decision cache could not be persisted after a
+/// scan. Persisting a routing decision is NOT part of producing findings, so
+/// this never discards them; it exists so `--autoroute-calibrate`, whose whole
+/// requested operation was to persist that decision, cannot report success
+/// when the write failed and leave every later scan silently falling back to
+/// scalar recovery with no way to tell why.
+pub(crate) static AUTOROUTE_PERSIST_ERRORS: AtomicUsize = AtomicUsize::new(0);
+/// Number of scan batches that reached the scanner and could not be routed to
+/// any backend, so their bytes were never scanned. The findings gathered before
+/// that point are still reported; this exists so the run cannot ALSO claim it
+/// covered the input, which is the other half of never discarding results.
+pub(crate) static BATCHES_NOT_ROUTED: AtomicUsize = AtomicUsize::new(0);
 /// Set to `true` if the scanner thread panicked during `scan_sources`.
 /// Read at the end of `run()` so a crashed scanner exits with a
 /// non-zero code instead of silently reporting "no findings, all
@@ -102,6 +114,8 @@ pub(crate) enum ScanFailureEvent {
     SourceError,
     FailedSource,
     IncrementalCachePersistFailed,
+    AutoroutePersistFailed,
+    BatchNotRouted,
     ScannerPanicked,
 }
 
@@ -121,6 +135,10 @@ pub(crate) fn record_scan_failure(event: ScanFailureEvent) -> RecordedScanFailur
         ScanFailureEvent::IncrementalCachePersistFailed => {
             INCREMENTAL_CACHE_ERRORS.fetch_add(1, Ordering::Relaxed)
         }
+        ScanFailureEvent::AutoroutePersistFailed => {
+            AUTOROUTE_PERSIST_ERRORS.fetch_add(1, Ordering::Relaxed)
+        }
+        ScanFailureEvent::BatchNotRouted => BATCHES_NOT_ROUTED.fetch_add(1, Ordering::Relaxed),
         ScanFailureEvent::ScannerPanicked => {
             let was_panicked = SCANNER_PANICKED.swap(true, Ordering::Relaxed);
             usize::from(was_panicked)
@@ -139,6 +157,14 @@ pub(crate) fn record_failed_source() -> RecordedScanFailureEvent {
 
 pub(crate) fn record_incremental_cache_persist_failed() -> RecordedScanFailureEvent {
     record_scan_failure(ScanFailureEvent::IncrementalCachePersistFailed)
+}
+
+pub(crate) fn record_autoroute_persist_failed() -> RecordedScanFailureEvent {
+    record_scan_failure(ScanFailureEvent::AutoroutePersistFailed)
+}
+
+pub(crate) fn record_batch_not_routed() -> RecordedScanFailureEvent {
+    record_scan_failure(ScanFailureEvent::BatchNotRouted)
 }
 
 pub(crate) fn record_scanner_panic() -> RecordedScanFailureEvent {
@@ -180,6 +206,8 @@ pub(crate) fn reset_scan_runtime_state() {
     SOURCE_ERRORS.store(0, Ordering::Relaxed);
     FAILED_SOURCES.store(0, Ordering::Relaxed);
     INCREMENTAL_CACHE_ERRORS.store(0, Ordering::Relaxed);
+    AUTOROUTE_PERSIST_ERRORS.store(0, Ordering::Relaxed);
+    BATCHES_NOT_ROUTED.store(0, Ordering::Relaxed);
     SCANNER_PANICKED.store(false, Ordering::Relaxed);
     keyhog_scanner::telemetry::reset_for_scan();
 }

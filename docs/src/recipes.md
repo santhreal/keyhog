@@ -128,6 +128,20 @@ echo "$SOME_BLOB" | keyhog scan --stdin
 kubectl get secret app -o yaml | keyhog scan --stdin
 ```
 
+A producer that fails writes nothing to stdout. The scan then reads zero bytes
+and exits `13` with a `scan covered nothing` gap row, which is honest but
+blames the scanner rather than the producer. Make the pipeline carry the real
+failure:
+
+```bash
+set -o pipefail
+kubectl get secret app -o yaml | keyhog scan --stdin
+```
+
+With `pipefail`, a missing `kubectl` or a denied request surfaces the
+producer's own exit code. See
+[tell a real clean from a skipped input](./reference/coverage-truth.md).
+
 ## Sweep an entire machine
 
 ```bash

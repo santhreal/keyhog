@@ -143,9 +143,9 @@ fn collect_gcs_chunks(
     let bucket = validate_bucket_name(bucket)?;
     // Bucket acquisition: endpoint validation, client build, and auth.
     let _acquire = crate::profile::acquire_span();
-    let endpoint =
+    let (endpoint, screened) =
         crate::cloud::validate_cloud_endpoint(endpoint, "GCS", http.allow_private_endpoint, true)?;
-    let client = crate::cloud::blocking_client("GCS", http)?;
+    let client = crate::cloud::blocking_client("GCS", http, screened.as_ref())?;
     let bearer = resolve_gcs_auth(&endpoint, allow_token_forward)?;
     drop(_acquire);
     let mut chunks = Vec::new();
@@ -507,8 +507,23 @@ fn gcs_bearer_token(
             "{env_name} contains control characters; provide a single-line bearer token"
         )));
     }
-    if endpoint_is_google(endpoint) || crate::cloud::credential_forward_allowed(allow_token_forward)
-    {
+    if endpoint_is_google(endpoint) {
+        return Ok(Some(token));
+    }
+    if crate::cloud::credential_forward_allowed(allow_token_forward) {
+        // Warn where the forwarding actually happens, not where the flag was
+        // parsed. This is the single owner of the consent notice, so every entry
+        // path into the GCS source (`--gcs-bucket ... --allow-gcs-token-forward`
+        // and `--source gcs:BUCKET\nPREFIX\nENDPOINT\ntrue`) surfaces it
+        // identically, and it fires only when an ambient token is genuinely
+        // carried off-provider rather than whenever the flag is present.
+        // Mirrors `s3::resolve_s3_auth`.
+        tracing::warn!(
+            endpoint = %endpoint,
+            env = env_name,
+            "explicit GCS token-forwarding override active: forwarding ambient GCS bearer token \
+             to non-Google endpoint. Verify you trust this host."
+        );
         return Ok(Some(token));
     }
     Err(SourceError::Other(format!(

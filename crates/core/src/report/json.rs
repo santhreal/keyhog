@@ -3,6 +3,8 @@
 
 use std::io::Write;
 
+use crate::access_target::AccessTargetReport;
+use crate::correlation::CorrelatedCredential;
 use crate::VerifiedFinding;
 
 use super::{
@@ -172,6 +174,15 @@ impl_writer_backed!(JsonArrayReporter);
 pub(crate) struct JsonEnvelopeReporter<W: Write + Send> {
     writer: W,
     first: bool,
+    /// Pre-encoded `correlations` array, or `None` when the caller supplied no
+    /// correlations. Encoding up front keeps the reporter free of a borrow on
+    /// the report while still emitting the array AFTER `findings`, where a
+    /// streaming reader expects a scan-wide summary.
+    correlations: Option<String>,
+    /// Pre-encoded `access_targets` object, `None` when the caller ran no
+    /// association pass. Same reasoning as `correlations`: encode up front,
+    /// emit after `findings`.
+    access_targets: Option<String>,
 }
 
 impl<W: Write + Send> JsonEnvelopeReporter<W> {
@@ -180,6 +191,8 @@ impl<W: Write + Send> JsonEnvelopeReporter<W> {
         mut writer: W,
         metadata: Option<&ScanReportMetadata>,
         coverage_gap_summary: &[(String, usize)],
+        correlations: &[CorrelatedCredential],
+        access_targets: Option<&AccessTargetReport>,
     ) -> Result<Self, ReportError> {
         write!(
             writer,
@@ -211,9 +224,23 @@ impl<W: Write + Send> JsonEnvelopeReporter<W> {
         }
         write!(writer, "]")?;
         write!(writer, ",\"findings\":[")?;
+        let correlations = if correlations.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(correlations)?)
+        };
+        // An association pass that ran and found nothing still emits its
+        // coverage block: "looked, found no door" and "never looked" are
+        // different facts and the artifact must not conflate them.
+        let access_targets = match access_targets {
+            Some(report) => Some(serde_json::to_string(report)?),
+            None => None,
+        };
         Ok(Self {
             writer,
             first: true,
+            correlations,
+            access_targets,
         })
     }
 }
@@ -229,7 +256,14 @@ impl<W: Write + Send> Reporter for JsonEnvelopeReporter<W> {
     }
 
     fn finish(&mut self) -> Result<(), ReportError> {
-        write!(self.writer, "]}}")?;
+        write!(self.writer, "]")?;
+        if let Some(correlations) = self.correlations.take() {
+            write!(self.writer, ",\"correlations\":{correlations}")?;
+        }
+        if let Some(access_targets) = self.access_targets.take() {
+            write!(self.writer, ",\"access_targets\":{access_targets}")?;
+        }
+        write!(self.writer, "}}")?;
         self.flush_writer()
     }
 }

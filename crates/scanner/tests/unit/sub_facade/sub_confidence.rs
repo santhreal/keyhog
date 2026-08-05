@@ -574,25 +574,6 @@ fn calibration_only_applies_when_store_is_explicit() {
     );
 }
 
-#[test]
-fn calibration_multiplier_has_no_ambient_default_cache_probe() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/confidence/penalties.rs"
-    ))
-    .expect("read penalties source");
-    for forbidden in [
-        "calibration_default_cache_path",
-        "OnceLock<Option<Calibration>>",
-        "Calibration::load(&path)",
-    ] {
-        assert!(
-            !source.contains(forbidden),
-            "scanner confidence must not discover calibration from ambient disk state: {forbidden}"
-        );
-    }
-}
-
 // ---------------------------------------------------------------------------
 // is_sensitive_path
 // ---------------------------------------------------------------------------

@@ -3,12 +3,11 @@
 //! The keyhog-profile runtime owns every figure: the counts are typed counters
 //! and the prefilter/extract wall times are typed nanosecond sums (they nest
 //! inside the `GenericDetection` stage span, so spans would double-count the
-//! stage total). Recording is a no-op when no profile runtime is active; the
-//! `Instant` gates at the call sites key off `keyhog_profile::enabled()`. The
-//! unified profiler drains the batch once per dump and renders the line via
+//! stage total). This module holds no clock. Both wall times come from
+//! [`keyhog_profile::counter_span`], which reads the clock only when a profile
+//! runtime is active, so an unprofiled pass pays one relaxed load. The unified
+//! profiler drains the batch once per dump and renders the line via
 //! [`format_generic_profile`].
-
-use std::time::Instant;
 
 /// All six generic-bridge figures drained from one typed-metric batch.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -63,12 +62,21 @@ pub(crate) fn generic_profile_from_typed(
     }
 }
 
-pub(super) fn record_prefilter_ns(start: Option<Instant>) {
-    record_elapsed(keyhog_profile::CounterId::GenericPrefilterNs, start);
+/// Time the keyword prefilter half of one generic pass.
+///
+/// Counters, not spans: both halves nest inside the `generic-detection` leaf,
+/// so a stage span would double-count that leaf's inclusive total.
+#[inline]
+#[must_use]
+pub(super) fn prefilter_span() -> keyhog_profile::CounterSpan {
+    keyhog_profile::counter_span(keyhog_profile::CounterId::GenericPrefilterNs)
 }
 
-pub(super) fn record_extract_ns(start: Option<Instant>) {
-    record_elapsed(keyhog_profile::CounterId::GenericExtractNs, start);
+/// Time the extraction half of one generic pass.
+#[inline]
+#[must_use]
+pub(super) fn extract_span() -> keyhog_profile::CounterSpan {
+    keyhog_profile::counter_span(keyhog_profile::CounterId::GenericExtractNs)
 }
 
 pub(super) fn record_prefilter_call(keyword_lines: usize) {
@@ -87,9 +95,4 @@ pub(super) fn record_emit() {
     keyhog_profile::add_counter(keyhog_profile::CounterId::GenericEmits, 1);
 }
 
-#[inline]
-fn record_elapsed(counter: keyhog_profile::CounterId, start: Option<Instant>) {
-    if let Some(start) = start {
-        keyhog_profile::add_counter(counter, start.elapsed().as_nanos() as u64);
-    }
-}
+

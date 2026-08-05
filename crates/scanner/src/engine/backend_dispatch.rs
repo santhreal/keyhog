@@ -90,7 +90,7 @@ impl CompiledScanner {
     }
 
     pub(crate) fn prepare_chunk<'a>(&self, chunk: &'a Chunk) -> PreparedChunk<'a> {
-        let _g = super::profile::span(super::profile::P::Preprocess);
+        let _g = super::profile::span(keyhog_profile::Stage::Preprocess);
         // Note: non-ASCII normalization used to swap `chunk` to an
         // owned `Chunk` via `normalize_scannable_chunk`. That path
         // is rarely-hit (most source code is pure ASCII) and the

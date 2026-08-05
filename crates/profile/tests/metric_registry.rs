@@ -101,6 +101,8 @@ fn micro_functions_have_exact_macro_stage_ownership() {
         (Stage::IncrementalLookup, MacroStageId::Scan),
         (Stage::BackendSelect, MacroStageId::Scan),
         (Stage::ScannerQueueWait, MacroStageId::Scan),
+        (Stage::AutorouteCalibration, MacroStageId::Scan),
+        (Stage::BoundaryScan, MacroStageId::Scan),
         (Stage::Suppression, MacroStageId::Resolve),
         (Stage::ResultMerge, MacroStageId::Resolve),
         (Stage::LiveVerification, MacroStageId::Verify),

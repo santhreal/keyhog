@@ -12,7 +12,7 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_profile::Stage;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use support::profile::{run_with_profile, stage_calls};
 
 /// One channel with one message records: 1 acquisition, 1 list-page walk, 1

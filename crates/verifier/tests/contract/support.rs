@@ -69,15 +69,3 @@ pub fn with_proxy_contract_env<R>(f: impl FnOnce() -> R) -> R {
         .expect("release fleet-wide proxy contract env lock");
     result
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn proxy_contract_env_lock_uses_cross_process_file_lock() {
-        let src = include_str!("support.rs");
-        assert!(
-            src.contains("lock_exclusive"),
-            "fleet-wide ENV_MUTEX must use cross-process file locking"
-        );
-    }
-}

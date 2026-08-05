@@ -3,6 +3,13 @@
 //! `lib.rs` owns the module map; this file owns the compatibility surface so
 //! root exports do not sprawl across the module declarations.
 
+pub use crate::access_target::{
+    access_target_rule_ids, associate_access_targets, associate_access_targets_with,
+    validate_access_target_policy, AccessTarget, AccessTargetCoverage, AccessTargetKind,
+    AccessTargetReport, ConfidenceProvenance, ContentError, CoverageGap, CoverageGapReason,
+    FileContent, FileContentSource, FilesystemContent, Redaction, TargetEvidence,
+    TargetRelation, TargetedLocation,
+};
 pub use crate::allowlist::*;
 pub use crate::ascii_ci::{
     contains_bytes_ignore_ascii_case, contains_ignore_ascii_case, ends_with_ignore_ascii_case,
@@ -16,6 +23,10 @@ pub use crate::calibration::{
     calibration_default_cache_path, BetaCounters, Calibration, CalibrationLoadError,
 };
 pub use crate::config::*;
+pub use crate::correlation::{
+    correlate_findings, correlation_composite_part_ids, validate_correlation_policy,
+    CorrelatedCredential, CorrelatedLocation, CorrelatedMember, CorrelationKind, CorrelationRole,
+};
 pub use crate::credential::{Credential, SensitiveString};
 pub use crate::dedup::*;
 pub use crate::display::strip_windows_verbatim_prefix;

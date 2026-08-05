@@ -1,6 +1,6 @@
 #![cfg(feature = "web")]
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use std::net::IpAddr;
 
 macro_rules! ssrf_url_case {

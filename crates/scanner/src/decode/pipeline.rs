@@ -380,7 +380,7 @@ pub(crate) use registry::CompiledDecoderPlan;
 pub(crate) use registry::{
     active_decoder_admission_sketch, decoder_admission, decoder_admission_sketch,
 };
-pub(crate) use registry::{decoder_profile_dump, decoder_profile_reset};
+pub(crate) use registry::decoder_profile_dump;
 pub use registry::{register_decoder, try_register_decoder, DecoderRegistrationError};
 #[cfg(test)]
 pub(crate) use registry::{register_thread_decoder, ScopedDecoderRegistration};

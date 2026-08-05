@@ -4,7 +4,7 @@
 mod capped {
     use super::super::support::split_chunk_results;
     use keyhog_core::Source;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
     use std::io::Write;
 
     #[test]

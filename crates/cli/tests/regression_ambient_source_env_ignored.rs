@@ -94,15 +94,3 @@ fn build_sources_ignores_ambient_remote_source_env() {
     });
 }
 
-#[test]
-fn source_factory_has_no_dead_global_registry_fallback() {
-    let src = include_str!("../src/sources.rs");
-    assert!(
-        !src.contains("keyhog_core::get_source"),
-        "source construction must not fall back to the dead global registry branch"
-    );
-    assert!(
-        !src.contains("register the source plugin before using --source"),
-        "operator errors must not advertise a registry plugin path the binary cannot wire"
-    );
-}

@@ -20,7 +20,7 @@
 
 use keyhog_core::SourceError;
 use keyhog_sources::create_source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 // ---------------------------------------------------------------------------
 // Helpers

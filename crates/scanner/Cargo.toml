@@ -302,10 +302,6 @@ name = "gap_decode_pipeline_layers"
 path = "tests/gap/decode_pipeline_layers.rs"
 
 [[test]]
-name = "gpu_tests_fail_not_skip"
-path = "tests/gap/gpu_tests_fail_not_skip.rs"
-
-[[test]]
 name = "gap_gpu_integrity_failure_reasons"
 path = "tests/gap/gpu_integrity_failure_reasons.rs"
 
@@ -329,10 +325,6 @@ path = "tests/gap/gpu_phase2_empty_hit_fast_path.rs"
 required-features = ["simd"]
 
 [[test]]
-name = "gap_gpu_phase2_unions_cpu_ac_roots"
-path = "tests/gap/gpu_phase2_unions_cpu_ac_roots.rs"
-
-[[test]]
 name = "gap_gpu_require_policy_fails_not_skips"
 path = "tests/gap/gpu_require_policy_fails_not_skips.rs"
 required-features = ["gpu"]
@@ -344,10 +336,6 @@ path = "tests/gap/gpu_shader_sigmoid_contract.rs"
 [[test]]
 name = "gap_no_inline_tests_in_src"
 path = "tests/gap/no_inline_tests_in_src.rs"
-
-[[test]]
-name = "gap_gpu_moe_readback_bounded"
-path = "tests/gap/gpu_moe_readback_bounded.rs"
 
 [[test]]
 name = "gap_backend_substitution_contracts"

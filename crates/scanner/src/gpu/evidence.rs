@@ -110,6 +110,9 @@ impl ContextClaimSet {
 static CONTEXT_CLAIMS: Mutex<ContextClaimSet> = Mutex::new(ContextClaimSet::new());
 
 fn claim_once(context: u64, slot: u16) -> bool {
+    // LAW10: poisoned dedup lock recovers in place. The claim set is a once-per-runtime
+    // evidence de-duplicator, never a finding path; its contents stay consistent across a
+    // panic (insert-only) and failing closed here would drop GPU evidence instead.
     let mut claims = CONTEXT_CLAIMS
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());

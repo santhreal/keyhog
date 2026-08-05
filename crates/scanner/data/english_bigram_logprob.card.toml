@@ -1,0 +1,32 @@
+# Schema and provenance card for `english_bigram_logprob.bin`, the English
+# bigram log-probability table the generic-bridge randomness discriminator
+# (`suppression/token_randomness.rs`) scores alphabetic runs against.
+#
+# `crates/scanner/build.rs` verifies this card against the actual bytes at BUILD
+# time: a table of the wrong size, or bytes that do not hash to
+# `bytes_fnv1a64`, fails compilation rather than silently changing every
+# dictionary-vs-random verdict in the product. Regenerate both together with
+# `ml/gen_bigram_model.py` and paste the reported digest here.
+
+[bigram_model]
+schema_version = 1
+
+# Flat little-endian f32 table indexed `[a * 26 + b]` over lowercase a..z.
+format = "f32-le"
+rows = 26
+columns = 26
+
+# `rows * columns * 4`. The load-time assert in `token_randomness.rs` and this
+# build-time check read the same contract.
+bytes = 2704
+
+# Reproducible generator and its input. The `.bin` is committed as the source of
+# truth so the model is host-independent; the wordlist only has to exist when
+# someone re-runs the generator.
+generator = "ml/gen_bigram_model.py"
+source_corpus = "standard English wordlist (default /usr/share/dict/words)"
+smoothing = "laplace-add-one over the 26x26 space"
+
+# FNV-1a 64-bit over the whole file, lowercase hex. A stable content identity,
+# not a tamper seal.
+bytes_fnv1a64 = "c33ca944c9109c09"

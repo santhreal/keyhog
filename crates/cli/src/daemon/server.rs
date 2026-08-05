@@ -15,8 +15,9 @@ use futures_util::{SinkExt, StreamExt};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::num::NonZeroUsize;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::{UnixListener, UnixStream};
@@ -26,6 +27,24 @@ const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
 static DAEMON_SOURCE_COVERAGE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 const DEFAULT_REQUEST_READ_TIMEOUT_SECS: u64 = 300;
+/// Ceiling on one response write. Without it a client that sends a request and
+/// never reads the reply parks its handler inside `Sink::flush` forever once the
+/// socket send buffer fills, holding its admission permit for the life of the
+/// daemon. 60s is far above the time a local peer needs to drain the largest
+/// response the wire allows (`MAX_FRAME_BYTES`, 64 MiB) over a Unix socket.
+const RESPONSE_WRITE_TIMEOUT: Duration = Duration::from_secs(60);
+/// Connections admitted to the control plane while every scan permit is held.
+/// `Health` and `Shutdown` must stay answerable when the data plane is
+/// saturated, otherwise `keyhog daemon status`/`stop` report the live daemon as
+/// absent and an operator has no way to reclaim it.
+const CONTROL_PLANE_ADMISSIONS: usize = 8;
+/// Read deadline for a control-only connection. The reserved pool is small, so
+/// it has to clear itself rather than depend on peers being well behaved.
+const CONTROL_PLANE_READ_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long `Shutdown` waits for in-flight scans to finish before it
+/// acknowledges anyway. The wire contract promises a flush, but an unbounded
+/// wait would let one wedged mass transaction make the daemon unstoppable.
+const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ServerOptions {
@@ -46,7 +65,6 @@ pub(crate) struct ServerOptions {
 pub(crate) enum DaemonServiceFailure {
     AcceptLoopTask(String),
     ListenerAccept(std::io::Error),
-    ConnectionHandlerSpawn(String),
 }
 
 impl std::fmt::Display for DaemonServiceFailure {
@@ -61,10 +79,6 @@ impl std::fmt::Display for DaemonServiceFailure {
                     "daemon service failed: listener accept failed fatally: {error}"
                 )
             }
-            Self::ConnectionHandlerSpawn(error) => write!(
-                f,
-                "daemon service failed: connection handler spawn failed: {error}"
-            ),
         }
     }
 }
@@ -74,7 +88,6 @@ impl std::error::Error for DaemonServiceFailure {
         match self {
             Self::AcceptLoopTask(_) => None,
             Self::ListenerAccept(error) => Some(error),
-            Self::ConnectionHandlerSpawn(_) => None,
         }
     }
 }
@@ -223,6 +236,18 @@ struct ServerState {
     // concurrent scans, which is the saturation point for the
     // bounded sync_channel(64) the scanner uses internally.
     connection_limit: Arc<Semaphore>,
+    // Admission reserved for connections that arrive while every data-plane
+    // permit is held. They serve Hello/Health/Shutdown and refuse scan work, so
+    // an operator can always observe and stop a saturated daemon.
+    control_limit: Arc<Semaphore>,
+    // Set by `Shutdown` before it waits for in-flight scans. New scan and mass
+    // requests are refused while it is set, so the drain terminates.
+    draining: AtomicBool,
+    // Notified when in-flight work reaches zero, so the drain does not poll.
+    scans_drained: Notify,
+    // Work requests currently between dispatch and a written response. Separate
+    // from `active_scans`, which covers scanner execution only.
+    active_requests: AtomicU32,
 }
 
 impl ServerState {
@@ -261,7 +286,79 @@ impl ServerState {
             mass_gpu_primary_required: options.mass_gpu_primary_required,
             fragment_scan_lock: Arc::new(Mutex::new(())),
             connection_limit: Arc::new(Semaphore::new(max_conns)),
+            control_limit: Arc::new(Semaphore::new(CONTROL_PLANE_ADMISSIONS)),
+            draining: AtomicBool::new(false),
+            scans_drained: Notify::new(),
+            active_requests: AtomicU32::new(0),
         }
+    }
+
+    fn begin_scan(&self) {
+        self.active_scans.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Release one scan slot and wake a waiting drain when the daemon just went
+    /// idle. `Shutdown` blocks on this instead of polling.
+    fn finish_scan(&self) {
+        if self.active_scans.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.scans_drained.notify_waiters();
+        }
+    }
+
+    /// Claim one in-flight work request, covering dispatch AND the response
+    /// write. Draining on scan execution alone is not enough: `active_scans`
+    /// drops to zero as soon as the scanner returns, so a shutdown that waited
+    /// only on that acknowledged while the results frame was still unflushed and
+    /// the client saw a closed socket instead of its findings.
+    fn begin_request(&self) {
+        self.active_requests.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn finish_request(&self) {
+        if self.active_requests.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.scans_drained.notify_waiters();
+        }
+    }
+
+    fn is_draining(&self) -> bool {
+        self.draining.load(Ordering::Acquire)
+    }
+
+    /// Refuse new work, then wait for in-flight work to finish executing and to
+    /// have its response written. Returns what was still outstanding when the
+    /// wait gave up, so the operator learns the flush the wire contract promises
+    /// did not complete.
+    ///
+    /// One request can be read microseconds before `draining` is set and land in
+    /// the window before it claims its slot. That request is refused or its
+    /// connection is closed, which is the same outcome it would have had by
+    /// arriving a moment later.
+    async fn drain_active_work(&self, timeout: Duration) -> u32 {
+        self.draining.store(true, Ordering::Release);
+        let deadline = Instant::now() + timeout;
+        loop {
+            // `enable()` registers the waiter now. `notify_waiters` only wakes
+            // waiters already queued, so registering after the counter loads
+            // would miss the very completion this drain is waiting for.
+            let mut idle = std::pin::pin!(self.scans_drained.notified());
+            idle.as_mut().enable();
+            let outstanding = self.outstanding_work();
+            if outstanding == 0 {
+                return 0;
+            }
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                return outstanding;
+            };
+            if tokio::time::timeout(remaining, idle).await.is_err() {
+                return self.outstanding_work();
+            }
+        }
+    }
+
+    fn outstanding_work(&self) -> u32 {
+        self.active_scans
+            .load(Ordering::Acquire)
+            .saturating_add(self.active_requests.load(Ordering::Acquire))
     }
 
     fn uptime_secs(&self) -> u64 {
@@ -307,12 +404,33 @@ pub(crate) fn warm_route_error(status: &WarmBackendStatus) -> Option<Response> {
     Some(Response::Error { message })
 }
 
+/// Restore `SIG_IGN` for `SIGPIPE` in the daemon service process.
+///
+/// `main::reset_sigpipe` sets `SIGPIPE` back to `SIG_DFL` so `keyhog scan | head`
+/// dies quietly like every other Unix filter. That disposition is process-wide,
+/// and a server is the one KeyHog process it is wrong for: when a client
+/// abandons a connection while the daemon is writing the reply, the `write(2)`
+/// raises `SIGPIPE` and the kernel kills the whole daemon. One client that reads
+/// part of a large `ScanResults` frame and closes therefore terminates the warm
+/// scanner for every other client, with no diagnostic and a stale socket file
+/// left behind. Serving code wants the library default: `write` returns `EPIPE`,
+/// the connection handler logs it, and the process keeps serving.
+fn ignore_sigpipe_while_serving() {
+    // SAFETY: `signal(2)` with `SIG_IGN` is defined for `SIGPIPE` and is called
+    // once, from the daemon service entry point, before any connection exists.
+    // Restoring the Rust startup default cannot race a handler it removes.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_IGN);
+    }
+}
+
 pub(crate) async fn run_with_backend_override(
     socket_path: PathBuf,
     detectors: Vec<DetectorSpec>,
     options: ServerOptions,
     backend_override: Option<ScanBackend>,
 ) -> Result<()> {
+    ignore_sigpipe_while_serving();
     // Tell the operator the daemon is working before scanner compile and warmup.
     // Duration varies with the detector corpus, backend, cache state, and host.
     // The count is the pre-compile spec count; the ready line reports the final
@@ -465,11 +583,7 @@ async fn run_accept_loop(
             _ = state.shutdown.notified() => return Ok(()),
             conn = listener.accept() => {
                 match conn {
-                    Ok((stream, _addr)) => {
-                        if let Err(error) = spawn_connection_handler(state.clone(), stream).await {
-                            return Err(handle_connection_spawn_error(&state.shutdown, error));
-                        }
-                    }
+                    Ok((stream, _addr)) => spawn_connection_handler(state.clone(), stream),
                     Err(e) => {
                         handle_accept_error(&state.shutdown, e).await?;
                     }
@@ -479,36 +593,42 @@ async fn run_accept_loop(
     }
 }
 
-async fn spawn_connection_handler(
-    state: Arc<ServerState>,
-    stream: UnixStream,
-) -> std::result::Result<(), String> {
-    let limiter = state.connection_limit.clone();
-    // Backpressure: refuse to spawn another handler until a permit is available.
-    // A permit drop at the end of the spawned task releases the slot.
-    let permit = limiter
-        .acquire_owned()
-        .await
-        .map_err(|error| format!("connection limiter closed: {error}"))?;
+/// Admission class of one accepted connection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Admission {
+    /// Holds a data-plane permit: scan and mass requests are served.
+    Scan,
+    /// The data plane was saturated when this connection arrived. Hello, Health,
+    /// and Shutdown are served; scan and mass requests are refused.
+    ControlOnly,
+}
+
+fn spawn_connection_handler(state: Arc<ServerState>, stream: UnixStream) {
+    // Never wait for a data-plane permit here. The accept loop is the only task
+    // that can hand a connection to a handler, so awaiting a permit that a slow
+    // or non-reading client holds stops the daemon from answering Health and
+    // Shutdown at all: `keyhog daemon status`/`stop` then time out on the
+    // handshake and report the live daemon as absent (KH-551).
+    let (permit, admission) = match state.connection_limit.clone().try_acquire_owned() {
+        Ok(permit) => (permit, Admission::Scan),
+        Err(_) => match state.control_limit.clone().try_acquire_owned() {
+            Ok(permit) => (permit, Admission::ControlOnly),
+            // Both pools exhausted: drop the socket now rather than queue
+            // unbounded work. The client observes EOF on its handshake read.
+            Err(_) => {
+                tracing::warn!(
+                    "daemon: refused a connection; every scan and control admission is held"
+                );
+                return;
+            }
+        },
+    };
     tokio::spawn(async move {
         let _permit = permit;
-        if let Err(e) = handle_connection(state, stream).await {
+        if let Err(e) = handle_connection(state, stream, admission).await {
             tracing::warn!("daemon: connection ended with error: {e:#}");
         }
     });
-    Ok(())
-}
-
-fn handle_connection_spawn_error(shutdown: &Notify, error: String) -> DaemonServiceFailure {
-    let palette = style::for_stderr();
-    eprintln!(
-        "{} keyhog daemon: failed to spawn a connection handler ({error}); \
-         the daemon can no longer accept connections and is shutting down. \
-         Restart it with `keyhog daemon start`.",
-        style::fail("FAIL", &palette)
-    );
-    shutdown.notify_waiters();
-    DaemonServiceFailure::ConnectionHandlerSpawn(error)
 }
 
 async fn handle_accept_error(
@@ -717,14 +837,27 @@ impl MassSession {
 impl Drop for MassSession {
     fn drop(&mut self) {
         self.state.scanner.clear_fragment_cache();
-        self.state.active_scans.fetch_sub(1, Ordering::Relaxed);
+        self.state.finish_scan();
     }
 }
 
-async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Result<()> {
+async fn handle_connection(
+    state: Arc<ServerState>,
+    stream: UnixStream,
+    admission: Admission,
+) -> Result<()> {
     trust::verify_accepted_peer(&stream)?;
     let mut transport = frame::server_transport(stream);
-    let read_timeout = state.request_read_timeout;
+    // A control-only connection exists because the data plane was full, so it
+    // must not be squattable. The reserved pool is small, and inheriting the
+    // 300s request budget would let eight idle peers wedge Health and Shutdown
+    // for five minutes: the exact outcome the reservation exists to prevent.
+    // Five seconds matches the client's own control response deadline, and a
+    // real control client sends Hello immediately.
+    let read_timeout = match admission {
+        Admission::Scan => state.request_read_timeout,
+        Admission::ControlOnly => CONTROL_PLANE_READ_TIMEOUT,
+    };
     let mut hello_ok = false;
     let mut warm_route_denial: Option<Response> = None;
     let mut mass_session: Option<MassSession> = None;
@@ -745,18 +878,28 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
         };
         if !hello_ok {
             if !matches!(request, Request::Hello) {
-                transport
-                    .send(Response::Error {
+                send_response(
+                    &mut transport,
+                    Response::Error {
                         message: "daemon: first request on a connection must be Hello \
                              (wire and corpus identity handshake required before scan or shutdown)"
                             .to_string(),
-                    })
-                    .await?;
+                    },
+                )
+                .await?;
                 break;
             }
             hello_ok = true;
         }
 
+        if let Some(refusal) = admission_refusal(&state, admission, &request) {
+            send_response(&mut transport, refusal).await?;
+            continue;
+        }
+
+        // Claim the slot before dispatch and hold it until the response is
+        // written, so a shutdown drain flushes results rather than racing them.
+        let work_slot = is_work_request(&request).then(|| RequestSlot::claim(&state));
         let response = match request {
             Request::MassBegin { dogfood, profile } => {
                 if !state.mass_service {
@@ -775,7 +918,7 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
                 } else {
                     let guard = state.fragment_scan_lock.clone().lock_owned().await;
                     state.scanner.clear_fragment_cache();
-                    state.active_scans.fetch_add(1, Ordering::Relaxed);
+                    state.begin_scan();
                     mass_session = Some(MassSession {
                         state: state.clone(),
                         dogfood,
@@ -922,13 +1065,107 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
             warm_route_denial = warm_route_error(warm_backend);
         }
         let is_shutdown_ack = matches!(response, Response::Shutdown);
-        transport.send(response).await?;
+        let sent = send_response(&mut transport, response).await;
+        // Released only now: the slot covers delivery, not just execution.
+        drop(work_slot);
+        sent?;
         if is_shutdown_ack {
             state.shutdown.notify_waiters();
             break;
         }
     }
     Ok(())
+}
+
+/// Requests that do scanner work, as opposed to the always-answerable control
+/// requests (`Hello`, `Health`, `Shutdown`).
+fn is_work_request(request: &Request) -> bool {
+    matches!(
+        request,
+        Request::ScanText { .. }
+            | Request::ScanPath { .. }
+            | Request::MassBegin { .. }
+            | Request::MassBatch { .. }
+            | Request::MassFilesystemBegin { .. }
+            | Request::MassFilesystemNext
+            | Request::MassEnd
+    )
+}
+
+/// RAII claim on one in-flight work request. Releasing it is what tells a
+/// shutdown drain the request has both executed and been written to its client.
+struct RequestSlot<'state> {
+    state: &'state ServerState,
+}
+
+impl<'state> RequestSlot<'state> {
+    fn claim(state: &'state ServerState) -> Self {
+        state.begin_request();
+        Self { state }
+    }
+}
+
+impl Drop for RequestSlot<'_> {
+    fn drop(&mut self) {
+        self.state.finish_request();
+    }
+}
+
+/// Write one response with a ceiling on the flush.
+///
+/// `Sink::send` flushes, so a peer that stops reading parks this handler inside
+/// the write once the socket buffer fills. Untimed, that permanently consumes
+/// the connection's admission permit; the timeout turns it into a closed
+/// connection and a released slot.
+async fn send_response(
+    transport: &mut frame::ServerTransport,
+    response: Response,
+) -> Result<()> {
+    let kind = crate::daemon::protocol::response_kind(&response);
+    match tokio::time::timeout(RESPONSE_WRITE_TIMEOUT, transport.send(response)).await {
+        Ok(result) => result,
+        Err(_elapsed) => anyhow::bail!(
+            "daemon: peer did not read the {} response within {}s; \
+             closing the connection to reclaim its admission slot",
+            kind,
+            RESPONSE_WRITE_TIMEOUT.as_secs()
+        ),
+    }
+}
+
+/// Refuse work this connection is not admitted to run, or that the daemon has
+/// stopped accepting because it is draining for shutdown. `Hello`, `Health`, and
+/// `Shutdown` are always answered: they are how an operator observes and
+/// reclaims a saturated or stopping daemon.
+fn admission_refusal(
+    state: &ServerState,
+    admission: Admission,
+    request: &Request,
+) -> Option<Response> {
+    if !is_work_request(request) {
+        return None;
+    }
+    if admission == Admission::ControlOnly {
+        return Some(Response::Error {
+            message: format!(
+                "daemon: at scan capacity, so this connection was admitted for control requests \
+                 only ({} refused). Retry, or scan in process with `--daemon=off`.",
+                crate::daemon::protocol::request_kind(request)
+            ),
+        });
+    }
+    // MassEnd stays legal while draining: it is how an in-flight transaction
+    // finishes, and the drain is waiting for exactly that.
+    if state.is_draining() && !matches!(request, Request::MassEnd) {
+        return Some(Response::Error {
+            message: format!(
+                "daemon: draining for shutdown, so no new scan work is accepted ({} refused). \
+                 Start a new daemon or scan in process with `--daemon=off`.",
+                crate::daemon::protocol::request_kind(request)
+            ),
+        });
+    }
+    None
 }
 
 async fn dispatch(state: &ServerState, request: Request) -> Response {
@@ -980,7 +1217,24 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
         | Request::MassEnd => Response::Error {
             message: "daemon: mass transaction request reached invalid dispatch state".to_string(),
         },
-        Request::Shutdown => Response::Shutdown,
+        // The wire contract says Shutdown flushes in-flight scans. Refuse new
+        // work, wait for the running scans, and only then acknowledge, so a
+        // client whose scan is mid-flight gets its results instead of a dropped
+        // socket. Bounded: one wedged transaction must not make the daemon
+        // unstoppable (KH-550).
+        Request::Shutdown => {
+            let stuck = state.drain_active_work(SHUTDOWN_DRAIN_TIMEOUT).await;
+            if stuck > 0 {
+                let palette = style::for_stderr();
+                eprintln!(
+                    "{} keyhog daemon: shutting down with {stuck} unfinished request slot(s) after \
+                     {}s; their clients will see a closed connection.",
+                    style::warn("WARN", &palette),
+                    SHUTDOWN_DRAIN_TIMEOUT.as_secs()
+                );
+            }
+            Response::Shutdown
+        }
     }
 }
 
@@ -991,7 +1245,7 @@ async fn scan_text(
     dogfood: bool,
     profile: bool,
 ) -> Response {
-    state.active_scans.fetch_add(1, Ordering::Relaxed);
+    state.begin_scan();
     let scanner = state.scanner.clone();
     let router = state.router.clone();
     let backend_override = state.backend_override;
@@ -1087,7 +1341,7 @@ async fn scan_text(
         Ok((matches, telemetry, backend_recovery, profile))
     })
     .await;
-    state.active_scans.fetch_sub(1, Ordering::Relaxed);
+    state.finish_scan();
     state.scans_served.fetch_add(1, Ordering::Relaxed);
 
     match res {
@@ -1167,8 +1421,18 @@ async fn scan_path(
         Ok(target) => target,
         Err(message) => return Response::Error { message },
     };
+    // The client validates that its argument is a regular file, but the server
+    // used to reopen only the pathname, so a directory, FIFO, socket, or symlink
+    // swapped in afterwards was scanned instead. Pin the identity here: the
+    // handle stays open across the scan and its inode is re-checked afterwards,
+    // so a replacement race fails closed instead of returning findings from
+    // substituted content (KH-553).
+    let pinned = match pin_regular_file(&resolved) {
+        Ok(pinned) => pinned,
+        Err(message) => return Response::Error { message },
+    };
 
-    state.active_scans.fetch_add(1, Ordering::Relaxed);
+    state.begin_scan();
     let scanner = state.scanner.clone();
     let router = state.router.clone();
     let backend_override = state.backend_override;
@@ -1205,6 +1469,7 @@ async fn scan_path(
             ),
         > {
             let (chunks, source_coverage_gaps) = daemon_scan_path_chunks(&resolved_owned)?;
+            pinned.verify_unreplaced(&resolved_owned)?;
             if chunks.iter().all(|chunk| chunk.data.is_empty()) {
                 return Ok((Vec::new(), telemetry.drain(), source_coverage_gaps, None));
             }
@@ -1268,7 +1533,7 @@ async fn scan_path(
         ))
     })
     .await;
-    state.active_scans.fetch_sub(1, Ordering::Relaxed);
+    state.finish_scan();
     state.scans_served.fetch_add(1, Ordering::Relaxed);
 
     match res {
@@ -1531,6 +1796,116 @@ fn autoroute_state_recovery_status(
     }
 }
 
+/// An open, no-follow handle to the exact regular file one `ScanPath` request
+/// named. Held for the whole scan so the inode cannot be recycled underneath the
+/// read, and re-checked afterwards against the pathname.
+struct PinnedFile(std::fs::File);
+
+/// Open `path` without following a final symlink and require a regular file.
+///
+/// `ScanPath` is documented as a regular-file request and the client checks that
+/// before sending, but the server is the side that must enforce it: without this
+/// a directory argument makes the daemon walk and scan an entire tree while
+/// holding the fragment lease, and a FIFO or socket argument turns a scan into an
+/// open on a file type the source layer never promised to handle.
+fn pin_regular_file(path: &Path) -> std::result::Result<PinnedFile, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    // Classify without following, so the refusal can name what the path actually
+    // is. `O_NOFOLLOW` below would report a symlink as `ELOOP`, which tells the
+    // operator nothing about why their argument was rejected.
+    let requested = std::fs::symlink_metadata(path).map_err(|error| {
+        format!(
+            "daemon: cannot identify scan target {}: {error}",
+            path.display()
+        )
+    })?;
+    if !requested.file_type().is_file() {
+        return Err(refused_file_type_message(path, &requested.file_type()));
+    }
+    // O_NOFOLLOW rejects a symlinked final component instead of resolving it, so
+    // a symlink swapped in after the classification above cannot be opened.
+    // O_NONBLOCK keeps a FIFO from parking the open before the type check runs.
+    let handle = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+        .open(path)
+        .map_err(|error| {
+            format!(
+                "daemon: cannot open scan target {}: {error}",
+                path.display()
+            )
+        })?;
+    let metadata = handle.metadata().map_err(|error| {
+        format!(
+            "daemon: cannot identify scan target {}: {error}",
+            path.display()
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(refused_file_type_message(path, &metadata.file_type()));
+    }
+    Ok(PinnedFile(handle))
+}
+
+fn refused_file_type_message(path: &Path, file_type: &std::fs::FileType) -> String {
+    format!(
+        "daemon: refusing to scan {}: ScanPath serves regular files only and this path is {}. \
+         Scan a directory in process with `--daemon=off`, or as bounded batches with \
+         `--daemon=mass`.",
+        path.display(),
+        file_type_label(file_type)
+    )
+}
+
+impl PinnedFile {
+    /// Fail closed when `path` no longer names the inode this request pinned.
+    /// The open handle keeps that inode alive, so an inode difference here means
+    /// the pathname was rebound to different content during the scan.
+    fn verify_unreplaced(&self, path: &Path) -> Result<()> {
+        let pinned = self
+            .0
+            .metadata()
+            .with_context(|| format!("daemon: re-identify pinned scan target {}", path.display()))?;
+        let current = std::fs::symlink_metadata(path).with_context(|| {
+            format!(
+                "daemon: re-identify scan target path {} after reading it",
+                path.display()
+            )
+        })?;
+        if current.dev() != pinned.dev() || current.ino() != pinned.ino() {
+            anyhow::bail!(
+                "daemon: {} was replaced while it was being scanned (pinned inode {}:{}, now \
+                 {}:{}); refusing to report findings for substituted content",
+                path.display(),
+                pinned.dev(),
+                pinned.ino(),
+                current.dev(),
+                current.ino()
+            );
+        }
+        Ok(())
+    }
+}
+
+fn file_type_label(file_type: &std::fs::FileType) -> &'static str {
+    use std::os::unix::fs::FileTypeExt;
+    if file_type.is_dir() {
+        "a directory"
+    } else if file_type.is_symlink() {
+        "a symbolic link"
+    } else if file_type.is_fifo() {
+        "a FIFO"
+    } else if file_type.is_socket() {
+        "a socket"
+    } else if file_type.is_block_device() {
+        "a block device"
+    } else if file_type.is_char_device() {
+        "a character device"
+    } else {
+        "not a regular file"
+    }
+}
+
 fn daemon_scan_path_chunks(path: &Path) -> Result<(Vec<Chunk>, SourceCoverageGaps)> {
     let _coverage_guard = DAEMON_SOURCE_COVERAGE_LOCK
         .lock()
@@ -1612,9 +1987,6 @@ pub(crate) mod testing {
                 }
                 crate::testing::DaemonTerminalFixture::FatalAccept(error) => {
                     super::handle_accept_error(&shutdown, error).await
-                }
-                crate::testing::DaemonTerminalFixture::ConnectionHandlerSpawn(error) => {
-                    Err(super::handle_connection_spawn_error(&shutdown, error))
                 }
             }
         });

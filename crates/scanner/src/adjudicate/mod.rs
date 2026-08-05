@@ -741,7 +741,8 @@ pub(crate) fn is_hex_digest_fragment(
     end: usize,
     credential: &str,
 ) -> bool {
-    let min_len = detector_min_len.map_or(16, |min_len| min_len);
+    let policy = crate::hex_digest_policy::policy();
+    let min_len = detector_min_len.unwrap_or(policy.fragment_default_min_len);
     if credential.len() < min_len || !credential.bytes().all(|b| b.is_ascii_hexdigit()) {
         return false;
     }
@@ -761,5 +762,5 @@ pub(crate) fn is_hex_digest_fragment(
     if before == 0 && after == 0 {
         return false;
     }
-    before + credential.len() + after >= 40
+    before + credential.len() + after >= policy.fragment_run_min_length
 }

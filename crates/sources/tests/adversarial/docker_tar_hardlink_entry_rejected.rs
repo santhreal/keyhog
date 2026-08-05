@@ -1,7 +1,7 @@
 //! Docker layer hard links must be ignored without resolving host paths.
 
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 /// A real image hard link must not abort the layer or create an alias to data outside the extracted tree.
 #[cfg(feature = "docker")]

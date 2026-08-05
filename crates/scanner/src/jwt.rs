@@ -322,28 +322,70 @@ fn decode_b64url(s: &str) -> Option<Vec<u8>> {
     URL_SAFE_NO_PAD.decode(trimmed).ok() // LAW10: malformed input => None (fail-closed at the boundary; not a valid value), recall-safe
 }
 
+/// Tier-B JWT standards vocabulary: the `alg` and `typ` values KeyHog treats
+/// as standard. Owned by `rules/jwt-standards.toml` so a JOSE registry update
+/// is a data edit, not a scanner release. Matching stays case-sensitive, so
+/// entries keep their registered spelling verbatim.
+#[derive(serde::Deserialize)]
+struct JwtStandardsFile {
+    jwt_standards: JwtStandards,
+}
+
+#[derive(serde::Deserialize)]
+struct JwtStandards {
+    algorithms: Vec<String>,
+    media_types: Vec<String>,
+}
+
+/// Parse + validate the bundled JWT standards vocabulary. Returns an error
+/// rather than panicking so the [`JWT_STANDARDS`] owner below is the single
+/// fail-closed site (the `no_unwrap_expect` gate bans `expect` in production).
+fn parse_jwt_standards(raw: &str) -> Result<(Vec<String>, Vec<String>), String> {
+    let parsed: JwtStandardsFile =
+        toml::from_str(raw).map_err(|error| format!("invalid jwt-standards.toml: {error}"))?;
+    let algorithms = crate::tier_b_list::parse_token_list(
+        parsed.jwt_standards.algorithms,
+        &crate::tier_b_list::ListPolicy {
+            // JWS `alg` names are alphanumeric in their registered casing
+            // (`EdDSA`, `ES256K`); the header comparison is case-sensitive.
+            what: "JWT algorithm",
+            require_lowercase: false,
+            separators: b"",
+        },
+    )?;
+    let media_types = crate::tier_b_list::parse_token_list(
+        parsed.jwt_standards.media_types,
+        &crate::tier_b_list::ListPolicy {
+            // JOSE `typ` values are either bare (`JWT`) or structured-suffix
+            // media types (`at+jwt`), so `+` is the one permitted separator.
+            what: "JWT media type",
+            require_lowercase: false,
+            separators: b"+",
+        },
+    )?;
+    Ok((algorithms, media_types))
+}
+
+static JWT_STANDARDS: std::sync::LazyLock<(Vec<String>, Vec<String>)> =
+    std::sync::LazyLock::new(|| {
+        match parse_jwt_standards(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/jwt-standards.toml"
+        ))) {
+            Ok(standards) => standards,
+            Err(error) => panic!(
+                "rules/jwt-standards.toml is invalid: {error}. \
+                 Fix the bundled Tier-B JWT standards vocabulary."
+            ),
+        }
+    });
+
 fn is_known_alg(alg: &str) -> bool {
-    matches!(
-        alg,
-        "RS256"
-            | "RS384"
-            | "RS512"
-            | "HS256"
-            | "HS384"
-            | "HS512"
-            | "ES256"
-            | "ES384"
-            | "ES512"
-            | "ES256K"
-            | "PS256"
-            | "PS384"
-            | "PS512"
-            | "EdDSA"
-    )
+    JWT_STANDARDS.0.iter().any(|known| known == alg)
 }
 
 fn is_standard_typ(typ: &str) -> bool {
-    matches!(typ, "JWT" | "at+jwt" | "id+jwt" | "dpop+jwt" | "logout+jwt")
+    JWT_STANDARDS.1.iter().any(|standard| standard == typ)
 }
 
 #[derive(Deserialize)]

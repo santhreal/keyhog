@@ -1,6 +1,6 @@
 //! Micro gate for `sources/timeouts.rs` - shared HTTP/subprocess budgets.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[cfg(any(feature = "web", feature = "slack", feature = "s3", feature = "github"))]
 #[test]
 fn http_request_timeout_is_thirty_seconds() {

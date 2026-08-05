@@ -1,7 +1,7 @@
 //! Truncated docker tar must not panic validation.
 
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[cfg(feature = "docker")]
 #[test]
 fn docker_tar_corrupt_truncated_no_panic() {

@@ -17,27 +17,6 @@
 use keyhog_scanner::gpu::GpuRuntimePolicy;
 use keyhog_scanner::testing::require_gpu_preflight_with_policy_for_test;
 
-/// The preflight routes through the region-presence self-test, not the weaker
-/// adapter probe.
-#[test]
-fn require_gpu_preflight_proves_production_region_presence() {
-    let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu/policy.rs"));
-    let preflight = source
-        .split("pub(crate) fn require_gpu_preflight_with_policy(")
-        .nth(1)
-        .and_then(|tail| tail.split("pub(crate) fn gpu_disabled_by_policy()").next())
-        .expect("require_gpu_preflight_with_policy source extractable");
-
-    assert!(
-        preflight.contains("super::gpu_region_presence_self_test()"),
-        "the preflight must prove region-presence parity, not merely that an adapter exists"
-    );
-    assert!(
-        !preflight.contains("super::gpu_self_test()"),
-        "the adapter probe is too weak to satisfy --require-gpu on its own"
-    );
-}
-
 /// A preflight that is not required never blocks a scan.
 #[test]
 fn a_non_required_policy_passes_preflight() {

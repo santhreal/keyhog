@@ -13,17 +13,14 @@ pub(crate) fn looks_like_dashed_serial_key(credential: &str) -> bool {
     is_five_by_five_dash_shape(credential, |b| b.is_ascii_alphanumeric())
 }
 
-/// The four canonical cryptographic hex-digest lengths in HEX CHARS: md5 = 32,
-/// sha1 = 40, sha256 = 64, sha512 = 128. Single owner, every shape gate that
-/// recognises a fixed-length hex digest consults [`is_canonical_hex_digest_length`]
-/// instead of re-listing the four widths inline, so a new digest width (or a
-/// correction) is made in exactly ONE place and two gates can never drift.
-pub(super) const CANONICAL_HEX_DIGEST_LENGTHS: [usize; 4] = [32, 40, 64, 128];
-
-/// `true` iff `len` (in hex chars) is one of the [`CANONICAL_HEX_DIGEST_LENGTHS`].
+/// `true` iff `len` (in hex chars) is a canonical cryptographic digest width
+/// (md5 = 32, sha1 = 40, sha256 = 64, sha512 = 128). The widths are Tier-B data
+/// (`rules/hex-digest-policy.toml`), so a new digest family is a data edit and
+/// every shape gate that recognises a fixed-length hex digest reads the one
+/// list instead of re-listing widths inline.
 #[inline]
 pub(super) fn is_canonical_hex_digest_length(len: usize) -> bool {
-    CANONICAL_HEX_DIGEST_LENGTHS.contains(&len)
+    crate::hex_digest_policy::is_canonical_length(len)
 }
 
 /// Exact dotted credential shapes the scanner may treat as real tokens.
@@ -122,19 +119,12 @@ pub(crate) fn looks_like_prefixed_hash_digest(credential: &str) -> bool {
 pub(crate) fn looks_like_bare_hex_digest(credential: &str) -> bool {
     // Bare hash-digest hex. Lengths that real secrets use commonly
     // (e.g. 40-char AWS secret-access-key body) DON'T match because
-    // those are base64, not pure hex.
-    //
-    // The 48-char length is included because several detector
-    // regexes (e.g. honeybadger-api-key `[a-f0-9]{32,48}`) greedy-
-    // capture the FIRST 48 chars of a 64-char sha256 hex span,
-    // producing a 48-char credential that is the prefix of a hash
-    // and not a real key. Same for 56 and 72 - common boundary
-    // lengths produced by detectors that quantify hex spans without
-    // a non-hex terminator. The 64/128 already-covered cases catch
-    // the full-length hash; the 48/56/72 extension covers the
-    // truncated-prefix variants. Each added length is justified by
-    // a SecretBench-medium FP cluster.
-    matches!(credential.len(), 32 | 40 | 48 | 56 | 64 | 72 | 128) && is_uniform_hex(credential)
+    // those are base64, not pure hex. The recognized widths are Tier-B
+    // data (`rules/hex-digest-policy.toml` `bare_digest_lengths`): the
+    // canonical digest widths plus the truncation boundaries produced by
+    // detectors that quantify hex spans without a non-hex terminator
+    // (48/56/72), each justified by a SecretBench-medium FP cluster.
+    crate::hex_digest_policy::is_bare_digest_length(credential.len()) && is_uniform_hex(credential)
 }
 
 /// The AWS partitions whose IAM ARNs this suppression recognizes. Single owner

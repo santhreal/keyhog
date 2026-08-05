@@ -197,7 +197,7 @@ fn perf_trace_decode_recursion_counts_are_exact() {
     let encoded = base64::engine::general_purpose::STANDARD.encode(token.as_bytes());
     let chunk = chunk_of(&format!("data = \"{encoded}\"\n"), "encoded");
 
-    keyhog_scanner::set_profile_enabled(true);
+    keyhog_scanner::set_profile_detail(keyhog_scanner::Detail::Diagnostic);
     keyhog_scanner::profile_reset();
     let _ = scanner.scan(&chunk).expect("scan succeeds");
     let mut gen_ns = 0;
@@ -213,7 +213,7 @@ fn perf_trace_decode_recursion_counts_are_exact() {
         crate::engine::scan_postprocess::decode_recursion_from_typed(&typed);
     let gen_ms = gen_ns as f64 / 1e6;
     let scan_ms = rescan_ns as f64 / 1e6;
-    keyhog_scanner::set_profile_enabled(false);
+    keyhog_scanner::set_profile_detail(keyhog_scanner::Detail::Off);
     keyhog_scanner::profile_reset();
 
     assert_eq!(

@@ -93,11 +93,7 @@ impl MappedPrefixReleaser {
         // `released_upto + len == aligned` stays within it. Advisory only: a
         // failure leaves the pages resident, which is merely the old behaviour.
         unsafe {
-            libc::madvise(
-                self.base.add(self.released_upto),
-                len,
-                libc::MADV_DONTNEED,
-            );
+            libc::madvise(self.base.add(self.released_upto), len, libc::MADV_DONTNEED);
         }
         self.released_upto = aligned;
     }

@@ -51,8 +51,10 @@ ML participation is detector-owned through `[detector.ml]`. `lift` can raise a
 structural score but cannot veto a match, `blend` combines model and structural
 evidence, and `authoritative` lets the model decide an otherwise ambiguous
 channel. In the shipped corpus every regex-pattern channel is currently
-`lift`; 919 of 923 entropy channels disable ML, and only the four generic
-entropy owners use `authoritative`. The model is therefore not a general regex
+`lift`; 921 of 925 entropy channels disable ML. The four that do not are all
+generic owners: `generic-api-key`, `generic-keyword-secret`, and
+`generic-secret` use `authoritative`, and `generic-password` uses `lift`. The
+model is therefore not a general regex
 false-positive veto. Its current feature record identifies detector and
 pattern-versus-entropy channel, but not the exact matched pattern. Pattern-local
 weak-anchor policy remains outside model conditioning until that provenance is
@@ -344,15 +346,35 @@ cross-source deduplication, verification, and output formatting run after
 selection. Missing or stale exact evidence is an error. Calibration never
 relaxes a detector to make a backend look faster.
 
-| Change | Finding-set effect | Routing/calibration effect |
+Two kinds of change exist, and keeping them apart is the whole point of the
+parity model. A **policy** change is allowed to change findings. An
+**execution** change is not. A finding-set difference across an execution change
+is a parity failure, which KeyHog treats as a defect rather than a result.
+
+### Policy changes: findings may change
+
+| Change | Finding-set effect | Routing and calibration effect |
 |---|---|---|
+| Change a preset (`--fast`, `--deep`, `--precision`) | Intended. Each preset resolves a different confidence floor and decode policy. | Configuration identity changes; calibration for the old identity is not reused |
+| Change scan-wide policy, a per-detector floor, or the disabled-ID set | Intended, according to the setting | Configuration identity changes |
+| Change detector TOML, corpus schema, or replacement/overlay membership | Candidates, suppressions, confidence, or final findings may change | Active corpus and rules identity change; recalibration is required |
+| Apply a matching `[detector.<id>] enabled = false` | That detector stops reporting | Corpus digest changes. An unknown disabled ID warns and leaves the digest unchanged |
+| Change the input | The input can change findings | A different exact workload key is selected |
+
+### Execution changes: findings must not change
+
+| Change | Finding-set effect | Routing and calibration effect |
+|---|---|---|
+| Change CPU, GPU, driver, or accelerator availability | None for the same resolved identities and input. A parity mismatch rejects that route. | Host, device, and runtime identity change; old host evidence is not reusable |
+| Use `--backend cpu`, `simd`, `gpu-cuda`, `gpu-metal`, or `gpu-wgpu` | None. Parity-identical by contract. | Diagnostic override. It bypasses autoroute and creates no reusable fastest-correct evidence |
+| Switch between a one-shot process and a ready daemon or `watch` runtime | None. Runtime lifetime must not change detector policy or canonical matches. | Cold-aware and warm persistent-runtime routes may have different winners |
+| Change `--threads`, worker, or pipeline settings | None | Configuration identity changes, so calibration is per worker shape |
 | Copy the same normalized corpus to another path | None | Content identity is unchanged; reported source provenance changes |
-| Change detector TOML, corpus schema, replacement/overlay membership, or a matching `enabled = false` override | Candidates, suppressions, confidence, or final findings may change | Active corpus/rules identity changes; recalibration is required |
-| Change a preset, scan-wide policy, per-detector floor, configured disabled-ID set, workers, or GPU/runtime policy | Results or scan cost may change according to the setting | Configuration identity changes; calibration for the old identity is not reused |
-| Change CPU, GPU, driver, or accelerator availability | None for the same resolved detector/configuration and input; a parity mismatch rejects that route | Host/device/runtime identity changes; old host evidence is not reusable |
-| Use `--backend cpu|simd|gpu-cuda|gpu-metal|gpu-wgpu` | Intended to be parity-identical | This diagnostic override bypasses autoroute and creates no reusable fastest-correct evidence |
-| Change input size, chunk count, source execution class, decoder-kind mask, decode candidate count or byte bucket, decoder uncertainty, or full-source-size availability | The input can change findings; backend choice must not | A different exact workload key is selected |
-| Switch between a one-shot process and a ready daemon/watch runtime | Runtime lifetime must not change detector policy or canonical matches | Cold-aware and warm persistent-runtime routes may have different winners |
+
+A difference in the first table is a decision you made. A difference in the
+second table is a bug. Report it with the effective config, detector digest,
+input identity, backend, host identity, and the complete finding sets from both
+runs.
 
 ### Strict Backend Parity
 

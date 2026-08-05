@@ -228,13 +228,25 @@ fn seven_zip_member_without_an_extractor_is_reported_as_an_uncovered_region() {
     // dispatcher cannot open it. Before, such a member fell through to the
     // printable-strings leaf, produced nothing, and read as clean. It must now be
     // a visible uncovered region naming the container family.
+    //
+    // THIS TEST GOES RED IF SOMEONE IMPROVES THE PRODUCT, so read the failure
+    // before deleting it. Adding an in-memory 7z/RAR/ar extractor is a WIN, and it
+    // makes this assertion false: the member would then be extracted rather than
+    // reported as uncovered. The correct response in that case is to rewrite this
+    // test to assert the member's CONTENTS are recovered (the shape every
+    // `assert_name_independent` pair above already uses), and to drop the family
+    // from `crate::magic::uninterpreted_container_format`. The wrong response is
+    // to delete the test, which would retire the only guard proving an
+    // un-openable container is never silently swallowed.
     let seven_zip = build_seven_zip(&[("creds.txt", SECRET)]);
     let (chunks, errors) = scan("bundle.tar", &tar_with_file("payload", &seven_zip));
     assert!(
         errors
             .iter()
             .any(|error| error.contains("7z") && error.contains("were not scanned")),
-        "an uninterpretable 7z member must surface an uncovered region, got errors={errors:?} chunks={chunks:?}"
+        "an uninterpretable 7z member must surface an uncovered region, got errors={errors:?} \
+         chunks={chunks:?}. If an in-memory 7z extractor was just added, this test must be \
+         rewritten to assert the member's contents are RECOVERED, not deleted."
     );
 }
 
@@ -366,6 +378,19 @@ fn extensionless_non_container_binary_is_still_skipped() {
     // Guard the other side: an extensionless binary that is NOT a container must
     // stay a binary skip, not be routed to an extractor. An ELF header followed
     // by NUL padding has no container signature and no printable run.
+    //
+    // This assertion's success value (no chunks, no errors) is byte-identical to
+    // what a harness that never ran would produce, so it is worthless on its own.
+    // The control below runs FIRST, through the same helper and the same walker
+    // path, and proves this scan can see a file when there is one to see. Without
+    // it, `scan_named` silently returning nothing would read as a pass.
+    let (control_chunks, _) = scan_named("plainfile", SECRET);
+    assert!(
+        !control_chunks.is_empty(),
+        "control: scan_named must emit a chunk for an extensionless text file, \
+         otherwise the emptiness asserted below proves nothing"
+    );
+
     let mut elf = b"\x7fELF\x02\x01\x01\x00".to_vec();
     elf.resize(2048, 0);
     let (chunks, errors) = scan_named("a.out", &elf);

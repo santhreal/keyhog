@@ -27,25 +27,38 @@ fn read_src(rel: &str) -> String {
 }
 
 #[test]
-fn mmap_fallback_buffered_reads_are_capped() {
+fn whole_file_read_is_capped_and_never_maps() {
     let raw = read_src("src/filesystem/read/raw.rs");
     // The bare unbounded slurp must be gone.
     assert!(
         !raw.contains("read_to_end(&mut file, &mut bytes)"),
-        "read_file_mmap must NOT fall back to an unbounded `read_to_end(&mut file, ...)`: \
-         a TOCTOU-grown file would OOM the process. Bound it with `capped_read::read_to_cap`."
+        "read_file_whole_capped must NOT slurp with an unbounded \
+         `read_to_end(&mut file, ...)`: a TOCTOU-grown file would OOM the \
+         process. Bound the read with `.take(cap)`."
+    );
+    // Nothing in this module may map a file. A file-backed mapping cannot be
+    // read race-free: another process truncating the file invalidates the
+    // page-cache pages past the new EOF, and the next touch raises SIGBUS,
+    // which kills the whole scan with no report written at all. Measured on a
+    // plain `keyhog scan <file>` against a concurrently truncated file: 1 of 6
+    // trials at 128 KiB and 4 of 6 at 800 KiB died by signal 7. `read(2)`
+    // cannot fault, so this path reads instead of mapping.
+    assert!(
+        !raw.contains("MmapOptions") && !raw.contains("memmap2"),
+        "read/raw.rs must not map files: a concurrent truncation of a mapped \
+         file raises SIGBUS and kills the scan with no report. Read the fd."
     );
     // Locked-file contention is refused at the SHARED open helper, not inside
-    // read_file_mmap. The 2026-07 refactor hoisted the advisory flock into
+    // the whole-file read. The 2026-07 refactor hoisted the advisory flock into
     // `open_file_safe` (documented in raw.rs as "ONE owner of the flock guard"),
-    // so EVERY read path, prefix, buffered, and mmap, inherits the torn-write
-    // refusal instead of only the mmap path. Pin that (stronger) structure: the
-    // shared opener must take a NON-BLOCKING shared lock and turn contention into
-    // an ERROR (fail closed, never a fallback read), and read_file_mmap must
-    // treat any open failure as a visible unreadable SKIP with no unlocked reopen
-    // or buffered read. (The `scanning a torn write` message + its no-fallback
-    // contract now live on the large-file windowed path in extract.rs, pinned by
-    // the second half of this test and by `unit/file_gate.rs`.)
+    // so EVERY read path, prefix, buffered, and whole-file, inherits the
+    // torn-write refusal. Pin that structure: the shared opener must take a
+    // NON-BLOCKING shared lock and turn contention into an ERROR (fail closed,
+    // never a fallback read), and the whole-file read must treat any open
+    // failure as a visible unreadable SKIP with no unlocked reopen or second
+    // read. (The `scanning a torn write` message + its no-fallback contract
+    // live on the large-file windowed path in extract.rs, pinned by the second
+    // half of this test and by `unit/file_gate.rs`.)
     let open_fn_start = raw
         .find("pub(crate) fn open_file_safe")
         .expect("open_file_safe (the shared no-follow + advisory-lock owner)");
@@ -57,40 +70,37 @@ fn mmap_fallback_buffered_reads_are_capped() {
          lock contention into an error, so no read path can reopen a locked / \
          torn-write file through an unlocked fallback"
     );
-    let mmap_fn_start = raw
-        .find("pub(in crate::filesystem) fn read_file_mmap")
-        .expect("read_file_mmap function");
-    let open_arm = raw[mmap_fn_start..]
+    let read_fn_start = raw
+        .find("pub(in crate::filesystem) fn read_file_whole_capped")
+        .expect("read_file_whole_capped function");
+    let open_arm = raw[read_fn_start..]
         .find("match open_file_safe(path)")
-        .map(|offset| mmap_fn_start + offset)
-        .expect("read_file_mmap must open through the shared open_file_safe helper");
-    let mmap_start = raw[open_arm..]
-        .find("// SAFETY: the mapping is read-only")
+        .map(|offset| read_fn_start + offset)
+        .expect("read_file_whole_capped must open through the shared open_file_safe helper");
+    let read_start = raw[open_arm..]
+        .find(".take(read_limit)")
         .map(|offset| open_arm + offset)
-        .expect("mmap section after the open arm");
-    // Everything between the open call and the mmap SAFETY block is the pre-mmap
-    // failure handling (open error incl. lock contention, stat error, oversize):
-    // each arm must be a visible skip that returns None, with NO buffered/unlocked
-    // read. The bounded capped-read fallback is legitimate ONLY after a successful
-    // open+lock, on an mmap() failure (i.e. BELOW this SAFETY landmark).
-    let pre_mmap_failure = &raw[open_arm..mmap_start];
+        .expect("bounded read after the open arm");
+    // Everything between the open call and the bounded read is pre-read failure
+    // handling (open error incl. lock contention, stat error, oversize): each arm
+    // must be a visible skip that returns None, with no second/unlocked read.
+    let pre_read_failure = &raw[open_arm..read_start];
     assert!(
-        pre_mmap_failure.contains("SourceSkipEvent::Unreadable")
-            && pre_mmap_failure.contains("return None"),
+        pre_read_failure.contains("SourceSkipEvent::Unreadable")
+            && pre_read_failure.contains("return None"),
         "a failed open (incl. locked-file contention) must be a visible unreadable skip"
     );
     assert!(
-        !pre_mmap_failure.contains("read_to_end")
-            && !pre_mmap_failure.contains("crate::capped_read::read_to_cap"),
-        "the open-failure path must NOT buffer-read or reopen; it must skip visibly \
-         (the bounded capped-read fallback belongs below the mmap SAFETY landmark)"
+        !pre_read_failure.contains("read_to_end"),
+        "the open-failure path must NOT read or reopen; it must skip visibly"
     );
+    let read_fn = &raw[read_fn_start..];
     assert!(
-        raw.contains("crate::capped_read::read_to_cap")
-            && raw.contains("MMAP_TOCTOU_SANITY_CAP_BYTES")
-            && raw.contains("read.truncated")
-            && raw.contains("SourceSkipEvent::OverMaxSize"),
-        "the mmap-failure buffered fallback must use the shared capped-read owner and count over-cap growth"
+        read_fn.contains("MMAP_TOCTOU_SANITY_CAP_BYTES")
+            && read_fn.contains(".take(read_limit)")
+            && read_fn.contains("SourceSkipEvent::OverMaxSize"),
+        "the whole-file read must bound itself with the hard sanity cap and count \
+         over-cap growth as a visible skip"
     );
 
     let extract = read_src("src/filesystem/extract.rs");
@@ -103,35 +113,6 @@ fn mmap_fallback_buffered_reads_are_capped() {
             && extract.contains("SourceSkipEvent::OverMaxSize")
             && extract.contains("SourceSkipEvent::Unreadable"),
         "large-file buffered fallback after windowed-mmap refusal must reuse the existing descriptor, re-prove the hard mmap sanity cap, and fail closed when it cannot"
-    );
-}
-
-#[test]
-fn compressed_fallback_read_is_bounded_and_no_follow() {
-    let bytes = read_src("src/filesystem/read/bytes.rs");
-    // The symlink-following, unbounded `std::fs::read(path)` fallbacks must be gone.
-    assert!(
-        !bytes.contains("std::fs::read(path)"),
-        "read_file_for_compressed_input must NOT fall back to `std::fs::read(path)`: it \
-         FOLLOWS symlinks (undoing the O_NOFOLLOW guard) and is UNBOUNDED (OOM on a \
-         TOCTOU-grown compressed file). Use the bounded no-follow helper instead."
-    );
-    assert!(
-        bytes.contains("fn read_capped_open_file")
-            && bytes.contains("crate::capped_read::read_to_cap")
-            && bytes.contains("read.truncated")
-            && bytes.contains("SourceSkipEvent::OverMaxSize"),
-        "the compressed mmap-failure fallback must use the shared capped-read owner on the already-open file and count over-cap growth"
-    );
-    assert!(
-        bytes.contains("read_capped_open_file(file, path, effective_size_cap, metadata.len())")
-            && !bytes.contains("read_capped_no_follow")
-            && !bytes.contains("open_file_safe(path)?;"),
-        "the compressed mmap-failure fallback must not reopen the path after the initial no-follow open; it must consume the existing descriptor"
-    );
-    assert!(
-        !bytes.contains("compressed file is locked; falling back to buffered read"),
-        "compressed locked-file contention must not reopen and buffered-read the path unlocked"
     );
 }
 

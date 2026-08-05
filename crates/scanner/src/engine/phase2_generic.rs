@@ -46,11 +46,20 @@ impl CompiledScanner {
         let scan_text: &str = &preprocessed.text;
         let identity_offsets = std::ptr::eq(scan_text.as_ptr(), chunk.data.as_ptr())
             && scan_text.len() == chunk.data.len();
+        // `prepare_chunk` runs `normalize_homoglyphs` over the WHOLE chunk when
+        // unicode normalization is on, and only hands back the original buffer
+        // when every char normalized to itself. So `identity_offsets` (the scan
+        // text IS `chunk.data`) is a proof that this chunk holds no homoglyph,
+        // zero-width, RTL, combining mark or evasion control. Each line below is
+        // a char-boundary substring of that same buffer, so the per-line
+        // normalization is then a proven identity and its whole-line rescan is
+        // pure overhead. With normalization off the chunk was never normalized,
+        // so the per-line pass still has real work and stays.
+        let lines_already_normalized = identity_offsets && self.config.unicode_normalization;
         // Take ownership so the RefCell is not borrowed during the consume loop.
         let mut lines_with_keyword = KEYWORD_LINES_POOL.with(|cell| cell.take());
         lines_with_keyword.clear();
-        let profile_enabled = keyhog_profile::enabled();
-        let prefilter_start = profile_enabled.then(std::time::Instant::now);
+        let prefilter = metrics::prefilter_span();
         if let Some(positions) = generic_keyword_positions {
             collect_generic_keyword_lines_from_positions(
                 line_offsets,
@@ -64,7 +73,7 @@ impl CompiledScanner {
                 &mut lines_with_keyword,
             );
         }
-        metrics::record_prefilter_ns(prefilter_start);
+        drop(prefilter);
         metrics::record_prefilter_call(lines_with_keyword.len());
         if lines_with_keyword.is_empty() {
             // Preserve buffer capacity across chunks.
@@ -76,7 +85,12 @@ impl CompiledScanner {
             return;
         }
 
-        let extract_start = profile_enabled.then(std::time::Instant::now);
+        // One guard replaces four hand-placed `record_extract_ns` calls. The
+        // two early deadline returns below used to have to remember to record,
+        // and a future third return would have silently lost its time. Dropped
+        // explicitly at the end so the measured interval still stops exactly
+        // where the old call did, before the buffer returns to the pool.
+        let extract = metrics::extract_span();
         let mut preprocessed_code_lines_cache: Option<Vec<&str>> = None;
         let mut preprocessed_documentation_lines_cache: Option<Vec<bool>> = None;
         for line_iter in 0..lines_with_keyword.len() {
@@ -85,7 +99,6 @@ impl CompiledScanner {
                 line_iter,
                 crate::deadline::HOT_LOOP_DEADLINE_CADENCE,
             ) {
-                metrics::record_extract_ns(extract_start);
                 KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
                 return;
             }
@@ -98,8 +111,13 @@ impl CompiledScanner {
             };
             // Extract from normalized text so in-value zero-width characters cannot
             // truncate the candidate. Pure ASCII remains borrowed and offsets stay raw.
-            let normalized_line = crate::unicode_hardening::normalize_homoglyphs(raw_line);
-            let line: &str = &normalized_line;
+            let normalized_line;
+            let line: &str = if lines_already_normalized {
+                raw_line
+            } else {
+                normalized_line = crate::unicode_hardening::normalize_homoglyphs(raw_line);
+                &normalized_line
+            };
             let mut covered_until = 0;
 
             for (capture_iter, caps) in generic_re.captures_iter(line).enumerate() {
@@ -108,7 +126,6 @@ impl CompiledScanner {
                     capture_iter,
                     crate::deadline::HOT_LOOP_DEADLINE_CADENCE,
                 ) {
-                    metrics::record_extract_ns(extract_start);
                     KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
                     return;
                 }
@@ -521,7 +538,7 @@ impl CompiledScanner {
                 metrics::record_emit();
             }
         }
-        metrics::record_extract_ns(extract_start);
+        drop(extract);
         // Return the scratch buffer to the pool, preserving its capacity for
         // the next chunk this worker handles.
         KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));

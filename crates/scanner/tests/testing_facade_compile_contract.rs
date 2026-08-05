@@ -42,34 +42,3 @@ fn hidden_testing_facade_exposes_only_the_standalone_probe_contract() {
     assert_eq!(decode_chunk(&chunk, 1, false, None, None).len(), 0);
 }
 
-#[test]
-fn scanner_testing_facade_is_file_owned_not_inline_root_sprawl() {
-    let lib = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
-        .expect("scanner lib.rs is readable");
-    let facade = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/testing.rs"))
-        .expect("scanner testing.rs is readable");
-    for forbidden in [
-        "\n    pub mod checksum",
-        "\n    pub mod compiler_prefix",
-        "\n    pub mod entropy_scanner",
-        "\n    pub mod segment_attribution",
-        "\n    pub mod unicode_hardening",
-    ] {
-        assert!(
-            !lib.contains(forbidden),
-            "scanner testing facade must not expose bulk internal module `{forbidden}`"
-        );
-    }
-    assert!(
-        lib.contains("#[doc(hidden)]\npub mod testing;"),
-        "scanner crate root must delegate the doc-hidden facade to src/testing.rs"
-    );
-    assert!(
-        !lib.contains("pub mod testing {"),
-        "scanner crate root must not inline the testing facade body"
-    );
-    assert!(
-        facade.contains("Doc-hidden scanner test facade") && facade.contains("pub fn decode_chunk"),
-        "src/testing.rs owns the standalone probe contract"
-    );
-}

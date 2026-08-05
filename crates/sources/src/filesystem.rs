@@ -25,6 +25,14 @@ use filter::walker_config;
 pub(crate) use path::display_path;
 pub(crate) use read::decode_text_file;
 pub(crate) use read::open_file_safe;
+
+/// Crate-visible read of the walker's default window size for the limits
+/// ordering guard. `reader::DEFAULT_WINDOW_SIZE` is `pub(in crate::filesystem)`,
+/// so a test outside this module cannot see it directly, and the guard has to
+/// compare it against the scanner's decode ceiling.
+pub(crate) fn default_window_size_for_test() -> usize {
+    reader::DEFAULT_WINDOW_SIZE
+}
 /// Crate-visible wrapper over the walker's guarded single-file read (`read`'s
 /// `pub(super)` primitive, which is `pub(in crate::filesystem)` and so cannot be
 /// re-exported crate-wide directly) so the crate-public
@@ -113,6 +121,7 @@ pub(crate) fn process_entry_with_recorded_size_for_test(
     // serializes the recording. A no-op in production where the gate is never
     // armed; see `skip::gate_scan`.
     let _scan_lease = crate::acquire_scan_read_lease();
+    let _attributed = _scan_lease.enter();
     extract::process_entry(
         entry,
         &None,
@@ -149,6 +158,7 @@ pub(crate) fn process_entry_with_merkle_for_test(
     // serializes the recording. A no-op in production where the gate is never
     // armed; see `skip::gate_scan`.
     let _scan_lease = crate::acquire_scan_read_lease();
+    let _attributed = _scan_lease.enter();
     extract::process_entry(
         entry,
         &Some(merkle),
@@ -748,6 +758,9 @@ impl Source for FilesystemSource {
         // instead of polluting the process-global skip counters. No-op in
         // production (the gate is never armed). See `skip::gate_scan`.
         let scan_lease = crate::acquire_scan_read_lease();
+        // Everything eager below (root validation, the archive-symlink audit,
+        // the walk) records on this thread, so attribute it to this scan.
+        let _attributed = scan_lease.enter();
         self.discovery_limit_reached.store(false, Ordering::Relaxed);
         let max_size = self.max_file_size;
         let mut config = walker_config(

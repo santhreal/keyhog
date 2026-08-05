@@ -145,8 +145,9 @@ fn collect_workspace_chunks(
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     validate_workspace(workspace)?;
     validate_basic_auth(username, token)?;
-    let api_root = hosted_git::validated_api_endpoint("bitbucket", endpoint)?;
-    let client = build_client(username, token, http)?;
+    let (api_root, screened) =
+        hosted_git::validated_api_endpoint("bitbucket", endpoint, http.allow_private_endpoint)?;
+    let client = build_client(username, token, http, screened.as_ref())?;
     let (repos, listing_errors) = {
         // Workspace repo enumeration is the acquisition boundary; cloning and
         // per-repo scans record inside `hosted_git::scan_hosted_repos`.
@@ -179,6 +180,7 @@ fn build_client(
     username: &str,
     token: &str,
     http: &crate::http::HttpClientConfig,
+    screened: Option<&crate::endpoint_screen::ScreenedEndpoint>,
 ) -> Result<Client, SourceError> {
     validate_basic_auth(username, token)?;
     let mut headers = HeaderMap::new();
@@ -191,10 +193,11 @@ fn build_client(
         })?,
     );
 
-    crate::http::blocking_client_builder(http)
+    let builder = crate::http::blocking_client_builder(http)
         .map_err(SourceError::Other)?
         .default_headers(headers)
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::none());
+    crate::endpoint_screen::pin_screened_addrs(builder, screened, http.proxy.is_some())
         .build()
         .map_err(|e| SourceError::Other(format!("failed to build Bitbucket client: {e}")))
 }

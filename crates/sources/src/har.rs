@@ -83,7 +83,13 @@ pub(crate) fn try_expand_har(
     let budget = crate::filesystem::extraction_total_budget(max_size);
 
     for entry in doc.log.entries {
-        let url = entry.request.url.clone();
+        // A captured request URL routinely carries the credential in its query
+        // (`?access_token=`, `?sig=`, OAuth `?code=`) or in `user:password@`
+        // userinfo. This string becomes the chunk path, i.e. the `file_path` of
+        // every finding in the entry, and is printed verbatim by text, JSON,
+        // SARIF, CSV, HTML, and JUnit output. Mask it at the boundary that
+        // creates it, the same masking every HAR log line already uses.
+        let url = crate::url_redaction::redact_url(&entry.request.url).into_owned();
 
         let request_text = render_request(&entry.request);
         let request_len = request_text.len() as u64;

@@ -245,6 +245,12 @@ pub struct ScanArgs {
     #[arg(long, requires = "github_collaboration")]
     pub github_gists: bool,
 
+    /// Include release notes, including drafts and prereleases, plus every
+    /// release asset name and label, from --github-collaboration
+    #[cfg(feature = "github")]
+    #[arg(long, requires = "github_collaboration")]
+    pub github_releases: bool,
+
     /// GitHub personal access token for --github-org or --github-collaboration. Prefer
     /// KEYHOG_GITHUB_TOKEN so the token is not exposed in the process list.
     #[cfg(feature = "github")]
@@ -567,7 +573,7 @@ pub struct ScanArgs {
     #[arg(long, value_name = "PATH")]
     pub profile_out: Option<std::path::PathBuf>,
 
-    /// Emit higher-overhead per-pattern and backend diagnostic timing traces to stderr.
+    /// Raise `--profile` to its diagnostic level: add higher-overhead per-pattern, per-decoder, and backend timing traces on stderr.
     #[arg(long)]
     pub perf_trace: bool,
 
@@ -908,7 +914,20 @@ pub struct ScanArgs {
     #[arg(long)]
     pub entropy_source_files: bool,
 
-    /// Disable default file exclusion patterns (lock files, minified files, build outputs, etc.)
+    /// Disable every default exclusion for this scan.
+    ///
+    /// Two separate defaults are turned off. The walker stops skipping lock
+    /// files, minified and bundled assets, build outputs, and vendored trees,
+    /// so their bytes are read. The scanner also stops dropping findings whose
+    /// path is a minified or vendored bundle (`.min.js`, `.bundle.js`,
+    /// `.min.css`, `node_modules/`, `site-packages/`, `wp-includes/`, and
+    /// similar), so a credential a build pipeline inlined into `app.min.js` is
+    /// reported instead of silently discarded.
+    ///
+    /// Expect more noise: random byte sequences in third-party bundles do
+    /// collide with credential shapes. Without this flag, findings dropped by
+    /// the second rule are counted and reported as a coverage gap, so you can
+    /// see how many there were before deciding to rerun.
     #[arg(long)]
     pub no_default_excludes: bool,
 
@@ -963,8 +982,67 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_suppress_test_fixtures: bool,
 
-    /// Run the built-in backend benchmark corpus and exit.
+    /// Report cross-file credential correlations alongside the findings.
+    ///
+    /// Joins one credential value seen at several file paths, across the
+    /// detector boundary that per-detector dedup never crosses, and provider
+    /// credentials whose halves are separate detectors split across files of
+    /// one directory (an AWS access key in `main.tf`, its secret in `.env`).
+    /// Which providers have halves is Tier-B data, not a hardcoded list, and
+    /// an ambiguous directory reports nothing rather than a guess.
+    ///
+    /// Additive only: `--format json-envelope` gains a `correlations` array
+    /// and `--format text` a summary block. Findings and every other format
+    /// are unchanged, so a default scan is byte-identical without this flag.
     #[arg(long)]
+    pub correlate: bool,
+
+    /// Report the resource each credential opens (its "door").
+    ///
+    /// A finding says where a credential is. It does not say which database,
+    /// bucket, tenant, or account that credential reaches, which is the first
+    /// thing a responder needs in order to rank it. The address almost always
+    /// sits next to the credential (in the same connection string, the same
+    /// `.env`, the same variable block) and no detector can see it: a companion
+    /// regex is bounded to a few lines and is written to capture the other half
+    /// of the CREDENTIAL, not the resource.
+    ///
+    /// This pass runs after the scan, over the findings the report is about to
+    /// publish, and attaches typed targets: `account`, `tenant`, `endpoint`,
+    /// `database`, `resource`. Which providers are understood is Tier-B data
+    /// (`crates/core/data/access-targets.toml`), not a hardcoded list.
+    ///
+    /// Redaction-safe by construction. Connection-string rules skip userinfo
+    /// with a non-capturing group, any candidate whose digest matches a
+    /// credential in the same report is dropped, and evidence carries only the
+    /// rule id, line, column, span length, and line distance. No document text
+    /// is ever emitted.
+    ///
+    /// Bounded: file context is indexed at most once per file, over at most
+    /// 1 MiB of it, under a 256 MiB whole-pass ceiling. Findings the pass could
+    /// not inspect (git history, container layers, stdin, unreadable paths) are
+    /// reported as coverage gaps, so an empty target list never reads as "this
+    /// credential opens nothing".
+    ///
+    /// Purely additive: findings are never added, dropped, reordered, or
+    /// edited. `--format json-envelope` gains an `access_targets` object; every
+    /// other format is untouched. Default off, so a report produced without
+    /// this flag is byte-identical.
+    #[arg(long)]
+    pub access_targets: bool,
+
+    /// Run the built-in backend benchmark corpus and exit.
+    ///
+    /// This measures backend throughput over KeyHog's own corpus; it never scans
+    /// an operator-supplied target and never writes a report. Passing a scan
+    /// target (`PATH`, `--path`, `--stdin`) or a report destination
+    /// (`--output`) alongside it used to exit 0 having silently ignored both, so
+    /// an operator could read "benchmark winner: ..." as a completed scan of
+    /// their tree. Those combinations now fail closed with the conflict named.
+    #[arg(
+        long,
+        conflicts_with_all = ["input", "path", "stdin", "output"]
+    )]
     pub benchmark: bool,
 
     /// Emit a structured `--dogfood` JSON trace to stderr after the

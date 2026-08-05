@@ -68,10 +68,42 @@ pub(crate) fn looks_like_secret_scanner_source(path: Option<&str>) -> bool {
         .any(|segment| contains_path_segment(p, segment))
 }
 
+/// Whether the vendored/minified path suppression should DROP a finding at
+/// `path`. Classification plus policy: [`path_is_vendored_minified`] answers the
+/// shape question, this answers the "and are we allowed to act on it" question.
+///
+/// Vendored bundles are noisy, so the suppression is on by default. It is not
+/// unconditional, and it is not free:
+///
+///   * `--no-default-excludes` turns it off. A flag whose whole promise is
+///     "disable the exclusions" that left a second, silent exclusion running
+///     was a false affordance: it made the walker read `app.min.js`, reported
+///     the 1441 bytes as scanned, and still dropped the `sk_live_` key inside.
+///   * Every drop is counted. The CLI surfaces the total as its own coverage-gap
+///     row, so a suppressed finding is visible and recoverable instead of
+///     vanishing between the matcher and the report.
+///
+/// A minified frontend bundle is one of the most common places a real credential
+/// leaks, because build tooling inlines API keys into it. Silently dropping that
+/// class was worse than the false positives it avoided.
+pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
+    if !crate::telemetry::vendored_path_suppression_enabled() {
+        return false;
+    }
+    if !path_is_vendored_minified(path) {
+        return false;
+    }
+    crate::telemetry::record_vendored_path_suppression();
+    true
+}
+
 /// True if `path` looks like a vendored 3rd-party JS/CSS/wasm bundle.
 /// These are minified copies of libraries the project does NOT author -
 /// any "secret-like" match inside them is a coincidence in the minified
 /// byte stream, not a leaked credential.
+///
+/// Pure classification, no policy and no counter: callers that want the
+/// suppression decision use [`looks_like_vendored_minified_path`].
 ///
 /// Catches:
 ///   * `gogs/public/plugins/codemirror-5.17.0/mode/dockerfile/dockerfile.js`
@@ -81,7 +113,7 @@ pub(crate) fn looks_like_secret_scanner_source(path: Option<&str>) -> bool {
 ///     `hot-aws_session_key`)
 ///   * `node_modules/`, `vendor/`, `wp-includes/`, `wp-content/plugins/`
 ///     (npm / Composer / WordPress vendored trees)
-pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
+pub(crate) fn path_is_vendored_minified(path: Option<&str>) -> bool {
     let Some(p) = path else {
         return false;
     };

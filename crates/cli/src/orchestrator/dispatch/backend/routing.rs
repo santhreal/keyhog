@@ -68,12 +68,48 @@ impl AutorouteRuntimeClass {
     }
 }
 
+/// Whether a routing failure casts doubt on the FINDINGS, or only on the route.
+///
+/// This is the whole question, and it is why the discriminant is a field set at
+/// each construction site rather than something inferred from the message text.
+/// A message is a string somebody will edit; this is a decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AutorouteRoutingErrorKind {
+    /// No trustworthy route was available, so the batch was scanned by scalar
+    /// correctness recovery. Recovery is the REFERENCE implementation, not a
+    /// degraded mode: its output is byte-identical to an explicit backend run
+    /// of the same tree. The findings are therefore the most trustworthy ones
+    /// in the report and discarding them is indefensible.
+    RoutingUnavailable,
+    /// The batch never reached a scanner: no worker could take it. This is a
+    /// COVERAGE fact, not a trust fact, and it is enumerable (we know exactly
+    /// which batch). Measured, not assumed: `scan_nonempty_batch` appends to
+    /// its finding vector only AFTER the fallible dispatch, so a failure here
+    /// contributes exactly zero findings and cannot leave us holding partial
+    /// output from a peer that died mid-flight. It therefore keeps the other
+    /// batches' findings on a production scan and records a `BatchNotRouted`
+    /// gap, and stays fatal under `--autoroute-calibrate`, where the artifact
+    /// is a decision and an unscanned batch voids the measurement.
+    BatchNotScanned,
+    /// The scan's own output is in doubt: two backends disagreed about what the
+    /// matches ARE, or the scalar reference was itself unstable. We do not know
+    /// which finding set we are holding, so there is nothing safe to report.
+    /// Stays fatal everywhere.
+    FindingsUntrustworthy,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct AutorouteRoutingError {
     message: String,
+    kind: AutorouteRoutingErrorKind,
 }
 
 impl AutorouteRoutingError {
+    /// Whether this failure means the findings cannot be trusted.
+    pub(crate) fn kind(&self) -> AutorouteRoutingErrorKind {
+        self.kind
+    }
+
     fn missing_decision(
         key: WorkloadKey,
         decisions: &HashMap<WorkloadKey, AutorouteDecision>,
@@ -106,6 +142,8 @@ impl AutorouteRoutingError {
             }
         };
         Self {
+            // A cache miss. The batch still got scanned, by the reference.
+            kind: AutorouteRoutingErrorKind::RoutingUnavailable,
             message: format!(
                 "autoroute calibration required: this workload has no persisted \
                  fastest-correct backend decision.\n  \
@@ -129,6 +167,8 @@ impl AutorouteRoutingError {
 
     pub(super) fn calibration_not_persisted(error: impl fmt::Display) -> Self {
         Self {
+            // A measurement was not made durable. Says nothing about matches.
+            kind: AutorouteRoutingErrorKind::RoutingUnavailable,
             message: format!(
                 "autoroute calibration did not persist a routing decision: {error}. \
                  Calibration records must be durable before auto routing can be trusted. \
@@ -141,12 +181,16 @@ impl AutorouteRoutingError {
 
     pub(super) fn measurement_observer_unavailable() -> Self {
         Self {
+            // A reporting lock, not a scan result.
+            kind: AutorouteRoutingErrorKind::RoutingUnavailable,
             message: "autoroute calibration persisted its routing decision, but the current-run measured-route observer lock was poisoned; the command cannot report a truthful measured class count. Rerun `keyhog calibrate-autoroute`.".to_string(),
         }
     }
 
     pub(super) fn insufficient_calibration_sample(sample_chunks: usize, sample_bytes: u64) -> Self {
         Self {
+            // Too little sample to decide a route. The scan is unaffected.
+            kind: AutorouteRoutingErrorKind::RoutingUnavailable,
             message: format!(
                 "autoroute calibration sample is insufficient: sample_chunks={sample_chunks}, \
                  sample_bytes={sample_bytes}. Autoroute cannot prove fastest-correct routing \
@@ -159,6 +203,8 @@ impl AutorouteRoutingError {
 
     pub(super) fn host_identity_unavailable(error: impl fmt::Display) -> Self {
         Self {
+            // Host probing failed, so no route can be tied to this machine.
+            kind: AutorouteRoutingErrorKind::RoutingUnavailable,
             message: format!(
                 "autoroute host identity unavailable: {error}. Autoroute calibration must be \
                  tied to an exact host profile before it can prove fastest-correct routing. \
@@ -172,6 +218,8 @@ impl AutorouteRoutingError {
 
     pub(super) fn incomplete_workload_evidence(error: WorkloadClassificationError) -> Self {
         Self {
+            // The workload could not be classified, so no bucket applies.
+            kind: AutorouteRoutingErrorKind::RoutingUnavailable,
             message: format!(
                 "autoroute workload evidence incomplete: {error}. Autoroute requires exact \
                  source-class evidence before it can trust a persisted fastest-correct backend \
@@ -185,6 +233,9 @@ impl AutorouteRoutingError {
 
     pub(super) fn inconsistent_reference_backend(trial: usize) -> Self {
         Self {
+            // The scalar REFERENCE disagreed with itself across trials, so we
+            // cannot say which finding set is the true one.
+            kind: AutorouteRoutingErrorKind::FindingsUntrustworthy,
             message: format!(
                 "autoroute calibration reference backend produced inconsistent findings on trial \
                  {trial}. Autoroute cannot prove fastest-correct routing when the scalar reference \
@@ -200,6 +251,11 @@ impl AutorouteRoutingError {
         reason: impl fmt::Display,
     ) -> Self {
         Self {
+            // An eligible accelerator did not come up (initialization, missing
+            // timing or route evidence, a degraded trial). The route is absent;
+            // the matches are not in question. Divergence in what a candidate
+            // FOUND uses `candidate_findings_diverged` instead.
+            kind: AutorouteRoutingErrorKind::RoutingUnavailable,
             message: format!(
                 "autoroute calibration rejected eligible backend {}: {reason}. Autoroute cannot \
                  prove fastest-correct routing while skipping an eligible backend candidate, so \
@@ -212,11 +268,40 @@ impl AutorouteRoutingError {
         }
     }
 
+    /// A candidate backend's OUTPUT differed from the scalar reference.
+    ///
+    /// The one case in this whole enum where the findings themselves are in
+    /// doubt: two backends disagree about what the matches are and we do not
+    /// know which set we are holding. Stays fatal and discarding, on purpose.
+    pub(super) fn candidate_findings_diverged(
+        backend: ScanBackend,
+        reason: impl fmt::Display,
+    ) -> Self {
+        Self {
+            message: format!(
+                "autoroute calibration rejected eligible backend {}: {reason}. Autoroute cannot \
+                 prove fastest-correct routing while skipping an eligible backend candidate, so \
+                 no routing decision was persisted. Fix the backend correctness/degradation \
+                 failure and rerun `install.sh --calibrate` or `install.ps1 -Calibrate`; or pass \
+                 an explicit `--backend <{}>` diagnostic override.",
+                backend.label(),
+                backend_override_hint()
+            ),
+            kind: AutorouteRoutingErrorKind::FindingsUntrustworthy,
+        }
+    }
+
     pub(in crate::orchestrator::dispatch) fn selected_backend_dispatch_failed(
         backend: ScanBackend,
         error: impl fmt::Display,
     ) -> Self {
         Self {
+            // The batch never ran, so this is COVERAGE, not trust. Verified
+            // rather than defaulted: `scan_nonempty_batch` appends to its
+            // finding vector only after this call's `?`, so a failure here
+            // contributes exactly zero findings and leaves no partial output
+            // from a peer that died mid-flight.
+            kind: AutorouteRoutingErrorKind::BatchNotScanned,
             message: format!(
                 "selected backend {} failed during dispatch ({error}); an explicit backend request or calibration candidate cannot be substituted. Repair the backend, rerun calibration, or select another diagnostic backend",
                 backend.label(),
@@ -226,6 +311,9 @@ impl AutorouteRoutingError {
 
     pub(in crate::orchestrator::dispatch) fn unsupported_backend(backend: ScanBackend) -> Self {
         Self {
+            // As above: no worker could scan this batch at all, and nothing was
+            // emitted for it.
+            kind: AutorouteRoutingErrorKind::BatchNotScanned,
             message: format!(
                 "autoroute selected unsupported scan backend {backend:?}. This binary cannot prove \
                  fastest-correct routing for a backend variant it does not implement in the \
@@ -242,6 +330,9 @@ impl AutorouteRoutingError {
         fault: &RuntimeRouteFault,
     ) -> Self {
         Self {
+            // The prior request completed through visible recovery, so its
+            // output stands; only the route is quarantined.
+            kind: AutorouteRoutingErrorKind::RoutingUnavailable,
             message: format!(
                 "autoroute decision is quarantined after backend {} faulted and the prior request completed through visible recovery.\n  fix: repair the backend and rerun `keyhog calibrate-autoroute`; this process will not silently substitute another route.\n  workload bucket: [{}], runtime={}\n  fault: {}",
                 fault.backend.label(),
@@ -257,6 +348,9 @@ impl AutorouteRoutingError {
         selected_backend: ScanBackend,
     ) -> Self {
         Self {
+            // Confused route identity. Conservative: do not vouch for output
+            // produced under a route we cannot name.
+            kind: AutorouteRoutingErrorKind::FindingsUntrustworthy,
             message: format!(
                 "autoroute recovery receipt names failed backend {}, but the selected route was {}; refusing to quarantine the wrong route identity",
                 failed_backend.label(),

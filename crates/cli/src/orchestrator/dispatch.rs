@@ -16,6 +16,7 @@ use anyhow::Result;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::inspect_autoroute_cache;
 pub(crate) use backend::AutorouteReadiness;
+pub(crate) use backend::{autoroute_cache_stats, render_cache_summary, render_missing_buckets};
 pub(crate) use backend::AutorouteStateRecovery;
 pub(crate) use backend::BackendRecoveryPlan;
 pub(crate) use backend::StagedAutorouteCache;
@@ -23,7 +24,10 @@ pub(crate) use backend::{
     autoroute_engine_identity, autoroute_executable_identity, autoroute_gpu_artifact_identity,
     AutorouteMeasurementObserver, AutorouteMeasurementReceipt, CachedBackendRouter,
 };
-use backend::{is_gpu_backend, AutorouteRoutingError, BackendSelection, MeasuredBackendRouter};
+use backend::{
+    is_gpu_backend, AutorouteRoutingError, AutorouteRoutingErrorKind, BackendSelection,
+    MeasuredBackendRouter,
+};
 use keyhog_core::{Chunk, RawMatch, Source};
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
@@ -112,21 +116,18 @@ pub(super) fn finalize_source_outcome(src_chunks: usize, src_errored: bool) {
     }
 }
 
-/// One batch's scan result, kept together so the parallel consumer can add the
-/// time to a shared counter and hand the findings straight to `collect`.
-struct ScannedBatch {
-    elapsed: std::time::Duration,
-    findings: Vec<RawMatch>,
-}
-
-/// The batch channel as a `Send` iterator that charges its own blocking time.
+/// The batch channel as a `Send` iterator that charges its blocking time to the
+/// profiler.
 ///
 /// `par_bridge` pulls from here under its internal cursor lock, so the measured
-/// wait is the summed time consumer threads spent with no batch to scan, which
-/// is what the `recv_wait` figure in `--perf-trace` has always meant.
+/// wait is the summed time consumer threads spent with no batch to scan. That
+/// is [`keyhog_profile::Stage::ScannerQueueWait`], and it is the only place the
+/// figure is produced. A private `AtomicU64` used to time the identical
+/// interval one line below the span so `--perf-trace` could print its own
+/// `recv_wait`; two clocks over one interval is exactly the split this file no
+/// longer keeps.
 struct TimedBatches {
     batches: std::sync::mpsc::IntoIter<Vec<Chunk>>,
-    recv_nanos: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl Iterator for TimedBatches {
@@ -134,13 +135,7 @@ impl Iterator for TimedBatches {
 
     fn next(&mut self) -> Option<Self::Item> {
         let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ScannerQueueWait);
-        let waited = std::time::Instant::now();
-        let batch = self.batches.next();
-        self.recv_nanos.fetch_add(
-            waited.elapsed().as_nanos() as u64,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        batch
+        self.batches.next()
     }
 }
 
@@ -161,7 +156,11 @@ struct CoalescedScannerWorker {
     scanner: Arc<CompiledScanner>,
     router: CoalescedBatchRouter,
     recover_automatic_backend_faults: bool,
-    perf_trace: bool,
+    /// Under `--autoroute-calibrate` the artifact is a routing DECISION, not a
+    /// report. A batch that never got scanned voids the measurement, so it is
+    /// fatal here while the same condition on a production scan is a coverage
+    /// gap with the findings kept.
+    calibrating: bool,
 }
 
 /// The measured router is behind a `Mutex` because the consumer scans batches
@@ -245,26 +244,37 @@ impl CoalescedBatchRouter {
     }
 }
 
+/// A batch that reached the scanner, plus any failure that happened AFTER its
+/// bytes were already scanned.
+///
+/// The split exists because "we could not scan this batch" and "we scanned it
+/// and then could not write down which route we used" are different facts with
+/// different consequences, and collapsing them is how a complete finding set
+/// gets thrown away for a bookkeeping error.
+struct ScannedBatch {
+    findings: Vec<RawMatch>,
+    /// Route bookkeeping that failed once the batch was fully scanned.
+    /// `findings` is complete and must be reported regardless.
+    route_bookkeeping: Option<AutorouteRoutingError>,
+}
+
 impl CoalescedScannerWorker {
-    fn explicit(scanner: Arc<CompiledScanner>, backend: ScanBackend, perf_trace: bool) -> Self {
+    fn explicit(scanner: Arc<CompiledScanner>, backend: ScanBackend) -> Self {
         Self {
             scanner,
             router: CoalescedBatchRouter::Explicit(backend),
             recover_automatic_backend_faults: false,
-            perf_trace,
+            calibrating: false,
         }
     }
 
-    fn measured(
-        scanner: Arc<CompiledScanner>,
-        config: CoalescedMeasuredRouterConfig,
-        perf_trace: bool,
-    ) -> Self {
+    fn measured(scanner: Arc<CompiledScanner>, config: CoalescedMeasuredRouterConfig) -> Self {
         let recover_automatic_backend_faults = automatic_backend_recovery_allowed(
             None,
             config.autoroute_calibration,
             config.gpu_runtime_policy,
         );
+        let calibrating = config.autoroute_calibration;
         let router = MeasuredBackendRouter::new(
             config.hw_caps,
             config.pattern_count,
@@ -281,7 +291,7 @@ impl CoalescedScannerWorker {
             scanner,
             router: CoalescedBatchRouter::Measured(std::sync::Mutex::new(router)),
             recover_automatic_backend_faults,
-            perf_trace,
+            calibrating,
         }
     }
 
@@ -304,23 +314,20 @@ impl CoalescedScannerWorker {
         rx: std::sync::mpsc::Receiver<Vec<Chunk>>,
     ) -> std::result::Result<Vec<RawMatch>, AutorouteRoutingError> {
         use rayon::iter::{ParallelBridge, ParallelIterator};
-        let sc_t0 = std::time::Instant::now();
-        let scan_nanos = std::sync::atomic::AtomicU64::new(0);
-        let recv_nanos = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let routing_error: std::sync::Mutex<Option<AutorouteRoutingError>> =
             std::sync::Mutex::new(None);
         let profile_runtime = keyhog_profile::current_runtime();
 
         let findings: Vec<RawMatch> = TimedBatches {
             batches: rx.into_iter(),
-            recv_nanos: Arc::clone(&recv_nanos),
         }
         .par_bridge()
         .flat_map_iter(|batch| {
             let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
-            // A routing failure is terminal for the scan. In-flight batches
-            // finish, later ones do no work, and `run` returns the error, so
-            // no partial finding set can be mistaken for a clean result.
+            // A routing failure stops further work: in-flight batches finish
+            // and later ones do none. It no longer decides on its own whether
+            // the findings already gathered survive; `run` does that below,
+            // from the failure's kind.
             if first_routing_error(&routing_error).is_some() {
                 return Vec::new();
             }
@@ -329,10 +336,12 @@ impl CoalescedScannerWorker {
             }
             match self.scan_nonempty_batch(&batch) {
                 Ok(scanned) => {
-                    scan_nanos.fetch_add(
-                        scanned.elapsed.as_nanos() as u64,
-                        std::sync::atomic::Ordering::Relaxed,
-                    );
+                    if let Some(error) = scanned.route_bookkeeping {
+                        let mut slot = first_routing_error(&routing_error);
+                        if slot.is_none() {
+                            *slot = Some(error);
+                        }
+                    }
                     scanned.findings
                 }
                 Err(error) => {
@@ -346,15 +355,63 @@ impl CoalescedScannerWorker {
         })
         .collect();
 
+        // The one question that decides whether a routing failure may destroy
+        // a finding set: is the OUTPUT in doubt, or only the route?
+        //
+        // This used to be an unconditional `return Err(error)`, so a cache miss
+        // on a workload bucket threw away a complete and correct scan. Scalar
+        // correctness recovery is the reference implementation, not a degraded
+        // mode; its findings are byte-identical to an explicit backend run of
+        // the same tree, which makes them the most trustworthy in the report
+        // rather than the least. Discarding them was pure loss.
+        // A backend that DISAGREED with the reference about what the matches
+        // are is the opposite case and stays fatal: we do not know which
+        // finding set we are holding, so there is nothing safe to report.
+        //
+        // A batch that never reached a scanner sits between the two, and which
+        // side it falls on depends on what this run is producing. On a scan the
+        // artifact is a report, so it is a coverage fact: keep the other
+        // batches' findings and record the gap. Under `--autoroute-calibrate`
+        // the artifact is a routing decision measured over a specific workload,
+        // and a batch that never ran voids that measurement, so it stays fatal.
         if let Some(error) = first_routing_error(&routing_error).take() {
-            return Err(error);
+            match error.kind() {
+                AutorouteRoutingErrorKind::FindingsUntrustworthy => return Err(error),
+                AutorouteRoutingErrorKind::BatchNotScanned if self.calibrating => {
+                    return Err(error)
+                }
+                AutorouteRoutingErrorKind::BatchNotScanned
+                | AutorouteRoutingErrorKind::RoutingUnavailable => {
+                    let _receipt = crate::record_batch_not_routed();
+                    eprintln!(
+                        "error: a scan batch could not be routed to a backend: {error}\n  \
+                         The findings gathered before this point are still reported, and the \
+                         coverage gap for the unrouted batch is recorded, so this scan is not \
+                         reported as clean."
+                    );
+                }
+            }
         }
-        self.router.commit()?;
-        self.dump_perf_trace(
-            sc_t0,
-            std::time::Duration::from_nanos(scan_nanos.load(std::sync::atomic::Ordering::Relaxed)),
-            std::time::Duration::from_nanos(recv_nanos.load(std::sync::atomic::Ordering::Relaxed)),
-        );
+        // Persisting a routing decision is NOT part of producing findings, so
+        // it must never be able to destroy them. This was `self.router.commit()?`,
+        // which meant a scan that read 100% of its input and found credentials
+        // reported NOTHING when $XDG_CACHE_HOME was read-only or full.
+        //
+        // Designed out rather than retried, deliberately: the write is already
+        // atomic and lock-guarded, and a read-only cache directory does not
+        // become writable on a second attempt. Retrying here would burn the
+        // bound and still lose nothing but time. The failure is recorded so
+        // `--autoroute-calibrate`, whose requested operation this was, still
+        // exits non-zero, and the findings go home with the operator either way.
+        if let Err(error) = self.router.commit() {
+            let _receipt = crate::record_autoroute_persist_failed();
+            eprintln!(
+                "error: the autoroute decision cache could not be persisted: {error}\n  \
+                 The scan itself completed and its findings are reported below. Until the \
+                 cache path is writable, later scans of this workload will fall back to \
+                 scalar correctness recovery instead of a measured backend."
+            );
+        }
         self.scanner.dump_profile_reports("keyhog scan");
         Ok(findings)
     }
@@ -363,7 +420,6 @@ impl CoalescedScannerWorker {
         &self,
         batch: &[Chunk],
     ) -> std::result::Result<ScannedBatch, AutorouteRoutingError> {
-        let scan_start = std::time::Instant::now();
         let scanned_count = batch.len();
         let scanned_bytes = batch.iter().map(|chunk| chunk.data.len()).sum::<usize>();
         let mut findings: Vec<RawMatch> = Vec::new();
@@ -371,8 +427,8 @@ impl CoalescedScannerWorker {
             crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
             crate::SCANNED_BYTES.fetch_add(scanned_bytes as u64, Ordering::Relaxed);
             return Ok(ScannedBatch {
-                elapsed: scan_start.elapsed(),
                 findings,
+                route_bookkeeping: None,
             });
         }
         let selection = {
@@ -412,13 +468,14 @@ impl CoalescedScannerWorker {
             AutorouteRoutingError::selected_backend_dispatch_failed(chosen_backend, error)
         })?;
         record_profiled_batch_route(batch, self.router.requested_backend(), &selection, &outcome);
-        if let Some(recovery) = outcome.recovery.as_ref() {
-            self.router
-                .quarantine_recovered_route(&selection, recovery)?;
-        }
         if let Some(recovery) = selection.autoroute_recovery.as_ref() {
             record_completed_autoroute_state_recovery(batch, chosen_backend, recovery);
         }
+        // Collect the findings BEFORE quarantining the route. From here the
+        // batch's bytes are scanned and its matches are known; quarantining is
+        // a note about which backend to avoid next time. It used to run first
+        // with a `?`, so a failed quarantine discarded a batch that had already
+        // been scanned successfully through visible recovery.
         let _result_merge_span = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
         append_scanned_batch_findings(
             &mut findings,
@@ -428,30 +485,15 @@ impl CoalescedScannerWorker {
             chose_gpu && !outcome.recovered,
         );
         drop(_result_merge_span);
+        let route_bookkeeping = outcome.recovery.as_ref().and_then(|recovery| {
+            self.router
+                .quarantine_recovered_route(&selection, recovery)
+                .err()
+        });
         Ok(ScannedBatch {
-            elapsed: scan_start.elapsed(),
             findings,
+            route_bookkeeping,
         })
-    }
-
-    fn dump_perf_trace(
-        &self,
-        started: std::time::Instant,
-        scan_dur: std::time::Duration,
-        recv_dur: std::time::Duration,
-    ) {
-        if !self.perf_trace {
-            return;
-        }
-        let wall = started.elapsed().as_secs_f64().max(1e-9);
-        eprintln!(
-            "perf-trace scanner_thread: wall={:.2}s scan={:.2}s recv_wait={:.2}s (scan {:.0}%, recv_wait {:.0}%)",
-            wall,
-            scan_dur.as_secs_f64(),
-            recv_dur.as_secs_f64(),
-            100.0 * scan_dur.as_secs_f64() / wall,
-            100.0 * recv_dur.as_secs_f64() / wall,
-        );
     }
 }
 
@@ -1145,9 +1187,8 @@ fn join_coalesced_scanner_thread(
 
 impl ScanOrchestrator {
     fn coalesced_scanner_worker(&self, scanner: Arc<CompiledScanner>) -> CoalescedScannerWorker {
-        let perf_trace = self.effective_config.scanner.perf_trace;
         if let Some(backend) = self.effective_config.backend_override {
-            return CoalescedScannerWorker::explicit(scanner, backend, perf_trace);
+            return CoalescedScannerWorker::explicit(scanner, backend);
         }
 
         // Auto-route every batch through the persisted calibration router when
@@ -1181,7 +1222,7 @@ impl ScanOrchestrator {
             autoroute_cache_path,
             measurement_observer: self.autoroute_measurement_observer.clone(),
         };
-        CoalescedScannerWorker::measured(scanner, router_config, perf_trace)
+        CoalescedScannerWorker::measured(scanner, router_config)
     }
 
     pub(crate) fn scan_sources(

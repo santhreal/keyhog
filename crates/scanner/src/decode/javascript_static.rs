@@ -31,6 +31,84 @@ const MAX_BYTE_ARRAY_LEN: usize = 64 * 1024;
 const MAX_ARRAY_BINDINGS: usize = 32;
 const MAX_STATIC_EXPRESSIONS: usize = 64;
 
+/// Binding keywords whose declarations these grammars read.
+///
+/// `var` is admitted HERE, and deliberately not in the CryptoJS grammar,
+/// because every rule in this module additionally requires the bound
+/// identifier to occur exactly twice in the whole source: the declaration and
+/// the single use inside the recovered expression
+/// ([`identifier_occurrence_count`]). Two occurrences leave no room for a
+/// reassignment, a second declaration, or a sibling scope, so `var`'s
+/// function-scope hoisting cannot make the wrong binding win and a reassigned
+/// binding fails closed on the count alone. CryptoJS resolves names through
+/// real scope analysis instead of counting, where hoisting would matter, so it
+/// stays at `const|let`.
+const BINDING_KEYWORD: &str = r"(?:const|let|var)";
+
+/// String-literal delimiter: single quote, double quote, or backtick.
+///
+/// Widening the delimiter is safe because [`unquote_static_string`] is the only
+/// way a captured literal becomes bytes, and it requires the opening and
+/// closing delimiter to match and refuses a backtick literal that carries
+/// interpolation or an escape. The character classes inside each literal
+/// exclude `$`, `{`, and `\` anyway, so an interpolated template cannot even
+/// reach that check.
+const QUOTE: &str = r#"["'`]"#;
+
+/// A quoted keyword operand (encoding label, cipher algorithm) in any
+/// delimiter and any ASCII case. Node accepts `'BASE64'`, `"Utf8"`, and
+/// `AES-256-CBC` identically, so recognizing only the lowercase spelling is a
+/// recall hole, not a safety boundary: the allowlist that follows is what
+/// bounds the operation.
+fn quoted_label(pattern: &str) -> String {
+    format!(r#"(?:'(?i:{pattern})'|"(?i:{pattern})"|`(?i:{pattern})`)"#)
+}
+
+/// `Buffer.from(literal, encoding)` and its deprecated but still executable
+/// twin `new Buffer(literal, encoding)`. The size constructor
+/// (`new Buffer(1024)`) cannot match any call site built from this because
+/// every one of them requires a quoted first argument.
+const BUFFER_CONSTRUCTOR: &str = r"(?:Buffer\s*\.\s*from|new\s+Buffer)";
+
+/// One static-operation allowance for one source.
+///
+/// `MAX_STATIC_EXPRESSIONS` used to be re-enforced from zero inside each
+/// grammar loop, so a file carrying XOR, bound-AES, and inline-AES
+/// expressions could evaluate up to three times the ceiling the limit
+/// advertises. This makes the ceiling mean what it says: 64 attempts per
+/// source, in a fixed grammar order, shared by every grammar that spends it.
+///
+/// The 64th attempt is granted, so a source sitting exactly on the boundary
+/// still recovers its last plaintext; the 65th is refused and reports one
+/// coverage reason, not one per grammar.
+struct StaticOperationBudget {
+    remaining: usize,
+    exhaustion_reported: bool,
+}
+
+impl StaticOperationBudget {
+    fn new(limit: usize) -> Self {
+        Self {
+            remaining: limit,
+            exhaustion_reported: false,
+        }
+    }
+
+    /// Spend one operation. Returns `false` once the source is out of budget,
+    /// recording the coverage reason exactly once.
+    fn take(&mut self) -> bool {
+        if self.remaining == 0 {
+            if !self.exhaustion_reported {
+                self.exhaustion_reported = true;
+                record_static_limit("static operation ceiling");
+            }
+            return false;
+        }
+        self.remaining -= 1;
+        true
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct RecoveredPlaintext {
     plaintext: String,
@@ -65,35 +143,53 @@ fn append_spliced_recoveries(
 
 static LITERAL_ARRAY_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
-        r"(?m)\bconst\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\[((?:[\x20\t\r\n]*(?:0[xX][0-9A-Fa-f]+|[0-9]+)[\x20\t\r\n]*,)*[\x20\t\r\n]*(?:0[xX][0-9A-Fa-f]+|[0-9]+)[\x20\t\r\n]*,?[\x20\t\r\n]*)\]",
+        &format!(
+            r"(?m)\b{BINDING_KEYWORD}\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\[((?:[\x20\t\r\n]*(?:0[xX][0-9A-Fa-f]+|[0-9]+)[\x20\t\r\n]*,)*[\x20\t\r\n]*(?:0[xX][0-9A-Fa-f]+|[0-9]+)[\x20\t\r\n]*,?[\x20\t\r\n]*)\]"
+        ),
         "literal byte-array assignment",
     )
 });
 
 static BASE64_JSON_ARRAY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    let base64 = quoted_label("base64");
+    // Node's `toString()` defaults to UTF-8 and accepts `utf8`, `utf-8`, and
+    // any casing of either, so all four spellings are the same program.
+    let utf8 = quoted_label("utf-?8");
     compile_static_regex(
-        r#"(?m)\bconst\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*JSON\s*\.\s*parse\s*\(\s*Buffer\s*\.\s*from\s*\(\s*(["'][A-Za-z0-9+/=_-]+["'])\s*,\s*(?:'base64'|"base64")\s*\)\s*\.\s*toString\s*\(\s*(?:(?:'(?i:utf8)'|"(?i:utf8)"))?\s*\)\s*\)"#,
+        &format!(
+            r"(?m)\b{BINDING_KEYWORD}\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*JSON\s*\.\s*parse\s*\(\s*{BUFFER_CONSTRUCTOR}\s*\(\s*({QUOTE}[A-Za-z0-9+/=_-]+{QUOTE})\s*,\s*{base64}\s*\)\s*\.\s*toString\s*\(\s*(?:{utf8})?\s*\)\s*\)"
+        ),
         "Base64 JSON byte-array assignment",
     )
 });
 
+// `fromCodePoint` is `fromCharCode` for every scalar this grammar can produce:
+// the operands are XOR results of two byte arrays, so every code point is in
+// 0..=255 and the two functions agree exactly. Recognizing only one spelling
+// dropped the other program on the floor.
+const FROM_CHAR_CODE: &str = r"from(?:CharCode|CodePoint)";
+
 static XOR_MAP_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
-        r"String\s*\.\s*fromCharCode\s*\(\s*\.\.\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*map\s*\(\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*=>\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\^\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\[\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*%\s*(?:(?:([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*length)|([0-9]+))\s*\]\s*\)\s*\)",
+        &format!(
+            r"String\s*\.\s*{FROM_CHAR_CODE}\s*\(\s*\.\.\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*map\s*\(\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*=>\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\^\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\[\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*%\s*(?:(?:([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*length)|([0-9]+))\s*\]\s*\)\s*\)"
+        ),
         "static XOR map expression",
     )
 });
 
 static XOR_CANDIDATE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    let computed = quoted_label(FROM_CHAR_CODE);
     compile_static_regex(
-        r#"String\s*(?:\.\s*fromCharCode|\[\s*(?:'fromCharCode'|"fromCharCode")\s*\])\s*\("#,
+        &format!(r"String\s*(?:\.\s*{FROM_CHAR_CODE}|\[\s*{computed}\s*\])\s*\("),
         "static XOR candidate",
     )
 });
 
 static XOR_DYNAMIC_PROPERTY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    let computed = quoted_label(FROM_CHAR_CODE);
     compile_static_regex(
-        r#"String\s*\[\s*(?:'fromCharCode'|"fromCharCode")\s*\]\s*\("#,
+        &format!(r"String\s*\[\s*{computed}\s*\]\s*\("),
         "computed static XOR property",
     )
 });
@@ -116,8 +212,13 @@ impl StaticExpressionKinds {
 
 fn static_expression_kinds(data: &str) -> StaticExpressionKinds {
     StaticExpressionKinds {
-        xor: data.contains("fromCharCode") && data.contains('^'),
-        node_aes: data.contains("createDecipheriv") && data.contains("aes-256-cbc"),
+        xor: (data.contains("fromCharCode") || data.contains("fromCodePoint"))
+            && data.contains('^'),
+        // Node's cipher name is case-insensitive, so the admission gate has to
+        // be too, or `AES-256-CBC` never reaches the grammar that would
+        // accept it.
+        node_aes: data.contains("createDecipheriv")
+            && crate::ascii_ci::ci_find(data.as_bytes(), b"aes-256-cbc"),
         cryptojs_aes: data.contains("crypto-js")
             && data.contains(".AES")
             && data.contains(".decrypt")
@@ -180,16 +281,35 @@ impl Decoder for JavaScriptStaticDecoder {
         }
 
         let base_offset = chunk.metadata.base_offset;
+        // ONE budget for the whole source. The XOR, bound-AES, and inline-AES
+        // grammars used to count independently, so a file mixing all three
+        // could evaluate three times the advertised 64-operation ceiling.
+        // Ordering is fixed (XOR, then bound AES, then inline AES, each in
+        // regex-match order), so which operations the budget buys is
+        // deterministic.
+        let mut budget = StaticOperationBudget::new(MAX_STATIC_EXPRESSIONS);
         if kinds.xor {
             let mut recovered = BTreeSet::new();
-            recover_xor_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut recovered);
+            recover_xor_plaintexts(
+                &chunk.data,
+                &chunk.metadata,
+                base_offset,
+                &mut recovered,
+                &mut budget,
+            );
             if !append_spliced_recoveries(sink, chunk, recovered, self.name()) {
                 return;
             }
         }
         if kinds.node_aes {
             let mut recovered = BTreeSet::new();
-            aes::recover_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut recovered);
+            aes::recover_plaintexts(
+                &chunk.data,
+                &chunk.metadata,
+                base_offset,
+                &mut recovered,
+                &mut budget,
+            );
             if !append_spliced_recoveries(sink, chunk, recovered, self.name()) {
                 return;
             }
@@ -253,15 +373,15 @@ fn recover_xor_plaintexts(
     metadata: &ChunkMetadata,
     base_offset: usize,
     emitted: &mut BTreeSet<RecoveredPlaintext>,
+    budget: &mut StaticOperationBudget,
 ) {
     report_nonstandard_xor_candidates(source, metadata, base_offset);
     let bindings = collect_byte_array_bindings(source);
     if bindings.len() < 2 {
         return;
     }
-    for (expression_index, captures) in XOR_MAP_RE.captures_iter(source).enumerate() {
-        if expression_index >= MAX_STATIC_EXPRESSIONS {
-            record_static_limit("XOR expression ceiling");
+    for captures in XOR_MAP_RE.captures_iter(source) {
+        if !budget.take() {
             break;
         }
         let Some((
@@ -474,13 +594,27 @@ fn record_static_limit(limit: &'static str) {
     );
 }
 
+/// Strip one string literal's delimiters, or refuse.
+///
+/// Single quotes, double quotes, and backticks all denote the same value in
+/// JavaScript as long as the backtick form carries no substitution and no
+/// escape. `${` would make the value depend on evaluation and `\` would make
+/// the written bytes differ from the runtime bytes, so both fail closed rather
+/// than recovering a plaintext this grammar cannot prove.
 fn unquote_static_string(value: &str) -> Option<&str> {
     let bytes = value.as_bytes();
     let quote = *bytes.first()?;
-    if bytes.len() < 2 || !matches!(quote, b'\'' | b'"') || bytes.last().copied() != Some(quote) {
+    if bytes.len() < 2
+        || !matches!(quote, b'\'' | b'"' | b'`')
+        || bytes.last().copied() != Some(quote)
+    {
         return None;
     }
-    value.get(1..value.len() - 1)
+    let inner = value.get(1..value.len() - 1)?;
+    if quote == b'`' && (inner.contains("${") || inner.contains('\\')) {
+        return None;
+    }
+    Some(inner)
 }
 
 fn identifier_occurrence_count(source: &str, identifier: &str) -> usize {

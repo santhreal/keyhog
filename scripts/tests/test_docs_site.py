@@ -42,7 +42,6 @@ class DocumentationSiteMetadataTests(unittest.TestCase):
             '<meta property="og:image" content="https://santh.dev/og-keyhog-v0-5-34.png">',
             updated,
         )
-        self.assertIn('<meta name="twitter:card" content="summary_large_image">', updated)
 
     def test_metadata_generation_is_idempotent(self) -> None:
         """Repeated docs builds must replace generated metadata instead of duplicating it."""

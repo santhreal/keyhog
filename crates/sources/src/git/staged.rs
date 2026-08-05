@@ -167,7 +167,7 @@ pub(crate) fn consume_oversized_staged_header_path(
     path_limit: usize,
 ) -> OversizedStagedHeaderOutcome {
     match super::read_capped_record(reader, raw_path, path_limit, 0) {
-        Ok(0) => OversizedStagedHeaderOutcome {
+        Ok(record) if record.consumed == 0 => OversizedStagedHeaderOutcome {
             error: SourceError::Git(
                 "git raw staged diff ended before the path for an oversized index entry".into(),
             ),
@@ -283,8 +283,8 @@ impl Iterator for StagedChunkIter {
                 super::GIT_PLUMBING_LINE_BYTES,
                 0,
             ) {
-                Ok(0) => return self.finish(),
-                Ok(bytes) => bytes,
+                Ok(record) if record.consumed == 0 => return self.finish(),
+                Ok(record) => record.content,
                 Err(error) => return self.stop(SourceError::Io(error)),
             };
             if header_bytes > super::GIT_PLUMBING_LINE_BYTES {
@@ -318,12 +318,12 @@ impl Iterator for StagedChunkIter {
                 self.limits.git_line_bytes,
                 0,
             ) {
-                Ok(0) => {
+                Ok(record) if record.consumed == 0 => {
                     return self.stop(SourceError::Git(
                         "git raw staged diff ended before the path for an index entry".into(),
                     ));
                 }
-                Ok(bytes) => bytes,
+                Ok(record) => record.content,
                 Err(error) => return self.stop(SourceError::Io(error)),
             };
             if path_bytes > self.limits.git_line_bytes {

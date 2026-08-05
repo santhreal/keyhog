@@ -89,6 +89,8 @@ impl<W: Write + Send> TextReporter<W> {
                 color: self.color,
                 example_suppressions: self.example_suppressions,
                 dogfood_active: self.dogfood_active,
+                covered_nothing: false,
+                path_policy_suppressions: 0,
             },
             &self.findings,
         )

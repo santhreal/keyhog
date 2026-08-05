@@ -2,7 +2,7 @@
 
 use crate::support::split_chunk_results;
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 #[test]
 fn windowed_large_file_emits_base_offset() {

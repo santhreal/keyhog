@@ -29,7 +29,7 @@
 #![cfg(feature = "s3")]
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 /// A syntactically valid S3 bucket name (3-63 chars, lowercase/digit/dash, no
 /// leading/trailing dash, no `..`) so `validate_bucket_name` passes and

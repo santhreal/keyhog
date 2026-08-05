@@ -544,6 +544,105 @@ keyhog detectors --format json \
   | jq '.[] | select(.service == "stripe")'
 ```
 
+## Which mechanisms a detector actually uses
+
+KeyHog matches patterns, validates structure, scores entropy, gates on BPE
+token efficiency, recovers encoded values, confirms with companions, verifies
+live, and suppresses with detector-owned allowlists. A given detector uses some
+of those and not others. Ask which:
+
+```sh
+keyhog detectors --mechanisms
+```
+
+```
+Mechanism manifest: 925 detectors from detectors
+
+  regex                    924  phase-1 pattern anchors
+  keywords                 925  phase-2 keyword triggers for shapeless candidates
+  structure                 25  offline structural proof: checksum, payload decode, or declared shape
+  entropy                   56  detector-owned Shannon entropy floors
+  bpe                        4  BPE token-efficiency precision gate
+  byte_pair_likelihood     n/a  fixed-point byte-pair log-likelihood scoring [UNAVAILABLE: see --format json for the reason]
+  decode                    69  detector-declared evasion and transport decode recovery
+  companions               174  secondary patterns that confirm a match
+  detector_relations         5  relations to findings from other detectors
+  verification             342  live verification against the provider
+  suppression                8  detector-owned allowlists, stopwords, and public-identifier markers
+  source_admission           1  positive source selectors gating where this detector fires
+
+Every detector declares at least one mechanism.
+```
+
+This does not scan. It reads the same corpus a scan would load.
+
+Scope it with `--search`, and take the machine-readable document with
+`--format json`:
+
+```sh
+keyhog detectors --mechanisms --search aws --format json \
+  | jq '.detectors[] | select(.id == "aws-access-key")'
+```
+
+```json
+{
+  "id": "aws-access-key",
+  "service": "aws",
+  "kind": "regex",
+  "mechanisms": [
+    { "id": "regex", "evidence": ["patterns"] },
+    { "id": "keywords", "evidence": ["keywords"] },
+    { "id": "structure", "evidence": ["credential_shape"] },
+    { "id": "decode", "evidence": ["decode_transforms.reverse_prefixes", "decode_transforms.caesar_prefixes"] },
+    { "id": "companions", "evidence": ["companions"] },
+    { "id": "verification", "evidence": ["verify"] }
+  ]
+}
+```
+
+`evidence` names the detector TOML field that made each mechanism active, so
+the claim is checkable against the data file rather than taken on trust. There
+is no per-detector table in the binary: every answer is derived from the
+corpus, so scoping the manifest changes every count in it, and a TOML edit
+changes the manifest with no release.
+
+A mechanism KeyHog cannot express yet is reported rather than omitted, because
+a missing row cannot be told apart from "no detector uses this":
+
+```sh
+keyhog detectors --mechanisms --format json \
+  | jq '.summary[] | select(.available == false)'
+```
+
+```json
+{
+  "id": "byte_pair_likelihood",
+  "description": "fixed-point byte-pair log-likelihood scoring",
+  "available": false,
+  "unavailable_reason": "no detector field expresses this yet; the fixed-point byte-pair model is unbuilt (BACKLOG KH-850), so no detector can declare it and this row is structurally empty rather than measured",
+  "detectors": 0
+}
+```
+
+Two questions the manifest answers that nothing else does. Which detectors can
+verify a credential against the provider:
+
+```sh
+keyhog detectors --mechanisms --format json \
+  | jq -r '.detectors[] | select([.mechanisms[].id] | index("verification")) | .id'
+```
+
+And which detector has no regex anchor at all, and therefore reaches candidates
+only through phase 2:
+
+```sh
+keyhog detectors --mechanisms --format json \
+  | jq -r '.detectors[] | select([.mechanisms[].id] | index("regex") | not) | .id'
+```
+
+On the shipped corpus that second query returns exactly one line,
+`generic-secret`.
+
 ## Explaining one detector
 
 ```sh
@@ -733,22 +832,25 @@ Severity is a property of the detector, but can shift per-finding:
 - **Verification: live → severity unchanged.** The credential authenticates
   successfully. As bad as it can get.
 
-## Writing your own - the short version
+## Writing your own
 
-1. Find a real example of the credential format (vendor docs, leaked
-   public sample, source).
-2. Write the regex. Test it against the example, against a similar
-   non-credential ("looks like, isn't"), and against an attacker-rotated
-   form.
-3. Add to `detectors/<service>-<thing>.toml` - `id`, `keywords`,
-   `patterns`, optionally `verify`.
-4. Add a contract file at `crates/scanner/tests/contracts/<id>.toml`
-   with at least:
-   - 2 positives (env-var form, quoted form)
-   - 2 negatives (placeholder, EXAMPLE marker)
-   - 2 evasions (the actual deployed credential shape from production)
-5. Run `cargo test -p keyhog-scanner --test contracts_runner` - must
-   pass for your detector to ship.
+[Write a detector](./guides/authoring-detectors.md) is the full workflow: how to
+choose the three example shapes you need, the rules that reject a file at corpus
+load, how to write the contract file every shipped detector has, and the
+mistakes that show up in most first drafts.
 
-That's it. The contracts gate enforces that every shipped detector
-catches what it claims to catch.
+The short version:
+
+1. Find a real example of the credential format, a lookalike that is not one,
+   and the form your provider actually deploys.
+2. Write the regex with a keyword anchor. Set `group` to the capture holding the
+   credential, not `0`.
+3. Add `detectors/<service>-<thing>.toml` with `id`, `keywords`, `patterns`, and
+   optionally `verify`.
+4. Add a contract at `crates/scanner/tests/contracts/<id>.toml` with at least
+   two positives, two negatives, and two evasions.
+5. Run `cargo test -p keyhog-scanner --test contracts_runner`. It must pass for
+   your detector to ship.
+
+The contracts gate enforces that every shipped detector catches what it claims
+to catch.

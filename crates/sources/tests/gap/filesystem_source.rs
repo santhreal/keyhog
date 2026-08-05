@@ -34,7 +34,7 @@
 use crate::support::split_chunk_results;
 use keyhog_core::testing as core_testing;
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use keyhog_sources::{reset_skipped_over_max_size, skip_counts, FilesystemSource};
 use std::fs;
 use std::io::Write;
@@ -543,8 +543,7 @@ fn max_file_size_zero_expands_nonempty_har() {
 }
 
 #[test]
-fn oversize_skip_increments_global_counter() {
-    // process_entry bumps crate::SKIPPED_OVER_MAX_SIZE per over-cap file. The
+fn oversize_skip_increments_global_counter() {// process_entry bumps crate::SKIPPED_OVER_MAX_SIZE per over-cap file. The
     // counter is process-global, so hold the exclusive skip-counter lease across
     // reset -> scan -> assert to serialize with every other counter-asserting
     // test. Without the lease a concurrent test's reset can zero our bump between
@@ -559,16 +558,12 @@ fn oversize_skip_increments_global_counter() {
     let rows: Vec<_> = source.chunks().collect();
     let (_chunks, errors) = split_chunk_results(&rows);
     assert_eq!(
-        errors.len(),
-        1,
-        "over-cap file must emit one SourceError row"
+        errors.len(), 1, "over-cap file must emit one SourceError row"
     );
 
     assert!(
-        skip_counts().over_max_size >= 1,
-        "the over-cap file must have bumped the skip counter"
-    );
-}
+        skip_counts().over_max_size >= 1, "the over-cap file must have bumped the skip counter"
+    );}
 
 #[test]
 fn cap_applies_to_included_single_file() {
@@ -880,17 +875,32 @@ fn extensionless_pdf_magic_is_skipped() {
 }
 
 #[test]
-fn extensionless_zip_magic_is_skipped_by_sniff() {
-    // PK\x03\x04 (ZIP) is in the prefix sniff list. An extensionless file
-    // with that header is skipped before any unpack attempt (the archive
-    // branch keys off the .zip extension, which this file lacks).
+fn extensionless_zip_magic_is_routed_to_the_zip_extractor_not_skipped() {
+    // WAS `extensionless_zip_magic_is_skipped_by_sniff`, which asserted
+    // `chunks.is_empty()` because "the archive branch keys off the .zip
+    // extension, which this file lacks". That extension-only routing was the bug
+    // (KH-1588): every OCI/Docker layer blob is digest-named, so a real container
+    // under a bare name was reported clean with no coverage gap.
+    //
+    // A PK-magic file is now routed to the zip extractor by its own signature.
+    // These bytes are NOT a readable zip (no end-of-central-directory record), so
+    // the contract to pin is that the refusal is VISIBLE: the source emits
+    // `SourceError` rows saying the archive was not scanned, instead of the file
+    // vanishing through the binary sniff. A readable extensionless container is
+    // covered by `regression_archive_member_content_format.rs`.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("archive"); // no extension
     fs::write(&path, b"PK\x03\x04 zip-ish bytes TOKEN=pk").unwrap();
-    let chunks = scan_single_file(&path);
+    let source = FilesystemSource::new(dir.path().to_path_buf())
+        .with_include_paths(vec![path.clone()]);
+    let rows: Vec<_> = source.chunks().collect();
+    let (_chunks, errors) = split_chunk_results(&rows);
     assert!(
-        chunks.is_empty(),
-        "PK magic extensionless file must be skipped"
+        errors
+            .iter()
+            .any(|error| error.to_string().contains("was not scanned")),
+        "an unreadable PK-magic container must surface an uncovered region, not be \
+         silently dropped by the binary sniff; got {errors:?}"
     );
 }
 

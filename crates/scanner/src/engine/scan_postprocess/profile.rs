@@ -74,9 +74,14 @@ pub(crate) fn confirmed_prof_reset(len: usize) {
 impl super::CompiledScanner {
     /// Print and reset the per-pattern confirmed-pass profile (top 30 by time).
     pub(crate) fn confirmed_profile_dump(&self, label: &str) {
+        // The tables are process-global and sized by whichever scanner asked
+        // first, which is not always this one (a probe scanner with a single
+        // pattern warms the GPU before the real corpus compiles). Recording
+        // already drops out-of-range indices, so the dump reads exactly the
+        // rows that exist instead of indexing past them.
         let total = self.ac_map.len() + self.phase2_patterns.len();
         let (ns, runs) = confirmed_prof_vecs(total);
-        let mut rows: Vec<(usize, u64, u64)> = (0..total)
+        let mut rows: Vec<(usize, u64, u64)> = (0..total.min(ns.len()).min(runs.len()))
             .map(|i| (i, ns[i].swap(0, Relaxed), runs[i].swap(0, Relaxed)))
             .filter(|&(_, n, _)| n > 0)
             .collect();

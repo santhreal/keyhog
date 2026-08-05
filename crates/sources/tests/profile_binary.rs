@@ -12,7 +12,7 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_profile::Stage;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use std::io::Write;
 use support::profile::{run_with_profile, stage_calls};
 

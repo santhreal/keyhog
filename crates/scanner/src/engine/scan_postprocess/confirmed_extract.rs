@@ -7,7 +7,75 @@
 use super::{absolute_offset, scan_postprocess, scan_postprocess_profile, CompiledScanner};
 use crate::types::{ScanState, ScannerPreprocessedText};
 use keyhog_core::Chunk;
+use std::cell::RefCell;
 use std::sync::atomic::Ordering::Relaxed;
+
+thread_local! {
+    /// Per-worker scratch for [`CompiledScanner::extract_confirmed_patterns`],
+    /// reused across every chunk the worker handles so the confirmed pass makes
+    /// no per-chunk heap allocation for either of its two lookup structures.
+    static CONFIRMED_SCRATCH: RefCell<ConfirmedScratch> =
+        RefCell::new(ConfirmedScratch::default());
+}
+
+/// Two dense bitsets the confirmed pass probes once per candidate.
+///
+/// They replace a per-chunk `HashSet<usize>` (suffix-literal presence) and a
+/// `binary_search` over `confirmed_patterns` (active-pattern membership). Both
+/// describe exactly the same sets as the structures they replace, so the set of
+/// patterns admitted to extraction is unchanged; only allocation and probe cost
+/// differ.
+#[derive(Default)]
+struct ConfirmedScratch {
+    /// One bit per `ac_map` index, set when that pattern is in this chunk's
+    /// `confirmed_patterns` slice.
+    active: Vec<u64>,
+    /// One bit per `suffix_gate_ac` literal id, set when that literal occurs in
+    /// this chunk.
+    suffix: Vec<u64>,
+}
+
+impl ConfirmedScratch {
+    /// Rebuild the active-pattern bitset for one chunk. `clear` + `resize`
+    /// zeroes in place and keeps the capacity from the previous chunk.
+    fn load_active(&mut self, pattern_count: usize, confirmed_patterns: &[usize]) {
+        let words = crate::engine::trigger_bitmap::words_for(pattern_count);
+        self.active.clear();
+        self.active.resize(words, 0);
+        for &pat_idx in confirmed_patterns {
+            if let Some(slot) = self.active.get_mut(pat_idx / 64) {
+                *slot |= 1u64 << (pat_idx % 64);
+            }
+        }
+    }
+
+    #[inline]
+    fn contains_active(&self, pat_idx: usize) -> bool {
+        self.active
+            .get(pat_idx / 64)
+            .is_some_and(|word| word & (1u64 << (pat_idx % 64)) != 0)
+    }
+
+    fn clear_suffix(&mut self, literal_count: usize) {
+        let words = crate::engine::trigger_bitmap::words_for(literal_count);
+        self.suffix.clear();
+        self.suffix.resize(words, 0);
+    }
+
+    #[inline]
+    fn mark_suffix(&mut self, literal_id: usize) {
+        if let Some(slot) = self.suffix.get_mut(literal_id / 64) {
+            *slot |= 1u64 << (literal_id % 64);
+        }
+    }
+
+    #[inline]
+    fn contains_suffix(&self, literal_id: usize) -> bool {
+        self.suffix
+            .get(literal_id / 64)
+            .is_some_and(|word| word & (1u64 << (literal_id % 64)) != 0)
+    }
+}
 
 impl CompiledScanner {
     #[allow(clippy::too_many_arguments)]
@@ -25,6 +93,10 @@ impl CompiledScanner {
     ) {
         let prof = scan_postprocess_profile::confirmed_prof_enabled();
         let total = self.ac_map.len() + self.phase2_patterns.len();
+        // Borrow this worker's scratch bitsets for the whole pass; they go back
+        // to the pool at the end so the next chunk reuses the same allocation.
+        let mut scratch_owned = CONFIRMED_SCRATCH.with(|cell| cell.take());
+        scratch_owned.load_active(self.ac_map.len(), confirmed_patterns);
         // Suffix gate: one AC pass marks which required-suffix literals are
         // present in the chunk; a triggered pattern whose suffix literals are
         // ALL absent cannot match (every match ends with one of them), so its
@@ -40,33 +112,36 @@ impl CompiledScanner {
                     .get(pat_idx)
                     .is_some_and(|gate| !gate.is_empty() && !anchored)
             });
-        let suffix_present: Option<std::collections::HashSet<usize>> = match &self.suffix_gate_ac {
+        let suffix_gate_active = match &self.suffix_gate_ac {
             Some(ac) if needs_suffix_gate => {
                 let t0 = prof.then(std::time::Instant::now);
-                let present = ac
-                    .find_overlapping_iter(&*preprocessed.text)
-                    .map(|m| m.pattern().as_usize())
-                    .collect();
+                scratch_owned.clear_suffix(ac.patterns_len());
+                for mat in ac.find_overlapping_iter(&*preprocessed.text) {
+                    scratch_owned.mark_suffix(mat.pattern().as_usize());
+                }
                 if let Some(t0) = t0 {
                     scan_postprocess_profile::confirmed_prof_record(
                         scan_postprocess_profile::ConfirmedStage::SuffixGate,
                         t0.elapsed(),
                     );
                 }
-                Some(present)
+                true
             }
-            _ => None,
+            _ => false,
         };
+        // Freeze the scratch for the rest of the pass: every use below is a
+        // read, so the closures share one immutable borrow.
+        let scratch = &scratch_owned;
         let suffix_allows = |pat_idx: usize| -> bool {
-            if let Some(present) = &suffix_present {
-                if let Some(gate) = self.ac_suffix_gate.get(pat_idx) {
-                    if !gate.is_empty() && !gate.iter().any(|id| present.contains(&(*id as usize)))
-                    {
-                        return false;
-                    }
-                }
+            if !suffix_gate_active {
+                return true;
             }
-            true
+            match self.ac_suffix_gate.get(pat_idx) {
+                Some(gate) if !gate.is_empty() => {
+                    gate.iter().any(|id| scratch.contains_suffix(*id as usize))
+                }
+                _ => true,
+            }
         };
         let hot_direct_offsets = self.hot_direct_emitted_offsets(confirmed_patterns, scan_state);
         if let Some(anchor_index) = &self.confirmed_anchor_index {
@@ -77,9 +152,12 @@ impl CompiledScanner {
                 scan_postprocess::confirmed_anchor::CONFIRMED_ANCHOR_CANDIDATES.with(|cell| {
                     let mut candidates = cell.borrow_mut();
                     let collect_t0 = prof.then(std::time::Instant::now);
-                    let is_active = |pat_idx| {
-                        confirmed_patterns.binary_search(&pat_idx).is_ok() && suffix_allows(pat_idx)
-                    };
+                    // `confirmed_patterns` is the set bits of this chunk's
+                    // trigger bitmap, so membership is one word load instead of
+                    // the binary search this probe used to run for every
+                    // (literal hit x pattern sharing that literal).
+                    let is_active =
+                        |pat_idx: usize| scratch.contains_active(pat_idx) && suffix_allows(pat_idx);
                     if let Some(literal_matches) = confirmed_anchor_literal_matches {
                         anchor_index.collect_candidates_from_literal_matches(
                             literal_matches,
@@ -257,6 +335,7 @@ impl CompiledScanner {
                 }
             }
         }
+        CONFIRMED_SCRATCH.with(|cell| cell.replace(scratch_owned));
     }
 
     fn hot_direct_emitted_offsets(
@@ -264,6 +343,16 @@ impl CompiledScanner {
         confirmed_patterns: &[usize],
         scan_state: &ScanState,
     ) -> Option<std::collections::HashSet<(usize, usize)>> {
+        // The map below hashes one detector-id string per hot triggered
+        // pattern, and the walk that follows can only find an offset if some
+        // earlier lane already produced a match. On a chunk where nothing was
+        // produced (the overwhelming majority) the result is provably `None`,
+        // so settle that before paying for the map.
+        let mut produced_any = false;
+        scan_state.for_each_produced_match(|_| produced_any = true);
+        if !produced_any {
+            return None;
+        }
         let detector_by_id: std::collections::HashMap<&str, usize> = confirmed_patterns
             .iter()
             .filter_map(|&pat_idx| {

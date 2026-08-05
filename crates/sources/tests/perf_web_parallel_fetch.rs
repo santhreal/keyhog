@@ -19,7 +19,7 @@
 #![cfg(feature = "web")]
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use std::time::{Duration, Instant};
 
 const ENDPOINTS: usize = 8;

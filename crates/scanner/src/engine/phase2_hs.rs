@@ -3,7 +3,6 @@
 use super::phase2::ActivePatternsScratch;
 use super::*;
 use crate::simd::backend::{HsCompileOpts, HsScanner};
-use std::time::Instant;
 
 /// Hyperscan-backed always-active prefilter engine. See the `hs` field on
 /// [`Phase2AlwaysActivePrefilter`].
@@ -132,30 +131,27 @@ impl HsSubEngine {
         match_text: &str,
         scratch: &mut ActivePatternsScratch,
     ) -> std::result::Result<(), String> {
-        // Profile-gated timing split (#68): only take `Instant` when a profile
-        // runtime is active, so the unprofiled hot path pays nothing. Attributes
-        // the HS-served prefilter cost between the SIMD scan and the dropped
-        // host loop.
-        let prof = keyhog_profile::enabled();
+        // The split nests inside the `phase2-prefilter` leaf, so it is charged
+        // to counters rather than to spans: a span here would double-count that
+        // leaf's inclusive total. `counter_span` reads the clock only when a
+        // profile runtime is active, so the unprofiled hot path pays one relaxed
+        // load. Attributes the HS-served prefilter cost between the SIMD scan
+        // and the dropped host loop.
         let hs_to_phase2 = &self.hs_to_phase2;
-        let t_scan = if prof { Some(Instant::now()) } else { None };
-        self.scanner
-            .scan_each_result(match_text.as_bytes(), |hs_id| {
-                if let Some(&fb) = hs_to_phase2.get(hs_id) {
-                    scratch.mark(fb);
-                }
-            })?;
-        if let Some(t) = t_scan {
-            super::phase2::record_hs_mark_scan_ns(t.elapsed().as_nanos() as u64);
+        {
+            let _scan = super::phase2::hs_mark_scan_span();
+            self.scanner
+                .scan_each_result(match_text.as_bytes(), |hs_id| {
+                    if let Some(&fb) = hs_to_phase2.get(hs_id) {
+                        scratch.mark(fb);
+                    }
+                })?;
         }
-        let t_dropped = if prof { Some(Instant::now()) } else { None };
+        let _dropped = super::phase2::hs_mark_dropped_span();
         for (idx, re) in &self.dropped {
             if re.get().is_match(match_text) {
                 scratch.mark(*idx);
             }
-        }
-        if let Some(t) = t_dropped {
-            super::phase2::record_hs_mark_dropped_ns(t.elapsed().as_nanos() as u64);
         }
         Ok(())
     }

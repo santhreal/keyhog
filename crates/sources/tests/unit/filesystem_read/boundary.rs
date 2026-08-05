@@ -1,50 +1,41 @@
 //! Boundary responsibility tests for filesystem read: overlapping-window
 //! slicing arithmetic and special-file safety at every read entry point.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 // ----- slice_into_windows: pure-function boundary behavior -----
 
 /// Regression: preserves the externally observable `slice_into_windows_empty_input_returns_empty` behavior after the inline suite split.
 #[test]
-fn slice_into_windows_empty_input_returns_empty() {
-    assert!(TestApi
+fn slice_into_windows_empty_input_returns_empty() {assert!(TestApi
         .slice_into_windows_with_offsets(&[], 64, 8)
-        .is_empty());
-}
+        .is_empty());}
 
 /// Regression: preserves the externally observable `slice_into_windows_smaller_than_window_yields_one_window` behavior after the inline suite split.
 #[test]
-fn slice_into_windows_smaller_than_window_yields_one_window() {
-    let bytes = b"hello, world";
+fn slice_into_windows_smaller_than_window_yields_one_window() {let bytes = b"hello, world";
     let ws = TestApi.slice_into_windows_with_offsets(bytes, 64, 8);
     assert_eq!(ws.len(), 1);
     assert_eq!(ws[0].0, 0);
-    assert_eq!(ws[0].1, "hello, world");
-}
+    assert_eq!(ws[0].1, "hello, world");}
 
 /// Regression: preserves the externally observable `slice_into_windows_exactly_one_window_size` behavior after the inline suite split.
 #[test]
-fn slice_into_windows_exactly_one_window_size() {
-    let bytes = vec![b'a'; 64];
+fn slice_into_windows_exactly_one_window_size() {let bytes = vec![b'a'; 64];
     let ws = TestApi.slice_into_windows_with_offsets(&bytes, 64, 8);
     assert_eq!(ws.len(), 1);
     assert_eq!(ws[0].0, 0);
-    assert_eq!(ws[0].1.len(), 64);
-}
+    assert_eq!(ws[0].1.len(), 64);}
 
 /// Regression: preserves the externally observable `slice_into_windows_one_byte_over_window_emits_two_windows` behavior after the inline suite split.
 #[test]
-fn slice_into_windows_one_byte_over_window_emits_two_windows() {
-    // A 65-byte input with window=64, overlap=8 - stride is 56,
-    // so window 1 starts at offset 56 and runs 56..65 = 9 bytes.
+fn slice_into_windows_one_byte_over_window_emits_two_windows() {// A 65-byte input with window=64, overlap=8 - stride is 56, // so window 1 starts at offset 56 and runs 56..65 = 9 bytes.
     let bytes: Vec<u8> = (0..65u8).collect();
     let ws = TestApi.slice_into_windows_with_offsets(&bytes, 64, 8);
     assert_eq!(ws.len(), 2);
     assert_eq!(ws[0].0, 0);
     assert_eq!(ws[0].1.len(), 64);
     assert_eq!(ws[1].0, 56);
-    assert_eq!(ws[1].1.len(), 9);
-}
+    assert_eq!(ws[1].1.len(), 9);}
 
 /// Regression: preserves the externally observable `slice_into_windows_overlap_bytes_match_between_neighbours` behavior after the inline suite split.
 #[test]
@@ -98,8 +89,7 @@ fn slice_into_windows_offsets_cover_the_whole_input() {
 
 /// Regression: preserves the externally observable `slice_into_windows_secret_straddling_cut_present_in_both_windows` behavior after the inline suite split.
 #[test]
-fn slice_into_windows_secret_straddling_cut_present_in_both_windows() {
-    // Motivating case. window=128, overlap=32 → stride=96.
+fn slice_into_windows_secret_straddling_cut_present_in_both_windows() {// Motivating case. window=128, overlap=32 → stride=96.
     // For exactly 2 windows we need len in (128, 128+96] = (128, 224].
     // Pick 200; windows are [0..128) and [96..200). The secret at
     // offset 100..120 sits in both - so the scanner can't miss it.
@@ -111,20 +101,15 @@ fn slice_into_windows_secret_straddling_cut_present_in_both_windows() {
     bytes[100..100 + secret.len()].copy_from_slice(secret);
     let ws = TestApi.slice_into_windows_with_offsets(&bytes, 128, 32);
     assert_eq!(
-        ws.len(),
-        2,
-        "expected exactly 2 windows for len=200, ws=128, ov=32"
+        ws.len(), 2, "expected exactly 2 windows for len=200, ws=128, ov=32"
     );
     let s = std::str::from_utf8(secret).unwrap();
     assert!(
-        ws[0].1.contains(s),
-        "window 0 must carry the straddling secret"
+        ws[0].1.contains(s), "window 0 must carry the straddling secret"
     );
     assert!(
-        ws[1].1.contains(s),
-        "window 1 must carry the straddling secret"
-    );
-}
+        ws[1].1.contains(s), "window 1 must carry the straddling secret"
+    );}
 
 /// Regression: preserves the externally observable `slice_into_windows_invalid_utf8_at_boundary_decodes_lossy` behavior after the inline suite split.
 #[test]
@@ -152,8 +137,7 @@ fn slice_into_windows_invalid_utf8_at_boundary_decodes_lossy() {
 
 /// Regression: preserves the externally observable `slice_into_windows_large_input_window_count_matches_formula` behavior after the inline suite split.
 #[test]
-fn slice_into_windows_large_input_window_count_matches_formula() {
-    // len = 4096, window = 1024, overlap = 64 → stride = 960.
+fn slice_into_windows_large_input_window_count_matches_formula() {// len = 4096, window = 1024, overlap = 64 → stride = 960.
     // Windows: starts at 0, 960, 1920, 2880, 3840 - 5 windows
     // (the last one ending exactly at 4096).
     let bytes = vec![b'x'; 4096];
@@ -164,17 +148,14 @@ fn slice_into_windows_large_input_window_count_matches_formula() {
     assert_eq!(ws[2].0, 1920);
     assert_eq!(ws[3].0, 2880);
     assert_eq!(ws[4].0, 3840);
-    assert_eq!(ws[4].1.len(), 256);
-}
+    assert_eq!(ws[4].1.len(), 256);}
 
 /// Regression: preserves the externally observable `slice_into_windows_panics_when_overlap_geq_window` behavior after the inline suite split.
 #[test]
 #[should_panic(expected = "window must exceed overlap")]
-fn slice_into_windows_panics_when_overlap_geq_window() {
-    // Same-as-window overlap means stride == 0 → infinite loop.
+fn slice_into_windows_panics_when_overlap_geq_window() {// Same-as-window overlap means stride == 0 → infinite loop.
     // Catch it as a programming error at the API surface.
-    TestApi.slice_into_windows_with_offsets(b"abc", 16, 16);
-}
+    TestApi.slice_into_windows_with_offsets(b"abc", 16, 16);}
 
 #[cfg(unix)]
 #[path = "special_files.rs"]
@@ -183,3 +164,134 @@ mod special_files;
 #[cfg(unix)]
 #[path = "higher_read_path_special_files.rs"]
 mod higher_read_path_special_files;
+
+// ----- exhaustive straddle sweep: the recall invariant the slicer exists for -----
+
+/// The slicer's whole reason to exist: a secret must be **fully contained** in at
+/// least one window no matter where it sits. Byte coverage alone (asserted by
+/// `slice_into_windows_offsets_cover_the_whole_input`) is strictly weaker: every
+/// byte can be covered while a secret is still split across the cut with neither
+/// window holding all of it, which is a silent clean.
+///
+/// This sweeps EVERY starting offset in a multi-window buffer, for several secret
+/// lengths up to the overlap, and asserts full containment at each. Pure
+/// arithmetic, so exhaustive is cheap here in a way it can never be for a
+/// scan-the-real-binary test.
+#[test]
+fn every_offset_holds_a_secret_fully_inside_some_window() {
+    let window_size = 256usize;
+    let overlap = 64usize;
+    let bytes: Vec<u8> = (b'a'..=b'z').cycle().take(4_000).collect();
+    let ws = TestApi.slice_into_windows_with_offsets(&bytes, window_size, overlap);
+
+    // ASCII input, so decoded text length equals the raw slice length and a
+    // window's byte span is exactly `[offset, offset + text.len())`.
+    let spans: Vec<(usize, usize)> = ws
+        .iter()
+        .map(|(offset, text)| (*offset, offset + text.len()))
+        .collect();
+
+    // Guaranteed-holdable ceiling. Window k accepts a length-L secret starting
+    // anywhere in `[k*stride, k*stride + window_size - L]`, so those ranges
+    // tile without gaps exactly while `window_size - L + 1 >= stride`, i.e.
+    // `L <= window_size - stride + 1 == overlap + 1`. Include that exact
+    // ceiling, not just `overlap`.
+    for secret_len in [1usize, 2, 20, 63, overlap, overlap + 1] {
+        for start in 0..=(bytes.len() - secret_len) {
+            let end = start + secret_len;
+            let holders = spans
+                .iter()
+                .filter(|(ws_start, ws_end)| *ws_start <= start && end <= *ws_end)
+                .count();
+            assert!(
+                holders >= 1,
+                "a {secret_len}-byte secret at offset {start} (bytes {start}..{end}) is not \
+                 fully inside ANY window: it would be split across a cut and silently missed. \
+                 window_size={window_size} overlap={overlap} spans={spans:?}"
+            );
+        }
+    }
+}
+
+/// Pins the recall ceiling from BOTH sides so it cannot drift by a byte in
+/// either direction.
+///
+/// Window k accepts a length-L secret starting in
+/// `[k*stride, k*stride + window_size - L]`. Those ranges tile without gaps
+/// exactly while `window_size - L + 1 >= stride`, so the guarantee holds up to
+/// `L == overlap + 1` and must fail from `L == overlap + 2`. A one-sided test
+/// would pass just as happily if the real ceiling were far larger or one byte
+/// smaller than advertised.
+#[test]
+fn the_recall_ceiling_is_exactly_overlap_plus_one() {
+    let window_size = 256usize;
+    let overlap = 64usize;
+    let stride = window_size - overlap;
+    let bytes: Vec<u8> = (b'a'..=b'z').cycle().take(4_000).collect();
+    let spans: Vec<(usize, usize)> = TestApi
+        .slice_into_windows_with_offsets(&bytes, window_size, overlap)
+        .iter()
+        .map(|(offset, text)| (*offset, offset + text.len()))
+        .collect();
+
+    let unholdable_count = |secret_len: usize| {
+        (0..=(bytes.len() - secret_len))
+            .filter(|&start| {
+                let end = start + secret_len;
+                !spans
+                    .iter()
+                    .any(|(ws_start, ws_end)| *ws_start <= start && end <= *ws_end)
+            })
+            .count()
+    };
+
+    assert_eq!(
+        window_size - stride + 1,
+        overlap + 1,
+        "the ceiling arithmetic below assumes stride == window_size - overlap"
+    );
+    assert_eq!(
+        unholdable_count(overlap + 1),
+        0,
+        "a secret of exactly overlap+1 = {} bytes must ALWAYS fit in some window; \
+         the scheme guarantees one more byte than the overlap constant suggests",
+        overlap + 1
+    );
+    assert!(
+        unholdable_count(overlap + 2) > 0,
+        "no offset defeats an {}-byte secret, so the effective overlap is LARGER than \
+         the geometry implies; the recall ceiling is not where window_size/overlap put it",
+        overlap + 2
+    );
+}
+
+/// Overlap means the bytes in a shared region are handed to the scanner TWICE,
+/// so a secret sitting inside one is scanned twice and dedup is what keeps it a
+/// single finding. Pin the duplication the scanner has to collapse, so the
+/// exactly-once guarantee downstream is anchored to a known input count rather
+/// than to whatever the slicer happens to do.
+#[test]
+fn a_secret_inside_an_overlap_region_is_emitted_by_exactly_two_windows() {
+    let window_size = 128usize;
+    let overlap = 32usize;
+    // stride = 96; windows [0,128) and [96,224). Overlap region is [96,128).
+    let mut bytes: Vec<u8> = (b'a'..=b'z').cycle().take(224).collect();
+    let secret = b"AKIAQYLPMN5HFIQR7XYA";
+    // 100..120 sits strictly inside [96,128), so both windows hold all of it.
+    bytes[100..100 + secret.len()].copy_from_slice(secret);
+    let ws = TestApi.slice_into_windows_with_offsets(&bytes, window_size, overlap);
+
+    let holders = ws
+        .iter()
+        .filter(|(offset, text)| {
+            let start = 100usize;
+            let end = start + secret.len();
+            *offset <= start && end <= offset + text.len()
+        })
+        .count();
+    assert_eq!(
+        holders, 2,
+        "a secret inside the overlap region must be produced by exactly two windows, so the \
+         scan-side dedup has a known duplication to collapse into one finding"
+    );
+}

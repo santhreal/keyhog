@@ -152,35 +152,16 @@ fn is_bare_ambiguous_fragment_owner(normalized: &str) -> bool {
         .any(|name| name.as_str() == normalized)
 }
 
-/// Fragment-name suffixes shared by the separated (`base_part`) and compact
-/// (`basepart`) credential-fragment strippers below. A single owner so the two
-/// suffix lists can never drift apart. The `part<digits>` numeric form is
-/// handled separately by each stripper (it is a pattern, not a fixed literal).
-#[derive(serde::Deserialize)]
-struct FragmentSuffixesFile {
-    suffixes: Vec<String>,
-}
-
-/// Token-name fragment/part suffixes, loaded from the Tier-B data file so the
-/// list has exactly one owner (`rules/fragment-suffixes.toml`).
-fn parse_fragment_suffixes(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<FragmentSuffixesFile>(raw)
-        .map(|parsed| parsed.suffixes)
-        .map_err(|error| error.to_string())
-}
-
-static FRAGMENT_SUFFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_fragment_suffixes(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/fragment-suffixes.toml"
-    ))) {
-        Ok(suffixes) => suffixes,
-        Err(error) => panic!(
-            "rules/fragment-suffixes.toml is invalid: {error}. \
-             Fix the bundled Tier-B suffix list."
-        ),
-    }
-});
+crate::tier_b_list::tier_b_vec!(
+    /// Token-name fragment/part suffixes shared by the separated (`base_part`)
+    /// and compact (`basepart`) credential-fragment strippers below. A single
+    /// owner (`rules/fragment-suffixes.toml`) so the two suffix lists can never
+    /// drift apart. The `part<digits>` numeric form is handled separately by
+    /// each stripper (it is a pattern, not a fixed literal).
+    FRAGMENT_SUFFIXES,
+    "fragment-suffixes.toml",
+    suffixes
+);
 
 fn strip_separated_fragment_suffix(normalized: &str) -> Option<&str> {
     let (base, suffix) = normalized.rsplit_once('_')?;

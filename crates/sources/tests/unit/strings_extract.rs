@@ -1,5 +1,5 @@
 //! Contract for `strings::extract_printable_strings` + `join_sensitive_strings`
-//! (reached via the `SourceTestApi` facade). Migrated out of an inline
+//! (reached via the `TestApi` facade). Migrated out of an inline
 //! `#[cfg(test)]` block in `src/strings.rs` to satisfy the sources folder
 //! contract (`strings_no_inline_tests`).
 //!
@@ -9,7 +9,7 @@
 //! separator between parts only.
 
 use keyhog_core::SensitiveString;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 fn as_strs(v: &[SensitiveString]) -> Vec<&str> {
     v.iter().map(|s| s.as_ref()).collect()

@@ -21,7 +21,7 @@
 //! facade (the `src/docker/**` no-inline-tests contract).
 
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 // ---------------------------------------------------------------------------
 // fixtures

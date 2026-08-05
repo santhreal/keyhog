@@ -14,7 +14,7 @@
 //! block-everything degenerate). Re-forking WebSource to a subset would turn
 //! this red (before the SSRF pivot could ship).
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use std::net::{IpAddr, Ipv4Addr};
 
 /// (label, address) pairs inside the ranges the OLD hand-rolled fork let

@@ -27,11 +27,27 @@ impl Phase2AlwaysActivePrefilter {
     /// 256 -> 4.64 s, 128 -> 3.40 s, 64 -> 3.20 s, 32 -> 3.20 s. 64 is the knee;
     /// smaller only adds per-batch scans for no further gain.
     const BATCH_SIZE: usize = 64;
-    /// Generous per-batch compiled-program + lazy-DFA budget. Larger than the
-    /// per-pattern `REGEX_SIZE_LIMIT_BYTES` because a batch holds many patterns;
-    /// size/DFA limits only affect compile success and cache size, never which
-    /// matches are reported, so a larger limit here stays match-equivalent.
+    /// Generous per-batch COMPILED-PROGRAM budget. Larger than the per-pattern
+    /// `REGEX_SIZE_LIMIT_BYTES` because a batch holds many patterns. This one
+    /// only decides whether a batch compiles at all; a batch that exceeds it
+    /// falls into `ungated_indices` and runs unconditionally, so the result
+    /// stays recall-equivalent either way.
     const BATCH_SIZE_LIMIT_BYTES: usize = 64 << 20;
+    /// Per-batch lazy-DFA cache ceiling. This is a PER-THREAD, PER-REGEXSET
+    /// allocation: every worker that runs a batch gets its own transition
+    /// cache, so a ceiling shared with the compile budget above meant a
+    /// nominal 64 MiB of scratch per batch per worker. The DFA cache size only
+    /// affects how much of the automaton is memoized, never which patterns the
+    /// set reports, so lowering it stays match-equivalent.
+    ///
+    /// 4 MiB is four times the per-pattern ceiling
+    /// (`crate::types::REGEX_SIZE_LIMIT_BYTES`), which keeps headroom for a
+    /// 64-pattern batch while bounding worker scratch. Going far below a
+    /// batch's real working set is counter-productive rather than cheaper: the
+    /// lazy DFA thrashes and the meta engine falls back to slower engines that
+    /// allocate comparable per-thread state (measured on the per-pattern
+    /// ceiling: 1 MiB -> 64 KiB left peak RSS unchanged and cost ~5x wall).
+    const BATCH_DFA_CACHE_LIMIT_BYTES: usize = 4 << 20;
 
     /// Build from the always-active phase-2 indices. Always returns `Some` for
     /// a non-empty input: patterns in batches that fail to compile fall into
@@ -495,7 +511,7 @@ impl Phase2AlwaysActivePrefilter {
         regex::RegexSetBuilder::new(srcs)
             .case_insensitive(case_insensitive)
             .size_limit(Self::BATCH_SIZE_LIMIT_BYTES)
-            .dfa_size_limit(Self::BATCH_SIZE_LIMIT_BYTES)
+            .dfa_size_limit(Self::BATCH_DFA_CACHE_LIMIT_BYTES)
             .crlf(case_insensitive)
             .build()
     }
@@ -508,7 +524,7 @@ impl Phase2AlwaysActivePrefilter {
         regex::RegexSetBuilder::new(trunc_srcs)
             .case_insensitive(case_insensitive)
             .size_limit(Self::BATCH_SIZE_LIMIT_BYTES)
-            .dfa_size_limit(Self::BATCH_SIZE_LIMIT_BYTES)
+            .dfa_size_limit(Self::BATCH_DFA_CACHE_LIMIT_BYTES)
             .crlf(case_insensitive)
             .build()
             .or_else(|_| {
@@ -558,7 +574,7 @@ impl Phase2AlwaysActivePrefilter {
         match regex::RegexSetBuilder::new(&folded)
             .case_insensitive(false)
             .size_limit(Self::BATCH_SIZE_LIMIT_BYTES)
-            .dfa_size_limit(Self::BATCH_SIZE_LIMIT_BYTES)
+            .dfa_size_limit(Self::BATCH_DFA_CACHE_LIMIT_BYTES)
             .build()
         {
             Ok(set) => Some(set),
@@ -585,7 +601,7 @@ impl Phase2AlwaysActivePrefilter {
         match regex::RegexSetBuilder::new(&folded)
             .case_insensitive(false)
             .size_limit(Self::BATCH_SIZE_LIMIT_BYTES)
-            .dfa_size_limit(Self::BATCH_SIZE_LIMIT_BYTES)
+            .dfa_size_limit(Self::BATCH_DFA_CACHE_LIMIT_BYTES)
             .build()
         {
             Ok(set) => Some(set),

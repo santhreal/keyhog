@@ -194,6 +194,9 @@ static MERKLE_SKIPPED_UNCHANGED: AtomicU64 = AtomicU64::new(0);
 
 /// Clear per-run workflow state. Called once at the start of `run()`.
 pub(crate) fn reset_workflow_state() {
+    // LAW10: the partition sink is per-run profile evidence, not a finding or coverage
+    // path. Recovering a poisoned lock in place keeps the evidence flowing; failing
+    // closed here would abort a scan over a telemetry mutex.
     let mut sink = SOURCE_PARTITIONS
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -205,6 +208,8 @@ pub(crate) fn reset_workflow_state() {
 /// Record one source's measured contribution at its production boundary.
 /// Over-cap records are counted, never silently dropped.
 pub(crate) fn record_source_partition(kind: &str, units: u64, bytes: u64) {
+    // LAW10: profile-evidence sink; see `reset_workflow_state`. Poison recovery keeps
+    // partition records surfaced and never affects findings or coverage gaps.
     let mut sink = SOURCE_PARTITIONS
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -223,6 +228,8 @@ pub(crate) fn record_source_partition(kind: &str, units: u64, bytes: u64) {
 
 /// Drain the partition records and the over-cap drop count for the profile.
 pub(crate) fn take_source_partitions() -> (Vec<SourcePartitionRecord>, u64) {
+    // LAW10: profile-evidence sink; see `reset_workflow_state`. Over-cap drops are
+    // counted in `dropped` and drained here, so the cap is never a silent loss.
     let mut sink = SOURCE_PARTITIONS
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());

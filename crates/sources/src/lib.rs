@@ -4,6 +4,7 @@
 //! values for the scanner. Sources are gated behind cargo features so only the
 //! transitive dependencies you actually need are compiled.
 
+#![doc = include_str!("../README.md")]
 #![allow(clippy::too_many_arguments)]
 
 mod api;

@@ -1,7 +1,7 @@
 #[cfg(feature = "slack")]
 use keyhog_core::Source;
 #[cfg(feature = "slack")]
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[cfg(feature = "slack")]
 use keyhog_sources::{skip_counts, SourceLimits};
 

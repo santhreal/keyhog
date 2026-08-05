@@ -79,10 +79,6 @@ def metadata_block(title: str, canonical: str) -> str:
             '<meta property="og:image" content="https://santh.dev/og-keyhog-v0-5-34.png">',
             '<meta property="og:image:alt" content="KeyHog GPU-accelerated secret scanner">',
             f'<meta property="og:url" content="{escaped_canonical}">',
-            '<meta name="twitter:card" content="summary_large_image">',
-            f'<meta name="twitter:title" content="{escaped_title}">',
-            f'<meta name="twitter:description" content="{escaped_description}">',
-            '<meta name="twitter:image" content="https://santh.dev/og-keyhog-v0-5-34.png">',
             f'<script type="application/ld+json">{structured}</script>',
             _END,
         )

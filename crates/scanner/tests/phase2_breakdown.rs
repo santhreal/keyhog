@@ -15,7 +15,7 @@ use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{
-    profile_dump, profile_reset, set_profile_enabled, CompiledScanner, ScanBackend,
+    profile_dump, profile_reset, set_profile_detail, CompiledScanner, Detail, ScanBackend,
 };
 
 fn chunk_of(bytes: Vec<u8>, label: &str) -> Chunk {
@@ -33,7 +33,7 @@ fn chunk_of(bytes: Vec<u8>, label: &str) -> Chunk {
 #[test]
 #[ignore = "measurement; run with --ignored --nocapture"]
 fn phase2_breakdown_mirror() {
-    set_profile_enabled(true);
+    set_profile_detail(Detail::Diagnostic);
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
 

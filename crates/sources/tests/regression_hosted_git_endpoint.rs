@@ -6,7 +6,7 @@
 //! weakened for these tests:
 //!
 //!   * GitHub clone-URL / org / repo-name validation via
-//!     `keyhog_sources::testing::SourceTestApi` (`github_org::validate_*`,
+//!     `keyhog_sources::testing::TestApi` (`github_org::validate_*`,
 //!     which delegate to `hosted_git::validate_clone_url_for_origin` /
 //!     `validate_clone_url_shape`). These bind the clone origin to
 //!     `github.com:443` and reject any non-https / userinfo-bearing /
@@ -27,7 +27,7 @@
 
 use std::time::Duration;
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -70,22 +70,14 @@ fn gitlab_group_single_error(params: &str) -> String {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn github_valid_https_clone_url_accepted() {
-    assert_accepted(
-        TestApi.validate_clone_url("https://github.com/acme/repo.git"),
-        "a canonical https github.com clone URL",
-    );
-}
+fn github_valid_https_clone_url_accepted() {assert_accepted(
+        TestApi.validate_clone_url("https://github.com/acme/repo.git"), "a canonical https github.com clone URL", );}
 
 #[test]
-fn github_clone_url_explicit_default_port_accepted() {
-    // Explicit :443 is the https default; `port_or_known_default()` normalizes
+fn github_clone_url_explicit_default_port_accepted() {// Explicit :443 is the https default; `port_or_known_default()` normalizes
     // it to 443, which matches the expected github.com:443 origin.
     assert_accepted(
-        TestApi.validate_clone_url("https://github.com:443/acme/repo.git"),
-        "explicit-default-port (github.com:443) clone URL",
-    );
-}
+        TestApi.validate_clone_url("https://github.com:443/acme/repo.git"), "explicit-default-port (github.com:443) clone URL", );}
 
 // ---------------------------------------------------------------------------
 // GitHub clone-URL origin validation (negative twins)
@@ -323,11 +315,14 @@ fn gitlab_endpoint_with_query_rejected_and_secret_redacted() {
 }
 
 #[test]
-fn gitlab_loopback_http_endpoint_accepted_and_normalized_to_api_v4() {
+fn gitlab_loopback_http_endpoint_accepted_with_private_optin_and_normalized_to_api_v4() {
     // Loopback http is the one non-https endpoint `validated_api_endpoint`
-    // accepts (for local tests). Driving the real source through a 127.0.0.1
-    // mock proves acceptance AND that `normalize_gitlab_api_root` appended
-    // `/api/v4`: the listing is served only at `/api/v4/groups/acme/projects`.
+    // accepts, and (like every other private destination) only behind the
+    // explicit `allow_private_endpoint` opt-in the CLI spells
+    // `--allow-private-cloud-endpoint`. Driving the real source through a
+    // 127.0.0.1 mock proves acceptance AND that `normalize_gitlab_api_root`
+    // appended `/api/v4`: the listing is served only at
+    // `/api/v4/groups/acme/projects`.
     let server = httpmock::MockServer::start();
     let list = server.mock(|when, then| {
         when.method(httpmock::Method::GET)
@@ -342,8 +337,15 @@ fn gitlab_loopback_http_endpoint_accepted_and_normalized_to_api_v4() {
     });
 
     let params = format!("acme\nglt_testtoken\n{}", server.url(""));
-    let source = keyhog_sources::create_source("gitlab-group", Some(&params))
-        .expect("gitlab-group source constructs against a loopback endpoint");
+    let source = keyhog_sources::create_source_with_http_config(
+        "gitlab-group",
+        Some(&params),
+        keyhog_sources::http::HttpClientConfig {
+            allow_private_endpoint: true,
+            ..Default::default()
+        },
+    )
+    .expect("gitlab-group source constructs against a loopback endpoint");
     let rows: Vec<_> = source.chunks().collect();
 
     assert_eq!(
@@ -360,19 +362,47 @@ fn gitlab_loopback_http_endpoint_accepted_and_normalized_to_api_v4() {
 }
 
 #[test]
-fn gitlab_private_ip_https_endpoint_reaches_transport_no_ssrf_screen() {
-    // KNOWN GAP (see bug note): `validated_api_endpoint` screens scheme,
-    // userinfo, query, and fragment, but NOT the destination host against the
-    // fleet-canonical `keyhog_verifier::ssrf::is_private_url` classifier that
-    // the cloud (`cloud::parse_http_endpoint`) and web sources already use. A
-    // self-hosted https endpoint pointed at a private / TEST-NET / metadata
-    // address is therefore ACCEPTED and the operator's GitLab token is carried
-    // to it. This test pins that current behavior: the error is a *transport*
-    // failure (validation passed) rather than a pre-connect endpoint refusal.
-    // A future SSRF screen should flip this to a refusal and this assertion
-    // will correctly flag the behavior change.
+fn gitlab_loopback_http_endpoint_refused_without_private_optin() {
+    // Same loopback mock, no opt-in: the endpoint must be refused *before* any
+    // socket opens, so the mock records zero calls and the operator's token is
+    // never carried to a private destination.
+    let server = httpmock::MockServer::start();
+    let list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/api/v4/groups/acme/projects");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body("[]");
+    });
+
+    let msg = gitlab_group_single_error(&format!("acme\nglt_testtoken\n{}", server.url("")));
+    assert!(
+        msg.contains(
+            "refusing gitlab endpoint: host is a private, loopback, link-local, or cloud-metadata address (SSRF)"
+        ),
+        "loopback endpoint without the private opt-in must be refused as SSRF, got: {msg}"
+    );
+    assert_eq!(
+        list.calls(),
+        0,
+        "a refused endpoint must open no socket, got {} calls",
+        list.calls()
+    );
+}
+
+#[test]
+fn gitlab_private_ip_https_endpoint_refused_before_network() {
+    // `validated_api_endpoint` screens scheme, userinfo, query, and fragment,
+    // and (this row) the destination host against the fleet-canonical
+    // `keyhog_verifier::ssrf` classifier that the cloud
+    // (`cloud::parse_http_endpoint`) and web sources already use. Before that
+    // screen existed a self-hosted https endpoint pointed at a private /
+    // TEST-NET / metadata address was ACCEPTED and the operator's GitLab token
+    // was carried to it; the refusal now happens pre-connect, so the failure is
+    // an endpoint refusal and never a transport error.
     let http = keyhog_sources::http::HttpClientConfig {
-        // TEST-NET-1 (RFC 5737) is unroutable; a short timeout bounds the probe.
+        // TEST-NET-1 (RFC 5737) is unroutable; a short timeout bounds the probe
+        // in the (now impossible) event the screen lets it reach the network.
         timeout: Some(Duration::from_millis(800)),
         ..Default::default()
     };
@@ -393,19 +423,14 @@ fn gitlab_private_ip_https_endpoint_reaches_transport_no_ssrf_screen() {
         .as_ref()
         .expect_err("private-IP endpoint attempt must be an Err chunk")
         .to_string();
-    // The endpoint was ACCEPTED by validation: the error is NOT a scheme/userinfo
-    // refusal, proving no pre-connect host SSRF screen ran.
     assert!(
-        !msg.contains("use https, or loopback http only for local tests"),
-        "private-IP https endpoint must not be refused as a bad scheme, got: {msg}"
+        msg.contains(
+            "refusing gitlab endpoint: host is a private, loopback, link-local, or cloud-metadata address (SSRF)"
+        ),
+        "private-IP https endpoint must be refused by the host SSRF screen, got: {msg}"
     );
     assert!(
-        !msg.contains("API endpoint must not include"),
-        "private-IP https endpoint must not be refused on userinfo/query, got: {msg}"
-    );
-    // It reached the network layer instead.
-    assert!(
-        msg.contains("GitLab API request failed") || msg.contains("GitLab API returned"),
-        "private-IP endpoint must surface a transport-level error (validation passed), got: {msg}"
+        !msg.contains("GitLab API request failed") && !msg.contains("GitLab API returned"),
+        "a refused endpoint must never reach the transport, got: {msg}"
     );
 }

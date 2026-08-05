@@ -150,7 +150,11 @@ pub(super) fn spawn_chunk_producer(
         // Held for the whole thread body: every `return` below (cursor end,
         // consumer gone, send failure) drops it, and the scan stops counting as
         // in-flight only once the last reader thread has done so.
-        let _scan_lease = scan_lease;
+        let scan_lease = scan_lease;
+        // `process_entry` records skip events from THIS thread, so it must be
+        // attributed to the scan or the gate would treat it as an unattributed
+        // leftover and make it wait out a counter-asserting test.
+        let _attributed = scan_lease.enter();
         let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
         loop {
             let item = {
@@ -195,9 +199,7 @@ pub(super) fn spawn_chunk_producer(
                     Err(_) => 0,
                 });
                 chunks.push(chunk);
-                if part_bytes < READER_PART_FLUSH_BYTES
-                    && chunks.len() < READER_PART_FLUSH_CHUNKS
-                {
+                if part_bytes < READER_PART_FLUSH_BYTES && chunks.len() < READER_PART_FLUSH_CHUNKS {
                     return true;
                 }
                 let send_result = {

@@ -232,6 +232,7 @@ fn api_endpoint_rejects_embedded_credentials_without_leaking_secrets() {
     let err = super::validated_api_endpoint(
         "gitlab",
         "https://user:SECRET@gitlab.example/api/v4?token=SECRET2#SECRET3",
+        false,
     )
     .expect_err("API endpoints must not carry embedded auth material")
     .to_string();
@@ -252,7 +253,7 @@ fn api_endpoint_rejects_embedded_credentials_without_leaking_secrets() {
 #[test]
 fn api_endpoint_and_pagination_errors_redact_query_fragment_and_userinfo() {
     let endpoint_err =
-        super::validated_api_endpoint("gitlab", "https://gitlab.example/api/v4?token=SECRET")
+        super::validated_api_endpoint("gitlab", "https://gitlab.example/api/v4?token=SECRET", false)
             .expect_err("API endpoints with query material must be refused")
             .to_string();
     assert!(

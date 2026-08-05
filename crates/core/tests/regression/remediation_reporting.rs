@@ -45,9 +45,7 @@ severity = "info"
 action = "info action"
 "#;
 
-fn parse_remediation_for_test(raw: &str) -> Result<(), String> {
-    TestApi.parse_remediation_file_for_test(raw)
-}
+fn parse_remediation_for_test(raw: &str) -> Result<(), String> {TestApi.parse_remediation_file_for_test(raw)}
 
 fn finding(detector_id: &str, name: &str, service: &str, severity: Severity) -> VerifiedFinding {
     VerifiedFinding {
@@ -91,6 +89,8 @@ fn report_text(finding: &VerifiedFinding) -> String {
             color: false,
             example_suppressions: 0,
             dogfood_active: false,
+            covered_nothing: false,
+            path_policy_suppressions: 0,
         },
         std::slice::from_ref(finding),
     )

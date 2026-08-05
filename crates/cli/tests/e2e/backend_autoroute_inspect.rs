@@ -313,6 +313,7 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
             Some("exact-plan-paired-95pct-confidence")
                 | Some("peer-separated-compiled-default-plan")
                 | Some("peer-separated-statistically-tied-plan")
+                | Some("unseparated-dead-heat-lowest-complexity-backend")
         ),
         "inspection must disclose the one-shot selection rule; json={value}"
     );

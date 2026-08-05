@@ -4,7 +4,7 @@
 #[test]
 fn web_redirect_six_hop_chain_errors() {
     use keyhog_core::Source;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
 
     let server = httpmock::MockServer::start();
     let final_path = "/final.js";
@@ -43,7 +43,7 @@ fn web_redirect_six_hop_chain_errors() {
 #[test]
 fn web_redirect_non_http_scheme_errors() {
     use keyhog_core::Source;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
 
     let server = httpmock::MockServer::start();
     let _redirect = server.mock(|when, then| {
@@ -73,7 +73,7 @@ fn web_redirect_non_http_scheme_errors() {
 #[test]
 fn web_loopback_calibration_redirect_to_metadata_errors() {
     use keyhog_core::Source;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
 
     let server = httpmock::MockServer::start();
     let _redirect = server.mock(|when, then| {

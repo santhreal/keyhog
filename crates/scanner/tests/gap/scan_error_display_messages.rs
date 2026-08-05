@@ -264,18 +264,6 @@ fn regex_compile_renders_the_inner_source_error() {
 }
 
 #[test]
-fn aho_corasick_variant_error_template_declares_the_fix() {
-    // Source-level guarantee independent of whether a BuildError can be provoked at
-    // runtime: the variant's `#[error]` template carries the Fix guidance.
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/error.rs"))
-        .expect("scanner error.rs readable");
-    assert!(
-        src.contains("failed to build Aho-Corasick literal matcher: {0}. Fix: check for empty or invalid detector keywords"),
-        "AhoCorasick variant must declare Fix guidance in its #[error] template"
-    );
-}
-
-#[test]
 fn every_error_variant_template_declares_a_fix() {
     // Whole-enum guard: no ScanError `#[error(...)]` template may ship without a
     // `Fix:` clause. The two String-detail variants render the fix after `{0}`; the

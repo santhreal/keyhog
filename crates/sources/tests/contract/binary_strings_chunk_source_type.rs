@@ -4,7 +4,7 @@
 #[test]
 fn binary_strings_chunk_source_type() {
     use keyhog_core::Source;
-    use keyhog_sources::testing::{SourceTestApi, TestApi};
+    use keyhog_sources::testing::{TestApi};
 
     let dir = tempfile::tempdir().expect("tempdir");
     let mut bytes = Vec::new();

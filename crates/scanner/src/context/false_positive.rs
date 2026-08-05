@@ -573,32 +573,7 @@ fn line_at_offset(text: &str, offset: usize) -> (&str, usize) {
     (&text[line_start..line_end], relative)
 }
 
-#[derive(serde::Deserialize)]
-struct FalsePositiveMarkers {
-    cors_headers: Vec<String>,
-}
-
-/// Parse the bundled Tier-B false-positive marker list. Returns an error rather
-/// than panicking so the `CORS_HEADERS` owner below is the single fail-closed
-/// site (the `no_unwrap_expect` gate bans `expect` in production source).
-fn parse_false_positive_markers(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<FalsePositiveMarkers>(raw)
-        .map(|parsed| parsed.cors_headers)
-        .map_err(|error| error.to_string())
-}
-
-static CORS_HEADERS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_false_positive_markers(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/false-positive-markers.toml"
-    ))) {
-        Ok(cors_headers) => cors_headers,
-        Err(error) => panic!(
-            "rules/false-positive-markers.toml is invalid: {error}. \
-             Fix the bundled Tier-B false-positive markers list."
-        ),
-    }
-});
+crate::tier_b_list::tier_b_vec!(CORS_HEADERS, "false-positive-markers.toml", cors_headers);
 
 fn is_cors_header_bytes(bytes: &[u8]) -> bool {
     let allowed: &[String] = &CORS_HEADERS;

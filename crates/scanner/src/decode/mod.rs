@@ -31,7 +31,7 @@ pub(crate) use base64::{
 };
 pub use hex::{find_hex_strings, hex_decode};
 pub(crate) use pipeline::{
-    bytecount_newlines, decoder_profile_dump, decoder_profile_reset, splice_decoded_payload_at,
+    bytecount_newlines, decoder_profile_dump, splice_decoded_payload_at,
     with_extracted_value_spans,
 };
 #[cfg(feature = "decode")]

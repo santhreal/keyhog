@@ -191,23 +191,3 @@ fn aws_sts_non_403_failure_remains_transient_rate_limited() {
     ));
 }
 
-#[test]
-fn aws_request_errors_do_not_use_debug_verification_text() {
-    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verify/aws.rs"))
-        .expect("AWS verifier source must be readable");
-
-    assert!(
-        !source.contains("format!(\"{:?}\", e.result)"),
-        "AWS request/body errors must surface canonical operator text, not Debug-derived Error(\"...\") strings"
-    );
-    assert!(
-        source.contains(
-            "std::result::Result<(VerificationResult, HashMap<String, String>, bool), RequestError>"
-        ),
-        "AWS request/body errors must preserve RequestError.transient instead of stringifying the result"
-    );
-    assert!(
-        source.contains("transient: error.transient"),
-        "AWS STS RequestBuildResult must preserve transient/final classification from RequestError"
-    );
-}

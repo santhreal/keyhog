@@ -56,9 +56,13 @@ This means a finding from the covered portion remains `1` or `10` even when
 coverage is incomplete. The coverage warning remains visible. Automation must
 not infer complete coverage from a finding code.
 
-Autoroute calibration is a separate scan mode. A successful calibration run
-returns `0` and publishes only evidence that passed its calibration checks.
-An inconclusive or failed calibration returns an error instead.
+Autoroute calibration is a separate scan mode, but it does not hide the scan's
+own result. `keyhog scan . --autoroute-calibrate` still exits `1` when the scan
+reports findings, and `0` only when the scan is clean and the calibration
+succeeded. Calibration publishes only evidence that passed its checks, and an
+inconclusive or failed calibration returns an error instead. This matters
+because the documented first-run command is a calibrating scan: if it swallowed
+the findings exit, a real leak would read as a clean warm-up.
 
 ## `0`: success
 
@@ -85,7 +89,10 @@ Examples include:
 - a detector corpus that fails to load or validate;
 - a missing or invalid baseline;
 - a required daemon that is unavailable, ineligible, or fails its trust or
-  protocol checks;
+  protocol checks. This is `--daemon=on`, where you asked for the warm route as
+  a hard contract. `--daemon=auto`, the default, never exits `2` because of a
+  daemon problem: any daemon failure falls back to an in-process scan and the
+  scan's own exit code is returned;
 - a failed or inconclusive autoroute calibration operation;
 - I/O classified as not found, permission denied, connection refused, invalid
   input, invalid data, or already exists.
@@ -167,6 +174,54 @@ This code protects the clean claim. Examples include:
 
 If no finding outcome takes precedence, the scan returns `13`. Fix the source,
 credentials, ref, permissions, or limit and scan the uncovered input again.
+
+The report is always written, including when every source failed to read. That
+report carries `scan covered nothing` plus the reason each source failed, so a
+CI job never has to pre-seed a placeholder file to have something to publish.
+
+A report that cannot be written is a different failure and says so. It exits
+`2`, because the output path is operator-correctable, and names the path and
+the I/O error:
+
+```text
+error: the scan completed but its report could not be written to /srv/out/keyhog.json: atomically writing report /srv/out/keyhog.json: Permission denied (os error 13)
+```
+
+Read that as "fix the output path", not "the scan could not cover your input".
+The two used to share a signature; they no longer do.
+
+### Not every coverage gap reaches the exit code
+
+Each gap reason carries one of two severities, and the severity decides whether
+it can produce `13`:
+
+| Severity | What it means | Exit with no findings |
+| --- | --- | --- |
+| Advisory | The bytes were examined. A file was deliberately skipped, or a derived layer such as decode-through was not expanded. | `0` |
+| Failing | The bytes were not covered, or their line identity is untrustworthy. | `13` |
+
+Advisory reasons include `default exclusion policy (...)`,
+`binary (extension or content sniff)`,
+`matches dropped by the vendored/minified path policy`,
+`exceeded a configured size cap`, and
+`scanner decode-through declined by --decode-size-limit`. Failing reasons
+include `unreadable (permission denied or I/O error)`,
+`source emitted error rows`, `Git object unreadable or wrong object kind`,
+`archive or container extraction truncated`, and `scan covered nothing`. The
+full split lives in `severity()` in `crates/cli/src/reporting.rs`.
+
+One scan can carry both classes, and then the failing one decides. A file over
+`--max-file-size` is advisory on its own, but the source that could not read it
+also emits `source emitted error rows`, which is failing, so that scan exits
+`13`. Read the reasons rather than counting the rows.
+
+The advisory rows are the ones to plan for. A tree whose only credentials sit
+in `vendor/`, inside a compiled binary, inside a minified bundle, or inside an
+encoded value too large to decode reports `partial`, exits `0`, and prints
+`No secrets detected in the scanned files.` on stdout, with the warning on
+stderr only. A gate that reads the exit code alone treats that as clean. Rerun
+with `--no-default-excludes` when those trees hold code you wrote. See
+[tell a real clean from a skipped input](./coverage-truth.md).
 
 ## `130`: interrupted
 

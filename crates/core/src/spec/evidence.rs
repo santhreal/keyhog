@@ -20,37 +20,69 @@ pub enum ProviderEvidenceSensitivity {
 /// selector supplies a role, while reporters receive only these reviewed keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProviderEvidenceRole {
+    /// Account label.
     Account,
+    /// Stable account identifier.
     AccountId,
+    /// Whether the credential is currently active.
     Active,
+    /// Bot display name.
     BotName,
+    /// Channel identifier.
     ChannelId,
+    /// Company name.
     Company,
+    /// Opaque provider payload.
     Data,
+    /// Email address.
     Email,
+    /// Human-friendly display name.
     FriendlyName,
+    /// Provider-assigned identifier.
     Id,
+    /// Login handle.
     Login,
+    /// Name.
     Name,
+    /// Organization name.
     Organization,
+    /// Granted permissions.
     Permissions,
+    /// Subscription plan.
     Plan,
+    /// Project name.
     Project,
+    /// Region.
     Region,
+    /// Resource identifier or name.
     Resource,
+    /// Result collection returned by the probe.
     Results,
+    /// Granted scopes.
     Scope,
+    /// Licensed seat count.
     SeatCount,
+    /// Status string.
     Status,
+    /// Store name.
     StoreName,
+    /// Team name.
     Team,
+    /// Team identifier.
     TeamId,
+    /// Total count reported by the probe.
     Total,
+    /// User label.
     User,
+    /// User identifier.
     UserId,
+    /// User principal name.
     UserPrincipalName,
+    /// Username.
     Username,
+    /// UUID.
     Uuid,
+    /// Workplace name.
     WorkplaceName,
 }
 

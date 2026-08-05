@@ -159,8 +159,10 @@ fn collect_s3_chunks(
     // existing behavior for callers that don't override.
     // Bucket acquisition: client build, endpoint resolution, and auth.
     let _acquire = crate::profile::acquire_span();
-    let client = crate::cloud::blocking_client("S3", http)?;
-    let base_url = build_base_url(&bucket, endpoint, http.allow_private_endpoint)?;
+    // Endpoint validation must precede the client build: the SSRF screen it runs
+    // yields the addresses pinned into that client.
+    let (base_url, screened) = build_base_url(&bucket, endpoint, http.allow_private_endpoint)?;
+    let client = crate::cloud::blocking_client("S3", http, screened.as_ref())?;
     let aws_auth = resolve_s3_auth(&base_url, endpoint, allow_credential_forward)?;
     drop(_acquire);
     let mut chunks = Vec::new();
@@ -534,20 +536,25 @@ fn build_base_url(
     bucket: &str,
     endpoint: Option<&str>,
     allow_private: bool,
-) -> Result<String, SourceError> {
+) -> Result<(String, Option<crate::endpoint_screen::ScreenedEndpoint>), SourceError> {
     match endpoint {
         Some(endpoint) => {
-            let endpoint =
+            let (endpoint, screened) =
                 crate::cloud::validate_cloud_endpoint(endpoint, "S3", allow_private, false)?;
-            Ok(format!(
-                "{}/{}",
-                endpoint.trim_end_matches('/'),
-                urlencoding::encode(bucket)
+            Ok((
+                format!(
+                    "{}/{}",
+                    endpoint.trim_end_matches('/'),
+                    urlencoding::encode(bucket)
+                ),
+                screened,
             ))
         }
-        None => Ok(format!(
-            "https://{bucket}.{}",
-            crate::cloud::DEFAULT_S3_HOST_SUFFIX
+        // The provider's own default host is not operator-supplied, so there is
+        // no custom endpoint to screen and nothing to pin.
+        None => Ok((
+            format!("https://{bucket}.{}", crate::cloud::DEFAULT_S3_HOST_SUFFIX),
+            None,
         )),
     }
 }

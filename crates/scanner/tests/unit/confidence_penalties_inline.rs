@@ -9,7 +9,7 @@
 
 use super::{
     apply_path_confidence_penalties, apply_post_ml_penalties_with_encoded_text_lift,
-    is_degenerate_repeat_at, longest_repeat_run_len, max_repeat_run, FIXTURE_PATH_COMPONENTS,
+    is_degenerate_repeat_at, longest_repeat_run_len, max_repeat_run, EXAMPLE_PATH_COMPONENTS,
 };
 
 fn post_match_policy() -> keyhog_core::DetectorPostMatchConfidenceSpec {
@@ -34,7 +34,7 @@ fn fixture_path_components_load_the_union_superset() {
         "test", "tests", "example", "examples", "fixtures", "samples",
     ] {
         assert!(
-            FIXTURE_PATH_COMPONENTS
+            EXAMPLE_PATH_COMPONENTS
                 .iter()
                 .any(|c| c.eq_ignore_ascii_case(expected)),
             "rules/example-path-components.toml missing `{expected}`"

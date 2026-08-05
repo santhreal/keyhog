@@ -100,6 +100,13 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
         let daemon_reachable = mode == DaemonMode::On
             || (mode != DaemonMode::Off && effective_daemon_socket(&args).exists());
         if !daemon_reachable {
+            announce_in_process_route(
+                &args,
+                &format!(
+                    "no daemon is listening on {}",
+                    effective_daemon_socket(&args).display()
+                ),
+            );
             let orchestrator = ScanOrchestrator::new(args)?;
             return orchestrator.run().await;
         }
@@ -136,7 +143,10 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                 }
             }
             DaemonRoute::Rejected(reason) => bail!("{reason}"),
-            DaemonRoute::Forbidden => {
+            DaemonRoute::Forbidden(reason) => {
+                if let Some(reason) = reason {
+                    announce_in_process_route(&args, &reason);
+                }
                 let orchestrator = ScanOrchestrator::new(args)?;
                 orchestrator.run().await
             }
@@ -148,8 +158,37 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
 enum DaemonRoute {
     Required,
     Opportunistic,
-    Forbidden,
+    /// Run in process. `Some(reason)` when a daemon route was in play and could
+    /// not be honored, so the operator can be told why; `None` when the daemon
+    /// was never a candidate (`--daemon=off`).
+    Forbidden(Option<String>),
     Rejected(String),
+}
+
+/// Tell an operator who ASKED for the daemon that this scan is running in
+/// process, and why.
+///
+/// Only fires when `--daemon` was passed explicitly AND asked for a daemon. The
+/// flag defaults to `auto`, and most scans (any directory, any Git or remote
+/// source) can never use the warm daemon, so announcing on the default would
+/// put a line of noise on almost every scan. `--daemon=off` already said "run
+/// in process", so repeating it back is noise too. Someone who typed
+/// `--daemon=auto` asked a question and deserves the answer: a silently
+/// in-process scan is indistinguishable from a daemon-served one, which makes
+/// timing results meaningless and hides a daemon that is not being used at all.
+///
+/// stderr only, so `--format json` stdout stays byte-identical.
+#[cfg(unix)]
+fn announce_in_process_route(args: &ScanArgs, reason: &str) {
+    tracing::debug!(reason, "daemon route not used; running in-process scanner");
+    if args.daemon.is_none() || args.daemon_mode() == DaemonMode::Off {
+        return;
+    }
+    let palette = crate::style::for_stderr();
+    eprintln!(
+        "{}: daemon route not used ({reason}); running in-process scanner",
+        crate::style::warn("keyhog", &palette)
+    );
 }
 
 /// Fail closed when several positional roots are combined with a mode that has
@@ -288,7 +327,7 @@ impl EffectivePolicy {
 fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     let mode = args.daemon_mode();
     if mode == DaemonMode::Off {
-        return DaemonRoute::Forbidden;
+        return DaemonRoute::Forbidden(None);
     }
     let forced_on = mode == DaemonMode::On;
 
@@ -299,47 +338,35 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     // only honest answer.
     #[cfg(feature = "verify")]
     if policy.verify {
-        if let Some(route) = reject_forced_daemon(
+        return daemon_cannot_serve(
             forced_on,
             "verification requires the in-process verifier; the daemon only returns scanner matches",
-        ) {
-            return route;
-        }
-        return DaemonRoute::Forbidden;
+        );
     }
     if args.baseline.is_some() {
-        if let Some(route) = reject_forced_daemon(
+        return daemon_cannot_serve(
             forced_on,
             "--baseline requires the in-process baseline filter; the daemon has no baseline state",
-        ) {
-            return route;
-        }
-        return DaemonRoute::Forbidden;
+        );
     }
 
     let single_file = match effective_single_file_path(args) {
         Ok(path) => path.is_some(),
         Err(error) => {
-            if let Some(route) = reject_forced_daemon(
+            return daemon_cannot_serve(
                 forced_on,
-                &format!(
+                format!(
                     "the daemon single-file route cannot inspect the requested path: {error:#}"
                 ),
-            ) {
-                return route;
-            }
-            return DaemonRoute::Forbidden;
+            );
         }
     };
     let primary_sources = usize::from(args.stdin) + usize::from(single_file);
     if primary_sources != 1 || has_daemon_incompatible_extra_sources(args) {
-        if let Some(route) = reject_forced_daemon(
+        return daemon_cannot_serve(
             forced_on,
             "the daemon only supports exactly one source: --stdin or a single regular file; directories, git, remote, binary, dynamic, and multi-source scans require the in-process scanner",
-        ) {
-            return route;
-        }
-        return DaemonRoute::Forbidden;
+        );
     }
 
     // The daemon's client-side finalize mirrors allowlist/rule suppression,
@@ -380,20 +407,14 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         || policy.has_disabled_detectors
         || args.hide_client_safe
     {
-        if let Some(route) = reject_forced_daemon(
+        return daemon_cannot_serve(
             forced_on,
             "this scan requests filtering, lockdown, secret-output, AWS canary config, allowlist governance, or config policy the daemon cannot enforce",
-        ) {
-            return route;
-        }
-        return DaemonRoute::Forbidden;
+        );
     }
 
     if let Some(reason) = daemon_incompatible_scan_options(&policy.effective_args) {
-        if let Some(route) = reject_forced_daemon(forced_on, reason) {
-            return route;
-        }
-        return DaemonRoute::Forbidden;
+        return daemon_cannot_serve(forced_on, reason);
     }
 
     if forced_on {
@@ -407,7 +428,10 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     if effective_daemon_socket(args).exists() {
         DaemonRoute::Opportunistic
     } else {
-        DaemonRoute::Forbidden
+        DaemonRoute::Forbidden(Some(format!(
+            "no daemon is listening on {}",
+            effective_daemon_socket(args).display()
+        )))
     }
 }
 
@@ -424,14 +448,22 @@ fn effective_daemon_socket(args: &ScanArgs) -> std::path::PathBuf {
         .unwrap_or_else(default_socket_path)
 }
 
+/// Resolve one "the daemon cannot serve this scan" finding into a route.
+///
+/// `--daemon=on` is a hard contract, so it becomes a refusal the caller turns
+/// into an error. Every other mode runs in process and CARRIES the reason, so
+/// the operator can be told why instead of silently getting a scan that never
+/// touched the daemon they started.
 #[cfg(unix)]
-fn reject_forced_daemon(forced_on: bool, reason: &str) -> Option<DaemonRoute> {
-    forced_on.then(|| {
-        DaemonRoute::Rejected(format!(
+fn daemon_cannot_serve(forced_on: bool, reason: impl Into<String>) -> DaemonRoute {
+    let reason = reason.into();
+    if forced_on {
+        return DaemonRoute::Rejected(format!(
             "--daemon=on cannot be honored: {reason}. Drop `--daemon=on`, or pass \
              `--daemon=off` to run the in-process scanner explicitly."
-        ))
-    })
+        ));
+    }
+    DaemonRoute::Forbidden(Some(reason))
 }
 
 #[cfg(unix)]
@@ -541,9 +573,22 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
         || args.gpu_batch_input_limit.is_some()
         || args.cache_dir.is_some()
         || args.ml_threshold.is_some()
+        // Per-chunk timeout is compiled into the daemon's long-lived scanner
+        // config. A daemon-served scan would silently run without the deadline
+        // the operator asked for, so the request cannot be honored per request.
+        || args.per_chunk_timeout_ms.is_some()
     {
         return Some(
             "this scan changes scanner or source-limit configuration that the precompiled daemon scanner cannot honor",
+        );
+    }
+    // `--perf-trace` writes per-pattern and backend timing to the CLIENT's
+    // stderr from process-global scanner state the daemon owns and never
+    // enables. Over the daemon route the flag produced no trace at all, so the
+    // operator saw a successful scan and an empty diagnostic (KH-423).
+    if args.perf_trace {
+        return Some(
+            "`--perf-trace` needs the in-process scanner: the daemon holds the traced engine state and the protocol carries no trace stream",
         );
     }
     if args.no_default_excludes || args.exclude_paths.is_some() {

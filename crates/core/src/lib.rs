@@ -8,6 +8,7 @@
 // carry per-module `allow(missing_docs)` that names the debt explicitly; each
 // per-module allow is removed once that module is fully documented and the
 // warn fires at full strength for it.
+#![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 #![cfg_attr(
     not(test),
@@ -27,6 +28,8 @@
 )]
 
 //! Core types shared across all KeyHog crates.
+/// Access-target ("door") association over an already-reported finding set.
+mod access_target;
 mod allowlist;
 mod api;
 pub mod ascii_ci;
@@ -36,6 +39,8 @@ pub mod ascii_ci;
 mod aws;
 /// Configuration system for KeyHog scanning options.
 mod config;
+/// Cross-file credential correlation over an already-reported finding set.
+mod correlation;
 /// Secure credential storage and redaction.
 mod credential;
 mod dedup;
@@ -55,6 +60,10 @@ mod hyperscan_cache;
 pub mod json_selector;
 /// Structured reporting (JSON, SARIF, Text).
 mod report;
+/// The one retry policy: bounded attempts, one backoff, one classification of
+/// transient versus permanent. Retry is the second choice; see the module docs
+/// for what must never be routed through it.
+pub mod retry;
 /// Safe absolute-path resolution for external binaries.
 mod safe_bin;
 mod source;

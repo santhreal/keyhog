@@ -9,7 +9,7 @@
 //! count cap that is inode exhaustion and an effective hang from a tiny input.
 
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 /// One past `MAX_DOCKER_TAR_ENTRIES` in `src/docker/archive.rs`.
 #[cfg(feature = "docker")]

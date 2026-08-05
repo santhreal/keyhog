@@ -105,6 +105,8 @@ fn render_text_full(
             color,
             example_suppressions,
             dogfood_active,
+            covered_nothing: false,
+            path_policy_suppressions: 0,
         },
         findings,
     )

@@ -30,7 +30,7 @@
 mod support;
 
 use keyhog_core::{Chunk, Source, SourceError};
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource, SkipCounts};
 use std::os::unix::fs::symlink;
 use std::os::unix::net::UnixListener;

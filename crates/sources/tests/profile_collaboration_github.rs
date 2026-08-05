@@ -14,7 +14,7 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_profile::{AnnotationId, Stage};
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use keyhog_sources::{GitHubCollaborationSelection, SourceLimits};
 use support::profile::{run_with_profile, run_with_profile_annotations, stage_calls};
 

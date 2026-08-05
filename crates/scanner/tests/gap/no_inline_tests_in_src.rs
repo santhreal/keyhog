@@ -82,18 +82,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // The suppression API tests exercise its crate-private typed contexts and
     // stage results directly.
     "suppression/api.rs",
-    // `AnchoredRegex` white-box tests assert the private anchor's `start()`/`end()`
-    // span semantics AND the FAIL-CLOSED compile-failure panics (no-context /
-    // left-context). The panic contract can only be pinned from inside the module
-    // that owns the compile path; the type's internals are not public API.
-    "anchored_regex.rs",
-    // `context/placeholder.rs` co-locates white-box tests for the MODULE-PRIVATE
-    // placeholder predicates `is_empty_input_hash` (empty-input digest recognition
-    // of every hash length) and `is_hex_sequential_placeholder` (monotonic hex
-    // runs), plus the `pub(crate)` `is_monotonic_sequence_placeholder`. The private
-    // predicates have no public surface, so their exact near-miss boundaries, the
-    // recall-load-bearing part (can only be pinned in-module).
-    "context/placeholder.rs",
     // `engine/mod.rs` co-locates compile-time `Send`/`Sync` assertions over the
     // private `CompiledScanner` plus the private `MAX_INNER_LOOP_ITERS` /
     // deadline-cadence hot-loop invariants. Compile-time trait asserts are
@@ -104,21 +92,11 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // counters. Same justification as `telemetry.rs`: keeping the record/read
     // seam in-module avoids making the counter plumbing public API.
     "engine/phase2/mark_stats.rs",
-    // `engine/phase2_generic/keywords.rs` pins the private encoded-text-secret
-    // anchoring (`is_strong_keyword_anchored_encoded_text_secret`,
-    // `collect_generic_keyword_lines_from_positions`), crate-internal phase-2
-    // reassembly heuristics whose boundary behaviour is recall-load-bearing.
-    "engine/phase2_generic/keywords.rs",
     // `engine/scan_postprocess/fragments.rs` pins the private reassembly floors
     // (`REASSEMBLY_MIN_ENTROPY` = 3.0, `REASSEMBLY_MIN_VALUE_LEN` = 16) and proves
     // the no-hit reassembly path reuses the SINGLE `reassembly_probe_data` owner
     // (a ONE-PLACE guard). Crate-internal, co-located with the owner.
     "engine/scan_postprocess/fragments.rs",
-    // `scanner_config.rs` pins how the `*_effective()` resolvers fall back to the
-    // COMPILED defaults (`FALLBACK_*_DEFAULT`) when a knob is unset, a
-    // crate-internal Tier-A default-wiring contract asserted against private
-    // compiled-default consts, not the public config surface.
-    "scanner_config.rs",
 ];
 
 /// True iff `path` ends with an allowlisted `src/`-relative path (component-wise,

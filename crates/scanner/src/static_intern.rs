@@ -34,19 +34,6 @@
 
 use std::sync::Arc;
 
-#[derive(serde::Deserialize)]
-struct SeedSourceTypes {
-    source_types: Vec<String>,
-}
-
-/// Parse the bundled Tier-B seed-source-type list. Returns an error rather than
-/// panicking so `SEED_SOURCE_TYPES` below is the single fail-closed site (the
-/// `no_unwrap_expect` gate bans `expect` in production source).
-fn parse_seed_source_types(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<SeedSourceTypes>(raw)
-        .map(|parsed| parsed.source_types)
-        .map_err(|error| error.to_string())
-}
 
 /// The seed source types leaked once into `&'static str`, derived from the single
 /// parsed [`SEED_SOURCE_TYPES`] owner (no second `include_str!`/parse).
@@ -60,23 +47,15 @@ pub(crate) fn seed_source_types_leaked() -> Vec<&'static str> {
     LEAKED_SEEDS.clone()
 }
 
-/// Stable source-type identifiers every keyhog source backend
-/// emits. Pre-interned because every match lands a copy of one of
-/// these in `MatchLocation::source`. Keep this list in sync with
-/// `keyhog_sources::Source::name()` implementations.
-pub(crate) static SEED_SOURCE_TYPES: std::sync::LazyLock<Vec<String>> =
-    std::sync::LazyLock::new(|| {
-        match parse_seed_source_types(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/rules/seed-source-types.toml"
-        ))) {
-            Ok(source_types) => source_types,
-            Err(error) => panic!(
-                "rules/seed-source-types.toml is invalid: {error}. \
-                 Fix the bundled Tier-B metadata file list."
-            ),
-        }
-    });
+crate::tier_b_list::tier_b_vec!(
+    /// Stable source-type identifiers every keyhog source backend
+    /// emits. Pre-interned because every match lands a copy of one of
+    /// these in `MatchLocation::source`. Keep this list in sync with
+    /// `keyhog_sources::Source::name()` implementations.
+    pub(crate) SEED_SOURCE_TYPES,
+    "seed-source-types.toml",
+    source_types
+);
 
 /// Frozen static-string interner. Built once at scanner
 /// construction; cloneable via `Arc` so every rayon worker shares

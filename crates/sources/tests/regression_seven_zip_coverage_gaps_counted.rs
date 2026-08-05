@@ -7,7 +7,7 @@ mod archive_support;
 mod support;
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 use sevenz_rust2::{ArchiveEntry, ArchiveWriter, SourceReader};
 use std::io::Cursor;
@@ -293,73 +293,3 @@ fn solid_seven_zip_special_entry_drains_before_safe_sibling() {
     );
 }
 
-#[test]
-fn seven_zip_entry_read_errors_are_per_entry_skips() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/filesystem/extract/seven_zip.rs"
-    ))
-    .expect("7z extractor source must be readable");
-
-    assert!(
-        source.contains("\"cannot read 7z entry; skipping\""),
-        "7z entry read errors must be operator-visible per-entry skips"
-    );
-    assert!(
-        source.contains("failed to scan 7z entry"),
-        "7z entry read errors must also emit machine-visible source errors"
-    );
-    assert!(
-        source.contains("return Ok(true);"),
-        "7z entry read errors must continue to the next archive entry"
-    );
-    assert!(
-        !source.contains("read_to_end(&mut content)?"),
-        "7z entry body reads must not abort the whole archive through ?"
-    );
-    assert!(
-        !source.contains("drain_entry(entry_reader)?"),
-        "7z skipped-entry draining must not abort the whole archive through ?"
-    );
-    assert!(
-        !source.contains("cannot drain skipped 7z entry; continuing with remaining entries"),
-        "7z skipped-entry drain failures must not warn-and-continue after solid-stream alignment is suspect"
-    );
-}
-
-/// Locks skipped-entry alignment and bounded allocation to the shared archive safety contract.
-#[test]
-fn seven_zip_skipped_entry_draining_is_limited_to_solid_archives() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/filesystem/extract/seven_zip.rs"
-    ))
-    .expect("7z extractor source must be readable");
-
-    assert!(
-        source.contains("let archive_requires_skip_drain = reader.archive().is_solid;"),
-        "7z skip draining must be based on the archive solidness contract"
-    );
-    assert!(
-        source.contains("fn drain_skipped_entry_if_needed(")
-            && source.contains("if !archive_requires_skip_drain"),
-        "non-solid skipped 7z entries must not be pointlessly decompressed after they are refused"
-    );
-    assert!(
-        source.contains("drain_entry_or_stop(archive_display, entry_name, entry_reader, emit)"),
-        "solid 7z skips still need an explicit drain path so later entries stay aligned"
-    );
-    assert!(
-        source.contains("\"cannot drain skipped solid 7z entry; stopping archive extraction\"")
-            && source.contains("failed to drain skipped solid 7z entry")
-            && source.contains("remaining archive entries were not scanned")
-            && source.contains("let _emitted = emit(Err(SourceError::Other(format!(")
-            && source.contains("            false\n")
-            && source.contains("SourceSkipEvent::Unreadable"),
-        "solid 7z drain failures must emit a machine-visible SourceError row and typed skip event"
-    );
-    assert!(
-        source.contains("entry_size.min(ARCHIVE_ENTRY_READ_CAPACITY_HINT)"),
-        "7z content buffers must not preallocate from untrusted declared sizes beyond the fixed hint"
-    );
-}

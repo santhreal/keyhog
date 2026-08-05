@@ -107,666 +107,72 @@ pub mod testing {
         )
     }
 
-    pub trait SourceTestApi {
+    impl TestApi {
         /// Enter an exclusive scan scope for a counter-asserting test. Held for
         /// the whole `reset → scan → read skip_counts()` window, it serializes
         /// against every other gated scan so concurrent tests cannot pollute the
         /// process-global skip counters this test is about to assert on.
-        fn skip_counter_guard(&self) -> ScanCounterScope;
+        pub fn skip_counter_guard(&self) -> ScanCounterScope {
+            crate::enter_exclusive_scan_scope()
+        }
+
         /// Return whether no scan currently holds the shared counter-isolation
         /// lease. Used to prove first-scope serialization before any guard runs.
-        fn scan_gate_exclusive_available(&self) -> bool;
+        pub fn scan_gate_exclusive_available(&self) -> bool {
+            crate::skip::scan_gate_exclusive_available_for_test()
+        }
+
         /// Archive entry-name path-traversal validator (test accessor; the
         /// `src/filesystem/extract/**` no-inline-tests contract keeps the unit
         /// coverage out of `src`). Returns `Ok(())` for a safe relative entry
         /// name and `Err(reason)` naming the refusal for traversal / absolute /
         /// backslash / NUL / over-encoded names.
-        fn validate_archive_entry_name(&self, name: &str) -> Result<(), String>;
+        pub fn validate_archive_entry_name(&self, name: &str) -> Result<(), String> {
+            crate::filesystem::validate_scan_archive_entry_name(name).map_err(str::to_string)
+        }
+
+        #[cfg(feature = "docker")]
         /// OCI/Docker manifest-vs-index classification (test accessor so the
         /// `src/docker/**` no-inline-tests contract holds; coverage lives in
         /// `tests/docker_oci_classification.rs`).
+        pub fn oci_descriptor_points_to_index(&self, media_type: Option<&str>, body: &[u8]) -> bool {
+            crate::docker::oci::descriptor_points_to_index_for_test(media_type, body)
+        }
+
         #[cfg(feature = "docker")]
-        fn oci_descriptor_points_to_index(&self, media_type: Option<&str>, body: &[u8]) -> bool;
         /// OCI blob sha256 verification through the crate's safe opener
         /// (O_NOFOLLOW): returns whether the blob at `path` matches `digest`.
         /// Critically REFUSES a symlink blob a raw `File::open` would follow (test
         /// accessor so the `src/docker/**` no-inline-tests contract holds; coverage
         /// lives in `tests/regression_docker_oci_safe_open.rs`).
-        #[cfg(feature = "docker")]
-        fn verify_oci_blob_sha256_ok(&self, path: &std::path::Path, digest: &str) -> bool;
-        fn set_skip_counts(&self, counts: crate::SkipCounts);
-        fn reset_skip_counters(&self);
-        fn bump_skipped_over_max_size(&self, delta: usize);
-        fn bump_git_object_unreadable(&self, delta: usize);
-        fn read_stdin_test_input_with_limit(
-            &self,
-            input: &[u8],
-            max_bytes: usize,
-        ) -> std::io::Result<String>;
-        #[cfg(any(
-            feature = "git",
-            feature = "docker",
-            feature = "github",
-            feature = "gitlab",
-            feature = "bitbucket"
-        ))]
-        fn drain_process_stderr_excerpt(&self, reader: &mut dyn std::io::Read) -> String;
-        fn expand_har(
-            &self,
-            bytes: &[u8],
-            path_str: &str,
-            max_size: u64,
-        ) -> Option<Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>>;
-        fn compact_har_base64_text(&self, text: &str) -> String;
-        fn reader_pool_thread_count(&self, scanner_threads: usize) -> usize;
-        fn reader_panic_rows(&self) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
-        fn reader_process_entry_panic_rows(
-            &self,
-        ) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
-        fn process_entry_with_recorded_size(
-            &self,
-            path: std::path::PathBuf,
-            recorded_size: u64,
-            max_size: u64,
-        ) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
-        fn process_entry_with_merkle(
-            &self,
-            path: std::path::PathBuf,
-            recorded_size: u64,
-            max_size: u64,
-            merkle: std::sync::Arc<keyhog_core::MerkleIndex>,
-        ) -> (
-            Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>,
-            usize,
-        );
-        fn configured_reader_pool_thread_count(
-            &self,
-            scanner_threads: usize,
-            configured: std::num::NonZeroUsize,
-        ) -> usize;
-        fn filesystem_with_window_config(
-            &self,
-            root: std::path::PathBuf,
-            window_size: usize,
-            overlap: usize,
-        ) -> crate::FilesystemSource;
-        fn filesystem_skipped_count(&self, source: &crate::FilesystemSource) -> usize;
-        fn max_buffered_read_bytes(&self) -> u64;
-        fn mmap_toctou_sanity_cap_bytes(&self) -> u64;
-        fn read_file_safe_capped(
-            &self,
-            path: &std::path::Path,
-            cap: u64,
-        ) -> std::io::Result<Vec<u8>>;
-        fn read_file_mmap(&self, path: &std::path::Path) -> Option<String>;
-        fn read_file_for_compressed_input(
-            &self,
-            path: &std::path::Path,
-            size_cap: u64,
-        ) -> Option<Vec<u8>>;
-        fn read_file_windowed_mmap_len(
-            &self,
-            path: &std::path::Path,
-            window_size: usize,
-            overlap: usize,
-        ) -> Option<usize>;
-        fn slice_into_windows(
-            &self,
-            bytes: &[u8],
-            window_size: usize,
-            overlap: usize,
-        ) -> Vec<String>;
-        fn slice_into_windows_with_offsets(
-            &self,
-            bytes: &[u8],
-            window_size: usize,
-            overlap: usize,
-        ) -> Vec<(usize, String)>;
-        fn read_file_windowed_mmap(
-            &self,
-            path: &std::path::Path,
-            window_size: usize,
-            overlap: usize,
-        ) -> Option<Vec<(usize, String)>>;
-        fn decode_utf16(&self, bytes: &[u8]) -> Option<String>;
-        fn decode_text_file(&self, bytes: &[u8]) -> Option<String>;
-        fn decode_text_file_owned_or_bytes(&self, bytes: Vec<u8>) -> Result<String, Vec<u8>>;
-        fn looks_binary(&self, bytes: &[u8]) -> bool;
-        fn looks_binary_prefix(&self, bytes: &[u8]) -> bool;
-        fn read_file_buffered_text(&self, path: &std::path::Path, size_hint: u64)
-            -> Option<String>;
-        fn read_file_prefix_safe(
-            &self,
-            path: &std::path::Path,
-            buf: &mut [u8],
-        ) -> std::io::Result<usize>;
-        fn open_file_safe(&self, path: &std::path::Path) -> std::io::Result<std::fs::File>;
-        fn duplicate_zip_central_entries_error(
-            &self,
-            path: &std::path::Path,
-        ) -> Result<String, String>;
-        fn duplicate_zip_local_entry_data_error(
-            &self,
-            path: &std::path::Path,
-            compressed_size: u64,
-        ) -> Result<String, String>;
-        fn duplicate_zip_reopen_error(&self, path: &std::path::Path) -> Option<String>;
-        fn filesystem_default_max_file_size(&self) -> u64;
-        #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
-        fn cloud_is_probably_text_object_key(&self, key: &str) -> bool;
-        #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
-        fn cloud_is_binary_content_type(&self, content_type: &str) -> bool;
-        #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
-        fn cloud_read_text_object_body_from_url(
-            &self,
-            url: &str,
-            max_bytes: u64,
-        ) -> Result<Option<String>, keyhog_core::SourceError>;
-        #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
-        fn cloud_record_unreadable_object_skip(
-            &self,
-            source: &str,
-            item_kind: &str,
-            display_path: &str,
-            reason: &str,
-        ) -> keyhog_core::SourceError;
-
-        #[cfg(any(
-            feature = "azure",
-            feature = "web",
-            feature = "slack",
-            feature = "s3",
-            feature = "github",
-            feature = "gitlab",
-            feature = "bitbucket",
-            feature = "gcs"
-        ))]
-        fn http_request_timeout(&self) -> std::time::Duration;
-        #[cfg(any(
-            feature = "azure",
-            feature = "web",
-            feature = "slack",
-            feature = "s3",
-            feature = "github",
-            feature = "gitlab",
-            feature = "bitbucket",
-            feature = "gcs"
-        ))]
-        fn http_effective_proxy(&self, http: &crate::http::HttpClientConfig) -> Option<String>;
-        #[cfg(any(
-            feature = "azure",
-            feature = "web",
-            feature = "slack",
-            feature = "s3",
-            feature = "github",
-            feature = "gitlab",
-            feature = "bitbucket",
-            feature = "gcs"
-        ))]
-        fn http_effective_insecure_tls(&self, http: &crate::http::HttpClientConfig) -> bool;
-        #[cfg(any(
-            feature = "azure",
-            feature = "web",
-            feature = "slack",
-            feature = "s3",
-            feature = "github",
-            feature = "gitlab",
-            feature = "bitbucket",
-            feature = "gcs"
-        ))]
-        fn http_blocking_client_builder(
-            &self,
-            http: &crate::http::HttpClientConfig,
-        ) -> Result<reqwest::blocking::ClientBuilder, String>;
-        #[cfg(any(
-            feature = "azure",
-            feature = "web",
-            feature = "slack",
-            feature = "s3",
-            feature = "github",
-            feature = "gitlab",
-            feature = "bitbucket",
-            feature = "gcs"
-        ))]
-        fn http_async_client_builder(
-            &self,
-            http: &crate::http::HttpClientConfig,
-        ) -> Result<reqwest::ClientBuilder, String>;
-
-        #[cfg(feature = "gcs")]
-        fn gcs_endpoint_is_google(&self, endpoint: &str) -> bool;
-        #[cfg(feature = "gcs")]
-        fn gcs_credential_forward_allowed(&self, allow_explicit: bool) -> bool;
-        #[cfg(feature = "gcs")]
-        fn gcs_source_with_endpoint<B, E>(&self, bucket: B, endpoint: E) -> crate::GcsSource
-        where
-            B: Into<String>,
-            E: Into<String>;
-        #[cfg(feature = "gcs")]
-        fn gcs_source_with_endpoint_and_limits<B, E>(
-            &self,
-            bucket: B,
-            endpoint: E,
-            limits: crate::SourceLimits,
-        ) -> crate::GcsSource
-        where
-            B: Into<String>,
-            E: Into<String>;
-        #[cfg(feature = "gcs")]
-        fn gcs_source_with_endpoint_max_objects<B, E>(
-            &self,
-            bucket: B,
-            endpoint: E,
-            max_objects: usize,
-        ) -> crate::GcsSource
-        where
-            B: Into<String>,
-            E: Into<String>;
-        #[cfg(feature = "s3")]
-        fn s3_endpoint_is_aws(&self, endpoint: &str) -> bool;
-        #[cfg(feature = "s3")]
-        fn s3_credential_forward_allowed(&self, allow_explicit: bool) -> bool;
-        /// Build an `S3Source` at a custom (typically loopback httpmock) endpoint.
-        ///
-        /// SECURITY NOTE: every `*_with_endpoint*` loopback-mock builder OPTS INTO
-        /// private endpoints (`allow_private_endpoint = true`) so the mock at
-        /// `127.0.0.1` is reachable, i.e. it DISABLES the cloud SSRF endpoint
-        /// screen. A test that must exercise the ACTIVE screen (private/metadata
-        /// refusal, public-host acceptance) MUST instead use
-        /// `s3_source_with_endpoint_allow_private(bucket, endpoint, false)`, or it
-        /// silently passes with the screen off.
-        #[cfg(feature = "s3")]
-        fn s3_source_with_endpoint<B, E>(&self, bucket: B, endpoint: E) -> crate::S3Source
-        where
-            B: Into<String>,
-            E: Into<String>;
-        #[cfg(feature = "s3")]
-        fn s3_source_with_endpoint_and_limits<B, E>(
-            &self,
-            bucket: B,
-            endpoint: E,
-            limits: crate::SourceLimits,
-        ) -> crate::S3Source
-        where
-            B: Into<String>,
-            E: Into<String>;
-        #[cfg(feature = "s3")]
-        fn s3_source_with_endpoint_max_objects<B, E>(
-            &self,
-            bucket: B,
-            endpoint: E,
-            max_objects: usize,
-        ) -> crate::S3Source
-        where
-            B: Into<String>,
-            E: Into<String>;
-        /// Build an S3 source whose SSRF endpoint screen is either default-on
-        /// (`allow_private = false`) or opted-out (`true`), the config-flag
-        /// replacement for the retired `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` env,
-        /// used by the SSRF-refusal regression tests to drive both paths.
-        #[cfg(feature = "s3")]
-        fn s3_source_with_endpoint_allow_private<B, E>(
-            &self,
-            bucket: B,
-            endpoint: E,
-            allow_private: bool,
-        ) -> crate::S3Source
-        where
-            B: Into<String>,
-            E: Into<String>;
-        /// GCS counterpart of [`s3_source_with_endpoint_allow_private`].
-        #[cfg(feature = "gcs")]
-        fn gcs_source_with_endpoint_allow_private<B, E>(
-            &self,
-            bucket: B,
-            endpoint: E,
-            allow_private: bool,
-        ) -> crate::GcsSource
-        where
-            B: Into<String>,
-            E: Into<String>;
-        /// Build an Azure Blob source whose container URL is permitted to be a
-        /// private / loopback endpoint (httpmock binds 127.0.0.1), the loopback
-        /// config-flag replacement used by the azure listing/drop regressions.
-        #[cfg(feature = "azure")]
-        fn azure_blob_source<U>(&self, container_url: U) -> crate::AzureBlobSource
-        where
-            U: Into<String>;
-        #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
-        fn git_clone_timeout(&self) -> std::time::Duration;
-        #[cfg(feature = "binary")]
-        fn ghidra_analysis_timeout(&self) -> std::time::Duration;
-        #[cfg(feature = "docker")]
-        fn docker_export_timeout(&self) -> std::time::Duration;
-        #[cfg(feature = "binary")]
-        fn binary_strings_only<P>(&self, path: P) -> crate::BinarySource
-        where
-            P: Into<std::path::PathBuf>;
-
-        fn user_agent(&self, suffix: Option<&str>) -> String;
-
-        #[cfg(feature = "binary")]
-        fn extract_string_literals(&self, line: &str) -> Vec<String>;
-        #[cfg(feature = "binary")]
-        fn extract_sections(&self, bytes: &[u8], path: &str) -> Option<Vec<keyhog_core::Chunk>>;
-        #[cfg(feature = "binary")]
-        fn resolve_binary_section_name<'a>(
-            &self,
-            resolved: Option<&'a str>,
-            sh_name: usize,
-        ) -> &'a str;
-
-        #[cfg(feature = "github")]
-        fn validate_repo_name(&self, name: &str) -> Result<(), keyhog_core::SourceError>;
-        #[cfg(feature = "github")]
-        fn github_collaboration_source_with_endpoint(
-            &self,
-            repository: &str,
-            endpoint: &str,
-            selection: crate::GitHubCollaborationSelection,
-            limits: crate::SourceLimits,
-        ) -> Result<crate::GitHubCollaborationSource, keyhog_core::SourceError>;
-        #[cfg(feature = "github")]
-        fn github_collaboration_wiki_chunks_from_repo(
-            &self,
-            repo: &std::path::Path,
-            limits: crate::SourceLimits,
-        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>;
-        #[cfg(feature = "github")]
-        fn validate_org_name(&self, name: &str) -> Result<(), keyhog_core::SourceError>;
-        #[cfg(feature = "github")]
-        fn validate_clone_url(&self, url: &str) -> Result<(), keyhog_core::SourceError>;
-        #[cfg(feature = "github")]
-        fn github_org_rewrite_chunk_path(
-            &self,
-            chunk: keyhog_core::Chunk,
-            org: &str,
-            repo_name: &str,
-            clone_path: &std::path::Path,
-        ) -> Result<keyhog_core::Chunk, keyhog_core::SourceError>;
-        #[cfg(feature = "github")]
-        fn github_org_scan_repo_chunks<I>(
-            &self,
-            chunks: I,
-            org: &str,
-            repo_name: &str,
-            clone_path: &std::path::Path,
-        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>
-        where
-            I: IntoIterator<Item = Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
-        #[cfg(feature = "github")]
-        fn github_org_listing_truncated_error(
-            &self,
-            org: &str,
-            repo_count: usize,
-            max_pages: usize,
-        ) -> keyhog_core::SourceError;
-
-        #[cfg(feature = "gitlab")]
-        fn validate_gitlab_group_path(&self, group: &str) -> Result<(), keyhog_core::SourceError>;
-        #[cfg(feature = "gitlab")]
-        fn gitlab_group_listing_truncated_error(
-            &self,
-            group: &str,
-            repo_count: usize,
-            max_pages: usize,
-        ) -> keyhog_core::SourceError;
-
-        #[cfg(feature = "bitbucket")]
-        fn validate_bitbucket_workspace(
-            &self,
-            workspace: &str,
-        ) -> Result<(), keyhog_core::SourceError>;
-        #[cfg(feature = "bitbucket")]
-        fn bitbucket_workspace_listing_truncated_error(
-            &self,
-            workspace: &str,
-            repo_count: usize,
-            max_pages: usize,
-        ) -> keyhog_core::SourceError;
-
-        #[cfg(feature = "docker")]
-        fn export_docker_image_archive(
-            &self,
-            docker_bin: &std::path::Path,
-            image: &str,
-            archive_path: &std::path::Path,
-        ) -> Result<(), keyhog_core::SourceError>;
-        #[cfg(feature = "docker")]
-        fn docker_manifest_layer_archives(
-            &self,
-            root_path: &std::path::Path,
-        ) -> Result<Vec<std::path::PathBuf>, keyhog_core::SourceError>;
-        #[cfg(feature = "docker")]
-        fn docker_fallback_layer_archives_from_rows(
-            &self,
-            rows: Vec<Result<std::path::PathBuf, keyhog_core::SourceError>>,
-        ) -> Vec<std::path::PathBuf>;
-        #[cfg(feature = "docker")]
-        fn docker_manifest_config_chunks(
-            &self,
-            root_path: &std::path::Path,
-            image: &str,
-        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>;
-        #[cfg(feature = "docker")]
-        fn docker_archive_metadata_chunks(
-            &self,
-            root_path: &std::path::Path,
-            image: &str,
-        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>;
-        #[cfg(feature = "docker")]
-        fn unpack_docker_layer_archive(
-            &self,
-            archive_path: &std::path::Path,
-            destination: &std::path::Path,
-        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError>;
-        #[cfg(feature = "docker")]
-        fn unpack_docker_layer_archive_with_total_cap(
-            &self,
-            archive_path: &std::path::Path,
-            destination: &std::path::Path,
-            total_cap: u64,
-        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError>;
-        #[cfg(feature = "docker")]
-        fn unpack_docker_layer_archive_with_entry_cap(
-            &self,
-            archive_path: &std::path::Path,
-            destination: &std::path::Path,
-            entry_cap: u64,
-        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError>;
-        #[cfg(feature = "docker")]
-        fn unpack_docker_layer_archive_with_caps(
-            &self,
-            archive_path: &std::path::Path,
-            destination: &std::path::Path,
-            entry_cap: u64,
-            total_cap: u64,
-        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError>;
-        #[cfg(feature = "docker")]
-        fn unpack_docker_image_archive_with_entry_cap(
-            &self,
-            archive_path: &std::path::Path,
-            destination: &std::path::Path,
-            entry_cap: u64,
-        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError>;
-        #[cfg(feature = "docker")]
-        fn docker_rewrite_layer_chunks<I>(
-            &self,
-            chunks: I,
-            image: &str,
-            layer_root: &std::path::Path,
-            layer_name: &str,
-        ) -> Result<
-            Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>,
-            keyhog_core::SourceError,
-        >
-        where
-            I: IntoIterator<Item = Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
-        #[cfg(feature = "docker")]
-        fn validate_docker_tar_archive(
-            &self,
-            archive_path: &std::path::Path,
-        ) -> Result<(), keyhog_core::SourceError>;
-        #[cfg(feature = "docker")]
-        fn validate_docker_tar_archive_with_total_cap(
-            &self,
-            archive_path: &std::path::Path,
-            total_cap: u64,
-        ) -> Result<(), keyhog_core::SourceError>;
-
-        #[cfg(feature = "azure")]
-        fn azure_blob_source_with_max_objects<U>(
-            &self,
-            container_url: U,
-            max_objects: usize,
-        ) -> crate::AzureBlobSource
-        where
-            U: Into<String>;
-        #[cfg(feature = "azure")]
-        fn azure_blob_source_with_limits<U>(
-            &self,
-            container_url: U,
-            limits: crate::SourceLimits,
-        ) -> crate::AzureBlobSource
-        where
-            U: Into<String>;
-
-        fn extract_printable_strings(
-            &self,
-            bytes: &[u8],
-            min_len: usize,
-        ) -> Vec<keyhog_core::SensitiveString>;
-        fn join_sensitive_strings(
-            &self,
-            parts: &[keyhog_core::SensitiveString],
-            sep: &str,
-        ) -> keyhog_core::SensitiveString;
-        #[cfg(feature = "git")]
-        fn git_max_commits_limit(&self, cap: usize) -> Option<usize>;
-        #[cfg(feature = "git")]
-        fn git_source_configured_max_commits(&self, cap: usize) -> Option<usize>;
-        #[cfg(feature = "git")]
-        fn git_history_source_configured_max_commits(&self, cap: usize) -> Option<usize>;
-        #[cfg(feature = "web")]
-        fn redact_url(&self, url: &str) -> String;
-        #[cfg(feature = "web")]
-        fn redirect_pin_key(&self, url: &str) -> Option<String>;
-        #[cfg(feature = "github")]
-        fn github_rate_limit_backoff_secs(&self, retry_after: Option<u64>, attempt: usize) -> u64;
-        #[cfg(feature = "github")]
-        fn github_max_backoff_secs(&self) -> u64;
-        #[cfg(feature = "github")]
-        fn github_repos_per_page(&self) -> usize;
-        #[cfg(feature = "web")]
-        fn is_disallowed_web_host(&self, url: &str) -> bool;
-        #[cfg(feature = "web")]
-        fn is_disallowed_ip(&self, ip: std::net::IpAddr) -> bool;
-        #[cfg(feature = "web")]
-        fn resolve_and_screen(
-            &self,
-            host: &str,
-            port: u16,
-            timeout: std::time::Duration,
-        ) -> Result<Vec<std::net::SocketAddr>, keyhog_core::SourceError>;
-        #[cfg(feature = "web")]
-        fn build_web_client(
-            &self,
-            http: &crate::http::HttpClientConfig,
-            original_url: &str,
-            use_proxy: bool,
-            allow_autoroute_loopback_calibration_url: bool,
-        ) -> Result<reqwest::blocking::Client, keyhog_core::SourceError>;
-        #[cfg(feature = "web")]
-        fn web_source_with_autoroute_loopback_calibration(
-            &self,
-            urls: Vec<String>,
-            allow: bool,
-        ) -> crate::WebSource;
-
-        #[cfg(feature = "slack")]
-        fn slack_conversations_list_len_for_test(&self, body: &str) -> Result<usize, String>;
-        #[cfg(feature = "slack")]
-        fn slack_history_len_for_test(&self, body: &str, channel_id: &str)
-            -> Result<usize, String>;
-        #[cfg(feature = "slack")]
-        fn slack_conversations_list_next_cursor_for_test(
-            &self,
-            body: &str,
-        ) -> Result<Option<String>, String>;
-        #[cfg(feature = "slack")]
-        fn slack_history_next_cursor_for_test(
-            &self,
-            body: &str,
-            channel_id: &str,
-        ) -> Result<Option<String>, String>;
-        #[cfg(feature = "slack")]
-        fn slack_source_with_endpoint<T, E>(&self, token: T, endpoint: E) -> crate::SlackSource
-        where
-            T: Into<String>,
-            E: Into<String>;
-        #[cfg(feature = "slack")]
-        fn slack_source_with_endpoint_and_limits<T, E>(
-            &self,
-            token: T,
-            endpoint: E,
-            limits: crate::SourceLimits,
-        ) -> crate::SlackSource
-        where
-            T: Into<String>,
-            E: Into<String>;
-        #[cfg(feature = "slack")]
-        fn slack_source_with_endpoint_and_lookback<T, E>(
-            &self,
-            token: T,
-            endpoint: E,
-            lookback_messages: usize,
-        ) -> crate::SlackSource
-        where
-            T: Into<String>,
-            E: Into<String>;
-    }
-
-    impl SourceTestApi for TestApi {
-        fn skip_counter_guard(&self) -> ScanCounterScope {
-            crate::enter_exclusive_scan_scope()
-        }
-
-        fn scan_gate_exclusive_available(&self) -> bool {
-            crate::skip::scan_gate_exclusive_available_for_test()
-        }
-
-        fn validate_archive_entry_name(&self, name: &str) -> Result<(), String> {
-            crate::filesystem::validate_scan_archive_entry_name(name).map_err(str::to_string)
-        }
-
-        #[cfg(feature = "docker")]
-        fn oci_descriptor_points_to_index(&self, media_type: Option<&str>, body: &[u8]) -> bool {
-            crate::docker::oci::descriptor_points_to_index_for_test(media_type, body)
-        }
-
-        #[cfg(feature = "docker")]
-        fn verify_oci_blob_sha256_ok(&self, path: &std::path::Path, digest: &str) -> bool {
+        pub fn verify_oci_blob_sha256_ok(&self, path: &std::path::Path, digest: &str) -> bool {
             crate::docker::oci::verify_oci_blob_sha256(path, digest).is_ok()
         }
 
-        fn set_skip_counts(&self, counts: crate::SkipCounts) {
+        pub fn set_skip_counts(&self, counts: crate::SkipCounts) {
             crate::skip::set_skip_counts_for_test(counts);
         }
 
-        fn reset_skip_counters(&self) {
+        pub fn reset_skip_counters(&self) {
             crate::reset_skip_counters();
         }
 
-        fn bump_skipped_over_max_size(&self, delta: usize) {
+        /// Source-side default window size, so the limits guard can assert its
+        /// ordering against the scanner's decode ceiling.
+        pub fn source_default_window_size(&self) -> usize {
+            crate::filesystem::default_window_size_for_test()
+        }
+
+        pub fn bump_skipped_over_max_size(&self, delta: usize) {
             let _event = crate::record_skip_events(crate::SourceSkipEvent::OverMaxSize, delta);
         }
 
-        fn bump_git_object_unreadable(&self, delta: usize) {
+        pub fn bump_git_object_unreadable(&self, delta: usize) {
             let _event =
                 crate::record_skip_events(crate::SourceSkipEvent::GitObjectUnreadable, delta);
         }
 
-        fn read_stdin_test_input_with_limit(
+        pub fn read_stdin_test_input_with_limit(
             &self,
             input: &[u8],
             max_bytes: usize,
@@ -782,11 +188,11 @@ pub mod testing {
             feature = "gitlab",
             feature = "bitbucket"
         ))]
-        fn drain_process_stderr_excerpt(&self, reader: &mut dyn std::io::Read) -> String {
+        pub fn drain_process_stderr_excerpt(&self, reader: &mut dyn std::io::Read) -> String {
             crate::process_excerpt::drain_stderr_excerpt(reader)
         }
 
-        fn expand_har(
+        pub fn expand_har(
             &self,
             bytes: &[u8],
             path_str: &str,
@@ -795,25 +201,25 @@ pub mod testing {
             crate::har::try_expand_har(bytes, path_str, max_size)
         }
 
-        fn compact_har_base64_text(&self, text: &str) -> String {
+        pub fn compact_har_base64_text(&self, text: &str) -> String {
             crate::har::compact_base64_text(text).into_owned()
         }
 
-        fn reader_pool_thread_count(&self, scanner_threads: usize) -> usize {
+        pub fn reader_pool_thread_count(&self, scanner_threads: usize) -> usize {
             crate::filesystem::reader_pool_thread_count_for_test(scanner_threads)
         }
 
-        fn reader_panic_rows(&self) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
+        pub fn reader_panic_rows(&self) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
             crate::filesystem::reader_panic_rows_for_test()
         }
 
-        fn reader_process_entry_panic_rows(
+        pub fn reader_process_entry_panic_rows(
             &self,
         ) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
             crate::filesystem::reader_process_entry_panic_rows_for_test()
         }
 
-        fn process_entry_with_recorded_size(
+        pub fn process_entry_with_recorded_size(
             &self,
             path: std::path::PathBuf,
             recorded_size: u64,
@@ -826,7 +232,7 @@ pub mod testing {
             )
         }
 
-        fn process_entry_with_merkle(
+        pub fn process_entry_with_merkle(
             &self,
             path: std::path::PathBuf,
             recorded_size: u64,
@@ -844,7 +250,7 @@ pub mod testing {
             )
         }
 
-        fn configured_reader_pool_thread_count(
+        pub fn configured_reader_pool_thread_count(
             &self,
             scanner_threads: usize,
             configured: std::num::NonZeroUsize,
@@ -855,7 +261,7 @@ pub mod testing {
             )
         }
 
-        fn filesystem_with_window_config(
+        pub fn filesystem_with_window_config(
             &self,
             root: std::path::PathBuf,
             window_size: usize,
@@ -864,21 +270,21 @@ pub mod testing {
             crate::FilesystemSource::new(root).with_window_config(window_size, overlap)
         }
 
-        fn filesystem_skipped_count(&self, source: &crate::FilesystemSource) -> usize {
+        pub fn filesystem_skipped_count(&self, source: &crate::FilesystemSource) -> usize {
             source
                 .skipped_counter()
                 .load(std::sync::atomic::Ordering::Relaxed)
         }
 
-        fn max_buffered_read_bytes(&self) -> u64 {
+        pub fn max_buffered_read_bytes(&self) -> u64 {
             crate::filesystem::max_buffered_read_bytes_for_test()
         }
 
-        fn mmap_toctou_sanity_cap_bytes(&self) -> u64 {
+        pub fn mmap_toctou_sanity_cap_bytes(&self) -> u64 {
             crate::filesystem::mmap_toctou_sanity_cap_bytes_for_test()
         }
 
-        fn read_file_safe_capped(
+        pub fn read_file_safe_capped(
             &self,
             path: &std::path::Path,
             cap: u64,
@@ -886,11 +292,11 @@ pub mod testing {
             crate::filesystem::read_file_safe_capped_for_test(path, cap)
         }
 
-        fn read_file_mmap(&self, path: &std::path::Path) -> Option<String> {
+        pub fn read_file_mmap(&self, path: &std::path::Path) -> Option<String> {
             crate::filesystem::read_file_mmap_for_test(path)
         }
 
-        fn read_file_for_compressed_input(
+        pub fn read_file_for_compressed_input(
             &self,
             path: &std::path::Path,
             size_cap: u64,
@@ -898,7 +304,7 @@ pub mod testing {
             crate::filesystem::read_file_for_compressed_input_for_test(path, size_cap)
         }
 
-        fn read_file_windowed_mmap_len(
+        pub fn read_file_windowed_mmap_len(
             &self,
             path: &std::path::Path,
             window_size: usize,
@@ -907,7 +313,7 @@ pub mod testing {
             crate::filesystem::read_file_windowed_mmap_len_for_test(path, window_size, overlap)
         }
 
-        fn slice_into_windows(
+        pub fn slice_into_windows(
             &self,
             bytes: &[u8],
             window_size: usize,
@@ -916,27 +322,27 @@ pub mod testing {
             crate::filesystem::slice_into_windows_for_test(bytes, window_size, overlap)
         }
 
-        fn decode_utf16(&self, bytes: &[u8]) -> Option<String> {
+        pub fn decode_utf16(&self, bytes: &[u8]) -> Option<String> {
             crate::filesystem::decode_utf16_for_test(bytes)
         }
 
-        fn decode_text_file(&self, bytes: &[u8]) -> Option<String> {
+        pub fn decode_text_file(&self, bytes: &[u8]) -> Option<String> {
             crate::filesystem::decode_text_file_for_test(bytes)
         }
 
-        fn decode_text_file_owned_or_bytes(&self, bytes: Vec<u8>) -> Result<String, Vec<u8>> {
+        pub fn decode_text_file_owned_or_bytes(&self, bytes: Vec<u8>) -> Result<String, Vec<u8>> {
             crate::filesystem::decode_text_file_owned_or_bytes_for_test(bytes)
         }
 
-        fn looks_binary(&self, bytes: &[u8]) -> bool {
+        pub fn looks_binary(&self, bytes: &[u8]) -> bool {
             crate::filesystem::looks_binary_for_test(bytes)
         }
 
-        fn looks_binary_prefix(&self, bytes: &[u8]) -> bool {
+        pub fn looks_binary_prefix(&self, bytes: &[u8]) -> bool {
             crate::filesystem::looks_binary_prefix_for_test(bytes)
         }
 
-        fn slice_into_windows_with_offsets(
+        pub fn slice_into_windows_with_offsets(
             &self,
             bytes: &[u8],
             window_size: usize,
@@ -945,7 +351,7 @@ pub mod testing {
             crate::filesystem::slice_into_windows_with_offsets_for_test(bytes, window_size, overlap)
         }
 
-        fn read_file_windowed_mmap(
+        pub fn read_file_windowed_mmap(
             &self,
             path: &std::path::Path,
             window_size: usize,
@@ -954,7 +360,7 @@ pub mod testing {
             crate::filesystem::read_file_windowed_mmap_for_test(path, window_size, overlap)
         }
 
-        fn read_file_buffered_text(
+        pub fn read_file_buffered_text(
             &self,
             path: &std::path::Path,
             size_hint: u64,
@@ -962,7 +368,7 @@ pub mod testing {
             crate::filesystem::read_file_buffered_text_for_test(path, size_hint)
         }
 
-        fn read_file_prefix_safe(
+        pub fn read_file_prefix_safe(
             &self,
             path: &std::path::Path,
             buf: &mut [u8],
@@ -970,18 +376,18 @@ pub mod testing {
             crate::filesystem::read_file_prefix_safe_for_test(path, buf)
         }
 
-        fn open_file_safe(&self, path: &std::path::Path) -> std::io::Result<std::fs::File> {
+        pub fn open_file_safe(&self, path: &std::path::Path) -> std::io::Result<std::fs::File> {
             crate::filesystem::open_file_safe(path)
         }
 
-        fn duplicate_zip_central_entries_error(
+        pub fn duplicate_zip_central_entries_error(
             &self,
             path: &std::path::Path,
         ) -> Result<String, String> {
             crate::filesystem::duplicate_zip_central_entries_error_for_test(path)
         }
 
-        fn duplicate_zip_local_entry_data_error(
+        pub fn duplicate_zip_local_entry_data_error(
             &self,
             path: &std::path::Path,
             compressed_size: u64,
@@ -989,26 +395,26 @@ pub mod testing {
             crate::filesystem::duplicate_zip_local_entry_data_error_for_test(path, compressed_size)
         }
 
-        fn duplicate_zip_reopen_error(&self, path: &std::path::Path) -> Option<String> {
+        pub fn duplicate_zip_reopen_error(&self, path: &std::path::Path) -> Option<String> {
             crate::filesystem::duplicate_zip_reopen_error_for_test(path)
         }
 
-        fn filesystem_default_max_file_size(&self) -> u64 {
+        pub fn filesystem_default_max_file_size(&self) -> u64 {
             crate::filesystem::default_max_file_size_for_test()
         }
 
         #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
-        fn cloud_is_probably_text_object_key(&self, key: &str) -> bool {
+        pub fn cloud_is_probably_text_object_key(&self, key: &str) -> bool {
             crate::cloud::is_probably_text_object_key(key)
         }
 
         #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
-        fn cloud_is_binary_content_type(&self, content_type: &str) -> bool {
+        pub fn cloud_is_binary_content_type(&self, content_type: &str) -> bool {
             crate::cloud::is_binary_content_type(content_type)
         }
 
         #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
-        fn cloud_read_text_object_body_from_url(
+        pub fn cloud_read_text_object_body_from_url(
             &self,
             url: &str,
             max_bytes: u64,
@@ -1034,7 +440,7 @@ pub mod testing {
         }
 
         #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
-        fn cloud_record_unreadable_object_skip(
+        pub fn cloud_record_unreadable_object_skip(
             &self,
             source: &str,
             item_kind: &str,
@@ -1054,7 +460,7 @@ pub mod testing {
             feature = "bitbucket",
             feature = "gcs"
         ))]
-        fn http_request_timeout(&self) -> std::time::Duration {
+        pub fn http_request_timeout(&self) -> std::time::Duration {
             crate::timeouts::HTTP_REQUEST
         }
 
@@ -1068,7 +474,7 @@ pub mod testing {
             feature = "bitbucket",
             feature = "gcs"
         ))]
-        fn http_effective_proxy(&self, http: &crate::http::HttpClientConfig) -> Option<String> {
+        pub fn http_effective_proxy(&self, http: &crate::http::HttpClientConfig) -> Option<String> {
             http.effective_proxy()
         }
 
@@ -1082,7 +488,7 @@ pub mod testing {
             feature = "bitbucket",
             feature = "gcs"
         ))]
-        fn http_effective_insecure_tls(&self, http: &crate::http::HttpClientConfig) -> bool {
+        pub fn http_effective_insecure_tls(&self, http: &crate::http::HttpClientConfig) -> bool {
             http.effective_insecure_tls()
         }
 
@@ -1096,7 +502,7 @@ pub mod testing {
             feature = "bitbucket",
             feature = "gcs"
         ))]
-        fn http_blocking_client_builder(
+        pub fn http_blocking_client_builder(
             &self,
             http: &crate::http::HttpClientConfig,
         ) -> Result<reqwest::blocking::ClientBuilder, String> {
@@ -1113,7 +519,7 @@ pub mod testing {
             feature = "bitbucket",
             feature = "gcs"
         ))]
-        fn http_async_client_builder(
+        pub fn http_async_client_builder(
             &self,
             http: &crate::http::HttpClientConfig,
         ) -> Result<reqwest::ClientBuilder, String> {
@@ -1121,17 +527,17 @@ pub mod testing {
         }
 
         #[cfg(feature = "gcs")]
-        fn gcs_endpoint_is_google(&self, endpoint: &str) -> bool {
+        pub fn gcs_endpoint_is_google(&self, endpoint: &str) -> bool {
             crate::gcs::endpoint_is_google(endpoint)
         }
 
         #[cfg(feature = "gcs")]
-        fn gcs_credential_forward_allowed(&self, allow_explicit: bool) -> bool {
+        pub fn gcs_credential_forward_allowed(&self, allow_explicit: bool) -> bool {
             crate::cloud::credential_forward_allowed(allow_explicit)
         }
 
         #[cfg(feature = "gcs")]
-        fn gcs_source_with_endpoint<B, E>(&self, bucket: B, endpoint: E) -> crate::GcsSource
+        pub fn gcs_source_with_endpoint<B, E>(&self, bucket: B, endpoint: E) -> crate::GcsSource
         where
             B: Into<String>,
             E: Into<String>,
@@ -1142,7 +548,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "gcs")]
-        fn gcs_source_with_endpoint_and_limits<B, E>(
+        pub fn gcs_source_with_endpoint_and_limits<B, E>(
             &self,
             bucket: B,
             endpoint: E,
@@ -1159,7 +565,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "gcs")]
-        fn gcs_source_with_endpoint_max_objects<B, E>(
+        pub fn gcs_source_with_endpoint_max_objects<B, E>(
             &self,
             bucket: B,
             endpoint: E,
@@ -1176,17 +582,26 @@ pub mod testing {
         }
 
         #[cfg(feature = "s3")]
-        fn s3_endpoint_is_aws(&self, endpoint: &str) -> bool {
+        pub fn s3_endpoint_is_aws(&self, endpoint: &str) -> bool {
             crate::s3::endpoint_is_aws(endpoint)
         }
 
         #[cfg(feature = "s3")]
-        fn s3_credential_forward_allowed(&self, allow_explicit: bool) -> bool {
+        pub fn s3_credential_forward_allowed(&self, allow_explicit: bool) -> bool {
             crate::cloud::credential_forward_allowed(allow_explicit)
         }
 
         #[cfg(feature = "s3")]
-        fn s3_source_with_endpoint<B, E>(&self, bucket: B, endpoint: E) -> crate::S3Source
+        /// Build an `S3Source` at a custom (typically loopback httpmock) endpoint.
+        ///
+        /// SECURITY NOTE: every `*_with_endpoint*` loopback-mock builder OPTS INTO
+        /// private endpoints (`allow_private_endpoint = true`) so the mock at
+        /// `127.0.0.1` is reachable, i.e. it DISABLES the cloud SSRF endpoint
+        /// screen. A test that must exercise the ACTIVE screen (private/metadata
+        /// refusal, public-host acceptance) MUST instead use
+        /// `s3_source_with_endpoint_allow_private(bucket, endpoint, false)`, or it
+        /// silently passes with the screen off.
+        pub fn s3_source_with_endpoint<B, E>(&self, bucket: B, endpoint: E) -> crate::S3Source
         where
             B: Into<String>,
             E: Into<String>,
@@ -1197,7 +612,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "s3")]
-        fn s3_source_with_endpoint_and_limits<B, E>(
+        pub fn s3_source_with_endpoint_and_limits<B, E>(
             &self,
             bucket: B,
             endpoint: E,
@@ -1214,7 +629,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "s3")]
-        fn s3_source_with_endpoint_max_objects<B, E>(
+        pub fn s3_source_with_endpoint_max_objects<B, E>(
             &self,
             bucket: B,
             endpoint: E,
@@ -1231,7 +646,11 @@ pub mod testing {
         }
 
         #[cfg(feature = "s3")]
-        fn s3_source_with_endpoint_allow_private<B, E>(
+        /// Build an S3 source whose SSRF endpoint screen is either default-on
+        /// (`allow_private = false`) or opted-out (`true`), the config-flag
+        /// replacement for the retired `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` env,
+        /// used by the SSRF-refusal regression tests to drive both paths.
+        pub fn s3_source_with_endpoint_allow_private<B, E>(
             &self,
             bucket: B,
             endpoint: E,
@@ -1250,7 +669,8 @@ pub mod testing {
         }
 
         #[cfg(feature = "gcs")]
-        fn gcs_source_with_endpoint_allow_private<B, E>(
+        /// GCS counterpart of [`s3_source_with_endpoint_allow_private`].
+        pub fn gcs_source_with_endpoint_allow_private<B, E>(
             &self,
             bucket: B,
             endpoint: E,
@@ -1269,7 +689,10 @@ pub mod testing {
         }
 
         #[cfg(feature = "azure")]
-        fn azure_blob_source<U>(&self, container_url: U) -> crate::AzureBlobSource
+        /// Build an Azure Blob source whose container URL is permitted to be a
+        /// private / loopback endpoint (httpmock binds 127.0.0.1), the loopback
+        /// config-flag replacement used by the azure listing/drop regressions.
+        pub fn azure_blob_source<U>(&self, container_url: U) -> crate::AzureBlobSource
         where
             U: Into<String>,
         {
@@ -1278,46 +701,46 @@ pub mod testing {
         }
 
         #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
-        fn git_clone_timeout(&self) -> std::time::Duration {
+        pub fn git_clone_timeout(&self) -> std::time::Duration {
             crate::timeouts::GIT_CLONE
         }
 
         #[cfg(feature = "binary")]
-        fn ghidra_analysis_timeout(&self) -> std::time::Duration {
+        pub fn ghidra_analysis_timeout(&self) -> std::time::Duration {
             crate::timeouts::GHIDRA_ANALYSIS
         }
 
         #[cfg(feature = "docker")]
-        fn docker_export_timeout(&self) -> std::time::Duration {
+        pub fn docker_export_timeout(&self) -> std::time::Duration {
             crate::timeouts::DOCKER_EXPORT
         }
 
         #[cfg(feature = "binary")]
-        fn binary_strings_only<P>(&self, path: P) -> crate::BinarySource
+        pub fn binary_strings_only<P>(&self, path: P) -> crate::BinarySource
         where
             P: Into<std::path::PathBuf>,
         {
             crate::BinarySource::strings_only(path)
         }
 
-        fn user_agent(&self, suffix: Option<&str>) -> String {
+        pub fn user_agent(&self, suffix: Option<&str>) -> String {
             crate::http::user_agent(suffix)
         }
 
         #[cfg(feature = "binary")]
-        fn extract_string_literals(&self, line: &str) -> Vec<String> {
+        pub fn extract_string_literals(&self, line: &str) -> Vec<String> {
             let mut out = Vec::new();
             crate::binary::literals::extract_string_literals(line, &mut out);
             out
         }
 
         #[cfg(feature = "binary")]
-        fn extract_sections(&self, bytes: &[u8], path: &str) -> Option<Vec<keyhog_core::Chunk>> {
+        pub fn extract_sections(&self, bytes: &[u8], path: &str) -> Option<Vec<keyhog_core::Chunk>> {
             crate::binary::sections::extract_sections(bytes, path)
         }
 
         #[cfg(feature = "binary")]
-        fn resolve_binary_section_name<'a>(
+        pub fn resolve_binary_section_name<'a>(
             &self,
             resolved: Option<&'a str>,
             sh_name: usize,
@@ -1326,12 +749,12 @@ pub mod testing {
         }
 
         #[cfg(feature = "github")]
-        fn validate_repo_name(&self, name: &str) -> Result<(), keyhog_core::SourceError> {
+        pub fn validate_repo_name(&self, name: &str) -> Result<(), keyhog_core::SourceError> {
             crate::github_org::validate_repo_name(name)
         }
 
         #[cfg(feature = "github")]
-        fn github_collaboration_source_with_endpoint(
+        pub fn github_collaboration_source_with_endpoint(
             &self,
             repository: &str,
             endpoint: &str,
@@ -1351,7 +774,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "github")]
-        fn github_collaboration_wiki_chunks_from_repo(
+        pub fn github_collaboration_wiki_chunks_from_repo(
             &self,
             repo: &std::path::Path,
             limits: crate::SourceLimits,
@@ -1360,17 +783,17 @@ pub mod testing {
         }
 
         #[cfg(feature = "github")]
-        fn validate_org_name(&self, name: &str) -> Result<(), keyhog_core::SourceError> {
+        pub fn validate_org_name(&self, name: &str) -> Result<(), keyhog_core::SourceError> {
             crate::github_org::validate_org_name(name)
         }
 
         #[cfg(feature = "github")]
-        fn validate_clone_url(&self, url: &str) -> Result<(), keyhog_core::SourceError> {
+        pub fn validate_clone_url(&self, url: &str) -> Result<(), keyhog_core::SourceError> {
             crate::github_org::validate_clone_url(url)
         }
 
         #[cfg(feature = "github")]
-        fn github_org_rewrite_chunk_path(
+        pub fn github_org_rewrite_chunk_path(
             &self,
             chunk: keyhog_core::Chunk,
             org: &str,
@@ -1381,7 +804,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "github")]
-        fn github_org_scan_repo_chunks<I>(
+        pub fn github_org_scan_repo_chunks<I>(
             &self,
             chunks: I,
             org: &str,
@@ -1395,7 +818,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "github")]
-        fn github_org_listing_truncated_error(
+        pub fn github_org_listing_truncated_error(
             &self,
             org: &str,
             repo_count: usize,
@@ -1405,12 +828,12 @@ pub mod testing {
         }
 
         #[cfg(feature = "gitlab")]
-        fn validate_gitlab_group_path(&self, group: &str) -> Result<(), keyhog_core::SourceError> {
+        pub fn validate_gitlab_group_path(&self, group: &str) -> Result<(), keyhog_core::SourceError> {
             crate::gitlab_group::validate_group_path(group)
         }
 
         #[cfg(feature = "gitlab")]
-        fn gitlab_group_listing_truncated_error(
+        pub fn gitlab_group_listing_truncated_error(
             &self,
             group: &str,
             repo_count: usize,
@@ -1420,7 +843,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "bitbucket")]
-        fn validate_bitbucket_workspace(
+        pub fn validate_bitbucket_workspace(
             &self,
             workspace: &str,
         ) -> Result<(), keyhog_core::SourceError> {
@@ -1428,7 +851,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "bitbucket")]
-        fn bitbucket_workspace_listing_truncated_error(
+        pub fn bitbucket_workspace_listing_truncated_error(
             &self,
             workspace: &str,
             repo_count: usize,
@@ -1440,7 +863,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
-        fn export_docker_image_archive(
+        pub fn export_docker_image_archive(
             &self,
             docker_bin: &std::path::Path,
             image: &str,
@@ -1450,7 +873,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
-        fn docker_manifest_layer_archives(
+        pub fn docker_manifest_layer_archives(
             &self,
             root_path: &std::path::Path,
         ) -> Result<Vec<std::path::PathBuf>, keyhog_core::SourceError> {
@@ -1458,7 +881,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
-        fn docker_fallback_layer_archives_from_rows(
+        pub fn docker_fallback_layer_archives_from_rows(
             &self,
             rows: Vec<Result<std::path::PathBuf, keyhog_core::SourceError>>,
         ) -> Vec<std::path::PathBuf> {
@@ -1466,7 +889,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
-        fn docker_manifest_config_chunks(
+        pub fn docker_manifest_config_chunks(
             &self,
             root_path: &std::path::Path,
             image: &str,
@@ -1475,7 +898,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
-        fn docker_archive_metadata_chunks(
+        pub fn docker_archive_metadata_chunks(
             &self,
             root_path: &std::path::Path,
             image: &str,
@@ -1484,7 +907,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
-        fn unpack_docker_layer_archive(
+        pub fn unpack_docker_layer_archive(
             &self,
             archive_path: &std::path::Path,
             destination: &std::path::Path,
@@ -1493,7 +916,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
-        fn unpack_docker_layer_archive_with_total_cap(
+        pub fn unpack_docker_layer_archive_with_total_cap(
             &self,
             archive_path: &std::path::Path,
             destination: &std::path::Path,
@@ -1507,7 +930,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
-        fn unpack_docker_layer_archive_with_entry_cap(
+        pub fn unpack_docker_layer_archive_with_entry_cap(
             &self,
             archive_path: &std::path::Path,
             destination: &std::path::Path,
@@ -1521,7 +944,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
-        fn unpack_docker_layer_archive_with_caps(
+        pub fn unpack_docker_layer_archive_with_caps(
             &self,
             archive_path: &std::path::Path,
             destination: &std::path::Path,
@@ -1537,7 +960,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
-        fn unpack_docker_image_archive_with_entry_cap(
+        pub fn unpack_docker_image_archive_with_entry_cap(
             &self,
             archive_path: &std::path::Path,
             destination: &std::path::Path,
@@ -1551,7 +974,18 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
-        fn docker_rewrite_layer_chunks<I>(
+        /// Unpack several layer tars through ONE image-scoped unpack budget, so
+        /// the image-wide ceiling is reachable without a docker daemon.
+        pub fn unpack_docker_layers_with_shared_budget(
+            &self,
+            archives: &[(&std::path::Path, &std::path::Path)],
+            total_cap: u64,
+        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError> {
+            crate::docker::unpack_layers_with_shared_budget_for_test(archives, total_cap)
+        }
+
+        #[cfg(feature = "docker")]
+        pub fn docker_rewrite_layer_chunks<I>(
             &self,
             chunks: I,
             image: &str,
@@ -1568,7 +1002,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
-        fn validate_docker_tar_archive(
+        pub fn validate_docker_tar_archive(
             &self,
             archive_path: &std::path::Path,
         ) -> Result<(), keyhog_core::SourceError> {
@@ -1576,7 +1010,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
-        fn validate_docker_tar_archive_with_total_cap(
+        pub fn validate_docker_tar_archive_with_total_cap(
             &self,
             archive_path: &std::path::Path,
             total_cap: u64,
@@ -1585,7 +1019,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "azure")]
-        fn azure_blob_source_with_max_objects<U>(
+        pub fn azure_blob_source_with_max_objects<U>(
             &self,
             container_url: U,
             max_objects: usize,
@@ -1599,7 +1033,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "azure")]
-        fn azure_blob_source_with_limits<U>(
+        pub fn azure_blob_source_with_limits<U>(
             &self,
             container_url: U,
             limits: crate::SourceLimits,
@@ -1612,7 +1046,7 @@ pub mod testing {
                 .with_http_config(crate::http::HttpClientConfig::allowing_private_endpoint())
         }
 
-        fn extract_printable_strings(
+        pub fn extract_printable_strings(
             &self,
             bytes: &[u8],
             min_len: usize,
@@ -1620,7 +1054,7 @@ pub mod testing {
             crate::strings::extract_printable_strings(bytes, min_len)
         }
 
-        fn join_sensitive_strings(
+        pub fn join_sensitive_strings(
             &self,
             parts: &[keyhog_core::SensitiveString],
             sep: &str,
@@ -1628,62 +1062,69 @@ pub mod testing {
             crate::strings::join_sensitive_strings(parts, sep)
         }
 
+        /// The exact separator `join_printable_runs` places between two
+        /// independent printable runs, so a test can split a binary-strings
+        /// chunk body back into its run list without restating the literal.
+        pub fn printable_run_separator(&self) -> &'static str {
+            crate::strings::RUN_SEPARATOR
+        }
+
         #[cfg(feature = "git")]
-        fn git_max_commits_limit(&self, cap: usize) -> Option<usize> {
+        pub fn git_max_commits_limit(&self, cap: usize) -> Option<usize> {
             crate::git::max_commits_limit(cap)
         }
 
         #[cfg(feature = "git")]
-        fn git_source_configured_max_commits(&self, cap: usize) -> Option<usize> {
+        pub fn git_source_configured_max_commits(&self, cap: usize) -> Option<usize> {
             crate::git::GitSource::new(std::path::PathBuf::from("."))
                 .with_max_commits(cap)
                 .max_commits
         }
 
         #[cfg(feature = "git")]
-        fn git_history_source_configured_max_commits(&self, cap: usize) -> Option<usize> {
+        pub fn git_history_source_configured_max_commits(&self, cap: usize) -> Option<usize> {
             crate::git::GitHistorySource::new(std::path::PathBuf::from("."))
                 .with_max_commits(cap)
                 .max_commits
         }
 
         #[cfg(feature = "web")]
-        fn redact_url(&self, url: &str) -> String {
+        pub fn redact_url(&self, url: &str) -> String {
             crate::web::redact_url(url).into_owned()
         }
 
         #[cfg(feature = "web")]
-        fn redirect_pin_key(&self, url: &str) -> Option<String> {
+        pub fn redirect_pin_key(&self, url: &str) -> Option<String> {
             crate::web::redirect_pin_key(url)
         }
 
         #[cfg(feature = "github")]
-        fn github_rate_limit_backoff_secs(&self, retry_after: Option<u64>, attempt: usize) -> u64 {
+        pub fn github_rate_limit_backoff_secs(&self, retry_after: Option<u64>, attempt: usize) -> u64 {
             crate::github_org::rate_limit_backoff_secs(retry_after, attempt)
         }
 
         #[cfg(feature = "github")]
-        fn github_max_backoff_secs(&self) -> u64 {
+        pub fn github_max_backoff_secs(&self) -> u64 {
             crate::github_org::MAX_BACKOFF_SECS
         }
 
         #[cfg(feature = "github")]
-        fn github_repos_per_page(&self) -> usize {
+        pub fn github_repos_per_page(&self) -> usize {
             crate::github_org::REPOS_PER_PAGE
         }
 
         #[cfg(feature = "web")]
-        fn is_disallowed_web_host(&self, url: &str) -> bool {
+        pub fn is_disallowed_web_host(&self, url: &str) -> bool {
             crate::web::is_disallowed_web_host(url)
         }
 
         #[cfg(feature = "web")]
-        fn is_disallowed_ip(&self, ip: std::net::IpAddr) -> bool {
+        pub fn is_disallowed_ip(&self, ip: std::net::IpAddr) -> bool {
             crate::web::is_disallowed_ip(ip)
         }
 
         #[cfg(feature = "web")]
-        fn resolve_and_screen(
+        pub fn resolve_and_screen(
             &self,
             host: &str,
             port: u16,
@@ -1693,7 +1134,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "web")]
-        fn build_web_client(
+        pub fn build_web_client(
             &self,
             http: &crate::http::HttpClientConfig,
             original_url: &str,
@@ -1709,7 +1150,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "web")]
-        fn web_source_with_autoroute_loopback_calibration(
+        pub fn web_source_with_autoroute_loopback_calibration(
             &self,
             urls: Vec<String>,
             allow: bool,
@@ -1718,12 +1159,12 @@ pub mod testing {
         }
 
         #[cfg(feature = "slack")]
-        fn slack_conversations_list_len_for_test(&self, body: &str) -> Result<usize, String> {
+        pub fn slack_conversations_list_len_for_test(&self, body: &str) -> Result<usize, String> {
             crate::slack::conversations_list_len_for_test(body).map_err(|error| error.to_string())
         }
 
         #[cfg(feature = "slack")]
-        fn slack_history_len_for_test(
+        pub fn slack_history_len_for_test(
             &self,
             body: &str,
             channel_id: &str,
@@ -1732,7 +1173,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "slack")]
-        fn slack_conversations_list_next_cursor_for_test(
+        pub fn slack_conversations_list_next_cursor_for_test(
             &self,
             body: &str,
         ) -> Result<Option<String>, String> {
@@ -1741,7 +1182,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "slack")]
-        fn slack_history_next_cursor_for_test(
+        pub fn slack_history_next_cursor_for_test(
             &self,
             body: &str,
             channel_id: &str,
@@ -1751,7 +1192,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "slack")]
-        fn slack_source_with_endpoint<T, E>(&self, token: T, endpoint: E) -> crate::SlackSource
+        pub fn slack_source_with_endpoint<T, E>(&self, token: T, endpoint: E) -> crate::SlackSource
         where
             T: Into<String>,
             E: Into<String>,
@@ -1760,7 +1201,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "slack")]
-        fn slack_source_with_endpoint_and_limits<T, E>(
+        pub fn slack_source_with_endpoint_and_limits<T, E>(
             &self,
             token: T,
             endpoint: E,
@@ -1776,7 +1217,7 @@ pub mod testing {
         }
 
         #[cfg(feature = "slack")]
-        fn slack_source_with_endpoint_and_lookback<T, E>(
+        pub fn slack_source_with_endpoint_and_lookback<T, E>(
             &self,
             token: T,
             endpoint: E,

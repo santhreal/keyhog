@@ -7,6 +7,8 @@ use std::process::Command;
 fn main() -> io::Result<()> {
     println!("cargo:rerun-if-changed=src/weights.bin");
     println!("cargo:rerun-if-changed=src/model_card.json");
+    println!("cargo:rerun-if-changed=data/english_bigram_logprob.bin");
+    println!("cargo:rerun-if-changed=data/english_bigram_logprob.card.toml");
 
     let manifest_dir = env::var_os("CARGO_MANIFEST_DIR").ok_or_else(|| {
         io::Error::new(
@@ -17,6 +19,7 @@ fn main() -> io::Result<()> {
     let manifest_dir = Path::new(&manifest_dir);
     stamp_source_tree_state(manifest_dir)?;
     stamp_gpu_driver_versions(manifest_dir)?;
+    verify_bigram_model_card()?;
 
     let out_dir = env::var_os("OUT_DIR").ok_or_else(|| {
         io::Error::new(
@@ -98,6 +101,86 @@ fn main() -> io::Result<()> {
             rust_string(&summary),
         ),
     )?;
+    Ok(())
+}
+
+/// Verify `data/english_bigram_logprob.bin` against its provenance card.
+///
+/// The table is `include_bytes!`-embedded and drives every dictionary-vs-random
+/// verdict in the generic bridge, so a truncated or regenerated-but-unrecorded
+/// file must fail the BUILD rather than silently shift suppression. Mirrors the
+/// `weights.bin` / `model_card.json` contract above.
+fn verify_bigram_model_card() -> io::Result<()> {
+    let bytes = fs::read("data/english_bigram_logprob.bin").map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("data/english_bigram_logprob.bin is required by the randomness discriminator: {error}"),
+        )
+    })?;
+    let card_src = fs::read_to_string("data/english_bigram_logprob.card.toml").map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!(
+                "data/english_bigram_logprob.card.toml is required beside the bigram table: {error}"
+            ),
+        )
+    })?;
+    let card: toml::Value = toml::from_str(&card_src).map_err(|error| {
+        invalid_data(format!(
+            "data/english_bigram_logprob.card.toml is not valid TOML: {error}"
+        ))
+    })?;
+    let model = card.get("bigram_model").ok_or_else(|| {
+        invalid_data("english_bigram_logprob.card.toml is missing [bigram_model]".to_string())
+    })?;
+    let card_int = |key: &str| -> io::Result<i64> {
+        model
+            .get(key)
+            .and_then(toml::Value::as_integer)
+            .ok_or_else(|| {
+                invalid_data(format!(
+                    "english_bigram_logprob.card.toml [bigram_model].{key} must be an integer"
+                ))
+            })
+    };
+    let schema_version = card_int("schema_version")?;
+    if schema_version != 1 {
+        return Err(invalid_data(format!(
+            "english_bigram_logprob.card.toml schema_version {schema_version} is unsupported; \
+             this build understands version 1"
+        )));
+    }
+    let expected_bytes = card_int("rows")? * card_int("columns")? * 4;
+    let declared_bytes = card_int("bytes")?;
+    if declared_bytes != expected_bytes {
+        return Err(invalid_data(format!(
+            "english_bigram_logprob.card.toml declares {declared_bytes} bytes but rows*columns*4 \
+             is {expected_bytes}"
+        )));
+    }
+    if i64::try_from(bytes.len()).unwrap_or(i64::MAX) != expected_bytes {
+        return Err(invalid_data(format!(
+            "english_bigram_logprob.bin is {} bytes, the card requires {expected_bytes}. Fix: \
+             regenerate with ml/gen_bigram_model.py and update the card.",
+            bytes.len()
+        )));
+    }
+    let digest = format!("{:016x}", fnv1a64(&bytes));
+    let card_digest = model
+        .get("bytes_fnv1a64")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| {
+            invalid_data(
+                "english_bigram_logprob.card.toml [bigram_model].bytes_fnv1a64 must be a string"
+                    .to_string(),
+            )
+        })?;
+    if card_digest != digest {
+        return Err(invalid_data(format!(
+            "english_bigram_logprob.card.toml bytes_fnv1a64 mismatch: card has {card_digest}, \
+             the table is {digest}. Fix: rerun ml/gen_bigram_model.py and record the new digest."
+        )));
+    }
     Ok(())
 }
 

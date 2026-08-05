@@ -38,6 +38,18 @@ impl MeasuredRoute {
     }
 }
 
+/// Ordering used when measurement proves no backend faster than another: the
+/// backend that needs no accelerator bring-up and always runs comes first.
+const fn backend_route_complexity(backend: ScanBackend) -> u8 {
+    match backend {
+        ScanBackend::CpuFallback => 0,
+        ScanBackend::SimdCpu => 1,
+        ScanBackend::GpuCuda => 2,
+        ScanBackend::GpuMetal => 3,
+        _ => 4,
+    }
+}
+
 fn paired_route_trials_are_faster(selected: &[u128], competitor: &[u128]) -> bool {
     if selected.len().abs_diff(competitor.len()) > 1 {
         return false;
@@ -330,6 +342,26 @@ impl AutorouteCalibrationPoint {
         self.resolve_measured_route_excluding(persistent_runtime, None)
     }
 
+    /// The route this point selects: separated evidence first, then the
+    /// deterministic dead-heat resolution when nothing separates.
+    ///
+    /// Route selection, class reconciliation and cache validation all read
+    /// this. [`Self::resolve_measured_route`] stays the strict proof and keeps
+    /// backing `confidence_separated`, so an unseparated selection is still
+    /// reported as one.
+    pub(super) fn resolve_selected_route(&self, persistent_runtime: bool) -> Option<MeasuredRoute> {
+        self.resolve_selected_route_excluding(persistent_runtime, None)
+    }
+
+    pub(super) fn resolve_selected_route_excluding(
+        &self,
+        persistent_runtime: bool,
+        excluded_backend: Option<ScanBackend>,
+    ) -> Option<MeasuredRoute> {
+        self.resolve_measured_route_excluding(persistent_runtime, excluded_backend)
+            .or_else(|| self.resolve_dead_heat_route(persistent_runtime, excluded_backend))
+    }
+
     fn resolve_measured_route_excluding(
         &self,
         persistent_runtime: bool,
@@ -404,70 +436,80 @@ impl AutorouteCalibrationPoint {
             .map(|(route, _)| *route)
     }
 
-    fn resolve_exact_peer_tie_route(&self, persistent_runtime: bool) -> Option<MeasuredRoute> {
-        let candidates = self.route_candidates_for_runtime(persistent_runtime);
-        let (selected, selected_median_ns) = candidates
+    /// Deterministic resolution for a measurement where nothing separates.
+    ///
+    /// [`Self::resolve_measured_route_excluding`] answers only when one route's
+    /// 95% interval lies entirely below every peer's. Real trees frequently do
+    /// not separate. Calibrating the homefield corpus measured cpu-fallback at
+    /// 4.507 s [3.08, 11.49] against wgpu at 4.462 s [4.40, 4.92], with every
+    /// interval overlapping every other. The old answer was no route at all, so
+    /// nothing was persisted and every later scan of that tree fell into scalar
+    /// correctness recovery: the slowest outcome reachable from a measurement
+    /// whose entire content is that the backends are indistinguishable.
+    ///
+    /// A dead heat is resolved instead of discarded. A route stays in
+    /// contention unless some peer is proved faster, meaning that peer's whole
+    /// interval lies below the route's own. Among the routes still in
+    /// contention only those whose median falls within the fastest route's own
+    /// 95% upper bound are eligible, so a route can never win on the strength
+    /// of a wide error bar while its central tendency is measurably worse. The
+    /// eligible set is ordered by backend complexity first, because when
+    /// nothing is proved faster the backend that needs no accelerator
+    /// initialization and always runs is the honest choice, and it is the same
+    /// choice on every rerun of the same evidence. Plan selection then prefers
+    /// the plan the binary was compiled with.
+    ///
+    /// This subsumes the exact peer-median tie it replaces: equal medians leave
+    /// both routes in contention and both inside the fastest bound, so the
+    /// lower-complexity backend still wins.
+    fn resolve_dead_heat_route(
+        &self,
+        persistent_runtime: bool,
+        excluded_backend: Option<ScanBackend>,
+    ) -> Option<MeasuredRoute> {
+        let intervals = self
+            .route_confidence_intervals_for(persistent_runtime)
+            .into_iter()
+            .filter(|(route, _)| Some(route.backend) != excluded_backend)
+            .collect::<Vec<_>>();
+        let contenders = intervals
             .iter()
-            .min_by_key(|(route, median_ns)| {
-                let backend_preference = match route.backend {
-                    ScanBackend::CpuFallback => 0u8,
-                    ScanBackend::SimdCpu => 1,
-                    ScanBackend::GpuCuda => 2,
-                    ScanBackend::GpuMetal => 3,
-                    ScanBackend::GpuWgpu => 4,
-                    _ => 4,
-                };
+            .filter_map(|(route, interval)| {
+                self.route_median_ns(*route, persistent_runtime)
+                    .map(|median_ns| (*route, median_ns, *interval))
+            })
+            .filter(|(_, _, interval)| {
+                !intervals
+                    .iter()
+                    .any(|(_, peer_interval)| peer_interval.high_ns < interval.low_ns)
+            })
+            .collect::<Vec<_>>();
+        let fastest_high_ns = contenders
+            .iter()
+            .min_by_key(|(route, median_ns, _)| {
                 (
                     *median_ns,
-                    backend_preference,
+                    backend_route_complexity(route.backend),
                     route.phase2_plain_localizer,
                     route.phase2_keyword_localizer,
                 )
             })
-            .copied()?;
-        let intervals = self.route_confidence_intervals_for(persistent_runtime);
-        let selected_interval = intervals
+            .map(|(_, _, interval)| interval.high_ns)?;
+        contenders
             .iter()
-            .find(|(route, _)| *route == selected)
-            .map(|(_, interval)| *interval)?;
-        let mut has_tied_peer = false;
-        for backend in [
-            ScanBackend::CpuFallback,
-            ScanBackend::SimdCpu,
-            ScanBackend::GpuCuda,
-            ScanBackend::GpuMetal,
-            ScanBackend::GpuWgpu,
-        ] {
-            if backend == selected.backend {
-                continue;
-            }
-            let Some((peer, peer_median_ns)) = candidates
-                .iter()
-                .filter(|(route, _)| route.backend == backend)
-                .min_by_key(|(route, median_ns)| {
-                    (
-                        *median_ns,
-                        route.phase2_plain_localizer,
-                        route.phase2_keyword_localizer,
-                    )
-                })
-                .copied()
-            else {
-                continue;
-            };
-            if peer_median_ns == selected_median_ns {
-                has_tied_peer = true;
-                continue;
-            }
-            let peer_interval = intervals
-                .iter()
-                .find(|(route, _)| *route == peer)
-                .map(|(_, interval)| *interval)?;
-            if selected_interval.high_ns >= peer_interval.low_ns {
-                return None;
-            }
-        }
-        has_tied_peer.then_some(selected)
+            .filter(|(_, median_ns, _)| *median_ns <= fastest_high_ns)
+            .min_by_key(|(route, median_ns, _)| {
+                (
+                    backend_route_complexity(route.backend),
+                    route.phase2_plain_localizer != self.compiled_default_phase2_plain_localizer
+                        || route.phase2_keyword_localizer
+                            != self.compiled_default_phase2_keyword_localizer,
+                    *median_ns,
+                    route.phase2_plain_localizer,
+                    route.phase2_keyword_localizer,
+                )
+            })
+            .map(|(route, _, _)| *route)
     }
 
     fn route_trial_ns_for(
@@ -865,7 +907,7 @@ impl AutorouteDecision {
                 .to_string()
         })?;
         let measured_one_shot = point
-            .resolve_measured_route(false)
+            .resolve_selected_route(false)
             .ok_or_else(|| "new workload point does not resolve one one-shot route".to_string())?;
         if declared_one_shot != measured_one_shot {
             return Err(format!(
@@ -879,7 +921,7 @@ impl AutorouteDecision {
                 .to_string()
         })?;
         let measured_daemon = point
-            .resolve_measured_route(true)
+            .resolve_selected_route(true)
             .ok_or_else(|| "new workload point does not resolve one daemon route".to_string())?;
         // The backend is what autoroute selects, so a class whose points
         // disagree about it is genuinely unresolved and must stay refused. The
@@ -917,7 +959,7 @@ impl AutorouteDecision {
                     )
                 })?;
             let measured_recovery = point
-                .resolve_measured_route_excluding(persistent_runtime, Some(expected_route.backend))
+                .resolve_selected_route_excluding(persistent_runtime, Some(expected_route.backend))
                 .ok_or_else(|| {
                     format!(
                         "new workload point has no {runtime_label} recovery route after {}",
@@ -1161,11 +1203,8 @@ impl AutorouteDecision {
     /// with, which is a plan that certainly exists and certainly runs, instead
     /// of to no decision at all.
     fn resolve_class_route(&self, persistent_runtime: bool) -> Option<MeasuredRoute> {
-        let resolve = |point: &AutorouteCalibrationPoint| {
-            point
-                .resolve_measured_route(persistent_runtime)
-                .or_else(|| point.resolve_exact_peer_tie_route(persistent_runtime))
-        };
+        let resolve =
+            |point: &AutorouteCalibrationPoint| point.resolve_selected_route(persistent_runtime);
         let first = self.calibration_points.first()?;
         let selected = resolve(first)?;
         let resolved: Vec<MeasuredRoute> = self
@@ -1230,11 +1269,11 @@ impl AutorouteDecision {
         let selected = self
             .calibration_points
             .first()?
-            .resolve_measured_route_excluding(persistent_runtime, Some(failed_backend))?;
+            .resolve_selected_route_excluding(persistent_runtime, Some(failed_backend))?;
         self.calibration_points
             .iter()
             .all(|point| {
-                point.resolve_measured_route_excluding(persistent_runtime, Some(failed_backend))
+                point.resolve_selected_route_excluding(persistent_runtime, Some(failed_backend))
                     == Some(selected)
             })
             .then_some(selected)

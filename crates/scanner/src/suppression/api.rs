@@ -85,6 +85,37 @@ pub(crate) fn is_uncontextualized_binary_source(source: &str) -> bool {
         || source.contains("binary:macho:")
 }
 
+/// Does the match at `start..end` occupy a WHOLE lexical token of `data`?
+///
+/// The proof a named detector needs to survive the binary-strings noise gate
+/// (KH-1064). The noise in a printable-run dump is not random bytes, it is
+/// identifier soup: mangled C++ symbols, Go string tables, ELF diagnostic
+/// text. A short service prefix collides inside those constantly, so a
+/// detector pattern anchored on `cu_`, `pl_`, `dn_`, `wh_` or `re_` matches a
+/// SUBSTRING of a longer identifier rather than a token the program actually
+/// holds. A credential compiled into a binary is its own string literal or a
+/// delimited field of one, so it always begins and ends at a token boundary.
+///
+/// Measured over 249 MiB of system ELF binaries: 86 named-detector matches
+/// survive every other gate, and requiring both boundaries drops 71 of them
+/// (all 66 `checkly-api-key` hits were `cu_` inside `_ZN6icu_74…` mangling)
+/// while keeping a real Sentry DSN that the program genuinely embeds.
+///
+/// `_` counts as an identifier byte, so `impl_pIN8fileview` cannot present
+/// `pl_pIN8fileview` as a token.
+pub(crate) fn binary_match_is_lexically_isolated(data: &str, start: usize, end: usize) -> bool {
+    fn is_boundary(byte: Option<&u8>) -> bool {
+        // Start or end of the scanned body is a boundary: nothing abuts it.
+        byte.is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')
+    }
+    let bytes = data.as_bytes();
+    let leading = match start.checked_sub(1) {
+        Some(index) => is_boundary(bytes.get(index)),
+        None => true,
+    };
+    leading && is_boundary(bytes.get(end))
+}
+
 pub(crate) fn suppress_known_example_credential_stage(
     credential: &str,
     ctx: KnownExampleSuppressionCtx<'_>,
@@ -443,9 +474,15 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // Native binary extraction (`filesystem:binary-strings`,
     // `filesystem/archive-binary`, and the raw strings/section analyzers):
     // printable bytes or compiled data without source context are normally
-    // noisy. A strong named detector with a validated credential shape is
-    // direct evidence and remains scannable. Ghidra output is excluded because
-    // it retains source context.
+    // noisy. A named detector whose match carries structural proof, either a
+    // declared `[detector.credential_shape]` or a whole-token span in the
+    // extracted text, is direct evidence and remains scannable
+    // (`allow_validated_binary_credential`, KH-1064). Ghidra output is
+    // excluded from the gate entirely because it retains source context.
+    //
+    // Reaching here means the bytes WERE scanned and a named detector DID
+    // match, and we are withholding it. Count it as a coverage gap so a
+    // zero-finding binary scan reports what it excluded rather than a clean.
     if source_type.is_some_and(is_uncontextualized_binary_source)
         && !ctx.allow_validated_binary_credential
     {
@@ -455,6 +492,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
             credential,
             "native_binary_strings",
         );
+        crate::telemetry::record_binary_strings_named_exclusion();
         return shape_stage("native_binary_strings");
     }
     // The file at `path` is itself a secret scanner - every detector

@@ -1,5 +1,5 @@
 //! Property tier for `extract_printable_strings` (reached via the
-//! `SourceTestApi` facade), the `strings(1)`-equivalent that turns a binary
+//! `TestApi` facade), the `strings(1)`-equivalent that turns a binary
 //! blob (ELF/PE/.NET, PDF, WASM, archive members) into the printable runs the
 //! scanner then searches for credentials. The fixed-vector twins
 //! (`tests/unit/strings_extract.rs`, `tests/regression_binary_strings_*`) pin a
@@ -24,7 +24,7 @@
 //!
 //! Base build: the extractor facade needs no cargo feature.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use proptest::prelude::*;
 use std::collections::HashMap;
 

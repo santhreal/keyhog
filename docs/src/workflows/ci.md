@@ -57,6 +57,19 @@ baseline never suppresses that, so do not read it as clean. Keep `keyhog.json`
 on every outcome. The [generic shell wrapper](#generic-shell) is the portable
 way to retain the report and the exact exit code together.
 
+A scan that reads zero source bytes exits `13` with a `scan covered nothing`
+gap row, so an `--exclude-paths` glob that matches everything, a container
+mount that landed empty, or a partition path that no longer exists fails the
+job rather than passing it. Assert the byte count anyway when the input path
+can change, because the assertion names the problem in the job log instead of
+leaving a reader to decode an exit code:
+
+```sh
+jq -e '.metadata.source_bytes_scanned > 0' keyhog.json
+```
+
+See [tell a real clean from a skipped input](../reference/coverage-truth.md).
+
 ### 3. Respond when the gate fires
 
 A failing gate means someone added a credential. Remove it from the code and
@@ -277,7 +290,6 @@ steps:
     commands:
       - cargo install --locked --version '=0.5.68' keyhog
       - |
-        printf '{"schema_version":{"major":1,"minor":7},"scan_status":"failed","coverage_gap_summary":[],"findings":[]}\n' > keyhog.json
         scan_status=0
         $HOME/.local/bin/keyhog scan . --format json-envelope --output keyhog.json \
           2>keyhog.stderr || scan_status=$?
@@ -318,7 +330,6 @@ CI that can run a POSIX shell:
 #!/bin/sh
 set -eu
 
-printf '{"schema_version":{"major":1,"minor":7},"scan_status":"failed","coverage_gap_summary":[],"findings":[]}\n' > keyhog.json
 scan_status=0
 keyhog scan . --format json-envelope --output keyhog.json \
   2>keyhog.stderr || scan_status=$?
@@ -328,11 +339,10 @@ exit "$scan_status"
 ```
 
 Configure the CI artifact publisher to retain `keyhog.json`, `keyhog.stderr`,
-and `keyhog.exit-code` on both success and failure. KeyHog atomically replaces
-the initial empty JSON envelope after a completed scan. If setup or scanning
-fails before report generation, the valid empty report remains, while the saved
-stderr and nonzero status record that the scan did not complete. Always
-evaluate the report together with `keyhog.exit-code`.
+and `keyhog.exit-code` on both success and failure. KeyHog always writes the
+report, including when every source failed to read: that report then carries
+`scan covered nothing` and the reason each source failed. Always evaluate the
+report together with `keyhog.exit-code`.
 
 ## Buildkite
 
@@ -427,10 +437,25 @@ raw exit code, source inventory, and coverage state before aggregating results.
 - **Advisory findings:** preserve the raw KeyHog exit separately from report
   publication, then decide explicitly whether exit `1` blocks the job. A
   verified-live credential exits `10` and should remain blocking.
-- **Shallow clones:** `actions/checkout` defaults to `fetch-depth: 1`,
-  which normally exposes only the checked-out HEAD commit. A `--git-history`
-  scan walks only the ancestry present in that clone. Set `fetch-depth: 0` to
-  scan the complete HEAD ancestry.
+- **Shallow clones fail the job:** `actions/checkout` defaults to
+  `fetch-depth: 1`, which exposes only the checked-out HEAD commit. A
+  `--git-history` or `--git-blobs` scan of that clone now exits `13` with
+  `"scan_status":"partial"` and a `Git object unreadable or wrong object kind`
+  gap, because the graft boundary names parent commits the clone does not
+  contain. Set `fetch-depth: 0` on any job that scans history. A depth-1 clone
+  of a single-commit repository stays clean and correct, because its boundary
+  is the root commit and hides no parent.
+- **`--git-history` misses branches you did not check out:** it covers the
+  ancestry of the current checkout only. A credential on a branch this job
+  never checked out, or one left behind by `git commit --amend`, is reported by
+  `--git-blobs` and missed by `--git-history` with no coverage gap. Use
+  `--git-blobs` when the policy has to cover the whole repository, not just one
+  line of history.
+- **A base ref that resolves to HEAD:** `keyhog scan --git-diff <BASE>` exits
+  `0` after scanning zero bytes when `<BASE>` and `HEAD` are the same commit,
+  which is what a shallow clone gives you for `origin/main`. The gate passes
+  without examining anything. A base ref that is missing from the clone is
+  safe by comparison: that exits `13` and refuses to report clean.
 - **LFS files:** keyhog reads the LFS pointer file, not the
   contents. To scan LFS-stored binaries, enable LFS in checkout
   (`lfs: true`) and let the scanner pull the real file.

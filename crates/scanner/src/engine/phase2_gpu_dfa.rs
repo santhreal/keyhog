@@ -6,6 +6,13 @@
 //! confidence, suppression, and reporting stay under one owner. A GPU miss is
 //! trusted only as "no covered prefixless pattern was seen"; uncovered patterns
 //! and dispatch failures continue through the CPU admission gate.
+//!
+//! Coverage is deliberately narrow. Compiler-generated homoglyph variants are
+//! excluded because phase one already admits their base detector on a row with
+//! no confusable glyph, which is the same invariant `homoglyph_ascii_skip`
+//! relies on. They cannot be added: a single homoglyph variant needs more than
+//! 1024 NFA states and vyre's GPU regex pipeline caps a pipeline at
+//! `LANES * 32 == 1024` by construction, so the pool does not lower at all.
 
 #[cfg(test)]
 use self::batch::ZeroPhase2GpuDfaScratch;
@@ -105,6 +112,14 @@ impl Phase2GpuDfaCatalog {
         }
     }
 
+    /// The covered set a GPU miss is trusted for.
+    ///
+    /// The CPU prefilter marks every always-active pattern that matches, minus
+    /// the compiler-generated homoglyph variants it skips on a row with no
+    /// confusable glyph. A miss may only prove absence when every one of the
+    /// remainder is in a shard, so anything the candidate filter drops for a
+    /// reason OTHER than that proven redundancy (a gate-prefixed always-active
+    /// pattern, a lowering failure) counts as uncovered.
     fn build(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         always_active_indices: &[usize],
@@ -113,24 +128,32 @@ impl Phase2GpuDfaCatalog {
         let all_candidates =
             prefixless_always_active_candidates(phase2_patterns, always_active_indices);
         let candidates = ascii_phase2_gpu_dfa_candidates(phase2_patterns, &all_candidates);
+        let redundant = always_active_indices
+            .iter()
+            .filter(|&&idx| phase2_patterns[idx].0.homoglyph_variant)
+            .count();
         Self::build_from_selected_candidates(
             phase2_patterns,
-            candidates.len(),
-            all_candidates.len().saturating_sub(candidates.len()),
+            always_active_indices.len().saturating_sub(redundant),
+            redundant,
             &candidates,
             program_kind,
         )
     }
 
+    /// `required_pattern_count` is what the CPU prefilter would mark on a row
+    /// of this scope's byte class; `candidates` is what lowering was attempted
+    /// for. Anything the difference leaves out, plus every lowering failure,
+    /// is uncovered, and an uncovered catalog is refused outright.
     fn build_from_selected_candidates(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
-        ascii_candidate_count: usize,
+        required_pattern_count: usize,
         excluded_ascii_redundant_patterns: usize,
         candidates: &[usize],
         program_kind: Phase2GpuDfaProgramKind,
     ) -> Option<Self> {
         if candidates.is_empty() {
-            return (ascii_candidate_count == 0).then_some(Self {
+            return (required_pattern_count == 0).then_some(Self {
                 shards: Vec::new(),
                 uncovered_ascii_patterns: 0,
                 excluded_ascii_redundant_patterns,
@@ -139,7 +162,7 @@ impl Phase2GpuDfaCatalog {
         }
 
         let mut shards = Vec::new();
-        let mut uncovered_ascii_patterns = ascii_candidate_count.saturating_sub(candidates.len());
+        let mut uncovered_ascii_patterns = required_pattern_count.saturating_sub(candidates.len());
         build_shards_recursive(
             phase2_patterns,
             candidates,
@@ -148,27 +171,22 @@ impl Phase2GpuDfaCatalog {
             &mut uncovered_ascii_patterns,
         );
         let covered_patterns: usize = shards.iter().map(|shard| shard.phase2_indices.len()).sum();
-        if shards.is_empty() {
+        // An incomplete catalog cannot prove absence, and a hit only tells the
+        // CPU to do what it was already going to do, so every dispatch it
+        // makes is pure cost. Refuse it and leave CPU admission authoritative.
+        if shards.is_empty() || uncovered_ascii_patterns > 0 {
             tracing::warn!(
                 target: "keyhog::gpu",
-                candidates = ascii_candidate_count,
-                "phase-2 GPU regex-DFA admission has no lowerable ASCII prefixless always-active pattern; CPU admission remains authoritative"
-            );
-            report_phase2_gpu_catalog_loss(format!(
-                "no lowerable ASCII prefixless always-active pattern among {ascii_candidate_count} candidate(s)"
-            ));
-            return None;
-        }
-        if uncovered_ascii_patterns > 0 {
-            tracing::warn!(
-                target: "keyhog::gpu",
+                required = required_pattern_count,
                 covered = covered_patterns,
                 uncovered = uncovered_ascii_patterns,
-                "phase-2 GPU regex-DFA admission has uncovered ASCII prefixless pattern(s); GPU hits can admit chunks, misses still consult CPU admission"
+                shards = shards.len(),
+                "phase-2 GPU regex-DFA admission cannot cover every prefixless always-active pattern for this scope; CPU admission remains authoritative"
             );
             report_phase2_gpu_catalog_loss(format!(
-                "{uncovered_ascii_patterns} ASCII prefixless always-active pattern(s) uncovered after lowering"
+                "{uncovered_ascii_patterns} of {required_pattern_count} prefixless always-active pattern(s) did not lower to a GPU regex-DFA"
             ));
+            return None;
         }
         tracing::debug!(
             target: "keyhog::gpu",

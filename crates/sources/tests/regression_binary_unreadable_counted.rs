@@ -15,7 +15,7 @@
 mod support;
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use keyhog_sources::{binary_unreadable, reset_binary_counters, skip_counts, SourceLimits};
 use std::sync::Mutex;
 use support::split_chunk_results;

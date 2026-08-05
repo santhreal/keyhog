@@ -33,6 +33,7 @@ pub(crate) mod client;
 #[cfg(test)]
 #[path = "client_staleness_tests.rs"]
 mod client_staleness_tests;
+pub(crate) mod control;
 pub(crate) mod frame;
 #[cfg(test)]
 #[path = "frame_incremental_tests.rs"]
@@ -48,6 +49,7 @@ mod path_resolution_tests;
 mod protected_wire_tests;
 pub(crate) mod protocol;
 pub(crate) mod server;
+pub(crate) mod sigpipe;
 mod trust;
 mod warm_identity;
 #[cfg(test)]

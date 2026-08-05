@@ -3,7 +3,7 @@
 //! not the env value). Config-policy mandate + security: an ambient proxy must
 //! not silently reroute secret-verification traffic.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use rusty_fork::rusty_fork_test;
 use std::sync::Mutex;
 

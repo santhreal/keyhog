@@ -17,6 +17,8 @@ pub(crate) mod sarif_uri;
 use std::collections::BTreeMap;
 use std::io::Write;
 
+use crate::access_target::AccessTargetReport;
+use crate::correlation::CorrelatedCredential;
 use crate::VerifiedFinding;
 
 /// Serialize redacted companion values deterministically for report formats
@@ -226,8 +228,10 @@ pub struct ScanReportMetadata {
 
 /// Current major version for the versioned JSON report envelope.
 pub const JSON_REPORT_SCHEMA_MAJOR: u16 = 1;
-/// Current minor version for the versioned JSON report envelope.
-pub const JSON_REPORT_SCHEMA_MINOR: u16 = 8;
+/// Current minor version for the versioned JSON report envelope. Minor 9 adds
+/// the optional `correlations` array and minor 10 the optional
+/// `access_targets` object, each absent unless the producer opted in.
+pub const JSON_REPORT_SCHEMA_MINOR: u16 = 10;
 /// Current minor version for the versioned JSONL stream contract.
 pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 9;
 
@@ -259,6 +263,17 @@ pub struct JsonReportEnvelope {
     pub coverage_gap_summary: Vec<JsonReportCoverageGap>,
     /// Findings in the same redacted shape used by the legacy array.
     pub findings: Vec<VerifiedFinding>,
+    /// Cross-file credential correlations, present only when the producer ran
+    /// with correlation enabled. Absent, not empty, otherwise, so a report from
+    /// a default scan is byte-identical to one from before minor 9.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub correlations: Vec<CorrelatedCredential>,
+    /// Access targets ("doors") derived from the findings, present only when
+    /// the producer ran with access-target association enabled. Absent, not
+    /// empty, otherwise, so a report from a default scan is byte-identical to
+    /// one from before minor 10.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access_targets: Option<AccessTargetReport>,
 }
 
 /// One scan-wide coverage gap preserved in a versioned JSON report.
@@ -498,6 +513,19 @@ pub struct ScanReport<'a> {
     pub findings: &'a [VerifiedFinding],
     /// Common scan identity and timing metadata, when the caller has it.
     pub metadata: Option<&'a ScanReportMetadata>,
+    /// Cross-file credential correlations, empty unless the caller opted in.
+    ///
+    /// Correlations are derived from `findings` and never replace them, so an
+    /// empty slice reproduces the report exactly as it rendered before
+    /// correlation existed.
+    pub correlations: &'a [CorrelatedCredential],
+    /// Access targets derived from these findings, absent unless the caller
+    /// opted in.
+    ///
+    /// Like correlations, targets are derived from `findings` and never replace
+    /// them, so `None` reproduces the report exactly as it rendered before
+    /// access-target association existed.
+    pub access_targets: Option<&'a AccessTargetReport>,
 }
 
 impl<'a> ScanReport<'a> {
@@ -506,6 +534,8 @@ impl<'a> ScanReport<'a> {
         Self {
             findings,
             metadata: None,
+            correlations: &[],
+            access_targets: None,
         }
     }
 
@@ -513,6 +543,20 @@ impl<'a> ScanReport<'a> {
     #[must_use]
     pub fn with_metadata(mut self, metadata: &'a ScanReportMetadata) -> Self {
         self.metadata = Some(metadata);
+        self
+    }
+
+    /// Attach cross-file credential correlations computed from these findings.
+    #[must_use]
+    pub fn with_correlations(mut self, correlations: &'a [CorrelatedCredential]) -> Self {
+        self.correlations = correlations;
+        self
+    }
+
+    /// Attach access targets ("doors") computed from these findings.
+    #[must_use]
+    pub fn with_access_targets(mut self, access_targets: &'a AccessTargetReport) -> Self {
+        self.access_targets = Some(access_targets);
         self
     }
 }
@@ -527,6 +571,15 @@ pub enum ReportFormat {
         example_suppressions: usize,
         /// Include dogfood telemetry hints in the text report.
         dogfood_active: bool,
+        /// The scan read zero source bytes. The empty-findings summary must
+        /// then say the scan covered nothing rather than that nothing was
+        /// detected: a scan that examined no bytes has detected nothing in the
+        /// same way an unopened envelope contains no bad news.
+        covered_nothing: bool,
+        /// Matches dropped by the minified/vendored path policy. A subset of
+        /// `example_suppressions`, reported separately because a credential a
+        /// build pipeline inlined into a bundle is not an example key.
+        path_policy_suppressions: usize,
     },
     /// JSON array output.
     Json,
@@ -616,17 +669,28 @@ pub fn write_scan_report<W: Write + Send>(
             color,
             example_suppressions,
             dogfood_active,
+            covered_nothing,
+            path_policy_suppressions,
         } => {
             let mut reporter = text::TextReporter::with_color(writer, color);
             reporter.set_example_suppressions(example_suppressions);
             reporter.set_dogfood_active(dogfood_active);
+            reporter.set_covered_nothing(covered_nothing);
+            reporter.set_path_policy_suppressions(path_policy_suppressions);
+            reporter.set_correlations(report.correlations);
             finish_reporter(reporter, findings)
         }
         ReportFormat::Json => finish_reporter(json::JsonArrayReporter::new(writer)?, findings),
         ReportFormat::JsonEnvelope {
             coverage_gap_summary,
         } => finish_reporter(
-            json::JsonEnvelopeReporter::new(writer, report_metadata, &coverage_gap_summary)?,
+            json::JsonEnvelopeReporter::new(
+                writer,
+                report_metadata,
+                &coverage_gap_summary,
+                report.correlations,
+                report.access_targets,
+            )?,
             findings,
         ),
         ReportFormat::Jsonl => finish_reporter(json::JsonlReporter::new(writer), findings),

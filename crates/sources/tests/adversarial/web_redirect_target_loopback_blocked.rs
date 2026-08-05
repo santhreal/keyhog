@@ -1,6 +1,6 @@
 //! WebSource SSRF gate must block redirect-target host `http://127.0.0.1/after-redirect.js`.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[cfg(feature = "web")]
 #[test]
 fn web_redirect_target_loopback_blocked() {

@@ -5,8 +5,10 @@ use crate::stable_hash::StableHasher;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use keyhog_core::{
-    ReportFormat, ResolvedScanManifest, ScanCompletionStatus, ScanReport, ScanReportMetadata,
-    StaticRecoveryMetrics, VerifiedFinding, STATIC_RECOVERY_METRICS_SCHEMA_VERSION,
+    AccessTargetReport, CorrelatedCredential, ReportFormat, ResolvedScanManifest,
+    ScanCompletionStatus, ScanReport,
+    ScanReportMetadata, StaticRecoveryMetrics, VerifiedFinding,
+    STATIC_RECOVERY_METRICS_SCHEMA_VERSION,
 };
 use keyhog_profile::Stage;
 use std::collections::BTreeMap;
@@ -22,10 +24,38 @@ pub(crate) fn report_findings_with_metadata(
     args: &ScanArgs,
     metadata: &ScanReportMetadata,
 ) -> Result<()> {
-    if let Some(ref path) = args.output {
+    // Correlation reads the final reported findings, so it sees exactly what
+    // the report will publish regardless of which source backend produced them.
+    // Skipping the join entirely when the flag is off keeps the default path at
+    // zero added work and its output byte-identical.
+    let correlations = if args.correlate {
+        let _correlate = keyhog_profile::span(Stage::Reporting);
+        keyhog_core::correlate_findings(findings)
+    } else {
+        Vec::new()
+    };
+    // Access-target association reads the same final finding set. It re-reads
+    // file context from disk, which is real work, so it only happens when the
+    // operator asked: with the flag off the pass is never constructed and the
+    // envelope has no `access_targets` key at all.
+    let access_targets = if args.access_targets {
+        let _doors = keyhog_profile::span(Stage::Reporting);
+        Some(keyhog_core::associate_access_targets(findings))
+    } else {
+        None
+    };
+    if let Some(path) = &args.output {
         crate::atomic_file::write_with_file(path, |writer_handle| {
             let w = io::BufWriter::new(writer_handle);
-            report_with(w, &args.format, false, findings, metadata)
+            report_with(
+                w,
+                &args.format,
+                false,
+                findings,
+                metadata,
+                &correlations,
+                access_targets.as_ref(),
+            )
                 .map_err(|error| io::Error::other(format!("{error:#}")))
         })
         .with_context(|| format!("atomically writing report {}", path.display()))?;
@@ -36,7 +66,15 @@ pub(crate) fn report_findings_with_metadata(
         // via `--no-color`. (The `NO_COLOR` env convention is honored in the
         // orchestrator, which sets the flag-equivalent before reporting.)
         let color = io::stdout().is_terminal() && !args.no_color;
-        report_with(w, &args.format, color, findings, metadata)
+        report_with(
+            w,
+            &args.format,
+            color,
+            findings,
+            metadata,
+            &correlations,
+            access_targets.as_ref(),
+        )
     }
 }
 
@@ -46,13 +84,21 @@ fn report_with<W: std::io::Write + 'static + Send>(
     color: bool,
     findings: &[VerifiedFinding],
     metadata: &ScanReportMetadata,
+    correlations: &[CorrelatedCredential],
+    access_targets: Option<&AccessTargetReport>,
 ) -> Result<()> {
     // One match owns every format. CSV uses write_csv_coverage_report (coverage
     // columns + gap summary); other formats go through write_scan_report.
     let report = {
         // Report finalization/assembly is Reporting-stage work.
         let _assembly = keyhog_profile::span(Stage::Reporting);
-        ScanReport::new(findings).with_metadata(metadata)
+        ScanReport::new(findings)
+            .with_metadata(metadata)
+            .with_correlations(correlations)
+    };
+    let report = match access_targets {
+        Some(targets) => report.with_access_targets(targets),
+        None => report,
     };
     match format {
         OutputFormat::Csv => {
@@ -68,12 +114,18 @@ fn report_with<W: std::io::Write + 'static + Send>(
             // distinguishes "no matches at all" from "matched + suppressed N as
             // known examples". Structured formats don't render prose, so the
             // count goes via --dogfood for those callers.
+            let coverage = CoverageCounts::current();
             keyhog_core::write_scan_report(
                 w,
                 ReportFormat::Text {
                     color,
                     example_suppressions: keyhog_scanner::telemetry::example_suppression_count(),
                     dogfood_active: keyhog_scanner::telemetry::is_dogfood_enabled(),
+                    // One snapshot for both, so stdout prose and the stderr
+                    // coverage summary cannot disagree about what this scan
+                    // looked at or what it threw away.
+                    covered_nothing: coverage.covered_nothing(),
+                    path_policy_suppressions: coverage.vendored_path_suppressions,
                 },
                 report,
             )?;
@@ -529,22 +581,61 @@ pub(crate) struct CoverageCounts {
     pub(crate) skip: keyhog_sources::SkipCounts,
     /// Source rows that surfaced as errors (requested input not fully scanned).
     pub(crate) source_errors: usize,
+    /// Scan batches that could not be routed to any backend and were therefore
+    /// never scanned at all. Distinct from `source_errors`: no source errored,
+    /// the bytes arrived and then had nowhere to go.
+    pub(crate) batches_not_routed: usize,
     /// Scanner structured parse failed (raw text scanned; encoded values not decoded).
     pub(crate) scanner_structured_parse_failures: usize,
     /// Structured decode-through file matched but exceeded the parse size cap.
     pub(crate) scanner_structured_oversize_skips: usize,
     /// Decode-through hit a budget/size cap; deeper encoded layers not expanded.
     pub(crate) scanner_decode_truncations: usize,
+    /// Chunks larger than `--decode-size-limit`: decode-through never ran on
+    /// them, so encoded secrets inside them were never recovered.
+    pub(crate) scanner_decode_oversize_skips: usize,
     /// Pattern expansion skipped by an invalid pattern index (invariant violation).
     pub(crate) scanner_invalid_pattern_index_skips: usize,
     /// Boundary reassembly skipped by chunk/result cardinality drift (invariant).
     pub(crate) scanner_boundary_cardinality_mismatches: usize,
     /// Multiline attribution used a fallback source offset (approximate lines).
     pub(crate) scanner_line_offset_mismatches: usize,
+    /// Chunks whose per-chunk deadline elapsed mid-scan: detection and/or
+    /// post-processing stopped early and the chunk's remaining bytes were
+    /// never matched, so its empty/short result is not a clean bill.
+    pub(crate) scanner_chunk_deadline_aborts: usize,
+    /// Named-detector matches the scanner MATCHED on a binary-derived chunk
+    /// (ELF/PE/Mach-O strings, an archive member, a container layer) and then
+    /// dropped because the match carried no structural proof. Like the
+    /// vendored/minified row this is a FINDING-coverage gap, not a byte one:
+    /// the bytes were read and a detector did fire.
+    pub(crate) scanner_binary_strings_named_exclusions: usize,
     /// Binaries whose deep analysis degraded to strings-only (0 without `binary`).
     pub(crate) binary_degraded: usize,
     /// Binaries dropped as unreadable (0 without the `binary` feature).
     pub(crate) binary_unreadable: usize,
+    /// Findings the scanner MATCHED and then dropped because their path is a
+    /// vendored/minified bundle. Not a byte-coverage gap: the bytes were read.
+    /// It is a FINDING-coverage gap, and an uncounted one used to be the only
+    /// way a `sk_live_` key inlined into `app.min.js` could reach the report
+    /// as "No secrets detected".
+    pub(crate) vendored_path_suppressions: usize,
+    /// The scan read ZERO source bytes and the walker found NOTHING to read:
+    /// an empty directory, a directory holding only symlinks (never followed),
+    /// or a CI matrix partition whose slice has no scannable files.
+    ///
+    /// Every other category answers "what did this scan miss"; this pair
+    /// answers "did this scan look at anything at all". Production sets at most
+    /// one of the two; the split exists because the remedies differ, and
+    /// "policy hid everything" is far more likely to be a misconfiguration than
+    /// "there was nothing there".
+    pub(crate) nothing_scanned_no_input: bool,
+    /// The scan read ZERO source bytes and the walker DID find candidates, then
+    /// skipped every one of them. A `.keyhogignore` of `path:**`, an
+    /// `--exclude-paths '**'`, or a tree that is entirely vendored used to
+    /// produce exit 0, status success, an empty gap summary, and "No secrets
+    /// detected" - a clean bill of health for a scan that examined nothing.
+    pub(crate) nothing_scanned_all_skipped: bool,
 }
 
 impl CoverageCounts {
@@ -553,19 +644,47 @@ impl CoverageCounts {
     /// pure function of the returned snapshot.
     pub(crate) fn current() -> Self {
         use keyhog_scanner::telemetry;
+        let skip = keyhog_sources::skip_counts();
+        // Read at end of scan from the same counter report metadata publishes
+        // as `source_bytes_scanned`, so the gap row and the envelope field can
+        // never disagree.
+        let covered_nothing =
+            crate::SCANNED_BYTES.load(std::sync::atomic::Ordering::Relaxed) == 0;
+        // "Policy hid everything" and "there was nothing there" are different
+        // operator problems with different fixes, so they are different rows.
+        // Any skip at all proves the walker found candidates and dropped them.
+        let anything_skipped = skip.total() > 0
+            || skip.git_lfs_pointer > 0
+            || skip.git_object_unreadable > 0;
         CoverageCounts {
-            skip: keyhog_sources::skip_counts(),
+            skip,
             source_errors: crate::SOURCE_ERRORS.load(std::sync::atomic::Ordering::Relaxed),
+            batches_not_routed: crate::BATCHES_NOT_ROUTED
+                .load(std::sync::atomic::Ordering::Relaxed),
             scanner_structured_parse_failures: telemetry::structured_parse_failure_count(),
             scanner_structured_oversize_skips: telemetry::structured_oversize_skip_count(),
             scanner_decode_truncations: telemetry::decode_truncation_count(),
+            scanner_decode_oversize_skips: telemetry::decode_oversize_skip_count(),
             scanner_invalid_pattern_index_skips: telemetry::invalid_pattern_index_skip_count(),
             scanner_boundary_cardinality_mismatches:
                 telemetry::boundary_result_cardinality_mismatch_count(),
             scanner_line_offset_mismatches: telemetry::line_offset_mapping_mismatch_count(),
+            scanner_chunk_deadline_aborts: telemetry::chunk_deadline_abort_count(),
+            scanner_binary_strings_named_exclusions:
+                telemetry::binary_strings_named_exclusion_count(),
             binary_degraded: binary_degraded_count(),
             binary_unreadable: binary_unreadable_count(),
+            vendored_path_suppressions: telemetry::vendored_path_suppression_count(),
+            nothing_scanned_no_input: covered_nothing && !anything_skipped,
+            nothing_scanned_all_skipped: covered_nothing && anything_skipped,
         }
+    }
+
+    /// True when this scan read zero source bytes, whatever the cause. The
+    /// text reporter's empty-findings prose asks this instead of duplicating
+    /// the byte check, so the stdout line and the gap rows always agree.
+    pub(crate) fn covered_nothing(&self) -> bool {
+        self.nothing_scanned_no_input || self.nothing_scanned_all_skipped
     }
 
     /// Sum of every FAIL-class [`CoverageGapKind`] count (KH-1410). Incomplete
@@ -625,13 +744,20 @@ pub(crate) enum CoverageSeverity {
 /// Adding a variant is a compile error until every `match` below handles it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CoverageGapKind {
+    NothingScannedNoInput,
+    NothingScannedAllSkipped,
     ScannerStructuredParseFailure,
     ScannerStructuredOversizeSkip,
     ScannerDecodeTruncation,
+    ScannerDecodeOversizeSkip,
     ScannerInvalidPatternIndexSkip,
     ScannerBoundaryCardinalityMismatch,
     ScannerLineOffsetMismatch,
+    ScannerChunkDeadlineAbort,
+    ScannerBinaryStringsNamedExclusion,
+    VendoredPathSuppressed,
     SourceError,
+    BatchNotRouted,
     OverMaxSize,
     Binary,
     Excluded,
@@ -648,17 +774,24 @@ pub(crate) enum CoverageGapKind {
 }
 
 impl CoverageGapKind {
-    /// Canonical emission order: scanner-engine gaps first, then source-walker
-    /// gaps, then binary-source gaps. Both surfaces emit non-zero categories in
-    /// this order.
-    pub(crate) const ALL: [CoverageGapKind; 20] = [
+    /// Canonical emission order: the whole-scan "did we look at anything" row
+    /// first, then scanner-engine gaps, then source-walker gaps, then
+    /// binary-source gaps. Both surfaces emit non-zero categories in this order.
+    pub(crate) const ALL: [CoverageGapKind; 27] = [
+        Self::NothingScannedNoInput,
+        Self::NothingScannedAllSkipped,
         Self::ScannerStructuredParseFailure,
         Self::ScannerStructuredOversizeSkip,
         Self::ScannerDecodeTruncation,
+        Self::ScannerDecodeOversizeSkip,
         Self::ScannerInvalidPatternIndexSkip,
         Self::ScannerBoundaryCardinalityMismatch,
         Self::ScannerLineOffsetMismatch,
+        Self::ScannerChunkDeadlineAbort,
+        Self::ScannerBinaryStringsNamedExclusion,
+        Self::VendoredPathSuppressed,
         Self::SourceError,
+        Self::BatchNotRouted,
         Self::OverMaxSize,
         Self::Binary,
         Self::Excluded,
@@ -688,15 +821,24 @@ impl CoverageGapKind {
     pub(crate) fn count(self, counts: &CoverageCounts) -> usize {
         let c = &counts.skip;
         match self {
+            Self::NothingScannedNoInput => usize::from(counts.nothing_scanned_no_input),
+            Self::NothingScannedAllSkipped => usize::from(counts.nothing_scanned_all_skipped),
             Self::ScannerStructuredParseFailure => counts.scanner_structured_parse_failures,
             Self::ScannerStructuredOversizeSkip => counts.scanner_structured_oversize_skips,
             Self::ScannerDecodeTruncation => counts.scanner_decode_truncations,
+            Self::ScannerDecodeOversizeSkip => counts.scanner_decode_oversize_skips,
             Self::ScannerInvalidPatternIndexSkip => counts.scanner_invalid_pattern_index_skips,
             Self::ScannerBoundaryCardinalityMismatch => {
                 counts.scanner_boundary_cardinality_mismatches
             }
             Self::ScannerLineOffsetMismatch => counts.scanner_line_offset_mismatches,
+            Self::ScannerChunkDeadlineAbort => counts.scanner_chunk_deadline_aborts,
+            Self::ScannerBinaryStringsNamedExclusion => {
+                counts.scanner_binary_strings_named_exclusions
+            }
+            Self::VendoredPathSuppressed => counts.vendored_path_suppressions,
             Self::SourceError => counts.source_errors,
+            Self::BatchNotRouted => counts.batches_not_routed,
             Self::OverMaxSize => c.over_max_size,
             Self::Binary => c.binary,
             Self::Excluded => c.excluded,
@@ -722,8 +864,22 @@ impl CoverageGapKind {
             Self::OverMaxSize
             | Self::Binary
             | Self::Excluded
+            // Findings dropped by the vendored/minified path policy are a
+            // precision trade the operator can reverse with
+            // `--no-default-excludes`, and a `node_modules` tree can produce
+            // thousands. WARN keeps a normal repo scan at exit 0 while still
+            // printing the count and the flag that recovers them.
+            | Self::VendoredPathSuppressed
+            // Same class one layer down: a named detector matched inside a
+            // binary's printable runs and the match could not prove it was a
+            // whole token rather than a fragment of surrounding identifier
+            // soup. The bytes are fully covered and the trade is a precision
+            // one, so WARN keeps a binary-heavy tree at exit 0 while printing
+            // the count and how to see the matches.
+            | Self::ScannerBinaryStringsNamedExclusion
             | Self::ScannerStructuredOversizeSkip
             | Self::ScannerDecodeTruncation
+            | Self::ScannerDecodeOversizeSkip
             | Self::ScannerInvalidPatternIndexSkip
             | Self::ScannerBoundaryCardinalityMismatch => CoverageSeverity::Warn,
             // Genuine "these bytes were NOT covered" (or line identity is wrong)
@@ -732,8 +888,13 @@ impl CoverageGapKind {
             // consumers share one FAIL set (KH-1347).
             // Structured parse failure loses encoded-value coverage and must
             // fail closed rather than bless the raw-only scan as complete.
-            Self::ScannerStructuredParseFailure
+            // Zero bytes read is the strongest FAIL there is: nothing was
+            // examined, so "no secrets detected" states nothing at all.
+            Self::NothingScannedNoInput
+            | Self::NothingScannedAllSkipped
+            | Self::ScannerStructuredParseFailure
             | Self::SourceError
+            | Self::BatchNotRouted
             | Self::NonBinaryUnreadable
             | Self::GitObjectUnreadable
             | Self::ArchiveTruncated
@@ -744,6 +905,7 @@ impl CoverageGapKind {
             | Self::GitLfsPointer
             | Self::BinaryDegraded
             | Self::BinaryUnreadable
+            | Self::ScannerChunkDeadlineAbort
             | Self::ScannerLineOffsetMismatch => CoverageSeverity::Fail,
         }
     }
@@ -752,6 +914,12 @@ impl CoverageGapKind {
     /// entry (the count is a separate field, so this string is count-free).
     pub(crate) fn sarif_reason(self) -> &'static str {
         match self {
+            Self::NothingScannedNoInput => {
+                "scan covered nothing (zero source bytes reached the scanner and no skip was counted; nothing was examined, so this result is not a clean bill of health)"
+            }
+            Self::NothingScannedAllSkipped => {
+                "scan covered nothing (zero source bytes read; every candidate was skipped by exclusion or skip policy, so nothing was examined)"
+            }
             Self::ScannerStructuredParseFailure => {
                 "scanner structured parse failed (raw text scanned; encoded structured values not decoded)"
             }
@@ -760,6 +928,9 @@ impl CoverageGapKind {
             }
             Self::ScannerDecodeTruncation => {
                 "scanner decode-through truncated by budget/cap (raw bytes scanned; deeper encoded layers not expanded)"
+            }
+            Self::ScannerDecodeOversizeSkip => {
+                "scanner decode-through declined by --decode-size-limit (chunk larger than the limit; raw bytes scanned, nothing encoded inside it was recovered)"
             }
             Self::ScannerInvalidPatternIndexSkip => {
                 "scanner pattern expansion skipped by invalid pattern index (scanner invariant violation; scan partial)"
@@ -770,20 +941,43 @@ impl CoverageGapKind {
             Self::ScannerLineOffsetMismatch => {
                 "scanner multiline attribution used fallback source offsets (line-offset metadata mismatch; scan partial)"
             }
+            Self::ScannerChunkDeadlineAbort => {
+                "scanner chunk abandoned at its per-chunk deadline (detection and/or post-processing stopped early; the chunk's remaining bytes were not matched)"
+            }
+            Self::ScannerBinaryStringsNamedExclusion => {
+                "named-detector matches dropped by the binary-strings noise gate (the match was inside a compiled artifact's printable runs and did not span a whole token; rerun with --dogfood to see them)"
+            }
+            Self::VendoredPathSuppressed => {
+                "matches dropped by the vendored/minified path policy (credentials matched in .min.js/.bundle.js/.min.css or a vendored tree and were not reported; rerun with --no-default-excludes to report them)"
+            }
             Self::SourceError => {
                 "source emitted error rows (requested input was not fully scanned)"
             }
-            Self::OverMaxSize => "exceeded --max-file-size",
+            Self::BatchNotRouted => {
+                "scan batches could not be routed to any backend and were never scanned"
+            }
+            // One counter, many caps: `SourceSkipEvent::OverMaxSize` is raised by
+            // --max-file-size AND by every --limit-*-bytes cap (stdin, git blob,
+            // docker tar entry / image config, s3 / gcs / azure object, archive
+            // per-entry, windowed-mmap sanity). Naming only --max-file-size sent
+            // operators to raise a cap that had not fired: with
+            // `--limit-git-blob-bytes 64B` the warning said "exceeded
+            // --max-file-size", so raising that flag left the blobs skipped. The
+            // per-cap warnings above the summary name the exact flag; this label
+            // must not contradict them.
+            Self::OverMaxSize => {
+                "exceeded a configured size cap (--max-file-size or the matching --limit-*-bytes)"
+            }
             Self::Binary => "binary (extension or content sniff)",
             Self::Excluded => {
-                "exclusion policy (.keyhogignore, --exclude-paths, or lock/minified/vendored defaults)"
+                "default exclusion policy (lock files, minified/bundled assets, vendored and build-output trees). User `.keyhogignore` / --exclude-paths removals are not counted here"
             }
             Self::NonBinaryUnreadable => "unreadable (permission denied or I/O error)",
             Self::GitObjectUnreadable => {
                 "Git object unreadable or wrong object kind (referenced commit/tree/blob not scanned)"
             }
             Self::ArchiveTruncated => {
-                "archive extraction truncated by decompression-bomb guard (remaining entries not scanned)"
+                "archive or container extraction truncated by an unpack budget (remaining entries not scanned; the warnings above name the exact cap)"
             }
             Self::BinarySectionNameUnresolved => {
                 "binary section name unresolved (corrupt section-name string table; section may be unscanned)"
@@ -813,6 +1007,23 @@ impl CoverageGapKind {
     /// `n` is this category's count (always > 0 at the call site).
     pub(crate) fn human_reason(self, n: usize) -> String {
         match self {
+            // `n` is always 1 here (a scan either read bytes or did not), so
+            // these two read as statements of fact rather than counts.
+            Self::NothingScannedNoInput => format!(
+                "This scan read ZERO bytes: nothing under the requested target(s) reached \
+                 the scanner and no skip was counted. Nothing was examined, so an empty \
+                 result says nothing about whether secrets are present. Check the target \
+                 path and your `.keyhogignore` / `--exclude-paths` patterns (`path:**` or \
+                 `**` removes every file), and note that symlinks are never followed and an \
+                 empty directory contributes nothing. ({n} scan.)"
+            ),
+            Self::NothingScannedAllSkipped => format!(
+                "This scan read ZERO bytes: the walker found candidates and skipped every \
+                 one of them (see the other rows for which policy). Nothing was examined, so \
+                 an empty result says nothing about whether secrets are present. Narrow your \
+                 `.keyhogignore` / `--exclude-paths`, or pass `--no-default-excludes`, then \
+                 re-scan. ({n} scan.)"
+            ),
             Self::ScannerStructuredParseFailure => format!(
                 "{n} file(s) matched a structured format (k8s Secret / Terraform state / \
                  Jupyter notebook / docker-compose) but FAILED to parse: secrets ENCODED \
@@ -831,6 +1042,13 @@ impl CoverageGapKind {
                  but deeper encoded layers may not have been expanded. Re-scan the affected \
                  corpus with a narrower target or tuned decode limits to prove encoded coverage."
             ),
+            Self::ScannerDecodeOversizeSkip => format!(
+                "{n} chunk(s) were larger than the decode-through limit \
+                 (`--decode-size-limit`, `decode_size_limit`), so decode-through did NOT run \
+                 on them at all: the raw bytes were scanned, but nothing base64/hex/URL-encoded \
+                 inside them was recovered. Raise `--decode-size-limit` above the largest \
+                 affected input, or scan the encoded blobs directly, to prove decoded coverage."
+            ),
             Self::ScannerInvalidPatternIndexSkip => format!(
                 "{n} scanner pattern expansion edge(s) were NOT applied: compiled pattern-index \
                  side data referenced patterns outside the trigger bitmap. This is a scanner \
@@ -846,20 +1064,52 @@ impl CoverageGapKind {
                  line-offset metadata was inconsistent. Findings were still emitted, but \
                  reported locations may be approximate; treat the scan as partial."
             ),
+            Self::ScannerChunkDeadlineAbort => format!(
+                "{n} chunk scan(s) STOPPED at the per-chunk deadline: detection and/or \
+                 post-processing did not finish, so those chunks' remaining bytes were NOT \
+                 checked for secrets and an empty result for them is not a clean bill. \
+                 Raise or clear the per-chunk deadline and re-scan the affected input."
+            ),
+            Self::ScannerBinaryStringsNamedExclusion => format!(
+                "{n} named-detector match(es) were MATCHED inside a compiled artifact's \
+                 printable runs and then DROPPED because the match did not span a whole \
+                 token: it began or ended mid-identifier, which in a binary usually means \
+                 a mangled symbol or a concatenated string table rather than a credential \
+                 the program holds. Re-scan with `--dogfood` to see each excluded match \
+                 and its detector."
+            ),
+            Self::VendoredPathSuppressed => format!(
+                "{n} credential match(es) were DROPPED before the report because their file \
+                 is a minified or vendored bundle (`.min.js`, `.bundle.js`, `.min.css`, \
+                 `node_modules/`, `site-packages/`, `wp-includes/`, `dist/assets/`, and \
+                 similar). One credential can be matched by more than one detector, so this \
+                 counts drops, not distinct secrets. Build tooling routinely inlines real \
+                 API keys into those bundles, so this is a precision trade, not proof they \
+                 are noise. Re-scan with `--no-default-excludes` to report them."
+            ),
             Self::SourceError => format!(
                 "{n} source error row(s) emitted: requested input was NOT fully scanned. \
                  Inspect the source errors above and rerun affected inputs."
             ),
+            Self::BatchNotRouted => format!(
+                "{n} scan batch(es) could not be routed to a backend and were NEVER SCANNED: \
+                 their bytes reached the scanner and had nowhere to go, so any secret in them \
+                 is unreported. Rerun `keyhog calibrate-autoroute` for this workload, or pass \
+                 an explicit `--backend`, then rerun the scan."
+            ),
             Self::OverMaxSize => format!(
-                "{n} file(s) skipped: exceeded --max-file-size. Re-scan with a larger cap to \
-                 include them."
+                "{n} file(s) skipped: exceeded a configured size cap (--max-file-size or the \
+                 matching --limit-*-bytes). Raise the cap named in the warnings above and re-scan."
             ),
             Self::Binary => format!(
                 "{n} file(s) skipped: detected as binary (extension or content sniff) and not \
                  scanned as text."
             ),
             Self::Excluded => format!(
-                "{n} file(s) skipped by exclusion policy (.keyhogignore, --exclude-paths, or lock/minified/vendored defaults)."
+                "{n} file(s) skipped by the DEFAULT exclusion policy (lock files, \
+                 minified/bundled assets, vendored and build-output trees). Pass \
+                 `--no-default-excludes` to scan them. Files removed by your own \
+                 `.keyhogignore` or `--exclude-paths` are not counted in this number."
             ),
             Self::NonBinaryUnreadable => format!(
                 "{n} file(s) NOT scanned: unreadable (permission denied or I/O error). These \
@@ -870,9 +1120,12 @@ impl CoverageGapKind {
                  or not the expected object kind."
             ),
             Self::ArchiveTruncated => format!(
-                "{n} archive(s) only PARTIALLY scanned: extraction was truncated by the \
-                 decompression-bomb guard (uncompressed size exceeded 4x --max-file-size). \
-                 Remaining entries were NOT checked for secrets."
+                "{n} archive(s) or container image(s) only PARTIALLY scanned: extraction \
+                 stopped at an unpack budget. Remaining entries were NOT checked for \
+                 secrets. Several caps raise this one counter (the filesystem \
+                 decompression-bomb guard at 4x `--max-file-size`, the Docker/OCI image \
+                 and per-tar budgets, the tar entry-count cap), so raise the cap named in \
+                 the warnings above and re-scan."
             ),
             Self::BinarySectionNameUnresolved => format!(
                 "{n} binary section(s) NOT scanned: their name could not be resolved \

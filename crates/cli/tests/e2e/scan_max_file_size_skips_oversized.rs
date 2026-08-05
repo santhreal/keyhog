@@ -64,7 +64,7 @@ fn scan_max_file_size_skips_oversized_file() {
     );
     assert!(
         stderr.contains("input coverage was incomplete")
-            && stderr.contains("exceeded --max-file-size"),
+            && stderr.contains("exceeded a configured size cap (--max-file-size or the matching --limit-*-bytes)"),
         "oversized clean-looking scan must explain the incomplete coverage; stderr={stderr}"
     );
 }

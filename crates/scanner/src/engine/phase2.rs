@@ -20,7 +20,7 @@ pub(crate) use mark_stats::take_mark_stats;
 mod hs_mark_timing;
 pub(crate) use hs_mark_timing::{format_hs_mark_split, hs_mark_split_from_typed, HsMarkSplit};
 #[cfg(feature = "simd")]
-pub(crate) use hs_mark_timing::{record_hs_mark_dropped_ns, record_hs_mark_scan_ns};
+pub(crate) use hs_mark_timing::{hs_mark_dropped_span, hs_mark_scan_span};
 
 // The per-scanner performance tuning lives at crate root but remains an
 // engine-internal route selector, not scanner public API.
@@ -66,13 +66,7 @@ pub(crate) fn phase2_pattern_prof_enabled() -> bool {
 static PHASE2_PATTERN_NS: OnceLock<Vec<AtomicU64>> = OnceLock::new();
 static PHASE2_PATTERN_RUNS: OnceLock<Vec<AtomicU64>> = OnceLock::new();
 
-/// Sub-split of `populate_active_phase2`: time spent in the always-active
-/// RegexSet prefilter vs the keyword Aho-Corasick. Confirms which half of the
-/// active-set computation dominates. Env-gated like the per-pattern profiler.
-pub(crate) static POPULATE_PREFILTER_NS: AtomicU64 = AtomicU64::new(0);
-pub(crate) static POPULATE_KEYWORD_NS: AtomicU64 = AtomicU64::new(0);
-
-/// Prefix-gate diagnostics (enabled by `keyhog scan --profile`). Counts how
+/// Prefix-gate diagnostics (enabled by `keyhog scan --perf-trace`). Counts how
 /// many gateable batches were SKIPPED (their required prefix literals absent)
 /// vs RUN, and how many `mark_matches` calls the gate saw, so we can tell
 /// whether the gate actually skips on a given corpus or whether spliced context
@@ -113,8 +107,6 @@ pub(crate) fn phase2_pattern_prof_reset(len: usize) {
     for r in runs {
         r.store(0, Relaxed);
     }
-    POPULATE_PREFILTER_NS.store(0, Relaxed);
-    POPULATE_KEYWORD_NS.store(0, Relaxed);
     GATE_BATCH_SKIPS.store(0, Relaxed);
     GATE_BATCH_RUNS.store(0, Relaxed);
     GATE_CALLS.store(0, Relaxed);

@@ -354,13 +354,13 @@ impl GitCommitEnumerator {
                 return Ok(Some(id));
             }
             if !self.log_done {
-                let consumed = super::read_capped_line(
+                let record = super::read_capped_line(
                     &mut self.log_reader,
                     &mut self.log_line_buf,
                     super::GIT_PLUMBING_LINE_BYTES,
                 )
                 .map_err(SourceError::Io)?;
-                if consumed == 0 {
+                if record.consumed == 0 {
                     self.log_done = true;
                     super::wait_for_git_child(
                         &mut self.log_child,
@@ -373,12 +373,12 @@ impl GitCommitEnumerator {
                 // output (a real object-id line is tiny), fail LOUDLY, never
                 // silently scan a truncated id (Law 10), matching the sibling
                 // tag-message and fsck plumbing readers.
-                if consumed > super::GIT_PLUMBING_LINE_BYTES {
+                if record.content > super::GIT_PLUMBING_LINE_BYTES {
                     return Err(super::git_output_line_truncated_error(
                         "git log source",
                         "commit id line",
                         super::GIT_PLUMBING_LINE_BYTES,
-                        consumed,
+                        record.content,
                     ));
                 }
                 let line = String::from_utf8_lossy(&self.log_line_buf);
@@ -450,6 +450,9 @@ fn stream_git_blobs(
     let repo_owned = PathBuf::from(&repo_arg);
     let repo_handle = gix::open(&repo_owned)
         .map_err(|e| SourceError::Io(std::io::Error::other(format!("gix open: {e}"))))?;
+    // A shallow clone cannot answer "what did history contain": say so before
+    // emitting a single chunk, so a truncated history can never read as clean.
+    super::record_shallow_history_gap(&repo_handle, "git blob source (--git-blobs)");
     let mut reachable_tags = collect_reachable_tag_messages(&repo_arg)?;
     // Snapshot every blob OID reachable from HEAD's tree. Used to label
     // emitted chunks as "git/head" (live in HEAD) vs "git/history"
@@ -665,6 +668,9 @@ fn load_commit_blob_set(
     // blob identities, so skip the tree read and the whole walk. `tree_id`
     // decodes only the commit header, so the skip happens before any blob or
     // tree object load.
+    // LAW10: recall-safe in the loud direction. An unreadable commit header skips the
+    // memo probe only, so the walk falls through to `commit.tree()` below, which counts
+    // and surfaces the unreadable object. The fallback can add work, never drop coverage.
     if let Ok(root_tree_id) = commit.tree_id() {
         if walked_trees.contains(&root_tree_id.detach()) {
             return Ok(Some(GitCommitBlobSet {
@@ -708,6 +714,8 @@ fn load_commit_blob_set(
     // corrupt subtree keeps re-reporting (and re-attempting) on later commits
     // exactly as before.
     if errors.is_empty() {
+        // LAW10: failing to read the tree id only skips memoization, so later commits
+        // re-walk this tree instead of trusting a memo. Recall-safe by construction.
         if let Ok(root_tree_id) = commit.tree_id() {
             walked_trees.insert(root_tree_id.detach());
         }
@@ -1183,6 +1191,7 @@ fn collect_unreachable_objects(
     let mut line_buf = Vec::new();
     while super::read_capped_line(&mut reader, &mut line_buf, super::GIT_PLUMBING_LINE_BYTES)
         .map_err(SourceError::Io)?
+        .consumed
         > 0
     {
         let line = String::from_utf8_lossy(&line_buf);

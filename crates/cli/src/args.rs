@@ -134,11 +134,11 @@ pub enum Command {
     #[command(verbatim_doc_comment)]
     BloomDiagnostic(BloomDiagnosticArgs),
 
-    /// Update keyhog to the latest release: verified download + self-replace
+    /// Update from the GitHub binary-asset channel: verified download + self-replace
     #[command(verbatim_doc_comment)]
     Update(UpdateArgs),
 
-    /// Repair a broken install: reinstall a known-good binary, then verify
+    /// Repair a broken install: reinstall a known-good binary asset, then verify
     #[command(verbatim_doc_comment)]
     Repair(RepairArgs),
 

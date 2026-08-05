@@ -321,7 +321,7 @@ impl CompiledScanner {
         // redundant work. The cheap keyword AC is tried first, so a
         // keyword-admitted chunk skips the prefilter scan entirely.
         {
-            let _g = super::profile::span(super::profile::P::Phase2KeywordAc);
+            let _g = super::profile::span(keyhog_profile::Stage::Phase2KeywordAc);
             for mat in keyword_ac.find_iter(data) {
                 let keyword_idx = mat.pattern().as_usize();
                 if self
@@ -333,7 +333,7 @@ impl CompiledScanner {
                 }
             }
         }
-        let _g = super::profile::span(super::profile::P::Phase2Prefilter);
+        let _g = super::profile::span(keyhog_profile::Stage::Phase2Prefilter);
         match &self.phase2_always_active_prefilter {
             Some(prefilter) => {
                 let tuning = self.tuning.resolve();
@@ -389,7 +389,6 @@ impl CompiledScanner {
         route: crate::ScanExecutionRoute,
     ) {
         if let Some(keyword_ac) = &self.phase2_keyword_ac {
-            let prof = phase2_pattern_prof_enabled();
             // Always-active patterns (no >=4-char keyword) would each run their
             // capture regex over the whole chunk. Gate them through a combined
             // RegexSet so only patterns that can actually match are activated;
@@ -412,11 +411,13 @@ impl CompiledScanner {
                     .is_some_and(|a| a.has_plain_localizer(route.phase2_plain_localizer));
             let mut tuning = self.tuning.resolve();
             tuning.fallback_localizer = route.phase2_plain_localizer;
-            let t0 = if prof { Some(Instant::now()) } else { None };
+            // No stopwatch: the prefilter span below IS this interval, and the
+            // keyword span below covers both marking routes. Two process-wide
+            // `AtomicU64`s used to re-time exactly these two regions.
             {
                 // The anchorless always-active RegexSet, the detectors that run
                 // on EVERY chunk. This span is the cost the old vague label hid.
-                let _g = super::profile::span(super::profile::P::Phase2Prefilter);
+                let _g = super::profile::span(keyhog_profile::Stage::Phase2Prefilter);
                 if !always_active_absence_proven {
                     match &self.phase2_always_active_prefilter {
                         Some(prefilter) => prefilter.mark_matches(
@@ -439,11 +440,12 @@ impl CompiledScanner {
                     }
                 }
             }
-            if let Some(t0) = t0 {
-                POPULATE_PREFILTER_NS.fetch_add(t0.elapsed().as_nanos() as u64, Relaxed);
-            }
-            let t1 = if prof { Some(Instant::now()) } else { None };
             {
+                // Covers BOTH marking routes. The span used to sit only on the
+                // Aho-Corasick branch, so the keyword-hint fast path (the GPU
+                // route) contributed nothing to `phase2-keyword-ac` and its
+                // cost was visible only through a private atomic.
+                let _g = super::profile::span(keyhog_profile::Stage::Phase2KeywordAc);
                 if let Some(keyword_hints) = phase2_keyword_hints {
                     for &keyword_idx in keyword_hints {
                         if let Some(pattern_indices) =
@@ -455,7 +457,6 @@ impl CompiledScanner {
                         }
                     }
                 } else {
-                    let _g = super::profile::span(super::profile::P::Phase2KeywordAc);
                     for mat in keyword_ac.find_iter(data) {
                         let keyword_idx = mat.pattern().as_usize();
                         if let Some(pattern_indices) =
@@ -467,9 +468,6 @@ impl CompiledScanner {
                         }
                     }
                 }
-            }
-            if let Some(t1) = t1 {
-                POPULATE_KEYWORD_NS.fetch_add(t1.elapsed().as_nanos() as u64, Relaxed);
             }
         } else {
             // No keyword prefilter compiled - every phase-2 pattern is
@@ -588,10 +586,8 @@ impl CompiledScanner {
             .collect();
         rows.sort_unstable_by(|a, b| b.1.cmp(&a.1));
         let grand: u64 = rows.iter().map(|r| r.1).sum();
-        let prefilter_ms = POPULATE_PREFILTER_NS.swap(0, Relaxed) as f64 / 1e6;
-        let keyword_ms = POPULATE_KEYWORD_NS.swap(0, Relaxed) as f64 / 1e6;
         eprintln!(
-            "=== PHASE2 per-pattern profile [{label}] ===\n  populate: always-active RegexSet prefilter={prefilter_ms:.1} ms, keyword-AC={keyword_ms:.1} ms\n  extract: {:.1} ms over {} active patterns\n  route: [ELIG]=compiled shared-anchor eligible, [PREFIX]=prefix-shaped but not anchor-eligible in this scanner",
+            "=== PHASE2 per-pattern profile [{label}] ===\n  populate: see the `phase2-prefilter` and `phase2-keyword-ac` rows of the profile tree\n  extract: {:.1} ms over {} active patterns\n  route: [ELIG]=compiled shared-anchor eligible, [PREFIX]=prefix-shaped but not anchor-eligible in this scanner",
             grand as f64 / 1e6,
             rows.len()
         );

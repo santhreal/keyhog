@@ -14,7 +14,7 @@
 //! inner reason with `.contains`, never a whole-string `==`.
 
 #[cfg(feature = "slack")]
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 // --- boundary: empty / whitespace-only cursor normalizes to None -------------
 

@@ -968,11 +968,22 @@ out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=ma
 expect_match  "8.1 broken binary reported" "could not run|could not run\." "$out"
 expect_status "8.2 broken binary exits 1" 1 "$st"
 rm -rf "$h"
-# 8.3 missing libhyperscan -> hint
+# 8.3 missing hyperscan -> hint. The published keyhog-linux-x86_64 declares
+#     NEEDED libhs.so.5, so that is the name ldd reports on a clean host. This
+#     case used to mock the nonexistent `libhyperscan.so.5` and therefore
+#     agreed with the bug: the real loader error matched no branch and the
+#     operator got "the download may be corrupt" instead of the apt command.
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD=libhyperscan.so.5 run_install "$sb" "$h" -- --no-prompt)
-expect_match  "8.3 hyperscan hint shown" "libhyperscan5|Hyperscan runtime" "$out"
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD=libhs.so.5 run_install "$sb" "$h" -- --no-prompt)
+expect_match  "8.3 hyperscan hint shown for the real SONAME" "libhyperscan5|Hyperscan runtime" "$out"
 rm -rf "$h"
+# 8.3b distribution alias spellings resolve to the same remediation.
+for soname in libhyperscan.so.5 libvectorscan.so.5; do
+    h=$(newhome)
+    out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD="$soname" run_install "$sb" "$h" -- --no-prompt)
+    expect_match  "8.3b hyperscan hint shown for $soname" "libhyperscan5|Hyperscan runtime" "$out"
+    rm -rf "$h"
+done
 # 8.4 missing libssl -> hint
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD=libssl.so.3 run_install "$sb" "$h" -- --no-prompt)

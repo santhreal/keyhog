@@ -1,7 +1,7 @@
 //! Many small docker tar entries must trip aggregate zip-bomb cap.
 
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[cfg(feature = "docker")]
 #[test]
 fn docker_tar_aggregate_many_entries_rejected() {

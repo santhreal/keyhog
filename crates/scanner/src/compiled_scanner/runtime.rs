@@ -1,6 +1,11 @@
 use super::*;
 use crate::hw_probe::ScanBackend;
 
+/// Every early return driven by `--per-chunk-timeout-ms` hands back a short (often
+/// empty) match set for a chunk whose tail was never matched. That empty set reads as
+/// "nothing found", so the abort is counted here and surfaced by the CLI as the
+/// `ScannerChunkDeadlineAbort` FAIL-class coverage gap; a deadline-truncated scan can
+/// never report as complete.
 #[inline]
 fn scan_deadline_expired(deadline: Option<std::time::Instant>) -> bool {
     let expired = crate::deadline::expired(deadline);
@@ -173,7 +178,9 @@ impl CompiledScanner {
         }
         self.simd_prefilter
             .get_or_init(|| {
-                let started = std::time::Instant::now();
+                let cold = keyhog_profile::decision_timer(
+                    keyhog_profile::Stage::AutorouteCalibration,
+                );
                 let plan = self
                     .simd_compile_plan
                     .lock()
@@ -182,7 +189,7 @@ impl CompiledScanner {
                     .ok_or_else(|| "Hyperscan compile plan was already consumed".to_string())?;
                 let result = plan.materialize();
                 self.simd_initialization_ns.store(
-                    u64::try_from(started.elapsed().as_nanos())
+                    u64::try_from(cold.finish().as_nanos())
                         // LAW10: reporting-only telemetry saturation preserves monotonic timing without changing scan execution or findings.
                         .unwrap_or(u64::MAX)
                         .max(1),
@@ -483,24 +490,31 @@ impl CompiledScanner {
         b
     }
 
-    /// Warm regex transition caches in parallel before scanning.
+    /// Warm the scanner's SHARED runtime regexes before scanning.
     ///
-    /// Detector regexes are already builder-validated and seeded during scanner
-    /// construction (see [`crate::types::LazyRegex`]), so this is now mostly
-    /// DFA/transition-cache first-touch work plus generated/plain fallback
-    /// regexes. For a LONG-lived or LARGE scan - the daemon, `watch`,
-    /// `scan-system`, or a big repo where a detector fires across thousands of
-    /// files - paying that warmup once, in parallel, avoids stalling worker
-    /// threads inside the first hot source batch. Callers on those paths should
-    /// `warm()` after building the scanner.
+    /// These are the handful of process-wide matchers every chunk touches
+    /// regardless of which detectors fire: the multiline structural regexes,
+    /// the shared assignment regex, and the generic-assignment value bridge.
+    /// They are worth building up front because the first chunk pays them
+    /// serially otherwise.
     ///
-    /// Idempotent and cheap to repeat: an already-compiled pattern is a
-    /// `OnceLock` hit. Also the correct setup for a per-scan perf benchmark,
-    /// which means to measure match throughput, not one-time compilation.
+    /// It deliberately does NOT force-compile the per-detector patterns. Doing
+    /// that materialized a compiled `Regex` for every pattern, companion and
+    /// generated homoglyph variant in the corpus (~450 MB) on every
+    /// invocation, including one-shot single-file and pre-commit scans
+    /// that reach a handful of detectors, and it made resident memory scale
+    /// with corpus size instead of workload. Detector patterns are validated at
+    /// construction and compiled on the first chunk that reaches them (see
+    /// [`crate::types::LazyRegex`]), so the work still happens once per
+    /// pattern, in parallel across whichever workers need it, and only for the
+    /// patterns the scan actually uses.
+    ///
+    /// Idempotent and cheap to repeat: every target is a `OnceLock` hit after
+    /// the first call.
     pub fn warm(&self) {
-        use rayon::prelude::*;
-        // Warm the lazy regex transition caches in parallel so the first real
-        // source batch does not serialize DFA first-touch under worker load.
+        // A sample carrying the assignment / URL / structural shapes the shared
+        // matchers key on, so warming touches their transition caches and not
+        // just their construction.
         const WARM_SAMPLE: &str = concat!(
             "int main(void){ char *buf = malloc(4096); for(size_t i=0;i<len;i++){ ",
             "config.timeout_ms = 30000; user_id=0x1f3b9c; const KEY = \"abcDEF0123456789\"; ",
@@ -509,12 +523,6 @@ impl CompiledScanner {
             "snake_case_name camelCaseName SCREAMING_CASE path/to/file.rs node_modules ",
             "} /* comment */ // trailing\n\t<xml attr='v'>text</xml> {\"json\":true,\"n\":42}"
         );
-        self.ac_map.par_iter().for_each(|p| {
-            let _ = p.regex.get().find(WARM_SAMPLE); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
-        });
-        self.phase2_patterns.par_iter().for_each(|(p, _)| {
-            let _ = p.regex.get().find(WARM_SAMPLE); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
-        });
         crate::shared_regexes::warm_runtime_regexes();
         if let Some(generic_assignment) = self.detector_plans.generic_assignment() {
             let _ = generic_assignment.matcher().find(WARM_SAMPLE); // LAW10: warm-up result is intentionally discarded; this eagerly initializes the exact regex used by later scans

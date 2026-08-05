@@ -224,7 +224,7 @@ impl BinarySource {
             extract_printable_strings(&bytes, crate::strings::MIN_PRINTABLE_STRING_LEN)
         };
         if !strings.is_empty() {
-            let data = crate::strings::join_sensitive_strings(&strings, "\n");
+            let data = crate::strings::join_printable_runs(&strings);
             crate::profile::add_derived_bytes(data.len() as u64);
             chunks.push(Ok(Chunk {
                 data,

@@ -37,16 +37,24 @@ from .base import Corpus, LabeledRecord, load_jsonl_manifest
 
 _THIS = pathlib.Path(__file__).resolve()
 _BENCH_ROOT = _THIS.parents[2]
-_MANIFEST_SCHEMA: dict[str, type] = {
+# `secret` and `certificate` are None on a negative: there is nothing to
+# recover, so any observed value is a false recovery rather than a wrong one.
+_MANIFEST_SCHEMA: dict[str, type | tuple[type, ...]] = {
     "category": str,
+    "certificate": (str, type(None)),
+    "detector_family": str,
     "end_line": int,
+    "family": str,
     "id": str,
     "key_material_embedded": bool,
+    "kind": str,
     "label": bool,
     "match_mode": str,
+    "mechanism": str,
     "on_disk_path": str,
     "phase": int,
-    "secret": str,
+    "polarity": str,
+    "secret": (str, type(None)),
     "seed": int,
     "source_id": str,
     "start_line": int,
@@ -69,7 +77,7 @@ class IocRecoveryCorpus(Corpus):
         self._home = (
             pathlib.Path(corpus_dir)
             if corpus_dir is not None
-            else _BENCH_ROOT / "corpora" / "ioc-recovery-v3"
+            else _BENCH_ROOT / "corpora" / "ioc-recovery-v4"
         )
 
     @property
@@ -130,7 +138,7 @@ class IocRecoveryCorpus(Corpus):
             )
         metadata = self._load_metadata()
         required = {
-            "schema_version": 3,
+            "schema_version": 4,
             "name": "keyhog-ioc-recovery",
             "methodology_title": PAPER_TITLE,
             "methodology_url": PAPER_URL,

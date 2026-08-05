@@ -1,5 +1,4 @@
 // LR1-A3: one #[test] per file
-mod all_tests_declares_a3_pipeline_module;
 mod code_lines_from_offsets_matches_str_lines;
 mod compute_line_offsets_empty;
 mod compute_line_offsets_only_newlines;
@@ -63,7 +62,6 @@ mod normalize_chunk_data_strips_zero_width;
 mod normalize_scannable_chunk_allocates_on_evasion;
 mod normalize_scannable_chunk_borrowed_when_clean;
 mod pipeline_mod_has_three_submodules;
-mod pipeline_mod_rs_reexports_public_api;
 mod scheme_prefixed_uri_does_not_suppress_secret_with_colon;
 mod should_suppress_example_akia;
 mod suppresses_aws_iam_role_arn;

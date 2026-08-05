@@ -1,6 +1,6 @@
 schema_version = 1
 measured_at = "2026-06-20"
-host = "mukund-linux-main"
+host = "work-linux-main"
 gpu = "NVIDIA GeForce RTX 5090"
 driver = "570.211.01"
 backend = "region-presence"

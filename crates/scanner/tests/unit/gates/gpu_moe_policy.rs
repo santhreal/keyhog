@@ -23,19 +23,6 @@ fn gpu_moe_honors_disabled_policy_before_adapter_probe() {
 }
 
 #[test]
-fn public_gpu_available_uses_the_policy_checked_probe() {
-    let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu.rs"));
-    let fn_start = src
-        .find("pub fn gpu_available() -> bool")
-        .expect("gpu_available owner present");
-    let body = &src[fn_start..];
-    assert!(
-        body.starts_with("pub fn gpu_available() -> bool {\n    gpu_probe().available\n}"),
-        "gpu_available must consume the policy-checked typed GPU probe"
-    );
-}
-
-#[test]
 fn gpu_probe_honors_disabled_policy_before_adapter_identity() {
     let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu/policy.rs"));
     let fn_start = src

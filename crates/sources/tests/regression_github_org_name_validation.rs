@@ -24,7 +24,7 @@
 #![cfg(feature = "github")]
 
 use keyhog_core::SourceError;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 /// Assert a validator accepted its input by matching the exact `Ok(())`
 /// variant. `SourceError` is not `PartialEq`, so a pattern match (not

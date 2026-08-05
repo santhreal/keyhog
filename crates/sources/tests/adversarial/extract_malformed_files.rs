@@ -5,7 +5,7 @@
 //! without their magic they fall back to the normal text/binary scanning path,
 //! so the oracle for those is "survives and does not panic".
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use std::io::Write;
 
 fn tmp_file_with(extension: &str, bytes: &[u8]) -> (tempfile::TempDir, std::path::PathBuf, u64) {

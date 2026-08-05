@@ -664,3 +664,59 @@ fn empty_ascii_plan_is_complete_without_a_dispatch_catalog() {
     assert_eq!(catalog.uncovered_ascii_patterns, 0);
     assert_eq!(catalog.excluded_ascii_redundant_patterns, 7);
 }
+
+/// Two-sided control for the incomplete-catalog refusal, one variable apart.
+///
+/// A refusal is invisible in a trace: on the shipped corpus it fires and
+/// produces no dispatches, which looks exactly like the guard not being wired
+/// at all. So both arms use the SAME lowerable pattern set and the SAME
+/// candidate list, and differ only in how many patterns the CPU prefilter
+/// would mark. Covering all of them must build pipelines; leaving one
+/// uncovered must yield no catalog, because a GPU miss that does not cover
+/// every marked pattern cannot prove absence, and dispatching anyway is pure
+/// cost the CPU gate has to repeat.
+#[test]
+fn catalog_is_refused_when_one_required_pattern_is_uncovered() {
+    let patterns = forced_multi_shard_patterns();
+    let candidates: Vec<usize> = (0..patterns.len()).collect();
+
+    let covered = Phase2GpuDfaCatalog::build_from_selected_candidates(
+        &patterns,
+        candidates.len(),
+        0,
+        &candidates,
+        Phase2GpuDfaProgramKind::CudaCompatible,
+    )
+    .expect("every required pattern is a candidate and lowers, so the proof is complete");
+    assert_eq!(covered.uncovered_ascii_patterns, 0);
+    assert!(
+        !covered.shards.is_empty(),
+        "the covered arm must actually build dispatch pipelines, otherwise the \
+         refused arm below proves nothing"
+    );
+    assert_eq!(
+        covered
+            .shards
+            .iter()
+            .map(|shard| shard.phase2_indices.len())
+            .sum::<usize>(),
+        candidates.len()
+    );
+
+    // The single variable: one more pattern the CPU would mark than the GPU
+    // was given to cover, the shape a gate-prefixed always-active pattern
+    // produces. Nothing else changes.
+    let refused = Phase2GpuDfaCatalog::build_from_selected_candidates(
+        &patterns,
+        candidates.len() + 1,
+        0,
+        &candidates,
+        Phase2GpuDfaProgramKind::CudaCompatible,
+    );
+    assert!(
+        refused.is_none(),
+        "one uncovered required pattern must refuse the catalog outright; \
+         returning it would let a GPU miss claim absence for a pattern the GPU \
+         never scanned"
+    );
+}

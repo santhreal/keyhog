@@ -136,6 +136,12 @@ pub(crate) fn scan_chunk_boundaries_with_route(
     if chunks.len() < 2 {
         return Ok(());
     }
+    // Seam rescan is charged to its own stage. It is INCLUSIVE of the phase-2
+    // leaves `scan_one_pair` opens underneath it, so read it as "of which",
+    // never as another addend of the scan total. Its cost grows with chunk
+    // count rather than with input size, which is why it needs to be separable
+    // at all: a many-small-files workload pays it hardest.
+    let _seam_span = keyhog_profile::span(keyhog_profile::Stage::BoundaryScan);
     if chunks.len() != per_chunk_results.len() {
         crate::telemetry::record_boundary_result_cardinality_mismatch();
         return Ok(());

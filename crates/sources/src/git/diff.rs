@@ -258,15 +258,15 @@ fn stream_added_lines(
         loop {
             let line =
                 match super::read_capped_line(&mut reader, &mut line_buf, limits.git_line_bytes) {
-                    Ok(n) if n > limits.git_line_bytes => {
+                    Ok(record) if record.content > limits.git_line_bytes => {
                         return Some(Err(super::git_output_line_truncated_error(
                             "git diff source",
                             "unified diff line",
                             limits.git_line_bytes,
-                            n,
+                            record.content,
                         )));
                     }
-                    Ok(n) if n > 0 => super::trim_diff_line_bytes(&line_buf),
+                    Ok(record) if record.consumed > 0 => super::trim_diff_line_bytes(&line_buf),
                     Err(e) => {
                         done = true;
                         return Some(Err(SourceError::Io(e)));

@@ -1,9 +1,9 @@
 //! Static AES-256-CBC recovery for the bounded JavaScript grammar.
 
 use super::{
-    all_distinct, compile_static_regex, identifier_occurrence_count, record_static_limit,
-    unquote_static_string, RecoveredPlaintext, MAX_ARRAY_BINDINGS, MAX_BYTE_ARRAY_LEN,
-    MAX_STATIC_EXPRESSIONS,
+    all_distinct, compile_static_regex, identifier_occurrence_count, quoted_label,
+    record_static_limit, unquote_static_string, RecoveredPlaintext, StaticOperationBudget,
+    BINDING_KEYWORD, BUFFER_CONSTRUCTOR, MAX_ARRAY_BINDINGS, MAX_BYTE_ARRAY_LEN, QUOTE,
 };
 use aes::cipher::{BlockDecrypt, KeyInit};
 use aes::Aes256;
@@ -14,30 +14,65 @@ use std::sync::LazyLock;
 
 use crate::telemetry::{record_static_recovery_rejection, StaticRecoveryRejection};
 
+/// `aes-256-cbc` in any ASCII case and any string delimiter. Node's
+/// `createDecipheriv` normalizes the algorithm name, so a program written
+/// `AES-256-CBC` is the same program.
+fn aes_256_cbc() -> String {
+    quoted_label("aes-256-cbc")
+}
+
 static BUFFER_BINDING_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
-        r#"(?m)\bconst\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(Buffer\s*\.\s*from\s*\(\s*(["'][A-Za-z0-9+/=_-]+["'])\s*,\s*(["'](?:hex|base64)["'])\s*\))"#,
+        &format!(
+            r"(?m)\b{BINDING_KEYWORD}\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*({BUFFER_CONSTRUCTOR}\s*\(\s*({QUOTE}[A-Za-z0-9+/=_-]+{QUOTE})\s*,\s*({QUOTE}(?i:hex|base64){QUOTE})\s*\))"
+        ),
         "Buffer binding",
     )
 });
 
 static STRING_JOIN_BINDING_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
-        r#"(?m)\bconst\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(\[[^\]\r\n]+\])\s*\.\s*join\s*\(\s*(?:''|"")\s*\)"#,
+        &format!(
+            r#"(?m)\b{BINDING_KEYWORD}\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(\[[^\]\r\n]+\])\s*\.\s*join\s*\(\s*(?:''|"")\s*\)"#
+        ),
         "static string-array join binding",
     )
 });
 
-static AES_BOUND_RE: LazyLock<Regex> = LazyLock::new(|| {
+/// A plain immutable string literal used as an AES key, IV, or payload.
+///
+/// `const key = "…"` is the ordinary way to write what the join form
+/// (`["…","…"].join("")`) writes the obfuscated way, and both are the same
+/// constant. The body class admits no `\` and no `$`/`{`, so an escape or a
+/// template substitution cannot match, and the occurrence check at the call
+/// site rejects any binding that is written to again.
+static STRING_LITERAL_BINDING_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
-        r#"(?s)\bconst\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:crypto\s*\.\s*)?createDecipheriv\s*\(\s*(?:'aes-256-cbc'|"aes-256-cbc")\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\).*?([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*update\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\).*?([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*final\s*\(\s*\)"#,
+        &format!(
+            r"(?m)\b{BINDING_KEYWORD}\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*({QUOTE}[A-Za-z0-9+/=_-]+{QUOTE})\s*;"
+        ),
+        "static string-literal binding",
+    )
+});
+
+static AES_BOUND_RE: LazyLock<Regex> = LazyLock::new(|| {
+    let algorithm = aes_256_cbc();
+    compile_static_regex(
+        &format!(
+            r"(?s)\b{BINDING_KEYWORD}\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:crypto\s*\.\s*)?createDecipheriv\s*\(\s*{algorithm}\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\).*?([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*update\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\).*?([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*final\s*\(\s*\)"
+        ),
         "AES-256-CBC bound-buffer expression",
     )
 });
 
 static AES_INLINE_BUFFER_RE: LazyLock<Regex> = LazyLock::new(|| {
+    let algorithm = aes_256_cbc();
+    let hex = quoted_label("hex");
+    let base64 = quoted_label("base64");
     compile_static_regex(
-        r#"(?s)\bconst\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:crypto\s*\.\s*)?createDecipheriv\s*\(\s*(?:'aes-256-cbc'|"aes-256-cbc")\s*,\s*Buffer\s*\.\s*from\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*(?:'hex'|"hex")\s*\)\s*,\s*Buffer\s*\.\s*from\s*\(\s*(["'][A-Fa-f0-9]+["'])\s*,\s*(?:'hex'|"hex")\s*\)\s*\).*?([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*update\s*\(\s*Buffer\s*\.\s*from\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*(?:'base64'|"base64")\s*\)\s*\).*?([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*final\s*\(\s*\)"#,
+        &format!(
+            r"(?s)\b{BINDING_KEYWORD}\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:crypto\s*\.\s*)?createDecipheriv\s*\(\s*{algorithm}\s*,\s*{BUFFER_CONSTRUCTOR}\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*{hex}\s*\)\s*,\s*{BUFFER_CONSTRUCTOR}\s*\(\s*({QUOTE}[A-Fa-f0-9]+{QUOTE})\s*,\s*{hex}\s*\)\s*\).*?([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*update\s*\(\s*{BUFFER_CONSTRUCTOR}\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*{base64}\s*\)\s*\).*?([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*final\s*\(\s*\)"
+        ),
         "AES-256-CBC inline-buffer expression",
     )
 });
@@ -53,11 +88,11 @@ pub(super) fn recover_plaintexts(
     metadata: &ChunkMetadata,
     base_offset: usize,
     emitted: &mut BTreeSet<RecoveredPlaintext>,
+    budget: &mut StaticOperationBudget,
 ) {
     let buffers = collect_buffer_bindings(source);
-    for (expression_index, captures) in AES_BOUND_RE.captures_iter(source).enumerate() {
-        if expression_index >= MAX_STATIC_EXPRESSIONS {
-            record_static_limit("bound AES expression ceiling");
+    for captures in AES_BOUND_RE.captures_iter(source) {
+        if !budget.take() {
             break;
         }
         let Some(decipher) = captures.get(1).map(|value| value.as_str()) else {
@@ -138,9 +173,8 @@ pub(super) fn recover_plaintexts(
     }
 
     let strings = collect_static_string_bindings(source);
-    for (expression_index, captures) in AES_INLINE_BUFFER_RE.captures_iter(source).enumerate() {
-        if expression_index >= MAX_STATIC_EXPRESSIONS {
-            record_static_limit("inline AES expression ceiling");
+    for captures in AES_INLINE_BUFFER_RE.captures_iter(source) {
+        if !budget.take() {
             break;
         }
         let Some(decipher) = captures.get(1).map(|value| value.as_str()) else {
@@ -271,7 +305,9 @@ fn collect_buffer_bindings(source: &str) -> HashMap<String, BufferBinding> {
         ) else {
             continue;
         };
-        let decoded = match format {
+        // Node's encoding names are case-insensitive, so `'HEX'` and `'Base64'`
+        // name the same codec. Normalize once, then allowlist exactly.
+        let decoded = match format.to_ascii_lowercase().as_str() {
             "hex" => match hex::decode(value) {
                 Ok(decoded) => Some(Ok(decoded)),
                 Err(_) => Some(Err(StaticRecoveryRejection::BufferHex)), // LAW10: a referenced binding emits a recorded dogfood event; no source bytes are retained.
@@ -331,6 +367,36 @@ fn collect_static_string_bindings(
             continue;
         }
         bindings.insert(name.as_str().to_owned(), parts.map(|parts| parts.concat()));
+    }
+
+    // Plain literal keys, IVs, and payloads are the same constant the join
+    // form spells the long way; the two must recover identically. Both loops
+    // share `MAX_ARRAY_BINDINGS` through the map length so the combined table
+    // cannot exceed the advertised ceiling.
+    for captures in STRING_LITERAL_BINDING_RE.captures_iter(source) {
+        if bindings.len() >= MAX_ARRAY_BINDINGS {
+            record_static_limit("string binding ceiling");
+            break;
+        }
+        let (Some(name), Some(literal)) = (captures.get(1), captures.get(2)) else {
+            continue;
+        };
+        let Some(value) = unquote_static_string(literal.as_str()) else {
+            continue;
+        };
+        if value.is_empty() {
+            continue;
+        }
+        if value.len() > MAX_BYTE_ARRAY_LEN {
+            record_static_limit("literal string byte ceiling");
+            continue;
+        }
+        // A name already bound by the join form is ambiguous, not a second
+        // reading of the same constant: leave the first and let the call
+        // site's occurrence check reject the program.
+        bindings
+            .entry(name.as_str().to_owned())
+            .or_insert_with(|| Ok(value.to_owned()));
     }
     bindings
 }

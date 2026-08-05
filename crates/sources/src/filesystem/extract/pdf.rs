@@ -165,7 +165,7 @@ fn emit_non_pdf_extension_fallback(
                 return;
             }
             (
-                crate::strings::join_sensitive_strings(&strings, "\n"),
+                crate::strings::join_printable_runs(&strings),
                 "filesystem:binary-strings",
             )
         }
@@ -198,6 +198,45 @@ fn pdf_decode_budget(max_size: u64) -> usize {
     }
 }
 
+/// Total bytes the `(...)` / `<...>` string parsers may EXAMINE across one PDF.
+///
+/// [`pdf_decode_budget`] caps decoded OUTPUT, which is not a bound on the WORK
+/// spent producing it. `append_pdf_strings` restarts `parse_literal_string` at
+/// every `(`, and an unbalanced literal makes that parse scan to end-of-buffer
+/// while the outer cursor advances only past the FIRST `)`. A document of
+/// `"(()"` repeated (net +1 nesting per unit, so the parse never balances) is
+/// therefore quadratic, and the work-per-byte ratio grows as roughly `n/6`, so
+/// it gets WORSE with file size rather than settling at a constant factor.
+///
+/// Measured, ci-lean release binary, startup baseline 2.01 s subtracted:
+/// 50 KB = 0.55 s, 100 KB = 0.85 s, 200 KB = 4.35 s, 400 KB = 34.5 s. A 10 MB
+/// PDF is well inside the default file cap and never finishes.
+///
+/// The multiplier is measured, not guessed. Across 212 real PDFs the worst
+/// examined-bytes-per-file-byte ratio was 26.1x (a 1.4 MB `complex_document`)
+/// and the median was 0.12x. The adversarial ratio was measured at small sizes
+/// (340x at 2 KB, 681x at 4 KB, 1,364x at 8 KB, 2,729x at 16 KB, doubling
+/// cleanly with size as the `n/6` fit predicts) and PROJECTED from that fit to
+/// roughly 8,500x at 50 KB and 68,000x at 400 KB; those two larger figures are
+/// extrapolations, not measurements. Even the smallest MEASURED adversarial
+/// ratio is 13x the worst real document, and the gap widens with size, so 512x
+/// separates them with ~20x headroom over honest input. An earlier draft used
+/// 8x, which the 26.1x measurement showed would have converted a DoS into a
+/// coverage gap for honest documents.
+///
+/// This bounds the work rather than removing the quadratic. An exactly
+/// equivalent single-pass rewrite was designed and rejected: deciding whether a
+/// `(` has a balanced close needs an oracle, and a backward-pass oracle is
+/// unsound here because escape state depends on where the scan STARTED
+/// (`\(a)` yields a string today, `(\)` does not, and one backward pass cannot
+/// tell them apart). Bounding the work is the practical fix; exhaustion is
+/// surfaced as a counted coverage gap, never a silent short read.
+fn pdf_string_scan_budget(len: usize) -> usize {
+    const MULTIPLIER: usize = 512;
+    const FLOOR: usize = 1 << 20;
+    len.saturating_mul(MULTIPLIER).max(FLOOR)
+}
+
 #[derive(Default)]
 struct PdfExtract {
     text: String,
@@ -212,6 +251,7 @@ enum PdfUnreadableGap {
     MissingEndstream,
     UnsupportedFilter,
     StreamDecodeFailed,
+    StringScanBudgetExhausted,
 }
 
 impl PdfUnreadableGap {
@@ -221,6 +261,9 @@ impl PdfUnreadableGap {
             Self::MissingEndstream => "stream without endstream marker",
             Self::UnsupportedFilter => "unsupported stream filter",
             Self::StreamDecodeFailed => "stream decode failed before producing text",
+            Self::StringScanBudgetExhausted => {
+                "PDF string-parser work budget exhausted; remaining strings were not scanned"
+            }
         }
     }
 }
@@ -242,6 +285,7 @@ fn extract_pdf_text(bytes: &[u8], decoded_budget: usize) -> PdfExtract {
     let mut ranges = Vec::new();
     let mut cursor = 0usize;
     let mut remaining_budget = decoded_budget;
+    let mut string_work = pdf_string_scan_budget(bytes.len());
     while let Some(rel) = memmem::find(&bytes[cursor..], STREAM) {
         let stream_pos = cursor + rel;
         if !is_pdf_keyword_boundary(bytes, stream_pos, STREAM.len()) {
@@ -267,12 +311,16 @@ fn extract_pdf_text(bytes: &[u8], decoded_budget: usize) -> PdfExtract {
         let stream_bytes = &bytes[body_start..body_end];
         match decode_stream(dict, stream_bytes, remaining_budget) {
             StreamDecode::Borrowed(slice, truncated) => {
-                append_pdf_strings(slice, &mut out.text);
+                if append_pdf_strings(slice, &mut out.text, &mut string_work) {
+                    out.record_unreadable_gap(PdfUnreadableGap::StringScanBudgetExhausted);
+                }
                 remaining_budget = remaining_budget.saturating_sub(slice.len());
                 out.truncated |= truncated;
             }
             StreamDecode::Owned(decoded, truncated, recovered_after_error) => {
-                append_pdf_strings(&decoded, &mut out.text);
+                if append_pdf_strings(&decoded, &mut out.text, &mut string_work) {
+                    out.record_unreadable_gap(PdfUnreadableGap::StringScanBudgetExhausted);
+                }
                 remaining_budget = remaining_budget.saturating_sub(decoded.len());
                 out.truncated |= truncated;
                 out.recovered_after_error |= recovered_after_error;
@@ -287,7 +335,9 @@ fn extract_pdf_text(bytes: &[u8], decoded_budget: usize) -> PdfExtract {
         cursor = body_end + ENDSTREAM.len();
     }
 
-    append_pdf_strings_outside_streams(bytes, &ranges, &mut out.text);
+    if append_pdf_strings_outside_streams(bytes, &ranges, &mut out.text, &mut string_work) {
+        out.record_unreadable_gap(PdfUnreadableGap::StringScanBudgetExhausted);
+    }
     out
 }
 
@@ -406,29 +456,42 @@ fn is_pdf_name_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
 }
 
-fn append_pdf_strings_outside_streams(bytes: &[u8], ranges: &[(usize, usize)], out: &mut String) {
+/// Returns `true` when the shared string-parser work budget ran out, so the
+/// caller can record the coverage gap instead of reporting a silent short scan.
+fn append_pdf_strings_outside_streams(
+    bytes: &[u8],
+    ranges: &[(usize, usize)],
+    out: &mut String,
+    work: &mut usize,
+) -> bool {
     let mut cursor = 0usize;
+    let mut exhausted = false;
     for &(start, end) in ranges {
         if start > cursor {
-            append_pdf_strings(&bytes[cursor..start], out);
+            exhausted |= append_pdf_strings(&bytes[cursor..start], out, work);
         }
         cursor = cursor.max(end.min(bytes.len()));
     }
     if cursor < bytes.len() {
-        append_pdf_strings(&bytes[cursor..], out);
+        exhausted |= append_pdf_strings(&bytes[cursor..], out, work);
     }
+    exhausted
 }
 
-fn append_pdf_strings(bytes: &[u8], out: &mut String) {
+/// Returns `true` when `work` was exhausted before the whole slice was scanned.
+fn append_pdf_strings(bytes: &[u8], out: &mut String, work: &mut usize) -> bool {
     let mut pos = 0usize;
     while pos < bytes.len() {
+        if *work == 0 {
+            return true;
+        }
         match bytes[pos] {
             b'(' => {
                 let Some(relative_close) = memchr::memchr(b')', &bytes[pos + 1..]) else {
                     break;
                 };
                 let next_close = pos + 1 + relative_close;
-                match parse_literal_string(bytes, pos, next_close) {
+                match parse_literal_string(bytes, pos, next_close, work) {
                     Some((text, next)) => {
                         push_scannable_pdf_text(&text, out);
                         pos = next;
@@ -454,7 +517,7 @@ fn append_pdf_strings(bytes: &[u8], out: &mut String) {
                     break;
                 };
                 let next_close = pos + 1 + relative_close;
-                match parse_hex_string(bytes, pos, next_close) {
+                match parse_hex_string(bytes, pos, next_close, work) {
                     Some((text, next)) => {
                         push_scannable_pdf_text(&text, out);
                         pos = next;
@@ -465,6 +528,7 @@ fn append_pdf_strings(bytes: &[u8], out: &mut String) {
             _ => pos += 1,
         }
     }
+    false
 }
 
 fn push_scannable_pdf_text(text: &str, out: &mut String) {
@@ -480,11 +544,23 @@ fn push_scannable_pdf_text(text: &str, out: &mut String) {
     }
 }
 
-fn parse_literal_string(bytes: &[u8], start: usize, first_close: usize) -> Option<(String, usize)> {
+/// Charges every examined byte against the shared `work` budget and gives up
+/// (as an unparseable string) once it is spent, so an unbalanced literal cannot
+/// rescan to end-of-buffer at every `(`.
+fn parse_literal_string(
+    bytes: &[u8],
+    start: usize,
+    first_close: usize,
+    work: &mut usize,
+) -> Option<(String, usize)> {
     let mut pos = start + 1;
     let mut depth = 1usize;
     let mut out = Vec::with_capacity(first_close.saturating_sub(start + 1).min(4096));
     while pos < bytes.len() {
+        if *work == 0 {
+            return None;
+        }
+        *work -= 1;
         match bytes[pos] {
             b'\\' => {
                 pos += 1;
@@ -545,10 +621,21 @@ fn parse_octal_escape(bytes: &[u8], start: usize) -> (u8, usize) {
     ((value & 0xff) as u8, consumed)
 }
 
-fn parse_hex_string(bytes: &[u8], start: usize, first_close: usize) -> Option<(String, usize)> {
+/// Charges examined bytes against the same shared `work` budget as
+/// [`parse_literal_string`], so one ceiling bounds all string-parser work.
+fn parse_hex_string(
+    bytes: &[u8],
+    start: usize,
+    first_close: usize,
+    work: &mut usize,
+) -> Option<(String, usize)> {
     let mut pos = start + 1;
     let mut nibbles = Vec::with_capacity(first_close.saturating_sub(start + 1).min(4096));
     while pos < bytes.len() {
+        if *work == 0 {
+            return None;
+        }
+        *work -= 1;
         let byte = bytes[pos];
         if byte == b'>' {
             if nibbles.len() % 2 == 1 {

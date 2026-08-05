@@ -1,11 +1,6 @@
 //! Detector specification: TOML-based pattern definitions with regex, keywords,
 //! verification endpoints, and companion patterns.
 
-// Debt bucket: 55 public items, each landed before the crate floor raised
-// `missing_docs` to `warn`. Each is part of the public TOML schema and would
-// benefit from a doc line; remove this allow once they all carry one.
-#![allow(missing_docs)]
-
 mod evidence;
 pub(crate) mod load;
 mod validate;
@@ -641,9 +636,13 @@ impl DetectorMatchConfidenceSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DetectorBase64Alphabet {
+    /// Canonical RFC 4648 base64 with `+`/`/` and `=` padding.
     Standard,
+    /// RFC 4648 base64 with `+`/`/` and no `=` padding.
     StandardNoPad,
+    /// URL-safe base64 with `-`/`_` and `=` padding.
     UrlSafe,
+    /// URL-safe base64 with `-`/`_` and no `=` padding.
     UrlSafeNoPad,
 }
 
@@ -656,29 +655,45 @@ pub enum DetectorBase64Alphabet {
 pub enum DetectorValidatorSpec {
     /// CRC32 over a fixed entropy body, encoded as a fixed-width base62 suffix.
     Crc32Base62 {
+        /// Literal token prefixes this validator claims.
         prefixes: Vec<String>,
+        /// Exact length of the entropy body between the prefix and the checksum.
         entropy_len: usize,
+        /// Exact length of the base62-encoded CRC32 suffix.
         checksum_len: usize,
+        /// Reject a candidate that carries extra token bytes past the declared length.
         reject_overlong: bool,
+        /// Confidence assigned when the checksum verifies.
         confidence_floor: f64,
     },
     /// GitHub fine-grained PAT CRC32 layout with two underscore-separated
     /// segments and compatibility for the two formats GitHub has emitted.
     GithubFineGrainedCrc32 {
+        /// Literal token prefixes this validator claims.
         prefixes: Vec<String>,
+        /// Exact length of the segment before the underscore separator.
         left_len: usize,
+        /// Exact length of the segment after the underscore separator.
         right_len: usize,
+        /// Exact length of the base62-encoded CRC32 suffix.
         checksum_len: usize,
+        /// Confidence assigned when the checksum verifies.
         confidence_floor: f64,
     },
     /// A base64 payload whose successful decode is offline authenticity
     /// evidence, such as the macaroon carried by a PyPI API token.
     Base64Payload {
+        /// Literal token prefixes this validator claims.
         prefixes: Vec<String>,
+        /// Base64 dialect the payload must decode under.
         alphabet: DetectorBase64Alphabet,
+        /// Smallest accepted encoded payload length.
         min_encoded_len: usize,
+        /// Largest accepted encoded payload length.
         max_encoded_len: usize,
+        /// Smallest accepted decoded payload length.
         min_decoded_len: usize,
+        /// Confidence assigned when the payload decodes.
         confidence_floor: f64,
     },
     /// The detector's own patterns are the complete structural contract. The
@@ -686,6 +701,7 @@ pub enum DetectorValidatorSpec {
     /// named matches reuse the already-proven pattern result without rerunning
     /// a second regex.
     PatternShape {
+        /// Literal token prefixes this validator claims.
         prefixes: Vec<String>,
         /// Whether a candidate that begins with a complete declared pattern but
         /// continues with provider-token bytes is an unknown future shape
@@ -1852,8 +1868,11 @@ pub enum OobProtocol {
 #[serde(rename_all = "snake_case")]
 pub enum OobPolicy {
     #[default]
+    /// The credential is live only when the HTTP success criteria pass AND the OOB callback is observed.
     OobAndHttp,
+    /// The credential is live purely on an observed OOB callback; the HTTP response is ignored.
     OobOnly,
+    /// The HTTP success criteria decide the verdict; an observed OOB callback is added as extra evidence.
     OobOptional,
 }
 
@@ -1861,15 +1880,23 @@ pub enum OobPolicy {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepSpec {
+    /// Step name referenced by later steps and by extracted-metadata keys.
     pub name: String,
+    /// HTTP method used for this step's request.
     pub method: HttpMethod,
+    /// Request URL template, interpolated with credential and prior-step values.
     pub url: String,
+    /// Authentication scheme applied to this step's request.
     pub auth: AuthSpec,
     #[serde(default)]
+    /// Extra request headers, each interpolated like the URL.
     pub headers: Vec<HeaderSpec>,
+    /// Optional request body template.
     pub body: Option<String>,
+    /// Criteria that decide whether this step succeeded.
     pub success: SuccessSpec,
     #[serde(default)]
+    /// Values pulled out of this step's response for later steps and the finding.
     pub extract: Vec<MetadataSpec>,
 }
 
@@ -1877,7 +1904,9 @@ pub struct StepSpec {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HeaderSpec {
+    /// Header field name sent verbatim.
     pub name: String,
+    /// Header value template, interpolated before the request is sent.
     pub value: String,
 }
 
@@ -1885,32 +1914,53 @@ pub struct HeaderSpec {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AuthSpec {
+    /// Unauthenticated request.
     None {},
+    /// `Authorization: Bearer <value>`.
     Bearer {
+        /// Companion or credential field supplying the bearer value.
         field: String,
     },
+    /// HTTP basic authentication.
     Basic {
+        /// Username template.
         username: String,
+        /// Password template.
         password: String,
     },
+    /// Credential carried in a custom header.
     Header {
+        /// Header field name.
         name: String,
+        /// Header value template.
         template: String,
     },
+    /// Credential carried in a query-string parameter.
     Query {
+        /// Query parameter name.
         param: String,
+        /// Companion or credential field supplying the parameter value.
         field: String,
     },
     #[serde(rename = "aws_v4")]
+    /// AWS Signature Version 4 request signing.
     AwsV4 {
+        /// Field supplying the access key id.
         access_key: String,
+        /// Field supplying the secret access key.
         secret_key: String,
+        /// AWS region the request is signed for.
         region: String,
+        /// AWS service name the request is signed for.
         service: String,
+        /// Optional field supplying a session token.
         session_token: Option<String>,
     },
+    /// Credential prepared by an external interpreter script.
     Script {
+        /// Interpreter that runs `code`.
         engine: ScriptEngine,
+        /// Script source executed to produce the request credential.
         code: String,
     },
 }
@@ -1918,15 +1968,21 @@ pub enum AuthSpec {
 /// Script interpreter names accepted by the detector TOML schema.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScriptEngine {
+    /// CPython 3 (`python3`).
     Python3,
+    /// Ambient CPython (`python`).
     Python,
+    /// Node.js (`node`).
     Node,
+    /// Any other engine name; parsed but refused for verification.
     Other(String),
 }
 
 impl ScriptEngine {
+    /// Engine names a detector may use for live verification.
     pub const ALLOWED_FOR_VERIFY: &'static [&'static str] = &["python3", "python", "node"];
 
+    /// Wire name of this engine, as written in detector TOML.
     pub fn as_str(&self) -> &str {
         match self {
             Self::Python3 => "python3",
@@ -1936,6 +1992,7 @@ impl ScriptEngine {
         }
     }
 
+    /// True when this engine is allowed to run during live verification.
     pub fn is_allowed_for_verify(&self) -> bool {
         matches!(self, Self::Python3 | Self::Python | Self::Node)
     }
@@ -2077,11 +2134,17 @@ fn migrate_legacy_success_policy(success: &mut SuccessSpec) -> bool {
 #[serde(rename_all = "kebab-case")]
 pub enum Severity {
     #[default]
+    /// Informational only; not treated as a credential exposure.
     Info,
+    /// Safe to ship to a client; an attacker gains nothing server-side.
     ClientSafe,
+    /// Limited blast radius.
     Low,
+    /// Meaningful blast radius.
     Medium,
+    /// Serious blast radius.
     High,
+    /// Full compromise of the referenced account or service.
     Critical,
 }
 
@@ -2254,16 +2317,22 @@ impl std::fmt::Display for Severity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HttpMethod {
     #[serde(rename = "GET")]
+    /// HTTP `GET`.
     Get,
     #[serde(rename = "POST")]
+    /// HTTP `POST`.
     Post,
     #[serde(rename = "PUT")]
+    /// HTTP `PUT`.
     Put,
     #[serde(rename = "DELETE")]
+    /// HTTP `DELETE`.
     Delete,
     #[serde(rename = "PATCH")]
+    /// HTTP `PATCH`.
     Patch,
     #[serde(rename = "HEAD")]
+    /// HTTP `HEAD`.
     Head,
 }
 
@@ -2294,5 +2363,6 @@ pub struct DetectorCorpusManifest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DetectorFile {
+    /// The single detector this file defines.
     pub detector: DetectorSpec,
 }

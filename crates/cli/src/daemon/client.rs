@@ -3,6 +3,7 @@
 
 use crate::daemon::frame;
 use crate::daemon::protocol::{response_kind, Request, Response, WarmBackendStatus, WIRE_VERSION};
+use crate::daemon::sigpipe;
 use crate::daemon::trust;
 use crate::daemon::warm_identity;
 use anyhow::{bail, Context, Result};
@@ -22,19 +23,25 @@ const DAEMON_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 /// CLI forever. Per-kind ceilings in [`request_timeout`] (KH-1459).
 const DAEMON_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 const DAEMON_HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
+/// `Shutdown` is answered only after the daemon has flushed in-flight work to
+/// its clients, which the server bounds by its own drain deadline. This ceiling
+/// sits above that bound so `daemon stop` observes the completed drain instead of
+/// reporting a timeout against a daemon that is stopping correctly.
+const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(45);
 const DAEMON_SCAN_TEXT_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Per-request-kind receive timeout (KH-1459). Health/Shutdown stay short so a
-/// stuck daemon does not block operator control; ScanPath keeps the 300s
-/// full-file budget; ScanText is mid-tier for pre-commit chunks.
+/// Per-request-kind receive timeout (KH-1459). Health stays short so a stuck
+/// daemon does not block operator control; Shutdown allows for the server-side
+/// drain; ScanPath keeps the 300s full-file budget; ScanText is mid-tier for
+/// pre-commit chunks.
 fn request_timeout(request: &Request) -> Duration {
     match request {
         Request::Hello
         | Request::Health
-        | Request::Shutdown
         | Request::MassBegin { .. }
         | Request::MassFilesystemBegin { .. }
         | Request::MassEnd => DAEMON_HEALTH_TIMEOUT,
+        Request::Shutdown => DAEMON_SHUTDOWN_TIMEOUT,
         Request::ScanText { .. } => DAEMON_SCAN_TEXT_TIMEOUT,
         Request::ScanPath { .. } | Request::MassBatch { .. } | Request::MassFilesystemNext => {
             DAEMON_REQUEST_TIMEOUT
@@ -115,6 +122,7 @@ async fn connect_inner(
         warm_backend: None,
         mass_service: false,
         mass_gpu_primary_required: false,
+        _sigpipe: sigpipe::SigPipeGuard::acquire(),
     };
 
     // Hello handshake gates the connection on wire compatibility. A
@@ -249,6 +257,11 @@ pub(crate) struct Client {
     warm_backend: Option<WarmBackendStatus>,
     mass_service: bool,
     mass_gpu_primary_required: bool,
+    /// Alive for the whole connection so a daemon that dies or closes mid-write
+    /// surfaces `EPIPE` on the socket instead of killing this process with
+    /// `SIGPIPE`. Dropped with the connection, before report writing, so the
+    /// piped-stdout contract `main::reset_sigpipe` exists for is unchanged.
+    _sigpipe: sigpipe::SigPipeGuard,
 }
 
 impl Client {

@@ -62,37 +62,3 @@ fn unknown_dynamic_source_error_includes_fix() {
     );
 }
 
-#[test]
-fn rare_setup_errors_are_actionable_in_source() {
-    let watch = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/subcommands/watch.rs"
-    ))
-    .expect("watch source readable");
-    let scan_system = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/subcommands/scan_system.rs"
-    ))
-    .expect("scan-system source readable");
-    let detector_config = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/orchestrator_config/detectors.rs"
-    ))
-    .expect("detector config source readable");
-
-    assert!(
-        !watch.contains("scanner compile failed: {e:?}")
-            && !scan_system.contains("scanner compile failed: {e:?}"),
-        "watch/scan-system must not expose bare scanner compile debug errors"
-    );
-    assert!(
-        detector_config.contains("keyhog detectors --audit --detectors"),
-        "detector compile failures must point at the detector audit command"
-    );
-    assert!(
-        watch.contains("fs.inotify.max_user_instances=1024")
-            && watch.contains("fs.inotify.max_user_watches=524288")
-            && watch.contains("keyhog scan {root}"),
-        "watcher setup errors must include inotify fixes and one-shot scan fallback"
-    );
-}

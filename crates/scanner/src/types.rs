@@ -59,14 +59,15 @@ static REGEX_DFA_LIMIT_OVERRIDE: std::sync::atomic::AtomicUsize =
 
 /// Process-wide count of [`LazyRegex`] first-use compilations - incremented
 /// EXACTLY once per `LazyRegex` the moment its `OnceLock` actually builds the
-/// `Regex` (the cold-cache miss inside [`LazyRegex::get`]). Detector patterns are
-/// seeded eagerly at scanner construction ([`LazyRegex::detector_compiled`] uses
-/// `OnceLock::from`, which never runs the init closure), so in a correctly-built
-/// scanner this counter does NOT advance on the scan hot path: it is the
-/// observable that proves "compile once, scan many" - no per-scan regex rebuild.
-/// A regression that reintroduced per-scan `Regex::new` (the bug #13 fixed) would
-/// make this climb across scans. Pure observability (Law 10): it only ticks on a
-/// real compile, never gates or alters behaviour.
+/// `Regex` (the cold-cache miss inside [`LazyRegex::get`]). Scanner
+/// construction VALIDATES every detector pattern by building it once and
+/// dropping it again (see `compiler_compile::compile_pattern`), so the first
+/// chunk that actually reaches a pattern pays one compile for it and every
+/// later chunk is a `OnceLock` hit: this counter is the observable that proves
+/// "compile once per reached pattern, scan many" - no per-scan regex rebuild.
+/// A regression that reintroduced per-scan `Regex::new` (the bug #13 fixed)
+/// would make this climb across scans. Pure observability (Law 10): it only
+/// ticks on a real compile, never gates or alters behaviour.
 static LAZY_REGEX_COMPILE_EVENTS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -265,13 +266,21 @@ pub(crate) type ScannerPreprocessedText<'a> = crate::multiline::PreprocessedText
 #[cfg(not(feature = "multiline"))]
 pub(crate) type ScannerPreprocessedText<'a> = PreprocessedText<'a>;
 
-/// A regex wrapper that can either hold a detector regex compiled during
-/// scanner construction.
+/// A regex wrapper that holds a detector regex source and compiles it at most
+/// once, on the first chunk that actually reaches the pattern.
 ///
-/// Detector patterns are validated through the bounded shared builder before a
-/// scan can start, then seeded here so `warm()` or first extraction does not
-/// compile the same detector regex again. Generated homoglyph/plain variants
-/// are also validated and seeded by the compiler before a scan can start.
+/// Scanner construction still VALIDATES every detector pattern (and every
+/// generated homoglyph/plain variant) by building it through the bounded
+/// shared builder, so a malformed or oversized pattern is rejected loudly
+/// before a scan can start. It does not RETAIN those builds: a compiled
+/// `regex::Regex` for a corpus pattern costs on the order of 200 KB of NFA /
+/// one-pass DFA / Teddy-prefilter state, and the embedded corpus declares
+/// 1,709 patterns and 178 companions (923 detectors, measured) plus a
+/// generated homoglyph variant per eligible literal prefix, so seeding every
+/// one of them cost ~450 MB of resident memory to scan an eleven-byte file.
+/// Only the patterns a scan really touches are worth that state, and phase-1
+/// literal gating means that is a small fraction of the corpus for real
+/// inputs.
 ///
 /// `as_str()` returns the source with no compilation, so the Hyperscan /
 /// GPU literal-set builders that only read pattern text stay zero-cost.
@@ -316,11 +325,9 @@ pub(crate) struct LazyRegex {
 }
 
 impl LazyRegex {
-    /// Test-only detector pattern constructor without a seeded compiled regex.
-    /// Production scanner compilation validates and seeds detector patterns
-    /// through [`Self::detector_compiled`] so it does not compile each regex
-    /// twice.
-    #[cfg(test)]
+    /// A detector pattern: case-insensitive, CRLF-aware, size-bounded. The
+    /// source has already been validated by `compile_pattern`; the compiled
+    /// form is built on first use and shared from there on.
     pub(crate) fn detector(src: impl Into<Arc<str>>) -> Self {
         Self {
             src: src.into(),
@@ -331,10 +338,9 @@ impl LazyRegex {
         }
     }
 
-    /// A detector pattern whose builder-level validation already produced the
-    /// shared compiled regex. Scanner construction uses this so startup does
-    /// not compile every curated regex once for validation and then compile the
-    /// same regexes again on `warm()` or first scan.
+    /// Test-only: a detector pattern with its compiled regex already seeded,
+    /// so a test can assert `get()` hands back that exact instance.
+    #[cfg(test)]
     pub(crate) fn detector_compiled(src: impl Into<Arc<str>>, compiled: Arc<Regex>) -> Self {
         Self {
             src: src.into(),
@@ -345,29 +351,13 @@ impl LazyRegex {
         }
     }
 
-    /// Test-only plain pattern constructor without a seeded compiled regex.
-    /// Production scanner compilation validates and seeds generated plain
-    /// variants through [`Self::plain_compiled`].
-    #[cfg(test)]
+    /// A generated plain pattern (a homoglyph-expanded variant) built with
+    /// default regex flags. Validated by the compiler, compiled on first use.
     pub(crate) fn plain(src: impl Into<Arc<str>>) -> Self {
         Self {
             src: src.into(),
             case_insensitive: false,
             cell: Arc::new(std::sync::OnceLock::new()),
-            has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
-            has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
-        }
-    }
-
-    /// A generated plain pattern whose default-regex validation already
-    /// produced the compiled regex. Scanner construction uses this for
-    /// homoglyph-expanded variants so an invalid generated regex cannot become
-    /// a first-use never-match pattern.
-    pub(crate) fn plain_compiled(src: impl Into<Arc<str>>, compiled: Arc<Regex>) -> Self {
-        Self {
-            src: src.into(),
-            case_insensitive: false,
-            cell: Arc::new(std::sync::OnceLock::from(compiled)),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
             has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
         }

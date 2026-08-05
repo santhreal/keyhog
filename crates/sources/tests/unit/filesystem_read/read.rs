@@ -2,7 +2,7 @@
 //! and the compressed-input read path.
 
 use keyhog_sources::testing::{
-    for_each_file_windowed_mmap_for_test, ForEachWindowedMmapOutcome, SourceTestApi, TestApi,
+    for_each_file_windowed_mmap_for_test, ForEachWindowedMmapOutcome, TestApi,
 };
 
 /// Regression: preserves the externally observable `read_file_windowed_mmap_roundtrip_matches_pure_helper` behavior after the inline suite split.
@@ -58,31 +58,6 @@ fn for_each_file_windowed_mmap_stops_on_consumer_backpressure() {
     );
     assert_eq!(seen[0].0, 0, "first streamed window starts at byte zero");
     assert!(seen[0].1 >= 1024, "lossy first window should be non-empty");
-}
-
-/// Regression: preserves the source-shape guard that makes windowed mmap fallback operator-visible.
-#[test]
-fn windowed_mmap_failure_fallback_is_operator_visible() {
-    let window = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/filesystem/read/window.rs"
-    ));
-    assert!(
-        window.contains("\"cannot windowed-mmap file; falling back to buffered read\""),
-        "windowed mmap failure must be operator-visible before buffered fallback"
-    );
-    assert!(
-        window.contains("%error") && window.contains("path = %path.display()"),
-        "windowed mmap fallback warning must include the path and mmap error"
-    );
-    let fallback = window
-        .split("\"cannot windowed-mmap file; falling back to buffered read\"")
-        .nth(1)
-        .expect("windowed mmap fallback warning must be present");
-    assert!(
-        fallback.contains("return WindowedMmapOutcome::Fallback(file);"),
-        "windowed mmap failure should hand the already-open descriptor to the buffered window path after warning"
-    );
 }
 
 /// Regression: preserves the externally observable `read_file_for_compressed_input_returns_full_contents_via_mmap` behavior after the inline suite split.

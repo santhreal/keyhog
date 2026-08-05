@@ -1,8 +1,10 @@
 use crate::schema::Stage;
 use crate::schema_v2::{
-    AnnotationV2, BatchRouteV2, BlockedWaitRecordV2, DistributionBucketV2, Evidence, EvidenceGap,
-    LatencyBucketV2, LatencyDistributionV2, MetricDistributionV2, PointEventV2, QueueDepthV2,
-    QueueLinkV2, SpanRecordV2, TypedMetricRecordV2, WorkerImbalanceV2, WorkerLoadV2, WorkOrigin,
+    AnnotationV2, BatchRouteV2, BlockedWaitRecordV2, CacheEffectivenessV2, DistributionBucketV2,
+    Evidence, EvidenceGap, IndexedCounterRecordV2, LatencyBucketV2, LatencyDistributionV2,
+    MetricDistributionV2, PointEventV2, QueueDepthV2, QueueLinkV2, RetryRecordV2, SpanRecordV2,
+    StageConcurrencyV2, TypedMetricRecordV2, WorkerImbalanceV2, WorkerLoadV2,
+    WorkerOccupancyRowV2, WorkerOccupancyV2, WorkOrigin,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -126,6 +128,17 @@ struct SpanTrace {
     stack_slot: Option<usize>,
 }
 
+/// One completed span's recording payload, assembled on the guard's drop path.
+#[derive(Clone, Copy)]
+struct SpanOutcome {
+    start_offset_ns: u64,
+    elapsed_ns: u64,
+    attributed: bool,
+    blocked: bool,
+    serial: bool,
+    outermost: bool,
+}
+
 struct RawSpanRecord {
     span_id: u64,
     parent_span_id: u64,
@@ -236,10 +249,30 @@ struct WorkerShard {
     legacy_input_units: AtomicU64,
     derived_decoder_bytes: AtomicU64,
     backend_dispatched_bytes: AtomicU64,
+    stage_first_start_ns: [AtomicU64; STAGE_COUNT],
+    stage_last_end_ns: [AtomicU64; STAGE_COUNT],
+    stage_bytes: [AtomicU64; STAGE_COUNT],
+    serial_ns: [AtomicU64; STAGE_COUNT],
+    serial_calls: [AtomicU64; STAGE_COUNT],
+    top_level_busy_ns: AtomicU64,
+    top_level_blocked_ns: AtomicU64,
+    top_level_calls: AtomicU64,
+    cache_hits: [AtomicU64; crate::CacheId::COUNT],
+    cache_misses: [AtomicU64; crate::CacheId::COUNT],
+    indexed_counters:
+        [[AtomicU64; crate::INDEXED_COUNTER_SLOTS]; crate::IndexedCounterId::COUNT],
+    indexed_counter_dropped: AtomicU64,
+    retries: [AtomicU64; crate::RetryCause::COUNT],
 }
 
 const fn zero_counters() -> [AtomicU64; STAGE_COUNT] {
     [const { AtomicU64::new(0) }; STAGE_COUNT]
+}
+
+const fn zero_indexed_counters(
+) -> [[AtomicU64; crate::INDEXED_COUNTER_SLOTS]; crate::IndexedCounterId::COUNT] {
+    [const { [const { AtomicU64::new(0) }; crate::INDEXED_COUNTER_SLOTS] };
+        crate::IndexedCounterId::COUNT]
 }
 
 const fn zero_event_values() -> [AtomicU64; crate::EventId::COUNT] {
@@ -256,6 +289,10 @@ const fn zero_latency_buckets() -> [[AtomicU64; LATENCY_BUCKET_COUNT]; STAGE_COU
 
 const fn max_counters() -> [AtomicU64; STAGE_COUNT] {
     [const { AtomicU64::new(u64::MAX) }; STAGE_COUNT]
+}
+
+const fn zero_cache_counters() -> [AtomicU64; crate::CacheId::COUNT] {
+    [const { AtomicU64::new(0) }; crate::CacheId::COUNT]
 }
 
 impl WorkerShard {
@@ -280,6 +317,19 @@ impl WorkerShard {
             legacy_input_units: AtomicU64::new(0),
             derived_decoder_bytes: AtomicU64::new(0),
             backend_dispatched_bytes: AtomicU64::new(0),
+            stage_first_start_ns: max_counters(),
+            stage_last_end_ns: zero_counters(),
+            stage_bytes: zero_counters(),
+            serial_ns: zero_counters(),
+            serial_calls: zero_counters(),
+            top_level_busy_ns: AtomicU64::new(0),
+            top_level_blocked_ns: AtomicU64::new(0),
+            top_level_calls: AtomicU64::new(0),
+            cache_hits: zero_cache_counters(),
+            cache_misses: zero_cache_counters(),
+            indexed_counters: zero_indexed_counters(),
+            indexed_counter_dropped: AtomicU64::new(0),
+            retries: [const { AtomicU64::new(0) }; crate::RetryCause::COUNT],
         }
     }
 }
@@ -1112,15 +1162,9 @@ impl Runtime {
             .collect()
     }
 
-    fn record(
-        &self,
-        shard: Option<&WorkerShard>,
-        stage: Stage,
-        elapsed_ns: u64,
-        attributed: bool,
-        blocked: bool,
-    ) {
+    fn record(&self, shard: Option<&WorkerShard>, stage: Stage, outcome: SpanOutcome) {
         let index = stage.index();
+        let elapsed_ns = outcome.elapsed_ns;
         if self.inner.session_recording {
             let Some(shard) = shard else {
                 return;
@@ -1133,20 +1177,84 @@ impl Runtime {
             shard.latency_buckets[index][bucket].fetch_add(1, Ordering::Relaxed);
             shard.latency_min_ns[index].fetch_min(elapsed_ns, Ordering::Relaxed);
             shard.latency_max_ns[index].fetch_max(elapsed_ns, Ordering::Relaxed);
-            if attributed {
+            shard.stage_first_start_ns[index]
+                .fetch_min(outcome.start_offset_ns, Ordering::Relaxed);
+            shard.stage_last_end_ns[index].fetch_max(
+                outcome.start_offset_ns.saturating_add(elapsed_ns),
+                Ordering::Relaxed,
+            );
+            if outcome.attributed {
                 shard.attributed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
                 shard.legacy_attributed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
             }
-            if blocked {
+            if outcome.blocked {
                 shard.blocked_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
                 shard.blocked_calls[index].fetch_add(1, Ordering::Relaxed);
+            }
+            if outcome.serial {
+                shard.serial_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
+                shard.serial_calls[index].fetch_add(1, Ordering::Relaxed);
+            }
+            // Only the outermost span on a thread contributes occupancy, so a
+            // nested span never counts its parent's time a second time.
+            if outcome.outermost {
+                shard.top_level_calls.fetch_add(1, Ordering::Relaxed);
+                if outcome.blocked {
+                    shard
+                        .top_level_blocked_ns
+                        .fetch_add(elapsed_ns, Ordering::Relaxed);
+                } else {
+                    shard
+                        .top_level_busy_ns
+                        .fetch_add(elapsed_ns, Ordering::Relaxed);
+                }
             }
             return;
         }
         self.inner.elapsed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
         self.inner.calls[index].fetch_add(1, Ordering::Relaxed);
-        if attributed {
+        if outcome.attributed {
             self.inner.attributed_ns[index].fetch_add(elapsed_ns, Ordering::Relaxed);
+        }
+    }
+
+    fn add_stage_bytes(&self, stage: Stage, bytes: u64) {
+        if let Some(shard) = self.worker_shard() {
+            shard.stage_bytes[stage.index()].fetch_add(bytes, Ordering::Relaxed);
+        }
+    }
+
+    fn record_cache_outcome(&self, cache: crate::CacheId, hit: bool) {
+        let Some(shard) = self.worker_shard() else {
+            return;
+        };
+        let slot = if hit {
+            &shard.cache_hits[cache.index()]
+        } else {
+            &shard.cache_misses[cache.index()]
+        };
+        slot.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_retry(&self, cause: crate::RetryCause) {
+        if let Some(shard) = self.worker_shard() {
+            shard.retries[cause.index()].fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn add_indexed_counter(&self, counter: crate::IndexedCounterId, slot: u16, delta: u64) {
+        let Some(shard) = self.worker_shard() else {
+            return;
+        };
+        // Folding an out-of-range slot into the last one would attribute one
+        // caller's cost to another. Count it as dropped instead.
+        match shard.indexed_counters[counter.index()].get(usize::from(slot)) {
+            Some(cell) => {
+                cell.fetch_add(delta, Ordering::Relaxed);
+            }
+            None => {
+                shard.indexed_counter_dropped.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
 
@@ -1590,8 +1698,236 @@ impl Runtime {
             .collect()
     }
 
+    /// Offset of one instant from this runtime's start, saturating at zero.
+    fn offset_ns(&self, at: Instant) -> u64 {
+        u64::try_from(
+            at.checked_duration_since(self.inner.started)
+                .unwrap_or_default()
+                .as_nanos(),
+        )
+        .unwrap_or(u64::MAX)
+    }
+
+    /// Drain per-micro-function wall-clock occupancy merged across workers.
+    ///
+    /// Call this before `Session::finish`, which drains the shared per-stage
+    /// call and elapsed counters this record reads.
+    pub fn take_session_stage_concurrency(&self) -> Vec<StageConcurrencyV2> {
+        let shards = self.inner.sorted_shards();
+        Stage::ALL
+            .into_iter()
+            .filter_map(|stage| {
+                let index = stage.index();
+                let mut calls = 0_u64;
+                let mut elapsed_ns = 0_u64;
+                let mut max_worker_elapsed_ns = 0_u64;
+                let mut worker_count = 0_u64;
+                let mut first_start_ns = u64::MAX;
+                let mut last_end_ns = 0_u64;
+                let mut declared_serial_ns = 0_u64;
+                let mut declared_serial_calls = 0_u64;
+                let mut bytes = 0_u64;
+                for shard in &shards {
+                    let shard_calls = shard.calls[index].load(Ordering::Relaxed);
+                    let shard_elapsed = shard.elapsed_ns[index].load(Ordering::Relaxed);
+                    if shard_calls != 0 {
+                        worker_count += 1;
+                    }
+                    calls = calls.saturating_add(shard_calls);
+                    elapsed_ns = elapsed_ns.saturating_add(shard_elapsed);
+                    max_worker_elapsed_ns = max_worker_elapsed_ns.max(shard_elapsed);
+                    first_start_ns =
+                        first_start_ns.min(shard.stage_first_start_ns[index].load(Ordering::Relaxed));
+                    last_end_ns =
+                        last_end_ns.max(shard.stage_last_end_ns[index].load(Ordering::Relaxed));
+                    declared_serial_ns = declared_serial_ns
+                        .saturating_add(shard.serial_ns[index].swap(0, Ordering::Relaxed));
+                    declared_serial_calls = declared_serial_calls
+                        .saturating_add(shard.serial_calls[index].swap(0, Ordering::Relaxed));
+                    bytes = bytes.saturating_add(shard.stage_bytes[index].swap(0, Ordering::Relaxed));
+                }
+                if calls == 0 {
+                    return None;
+                }
+                let first_start_ns = if first_start_ns == u64::MAX {
+                    0
+                } else {
+                    first_start_ns
+                };
+                let window_ns = last_end_ns.saturating_sub(first_start_ns);
+                // A window of zero means every call fell inside one clock tick;
+                // report the calls as serial rather than inventing concurrency.
+                // A stage entered recursively on one thread sums its nested
+                // time, so raw elapsed can exceed the wall the thread spent
+                // there. Average concurrency can never exceed the number of
+                // workers that entered the stage, so cap it there rather than
+                // report a single-threaded recursion as parallel.
+                let ceiling_milli = worker_count.saturating_mul(1_000);
+                let concurrency_milli = if window_ns == 0 {
+                    1_000
+                } else {
+                    u64::try_from((u128::from(elapsed_ns) * 1_000) / u128::from(window_ns))
+                        .unwrap_or(u64::MAX)
+                        .min(ceiling_milli)
+                };
+                Some(StageConcurrencyV2 {
+                    version: crate::schema_v2::STAGE_CONCURRENCY_V2_VERSION,
+                    metric_id: stage.metric_id(),
+                    macro_stage_id: stage.macro_stage_id(),
+                    calls,
+                    elapsed_ns,
+                    window_ns,
+                    first_start_ns,
+                    last_end_ns,
+                    worker_count,
+                    max_worker_elapsed_ns,
+                    concurrency_milli,
+                    declared_serial_ns,
+                    declared_serial_calls,
+                    bytes,
+                })
+            })
+            .collect()
+    }
+
+    /// Drain per-worker busy and blocked time merged in sorted shard order.
+    pub fn take_session_worker_occupancy(&self) -> WorkerOccupancyV2 {
+        let shards = self.inner.sorted_shards();
+        let workers: Vec<WorkerOccupancyRowV2> = shards
+            .iter()
+            .map(|shard| WorkerOccupancyRowV2 {
+                version: crate::schema_v2::WORKER_OCCUPANCY_V2_VERSION,
+                worker_id: shard.sequence,
+                busy_ns: shard.top_level_busy_ns.swap(0, Ordering::Relaxed),
+                blocked_ns: shard.top_level_blocked_ns.swap(0, Ordering::Relaxed),
+                calls: shard.top_level_calls.swap(0, Ordering::Relaxed),
+            })
+            .collect();
+        let busy_ns = workers
+            .iter()
+            .fold(0_u64, |total, worker| total.saturating_add(worker.busy_ns));
+        let blocked_ns = workers.iter().fold(0_u64, |total, worker| {
+            total.saturating_add(worker.blocked_ns)
+        });
+        let calls = workers
+            .iter()
+            .fold(0_u64, |total, worker| total.saturating_add(worker.calls));
+        let mut sorted_busy: Vec<u64> = workers.iter().map(|worker| worker.busy_ns).collect();
+        sorted_busy.sort_unstable();
+        let median_busy_ns = sorted_busy
+            .get(sorted_busy.len() / 2)
+            .copied()
+            .unwrap_or_default();
+        WorkerOccupancyV2 {
+            version: crate::schema_v2::WORKER_OCCUPANCY_V2_VERSION,
+            worker_count: u64::try_from(workers.len()).unwrap_or(u64::MAX),
+            active_worker_count: workers.iter().filter(|worker| worker.calls != 0).count() as u64,
+            busy_ns,
+            blocked_ns,
+            calls,
+            busiest_busy_ns: sorted_busy.last().copied().unwrap_or_default(),
+            median_busy_ns,
+            workers,
+        }
+    }
+
+    /// Drain reuse-cache hit and miss counts merged in sorted shard order.
+    pub fn take_session_cache_effectiveness(&self) -> Vec<CacheEffectivenessV2> {
+        let shards = self.inner.sorted_shards();
+        crate::CacheId::ALL
+            .into_iter()
+            .filter_map(|cache| {
+                let index = cache.index();
+                let mut hits = 0_u64;
+                let mut misses = 0_u64;
+                for shard in &shards {
+                    hits = hits.saturating_add(shard.cache_hits[index].swap(0, Ordering::Relaxed));
+                    misses =
+                        misses.saturating_add(shard.cache_misses[index].swap(0, Ordering::Relaxed));
+                }
+                let total = hits.saturating_add(misses);
+                if total == 0 {
+                    return None;
+                }
+                Some(CacheEffectivenessV2 {
+                    version: crate::schema_v2::CACHE_EFFECTIVENESS_V2_VERSION,
+                    cache,
+                    hits,
+                    misses,
+                    hit_rate_ppm: u64::try_from((u128::from(hits) * 1_000_000) / u128::from(total))
+                        .unwrap_or(u64::MAX),
+                })
+            })
+            .collect()
+    }
+
+    /// Drain retry attempts by cause, merged in sorted shard order.
+    pub fn take_session_retries(&self) -> Vec<RetryRecordV2> {
+        let shards = self.inner.sorted_shards();
+        crate::RetryCause::ALL
+            .into_iter()
+            .filter_map(|cause| {
+                let attempts = shards.iter().fold(0_u64, |total, shard| {
+                    total.saturating_add(shard.retries[cause.index()].swap(0, Ordering::Relaxed))
+                });
+                (attempts != 0).then_some(RetryRecordV2 {
+                    version: crate::schema_v2::RETRY_RECORD_V2_VERSION,
+                    cause,
+                    attempts,
+                })
+            })
+            .collect()
+    }
+
+    /// Drain indexed counter families merged in sorted shard order.
+    pub fn take_session_indexed_counters(&self) -> Vec<IndexedCounterRecordV2> {
+        let shards = self.inner.sorted_shards();
+        let dropped_out_of_range = shards.iter().fold(0_u64, |total, shard| {
+            total.saturating_add(shard.indexed_counter_dropped.swap(0, Ordering::Relaxed))
+        });
+        crate::IndexedCounterId::ALL
+            .into_iter()
+            .filter_map(|counter| {
+                let index = counter.index();
+                let mut slots = [0_u64; crate::INDEXED_COUNTER_SLOTS];
+                for shard in &shards {
+                    for (slot, total) in slots.iter_mut().enumerate() {
+                        *total = total.saturating_add(
+                            shard.indexed_counters[index][slot].swap(0, Ordering::Relaxed),
+                        );
+                    }
+                }
+                if slots.iter().all(|value| *value == 0) && dropped_out_of_range == 0 {
+                    return None;
+                }
+                Some(IndexedCounterRecordV2 {
+                    version: crate::schema_v2::INDEXED_COUNTER_V2_VERSION,
+                    counter,
+                    slots: slots.to_vec(),
+                    dropped_out_of_range,
+                })
+            })
+            .collect()
+    }
+
+    /// Discard every per-run accumulator this runtime owns.
+    ///
+    /// Benchmarks call this between measured rounds to drop warm-up, so
+    /// anything left behind is reported as part of the next round. That makes
+    /// a partial reset a wrong number presented as a right one, which is why
+    /// this clears the per-worker shards as well as the runtime-level stores.
     fn reset(&self) {
+        // Session drains clear their own storage; the legacy drain clears the
+        // legacy mirrors. Both are needed because a session runtime keeps two.
         let _ = self.drain_stage_counters(false);
+        let _ = self.drain_stage_counters(true);
+        let _ = self.take_session_worker_occupancy();
+        let _ = self.take_session_blocked_waits();
+        let _ = self.take_session_stage_concurrency();
+        let _ = self.take_session_cache_effectiveness();
+        let _ = self.take_session_indexed_counters();
+        let _ = self.take_session_retries();
+        let _ = self.take_session_queue_depths();
         self.inner.input_bytes.store(0, Ordering::Relaxed);
         self.inner.input_units.store(0, Ordering::Relaxed);
         for index in 0..crate::MetricId::COUNT {
@@ -1600,6 +1936,26 @@ impl Runtime {
             self.inner.distribution_max[index].store(0, Ordering::Relaxed);
             for bucket in 0..LATENCY_BUCKET_COUNT {
                 self.inner.distribution_buckets[index][bucket].store(0, Ordering::Relaxed);
+            }
+        }
+        for shard in self.inner.sorted_shards() {
+            shard.input_bytes.store(0, Ordering::Relaxed);
+            shard.input_units.store(0, Ordering::Relaxed);
+            shard.legacy_input_bytes.store(0, Ordering::Relaxed);
+            shard.legacy_input_units.store(0, Ordering::Relaxed);
+            shard.derived_decoder_bytes.store(0, Ordering::Relaxed);
+            shard.backend_dispatched_bytes.store(0, Ordering::Relaxed);
+            for index in 0..crate::MetricId::COUNT {
+                shard.counter_values[index].store(0, Ordering::Relaxed);
+            }
+            for index in 0..STAGE_COUNT {
+                shard.latency_min_ns[index].store(u64::MAX, Ordering::Relaxed);
+                shard.latency_max_ns[index].store(0, Ordering::Relaxed);
+                shard.stage_first_start_ns[index].store(u64::MAX, Ordering::Relaxed);
+                shard.stage_last_end_ns[index].store(0, Ordering::Relaxed);
+                for bucket in 0..LATENCY_BUCKET_COUNT {
+                    shard.latency_buckets[index][bucket].store(0, Ordering::Relaxed);
+                }
             }
         }
     }
@@ -1729,6 +2085,7 @@ thread_local! {
     static CURRENT: RefCell<Vec<Runtime>> = const { RefCell::new(Vec::new()) };
     static WORK_ORIGIN: Cell<WorkOrigin> = const { Cell::new(WorkOrigin::Root) };
     static TASK_ID: Cell<u64> = const { Cell::new(0) };
+    static SPAN_DEPTH: Cell<u32> = const { Cell::new(0) };
     static LEGACY: RefCell<LegacyRuntime> = RefCell::new(LegacyRuntime::new());
     static ACTIVE_SPANS: RefCell<[Option<ActiveSpan>; MAX_NESTED_SPANS]> =
         const { RefCell::new([None; MAX_NESTED_SPANS]) };
@@ -1862,9 +2219,16 @@ impl Drop for AsyncSpan {
         runtime.record(
             self.shard.as_deref(),
             self.stage,
-            elapsed_ns,
-            self.attributed,
-            false,
+            SpanOutcome {
+                start_offset_ns: runtime.offset_ns(started),
+                elapsed_ns,
+                attributed: self.attributed,
+                blocked: false,
+                serial: false,
+                // An async span can be polled on any thread, so it never
+                // owns a worker's outermost interval.
+                outermost: false,
+            },
         );
         if let Some(trace) = self.trace {
             runtime.finish_span(trace, elapsed_ns);
@@ -1971,6 +2335,8 @@ pub struct Span {
     trace: Option<SpanTrace>,
     attributed: bool,
     blocked: bool,
+    serial: bool,
+    outermost: bool,
 }
 
 impl Span {
@@ -1980,7 +2346,12 @@ impl Span {
     }
 }
 
-fn span_impl(stage: Stage, parent_override: Option<CausalParent>, blocked: bool) -> Span {
+fn span_impl(
+    stage: Stage,
+    parent_override: Option<CausalParent>,
+    blocked: bool,
+    serial: bool,
+) -> Span {
     if ACTIVE_CONTEXTS.load(Ordering::Relaxed) == 0 {
         return Span {
             runtime: None,
@@ -1990,12 +2361,19 @@ fn span_impl(stage: Stage, parent_override: Option<CausalParent>, blocked: bool)
             trace: None,
             attributed: false,
             blocked: false,
+            serial: false,
+            outermost: false,
         };
     }
     let runtime = current_runtime();
     let shard = runtime.as_ref().and_then(Runtime::worker_shard);
     let worker_id = shard.as_ref().map_or(0, |shard| shard.sequence);
     let started = runtime.as_ref().map(|_| Instant::now());
+    // Depth is tracked for every recording guard, including guards whose span
+    // record was dropped for capacity, so occupancy never double-counts a
+    // nested region just because the forest was truncated.
+    let outermost =
+        started.is_some() && SPAN_DEPTH.with(|depth| depth.replace(depth.get() + 1) == 0);
     let trace = match (runtime.as_ref(), started, parent_override) {
         (Some(runtime), Some(started), Some(parent)) => {
             let parent_span_id = if runtime.context_id() == parent.context_id() {
@@ -2022,13 +2400,15 @@ fn span_impl(stage: Stage, parent_override: Option<CausalParent>, blocked: bool)
         trace,
         attributed,
         blocked,
+        serial,
+        outermost,
     }
 }
 
 /// Start one fixed-stage measurement.
 #[inline]
 pub fn span(stage: Stage) -> Span {
-    span_impl(stage, None, false)
+    span_impl(stage, None, false, false)
 }
 
 /// Start one fixed-stage measurement with an explicit portable causal parent.
@@ -2037,7 +2417,20 @@ pub fn span(stage: Stage) -> Span {
 /// parentage across crate, thread, or spawn boundaries. A token captured from
 /// another runtime records this span as a root of the current runtime.
 pub fn span_with_parent(parent: CausalParent, stage: Stage) -> Span {
-    span_impl(stage, Some(parent), false)
+    span_impl(stage, Some(parent), false, false)
+}
+
+/// Declare that this region runs with the worker pool idle.
+///
+/// Use it for barriers such as enumeration, plan compilation, or final merge,
+/// where no other worker can make progress. The guard measures wall time like
+/// [`span`] and additionally accumulates declared-serial time, which the
+/// profiler reports as the Amdahl floor on any speedup from more threads.
+/// The profiler also derives serial phases from observed concurrency, so a
+/// region left undeclared is still detected; declaring it makes the report
+/// state the intent rather than infer it.
+pub fn serial_span(stage: Stage) -> Span {
+    span_impl(stage, None, false, true)
 }
 
 /// Record one blocked wait interval separately from runnable execution.
@@ -2047,7 +2440,60 @@ pub fn span_with_parent(parent: CausalParent, stage: Stage) -> Span {
 /// and it never counts as attributed (decoded or derived) execution. Reuse
 /// wait stages such as [`Stage::SourceQueueWait`] and [`Stage::ScannerQueueWait`].
 pub fn blocked(stage: Stage) -> Span {
-    span_impl(stage, None, true)
+    span_impl(stage, None, true, false)
+}
+
+/// Time a region whose measurement drives a decision, profiled or not.
+///
+/// [`span`] deliberately measures nothing while profiling is off, which is
+/// right for reporting and wrong for a measurement the product acts on. A
+/// timer whose value picks a backend must produce the same value whether or
+/// not an operator passed `--profile`, or the flag would change routing.
+///
+/// This guard therefore reads the clock unconditionally, returns the elapsed
+/// duration to the caller, and additionally records it as a [`span`] would
+/// when a runtime is current. The name says "decision" so a reader knows at
+/// the call site that it costs a clock read even when profiling is off. On a
+/// hot path where nothing acts on the value, use [`span`].
+#[must_use = "a decision timer only measures when finished"]
+pub struct DecisionTimer {
+    stage: Stage,
+    started: Instant,
+}
+
+/// Start a decision-driving measurement of one micro-function.
+pub fn decision_timer(stage: Stage) -> DecisionTimer {
+    DecisionTimer {
+        stage,
+        started: Instant::now(),
+    }
+}
+
+impl DecisionTimer {
+    /// Stop the timer, record it when profiling is on, and return the elapsed time.
+    pub fn finish(self) -> std::time::Duration {
+        let elapsed = self.started.elapsed();
+        if ACTIVE_CONTEXTS.load(Ordering::Relaxed) != 0 {
+            if let Some(runtime) = current_runtime() {
+                let shard = runtime.worker_shard();
+                runtime.record(
+                    shard.as_deref(),
+                    self.stage,
+                    SpanOutcome {
+                        start_offset_ns: runtime.offset_ns(self.started),
+                        elapsed_ns: u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
+                        attributed: false,
+                        blocked: false,
+                        serial: false,
+                        // The caller owns the enclosing span, if any; a decision
+                        // timer never claims a worker's outermost interval.
+                        outermost: false,
+                    },
+                );
+            }
+        }
+        elapsed
+    }
 }
 
 impl Drop for Span {
@@ -2056,18 +2502,109 @@ impl Drop for Span {
         let (Some(runtime), Some(started)) = (&self.runtime, self.started) else {
             return;
         };
+        SPAN_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
         let elapsed_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         runtime.record(
             self.shard.as_deref(),
             self.stage,
-            elapsed_ns,
-            self.attributed,
-            self.blocked,
+            SpanOutcome {
+                start_offset_ns: runtime.offset_ns(started),
+                elapsed_ns,
+                attributed: self.attributed,
+                blocked: self.blocked,
+                serial: self.serial,
+                outermost: self.outermost,
+            },
         );
         if let Some(trace) = self.trace {
             runtime.finish_span(trace, elapsed_ns);
             crate::allocation::stage_context_pop();
         }
+    }
+}
+
+/// Time a sub-stage region into a [`crate::CounterId`] instead of a stage.
+///
+/// Some measurements sit strictly inside a stage leaf. Recording them as
+/// spans would add their time to that leaf's inclusive total a second time,
+/// so they belong in a counter. This guard is [`span`] with a counter sink:
+/// same enabled gate, same clock, no allocation on drop.
+#[must_use = "a counter span measures nothing until it is dropped"]
+pub struct CounterSpan {
+    counter: crate::CounterId,
+    started: Option<Instant>,
+}
+
+/// Start a sub-stage measurement that accumulates into one counter.
+#[inline]
+pub fn counter_span(counter: crate::CounterId) -> CounterSpan {
+    CounterSpan {
+        counter,
+        started: (ACTIVE_CONTEXTS.load(Ordering::Relaxed) != 0).then(Instant::now),
+    }
+}
+
+impl Drop for CounterSpan {
+    #[inline]
+    fn drop(&mut self) {
+        let Some(started) = self.started else {
+            return;
+        };
+        add_counter(
+            self.counter,
+            u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+        );
+    }
+}
+
+/// Count one retry attempt, whether or not the retry eventually succeeded.
+///
+/// Count every attempt, not every operation: a path that retries a thousand
+/// times must read as a thousand. The profiler reports retries as a finding
+/// because a retry that fires means a failure the product did not design out.
+#[inline]
+pub fn record_retry(cause: crate::RetryCause) {
+    if let Some(runtime) = current_runtime() {
+        runtime.record_retry(cause);
+    }
+}
+
+/// Add to one slot of an indexed counter family.
+///
+/// A slot at or beyond [`crate::INDEXED_COUNTER_SLOTS`] is counted as dropped
+/// on the drained record rather than folded into another slot.
+#[inline]
+pub fn add_indexed_counter(counter: crate::IndexedCounterId, slot: u16, delta: u64) {
+    if let Some(runtime) = current_runtime() {
+        runtime.add_indexed_counter(counter, slot, delta);
+    }
+}
+
+/// Attribute bytes to one micro-function so its throughput can be reported.
+///
+/// Record the bytes the named stage actually moved or examined, not the run's
+/// input size. A stage that sees each byte twice reports twice the bytes, and
+/// that is the honest number for its own throughput.
+#[inline]
+pub fn add_stage_bytes(stage: crate::Stage, bytes: u64) {
+    if let Some(runtime) = current_runtime() {
+        runtime.add_stage_bytes(stage, bytes);
+    }
+}
+
+/// Count one consultation of a reuse cache that was served from the cache.
+#[inline]
+pub fn record_cache_hit(cache: crate::CacheId) {
+    if let Some(runtime) = current_runtime() {
+        runtime.record_cache_outcome(cache, true);
+    }
+}
+
+/// Count one consultation of a reuse cache that had to recompute or refetch.
+#[inline]
+pub fn record_cache_miss(cache: crate::CacheId) {
+    if let Some(runtime) = current_runtime() {
+        runtime.record_cache_outcome(cache, false);
     }
 }
 

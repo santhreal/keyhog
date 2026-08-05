@@ -38,7 +38,7 @@ use keyhog_core::{
     Chunk, ChunkMetadata, RawMatch,
 };
 use keyhog_scanner::{
-    set_perf_trace_enabled, set_profile_enabled, CompiledScanner, ScanBackend, ScanExecutionRoute,
+    set_profile_detail, CompiledScanner, Detail, ScanBackend, ScanExecutionRoute,
     ScannerTuningConfig,
 };
 use std::env;
@@ -528,8 +528,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let perf_trace = args.iter().any(|arg| arg == "--perf-trace");
     let profile = args.iter().any(|arg| arg == "--profile");
     let diagnostic = args.iter().any(|arg| arg == "--diagnostic");
-    set_perf_trace_enabled(perf_trace);
-    set_profile_enabled(false);
+    // One switch, two levels. `--perf-trace` is the diagnostic level of the same
+    // measurement, so the timing rounds below run at the level the flag asks for
+    // and the isolated profile section raises it to at least `Stages`.
+    let base_detail = if perf_trace {
+        Detail::Diagnostic
+    } else {
+        Detail::Off
+    };
+    set_profile_detail(base_detail);
 
     let size_mib = env_positive_usize("KH_BENCH_SIZE_MIB", 8)?;
     let size = size_mib.checked_mul(MIB).ok_or_else(|| {
@@ -1001,7 +1008,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         if profile {
-            set_profile_enabled(true);
+            set_profile_detail(base_detail.max(Detail::Stages));
             let mut profile_routes = hyperscan_routes.clone();
             profile_routes.push(selected_gpu);
             for route in profile_routes {
@@ -1024,7 +1031,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 scanner.dump_profile_reports(&format!("gpu-vs-hs:{}", route.label()));
             }
-            set_profile_enabled(false);
+            set_profile_detail(base_detail);
         }
         let gpu_median = median_duration(&held_out_gpu).expect("held-out GPU samples");
         report(

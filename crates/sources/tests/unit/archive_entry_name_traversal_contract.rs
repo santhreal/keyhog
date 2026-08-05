@@ -1,5 +1,5 @@
 //! Security contract for `validate_scan_archive_entry_name` (reached via the
-//! `SourceTestApi` facade), the guard every archive extractor (zip / 7z / rar)
+//! `TestApi` facade), the guard every archive extractor (zip / 7z / rar)
 //! runs over each entry name before the entry is processed.
 //!
 //! keyhog scans archive members in memory rather than extracting them to disk,
@@ -14,7 +14,7 @@
 //! lookalikes `..env`, `foo..`, `./foo`) are accepted, over-rejection here
 //! would silently drop a real archived secret from the scan.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 fn validate(name: &str) -> Result<(), String> {
     TestApi.validate_archive_entry_name(name)

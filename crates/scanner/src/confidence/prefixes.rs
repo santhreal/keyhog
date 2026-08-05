@@ -1,49 +1,29 @@
-/// Canonical list of well-known service-credential prefixes.
-///
-/// This is the single source of truth for the prefix set. Two consumers:
-///
-/// 1. [`known_prefix_confidence_floor`] (this module) lifts any credential
-///    starting with one of these to a 0.8 confidence floor.
-/// 2. `context::inference::{is_sequential_placeholder, is_hex_sequential_placeholder}`
-///    strip these prefixes before sequence-detection so a `ghp_aaaaaaaaaa`
-///    placeholder still triggers the all-same-char suppression on the
-///    BODY, not on the prefix.
-///
-/// Pre-2026-05-24 state: this list was duplicated three times across
-/// `confidence/prefixes.rs` + `context/inference.rs` × 2, and the copies
-/// had already drifted (KNOWN_PREFIXES missed `glcbt-`, `glrt-`,
-/// `xoxs-`, `vercel_`, `sbp_`, `0x`, `rk_test_`, `sk-`; the inference
-/// copies missed `PRIVATE KEY`, `-----BEGIN`, `TESTKEY_`). Consolidated
-/// here (kimi-dedup audit rows #12-13).
-#[derive(serde::Deserialize)]
-struct Wrapper {
-    prefixes: Vec<String>,
-}
-
-// `pub` (not `pub(crate)`) so `crate::testing` can `pub use` it out to the
-// external test crates (confidence_known_prefix_contract, decode_caesar parity)
-// that assert against the list; those re-exports need a `pub` source.
-pub static KNOWN_PREFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_known_prefixes(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/known-prefixes.toml"
-    ))) {
-        Ok(prefixes) => prefixes,
-        Err(error) => panic!(
-            "rules/known-prefixes.toml is invalid: {error}. \
-                 Fix the bundled Tier-B metadata file list."
-        ),
-    }
-});
-
-/// Parse the bundled Tier-B known-prefix list. Returns an error rather than
-/// panicking so the `KNOWN_PREFIXES` owner above is the single fail-closed site
-/// (the `no_unwrap_expect` gate bans `expect` in production source).
-fn parse_known_prefixes(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<Wrapper>(raw)
-        .map(|wrapper| wrapper.prefixes)
-        .map_err(|error| error.to_string())
-}
+crate::tier_b_list::tier_b_vec!(
+    /// Canonical list of well-known service-credential prefixes.
+    ///
+    /// This is the single source of truth for the prefix set. Two consumers:
+    ///
+    /// 1. [`known_prefix_confidence_floor`] (this module) lifts any credential
+    ///    starting with one of these to a 0.8 confidence floor.
+    /// 2. `context::inference::{is_sequential_placeholder, is_hex_sequential_placeholder}`
+    ///    strip these prefixes before sequence-detection so a `ghp_aaaaaaaaaa`
+    ///    placeholder still triggers the all-same-char suppression on the
+    ///    BODY, not on the prefix.
+    ///
+    /// Pre-2026-05-24 state: this list was duplicated three times across
+    /// `confidence/prefixes.rs` + `context/inference.rs` × 2, and the copies
+    /// had already drifted (KNOWN_PREFIXES missed `glcbt-`, `glrt-`,
+    /// `xoxs-`, `vercel_`, `sbp_`, `0x`, `rk_test_`, `sk-`; the inference
+    /// copies missed `PRIVATE KEY`, `-----BEGIN`, `TESTKEY_`). Consolidated
+    /// here (kimi-dedup audit rows #12-13).
+    ///
+    /// `pub` (not `pub(crate)`) so `crate::testing` can `pub use` it out to the
+    /// external test crates (confidence_known_prefix_contract, decode_caesar
+    /// parity) that assert against the list; those re-exports need a `pub` source.
+    pub KNOWN_PREFIXES,
+    "known-prefixes.toml",
+    prefixes
+);
 
 /// Minimum confidence a credential carrying a well-known literal prefix is lifted
 /// to. Named (not an inline `0.8`) so this shared prefix-list floor has one owner

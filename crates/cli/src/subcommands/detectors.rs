@@ -1,6 +1,7 @@
 //! Logic for the `detectors` subcommand.
 
 mod brace_rewrite;
+mod mechanisms;
 
 use brace_rewrite::{
     fix_single_brace_in_verify_blocks, rewrite_braces, rewrite_braces_in_string_literals,
@@ -62,6 +63,22 @@ fn run_list(args: DetectorArgs) -> Result<()> {
         .collect();
 
     let want_json = matches!(args.format, Some(crate::args::DetectorFormat::Json));
+    if args.mechanisms {
+        // Derived from the corpus that was just loaded, so the manifest can
+        // never describe a different detector set from the one this binary
+        // would scan with.
+        let manifest = mechanisms::build(&filtered, source);
+        if want_json {
+            let out = serde_json::to_string_pretty(&manifest)
+                .context("serializing mechanism manifest to JSON")?;
+            println!("{out}");
+        } else {
+            let mut rendered = String::new();
+            mechanisms::render_text(&manifest, &mut rendered);
+            print!("{rendered}");
+        }
+        return Ok(());
+    }
     if want_json {
         print_detectors_json(&filtered)?;
         return Ok(());

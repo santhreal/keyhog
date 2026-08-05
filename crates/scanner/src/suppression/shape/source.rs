@@ -220,53 +220,9 @@ fn looks_like_source_format_template_fragment(value: &str) -> bool {
             || template.contains("%s"))
 }
 
-#[derive(serde::Deserialize)]
-struct SourceTypeTerms {
-    terms: Vec<String>,
-}
+crate::tier_b_list::tier_b_vec!(SOURCE_TYPE_TERMS, "source-type-terms.toml", terms);
 
-fn parse_source_type_terms(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<SourceTypeTerms>(raw)
-        .map(|parsed| parsed.terms)
-        .map_err(|error| error.to_string())
-}
-
-static SOURCE_TYPE_TERMS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_source_type_terms(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/source-type-terms.toml"
-    ))) {
-        Ok(terms) => terms,
-        Err(error) => panic!(
-            "rules/source-type-terms.toml is invalid: {error}. \
-             Fix the bundled Tier-B source-type terms list."
-        ),
-    }
-});
-
-#[derive(serde::Deserialize)]
-struct SourceReceivers {
-    receivers: Vec<String>,
-}
-
-fn parse_source_receivers(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<SourceReceivers>(raw)
-        .map(|parsed| parsed.receivers)
-        .map_err(|error| error.to_string())
-}
-
-static SOURCE_RECEIVERS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_source_receivers(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/source-receivers.toml"
-    ))) {
-        Ok(receivers) => receivers,
-        Err(error) => panic!(
-            "rules/source-receivers.toml is invalid: {error}. \
-             Fix the bundled source receivers list."
-        ),
-    }
-});
+crate::tier_b_list::tier_b_vec!(SOURCE_RECEIVERS, "source-receivers.toml", receivers);
 
 pub(crate) fn looks_like_source_symbol_identifier_with_randomness(
     value: &str,

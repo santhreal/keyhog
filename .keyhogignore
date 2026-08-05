@@ -1,429 +1,146 @@
+# KeyHog repository dogfood policy (normal operator lane).
+#
+# Every entry carries `reason=` and `approved_by=` inline metadata, the
+# governance trailer `keyhog_core::Allowlist` parses. `tests/dogfood/suppression_audit.py`
+# fails the build when an entry lacks either field, when a literal `path:`
+# entry stops resolving (a rename or module split silently voids it), and it
+# reports every `hash:` entry that suppressed nothing.
+#
+# Two lanes consume repository policy, and they publish separate coverage
+# manifests so neither can quietly omit a path:
+#   * this file            - `tests/dogfood/repository_scan.sh` (operator policy)
+#   * keyhogignore.strict  - `tests/dogfood/strict_scan.sh` (strict repository policy,
+#                            scans detectors/, examples, baselines, generators, and
+#                            workflow YAML that this lane excludes wholesale)
+#
+# Do not paste literal credential shapes into a comment here. This file is
+# itself scanned by both lanes.
 
-path:benchmark-harness/
-# Build artifacts
-path:crates/cli/tests/fixtures/
-# The scanner regression fixture embeds fabricated passwords from the exact
-# source that reproduced a UTF-8 span crash. It is test input, not live material.
-path:crates/scanner/tests/fixtures/detector_execution_policy_utf8/
-path:debug.log
-# Demo fixtures intentionally embed fake credentials so the TUI recording
-# has rich content to scan; they must never block the self-scan in CI.
-path:demo/
-path:demo.env
-path:demo-secret.env
-# Reviewed non-text release assets. The default filesystem source does not scan
-# their bytes as text, so dogfood names them explicitly instead of reporting an
-# incomplete clean scan: two embedded model/data blobs and the docs banner SVG.
-path:crates/scanner/data/english_bigram_logprob.bin
-path:crates/scanner/src/weights.bin
-path:docs/assets/keyhog-banner.svg
-# CHANGELOG entries quote release notes that paste example credentials
-# verbatim - they are documentation about findings, not live secrets.
-path:CHANGELOG.md
-# Internal planning / analysis docs (gap writeups, perf notes) quote credential
-# shapes verbatim while documenting detector behavior - documentation about
-# findings, not live secrets (same rationale as CHANGELOG.md). Some documents
-# intentionally discuss deploy-token and private-key shapes in prose. (NB: do
-# not paste literal credential shapes into the comments below - this file is
-# itself scanned.)
-path:backlog/
-# Synthetic AWS split-credential reassembly fixture in the multiline fragment
-# cache (all-zero key id || all-placeholder body, no real key material). The
-# source carries an inline keyhog:ignore, while fragment reassembly can emit a
-# distinct derived match, so the derived value is suppressed here by hash.
-hash:57028a916a4ba4e7abfc8318ff8774852c5f4264ece9cfab01b97004ab56e3ae
-# Two fabricated AWS-access-key FIXTURES that are non-secrets by construction
-# (literal shapes deliberately NOT pasted here - this file is itself scanned;
-# see the NB above). Hash-suppressed because dedup is by value, so one entry
-# covers every source + test occurrence:
-#   * 3f0911f2... = the all-`X` synthetic placeholder driving the
-#     degenerate-repeat suppression unit tests + the doc-comment examples in
-#     confidence/penalties.rs + prefixes.rs. It is retained as an explicit
-#     defense-in-depth suppression for dogfood across supported builds.
-#   * 0edfda19... = the fabricated known-positive key planted in the
-#     differential-bench smoke check ($tmp fixture, outside the repo - so this
-#     repo-local ignore does NOT affect that scan) and the prefix-floor tests.
-hash:3f0911f20f6b9854e34b43ad05470a9075d1c6a99b65ab82f03cce4201ee9f4a
-hash:0edfda193f931b8c1c9c1a1db3b27576e70dd343cf943b5d22aacd5b63cb0090
-# 48d2a5bb... = a leetspeak placeholder in the `parse_env` doc comment in
-# crates/scanner/src/structured/parsers/env.rs (`KEY=value # comment` example
-# illustrating inline-comment stripping). Not a real secret. It became visible
-# to the self-scan when the keyword bridge gained the relaxed low-entropy floor
-# (`generic_keyword_low_entropy`): `*_PASS=`-shaped doc examples now surface as
-# the feature intends. Suppressed by value hash (literal shape NOT pasted here).
-hash:48d2a5bbcf422ccd1b69e2a82fb90bafb52384953e77e304bef856084be052b6
-# integration-smoke ships a base64-encoded seed of well-known AWS docs
-# examples + an `xoxb-` slack token shape + a `ghp_` GitHub PAT shape;
-# the workflow base64-decodes them on the runner so the scanner under
-# test can confirm it finds them. Decode-through composition follows the base64
-# in the workflow source too, surfacing those
-# planted fixtures as findings on the dogfood scan.
-path:.github/workflows/integration-smoke.yml
-# Bundled test-fixture suppression list: the very purpose of the file
-# is to enumerate known-public sample credentials (Stripe docs example,
-# GitHub docs example, etc.) so keyhog can suppress them by hash. The
-# fixture credentials live in this file verbatim by design.
-path:crates/cli/data/suppressions/test-fixtures.toml
-# Detector unit tests + examples carry sample credentials by design.
-path:crates/scanner/examples/
-# The local-build installer exercise decodes synthetic credentials so the
-# freshly installed binary can prove detector coverage end to end.
-path:tests/install/fixtures/install_from_local_build_posix.sh
-# Test and benchmark fixtures intentionally contain exact positive and negative
-# credential examples. They prove detector behavior and are not live material.
-path:crates/core/tests/
-path:crates/cli/tests/
-path:crates/scanner/tests/
-path:crates/sources/tests/
-path:crates/verifier/tests/
-path:crates/scanner/benches/
-path:benchmarks/bench/tests/
-path:tests/dogfood/
-path:crates/cli/src/benchmark.rs
-path:deno/
-path:detectors/
-# Exclude massive datasets and external projects from self-scans
-# External projects / Corpuses
-path:findings.json
-path:go/
-hash:00bfcdacfbb7386c7aee8678d9d706de2df12d5ecb2609d530647a91359faa95
-hash:041c26b3dc46c8617d59c0dfd6979bda82679725dd14f3e903609f7f23b0154e
-hash:053ce87c3513cd550baa61e13439208ea9c4a815a5073338f79cd5349666fd47
-hash:065e56b7dfe87d57ab86b89ca7bfd8e73cf9b818daa8388b79a33343d2d3e824
-hash:0785dd1c37c60806a37adf41cbe3d1c6db4f7a78e9669b40ea508512231f212a
-hash:07e23ede2756aa3f5f7cc9759117c4910875e032c27b8556a1e20626224f10ec
-hash:0d3df60eb91a2a4d889ca9acc6c0be39da1f1e8521d9cf4f2e2ee3ec5df66968
-hash:0e2a103d00dde12faaecfee17c35dba3b9eb357c816c539caf058f3fecaba440
-hash:0e305412dc27135c51f47c67a14a14b43dee246f2f57be33148b191602980afc
-hash:0e3da5dcd627e30ccb09f4273599b2d8cfd2a012b9959341cb9ac546fc904f1e
-hash:113459eb7bb31bddee85ade5230d6ad5d8b2fb52879e00a84ff6ae1067a210d3
-hash:126e6bbf39726060ef04a66e6426f41c0b34f0c96cfc34ee38b7526ae63deba4
-hash:16db044ce83335d41d388185fea51d727a62f3b05e3e205eb2de84b075ca56b1
-hash:17844e3894347b36ea58256d7338ab3cd8f70b36597838193b1f1a92aa8ffa1f
-hash:1960a9ab0a36b0052ee75204a904d1a84ab6760be1deceebc521c78834e65ad8
-hash:19898401dcc2aad652a794644756f71d4de5a967357aac58a69f6aa177987cbd
-hash:1a3043bc3a2e8c2602bcecf436d4092be9e2fcfe980f5f8fbfe13873688483fc
-hash:1dbd560513ddf368ec3f5616a6d14b3421d03f95cb372e1cb0f8a7dfa41b5c5e
-hash:20eaff828421ab80cba1fa2aff36b3b9d4cd09a906540a237b388ef95c0215d7
-hash:22c78303977c6bbae6d5d08cb33e180541c50f0fc0a1d474f3458c133d9a2c20
-hash:233f060abfbaf91faad9fb11f2c2a9701a14b6b4d6f15bd5ecc90b56b4bcd275
-hash:26e620cdef2674017cb00bbb4dd38ca6e35b4eed9800a537d8130efdcb050ab7
-hash:2a60ed5d4f84727a3fbb06e3365d4b91072285b8360b2789fa9c0e49d5af5dc5
-hash:2af7df75fe80688bee1dbcac4e3e348ecd3ad1e731b61483cb6c4a51d3902691
-hash:2f493c523b2d22e4651db0d9cd37ccc579e1a1f520a69683e908ec74bdde6b08
-hash:3242ae2ca0f4e059ef4039608dd4cd7a60698e747b46686607fba98ea446f634
-hash:33cfc85a344fd5a3dc50dccc5d21b65394c63ff02c7f6114bcf9c671c0daa663
-hash:384231f02b634b147cab4f8b9ebafa36d3370578fce7455c502b5ff3d45ef3e5
-hash:39200d1e8a8dbbb6d7bcea51e02b99f062d32a5f83151e8c5a9fab79576245dd
-hash:3af35788198f55f2484792594d05c38746420b283ce5f21f346f1f9b1095a40f
-hash:3d291f481c7139c0d15a6ace92db3ac5dd44b4152e2fdfb00455de0c1b2014a2
-hash:3de2d5b1989df568904c7c7e648f201f53c13e395287ce0b39a49dcae25d350b
-hash:43d935f6971cdd153c2e7e1ff221af94ec81c3e0cfae733176afc52deb5fc18d
-hash:448614386ba98053f823fb111cf8335ca19fb14fc776b3131a929f99904e32fb
-hash:4617a58d5a1484b36cc00dd47290785501228c6589d8486df573568472bde0a4
-hash:4c281411e1ccc93c230902001a09e7b863cb12a3f3b341089eb980a34aa9e434
-hash:4e36e93944591d2a960e85a6781ef1791276f2ebb052a0f0483c8f30f518809e
-hash:53061b050d3406ce37fd230b54dc072d6bcccdd6df0079b0b6fbc715e0f12187
-hash:569fcb14e41e644c3439c558784d87ad85f169630dece28d18945d0b0f35863a
-hash:5725f275b793fbca4a3f144cf24ba7da2569ec495a178c5cd183812c02bcaca1
-hash:5b0872f369ceae5aed392228ade2e50ddb6a19ee550b04de8c4608598c76fe38
-hash:5b2d1b6068626557524ae240c18dd2dae9dcab111b157cd2b85837da5decb28e
-hash:62693af46d52edba15a6ee6674da302edd7a350e124d7a8a8265239344ef9e64
-hash:63c7cc16bfecbde8952f56f75868eff3e1c40ef49899304359c78006fce148bf
-hash:65937d5eec19d2ec8bfc0e469eab5992988d689c88d8782d24be24f02f7de8fe
-hash:676fe4d0a299c22a453a78f12d1063adbb2807ea2faabfb985cdf7a559538704
-hash:68307278c18d196c4725ee628b80002faee4f418f3da64be16f03c2f24c5dc8a
-hash:69b656de3f24c82e27d4360a67dafcf4db0338ed83df2f527bb35d58ac99bbad
-hash:6bf6e052f5d2fb050ac4264430ca65614b656bfe260bafafb889003d28f1fd95
-hash:6cfb680d063378ef7b16f4a1d43947551cb97fd7d4dae4977e2badfe74576af8
-hash:6fb137fe3829ecf0dbd9a55409fe087187488f2e3eab37a3c11f773ebf3e7665
-hash:70f1a50a42c5c3452279220a4dac12ade7d8f38c4ed561163270b75070175441
-hash:71be76a374b5f353a945bdb12a1cf1d3256f1a46be1d31386313a7fcd7110e45
-hash:720835daaa7eab719c5413c3480ecc1dd63907c30983aad27130aaadd333f30d
-hash:733f1beeaa2d3f5682e4f7098701eac3002646d16a806d8e0829fd797068230f
-hash:735f7c3ed78a281b50dfb57806418f6b831b8b78cf46fe8f1dd1af41cfd373df
-hash:75477133ccfb810edac82b409c82bb80ea1659bf5497571796ce516005733c44
-hash:764b78da623b9d7bff422a0577cbe3bf3a99ee183cccc777832830edbddb41b1
-hash:79f43c3b9c23fbdf293bdba80dab38ba194fc1da79187091b3d3760dad840bf8
-hash:7b3e53129febd47e44b460f4bde6179ea9e8d2e85465653272cbfbbc59a61f16
-hash:82065707a7c16199d869878cdc2be14195391f6d9820a7d6120d27e947486188
-hash:85aca9569dd3939698a812a1e74d05cb39ff7602e0bbffc7cf6cbe61b947874a
-hash:8aa521afad23b913a6b19299221b3fef5d51733602e4fd1b2084a85efc40711e
-hash:8cd5da67b0e08f4280e6c0f78faafe0c1ba39a6f3218e774d4d7aeef7f8b4bec
-hash:9303e19f814f307b0e72ab2a4115ec8ba07c9e84b2c2332ffbb84402952b15cb
-hash:9329db92b70356c6edc0c4fabed34cca7d8edf383647f9491b0a521953a1d129
-hash:94c0de7b71a483caede642e9bd0dbc40c5a1690b2fabf3bcddf19193b46c1bef
-hash:99bedca618d1113a5caf970adc7c11136b2f774ca8449258e40cf9cb90422554
-hash:9ac7a641413a08ec5dee36dd699c76285e3455ae5a923a7f4a665a5b593e6d40
-hash:9ee116138888a0eab6b35b19ea3e3eb9ed2056f659863c93773b9a932dde077e
-hash:9fb28bb8e51420ccd832c43840319f26625fabde26e8765cfd0472d169fe8bbc
-hash:9fb4a19158e9de94d73847ee0645f36226a22ea0f2683aff836e0b7bff58fbdc
-hash:9fef4fb402a02300596267a332ca8fd6d8f3d303045999ced07cd64a91b9f92f
-hash:a0b034cb1d8caa8a41101cd2c8132d0173810f958809cf9c4be723ad73caf357
-hash:a268725f8cb345bce8b5a97311f100c297c2f79afd37111a780643698cfc46de
-hash:a2a37fd9acc0a7709bf995bff2379fa8561db0250b48c38cef2dd89487b5fe8b
-hash:a562c62b6abe32ba628fa45e9bae2bfc8973f2d5a437e6d4ac89b0ca8985d1b4
-hash:a58bba2cc561bddbc30505632528c8aec0c367b859555462f52fe4476dc4d4bb
-hash:a6140d3145515e5a5c81a5a8818ba92e76cf2b6cd81230e4f8472a411ef8a4bf
-hash:a6835e3e01566a937af45890e1534ddc60001c6548829806f1a64decf86d7b7e
-hash:a87089f003fb18e26d66d60fad6b0e0659149ce742a6f6c3ec9edab07723495d
-hash:a9a27e2c454242b75bdf8c8a8a7b2ae78a031ccd39aa4a7bd7fc53aecfa531bc
-hash:aa09fc08c924ad3a4ed5753e4c8c1de10bd5addddd64c0f8acda5ff3c141cd47
-hash:aab6089a19b09bd61033069a46a14c76a8873d3bc3f7b735368998c8a9eeb491
-hash:af7439e4314e7f0b2bd4513a828d59533aac634d0a969e32b78ab870d529b58b
-hash:af7ff1b9cd85a779b1a3816817037586184d9b49083e8a2b65ca057192b3e8a3
-hash:afa36a15d8640dca3bbfa07feb397bf4f17dd30a1a9a99813dfb68303201ccf2
-hash:b02356ac82aebf6d4740820c4e680c4333c9f64b97c4de2a11d7c786c5318da9
-hash:b0c133c8d9ecb16ecee2de43935b769132232b3cf4c919ab91e223bd65f8c1c0
-hash:b234422588d3235072beb50f3b5b0c47a658dfcd4819e8132e6525f290588673
-hash:b27b70594c9f2b9a930b93a7a9319f97f2a3013ec11864fa76bd6efb50dd2ef6
-hash:b45a6fb1f008cc85df16d48345d4ca97cb57788ab272f3dec504add438f18de2
-hash:b4b11a0045c828324233883e4d55e4a16a8afc40822fcd5359b71fbd18c12fd5
-hash:b537b1df4cfa825103ed04d4aa3ff5febead501b419936c2d15506da59b32c91
-hash:b6303e7f380fbe749d2efb30dac839400ba7982051279bfedb55ee134bc1b1f5
-hash:b64ba217d95e8f030fd632d75e96fcdbb536ca98621d91a2884729ab3550b6c3
-hash:ba656d1c627e5d225acd10ce9bf37872f93ddb6b93d8fd6ffe4cfa98261103e2
-hash:baa7ca79fce6083f2e1d3c17639f9ef29e9d95c140036bbac440adf5ccc624c3
-hash:bba705a47c53eaf37e963418aee3220419f900b926564d09c0c7aa8ad2dcc66b
-hash:bd0ea55ff6295cb01e11f6c34960719f967eab984f761f272b894c786bd961c0
-hash:bf4722b7db40f2615d1fb5307ac841e9b585b5bbdba3454118e0fbea1f09c5ab
-hash:bf58a9922dd1282444fc6018f60df5a229e2be19e5a189d289ddbfcc0b8e34be
-hash:c08c40e757c6ba5e044c73054f96c4b540c42b81e731451a5f40a21ffd9fe373
-hash:c2e2d0c56ee6f16dcabf0cfd6611c9b9d045e57bef604946a0da2079c214ca76
-hash:c2e3eca817c33c2654c0e36f74948e04b99f8de454dd4eb514e9ce4c50568a75
-hash:c3eafeb8f695e62cb928ead444e8d155d61c7dee93587656109d4681151cb9f9
-hash:c807966f8630d8d9d4e5b03d702959c1d856850c76c73cf620cf4bdec68b3b19
-hash:c9f86b49cb9efad947fc328d9a7c915bbd1e1cab3d147915aacfd163a93d3fb1
-hash:cc6acf934795805fa180cbdaa15f689b0104d75746d776598bedb40d71f4d7b0
-hash:cd372fb85148700fa88095e3492d3f9f5beb43e555e5ff26d95f5a6adc36f8e6
-hash:d1698322763b9543bdbf10a744292dc1b353aaa2c68ed7948867a76f7b1fcc93
-hash:d3e8a3b602396c60889866c840cb936381ed9e7c60d9e520671495192983b66f
-hash:d46b11dfa71ad1d618300793356457cde279a1fc5018f456f815fa9d5248224e
-hash:d506f8acc59482e0d5efa4ba31d805c699a4f3b9520fcc363f56475e6e4ebc4c
-hash:db88842693f2722f55fdf62113df834a2f605e37807d10954ab59e5707b16eea
-hash:df1cb089d0a72424656e34772fa95fece84bab93b0daac3729c5186c149371ce
-hash:df7913cc4c1bfe8c38777e5e41dc1f56133aeaf3e2211f441addcded6cc286e2
-hash:e414dc6273262a817aca7be7300e52c66a7b2da61eebf2d79c174c5ef3888dd1
-hash:e4e3e2ea88d0fb422b75ddf2be9e9114e719c31de89a2439c79d65b10c88b8ed
-hash:ea7a41698e1cd6a6d1e5429155643e7270e27d9c048ac5670eed9e5490f8df6e
-hash:ebc5e575d11c4b7cf51afbafdaec4feaed482946df1e5f09a164b89f463c83c1
-hash:f017c2c7a283a08d033ba3e1c185fdc7428109382dfc18e2691b136567e3691a
-hash:f215faf9d88b7f0a881632ee22459ee452a296c808d261b6cc993d3a1fd0600e
-hash:f3b3bb0e5e65dfc51e40d8ef543345028537f01774a13f8bf455b3d1dc95f728
-hash:f498be9891483c0c71ce5116e12f63acf3ee52d1550e734968a199e031bfba86
-hash:f8003ac36ba4b1c8dad046c76503551ed03534ba810197f0801ca639e0e71357
-hash:f80fa846f1787a9411e455d0eeac6c271c0ee498a01190e10bec396a6dbbd9cf
-hash:fa0711ddc31e9c34d754f8326fb7e11847690b1ea680cb1f8ee312ba55b1c220
-hash:faaa7b43e631a9e9a3242da86d987ec050a9f0db84884dbddce714774b2f761c
-hash:fcf0fd485a95ba44c73b7cbccce86d9ab49ee55d3065c38ff0fcb4385a4f9cdf
-hash:fe41e95195306260b2f87b35d6ee8eb410f878f6da2f45ce28292874a647cab6
-path:.keyhog-cache.json
-# KeyHog Ignore File
-path:laravel/
-path:linux/
-path:ml/
-path:output.json
-path:react/
-path:ruff/
-path:run_decoder
-# Docs site: regenerated from detectors/*.toml on every build, embeds
-# the example/regex tokens from each detector definition. The example
-# tokens are by-design tutorial content, not live credentials.
-path:site/
-# Engine/parser source files that document detector regex shapes and
-# reverse-decoder fixtures inside /// doc-comments. They are documentation,
-# not credentials, but detector extraction matches the shape every CI run;
-# suppress at the path level so the KeyHog dogfood scan stays at 0.
-# (path_filter.rs moved out of pipeline/postprocess/ - keep the path current.)
-path:crates/scanner/src/decode/reverse.rs
-path:crates/scanner/src/suppression/path_filter.rs
-# Pinned v0.5.34 dog-food binary over-captures regex shapes and the
-# deliberate "this is NOT a token" counter-examples embedded in engine
-# doc-comments (simdsieve_prefilter, hot_patterns, engine/mod, har decode
-# fixture). The unreleased HEAD validator already rejects these. Suppress by
-# credential hash so the suppression is dedup-proof across every file that
-# quotes the same illustrative shape. Not live secrets.
-hash:01c2c0cfbc4247225dbbe5fdbf59cecb4abdc6a1c6d78b7ff0c7a5b968fb40b2
-hash:76cae95dffa6aec51be9c44c76b13fbfe3e42733d0cc70029ad0d446363bea5a
-hash:a512490443708200a01b906808533c7805ee830c2af612b57e7ef47cbba8e1d7
-hash:d958bea220901fe230d4387420fc824757df47783f2d79ef7cfff99bff31ba0a
-hash:d87feb2a98b486e4ced10e33e459d82fad6df7083432ab2548e5d5e67f943e73
-hash:381a4f9e363361fe674d68bee7f8d38045d8a60e24f1aefb5b9e3bca7084163d
-hash:cd757e6a240a57d33e1c1daac2f2a1511ef635c9bee7eb88785d6498c9f5fe8a
-# engine/mod.rs WARM_SAMPLE: a synthetic string concat (JWT fragment, base64'd
-# AKIAIOSFODNN7EXAMPLE, a UUID) used ONLY to warm the lazy-regex DFA caches in
-# parallel before the first real batch. It deliberately contains secret SHAPES
-# so the detection regexes touch their transition tables; it is not a secret.
-hash:3301c53957d9fa995b5ac610c71ba113ec0f41615a0e215c1b119181c34d6b7d
-path:tailwind/
-path:target/
-path:test_extract
-# Test fixtures and data
-path:test_prefix
-path:test_regex_multiline
-path:tests/data/
-path:tests/fixtures/
-path:test_walk
-path:test_walk.rs
-# Benchmark tooling + fixtures live in benchmarks/ now; the generated corpora
-# (benchmarks/corpora/, benchmarks/results/) are gitignored so the dog-food
-# self-scan skips them. The retired tools/secretbench/ tree is also gitignored,
-# but reproducible/generated leftovers (mirror corpus, ad-hoc result dumps) may
-# still sit on disk there (path-suppress it so a local self-scan stays at 0).
-path:tools/secretbench/
-path:tools/diff_bench/
-# Committed differential/leaderboard baselines. The *.json files are keyhog's
-# own structured output (credentials already redacted), and differential-round-*.md
-# is a TP/FP/FN/TN comparison table that quotes the credential SHAPES each scanner
-# (keyhog/trufflehog/gitleaks) surfaced on the TEST corpus, documentation about
-# findings, not live secrets (same rationale as CHANGELOG.md / analysis docs above).
-path:benchmarks/baselines/
-# Mirror-corpus generators assemble SYNTHETIC credentials at runtime to build the
-# benchmark fixtures (providers.py: "Every secret is assembled at runtime from
-# fragments that ... never match a detector heuristic"). The full-feature
-# (ml/decode) self-scan reconstructs a couple of those shapes; they are generator
-# templates for fake test data, not live secrets.
-path:benchmarks/generators/
-# Tooling
-hash:03d104c669e3c7b6be7f989db8b12c8b910d3be8c1e2a73c9369d3cc0ba803b5
-hash:091652c1b31bff45e34cd898488baa49a69db7a06884c9fa48b219f91517792f
-hash:0a07bfebffa769bd0175715e3aceb670d9721f97a5adde6d2dd257b1799f5bf7
-hash:1297e216ec6b95fd6d70243ff494e9602b5a133e000c532507fefe672f5d9db3
-hash:199163e14049bac77807991e8490a34c2e2ca6781c96cbbdd4baf086f7baab10
-hash:305a1a0ed9a4b5ebe2b7c01c24cc68708d1c53b650e4e81243aefc059e69fb9c
-hash:33b413e55cb0785f7d7b466503b936d77dd35480432f6e2a8b094a764a23e657
-hash:39d479ab19957127eb8c40addfe82372db196387655cd97626ee7053c9ba2965
-hash:3efc59b5952b2b54eb30db7608bee9f8b51906b308e5e3109591cff24e62a18d
-hash:5241fd13f472029ed3b6ccbe4752652561dd2902ba67e1731403d6de5435e404
-hash:536162d6367b53df1f0cac94abd0812082c9054fc921fabbb3282fa2cb6c8ffb
-hash:6634ec1802542c19584841ac1e75ea04369825dcc012c86a6c2646a6ed26b47f
-hash:70afe56a123e07905257583b315e619484248ac7d3032161220430af3312d057
-hash:72f203a86f597e55eff804577a19d190106cb73700be6ad0d4fb2ba715513c72
-hash:8bcac7908eb950419537b91e19adc83ce2c9cbfdacf4f81157fdadfec11f7017
-hash:9185907d7516d470df3d4a65f7224de6880bb984eac50ac97e7c19f32553441f
-hash:9ad3eb0516713f264c5c9dade5a1973f6e75540902b9d68b9bcf13341a4786ae
-hash:a38cc42fd4ac46ec596728860189148b6933415ed7c6a153f413cda2a4b9533b
-hash:a911455066b5424380caeeed96e7e48d5b157f3e799fb1fba670d5556a3f2e4a
-hash:aa44abc7405c2d482b1d9b86229d9b113101740d347eb6eacf6bbe71176d1ae9
-hash:b073aefd7c9215dd0179def431a8e7b5b1c39770f72ab676e9d9bd4a466268d1
-hash:b5177f693f661b0996e179d5bda5ae770ed1dbbec92a8895c56ffcafc41354b4
-hash:b59a2d952c5ccbc5aa8fddc15f7b73c128af9fd568ddde6872edbfc96d2de255
-hash:c4f694a5a437281edc2e11bc57b5e50e093f9b54d4dfa8e26e163ad20ffe9f1b
-hash:c6a0581b815665905d56e77047d9ad08b200d75d7dd7c84e052a5e7ffe23e8ea
-hash:ca0088c82832b0bc60b9243ba08a072cb7286d70399c7e324809459acc6fbeb4
-hash:d441c8895cdcd9f31d8bb818bad5d16e97b07aa86704c9370363f6a9431360e8
-hash:da3dd7b4bc4bc03d80d8ca048f85e34a11919f4ffdbea1077d4a28762fdc7511
-hash:db7b6248ccd32ed7c16aef552bc1fa1bc6ceca8344c66174cc2621cd067452f7
-hash:e1bd4d304ca8a683e37d0800df4b21868aa292320c8a073a7bd6202202d24536
-hash:e24897816e2d61526e61bf2041e4d1c6747cc5129ed1d52f00fb02167bfd0b0d
-hash:f4913b0dd2685cbdf7af5d2fb5c8b21c1389ff106f99f4f4296d3ae3b7ffda17
-hash:f6dc8f29e382dcc29478e74e5419e82c8d03453461b06224b9f8d573cc2bd79f
-hash:f9b149f9188fb49b28ee28794382c1d4bc655f6b5086e01da4d5308372fbb87e
-# Fabricated test/probe fixtures dogfood surfaces from
-# inline-test and ML-probe SOURCE. These three source files contain ONLY
-# fabricated detector-shape fixtures (no real credential ever belongs in them),
-# and because history-source dogfood may inspect older blobs, each finding can
-# be attributed with a value hash that varies by historical blob and by
-# detector match-extent - canonical.rs alone produced two different hashes for
-# the same fixture line across two runs. Value-hash suppression is therefore a
-# moving target here, so path-suppress them like the other engine/parser fixture
-# sources above (reverse.rs, path_filter.rs); the gate stays deterministically
-# green regardless of which historical form is surfaced:
-#   * crates/sources/src/hosted_git/sanitize.rs - the
-#     redacts_every_credential_shape / url_credential_exact_output /
-#     missing_pattern_fails_closed cases feed deliberately fake gitlab-PAT,
-#     stripe, slack-bot, AWS-access-key, and github-classic-PAT shapes THROUGH the
-#     git stderr redactor to PROVE every shape is scrubbed. Real secrets only flow
-#     through this file at runtime; none is stored in it.
-#   * crates/scanner/src/suppression/shape/canonical.rs - shape-classifier
-#     accept/reject fixtures (the canonical jwt.io JWT plus a fabricated
-#     github-classic-PAT for the dotted-token / url-safe-blob gates).
-#   * crates/scanner/src/gpu/backend.rs - canonical vendor example tokens used
-#     only to warm the GPU-batch ML scorer's feature extractor.
-path:crates/sources/src/hosted_git/sanitize.rs
-path:crates/scanner/src/suppression/shape/canonical.rs
-path:crates/scanner/src/gpu/backend.rs
-# crates/verifier/src/verify/aws.rs (attributed) - an aws-access-key shape the
-# pinned binary re-emits from a git-history / decode-through buffer attributed to
-# that path. No AWS access-key value has ever lived in that file's history (so
-# there is no source line to path-suppress, and the real verifier logic stays
-# scanned); the reassembled buffer value is suppressed by hash, stable across runs.
-hash:26e4e47b31d8cefa746fc6bb298ad3f846e293c9c10243418d28b747155e1207
-# The canonical fabricated GitHub classic PAT (the `...PDSiF` valid-CRC token) is
-# the fleet-wide test fixture for github-classic-pat detection - it recurs across
-# many test files (the format/backend parity e2e, the -o /dev/null regression, the
-# new BOM-prefixed UTF-16 decode test in filesystem/read/tests.rs, ...). It is
-# exactly 36 chars, so unlike the canonical.rs example its value hash is stable (no
-# match-extent flap); suppress it by VALUE so any test that plants it stays green
-# without a per-file path entry.
-hash:7b85310a29300230c865bc48ca1836f15b81bd50ac85e8c0785e8145e98ff175
-# Current-tree dogfood fixtures reviewed by source location. These exact values
-# are synthetic detector/BPE/suppression examples, runtime smoke credentials,
-# redaction/read-boundary fixtures, documentation examples, or Caesar-derived
-# workflow text. Hash scope keeps their containing production files scanned and
-# makes any changed/new candidate fail the repository gate for fresh review.
-hash:0c0cb9fda9b0835561762d3bc89c82efc565dde3e99fb00394439f95a2df98c0
-hash:12c0013573f5fef77291889af9bdb2880ea46ad7f23206fba36296518c830eb3
-hash:13b3801bd2362517f9fc88b520c2d850bed1e8146fa8bae427260ad294d58143
-hash:14ef8ebda1d2b6fdd856faeaa9fd9dedf960d53c98e35d52944980e8789446b3
-hash:1721f440ed59437511c5c7fa6f20751cccddc4dbf43e3f1d09c4ead4aa05a1ea
-hash:2cafc0970149a84f3b9e62eaf169f36f59907a3b3e31f7b82e68c69cd27f7326
-hash:2e506c9614f448abbf31db9a752bf801f9aa51cfd476ea2cebbb8bdc71978c60
-hash:386de3e7c99e0ae3152c54d0a80c5d2d138255916a37810a4c8f7a093331fc9b
-hash:3bcba6dd69a4df503b7a555cd53620c567e3eca4ff4a4c9ab98df6d2d3620a73
-hash:40769d9505fadf9d959e05cee5c792f9fb2f8772e1aabfabe248d477e0421aa7
-hash:4d72588105763b14841eb916a556a251ed6d9e2f00ba7a86ac5673836a1bfc4e
-hash:6f8169ce863b18611278d066c95eb8d5b11cbeaf61fd1d6ad4b03ffef14f7481
-hash:71178fb38256667000368feb9847ea74f35140026f6c1dc788f2a77f15de1089
-hash:7e3d5eecdd34a230a81b2bee3bf4fad0cb002fef74c1929b05147efc0030382a
-hash:81475fe7907ae1818130c48c21a8d632f083a0337fed43e825e21b94566e38ba
-hash:81f1542c58b7019262f0eb6e7290d7d673eb56d2ab0afa8f11f636b98117cbf2
-hash:83eee1420adf36ee9cfe736087c997f6e83c1acea1541b9954d99b0544efe182
-hash:97f21a4b36cc122a3d2d98021f9e4a38fe4f03af188c58e3e0aead6765600c26
-hash:9e5ae7f2f2af222eb3c78a7226871124ed1af7ebd9804650e077c38d24f1a235
-hash:a1592ac7ce1a434b7274b09d15bd59e1c96e35ba02e80eb33182f4c353713e0b
-hash:a19b1850ae2a80da3f188c39027255deb23847f1bf69dd43c3815e39e4f182e1
-hash:a51d797583477da171e1f72779d93d00efebbb4455862d2085d2ffa6c13208bd
-hash:a62fc80a93aaa0f05793ce89eba434f3818c6e89fe0f58a286a00034d1879a7f
-hash:a911b3d25242bc1657a9f34c9666348e7fb3b99bf904e10d1ea868e857a3a3d3
-hash:af047096c2b37a7dcea19eff5cff7e29639a5e65be6142e43aa5fc7f537007f5
-hash:c52905f61f18f119d779b88900103e1bff9e37ef3e05a6ccbe276ca804bdef06
-hash:c574bfdbd2d3c6e0e358055e8f8b4be8c29f88de56d6999da50027b8833fc8e2
-hash:c80a9f703a14ccc6216836841d285800014d3f3506cffe16ecc41631dcc05c9b
-hash:c90f315ef13ef88951f5bb6426a7ea05b7974368374b0398bb0ed9e8840f0391
-hash:c92417ab6c54df83e568fc6a7c984ad9790331d9ddaa9322e728b135d110a668
-hash:d0e5167351768a459206fa4777f359436ca276599c31c5346e4d6264f7dfff4f
-hash:d25d7a1db0b9f58d4edc3041ab54ee40cc23b85ceda176ce6985a4f8e8d4b334
-hash:e26289a574efe798d93c2a89271bff4e245f2d5b1150a705085f9a3c91f550d8
-hash:e2bfc0d6de7a92f28c927aa59f4f9771201aa2f3ecad50e63fdf53a0119ec4ac
-hash:f4c43a6c7068bd38e340a2c533747aaffc22f31609aef6489a703cb58b8c34f7
-hash:f6f22bd2ff23e9a4c78d1d35c8600be4963214b02fa8aa3f4e833b22f1f68927
-# The optimized full-feature scanner can select a different enclosing generic
-# match extent for five of the reviewed fixtures above. Keep those exact
-# release-profile value identities explicit; CPU/SIMD parity must still agree.
-hash:2740fd3a1b7915193d321b03feaf37b30e1c17047c24a4792f01a2302993d407
-hash:3f8ec5354f76a97577c5d9df9c7416531ce180af7398c73835a032e9b45f3a35
-hash:51d2a659f0940c6e7dce3fc11c5df329aff93212408a5a4a2a47124df1964be0
-hash:66c3ea8e09ca94ad6b2ca29a345abdb1ab2a1e8169fd503dc3d4ccc240510c56
-hash:d6b553681259ec813fafc35b4a3536a6672d84cd1bec7688596f1f5b4c3b3570
-# Portable-profile self-scan fixtures introduced by compiled entropy shapes.
-# These exact values are schema identifiers, pinned action commit ids, generated
-# test credentials, documentation examples, and backend test vectors. Hash
-# suppression keeps every surrounding source file visible to dogfood.
-hash:cd4ec61c827fc8c3a353af7120ac63c5bef265098aee80c1ff7343351261d723
-hash:03dea4c01ecc3d1dbab52f9efd5c4e2c2f888a6a0c9432b2ace8016693be31bc
-hash:6ff532f01420d686d69b79f6aa500656d91e2acbc9fdc3b1f2dd09b56be3aaf2
-hash:344dc4f586722e2e1323ac25126560a99ceeab70bcd1ccaafe71ff6bf021214e
-hash:018acf26a85dc73866457d9a300f869e12bedde7f914da83e968f373ea51edd6
-hash:01cd02801a282dba08936c1e82be733ed3162be91ffc612a9b2f3f4dc71738d5
-hash:0c7452eae2c395928b523b6210e5ea990d2ee6bd669000d625a136e66421e794
-hash:12ce53f6ad499aa544f564af18b4ca5a89dc2c344b469c8a13e5b0391492f6cf
-hash:17a0fc073490eff77d13c8d89df03d57c0768bfd286f2d2e4052f72894dac39f
-hash:34355e0e1382e75703841bd426f79d7262518ca513a87767503f5786741dd4eb
-hash:69a41ab0cf091f8e235971a5ca2c9a87903b6ea5140e46e1e93b39cd0774b7b3
-hash:a9cc88ae40c24836445557c37b68a3e2315f87c987cdea775340f2c4b7e2a125
-hash:bb14a019aa4c82e5bea68cbc8b9e5fb883a3e2c0d3efe2c325a8fece571dd689
-hash:fc08c0cb4a82a61de3377cb7cb0cfe57659a1ead7383b9a1e02eae6dcf7ce3dc
-hash:6f51d59249d3572763961fb02371c80e2ab8dce0caa1877393e25c2b3f07e0e9
-hash:d9c9e7d9e365ee56490fc4c5e8fe8bc644d4dad08fe4f06c297a0870ad679cd4
-hash:a47a2ee957d9f3aa349ceb0ceb4ecf5d221023181176beef222e0a58fe16c17b
+# --- Generated and external trees -------------------------------------------
+# `reason=transient:` marks a path that is generated, gitignored, or an
+# external corpus dropped in the tree. The auditor does not require these to
+# exist; every other literal path must resolve.
+path:target/; reason="transient: cargo build output, gitignored"; approved_by="keyhog-maintainers"
+path:site/; reason="transient: docs site regenerated from detectors/*.toml on every build; embeds each detector's example token"; approved_by="keyhog-maintainers"
+path:ml/; reason="transient: model training scratch and datasets, not shipped source"; approved_by="keyhog-maintainers"
+path:tools/secretbench/; reason="transient: retired SecretBench tree; only regenerable corpora and result dumps remain on disk"; approved_by="keyhog-maintainers"
+path:benchmarks/corpora/; reason="transient: generated mirror corpora, reproducible with `make -C benchmarks mirror`, full of synthetic secret-shaped fixtures"; approved_by="keyhog-maintainers"
+path:benchmarks/results/; reason="transient: per-run RunResult JSONs, reproducible with `make -C benchmarks bench`"; approved_by="keyhog-maintainers"
+
+# --- Reviewed non-text release assets ---------------------------------------
+# The default filesystem source does not scan their bytes as text, so dogfood
+# names them explicitly instead of reporting an incomplete clean scan.
+path:crates/scanner/data/english_bigram_logprob.bin; reason="reviewed binary model blob; not scanned as text, named explicitly so the lane never reports an incomplete clean"; approved_by="keyhog-maintainers"
+path:crates/scanner/src/weights.bin; reason="reviewed binary ML weight blob; not scanned as text, named explicitly so the lane never reports an incomplete clean"; approved_by="keyhog-maintainers"
+path:docs/assets/keyhog-banner.svg; reason="reviewed docs banner asset; not scanned as text, named explicitly so the lane never reports an incomplete clean"; approved_by="keyhog-maintainers"
+
+# --- Documentation that quotes findings --------------------------------------
+path:CHANGELOG.md; reason="release notes quote example credentials verbatim; documentation about findings, not live material"; approved_by="keyhog-maintainers"
+
+# --- Test, fixture, and demo trees -------------------------------------------
+# These trees carry exact positive and negative credential examples by design.
+# The STRICT lane scans the fixture-heavy subset of them under an explicit
+# fixture policy; see tests/dogfood/keyhogignore.strict.
+path:demo/; reason="demo fixtures embed fake credentials so the TUI recording has content to scan"; approved_by="keyhog-maintainers"
+path:crates/scanner/tests/fixtures/detector_execution_policy_utf8/; reason="regression fixture embeds fabricated passwords from the source that reproduced a UTF-8 span crash"; approved_by="keyhog-maintainers"
+path:crates/core/tests/; reason="test fixtures carry exact positive and negative credential examples that prove detector behavior"; approved_by="keyhog-maintainers"
+path:crates/cli/tests/; reason="test fixtures carry exact positive and negative credential examples that prove detector behavior"; approved_by="keyhog-maintainers"
+path:crates/scanner/tests/; reason="test fixtures carry exact positive and negative credential examples that prove detector behavior"; approved_by="keyhog-maintainers"
+path:crates/sources/tests/; reason="test fixtures carry exact positive and negative credential examples that prove detector behavior"; approved_by="keyhog-maintainers"
+path:crates/verifier/tests/; reason="test fixtures carry exact positive and negative credential examples that prove detector behavior"; approved_by="keyhog-maintainers"
+path:crates/scanner/benches/; reason="benchmark fixtures carry exact credential examples that prove detector behavior"; approved_by="keyhog-maintainers"
+path:benchmarks/bench/tests/; reason="scorer tests carry exact credential examples that prove scoring behavior"; approved_by="keyhog-maintainers"
+path:tests/dogfood/; reason="the dogfood lane's own fixtures and planted-secret probes live here"; approved_by="keyhog-maintainers"
+path:tests/install/fixtures/install_from_local_build_posix.sh; reason="installer exercise decodes synthetic credentials so the freshly installed binary can prove detector coverage end to end"; approved_by="keyhog-maintainers"
+path:crates/cli/data/suppressions/test-fixtures.toml; reason="the file's purpose is to enumerate known-public sample credentials so keyhog can suppress them by hash"; approved_by="keyhog-maintainers"
+path:crates/scanner/examples/; reason="detector probe examples carry sample credentials by design; the strict lane scans them under an explicit fixture policy"; approved_by="keyhog-maintainers"
+path:detectors/; reason="detector definitions carry example tokens by design; the strict lane scans them and currently reports zero findings"; approved_by="keyhog-maintainers"
+path:benchmarks/baselines/; reason="committed differential baselines are keyhog's own redacted output plus TP/FP/FN comparison tables that quote surfaced shapes; the strict lane scans them under a redaction-aware policy"; approved_by="keyhog-maintainers"
+path:benchmarks/generators/; reason="mirror generators assemble synthetic credentials at runtime to build benchmark fixtures; the strict lane scans the generator source"; approved_by="keyhog-maintainers"
+path:.github/workflows/integration-smoke.yml; reason="the workflow base64-encodes planted vendor-doc fixtures so the runner can prove the scanner finds them; the strict lane scans workflow YAML by hash instead"; approved_by="keyhog-maintainers"
+
+# --- Fixture-scoped hashes replacing former source-path suppressions ---------
+# KH-576: `path:` entries hid whole production source files because they
+# contain doc-comment fixtures. Measured on the release-fast build across the
+# default, --no-decode, --fast, --precision, --deep, --no-default-excludes, and
+# --git-history presets, four of those files (decode/reverse.rs,
+# suppression/path_filter.rs, hosted_git/sanitize.rs, suppression/shape/canonical.rs)
+# surface nothing at all, so their path entries are gone. The rest are scoped to
+# the exact fixture value, which keeps the surrounding file scanned and fails the
+# lane on any second credential planted in it.
+hash:e51274cf409418544734e68fef141a841ca58b82a4d7e61f41b2ed638abfd902; reason="GPU ML-scorer warm sample; vendor example token used only to touch the feature extractor; measured entropy-api-key at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/scanner/src/gpu/backend/execution.rs:755; surfaced by preset(s) decode,deep,nodecode,noexcl"; approved_by="keyhog-maintainers"
+hash:5cb35e896767fc86473c803ec5915fe272b73dcb274743e520c660d719d52ece; reason="benchmark smoke fixture; measured stripe-secret-key at crates/cli/src/benchmark.rs:115, fabricated vendor-docs shape"; approved_by="keyhog-maintainers"
+hash:94ba8206be4dd790b4d3243a600904b91e210b7a3940f285559631d2079f0145; reason="shape-classifier accept fixture; measured entropy-token at crates/scanner/src/suppression/shape/canonical.rs:273 under --deep only"; approved_by="keyhog-maintainers"
+
+# --- Reviewed fixtures, provenance generated from measurement -----------------
+# Each `reason=` below records the detector, source location, and presets that
+# actually surfaced the value on the release-fast build (2026-08-04). Regenerate
+# with tests/dogfood/suppression_audit.py after any detector or fixture change.
+hash:0edfda193f931b8c1c9c1a1db3b27576e70dd343cf943b5d22aacd5b63cb0090; reason="fabricated known-positive AWS key planted in the differential-bench smoke check; measured aws-access-key at /media/mukund-thiru/SanthData/Santh/software/keyhog/.github/workflows/differential-bench.yml:196; surfaced by preset(s) decode,deep,fast,nodecode,noexcl,precision"; approved_by="keyhog-maintainers"
+hash:48d2a5bbcf422ccd1b69e2a82fb90bafb52384953e77e304bef856084be052b6; reason="leetspeak placeholder in the parse_env doc comment illustrating inline-comment stripping; measured generic-keyword-secret at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/scanner/src/structured/parsers/env.rs:21; surfaced by preset(s) decode,deep,fast,nodecode,noexcl"; approved_by="keyhog-maintainers"
+hash:01c2c0cfbc4247225dbbe5fdbf59cecb4abdc6a1c6d78b7ff0c7a5b968fb40b2; reason="canonical vendor-docs AWS example reused by the action E2E and the GPU warm sample; measured aws-access-key at .github/workflows/action-e2e.yml:206; surfaced by preset(s) decode,deep,fast,hist,nodecode,noexcl,precision"; approved_by="keyhog-maintainers"
+hash:f6dc8f29e382dcc29478e74e5419e82c8d03453461b06224b9f8d573cc2bd79f; reason="canonical vendor-docs AWS secret quoted in the detection guide; measured aws-secret-access-key at /media/mukund-thiru/SanthData/Santh/software/keyhog/.git/lfs/objects/1e/03/1e0315e324a88b4eca0fdb7d8b6811716c37a25a0d77fc673f4067f38f1b3231:7; surfaced by preset(s) decode,deep,fast,nodecode,noexcl,precision"; approved_by="keyhog-maintainers"
+hash:7b85310a29300230c865bc48ca1836f15b81bd50ac85e8c0785e8145e98ff175; reason="fleet-wide fabricated GitHub classic PAT fixture with a valid CRC, exactly 36 chars so its value hash is stable; measured github-classic-pat at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/cli/src/subcommands/calibrate_autoroute.rs:66; surfaced by preset(s) decode,deep,fast,nodecode,noexcl,precision"; approved_by="keyhog-maintainers"
+hash:386de3e7c99e0ae3152c54d0a80c5d2d138255916a37810a4c8f7a093331fc9b; reason="suppression API doc-comment example; measured rabbitmq-credentials at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/scanner/src/suppression/api.rs:243; surfaced by preset(s) decode,deep,fast,nodecode,noexcl"; approved_by="keyhog-maintainers"
+hash:3bcba6dd69a4df503b7a555cd53620c567e3eca4ff4a4c9ab98df6d2d3620a73; reason="generic assignment shape doc-comment example; measured generic-keyword-secret at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/scanner/src/generic_assignment_shape.rs:19; surfaced by preset(s) decode,deep,fast,nodecode,noexcl"; approved_by="keyhog-maintainers"
+hash:40769d9505fadf9d959e05cee5c792f9fb2f8772e1aabfabe248d477e0421aa7; reason="cloud source redaction fixture; measured entropy-token/generic-keyword-secret at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/sources/src/cloud/mod.rs:752; surfaced by preset(s) decode,deep,nodecode,noexcl,precision"; approved_by="keyhog-maintainers"
+hash:4d72588105763b14841eb916a556a251ed6d9e2f00ba7a86ac5673836a1bfc4e; reason="cross-OS dogfood script planted probe value; measured entropy-token at /media/mukund-thiru/SanthData/Santh/software/keyhog/scripts/dogfood-all-os.sh:112; surfaced by preset(s) deep"; approved_by="keyhog-maintainers"
+hash:7e3d5eecdd34a230a81b2bee3bf4fad0cb002fef74c1929b05147efc0030382a; reason="demo application fixture credential; measured stripe-secret-key at /media/mukund-thiru/SanthData/Santh/software/keyhog/.git/lfs/objects/17/5f/175f66c0f81bfe216c43640f3b747c64b552c0cfa2d2992cc515018bfd85f65a:16; surfaced by preset(s) decode,deep,fast,nodecode,noexcl,precision"; approved_by="keyhog-maintainers"
+hash:81475fe7907ae1818130c48c21a8d632f083a0337fed43e825e21b94566e38ba; reason="PowerShell installer checksum-shaped constant; measured entropy-token at /media/mukund-thiru/SanthData/Santh/software/keyhog/install.ps1:1524; surfaced by preset(s) deep"; approved_by="keyhog-maintainers"
+hash:83eee1420adf36ee9cfe736087c997f6e83c1acea1541b9954d99b0544efe182; reason="token-randomness suppression doc-comment example; measured generic-password at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/scanner/src/suppression/token_randomness.rs:8; surfaced by preset(s) decode,deep,fast,nodecode,noexcl,precision"; approved_by="keyhog-maintainers"
+hash:9e5ae7f2f2af222eb3c78a7226871124ed1af7ebd9804650e077c38d24f1a235; reason="entropy keyword table doc-comment example; measured generic-keyword-secret at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/scanner/src/entropy/keywords.rs:444; surfaced by preset(s) decode,deep,fast,nodecode,noexcl"; approved_by="keyhog-maintainers"
+hash:a1592ac7ce1a434b7274b09d15bd59e1c96e35ba02e80eb33182f4c353713e0b; reason="suppression API doc-comment example; measured rabbitmq-credentials at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/scanner/src/suppression/api.rs:678; surfaced by preset(s) decode,deep,fast,nodecode,noexcl"; approved_by="keyhog-maintainers"
+hash:af047096c2b37a7dcea19eff5cff7e29639a5e65be6142e43aa5fc7f537007f5; reason="autoroute calibration probe sample; measured entropy-token at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/cli/src/subcommands/calibrate_autoroute.rs:71; surfaced by preset(s) deep"; approved_by="keyhog-maintainers"
+hash:c90f315ef13ef88951f5bb6426a7ea05b7974368374b0398bb0ed9e8840f0391; reason="cross-OS dogfood script planted probe value; measured aws-access-key at /media/mukund-thiru/SanthData/Santh/software/keyhog/scripts/dogfood-all-os.sh:120; surfaced by preset(s) decode,deep,fast,nodecode,noexcl,precision"; approved_by="keyhog-maintainers"
+hash:c92417ab6c54df83e568fc6a7c984ad9790331d9ddaa9322e728b135d110a668; reason="core config doc-comment example; measured generic-password at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/core/src/config.rs:58; surfaced by preset(s) decode,deep,fast,nodecode,noexcl"; approved_by="keyhog-maintainers"
+hash:d0e5167351768a459206fa4777f359436ca276599c31c5346e4d6264f7dfff4f; reason="scanner testing facade fixture; measured generic-keyword-secret at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/scanner/src/testing.rs:763; surfaced by preset(s) decode,deep,fast,nodecode,noexcl,precision"; approved_by="keyhog-maintainers"
+hash:51d2a659f0940c6e7dce3fc11c5df329aff93212408a5a4a2a47124df1964be0; reason="release-profile match-extent variant of the token-randomness doc-comment example; measured generic-keyword-secret at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/scanner/src/suppression/token_randomness.rs:8; surfaced by preset(s) decode,deep,fast,nodecode,noexcl"; approved_by="keyhog-maintainers"
+hash:03dea4c01ecc3d1dbab52f9efd5c4e2c2f888a6a0c9432b2ace8016693be31bc; reason="CLI password-flag documentation example in the spec; measured cli-password-flag at /media/mukund-thiru/SanthData/Santh/software/keyhog/crates/core/src/spec.rs:1109; surfaced by preset(s) deep,fast"; approved_by="keyhog-maintainers"
+hash:6ff532f01420d686d69b79f6aa500656d91e2acbc9fdc3b1f2dd09b56be3aaf2; reason="CLI password-flag documentation example in the detection guide; measured cli-password-flag at /media/mukund-thiru/SanthData/Santh/software/keyhog/docs/src/detection.md:262; surfaced by preset(s) decode,deep,fast,nodecode,noexcl"; approved_by="keyhog-maintainers"
+hash:17a0fc073490eff77d13c8d89df03d57c0768bfd286f2d2e4052f72894dac39f; reason="detector guide documentation example; measured entropy-token at /media/mukund-thiru/SanthData/Santh/software/keyhog/docs/src/detectors.md:387; surfaced by preset(s) decode,deep,nodecode,noexcl"; approved_by="keyhog-maintainers"
+hash:34355e0e1382e75703841bd426f79d7262518ca513a87767503f5786741dd4eb; reason="pinned action commit id in action.yml; measured entropy-token at /media/mukund-thiru/SanthData/Santh/software/keyhog/action.yml:264; surfaced by preset(s) deep"; approved_by="keyhog-maintainers"
+hash:6f51d59249d3572763961fb02371c80e2ab8dce0caa1877393e25c2b3f07e0e9; reason="generated source-contract test template value; measured generic-keyword-secret at /media/mukund-thiru/SanthData/Santh/software/keyhog/scripts/generate_source_contract_tests.py:114; surfaced by preset(s) decode,deep,fast,nodecode,noexcl"; approved_by="keyhog-maintainers"
+hash:a47a2ee957d9f3aa349ceb0ceb4ecf5d221023181176beef222e0a58fe16c17b; reason="generated source-contract test template value; measured postgresql-connection-string at /media/mukund-thiru/SanthData/Santh/software/keyhog/scripts/generate_source_contract_tests.py:104; surfaced by preset(s) decode,deep,fast,nodecode,noexcl"; approved_by="keyhog-maintainers"
+
+# --- Retained but unproven on this build --------------------------------------
+# These suppressed nothing under the seven presets measured on the release-fast
+# build. Each is attributed to a build profile or source class this lane cannot
+# reproduce (portable/ci feature sets, full-feature match extents, git-history
+# reassembly). tests/dogfood/suppression_audit.py lists them in the coverage
+# manifest on every run, so removing one is a reviewable one-line change once
+# the owning lane confirms it no longer fires.
+hash:cd4ec61c827fc8c3a353af7120ac63c5bef265098aee80c1ff7343351261d723; reason="portable profile: compiled entropy-shape schema identifier"; approved_by="keyhog-maintainers"
+hash:344dc4f586722e2e1323ac25126560a99ceeab70bcd1ccaafe71ff6bf021214e; reason="portable profile: compiled entropy-shape fixture"; approved_by="keyhog-maintainers"
+hash:018acf26a85dc73866457d9a300f869e12bedde7f914da83e968f373ea51edd6; reason="portable profile: compiled entropy-shape fixture"; approved_by="keyhog-maintainers"
+hash:01cd02801a282dba08936c1e82be733ed3162be91ffc612a9b2f3f4dc71738d5; reason="portable profile: compiled entropy-shape fixture"; approved_by="keyhog-maintainers"
+hash:0c7452eae2c395928b523b6210e5ea990d2ee6bd669000d625a136e66421e794; reason="portable profile: compiled entropy-shape fixture"; approved_by="keyhog-maintainers"
+hash:12ce53f6ad499aa544f564af18b4ca5a89dc2c344b469c8a13e5b0391492f6cf; reason="portable profile: compiled entropy-shape fixture"; approved_by="keyhog-maintainers"
+hash:69a41ab0cf091f8e235971a5ca2c9a87903b6ea5140e46e1e93b39cd0774b7b3; reason="portable profile: compiled entropy-shape fixture"; approved_by="keyhog-maintainers"
+hash:a9cc88ae40c24836445557c37b68a3e2315f87c987cdea775340f2c4b7e2a125; reason="portable profile: compiled entropy-shape fixture"; approved_by="keyhog-maintainers"
+hash:bb14a019aa4c82e5bea68cbc8b9e5fb883a3e2c0d3efe2c325a8fece571dd689; reason="portable profile: compiled entropy-shape fixture"; approved_by="keyhog-maintainers"
+hash:fc08c0cb4a82a61de3377cb7cb0cfe57659a1ead7383b9a1e02eae6dcf7ce3dc; reason="portable profile: compiled entropy-shape fixture"; approved_by="keyhog-maintainers"
+hash:d9c9e7d9e365ee56490fc4c5e8fe8bc644d4dad08fe4f06c297a0870ad679cd4; reason="portable profile: compiled entropy-shape fixture"; approved_by="keyhog-maintainers"
+hash:2740fd3a1b7915193d321b03feaf37b30e1c17047c24a4792f01a2302993d407; reason="full-feature release profile: alternate generic match extent of a reviewed fixture"; approved_by="keyhog-maintainers"
+hash:3f8ec5354f76a97577c5d9df9c7416531ce180af7398c73835a032e9b45f3a35; reason="full-feature release profile: alternate generic match extent of a reviewed fixture"; approved_by="keyhog-maintainers"
+hash:66c3ea8e09ca94ad6b2ca29a345abdb1ab2a1e8169fd503dc3d4ccc240510c56; reason="full-feature release profile: alternate generic match extent of a reviewed fixture"; approved_by="keyhog-maintainers"
+hash:d6b553681259ec813fafc35b4a3536a6672d84cd1bec7688596f1f5b4c3b3570; reason="full-feature release profile: alternate generic match extent of a reviewed fixture"; approved_by="keyhog-maintainers"
+hash:3f0911f20f6b9854e34b43ad05470a9075d1c6a99b65ab82f03cce4201ee9f4a; reason="all-X synthetic AWS placeholder driving the degenerate-repeat suppression tests; defense in depth across supported builds"; approved_by="keyhog-maintainers"
+hash:57028a916a4ba4e7abfc8318ff8774852c5f4264ece9cfab01b97004ab56e3ae; reason="synthetic AWS split-credential reassembly fixture; the derived multiline value differs from the inline-ignored source value"; approved_by="keyhog-maintainers"
+hash:3301c53957d9fa995b5ac610c71ba113ec0f41615a0e215c1b119181c34d6b7d; reason="engine WARM_SAMPLE synthetic concat that warms lazy-regex DFA caches; contains secret shapes by construction"; approved_by="keyhog-maintainers"
+hash:26e4e47b31d8cefa746fc6bb298ad3f846e293c9c10243418d28b747155e1207; reason="AWS shape reassembled from a git-history decode-through buffer attributed to crates/verifier/src/verify/aws.rs; no such value exists in that file"; approved_by="keyhog-maintainers"
+
+# --- Historical blobs surfaced by the git-history lane -------------------------
+# tests/dogfood/history_scan.sh scans the last N commits, so these values live in
+# blobs that are no longer in the working tree. Each is a documentation example,
+# a test fixture, or an engine warm sample from an older revision of a file that
+# still carries the same reviewed material today. None was ever a live credential.
+hash:208809266b21eea32c2aa498ae43d863cc37f284e93328fd15329c718b0e28bc; reason="historical blob only; measured entropy-token at docs/src/reference/env.md:96 in commit 5b6fe65bddab"; approved_by="keyhog-maintainers"
+hash:33e6235fbc9cb6f13013eda71c49a40130069a94dd8dc1b66cf190903193af9b; reason="historical blob only; measured generic-keyword-secret at crates/cli/src/daemon/protocol.rs:458 in commit 181b29a4125c"; approved_by="keyhog-maintainers"
+hash:4794fa06d0a17b24225af749dadcd3b75c0950f258ec8fdae9da89a69bf6f783; reason="historical blob only; measured generic-secret at crates/scanner/src/gpu/backend/execution.rs:547 in commit ad76d87d9612"; approved_by="keyhog-maintainers"
+hash:6c2a2d4e9552a9fea567cda5c78e7e437b72e58f5ea0d71460f0eb017f3f9e75; reason="historical blob only; measured cli-password-flag at crates/cli/src/orchestrator/dispatch/backend/tests.rs:186 in commit 181b29a4125c"; approved_by="keyhog-maintainers"
+hash:71178fb38256667000368feb9847ea74f35140026f6c1dc788f2a77f15de1089; reason="historical blob only; measured aws-access-key at scripts/prerelease.sh:392 in commit 7d1ead15a9e2"; approved_by="keyhog-maintainers"
+hash:713a9648f0089c753a8253a4078d72d5bd271a3ccfccada9098ad13f6fe4820f; reason="historical blob only; measured generic-keyword-secret at crates/core/src/report/gitlab_sast.rs:175 in commit 181b29a4125c"; approved_by="keyhog-maintainers"
+hash:94b9b7f8b35f61bbec1125726f7a794010497975d7f69ce6d0dcb43b7a5913db; reason="historical blob only; measured github-classic-pat at docs/src/first-scan.md:24 in commit 181b29a4125c"; approved_by="keyhog-maintainers"
+hash:ae83b1e9e6269ca7248db0b20d99a9bea90f2b78b47bb6b8013e2a386869da3c; reason="historical blob only; measured generic-secret at crates/scanner/src/ml_scorer/service_vocab.rs:7 in commit 181b29a4125c"; approved_by="keyhog-maintainers"
+hash:cffe607065e2f7a6599bd2e36471e4196fa8e4c0335a081ee2ae798f08c27a2a; reason="historical blob only; measured entropy-token at docs/src/reference/env.md:95 in commit 5b6fe65bddab"; approved_by="keyhog-maintainers"
+hash:e4b78f83e32d6ea27cfde4144bf090c52c6191af4662e75b2fb5f99fd2fe7435; reason="historical blob only; measured slack-bot-token at crates/scanner/src/gpu/backend/execution.rs:537 in commit 181b29a4125c"; approved_by="keyhog-maintainers"

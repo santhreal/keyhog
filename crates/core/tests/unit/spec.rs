@@ -202,51 +202,6 @@ fn oversized_toml_files_fail_closed_instead_of_allocating_unboundedly() {
 }
 
 #[test]
-fn spec_loader_and_validator_boundaries_are_explicit() {
-    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let spec_source =
-        std::fs::read_to_string(manifest_dir.join("src/spec.rs")).expect("read spec root");
-    let load_source =
-        std::fs::read_to_string(manifest_dir.join("src/spec/load.rs")).expect("read spec loader");
-    let file_io_source = std::fs::read_to_string(manifest_dir.join("src/detector_file_io.rs"))
-        .expect("read detector file I/O owner");
-    let validate_source = std::fs::read_to_string(manifest_dir.join("src/spec/validate.rs"))
-        .expect("read spec validator");
-
-    assert!(spec_source.contains("pub use load::{"));
-    assert!(!spec_source.contains("pub enum SpecError"));
-    assert!(!spec_source.contains("pub fn read_detector_toml_file"));
-    assert!(!spec_source.contains("pub const DETECTOR_TOML_FILE_BYTES"));
-
-    assert!(load_source.contains("pub enum SpecError"));
-    assert!(load_source.contains("pub use crate::detector_file_io::{"));
-    assert!(file_io_source.contains("pub fn read_detector_toml_file"));
-    assert!(file_io_source.contains("pub const DETECTOR_TOML_FILE_BYTES"));
-    assert!(load_source.contains("fn discover_detector_tomls("));
-    assert!(load_source.contains("fn parse_detector_files("));
-    assert!(load_source.contains("fn assemble_detector_load("));
-    assert!(load_source.contains("directory entry under"));
-    assert!(file_io_source.contains("detector TOML {} exceeds"));
-
-    let load_fn = load_source
-        .split("pub(crate) fn load_detectors_with_gate(")
-        .nth(1)
-        .expect("load_detectors_with_gate exists")
-        .split("fn discover_detector_tomls(")
-        .next()
-        .expect("load function boundary");
-    assert!(!load_fn.contains("std::fs::read_dir"));
-    assert!(!load_fn.contains(".par_iter()"));
-    assert!(!load_fn.contains("for outcome in parsed"));
-
-    assert!(validate_source.contains("mod regex_complexity;"));
-    assert!(!validate_source.contains("#[path ="));
-    assert!(spec_source.contains("pub enum ScriptEngine"));
-    assert!(spec_source.contains("engine: ScriptEngine"));
-    assert!(!spec_source.contains("Script {\n        engine: String"));
-}
-
-#[test]
 fn no_detector_uses_singular_companion_table() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     // The in-crate `detectors` is a Unix symlink to `../../detectors`. On

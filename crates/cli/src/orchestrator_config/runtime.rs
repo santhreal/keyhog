@@ -23,6 +23,28 @@ static RAYON_CONFIGURATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(()
 /// Default chunk batch size for the fused filesystem read+scan pipeline.
 pub(crate) const FUSED_BATCH_DEFAULT: usize = 32;
 
+/// Byte ceiling on one fused filesystem batch, applied alongside
+/// [`FUSED_BATCH_DEFAULT`].
+///
+/// `FUSED_BATCH_DEFAULT` is a chunk COUNT, and a chunk's size differs by two
+/// orders of magnitude between regimes: ~4 KiB for a small source file versus a
+/// full 1 MiB window from the large-file path. Counting only chunks therefore
+/// described ~128 KiB per batch on a small-file corpus but ~32 MiB on one big
+/// file, and since every bound from here to the workers is also a chunk count
+/// (`fused_depth` batches queued, plus one batch resident per worker), the
+/// large-file regime carried over a gigabyte of queue headroom and split a
+/// 300 MiB file into only ~11 work units for 32 cores.
+///
+/// 4 MiB keeps a batch small enough that a 32-core box gets tens of work units
+/// from a single large file, while sitting far above any small-file batch (32
+/// chunks would each have to average 128 KiB to reach it), so small-file
+/// batching, and its tuning, is left exactly as it was.
+///
+/// Compile-time rather than configurable on purpose: it is hashed into the
+/// autoroute identity, so a change here invalidates persisted calibration
+/// instead of silently replaying decisions measured under different batching.
+pub(crate) const FUSED_BATCH_BYTES: usize = 4 * 1024 * 1024;
+
 /// Default bounded-channel depth for fused filesystem batches.
 pub(crate) fn fused_depth_default(worker_threads: usize) -> usize {
     worker_threads
@@ -189,6 +211,52 @@ impl ScanRuntimeInput {
             source_limits: args.limits.to_source_limits(),
         }
     }
+}
+
+/// The scan worker width `rayon::current_num_threads()` would report, WITHOUT
+/// creating Rayon's global registry.
+///
+/// That call looks like a read and is a write: when nobody has claimed the
+/// global pool it CREATES one at Rayon's default width, permanently. Any later
+/// [`configure_threads`] then fails with "Rayon worker pool was initialized
+/// outside KeyHog", because `build_global` cannot replace an existing registry.
+///
+/// The daemon route reached that call while merely computing an identity
+/// digest, on every client connect that got a `Hello` back. A `--daemon=auto`
+/// scan whose daemon then turned out to be incompatible, or died mid-scan,
+/// announced "running in-process scanner" and exited 2 having scanned nothing:
+/// the in-process retry could no longer own a pool.
+///
+/// The value is EXACTLY what Rayon would report, so digests built from it do
+/// not move: KeyHog's configured width once [`configure_threads`] has run, and
+/// otherwise Rayon's own unconfigured default, `RAYON_NUM_THREADS` included.
+/// Only the side effect is gone.
+///
+/// Honouring `RAYON_NUM_THREADS` here is not a preference, it is required for
+/// correctness. [`crate::subcommands::scan`] still calls
+/// `rayon::current_num_threads()` directly when resolving the `--daemon=mass`
+/// scan config, and `validate_mass_daemon_policy` compares that config's digest
+/// against this one. Reading the environment differently from Rayon split those
+/// two digests and made every `--daemon=mass` scan fail with a spurious policy
+/// mismatch whenever `RAYON_NUM_THREADS` was set.
+pub(crate) fn keyhog_worker_threads() -> usize {
+    if let Some(configured) = CONFIGURED_RAYON_THREADS.get().copied() {
+        return configured;
+    }
+    // Rayon's unconfigured default, resolved the way Rayon resolves it: a
+    // positive `RAYON_NUM_THREADS`, else the host's available parallelism.
+    if let Some(env_threads) = std::env::var("RAYON_NUM_THREADS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|threads| *threads > 0)
+    {
+        return env_threads;
+    }
+    std::thread::available_parallelism()
+        .map(std::num::NonZeroUsize::get)
+        // LAW10: host probe failure => single worker; identity-only value,
+        // recall-irrelevant.
+        .unwrap_or(1)
 }
 
 pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) -> Result<usize> {

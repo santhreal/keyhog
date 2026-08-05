@@ -411,7 +411,7 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
                         .to_string(),
                 );
             };
-            if crate::engine::profile::perf_trace_enabled() {
+            if crate::engine::profile::diagnostic() {
                 eprintln!(
                     "perf-trace gpu-resident-fused: action={} backend={} haystack_capacity={} region_capacity={} match_capacity={} host_output_capacity={} host_match_capacity={} host_scratch_capacity={}",
                     if must_rebuild || attempt > 0 { "prepare" } else { "reuse" },

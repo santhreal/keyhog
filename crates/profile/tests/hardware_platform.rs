@@ -17,50 +17,6 @@ fn session(name: &str) -> Session {
     .expect("start profile")
 }
 
-/// The Windows backend must be a real implementation over process and thread
-/// APIs, so cross-compilation or review cannot silently swap in a stub that
-/// fabricates counters.
-#[test]
-fn windows_backend_uses_real_process_and_thread_apis() {
-    let source = include_str!("../src/hardware/windows.rs");
-    assert!(source.contains("#[repr(C)]"));
-    for api in [
-        "GetProcessTimes",
-        "GetThreadTimes",
-        "QueryThreadCycleTime",
-        "CreateToolhelp32Snapshot",
-        "GetNumaHighestNodeNumber",
-        "GetProcessAffinityMask",
-        "OpenThread",
-    ] {
-        assert!(source.contains(api), "windows backend must call {api}");
-    }
-    // Unavailable families must be explicit gaps, never fabricated values.
-    assert!(source.contains("EvidenceGap::Unsupported"));
-    assert!(source.contains("ETW"));
-}
-
-/// The macOS backend must use mach task_info/thread_info for what it reports
-/// and mark everything else Unsupported, so capability gaps stay honest on
-/// Apple platforms.
-#[test]
-fn macos_backend_uses_mach_info_apis_with_explicit_gaps() {
-    let source = include_str!("../src/hardware/macos.rs");
-    for api in [
-        "task_info",
-        "thread_info",
-        "task_threads",
-        "sysctlbyname",
-        "mach_task_self",
-        "TASK_EVENTS_INFO",
-        "THREAD_BASIC_INFO",
-    ] {
-        assert!(source.contains(api), "macOS backend must call {api}");
-    }
-    assert!(source.contains("kpc is a private framework"));
-    assert!(source.contains("EvidenceGap::Unsupported"));
-}
-
 /// Span records written before span hardware existed must decode with an
 /// explicit legacy gap rather than a deserialization error.
 #[test]

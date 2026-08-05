@@ -17,6 +17,37 @@ Each eligible readable regular member enters the normal detector pipeline.
 Binary members use printable-string extraction. Finding paths retain every
 container and member, such as `submission.tar//paper/main.tex`.
 
+## How a member is admitted
+
+A member's extension is consulted first, so a named member always resolves to
+the format it has always resolved to. A member whose name carries no recognized
+extension is admitted on its own leading bytes: gzip, zstd, xz, LZ4, Snappy,
+bzip2, ZIP, and tar all have a signature at a fixed offset. An extensionless
+gzip layer inside a tarball, a `.zip` renamed `.dat`, and a `.dat` that is
+really a tar are therefore all descended into.
+
+The probe reads a bounded prefix at offset zero. KeyHog never speculatively
+runs an extractor to find out what a member is.
+
+Some families have no signature and are not covered: cab, iso, xar, lzip, `.Z`,
+and raw deflate or raw LZMA streams, which have no magic in principle. Those
+fall through to printable-string extraction with no container coverage gap.
+A 7z, RAR, or ar/deb member is different: it produces an explicit error row
+naming the family, because those formats need a seekable file and have no
+in-memory extractor.
+
+## Archives reached through Git or a bucket
+
+Container expansion applies to files on disk and to the sources that expand
+them. It does not apply to Git objects or to cloud object bodies. An archive
+committed to a repository is descended into by `keyhog scan <path>` and is not
+descended into by `--git-history` or `--git-blobs`, which report it as a
+`binary (extension or content sniff)` gap. An object in an S3, GCS, or Azure
+container is not descended into either.
+
+Download or check out the archive and scan it as a file when its contents are
+in scope.
+
 ## Scan untrusted archives
 
 Keep the envelope report when the input may be corrupt or hostile:

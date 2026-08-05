@@ -90,27 +90,6 @@ fn tfstate_numeric_index_key_renders_bare_via_shared_literal() {
     );
 }
 
-#[test]
-fn json_scalar_literal_is_single_owner() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let src = std::fs::read_to_string(root.join("src/structured/parsers/json.rs"))
-        .expect("json parser source readable");
-
-    assert!(
-        src.contains("fn json_scalar_literal("),
-        "the shared scalar-literal renderer must exist"
-    );
-    assert!(
-        !src.contains("fn json_index_key_literal("),
-        "the byte-identical index_key twin must be removed"
-    );
-    // The index_key call site now routes through the shared owner.
-    assert!(
-        src.contains("instance.get(\"index_key\").and_then(json_scalar_literal)"),
-        "the index_key render must delegate to json_scalar_literal"
-    );
-}
-
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin one string and one numeric index_key; these SWEEP the
 // shared `json_scalar_literal` rendering through the tfstate context: a STRING

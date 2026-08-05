@@ -588,6 +588,7 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
                         Some("exact-plan-paired-95pct-confidence")
                             | Some("peer-separated-compiled-default-plan")
                             | Some("peer-separated-statistically-tied-plan")
+                            | Some("unseparated-dead-heat-lowest-complexity-backend")
                     ),
                     "{field} must name the actual resolution rule; decision={decision}"
                 );

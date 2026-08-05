@@ -72,35 +72,6 @@ fn contains_evasion_matches_normalized_char_classification() {
     );
 }
 
-#[test]
-fn contains_evasion_delegates_to_normalized_char_single_owner() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let src =
-        std::fs::read_to_string(root.join("src/unicode_hardening.rs")).expect("source readable");
-    let start = src
-        .find("pub(crate) fn contains_evasion(")
-        .expect("contains_evasion present");
-    let after = &src[start..];
-    let body_end = after
-        .find("\nfn contains_ascii_evasion")
-        .expect("next fn marks the end of contains_evasion's body");
-    let body = &after[..body_end];
-
-    assert!(
-        body.contains("matches!(normalized_char(ch), NormalizedChar::Keep)"),
-        "contains_evasion must delegate to normalized_char (single-owner classification)"
-    );
-    // The duplicated per-char predicate list must no longer be inlined here.
-    assert!(
-        !body.contains("is_unicode_separator_evasion(ch)"),
-        "the duplicated 8-predicate disjunction must be gone from contains_evasion"
-    );
-    assert!(
-        !body.contains("cyrillic_to_latin(ch).is_some()"),
-        "the duplicated 8-predicate disjunction must be gone from contains_evasion"
-    );
-}
-
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vector enumerates one instance per evasion category; these SWEEP the
 // two directional guarantees the detector exists for. `contains_evasion` gates

@@ -6,7 +6,7 @@
 #![cfg(feature = "binary")]
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 /// An ELF larger than the configured scan window must not become ordinary text,
 /// because compiled bytes then produce named and entropy false positives.

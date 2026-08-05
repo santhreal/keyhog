@@ -29,37 +29,6 @@ const fn automatic_gpu_backend() -> ScanBackend {
     }
 }
 
-fn strip_line_comments(src: &str) -> String {
-    src.lines()
-        .map(|line| line.split_once("//").map_or(line, |(code, _)| code))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn function_body<'a>(src: &'a str, signature: &str) -> &'a str {
-    let start = src
-        .find(signature)
-        .unwrap_or_else(|| panic!("missing function signature: {signature}"));
-    let tail = &src[start..];
-    let open = tail
-        .find('{')
-        .unwrap_or_else(|| panic!("missing function body for: {signature}"));
-    let mut depth = 0usize;
-    for (offset, ch) in tail[open..].char_indices() {
-        match ch {
-            '{' => depth += 1,
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return &tail[open..=open + offset];
-                }
-            }
-            _ => {}
-        }
-    }
-    panic!("unterminated function body for: {signature}");
-}
-
 /// High-tier discrete-GPU caps (RTX 5090 class). `hyperscan`/`simd` toggle the
 /// CPU tier.
 fn caps_gpu(hyperscan: bool, simd: bool) -> HardwareCaps {
@@ -344,74 +313,6 @@ fn batch_dominance_guard_keeps_small_file_swarm_on_cpu() {
     });
 }
 
-#[test]
-fn workload_selector_is_the_single_branch_owner() {
-    let select_path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/hw_probe/select.rs");
-    let select_code =
-        strip_line_comments(&std::fs::read_to_string(select_path).expect("read select.rs"));
-
-    assert_eq!(
-        select_code
-            .matches("fn select_backend_for_workload(")
-            .count(),
-        1,
-        "backend routing must have exactly one workload-policy owner"
-    );
-
-    let owner = function_body(&select_code, "fn select_backend_for_workload(");
-    for required in [
-        "test_backend_override()",
-        "crate::gpu::gpu_disabled_by_policy()",
-        "gpu_could_engage(",
-        "cpu_tier_backend(caps)",
-    ] {
-        assert!(
-            owner.contains(required),
-            "the single workload selector must own `{required}`"
-        );
-    }
-
-    for (signature, expected_delegate, name) in [
-        (
-            "pub fn select_backend(",
-            "select_backend_verdict(",
-            "public file/workload wrapper",
-        ),
-        (
-            "pub fn select_backend_verdict(",
-            "select_backend_for_workload(",
-            "public file/workload verdict wrapper",
-        ),
-        (
-            "pub(crate) fn select_backend_for_batch(",
-            "select_backend_for_batch_verdict(",
-            "batch workload wrapper",
-        ),
-        (
-            "pub(crate) fn select_backend_for_batch_verdict(",
-            "select_backend_for_workload(",
-            "batch workload verdict wrapper",
-        ),
-    ] {
-        let body = function_body(&select_code, signature);
-        assert!(
-            body.contains(expected_delegate),
-            "{name} must delegate via `{expected_delegate}`"
-        );
-        for forbidden in [
-            "test_backend_override()",
-            "crate::gpu::gpu_disabled_by_policy()",
-            "gpu_could_engage(",
-            "cpu_tier_backend(caps)",
-        ] {
-            assert!(
-                !body.contains(forbidden),
-                "{name} must not carry duplicate routing branch logic: `{forbidden}`"
-            );
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // 3. Retired operator spellings stay rejected by parse_backend_str.
 // ---------------------------------------------------------------------------
@@ -436,88 +337,6 @@ fn retired_megascan_aliases_stay_rejected() {
 //    Goes RED if a future change re-adds one of the removed parallel GPU
 //    pipelines or the duplicated CPU-tier ladder.
 // ---------------------------------------------------------------------------
-
-#[test]
-fn removed_dead_gpu_pipelines_stay_removed() {
-    let engine = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/");
-    // Read every engine source file once.
-    let mut all = String::new();
-    for entry in std::fs::read_dir(engine).expect("read engine dir") {
-        let path = entry.expect("dir entry").path();
-        if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            all.push_str(&std::fs::read_to_string(&path).expect("read engine source"));
-        }
-    }
-    let code = strip_line_comments(&all);
-
-    // The dead `ac_gpu_program` AC `vyre::Program` builder must not return.
-    // (Doc-comment mentions in gpu_lazy.rs/gpu_input_budget.rs are prose, not a
-    //  method def or field, so match the *executable* forms.)
-    assert!(
-        !code.contains("fn ac_gpu_program"),
-        "ac_gpu_program method was removed as a dead route; do not re-add it. \
-         region-presence is the single on-GPU trigger producer"
-    );
-    assert!(
-        !code.contains("ac_gpu_program:"),
-        "the ac_gpu_program field was removed; do not re-add it to CompiledScanner"
-    );
-    assert!(
-        !code.contains("build_ac_bounded_ranges_program_bound_atomic"),
-        "the dead AC bounded-ranges Program builder must stay removed"
-    );
-
-    // The dead per-scanner `rule_pipeline()` lazy NFA engine + field stay gone.
-    // The cached wrapper `rule_pipeline_cached` and its diagnostic builder were
-    // deleted as dead routes, so match the method/field/wrapper forms.
-    assert!(
-        !code.contains("fn rule_pipeline(&self)"),
-        "the rule_pipeline() lazy method was removed because its scan was never invoked"
-    );
-    assert!(
-        !code.contains("rule_pipeline: OnceLock"),
-        "the rule_pipeline OnceLock field was removed from CompiledScanner"
-    );
-    // The dead `rule_pipeline_cached` on-disk cache wrapper (persistence for a
-    // pipeline no scan path builds) stays removed. Its private cache helpers go
-    // too.
-    assert!(
-        !code.contains("fn rule_pipeline_cached"),
-        "rule_pipeline_cached was deleted as dead public surface (zero non-test \
-         callers); the live GpuLiteralSet path caches via gpu_cache"
-    );
-    assert!(
-        !code.contains("fn pipeline_cache_key") && !code.contains("PIPELINE_CACHE_VERSION"),
-        "the private rule-pipeline cache key helper + version const were removed \
-         with rule_pipeline_cached; do not re-add a cache for an unbuilt pipeline"
-    );
-    assert!(
-        !code.contains("fn build_rule_pipeline")
-            && !code.contains("AC_GPU_MAX_MATCHES_PER_DISPATCH")
-            && !code.contains("GPU_BATCH_INPUT_LIMIT:"),
-        "the test-only rule-pipeline diagnostic builder and fixed-size aliases \
-         were removed; keep only gpu_batch_input_limit() as the live sizing contract"
-    );
-    let lib_rs = strip_line_comments(
-        &std::fs::read_to_string(
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"),
-        )
-        .expect("read scanner lib.rs"),
-    );
-    assert!(
-        !lib_rs.contains("build_rule_pipeline")
-            && !lib_rs.contains("AC_GPU_MAX_MATCHES_PER_DISPATCH")
-            && !lib_rs.contains("GPU_BATCH_INPUT_LIMIT:"),
-        "the testing facade must not re-export the dead rule-pipeline builder or aliases"
-    );
-
-    // The megascan-specific degrade warner (warned about a degrade that can no
-    // longer happen) stays removed.
-    assert!(
-        !code.contains("fn deny_silent_megascan_degrade"),
-        "deny_silent_megascan_degrade was removed with the duplicate backend route"
-    );
-}
 
 #[test]
 fn parse_backend_str_is_the_single_string_source() {

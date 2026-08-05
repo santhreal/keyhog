@@ -332,36 +332,19 @@ fn push_extraction_rejection(
     }
 }
 
-/// Import/module-declaration line prefixes, the single Tier-B owner
-/// (`rules/import-line-prefixes.toml`; was an inline `&[&str]` const). A line
-/// opening with one of these is a language `import`/`use`/`include`/`package`
-/// statement, never a credential assignment. Every prefix is space- or
-/// paren-terminated so an identifier that merely *begins* with the keyword
-/// (`important_key`, `package_secret`) is NOT matched, that divergence used to
-/// reject real credential lines here while [`is_likely_innocuous_line`] accepted
-/// them (the termination contract is documented in the data file). Fails closed
-/// on an invalid/empty list.
-static IMPORT_LINE_PREFIXES: LazyLock<Vec<String>> = LazyLock::new(|| {
-    #[derive(serde::Deserialize)]
-    struct Prefixes {
-        prefixes: Vec<String>,
-    }
-    let raw = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/import-line-prefixes.toml"
-    ));
-    match toml::from_str::<Prefixes>(raw) {
-        Ok(parsed) if !parsed.prefixes.is_empty() => parsed.prefixes,
-        Ok(_) => panic!(
-            "rules/import-line-prefixes.toml is empty; it must list the \
-             import/module-declaration line prefixes."
-        ),
-        Err(error) => panic!(
-            "rules/import-line-prefixes.toml is invalid: {error}. \
-             Fix the bundled Tier-B import-line-prefix list."
-        ),
-    }
-});
+crate::tier_b_list::tier_b_vec!(
+    /// Import/module-declaration line prefixes, the single Tier-B owner
+    /// (`rules/import-line-prefixes.toml`; was an inline `&[&str]` const). A line
+    /// opening with one of these is a language `import`/`use`/`include`/`package`
+    /// statement, never a credential assignment. Every prefix is space- or
+    /// paren-terminated so an identifier that merely *begins* with the keyword
+    /// (`important_key`, `package_secret`) is NOT matched, that divergence used to
+    /// reject real credential lines here while [`is_likely_innocuous_line`] accepted
+    /// them (the termination contract is documented in the data file).
+    IMPORT_LINE_PREFIXES,
+    "import-line-prefixes.toml",
+    prefixes
+);
 
 pub(crate) fn is_import_like_prefix(trimmed: &str) -> bool {
     IMPORT_LINE_PREFIXES

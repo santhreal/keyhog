@@ -122,7 +122,13 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
     let text = String::from_utf8(buf).expect("JSON envelope is UTF-8");
     let parsed = JsonReportEnvelope::parse(&text).expect("current major parses");
     assert_eq!(parsed.schema_version.major, 1);
-    assert_eq!(parsed.schema_version.minor, 8);
+    // Pinned to the exported constant, not a literal: every additive minor
+    // revision would otherwise break this contract test for a change the
+    // contract explicitly permits.
+    assert_eq!(
+        parsed.schema_version.minor,
+        keyhog_core::JSON_REPORT_SCHEMA_MINOR
+    );
     assert_eq!(
         parsed.scan_status,
         keyhog_core::ScanCompletionStatus::Partial
@@ -174,6 +180,23 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
             .scan_status,
         keyhog_core::ScanCompletionStatus::Success
     );
+
+    // A report written by an OLDER binary carries an older minor and none of
+    // the additive keys. Forward compatibility is the whole promise of the
+    // minor bump, so the current reader must accept that document.
+    let mut previous_minor: serde_json::Value =
+        serde_json::from_str(&text).expect("envelope JSON parses");
+    previous_minor["schema_version"]["minor"] = serde_json::json!(8);
+    let previous_object = previous_minor
+        .as_object_mut()
+        .expect("previous-minor envelope object");
+    previous_object.remove("correlations");
+    previous_object.remove("access_targets");
+    let previous = JsonReportEnvelope::parse(&previous_minor.to_string())
+        .expect("a report from a previous binary must remain readable");
+    assert_eq!(previous.schema_version.minor, 8);
+    assert_eq!(previous.correlations.len(), 0);
+    assert_eq!(previous.findings.len(), 1);
 
     let mut future_minor: serde_json::Value =
         serde_json::from_str(&text).expect("envelope JSON parses");

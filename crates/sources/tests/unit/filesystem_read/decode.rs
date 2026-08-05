@@ -2,7 +2,7 @@
 //! classification, magic-byte heuristics, UTF-16/UTF-8 text decoding, and
 //! the owning/non-owning decoder pair.
 
-use keyhog_sources::testing::{zstd_frame_magic_for_test, SourceTestApi, TestApi};
+use keyhog_sources::testing::{zstd_frame_magic_for_test, TestApi};
 
 /// Regression: preserves the externally observable `looks_binary_empty_input_is_text` behavior after the inline suite split.
 #[test]

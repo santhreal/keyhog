@@ -3,7 +3,7 @@
 mod support;
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::sync::Mutex;
 

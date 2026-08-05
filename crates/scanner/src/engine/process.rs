@@ -193,12 +193,38 @@ impl CompiledScanner {
         let allow_canonical_hex_key_material = allow_decoded_hex_key_material
             || (credential.bytes().all(|byte| byte.is_ascii_hexdigit())
                 && key_material_policy.allows_canonical_hex_len(credential.len()));
-        // Raw binary sections lack source context, but a strong named detector
-        // with an explicit credential-shape contract has already validated the
-        // complete captured value. Keep that evidence while weak and generic
-        // detectors remain covered by the binary-string noise gate.
-        let allow_validated_binary_credential =
-            !is_generic && !weak_anchor && detector_plan.credential_shape.is_some();
+        // Raw binary sections lack source context, so the binary-strings noise
+        // gate (`suppression::api`, `native_binary_strings`) drops a named
+        // detector unless the match carries its own structural proof.
+        //
+        // That proof used to be `[detector.credential_shape]` alone. Exactly 4
+        // of 924 detector TOMLs declare one, so 920 named detectors could never
+        // fire on ANY binary-derived chunk: not an ELF on disk, not a `.so`
+        // inside a `.tar.gz`, not an executable in a container layer. Same
+        // bytes, `aws-access-key` reported and `slack-bot-token` silently
+        // suppressed, purely because one TOML has the block (KH-1064). A
+        // 4-of-924 allowlist nobody maintained is not a precision policy.
+        //
+        // A declared shape is still the strongest proof and still admits. The
+        // general proof is lexical: the match occupies a whole token of the
+        // extracted text rather than a substring of surrounding identifier
+        // soup. Both are per-match evidence, neither is an id list.
+        //
+        // A structural password slot is excluded from both. Its captured value
+        // is by definition "whatever token followed the keyword", so it has no
+        // shape to satisfy and being a whole token proves nothing about it.
+        // Measured over 249 MiB of system ELF binaries, dropping the slot
+        // family removes 12 of the 15 residual false positives and costs
+        // nothing a shaped detector would have caught.
+        let allow_validated_binary_credential = !is_generic
+            && !weak_anchor
+            && !structural_password_slot
+            && (detector_plan.credential_shape.is_some()
+                || crate::suppression::binary_match_is_lexically_isolated(
+                    data,
+                    credential_start,
+                    match_end,
+                ));
         let named_suppression_ctx =
             crate::suppression::NamedDetectorSuppressionCtx::with_weak_anchor_and_key_material_policy(
                 chunk.metadata.path.as_deref(),

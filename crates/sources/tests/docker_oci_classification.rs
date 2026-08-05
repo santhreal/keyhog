@@ -5,7 +5,7 @@
 //! private, so it is exercised through the `oci_descriptor_points_to_index`
 //! test accessor on the source testing facade.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 #[test]
 fn classifies_index_vs_manifest_by_declared_media_type() {

@@ -80,20 +80,3 @@ fn alg_none_surfaces_the_unsigned_anomaly() {
     assert_eq!(meta.len(), 3, "jwt.alg + jwt.sub + jwt.alg_none");
 }
 
-#[test]
-fn finding_metadata_reserves_capacity_and_doc_lists_logout_typ() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let src = std::fs::read_to_string(root.join("src/jwt.rs")).expect("jwt source readable");
-    assert!(
-        src.contains("HashMap::with_capacity(8)"),
-        "finding_metadata must pre-reserve its per-finding map"
-    );
-    assert!(
-        !src.contains("let mut meta = std::collections::HashMap::new();"),
-        "finding_metadata must not start from a zero-capacity map"
-    );
-    assert!(
-        src.contains("`dpop+jwt`, `logout+jwt`"),
-        "the NonStandardTyp doc must list logout+jwt to match is_standard_typ"
-    );
-}

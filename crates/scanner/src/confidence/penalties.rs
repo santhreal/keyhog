@@ -1,33 +1,5 @@
 use super::{CONFIDENCE_MAX, CONFIDENCE_MIN};
-
-#[derive(serde::Deserialize)]
-struct ExamplePathComponents {
-    components: Vec<String>,
-}
-
-fn parse_fixture_path_components(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<ExamplePathComponents>(raw)
-        .map(|parsed| parsed.components)
-        .map_err(|error| error.to_string())
-}
-
-/// Tier-B fixture/example path components that trigger the path-confidence
-/// haircut. Loaded from the SAME `rules/example-path-components.toml` the
-/// suppression path uses so the two lists cannot drift to different sets (they
-/// previously diverged: this owner carried `sample`/`samples` but not
-/// `fixture`/`fixtures`, the suppression owner the reverse).
-static FIXTURE_PATH_COMPONENTS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_fixture_path_components(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/example-path-components.toml"
-    ))) {
-        Ok(components) => components,
-        Err(error) => panic!(
-            "rules/example-path-components.toml is invalid: {error}. \
-                 Fix the bundled Tier-B example path components list."
-        ),
-    }
-});
+use crate::tier_b_list::EXAMPLE_PATH_COMPONENTS;
 
 /// Sanitize a confidence value so a NaN or infinity entering the
 /// pipeline can never reach the final finding.
@@ -312,7 +284,7 @@ pub(crate) fn apply_path_confidence_penalties(
         return finalize_confidence(score);
     }
     let is_fixture_like = crate::platform_compat::path_component_matches(path, |component| {
-        FIXTURE_PATH_COMPONENTS
+        EXAMPLE_PATH_COMPONENTS
             .iter()
             .any(|fixture| component.eq_ignore_ascii_case(fixture))
             || crate::placeholder_words::words()

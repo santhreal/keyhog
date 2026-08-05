@@ -3,8 +3,8 @@
 use crate::orchestrator::ScanOrchestrator;
 use anyhow::Result;
 use keyhog_core::{Chunk, ChunkMetadata};
+use keyhog_profile::{decision_timer, Stage};
 use keyhog_scanner::{probe_hardware, ScanBackend};
-use std::time::Instant;
 
 // Total ~96 MiB. `keyhog scan --benchmark` compares explicit backend rows;
 // default auto-routing is driven by persisted calibration evidence, not this
@@ -75,14 +75,18 @@ pub(crate) fn run_benchmark(orchestrator: &ScanOrchestrator) -> Result<Vec<Backe
     let mut results = Vec::new();
     for backend in backends {
         orchestrator.scanner().warm_backend(backend);
-        let started = Instant::now();
+        // The row's MB/s is a number this function consumes, so it takes the
+        // profiler's decision timer rather than a private `Instant`: same clock,
+        // and the interval also lands in the profile when one is running, so the
+        // printed throughput and the profiled throughput cannot disagree.
+        let timer = decision_timer(Stage::BackendDispatch);
         let findings = orchestrator
             .scanner()
             .scan_chunks_with_backend(&corpus, backend)?
             .into_iter()
             .map(|matches| matches.len())
             .sum();
-        let elapsed = started.elapsed().as_secs_f64().max(f64::EPSILON);
+        let elapsed = timer.finish().as_secs_f64().max(f64::EPSILON);
         results.push(BackendBenchmark {
             backend,
             mb_per_sec: (total_bytes as f64 / 1024.0 / 1024.0) / elapsed,

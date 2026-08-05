@@ -34,7 +34,7 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
             "  {} scan engine healthy - nothing to repair.",
             style::pass("PASS", &palette)
         );
-        println!("  {dim}use --force to reinstall the latest release anyway.{reset}");
+        println!("  {dim}use --force to reinstall the newest binary release asset anyway.{reset}");
         return Ok(ExitCode::SUCCESS);
     }
     if healthy {

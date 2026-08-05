@@ -1,5 +1,5 @@
 //! Property tier for `validate_scan_archive_entry_name` (reached via the
-//! `SourceTestApi` facade), the guard every archive extractor (zip / 7z / rar)
+//! `TestApi` facade), the guard every archive extractor (zip / 7z / rar)
 //! runs over each entry name before the member is processed. The fixed-vector
 //! twin (`tests/unit/archive_entry_name_traversal_contract.rs`) pins the exact
 //! refusal reason for each hand-picked class; this file sweeps the SECURITY
@@ -25,11 +25,11 @@
 //!     of the NUL / backslash structural hazards. This is the load-bearing
 //!     security direction: the guard must never accept something dangerous.
 //!
-//! Reached ONLY through the stable `SourceTestApi` facade (the
+//! Reached ONLY through the stable `TestApi` facade (the
 //! `src/filesystem/extract/**` no-inline-tests contract keeps unit coverage out
 //! of `src`). No cargo feature is required (the guard is on the base build).
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use proptest::prelude::*;
 
 /// Percent-encode EVERY byte of `s` to `%XX` (uppercase hex). Applied to a

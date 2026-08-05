@@ -4,6 +4,12 @@ use super::{Phase2GpuDfaShard, PHASE2_GPU_DFA_MAX_STATES};
 use crate::types::CompiledPattern;
 use std::borrow::Cow;
 
+/// Every shard is a separate dispatch over the SAME haystack, so shard count
+/// multiplies GPU work directly. A pool that shatters is not an accelerator,
+/// it is a dispatch storm: the caller drops such a catalog and leaves CPU
+/// admission authoritative rather than paying for it.
+pub(super) const PHASE2_GPU_DFA_MAX_SHARDS: usize = 64;
+
 pub(super) fn build_shards_recursive(
     phase2_patterns: &[(CompiledPattern, Vec<String>)],
     indices: &[usize],
@@ -12,6 +18,13 @@ pub(super) fn build_shards_recursive(
     uncovered_patterns: &mut usize,
 ) {
     if indices.is_empty() {
+        return;
+    }
+    // One uncovered pattern already forfeits the completeness the caller needs,
+    // and splitting past the shard budget only deepens a dispatch storm the
+    // caller will refuse anyway. Either way, stop and account the rest.
+    if *uncovered_patterns > 0 || shards.len() >= PHASE2_GPU_DFA_MAX_SHARDS {
+        *uncovered_patterns = uncovered_patterns.saturating_add(indices.len());
         return;
     }
     // Start with the complete candidate set. A successful compilation gives

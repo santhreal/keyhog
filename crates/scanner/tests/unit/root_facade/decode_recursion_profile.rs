@@ -11,7 +11,7 @@
 use super::support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{set_profile_enabled, CompiledScanner, ScanBackend};
+use keyhog_scanner::{set_profile_detail, CompiledScanner, Detail, ScanBackend};
 use std::time::Instant;
 
 fn chunk_of(bytes: &[u8], label: &str) -> Chunk {
@@ -29,7 +29,7 @@ fn chunk_of(bytes: &[u8], label: &str) -> Chunk {
 #[test]
 #[ignore = "measurement; run with --ignored --nocapture"]
 fn decode_recursion_profile_mirror() {
-    set_profile_enabled(true);
+    set_profile_detail(Detail::Diagnostic);
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
     let Some(root) = corpus_dir() else {

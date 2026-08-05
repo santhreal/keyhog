@@ -1,6 +1,6 @@
 //! R5-T http adversarial: blocks metadata.google.internal.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[cfg(feature = "web")]
 #[test]
 fn r5t_web_blocks_metadata_google_internal() {

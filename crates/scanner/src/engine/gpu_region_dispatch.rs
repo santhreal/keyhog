@@ -87,7 +87,7 @@ impl CompiledScanner {
         // This phase-2 tail is backend-neutral. GPU-only builds use it without
         // linking Hyperscan, while SIMD builds feed the same trigger bitmap into
         // the same extraction and policy pipeline.
-        let kh = super::profile::perf_trace_enabled();
+        let kh = super::profile::diagnostic();
         let t_matcher = kh.then(std::time::Instant::now);
         let Some(matcher) = self.gpu_matcher() else {
             return dispatch_failure(
@@ -143,7 +143,7 @@ impl CompiledScanner {
         let t_co = kh.then(std::time::Instant::now);
         let mut dis_s = std::time::Duration::ZERO;
         let mut derive_s_total = std::time::Duration::ZERO;
-        let region_dispatch_profile = super::profile::span(super::profile::P::BackendDispatch);
+        let region_dispatch_profile = super::profile::span(keyhog_profile::Stage::BackendDispatch);
         let mut triggers: Vec<Option<Vec<u64>>> = Vec::new();
         let mut phase2_keyword_hints: Vec<Vec<u32>> = Vec::new();
         let mut phase2_always_anchor_presence: Vec<bool> = Vec::new();
@@ -766,7 +766,7 @@ impl CompiledScanner {
         } else {
             Phase2GpuAdmissionWorkload::Empty
         };
-        let phase2_dispatch_profile = super::profile::span(super::profile::P::BackendDispatch);
+        let phase2_dispatch_profile = super::profile::span(keyhog_profile::Stage::BackendDispatch);
         let t_phase2_gpu = kh.then(std::time::Instant::now);
         let mut phase2_gpu_empty_complete = false;
         let mut phase2_gpu_coverage = None;

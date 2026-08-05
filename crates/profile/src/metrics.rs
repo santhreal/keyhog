@@ -124,6 +124,8 @@ pub enum MetricId {
     FsReadLatencyNs,
     FsMetadataLatencyNs,
     NetworkLatencyNs,
+    AutorouteCalibration,
+    BoundaryScan,
 }
 
 /// Stable identifier for a top-level production pipeline stage.
@@ -514,6 +516,171 @@ impl QueueId {
     }
 }
 
+/// A reuse cache the profiler reports hit and miss counts for.
+///
+/// Every KeyHog cache that exists to avoid repeating work reports through this
+/// one enum, so "what is our cache hit rate" has a single answer instead of one
+/// per subsystem. Record every consultation with exactly one of
+/// [`crate::record_cache_hit`] or [`crate::record_cache_miss`], so the reported
+/// rate has a real denominator.
+///
+/// Counters are indexed by [`CacheId::index`] into a fixed array of length
+/// [`CacheId::COUNT`], so recording is one relaxed atomic add with no
+/// allocation and no lookup on the hot path.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[repr(u8)]
+pub enum CacheId {
+    /// Persisted autoroute backend decision reused instead of re-deciding.
+    /// A miss means the scan runs without a calibrated route.
+    AutorouteDecision = 0,
+    /// Autoroute calibration measurement reused instead of re-measuring.
+    AutorouteCalibration,
+    /// Chunk skipped because the incremental scan judged it unchanged.
+    IncrementalUnchanged,
+    /// Compiled matcher artifact reused instead of recompiled. This is the
+    /// cache standing between a scan and the engine-initialization cost.
+    MatcherArtifact,
+    /// Credential verification result reused instead of re-requested. A miss
+    /// costs a network round trip, so this rate is also a rate-limit story.
+    VerifierResult,
+}
+
+impl CacheId {
+    /// Every cache slot in stable wire order.
+    pub const ALL: [Self; Self::COUNT] = [
+        Self::AutorouteDecision,
+        Self::AutorouteCalibration,
+        Self::IncrementalUnchanged,
+        Self::MatcherArtifact,
+        Self::VerifierResult,
+    ];
+
+    /// Number of variants, and the length of the profiler's counter arrays.
+    pub const COUNT: usize = 5;
+
+    /// Dense index into the profiler's per-shard counter arrays.
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Stable text label used by profiles and operator reports.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AutorouteDecision => "autoroute-decision",
+            Self::AutorouteCalibration => "autoroute-calibration",
+            Self::IncrementalUnchanged => "incremental-unchanged",
+            Self::MatcherArtifact => "matcher-artifact",
+            Self::VerifierResult => "verifier-result",
+        }
+    }
+}
+
+/// Why one operation was attempted again.
+///
+/// A retry that fires is evidence of a defect, not a success, so every attempt
+/// is counted and surfaced. There is deliberately no catch-all cause: an
+/// unclassified failure is permanent and is not retried, which is what stops
+/// "it will just retry" from becoming a reason to ship a racy path.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[repr(u8)]
+pub enum RetryCause {
+    /// A syscall returned EINTR.
+    Interrupted = 0,
+    /// A syscall returned EAGAIN or EWOULDBLOCK.
+    WouldBlock,
+    /// ENOENT or ESTALE on a path the walker had already enumerated.
+    VanishedUnderWalk,
+    /// The file was replaced, truncated, or grown between the size decision
+    /// and the completion of the read.
+    SizeChangedUnderRead,
+    /// EBUSY, ETXTBSY, or a sharing violation.
+    Locked,
+    /// A 429 or an equivalent provider throttle.
+    RateLimited,
+    /// Connection reset, timeout, or name resolution failure.
+    Network,
+    /// A git pack was rewritten while it was being read.
+    PackRewritten,
+}
+
+impl RetryCause {
+    /// Every cause in stable wire order.
+    pub const ALL: [Self; Self::COUNT] = [
+        Self::Interrupted,
+        Self::WouldBlock,
+        Self::VanishedUnderWalk,
+        Self::SizeChangedUnderRead,
+        Self::Locked,
+        Self::RateLimited,
+        Self::Network,
+        Self::PackRewritten,
+    ];
+
+    pub const COUNT: usize = 8;
+
+    /// Dense index into the profiler's per-shard counter arrays.
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Stable text label used by profiles and operator reports.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Interrupted => "interrupted",
+            Self::WouldBlock => "would-block",
+            Self::VanishedUnderWalk => "vanished-under-walk",
+            Self::SizeChangedUnderRead => "size-changed-under-read",
+            Self::Locked => "locked",
+            Self::RateLimited => "rate-limited",
+            Self::Network => "network",
+            Self::PackRewritten => "pack-rewritten",
+        }
+    }
+}
+
+/// Number of slots in every indexed counter family.
+///
+/// Fixed so recording is one relaxed add with no bounds negotiation. A slot
+/// outside the range is counted as dropped rather than folded into the last
+/// slot, because a misattributed measurement is worse than a missing one.
+pub const INDEXED_COUNTER_SLOTS: usize = 16;
+
+/// An additive counter that exists once per caller-owned slot.
+///
+/// The caller owns the labels. A decoder registry knows slot three is base64,
+/// so the profiler stores sixteen numbers and never a string, which is what
+/// keeps the record path allocation-free and hash-free.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[repr(u8)]
+pub enum IndexedCounterId {
+    /// Nanoseconds spent inside one decoder slot.
+    DecoderElapsedNs = 0,
+    /// Sub-chunks one decoder slot produced.
+    DecoderSubchunksEmitted,
+}
+
+impl IndexedCounterId {
+    /// Every indexed family in stable wire order.
+    pub const ALL: [Self; Self::COUNT] = [Self::DecoderElapsedNs, Self::DecoderSubchunksEmitted];
+
+    pub const COUNT: usize = 2;
+
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Stable text label used by profiles and operator reports.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DecoderElapsedNs => "decoder-elapsed-ns",
+            Self::DecoderSubchunksEmitted => "decoder-subchunks-emitted",
+        }
+    }
+}
+
 /// Stable identifier for a numeric annotation attached to the run timeline.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -557,6 +724,8 @@ impl From<crate::Stage> for MetricId {
             crate::Stage::BackendSelect => Self::BackendSelect,
             crate::Stage::ResultMerge => Self::ResultMerge,
             crate::Stage::ScannerQueueWait => Self::ScannerQueueWait,
+            crate::Stage::AutorouteCalibration => Self::AutorouteCalibration,
+            crate::Stage::BoundaryScan => Self::BoundaryScan,
         }
     }
 }
@@ -1318,14 +1487,32 @@ pub static METRICS: [MetricDescriptor; MetricId::COUNT] = [
         MetricKind::Distribution,
         MetricUnit::Nanoseconds,
     ),
+    metric(
+        MetricId::AutorouteCalibration,
+        "autoroute-calibration",
+        MetricKind::Duration,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::BoundaryScan,
+        "boundary-scan",
+        MetricKind::Duration,
+        MetricUnit::Nanoseconds,
+    ),
 ];
 
 impl MetricId {
-    pub const COUNT: usize = 119;
+    pub const COUNT: usize = 121;
 
     /// Return static metadata with no lookup allocation or hashing.
     #[inline]
     pub const fn descriptor(self) -> &'static MetricDescriptor {
         &METRICS[self as usize]
+    }
+
+    /// Stable metric name from the static registry.
+    #[inline]
+    pub const fn as_str(self) -> &'static str {
+        self.descriptor().name
     }
 }

@@ -370,6 +370,102 @@ fn hyperscan_runtime_identity_must_match_backend_availability() {
     );
 }
 
+#[test]
+fn cpu_only_calibration_cannot_replay_under_a_gpu_admitting_scan() {
+    // v51 removed `calibration.excludes_gpu_candidates` from the resolved-config
+    // digest, because hashing it there produced a guaranteed miss on every host
+    // and build with no GPU candidate. This is the guard that keeps the
+    // property the removed field was reaching for: the persisted host
+    // generation carries the candidate census and the full GPU device, runtime,
+    // driver and batch-limit identity, so evidence measured with GPU excluded
+    // can only be found again by a scan whose host profile matches exactly.
+    let dir = tempfile::tempdir().expect("gpu exclusion isolation tempdir");
+    let path = dir.path().join("autoroute.json");
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+
+    let cpu_only = test_host(None);
+    let key = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(key, valid_decision_for_host(&cpu_only));
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &cpu_only,
+        &decisions,
+    )
+    .expect("CPU-only calibration persists");
+
+    // Same binary, same corpus, same resolved config digest. Only the admitted
+    // candidate set differs, which is exactly the case the config digest used
+    // to carry.
+    let gpu_admitting = test_host(Some("NVIDIA GeForce RTX 5090"));
+    let error = load_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &gpu_admitting,
+    )
+    .expect_err("CPU-only route evidence must not replay under a scan that admits a GPU")
+    .to_string();
+    assert!(
+        error.contains("host profile mismatch"),
+        "refusal must name the host generation, not a config mismatch: {error}"
+    );
+
+    // And the scan that measured it still finds its own evidence, which is the
+    // half the old config-digest field broke.
+    assert_eq!(
+        load_autoroute_cache(
+            &path,
+            digest,
+            test_rules_digest(),
+            config_digest,
+            &cpu_only,
+        )
+        .expect("CPU-only evidence replays under the identity that measured it"),
+        decisions,
+    );
+}
+
+#[test]
+fn a_rejected_cache_is_never_reported_as_an_uncalibrated_bucket() {
+    // These two misses call for opposite repairs. A rejected cache does not
+    // belong to this binary, host, corpus or config, so recalibrating one
+    // bucket into it changes nothing; an absent bucket means the cache is valid
+    // and simply does not cover this workload yet. Before the causes were
+    // separated both surfaced as the same scalar recovery, which is how a cache
+    // that could never hit looked exactly like a corpus nobody had calibrated.
+    let path = Some(std::path::PathBuf::from("/tmp/autoroute.json"));
+    let rejected = Some("executable digest mismatch".to_string());
+
+    assert_eq!(
+        lookup_miss_cause(&path, &rejected, false),
+        AutorouteCacheMiss::CacheRejected
+    );
+    assert_eq!(
+        lookup_miss_cause(&path, &rejected, true),
+        AutorouteCacheMiss::CacheRejected,
+        "a rejected cache stays rejected even when it happens to hold the bucket"
+    );
+    assert_eq!(
+        lookup_miss_cause(&path, &None, false),
+        AutorouteCacheMiss::BucketAbsent
+    );
+    assert_eq!(
+        lookup_miss_cause(&path, &None, true),
+        AutorouteCacheMiss::RuntimeClassUnproved,
+        "a present bucket without runtime-class evidence is not an absent bucket"
+    );
+    assert_eq!(
+        lookup_miss_cause(&None, &None, false),
+        AutorouteCacheMiss::NoCacheConfigured
+    );
+}
+
 fn test_workload_key() -> WorkloadKey {
     WorkloadKey {
         bytes_bucket: 24,
@@ -2969,10 +3065,18 @@ fn paired_backend_rounds_do_not_override_cross_backend_interval_overlap() {
         true,
     );
 
+    assert!(
+        !decision.has_confidence_supported_route(),
+        "paired rounds must not replace the independent cross-backend confidence interval"
+    );
     assert_eq!(
         decision.resolved_routing_route(),
-        None,
-        "paired rounds must not replace the independent cross-backend confidence interval"
+        Some(MeasuredRoute {
+            backend: ScanBackend::CpuFallback,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: true,
+        }),
+        "an unproved measurement resolves to the lowest-complexity backend's compiled default"
     );
 }
 
@@ -3134,7 +3238,7 @@ fn calibration_rejects_a_recovery_backend_crossover_inside_one_workload_class() 
 }
 
 #[test]
-fn overlapping_confidence_produces_no_autoroute_decision() {
+fn overlapping_confidence_resolves_the_lower_complexity_backend() {
     let simd_timing = BackendTimingEvidence::from_trial_ns(vec![
         18_000_000, 20_000_000, 20_000_000, 20_000_000, 20_000_000, 20_000_000, 22_000_000,
     ])
@@ -3164,8 +3268,42 @@ fn overlapping_confidence_produces_no_autoroute_decision() {
     assert_eq!(decision.gpu_ms(), Some(19));
     assert_eq!(
         decision.resolved_routing_backend(),
+        Some(ScanBackend::SimdCpu),
+        "a 1 ms unproved GPU lead inside the GPU's own upper bound does not buy GPU bring-up"
+    );
+}
+
+#[test]
+fn a_measurably_worse_median_cannot_win_a_dead_heat_on_a_wide_error_bar() {
+    // Scalar is far slower on average but jitters enough that its interval
+    // still overlaps the accelerator's. Lower complexity must not rescue it.
+    let cpu_timing = BackendTimingEvidence::from_trial_ns(vec![
+        1_000_000, 60_000_000, 60_000_000, 60_000_000, 60_000_000, 60_000_000, 200_000_000,
+    ])
+    .expect("valid CPU timing");
+    let simd_timing = BackendTimingEvidence::from_trial_ns(vec![
+        21_000_000, 20_000_000, 20_000_000, 20_000_000, 22_000_000, 24_000_000, 26_000_000,
+    ])
+    .expect("valid SIMD timing");
+    let decision = AutorouteDecision::from_timing_evidence(
+        ScanBackend::SimdCpu,
+        8 * 1024 * 1024,
+        1,
+        0xA11D_0B57_A11D_0B57,
+        1,
+        simd_timing,
+        Some(cpu_timing),
         None,
-        "a lower measured median does not prove a fastest route when confidence overlaps"
+    );
+
+    assert!(
+        !decision.has_confidence_supported_route(),
+        "fixture must retain overlapping 95% confidence intervals"
+    );
+    assert_eq!(
+        decision.resolved_routing_backend(),
+        Some(ScanBackend::SimdCpu),
+        "a scalar median outside the fastest route's own 95% bound is ineligible"
     );
 }
 
@@ -3999,7 +4137,7 @@ fn calibration_envelope_retains_agreeing_points_and_rejects_a_crossover() {
         1_000_000, 12_000_000, 12_000_000, 12_000_000, 12_000_000, 12_000_000, 20_000_000,
     ])
     .expect("valid CPU confidence fixture");
-    let overlap_error = stable
+    stable
         .merge_calibration_point(AutorouteDecision::from_timing_evidence(
             ScanBackend::SimdCpu,
             14 * 1024 * 1024,
@@ -4010,10 +4148,15 @@ fn calibration_envelope_retains_agreeing_points_and_rejects_a_crossover() {
             Some(overlapping_cpu),
             None,
         ))
-        .expect_err("an inconclusive point cannot enter a routable workload class");
+        .expect("an unseparated point that still names the class backend joins the class");
+    assert_eq!(stable.calibration_points.len(), 3);
+    assert_eq!(
+        stable.resolved_routing_backend(),
+        Some(ScanBackend::SimdCpu)
+    );
     assert!(
-        overlap_error.contains("does not resolve one one-shot route"),
-        "inconclusive point rejection must name the missing route proof: {overlap_error}"
+        !stable.has_confidence_supported_route(),
+        "an unseparated point must cost the class its separated proof, not its route"
     );
 
     let error = stable
@@ -7044,7 +7187,7 @@ fn live_calibration_measures_every_gpu_peer_before_resolving_or_refusing() {
         Err(error) => {
             let diagnostic = error.to_string();
             assert!(
-                diagnostic.contains("calibration timing is inconclusive")
+                diagnostic.contains("calibration timing does not resolve one route")
                     && diagnostic.contains(ScanBackend::GpuCuda.label())
                     && diagnostic.contains(ScanBackend::GpuWgpu.label())
                     && diagnostic.contains("median_ns=")

@@ -79,13 +79,21 @@ pub struct DoctorArgs {
     /// enabled-versus-bypassed finding parity.
     #[arg(long, value_name = "PATH")]
     pub bloom_evidence: Option<PathBuf>,
+
+    /// Inspect this explicit autoroute cache file instead of the platform
+    /// default. Use the same absolute path passed to `scan --autoroute-cache`
+    /// or configured as `[system].autoroute_cache`; `off` inspects the disabled
+    /// state. Without it, doctor reports the platform-default cache, which is
+    /// not the file a project-configured scan uses.
+    #[arg(long, value_name = "PATH|off")]
+    pub autoroute_cache: Option<String>,
 }
 
 /// Arguments for `keyhog update` (self-update from GitHub releases).
 #[derive(Parser)]
 pub struct UpdateArgs {
-    /// Only check whether a newer release is available; do not install.
-    /// Exits 10 when an update is available, 0 when already current.
+    /// Only check whether the GitHub binary-asset channel offers a newer
+    /// release; do not install. Exits 10 when a newer asset exists, 0 otherwise.
     #[arg(long)]
     pub check: bool,
 

@@ -1,7 +1,9 @@
 //! Human-readable terminal reporter with severity coloring and rich finding details.
 
+use std::fmt::Write as _;
 use std::io::Write;
 
+use crate::correlation::CorrelatedCredential;
 use crate::{MatchLocation, VerificationResult, VerifiedFinding};
 
 use super::escape::sanitize_terminal;
@@ -36,6 +38,23 @@ pub(crate) struct TextReporter<W: Write + Send> {
     /// user has clearly already done so. Set by the caller before `finish()`;
     /// default false matches the historical behavior.
     dogfood_active: bool,
+    /// True when the scan read ZERO source bytes. The empty-findings summary
+    /// must then report that the scan covered nothing: "no secrets detected in
+    /// the scanned files" is technically true of a scan with no scanned files
+    /// and reads as a clean bill of health, which is the exact false-clean this
+    /// reporter's honest phrasing exists to avoid. Default false.
+    covered_nothing: bool,
+    /// Matches dropped by the minified/vendored PATH policy. These are a subset
+    /// of `example_suppressions` (the same recorder counts both), and they are
+    /// the dangerous subset: a real credential a build pipeline inlined into
+    /// `app.min.js` is not an example key, and "No real secrets" is the wrong
+    /// thing to print about one. Default 0.
+    path_policy_suppressions: usize,
+    /// Pre-rendered cross-file correlation block, or `None` when the caller
+    /// passed no correlations. Rendered at set time rather than in `finish()`
+    /// so the reporter never holds a borrow on the report; default `None`
+    /// reproduces the output exactly as it looked before correlation existed.
+    correlations_block: Option<String>,
 }
 
 impl<W: Write + Send> TextReporter<W> {
@@ -59,6 +78,9 @@ impl<W: Write + Send> TextReporter<W> {
             dead_count: 0,
             example_suppressions: 0,
             dogfood_active: false,
+            covered_nothing: false,
+            path_policy_suppressions: 0,
+            correlations_block: None,
         }
     }
 
@@ -76,6 +98,28 @@ impl<W: Write + Send> TextReporter<W> {
     /// line, since the user has clearly already passed it. Idempotent.
     pub(crate) fn set_dogfood_active(&mut self, active: bool) {
         self.dogfood_active = active;
+    }
+
+    /// Tell the reporter the scan read zero source bytes, so the empty-findings
+    /// summary states that nothing was covered instead of that nothing was
+    /// found. Idempotent.
+    pub(crate) fn set_covered_nothing(&mut self, covered_nothing: bool) {
+        self.covered_nothing = covered_nothing;
+    }
+
+    /// Tell the reporter how many matches the minified/vendored path policy
+    /// dropped, so the empty-findings summary names them instead of calling
+    /// them example keys. Idempotent.
+    pub(crate) fn set_path_policy_suppressions(&mut self, n: usize) {
+        self.path_policy_suppressions = n;
+    }
+
+    /// Attach cross-file credential correlations for the summary block.
+    /// An empty slice leaves the report untouched. Idempotent; later calls
+    /// replace.
+    pub(crate) fn set_correlations(&mut self, correlations: &[CorrelatedCredential]) {
+        self.correlations_block = (!correlations.is_empty())
+            .then(|| render_correlations(correlations, self.color));
     }
 }
 
@@ -316,7 +360,41 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
 
     fn finish(&mut self) -> Result<(), ReportError> {
         if self.count == 0 {
-            if self.example_suppressions > 0 {
+            if self.covered_nothing {
+                // A scan that read no bytes has not detected the absence of
+                // anything. "No secrets detected in the scanned files" is
+                // vacuously true when there are no scanned files, and reads as
+                // a clean bill of health, so it must not be printed here. The
+                // stderr coverage summary carries the reason and the remedy.
+                writeln!(
+                    self.writer,
+                    "  {}\n",
+                    report_style::warning(
+                        "This scan covered nothing: zero bytes were read, so nothing was \
+                         checked for secrets. See the coverage summary on stderr.",
+                        self.color,
+                    ),
+                )?;
+            } else if self.path_policy_suppressions > 0 {
+                // A credential inlined into a minified or vendored bundle is
+                // not an example key, so it must not be reported as one. This
+                // branch takes priority over the example-suppression line
+                // below, which counts the same drops through a shared recorder.
+                let plural = if self.path_policy_suppressions == 1 {
+                    ""
+                } else {
+                    "es"
+                };
+                let msg = format!(
+                    "Nothing reported, but {} match{} in minified or vendored files were dropped by path policy. Re-scan with --no-default-excludes to see them.",
+                    self.path_policy_suppressions, plural
+                );
+                writeln!(
+                    self.writer,
+                    "  {}\n",
+                    report_style::warning(&msg, self.color)
+                )?;
+            } else if self.example_suppressions > 0 {
                 let plural = if self.example_suppressions == 1 {
                     ""
                 } else {
@@ -351,6 +429,9 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
                 )?;
             }
         } else {
+            if let Some(block) = self.correlations_block.take() {
+                self.writer.write_all(block.as_bytes())?;
+            }
             let summary_border = report_style::muted_border(
                 "━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
                 self.color,
@@ -414,6 +495,78 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
 }
 
 impl_writer_backed!(TextReporter);
+
+/// Render the cross-file correlation block shown above the results summary.
+///
+/// Built as one string so the reporter can hold the finished bytes instead of a
+/// borrow on the report. Paths and prose come from the report and are
+/// terminal-sanitized on the way out, exactly like finding locations.
+fn render_correlations(correlations: &[CorrelatedCredential], color: bool) -> String {
+    let mut out = String::new();
+    let border = report_style::muted_border(
+        "━━━ Correlated credentials ━━━━━━━━━━━━━━━━━━━━━",
+        color,
+    );
+    let _ = writeln!(out, "  {border}");
+    let plural = if correlations.len() == 1 { "" } else { "s" };
+    let _ = writeln!(
+        out,
+        "  {}",
+        report_style::highlight(
+            &format!(
+                "{} cross-file correlation{plural}",
+                correlations.len()
+            ),
+            color
+        )
+    );
+    for correlation in correlations {
+        let _ = writeln!(out);
+        let _ = writeln!(
+            out,
+            "  {} {} {}",
+            report_style::severity_label(correlation.severity, color),
+            report_style::dim(correlation.kind.as_str(), color),
+            sanitize_terminal(&correlation.title),
+        );
+        let confidence = match (
+            correlation.confidence,
+            correlation.strongest_member_confidence,
+        ) {
+            (Some(lifted), Some(member)) => {
+                format!("confidence {lifted:.2} (strongest member {member:.2})")
+            }
+            _ => "confidence unscored".to_string(),
+        };
+        let _ = writeln!(
+            out,
+            "      {}",
+            report_style::dim(&confidence, color)
+        );
+        let _ = writeln!(
+            out,
+            "      {}",
+            report_style::warning(&sanitize_terminal(&correlation.impact), color)
+        );
+        for member in &correlation.members {
+            for location in &member.locations {
+                let line = location
+                    .line
+                    .map_or_else(String::new, |line| format!(":{line}"));
+                let _ = writeln!(
+                    out,
+                    "      {} {} {}{}",
+                    sanitize_terminal(&member.detector_id),
+                    report_style::dim(&sanitize_terminal(&member.credential_redacted), color),
+                    sanitize_terminal(crate::strip_windows_verbatim_prefix(&location.file_path)),
+                    line,
+                );
+            }
+        }
+    }
+    let _ = writeln!(out);
+    out
+}
 
 fn format_location(location: &MatchLocation) -> String {
     match (&location.file_path, location.line) {

@@ -200,6 +200,47 @@ proptest! {
     }
 }
 
+/// Markers that suppress a credential when they END the token.
+///
+/// Position matters: `AKIAAA000AA0A00AMOCK` is withheld while
+/// `AKIAMOCKAA000AA0A00A` surfaces, so this is a trailing-suffix rule.
+const TRAILING_PLACEHOLDER_MARKERS: &[&str] = &["MOCK", "FAKE"];
+
+/// A trailing placeholder marker withholds an otherwise valid AWS key.
+///
+/// This is the rule the fuzzer collided with. It was implicit: nothing pinned
+/// it, so the property test saved `AKIAAA000AA0A00AMOCK` as a "recall
+/// regression" seed, which would have locked in the opposite expectation and
+/// eventually been "fixed" by weakening the suppression.
+///
+/// Position is the whole rule, so both halves are asserted. A marker at the end
+/// suppresses; the same letters anywhere else do not, because a real key can
+/// contain any uppercase run.
+#[test]
+fn aws_key_with_a_trailing_placeholder_marker_is_withheld() {
+    for marker in TRAILING_PLACEHOLDER_MARKERS {
+        let planted = format!("AKIAAA000AA0A00A{marker}");
+        let chunk = make_text_chunk(format!("AWS_ACCESS_KEY_ID={planted}\n"));
+        let matches = CORRECTNESS_SCANNER
+            .scan(&chunk)
+            .expect("placeholder-marker scan succeeds");
+        assert!(
+            !finds_token_anywhere(&matches, &planted),
+            "{planted} ends in a placeholder marker and must be withheld; saw {matches:?}"
+        );
+    }
+
+    let embedded = "AKIAMOCKAA000AA0A00A";
+    let chunk = make_text_chunk(format!("AWS_ACCESS_KEY_ID={embedded}\n"));
+    let matches = CORRECTNESS_SCANNER
+        .scan(&chunk)
+        .expect("embedded-marker scan succeeds");
+    assert!(
+        finds_token_anywhere(&matches, embedded),
+        "a marker that does not END the token must not suppress it; saw {matches:?}"
+    );
+}
+
 proptest! {
     // Positive-correctness tests use the same 10,000-case contract as the
     // panic-safety properties. Random surroundings stay bounded; dedicated
@@ -221,12 +262,27 @@ proptest! {
     /// does not trivially pass on one token. We check `credential` for the
     /// literal token rather than detector ID because cross-detector resolution
     /// may relabel an overlapping finding; the credential is what users see.
+    ///
+    /// The tail excludes a trailing placeholder marker. A random 16-character
+    /// tail can end in `MOCK` or `FAKE`, and suppressing those is a deliberate
+    /// precision rule, not a recall bug: `AKIAAA000AA0A00AMOCK` is withheld
+    /// while `AKIAAA000AA0A00AMOCX` and `AKIAMOCKAA000AA0A00A` both surface, so
+    /// only the trailing position suppresses. The fuzzer found this collision
+    /// between its own generator and that rule and saved it as a regression
+    /// seed, which would have pinned the wrong expectation forever. The rule
+    /// itself is pinned directly in
+    /// `aws_key_with_a_trailing_placeholder_marker_is_withheld` below.
     #[test]
     fn aws_key_is_always_found_regardless_of_surroundings(
         prefix in "[a-zA-Z0-9_\\-\\s]{0,256}",
         suffix in "[a-zA-Z0-9_\\-\\s]{0,256}",
         random_tail in "[0-9A-Z]{16}",
     ) {
+        // Reject, rather than never generate, so the exclusion is exactly the
+        // rule and not a coarse character-class approximation of it.
+        prop_assume!(!TRAILING_PLACEHOLDER_MARKERS
+            .iter()
+            .any(|marker| random_tail.ends_with(marker)));
         let token = format!("AKIA{random_tail}");
         let body = format!("{prefix}\n{token}\n{suffix}");
         let chunk = make_text_chunk(body);

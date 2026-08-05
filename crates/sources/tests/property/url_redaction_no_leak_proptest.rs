@@ -1,4 +1,4 @@
-//! Property tier for `redact_url` (reached via the `SourceTestApi` web facade)
+//! Property tier for `redact_url` (reached via the `TestApi` web facade)
 //! the ONE credential-masking gate every WebSource / cloud / DNS error message
 //! routes through before it is logged (`url_redaction.rs`; called at each SSRF
 //! refusal site in `web/ssrf.rs`). A leak here is a real secret-disclosure bug:
@@ -31,7 +31,7 @@
 //! Feature gate: `redact_url` is exposed on the facade under `feature = "web"`,
 //! which is a default source feature, so this runs in the base `all_tests` step.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use proptest::prelude::*;
 
 /// The sensitive query-parameter keys, mirrored from `url_redaction.rs`'s

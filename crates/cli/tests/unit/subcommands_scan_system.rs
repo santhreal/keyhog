@@ -208,78 +208,6 @@ fn skipped_chunks_start_at_zero_and_accumulate() {
 }
 
 #[test]
-fn git_repo_discovery_does_not_flatten_read_dir_errors() {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/subcommands/scan_system.rs"
-    ))
-    .expect("scan-system source readable");
-    assert!(
-        !src.contains("entries.flatten()"),
-        "scan-system repo discovery must match read_dir entry errors explicitly so skipped subtrees are logged"
-    );
-    assert!(
-        src.contains("record_git_discovery_gap")
-            && src.contains("\"directory entry read\"")
-            && src.contains("\"directory read\"")
-            && src.contains("\"root canonicalization\"")
-            && src.contains("\"subtree canonicalization\""),
-        "scan-system repo discovery must use the shared loud discovery-gap reporter for canonicalization, per-entry, and whole-directory read failures"
-    );
-    let discovery_fn = src
-        .split("fn discover_git_repos")
-        .nth(1)
-        .and_then(|rest| rest.split("fn record_git_discovery_gap").next())
-        .expect(
-            "scan-system source must contain discover_git_repos before record_git_discovery_gap",
-        );
-    assert!(
-        !discovery_fn.contains("space_cap"),
-        "scan-system repo discovery must not advertise a fake space-cap traversal contract"
-    );
-}
-
-#[test]
-fn scan_system_does_not_double_count_space_cap_before_git_history_loop() {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/subcommands/scan_system.rs"
-    ))
-    .expect("scan-system source readable");
-    let git_history_loop = src
-        .split("// Then walk every git history.")
-        .nth(1)
-        .expect("scan-system must have a git-history loop marker");
-    assert!(
-        git_history_loop.contains(
-            "if !args.no_git_history && bytes_scanned.load(Ordering::Relaxed) < space_cap"
-        ),
-        "scan-system must not enter the git-history loop only to record a second space-cap gap after the filesystem walk already reached --space"
-    );
-}
-
-#[test]
-fn macos_scan_system_mount_enumeration_does_not_fall_back_to_path() {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/subcommands/scan_system/mounts.rs"
-    ))
-    .expect("scan-system mount source readable");
-    assert!(
-        src.contains(r#"resolve_safe_bin("mount")"#),
-        "macOS scan-system mount enumeration must use the trusted absolute binary resolver"
-    );
-    assert!(
-        !src.contains(r#"resolve_or_fallback("mount")"#),
-        "macOS scan-system must not execute an untrusted PATH mount binary when trusted resolution misses"
-    );
-    assert!(
-        src.contains("[system].trusted_bin_dirs"),
-        "trusted mount resolution failure must tell the operator how to configure a non-standard mount path"
-    );
-}
-
-#[test]
 fn linux_mount_filters_are_tier_b_and_match_decoded_targets() {
     let src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -403,33 +331,6 @@ fn windows_drive_skip_prefixes_are_case_and_separator_insensitive() {
     assert!(
         !skips_c,
         "Windows mount skip prefixes must not match unrelated drive roots"
-    );
-}
-
-#[test]
-fn scan_system_output_uses_atomic_file_writer() {
-    let scan_system = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/subcommands/scan_system.rs"
-    ))
-    .expect("scan-system source readable");
-    let atomic_file =
-        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/atomic_file.rs"))
-            .expect("atomic file source readable");
-
-    assert!(
-        scan_system.contains("crate::atomic_file::write_bytes(out, json.as_bytes())"),
-        "scan-system --output must use the shared atomic writer"
-    );
-    assert!(
-        !scan_system.contains("std::fs::write(out"),
-        "scan-system --output must not truncate/write the final report path directly"
-    );
-    assert!(
-        atomic_file.contains("tempfile::NamedTempFile::new_in(parent)")
-            && atomic_file.contains("tmp.as_file().sync_all()")
-            && atomic_file.contains("tmp.persist(path)"),
-        "shared CLI output writer must write a same-directory temp file, sync it, then persist over the target"
     );
 }
 

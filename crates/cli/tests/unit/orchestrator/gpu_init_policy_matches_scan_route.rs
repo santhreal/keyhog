@@ -287,7 +287,7 @@ fn autoroute_config_digest_includes_hot_path_instrumentation() {
 }
 
 #[test]
-fn canonical_calibration_shares_normal_identity_but_gpu_exclusion_is_isolated() {
+fn every_calibration_shape_shares_the_normal_scan_config_identity() {
     let mut normal = scan_args(&["scan", "--no-config", "--stdin"]);
     let normal_digest = API
         .autoroute_config_digest_for_args(&mut normal)
@@ -308,6 +308,20 @@ fn canonical_calibration_shares_normal_identity_but_gpu_exclusion_is_isolated() 
         "all-candidate calibration must persist under the normal scan identity it serves"
     );
 
+    // A calibration that deliberately excludes an eligible GPU is a different
+    // candidate census, and that difference is carried by the persisted HOST
+    // generation, not by this digest. `AutorouteHostProfile` records
+    // `eligible_backends` plus the full GPU device, runtime, driver and
+    // batch-limit identity, and a cache row only loads when the whole profile
+    // compares equal, so CPU-only evidence still cannot replay under a scan
+    // that admits a GPU. See
+    // `cpu_only_calibration_cannot_replay_under_a_gpu_admitting_scan`.
+    //
+    // Hashing it here as well was not redundant-but-harmless. On any host or
+    // build with no GPU candidate the exclusion is vacuous and the two host
+    // profiles are identical, so the digest was the only thing that differed
+    // and it differed on every run: calibration wrote decisions under a key no
+    // scan would ever request.
     let mut gpu_excluded = scan_args(&[
         "scan",
         "--no-config",
@@ -318,9 +332,9 @@ fn canonical_calibration_shares_normal_identity_but_gpu_exclusion_is_isolated() 
     let gpu_excluded_digest = API
         .autoroute_config_digest_for_args(&mut gpu_excluded)
         .expect("GPU-excluded calibration digest");
-    assert_ne!(
+    assert_eq!(
         gpu_excluded_digest, normal_digest,
-        "incomplete diagnostic calibration must not replace normal all-candidate evidence"
+        "a calibration must look up its own evidence under the normal scan identity"
     );
 
     let mut cpu_only_normal = scan_args(&["scan", "--no-config", "--stdin", "--no-gpu"]);

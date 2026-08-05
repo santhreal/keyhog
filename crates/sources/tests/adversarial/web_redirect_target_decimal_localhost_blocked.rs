@@ -1,6 +1,6 @@
 //! WebSource SSRF gate must block redirect-target link-local IP hosts.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 #[cfg(feature = "web")]
 #[test]
 fn web_redirect_target_decimal_localhost_blocked() {

@@ -3,7 +3,7 @@
 //! multi-platform children are not exported into the local archive.
 
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 #[cfg(feature = "docker")]
 fn docker_save_root() -> (tempfile::TempDir, std::path::PathBuf) {

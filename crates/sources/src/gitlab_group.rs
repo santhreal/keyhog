@@ -122,8 +122,8 @@ fn collect_group_chunks(
     respect_default_excludes: bool,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     validate_group_path(group)?;
-    let api_root = normalize_gitlab_api_root(endpoint)?;
-    let client = build_client(token, http)?;
+    let (api_root, screened) = normalize_gitlab_api_root(endpoint, http.allow_private_endpoint)?;
+    let client = build_client(token, http, screened.as_ref())?;
     // Group project enumeration is the acquisition boundary; cloning and
     // per-repo scans record inside `hosted_git::scan_hosted_repos`.
     let repos = {
@@ -150,7 +150,11 @@ fn collect_group_chunks(
     )
 }
 
-fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Client, SourceError> {
+fn build_client(
+    token: &str,
+    http: &crate::http::HttpClientConfig,
+    screened: Option<&crate::endpoint_screen::ScreenedEndpoint>,
+) -> Result<Client, SourceError> {
     validate_token(token)?;
     let mut headers = HeaderMap::new();
     headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
@@ -160,10 +164,11 @@ fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Cli
             .map_err(|e| SourceError::Other(format!("invalid GitLab private-token header: {e}")))?,
     );
 
-    crate::http::blocking_client_builder(http)
+    let builder = crate::http::blocking_client_builder(http)
         .map_err(SourceError::Other)?
         .default_headers(headers)
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::none());
+    crate::endpoint_screen::pin_screened_addrs(builder, screened, http.proxy.is_some())
         .build()
         .map_err(|e| SourceError::Other(format!("failed to build GitLab client: {e}")))
 }
@@ -226,14 +231,17 @@ fn list_projects(
     ))
 }
 
-fn normalize_gitlab_api_root(endpoint: &str) -> Result<reqwest::Url, SourceError> {
+fn normalize_gitlab_api_root(
+    endpoint: &str,
+    allow_private_endpoint: bool,
+) -> Result<(reqwest::Url, Option<crate::endpoint_screen::ScreenedEndpoint>), SourceError> {
     let trimmed = endpoint.trim_end_matches('/');
     let root = if trimmed.ends_with("/api/v4") {
         trimmed.to_string()
     } else {
         format!("{trimmed}/api/v4")
     };
-    hosted_git::validated_api_endpoint("gitlab", &root)
+    hosted_git::validated_api_endpoint("gitlab", &root, allow_private_endpoint)
 }
 
 pub(crate) fn validate_group_path(group: &str) -> Result<(), SourceError> {

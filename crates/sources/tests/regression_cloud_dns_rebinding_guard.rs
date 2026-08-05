@@ -30,7 +30,7 @@
 #![cfg(feature = "s3")]
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use keyhog_verifier::ssrf::is_private_ip_addr;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 

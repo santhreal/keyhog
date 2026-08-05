@@ -184,53 +184,9 @@ pub(crate) fn looks_like_word_separated_identifier(value: &str) -> bool {
     true
 }
 
-#[derive(serde::Deserialize)]
-struct ProseConnectors {
-    connectors: Vec<String>,
-}
+crate::tier_b_list::tier_b_vec!(PROSE_CONNECTORS, "prose-connectors.toml", connectors);
 
-fn parse_prose_connectors(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<ProseConnectors>(raw)
-        .map(|parsed| parsed.connectors)
-        .map_err(|error| error.to_string())
-}
-
-static PROSE_CONNECTORS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_prose_connectors(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/prose-connectors.toml"
-    ))) {
-        Ok(connectors) => connectors,
-        Err(error) => panic!(
-            "rules/prose-connectors.toml is invalid: {error}. \
-             Fix the bundled Tier-B prose connectors list."
-        ),
-    }
-});
-
-#[derive(serde::Deserialize)]
-struct RegexSigilSuffixes {
-    suffixes: Vec<String>,
-}
-
-fn parse_regex_sigil_suffixes(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<RegexSigilSuffixes>(raw)
-        .map(|parsed| parsed.suffixes)
-        .map_err(|error| error.to_string())
-}
-
-static REGEX_SIGIL_SUFFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_regex_sigil_suffixes(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/regex-sigil-suffixes.toml"
-    ))) {
-        Ok(suffixes) => suffixes,
-        Err(error) => panic!(
-            "rules/regex-sigil-suffixes.toml is invalid: {error}. \
-             Fix the bundled regex sigil suffixes list."
-        ),
-    }
-});
+crate::tier_b_list::tier_b_vec!(REGEX_SIGIL_SUFFIXES, "regex-sigil-suffixes.toml", suffixes);
 
 /// True when a hyphen-separated value is policy/config prose rather than an
 /// opaque token. This targets long train-case status strings such as

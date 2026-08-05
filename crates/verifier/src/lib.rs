@@ -2,6 +2,7 @@
 //! active by making HTTP requests to the service's API endpoint as specified in
 //! each detector's `[detector.verify]` configuration.
 
+#![doc = include_str!("../README.md")]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::type_complexity)]
 

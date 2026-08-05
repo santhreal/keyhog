@@ -183,6 +183,7 @@ pub(crate) fn record_skip_event(event: SourceSkipEvent) -> RecordedSkipEvent {
 }
 
 pub(crate) fn record_skip_events(event: SourceSkipEvent, delta: usize) -> RecordedSkipEvent {
+    await_recording_admission();
     let previous = event.counter().fetch_add(delta, Relaxed);
     RecordedSkipEvent {
         event,
@@ -415,19 +416,83 @@ pub(crate) fn acquire_scan_read_lease() -> ScanReadLease {
     }
 }
 
+// Depth of nested "this thread is doing work for a leased scan" markers.
+//
+// The gate serializes SCANS, but a counter increment is what a test observes,
+// and not every increment comes from a thread the gate knows about: the
+// filesystem reader crew records from its own threads, and a thread whose scan
+// has ended can still be mid-`process_entry`. This marker is what lets
+// `record_skip_events` tell "I belong to an admitted scan" from "I am an
+// unattributed leftover", without plumbing a token through forty call sites.
+thread_local! {
+    static SCAN_THREAD_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Marks the current thread as doing work for an admitted scan. Not `Send`:
+/// the depth it decrements is the depth its constructor incremented.
+pub(crate) struct AttributedScanWork {
+    _not_send: std::marker::PhantomData<*const ()>,
+}
+
+impl Drop for AttributedScanWork {
+    fn drop(&mut self) {
+        SCAN_THREAD_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+    }
+}
+
+impl ScanReadLease {
+    /// Attribute the current thread's work to this scan for the guard's
+    /// lifetime. Every thread that records skip events for a scan must hold
+    /// one, including reader-pool threads.
+    pub(crate) fn enter(&self) -> AttributedScanWork {
+        SCAN_THREAD_DEPTH.with(|depth| depth.set(depth.get() + 1));
+        AttributedScanWork {
+            _not_send: std::marker::PhantomData,
+        }
+    }
+}
+
+/// Block an unattributed recorder until no other thread holds the exclusive
+/// scope.
+///
+/// Threads inside an admitted scan pass straight through: the gate already
+/// serialized their scan against every exclusive scope, so a lock here would be
+/// pure overhead and, for the scope owner's own scan, a deadlock. Everyone else
+/// is either a leftover from a finished scan or a direct caller outside any
+/// scan, and their increment must not land inside a counter-asserting test's
+/// window. The event is delayed, never dropped: a coverage gap that is not
+/// recorded is a false clean. A no-op in production, where no scope is ever
+/// taken and the fast path is one thread-local read.
+fn await_recording_admission() {
+    if SCAN_THREAD_DEPTH.with(std::cell::Cell::get) > 0 {
+        return;
+    }
+    let me = std::thread::current().id();
+    let mut state = SCAN_GATE.lock();
+    while state.exclusive_owner.is_some_and(|owner| owner != me) {
+        state = SCAN_GATE
+            .changed
+            .wait(state)
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+    }
+}
+
 pub(crate) fn scan_gate_exclusive_available_for_test() -> bool {
     let state = SCAN_GATE.lock();
     state.exclusive_owner.is_none() && state.active_scans == 0
 }
 
 struct LeasedScanIter<'a, T> {
-    _lease: ScanReadLease,
+    lease: ScanReadLease,
     inner: Box<dyn Iterator<Item = T> + 'a>,
 }
 
 impl<T> Iterator for LeasedScanIter<'_, T> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
+        // Lazy sources record while the consumer pulls, so each pull runs
+        // attributed to this scan.
+        let _attributed = self.lease.enter();
         self.inner.next()
     }
 }
@@ -439,10 +504,7 @@ pub(crate) fn attach_scan_lease<'a, T: 'a>(
     lease: ScanReadLease,
     inner: Box<dyn Iterator<Item = T> + 'a>,
 ) -> Box<dyn Iterator<Item = T> + 'a> {
-    Box::new(LeasedScanIter {
-        _lease: lease,
-        inner,
-    })
+    Box::new(LeasedScanIter { lease, inner })
 }
 
 /// Acquire a lease, run an (often eager) iterator builder under it, then keep
@@ -453,7 +515,10 @@ pub(crate) fn gate_scan<'a, T: 'a>(
     build: impl FnOnce() -> Box<dyn Iterator<Item = T> + 'a>,
 ) -> Box<dyn Iterator<Item = T> + 'a> {
     let lease = acquire_scan_read_lease();
-    let inner = build();
+    let inner = {
+        let _attributed = lease.enter();
+        build()
+    };
     attach_scan_lease(lease, inner)
 }
 

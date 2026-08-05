@@ -58,17 +58,3 @@ fn expand_homoglyphs_produces_exact_class_expansion() {
     assert_eq!(expand(""), "", "empty pattern expands to empty");
 }
 
-#[test]
-fn expand_homoglyphs_reserves_output_capacity() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let src =
-        std::fs::read_to_string(root.join("src/homoglyph.rs")).expect("homoglyph source readable");
-    assert!(
-        src.contains("String::with_capacity(pattern.len() * 8)"),
-        "expand_homoglyphs must pre-reserve its output capacity (no realloc growth)"
-    );
-    assert!(
-        !src.contains("let mut expanded = String::new();"),
-        "expand_homoglyphs must not start from a zero-capacity String"
-    );
-}

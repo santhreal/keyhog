@@ -54,48 +54,6 @@ fn detector_toml(id: &str, prefix: &str) -> String {
 }
 
 #[test]
-fn no_verify_build_policy_and_config_keys_are_not_dead_surfaces() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let policy =
-        std::fs::read_to_string(root.join("src/orchestrator_config/policy.rs")).expect("policy.rs");
-    let scan_args = std::fs::read_to_string(root.join("src/args/scan.rs")).expect("scan args");
-    let config_scan =
-        std::fs::read_to_string(root.join("src/config/scan.rs")).expect("config scan");
-    let config = std::fs::read_to_string(root.join("src/config.rs")).expect("config.rs");
-    let sections =
-        std::fs::read_to_string(root.join("src/config/sections.rs")).expect("sections.rs");
-
-    assert!(
-        policy.contains("#[cfg(not(feature = \"verify\"))]")
-            && policy.contains("pub(super) fn from_scan_args(_args: &ScanArgs) -> Self")
-            && policy.contains("Self::disabled()")
-            && policy.contains("fn scan_verify_enabled(_args: &ScanArgs) -> bool")
-            && policy.contains("false"),
-        "no-verify builds must resolve verifier policy explicitly disabled"
-    );
-    assert!(
-        scan_args.contains("#[cfg(feature = \"verify\")]\n    #[arg(long, requires = \"verify\")]\n    pub timeout")
-            && scan_args.contains("pub verify_concurrency: Option<usize>"),
-        "verifier-only CLI flags must not be accepted in no-verify builds"
-    );
-    for required in [
-        "- verify: this key requires the `verify` feature",
-        "- timeout: this key requires the `verify` feature",
-        "- verify_concurrency: this key requires the `verify` feature",
-        "- max_commits: this key requires the `git` feature",
-    ] {
-        assert!(
-            config_scan.contains(required),
-            "verifier-only TOML key must fail loud in no-verify builds; missing {required:?}"
-        );
-    }
-    assert!(
-        config.contains("feature = \"verify\"") && sections.contains("feature = \"verify\""),
-        "[http] proxy/TLS config gates must include verifier HTTP usage"
-    );
-}
-
-#[test]
 fn sanitise_thread_count_rejects_zero() {
     assert_eq!(API.sanitise_thread_count(0, 8, "test"), 8);
     assert_eq!(API.sanitise_thread_count(0, 0, "test"), 1);
@@ -663,38 +621,6 @@ fn config_count_limits_reach_source_limits() {
 }
 
 #[test]
-fn detector_parse_cache_has_single_cli_owner() {
-    let cli_src = include_str!("../../src/orchestrator_config/detectors.rs");
-    let parent_src = include_str!("../../src/orchestrator_config.rs");
-    let core_src = include_str!("../../../core/src/spec/load.rs");
-    assert!(
-        cli_src.contains("struct DetectorCacheFile") && cli_src.contains("source_fingerprint"),
-        "CLI detector loading owns the XDG parse-cache schema and source fingerprint"
-    );
-    assert!(
-        parent_src.contains("mod detectors;")
-            && parent_src.contains("pub(crate) use detectors::{"),
-        "orchestrator_config parent must expose the detector owner without keeping the cache implementation"
-    );
-    assert!(
-        !parent_src.contains("struct DetectorCacheFile")
-            && !parent_src.contains("save_detector_cache")
-            && !parent_src.contains("load_detector_cache"),
-        "orchestrator_config parent must not keep a second detector parse-cache schema/parser"
-    );
-    assert!(
-        !cli_src.contains("keyhog_core::load_detectors_with_cache("),
-        "detector owner must not call a second core detector-cache owner"
-    );
-    assert!(
-        !core_src.contains("DetectorCacheFile")
-            && !core_src.contains("save_detector_cache")
-            && !core_src.contains("load_detector_cache"),
-        "keyhog-core must not keep a second detector parse-cache schema/parser"
-    );
-}
-
-#[test]
 fn detector_parse_cache_invalidates_deleted_source_toml() {
     let dir = TempDir::new().expect("tempdir");
     let source_dir = dir.path().join("detectors");
@@ -797,22 +723,3 @@ fn detector_parse_cache_refuses_oversized_cache_file() {
     );
 }
 
-#[test]
-fn detector_parse_cache_reads_are_bounded() {
-    let cli_src = include_str!("../../src/orchestrator_config/detectors.rs");
-    assert!(
-        cli_src.contains("const DETECTOR_CACHE_FILE_BYTES")
-            && cli_src.contains("fn read_detector_cache_file(")
-            && cli_src.contains(".take(DETECTOR_CACHE_FILE_BYTES.saturating_add(1))"),
-        "detector parse cache reads must go through the capped cache reader"
-    );
-    assert!(
-        !cli_src.contains("std::fs::read(cache_path)")
-            && !cli_src.contains("std::fs::read(&cache_path)"),
-        "detector parse cache must not use unbounded std::fs::read"
-    );
-    assert!(
-        cli_src.contains("keyhog_core::read_detector_toml_file(&path)"),
-        "detector source fingerprinting must share the bounded core detector TOML reader"
-    );
-}

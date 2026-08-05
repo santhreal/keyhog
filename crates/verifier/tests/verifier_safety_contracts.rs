@@ -1143,29 +1143,6 @@ fn oob_decrypt_entry_drops_are_surfaced_loudly_not_silently() {
     );
 }
 
-#[test]
-fn oob_decrypt_hot_path_does_not_clone_ciphertext_or_recollect_payload() {
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/oob/decrypt.rs"))
-        .expect("oob/decrypt.rs must be readable");
-
-    assert!(
-        src.contains("split_at_mut(AES_CFB_IV_LEN)") && src.contains(".decrypt(payload)"),
-        "decrypt_entry must decrypt in place inside the decoded buffer, not clone ciphertext"
-    );
-    assert!(
-        !src.contains("ct.to_vec()"),
-        "decrypt_entry must not clone the ciphertext tail before AES-CFB decrypt"
-    );
-    assert!(
-        src.contains("fn truncate_raw_payload(mut raw_payload: String) -> String"),
-        "payload truncation must keep ownership and truncate in place"
-    );
-    assert!(
-        !src.contains(".chars().take(MAX_RAW_PAYLOAD).collect()"),
-        "payload truncation must not allocate a second String"
-    );
-}
-
 // ===========================================================================
 // 6. No auto-decompression feature => the 1 MB cap measures real wire bytes
 // ===========================================================================

@@ -1,7 +1,7 @@
 #![cfg(feature = "web")]
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 use keyhog_sources::{
     create_source_with_http_config_and_limits, http::HttpClientConfig, skip_counts, SourceLimits,
     WebSource,

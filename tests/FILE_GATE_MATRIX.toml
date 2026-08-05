@@ -1629,6 +1629,9 @@ path = "crates/sources/src/capped_read.rs"
 path = "crates/sources/src/compression_limits.rs"
 
 [[module]]
+path = "crates/sources/src/endpoint_screen.rs"
+
+[[module]]
 path = "crates/sources/src/cloud/mod.rs"
 
 [[module]]

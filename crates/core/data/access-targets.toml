@@ -1,0 +1,306 @@
+# Tier-B data: access-target ("door") extraction policy.
+#
+# A finding answers "there is a credential here". A responder's next question is
+# "what does it open". `keyhog scan --access-targets` answers that second
+# question and publishes the answers as a separate `access_targets` section. It
+# never adds, drops, reorders, or edits a finding, so this file can only change
+# that section of a report.
+#
+# Five target kinds, from broadest blast radius to narrowest:
+#
+#   account    A billing/ownership boundary. An AWS account id, an Azure storage
+#              account. Everything inside it is potentially reachable.
+#   tenant     An identity or organization boundary inside a provider. A Slack
+#              workspace, an Okta org, an Atlassian site, a GCP project.
+#   endpoint   A network address the credential authenticates to. A database
+#              host and port, an API base URL, a regional service endpoint.
+#   database   A named logical database or schema inside an endpoint.
+#   resource   A concrete addressable object. An S3 bucket, an ARN, a git
+#              repository, a Firebase instance.
+#
+# Every rule below is DATA. There is no provider match arm in
+# `crates/core/src/access_target.rs`; adding a provider is an edit to this file
+# reviewable in one diff, exactly like the detector corpus.
+#
+# Redaction contract. A rule may only capture a value that is an ADDRESS, never
+# an authenticator. Connection-string rules therefore skip userinfo with a
+# NON-capturing `(?:[^\s@/"'<>]*@)?` group so a password can never land in a
+# capture. On top of that the extractor rejects, unconditionally, any candidate
+# value whose SHA-256 equals a credential digest in the same report, and applies
+# the per-rule `redact` policy before the value reaches an artifact:
+#
+#   redact = "none"   emit verbatim (hostnames, bucket names, account ids)
+#   redact = "tail"   emit `...` + the last `redact_keep` characters
+#   redact = "hash"   emit `sha256:` + the first 16 hex characters of the digest
+#
+# Evidence never contains document text. It carries the rule id, the line, the
+# 1-based column, the span length in bytes, and the line distance to the
+# finding, which is enough to audit a pairing without echoing the file body.
+#
+# Regex dialect is the Rust `regex` crate: no look-around, no backreferences.
+# Rules are applied in file order and each rule contributes at most
+# `max_matches_per_rule` targets per file, so a pathological file cannot make
+# one rule dominate the budget.
+
+[settings]
+# Largest prefix of a single file the index will read, in bytes. A file longer
+# than this is still indexed over its prefix and is reported as `truncated` in
+# the coverage section, never silently treated as fully analyzed.
+max_file_bytes = 1048576
+
+# Total bytes the whole association pass may read across all files. Reaching it
+# stops indexing and every remaining finding is reported as `budget_exhausted`.
+# This is what bounds the pass: cost is O(indexed bytes), not O(findings^2).
+max_total_bytes = 268435456
+
+# Largest number of targets attached to one finding, after ranking by line
+# distance then confidence.
+max_targets_per_finding = 8
+
+# Largest number of matches one rule may contribute from one file.
+max_matches_per_rule = 64
+
+# Targets scoring below this after relation weighting are dropped.
+min_confidence = 0.35
+
+# Multiplier applied once per `decay_line_step` lines of distance between the
+# finding and a same-file target, capped at `decay_max_steps` applications.
+same_file_decay = 0.85
+decay_line_step = 25
+decay_max_steps = 4
+
+# Confidence for a target decoded from the credential itself (for example the
+# AWS account id recovered offline from an `AKIA` key). This is the only
+# relation that needs no file context and cannot be a coincidence of proximity.
+decoded_confidence = 0.99
+
+# Metadata keys promoted to targets, with the kind they map to. A finding whose
+# `metadata` carries the key gets a `decoded` target with no file read at all.
+[[metadata]]
+key = "account_id"
+kind = "account"
+service = "aws"
+label = "AWS account"
+
+# --- connection strings -----------------------------------------------------
+
+[[rule]]
+id = "database-uri-endpoint"
+kind = "endpoint"
+label = "database host"
+# Group 1 is host[:port]. Userinfo is skipped by a non-capturing group so the
+# password half of a connection string can never be captured.
+pattern = '''(?i)\b(?:postgres|postgresql|mysql|mariadb|mongodb|mongodb\+srv|redis|rediss|amqp|amqps|mssql|sqlserver|clickhouse|cassandra|couchbase|elasticsearch)://(?:[^\s@/"'<>]*@)?([A-Za-z0-9._-]+(?::[0-9]{1,5})?)'''
+group = 1
+confidence = 0.95
+redact = "none"
+
+[[rule]]
+id = "database-uri-name"
+kind = "database"
+label = "database name"
+# Group 1 is the first path segment after the host: the logical database.
+pattern = '''(?i)\b(?:postgres|postgresql|mysql|mariadb|mongodb|mongodb\+srv|mssql|sqlserver|clickhouse)://(?:[^\s@/"'<>]*@)?[A-Za-z0-9._-]+(?::[0-9]{1,5})?/([A-Za-z0-9._-]+)'''
+group = 1
+confidence = 0.9
+redact = "none"
+
+[[rule]]
+id = "jdbc-endpoint"
+kind = "endpoint"
+label = "JDBC host"
+pattern = '''(?i)\bjdbc:[a-z0-9]+://([A-Za-z0-9._-]+(?::[0-9]{1,5})?)'''
+group = 1
+confidence = 0.92
+redact = "none"
+
+# --- amazon web services ----------------------------------------------------
+
+[[rule]]
+id = "aws-s3-uri-bucket"
+kind = "resource"
+label = "S3 bucket"
+service = "aws"
+pattern = '''\bs3://([a-z0-9][a-z0-9.-]{2,62})'''
+group = 1
+confidence = 0.95
+redact = "none"
+
+[[rule]]
+id = "aws-s3-host-bucket"
+kind = "resource"
+label = "S3 bucket"
+service = "aws"
+pattern = '''\b([a-z0-9][a-z0-9.-]{2,62})\.s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com'''
+group = 1
+confidence = 0.9
+redact = "none"
+
+[[rule]]
+id = "aws-arn"
+kind = "resource"
+label = "AWS ARN"
+service = "aws"
+pattern = '''\b(arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:[0-9]{0,12}:[^\s"'<>,]+)'''
+group = 1
+confidence = 0.97
+redact = "none"
+
+[[rule]]
+id = "aws-service-endpoint"
+kind = "endpoint"
+label = "AWS service endpoint"
+service = "aws"
+pattern = '''\b([a-z0-9][a-z0-9.-]*\.(?:[a-z]{2}-[a-z]+-[0-9]\.)?amazonaws\.com)'''
+group = 1
+confidence = 0.85
+redact = "none"
+
+# --- microsoft azure --------------------------------------------------------
+
+[[rule]]
+id = "azure-storage-account"
+kind = "account"
+label = "Azure storage account"
+service = "azure"
+pattern = '''\b([a-z0-9]{3,24})\.(?:blob|queue|table|file|dfs)\.core\.windows\.net'''
+group = 1
+confidence = 0.95
+redact = "none"
+
+[[rule]]
+id = "azure-sql-server"
+kind = "endpoint"
+label = "Azure SQL server"
+service = "azure"
+pattern = '''\b([a-z0-9-]{1,63}\.database\.windows\.net)'''
+group = 1
+confidence = 0.95
+redact = "none"
+
+[[rule]]
+id = "azure-tenant-domain"
+kind = "tenant"
+label = "Entra ID tenant"
+service = "azure"
+pattern = '''\b([a-z0-9-]{1,63}\.onmicrosoft\.com)'''
+group = 1
+confidence = 0.95
+redact = "none"
+
+# --- google cloud -----------------------------------------------------------
+
+[[rule]]
+id = "gcp-project-id"
+kind = "tenant"
+label = "GCP project"
+service = "gcp"
+pattern = '''"project_id"\s*:\s*"([a-z][a-z0-9-]{4,28}[a-z0-9])"'''
+group = 1
+confidence = 0.97
+redact = "none"
+
+[[rule]]
+id = "gcp-storage-bucket"
+kind = "resource"
+label = "GCS bucket"
+service = "gcp"
+pattern = '''\bgs://([a-z0-9][a-z0-9._-]{2,62})'''
+group = 1
+confidence = 0.95
+redact = "none"
+
+[[rule]]
+id = "firebase-instance"
+kind = "resource"
+label = "Firebase instance"
+service = "firebase"
+pattern = '''\b([a-z0-9-]{3,63})\.firebaseio\.com'''
+group = 1
+confidence = 0.95
+redact = "none"
+
+# --- saas tenants -----------------------------------------------------------
+
+[[rule]]
+id = "slack-workspace"
+kind = "tenant"
+label = "Slack workspace"
+service = "slack"
+pattern = '''hooks\.slack\.com/services/(T[A-Z0-9]{6,20})'''
+group = 1
+confidence = 0.95
+redact = "none"
+
+[[rule]]
+id = "slack-webhook-channel"
+kind = "resource"
+label = "Slack webhook channel"
+service = "slack"
+pattern = '''hooks\.slack\.com/services/T[A-Z0-9]{6,20}/(B[A-Z0-9]{6,20})'''
+group = 1
+confidence = 0.9
+redact = "none"
+
+[[rule]]
+id = "okta-org"
+kind = "tenant"
+label = "Okta org"
+service = "okta"
+pattern = '''\b([a-z0-9-]{1,40}\.okta(?:preview)?\.com)'''
+group = 1
+confidence = 0.95
+redact = "none"
+
+[[rule]]
+id = "atlassian-site"
+kind = "tenant"
+label = "Atlassian site"
+service = "atlassian"
+pattern = '''\b([a-z0-9-]{1,40})\.atlassian\.net'''
+group = 1
+confidence = 0.95
+redact = "none"
+
+[[rule]]
+id = "shopify-store"
+kind = "tenant"
+label = "Shopify store"
+service = "shopify"
+pattern = '''\b([a-z0-9-]{1,60})\.myshopify\.com'''
+group = 1
+confidence = 0.95
+redact = "none"
+
+[[rule]]
+id = "supabase-project"
+kind = "tenant"
+label = "Supabase project"
+service = "supabase"
+pattern = '''\b([a-z]{20})\.supabase\.co'''
+group = 1
+confidence = 0.95
+redact = "none"
+
+[[rule]]
+id = "git-repository"
+kind = "resource"
+label = "git repository"
+pattern = '''(?i)\b(?:github\.com|gitlab\.com|bitbucket\.org)[:/]([A-Za-z0-9][A-Za-z0-9._-]{0,38}/[A-Za-z0-9][A-Za-z0-9._-]{0,99})'''
+group = 1
+confidence = 0.8
+redact = "none"
+
+# --- generic ----------------------------------------------------------------
+
+# Last, and lowest confidence: an explicitly named base URL or endpoint. This is
+# the only rule that fires on an arbitrary vendor, so it must stay below the
+# named rules in both file order and score.
+[[rule]]
+id = "declared-api-endpoint"
+kind = "endpoint"
+label = "declared API endpoint"
+pattern = '''(?i)\b(?:api[_-]?url|base[_-]?url|endpoint[_-]?url|service[_-]?url|host[_-]?url|api[_-]?base|endpoint)\s*[:=]\s*["']?(https?://[A-Za-z0-9._-]+(?::[0-9]{1,5})?)'''
+group = 1
+confidence = 0.6
+redact = "none"

@@ -1,6 +1,6 @@
 #![cfg(feature = "binary")]
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 #[test]
 fn ghidra_literal_minimum_length_is_inclusive() {

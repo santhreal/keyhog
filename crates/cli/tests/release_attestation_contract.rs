@@ -82,9 +82,20 @@ fn install_docs_match_the_crates_only_release_surface() {
     let workflow = release_workflow();
     let docs = fs::read_to_string(root().join("docs/src/install.md")).expect("read install docs");
 
+    // The pinned-install example is derived, never spelled out. `keyhog` takes
+    // `version.workspace = true`, so `CARGO_PKG_VERSION` is the workspace
+    // version at compile time. Hardcoding it drifted: the literal said 0.5.50
+    // while `prepare_release` had advanced the doc to 0.5.68, so this contract
+    // could not be satisfied and the gate failed on a tree whose docs were
+    // correct. A release gate that goes red because the release happened is
+    // worse than no gate, because the next person deletes it.
+    let pinned_install = format!(
+        "cargo install --locked --version '={}' keyhog",
+        env!("CARGO_PKG_VERSION")
+    );
     for contract in [
         "cargo install --locked keyhog",
-        "cargo install --locked --version '=0.5.50' keyhog",
+        pinned_install.as_str(),
         "Every successful `main` CI run publishes the next patch version.",
         "does\nnot publish binary release assets or installer bundles.",
     ] {

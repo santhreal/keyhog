@@ -25,7 +25,7 @@ containers, cloud storage, browser assets, collaboration content, and running
 systems.**
 
 Most secret scanners stop at CPU regex matches in a repository checkout.
-KeyHog combines **923 service-specific detectors**, decode-through for concealed
+KeyHog combines **925 service-specific detectors**, decode-through for concealed
 credentials, context-aware confidence and suppression, live provider
 verification, and first-class **CUDA, Metal, and WGPU execution through
 [Vyre](https://github.com/santhreal/vyre)**. Calibration measures every eligible
@@ -218,7 +218,7 @@ the relevant boundaries below as separate jobs and retains each
 | GitHub pull-request gate | `santhreal/keyhog@v0` | The Action installs, scans, publishes SARIF and an artifact, then preserves KeyHog's status. | One checked-out path. Use provider inventory scanning for an organization. |
 | GitLab, Jenkins, Buildkite, or shell CI | `keyhog scan . --format json-envelope --output keyhog.json` | Persist the report and exit code on success, findings, and errors. Use `--git-diff <base>` only for an explicitly narrower changed-line gate. | The bytes present in the checkout, or the selected diff. |
 | Adopt a repository with known findings | Create `.keyhog-baseline.json`, commit it, then scan with `--baseline .keyhog-baseline.json`. | Existing identities remain visible in the baseline while only new findings fail the gate. | A baseline does not suppress changed credentials or incomplete coverage. |
-| Recursive Git recovery | `keyhog scan --deep --git-history . --git-blobs . --daemon=off` | Calibrate the deep policy once per worker class. Run in process. | Reachable additions and blobs in one repository. It does not scan deleted unreachable objects or other repositories. |
+| Recursive Git recovery | `keyhog scan --deep --git-history . --git-blobs . --daemon=off` | Calibrate the deep policy once per worker class. Run in process. | One repository. `--git-history` covers only the current checkout's ancestry, so a branch you never checked out is missed with no coverage gap; `--git-blobs` also reaches dangling blobs, amended-away commits, stashes, notes, annotated tag messages, and packed refs. |
 | Container or archive inspection | `keyhog scan --docker-image registry/app:v1` or `keyhog scan incoming/` | Keep an envelope report so skipped, corrupt, encrypted, unsafe, or oversized members remain visible. | Only the selected image or filesystem path and supported nested formats. |
 | URL, response, or HAR inspection | `keyhog scan --url https://api.example.com/config` or `keyhog scan capture.har` | Use bounded source limits and preserve the terminal envelope. | Only fetched responses or capture entries. This is not a crawler. |
 | Organization or cloud inventory | `keyhog scan --daemon=off --github-org acme --format json-envelope --output acme.json` | Partition by provider, owner, or bucket. Run independent partitions concurrently with one report and status each. | One selected provider inventory per job. Pagination or object limits remain coverage boundaries. |
@@ -236,7 +236,7 @@ status for each inventory partition.
 | Several local roots | `keyhog scan services/api services/web deploy/` |
 | Continuously changed files | `keyhog watch services/api deploy/` |
 | Staged bytes, changed lines, reachable history, or blobs | `keyhog scan --git-staged`, `--git-diff main`, `--git-history .`, or `--git-blobs .` |
-| Native binaries and firmware strings | `keyhog scan --binary firmware.bin` |
+| Native binaries and firmware strings | `keyhog scan --binary firmware.bin` (a plain directory scan skips binaries and still exits `0`) |
 | Archives and compressed sources | `keyhog scan incoming/` (supported members expand automatically) |
 | Docker image layers | `keyhog scan --docker-image registry/app:v1` |
 | JavaScript, source maps, WASM, or an endpoint response | `keyhog scan --url https://api.example.com/config` |
@@ -244,7 +244,14 @@ status for each inventory partition.
 | GitHub issues, pull requests, discussions, wikis, and gists | `keyhog scan --github-collaboration owner/repo --github-all` |
 | GitHub, GitLab, or Bitbucket inventories | `--github-org ORG`, `--gitlab-group GROUP`, or `--bitbucket-workspace WORKSPACE` |
 | S3, GCS, or Azure Blob inventories | `--s3-bucket BUCKET`, `--gcs-bucket BUCKET`, or `--azure-container-url URL` |
-| A bounded stream from another tool | `producer | keyhog scan --stdin` |
+| A bounded stream from another tool | `producer \| keyhog scan --stdin` (use `set -o pipefail` so a failed producer surfaces its own error, not a zero-byte scan) |
+
+A plain directory scan does not read native binaries. Each one becomes a
+`binary (extension or content sniff)` coverage gap, the scan still exits `0`,
+and `--no-default-excludes` does not change it, so pass `--binary` when
+compiled artifacts are in scope. That flag needs a build with the `binary`
+feature, which the default crates.io install has and the lean `ci` feature does
+not.
 
 Native binary extraction reports complete credentials that satisfy a named
 detector's explicit shape contract. It suppresses short prefix fragments and
@@ -495,7 +502,7 @@ contracts.
 
 ## How KeyHog works
 
-KeyHog compiles its 923 detectors into a shared trigger/extraction plan,
+KeyHog compiles its 925 detectors into a shared trigger/extraction plan,
 uses Hyperscan when that feature is present, decodes nested encodings before
 matching, and can apply explicit per-detector Bayesian Beta(α,β) confidence
 calibration. Hardware acceleration is an explicit backend selection layer;
@@ -571,7 +578,7 @@ dependencies.
 
 ## What it catches
 
-923 embedded detectors with detector-owned offline validation and companions:
+925 embedded detectors with detector-owned offline validation and companions:
 
 - **Cloud providers:** AWS (access key + secret + STS verification),
   Azure (subscription key, storage account key, SAS), GCP (service account,

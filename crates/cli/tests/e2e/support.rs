@@ -221,6 +221,17 @@ impl DaemonGuard {
     pub fn runtime_dir(&self) -> &Path {
         self.runtime.path()
     }
+
+    /// The Unix socket this daemon is bound to.
+    pub fn socket(&self) -> std::path::PathBuf {
+        self.runtime.path().join("keyhog.sock")
+    }
+
+    /// `None` while the daemon is still running, otherwise its exit status.
+    /// Tests that abuse the wire use this to prove the process survived.
+    pub fn exited(&mut self) -> Option<std::process::ExitStatus> {
+        self.child.try_wait().expect("poll daemon liveness")
+    }
 }
 
 #[cfg(unix)]

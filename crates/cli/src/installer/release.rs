@@ -203,6 +203,38 @@ pub(crate) fn is_newer(current: &str, latest: &str) -> bool {
     }
 }
 
+/// Where the running build sits relative to the newest tag the GitHub
+/// binary-asset channel offers.
+///
+/// This channel is not the canonical release channel. Automatic releases
+/// publish crates.io packages only, so the newest published asset can be many
+/// versions behind the newest published KeyHog. Collapsing that state into
+/// "already on the latest release" reported a stale install as current and
+/// gave a `--check` caller a clean answer the channel could not actually
+/// support (Law 10).
+pub(crate) enum ReleaseChannelState {
+    /// The channel offers a strictly newer tag than the running build.
+    UpdateAvailable,
+    /// The channel's newest tag is exactly the running build.
+    OnNewestAsset,
+    /// The running build is newer than anything the channel has published, so
+    /// the channel cannot answer whether a newer KeyHog exists.
+    ChannelBehind,
+}
+
+/// Classify `latest` (a resolved release tag) against the running `current`
+/// version. Unparseable input classifies as [`ReleaseChannelState::OnNewestAsset`]
+/// so a garbage tag never authorizes an install, matching [`is_newer`].
+pub(crate) fn classify_channel(current: &str, latest: &str) -> ReleaseChannelState {
+    if is_newer(current, latest) {
+        return ReleaseChannelState::UpdateAvailable;
+    }
+    if is_newer(latest, current) {
+        return ReleaseChannelState::ChannelBehind;
+    }
+    ReleaseChannelState::OnNewestAsset
+}
+
 /// Cheap guard against installing a non-executable (404 HTML page, truncated
 /// download): check the platform's executable magic bytes.
 pub(crate) fn looks_like_native_executable(bytes: &[u8]) -> bool {

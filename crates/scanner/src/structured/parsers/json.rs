@@ -457,47 +457,22 @@ fn extract_jupyter_outputs(
     }
 }
 
-/// Jupyter `output.data` MIME keys whose payload is human-readable TEXT (a
-/// string, or an array of string fragments to be joined) and can therefore carry
-/// a pasted or rendered secret: a token embedded in an HTML widget's URL, an API
-/// response shown as `application/json`, a credential in an inline
-/// `application/javascript` snippet, an `xlink:href` inside an `image/svg+xml`,
-/// etc. `text/plain` is the common case; the richer renderings are precisely
-/// where a display-only secret hides from a plain-text scan of the raw notebook
-/// (JSON string-array fragmentation breaks the token). Binary MIME payloads
-/// (`image/png`, `image/jpeg`, …) are base64 blobs handled by the decode-through
-/// pipeline, not here, so they are deliberately excluded.
-#[derive(serde::Deserialize)]
-struct JupyterMimeTypes {
-    mime_types: Vec<String>,
-}
-
-/// Parse the bundled Tier-B jupyter-mime-type list. Returns an error rather than
-/// panicking so the static owner below is the single fail-closed site (the
-/// `no_unwrap_expect` gate bans `expect` in production source).
-fn parse_jupyter_mime_types(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<JupyterMimeTypes>(raw)
-        .map(|parsed| parsed.mime_types)
-        .map_err(|error| error.to_string())
-}
-
-static JUPYTER_TEXT_OUTPUT_MIME_TYPES: std::sync::LazyLock<Vec<String>> =
-    std::sync::LazyLock::new(|| {
-        // `include_str!` embeds the file at compile time; attacker-controlled input
-        // cannot reach this parse. A panic here indicates a build-time defect in the
-        // bundled `rules/jupyter-mime-types.toml`, not a runtime hostile-input risk
-        // fail-closed (Law 10), naming the file so the build owner knows what to fix.
-        match parse_jupyter_mime_types(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/rules/jupyter-mime-types.toml"
-        ))) {
-            Ok(mime_types) => mime_types,
-            Err(error) => panic!(
-                "rules/jupyter-mime-types.toml is invalid: {error}. \
-                 Fix the bundled Tier-B metadata file list."
-            ),
-        }
-    });
+crate::tier_b_list::tier_b_vec!(
+    /// Jupyter `output.data` MIME keys whose payload is human-readable TEXT (a
+    /// string, or an array of string fragments to be joined) and can therefore
+    /// carry a pasted or rendered secret: a token embedded in an HTML widget's
+    /// URL, an API response shown as `application/json`, a credential in an
+    /// inline `application/javascript` snippet, an `xlink:href` inside an
+    /// `image/svg+xml`, etc. `text/plain` is the common case; the richer
+    /// renderings are precisely where a display-only secret hides from a
+    /// plain-text scan of the raw notebook (JSON string-array fragmentation
+    /// breaks the token). Binary MIME payloads (`image/png`, `image/jpeg`, …)
+    /// are base64 blobs handled by the decode-through pipeline, not here, so
+    /// they are deliberately excluded.
+    JUPYTER_TEXT_OUTPUT_MIME_TYPES,
+    "jupyter-mime-types.toml",
+    mime_types
+);
 
 fn extract_jupyter_output(
     output: &serde_json::Value,

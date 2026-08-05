@@ -1,6 +1,6 @@
 //! Contract for the GitHub-org source's rate-limit backoff + pagination owners
 //! (`rate_limit_backoff_secs`, `MAX_BACKOFF_SECS`, `REPOS_PER_PAGE`), reached via
-//! the `SourceTestApi` facade. Migrated out of an inline `#[cfg(test)]` block in
+//! the `TestApi` facade. Migrated out of an inline `#[cfg(test)]` block in
 //! `src/github_org.rs` to satisfy the sources folder contract
 //! (`github_org_no_inline_tests`).
 //!
@@ -10,7 +10,7 @@
 //! `REPOS_PER_PAGE` (100, GitHub's documented max) is the single owner the
 //! list-repos query and the last-page check both read.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::testing::{TestApi};
 
 #[test]
 fn hostile_retry_after_is_clamped_to_the_ceiling() {

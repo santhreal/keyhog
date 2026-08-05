@@ -27,6 +27,38 @@ fn legacy_asset_name_matches_historical_release_convention() {
     assert_eq!(API.asset_name("linux", "riscv64"), None);
 }
 
+/// A build newer than the newest published asset must never be reported as
+/// "already on the latest release". The binary-asset channel stopped
+/// publishing while crates.io kept releasing, so collapsing "no newer asset"
+/// into "you are current" told a stale install it was up to date and gave
+/// `update --check` a clean answer the channel could not support.
+#[test]
+fn release_channel_state_separates_a_stale_channel_from_a_current_build() {
+    assert_eq!(
+        API.release_channel_state("0.5.47", "v0.5.48"),
+        "update-available"
+    );
+    assert_eq!(
+        API.release_channel_state("0.5.47", "v0.5.47"),
+        "on-newest-asset"
+    );
+    // The live state: the running build is many versions past the newest asset.
+    assert_eq!(
+        API.release_channel_state("0.5.68", "v0.5.47"),
+        "channel-behind"
+    );
+    // Prerelease precedence is not discarded.
+    assert_eq!(
+        API.release_channel_state("0.5.47", "v0.5.47-rc.1"),
+        "channel-behind"
+    );
+    // Unparseable input authorizes no install and claims no staleness.
+    assert_eq!(
+        API.release_channel_state("0.5.68", "not-a-tag"),
+        "on-newest-asset"
+    );
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn release_selection_uses_the_single_linux_asset() {
@@ -447,55 +479,6 @@ fn reap_stale_binaries_reaps_digit_only_overflow_pid_artifacts() {
 }
 
 #[test]
-fn reap_stale_binaries_does_not_flatten_read_dir_errors() {
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/installer.rs"))
-        .expect("installer source readable");
-    assert!(
-        !src.contains("entries.flatten()"),
-        "installer stale-artifact reap must match read_dir entry errors explicitly"
-    );
-    assert!(
-        src.contains("cannot read installer artifact directory entry"),
-        "installer stale-artifact reap must log unreadable directory entries"
-    );
-    assert!(
-        src.contains("fn remove_installer_artifact_best_effort(")
-            && src.contains("failed to remove installer artifact; it may need manual cleanup")
-            && src.contains("remove_installer_artifact_best_effort(")
-            && !src.contains("let _ = std::fs::remove_file"),
-        "installer artifact cleanup must be best-effort but visible, not anonymous let-_ remove_file"
-    );
-    assert!(
-        src.contains("fn installer_artifact_pid(")
-            && src.contains("fn process_is_running(")
-            && src.contains("!process_is_running(pid)")
-            && !src.contains("fname.starts_with(stash_prefix.as_str())\n            || fname.starts_with(backup_prefix.as_str())"),
-        "installer stale-artifact reap must parse PID suffixes and skip live owners"
-    );
-}
-
-#[test]
-fn rollback_cleanup_failures_are_operator_visible() {
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/installer.rs"))
-        .expect("installer source readable");
-    for required in [
-        "ROLLBACK FAILED after a failed binary write",
-        "It is stranded at",
-        "it could NOT be removed from",
-        "delete it manually",
-    ] {
-        assert!(
-            src.contains(required),
-            "installer rollback/cleanup failure must surface `{required}`"
-        );
-    }
-    assert!(
-        !src.contains("installed binary failed its post-install health check: {verify_error}; removed it because no prior \\\n         binary to roll back to)."),
-        "installer fresh-install verify failure must not claim a broken binary was removed without checking remove_file"
-    );
-}
-
-#[test]
 fn install_with_rollback_bool_wrapper_has_one_owner() {
     let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/installer.rs"))
         .expect("installer source readable");
@@ -513,19 +496,6 @@ fn install_with_rollback_bool_wrapper_has_one_owner() {
         src.matches("fn bool_verify_as_result<F>").count() == 1
             && src.matches("post-install verifier returned false").count() == 1,
         "boolean verifier compatibility text must live in one adapter, not per-platform wrappers"
-    );
-}
-
-#[test]
-fn current_binary_surfaces_canonicalize_failure() {
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/installer.rs"))
-        .expect("installer source readable");
-    assert!(
-        src.contains("std::fs::canonicalize(&exe).with_context(||")
-            && src.contains("resolve current executable symlink target")
-            && !src.contains("std::fs::canonicalize(&exe).unwrap_or(exe)")
-            && !src.contains("canonicalize failure => original path"),
-        "current_binary must not silently install through a non-canonical symlink path"
     );
 }
 

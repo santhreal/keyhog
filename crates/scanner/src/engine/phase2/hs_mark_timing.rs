@@ -77,25 +77,25 @@ pub(crate) fn format_hs_mark_split(s: &HsMarkSplit) -> String {
     )
 }
 
-/// Add `ns` to the HS SIMD scan accumulator. Called only when profiling is on
-/// (the caller gates the `Instant`), so the add is never on the unprofiled path.
-/// The keyhog-profile runtime owns the counter (a sub-stage duration sum: the
-/// split nests inside the `phase2:prefilter` leaf, so a span would double-count
-/// the leaf's inclusive total).
+/// Time the HS SIMD scan half of one mark call.
+///
+/// A counter, not a span: the split nests inside the `phase2-prefilter` leaf,
+/// so a stage span would double-count that leaf's inclusive total. The guard
+/// reads the clock only when a profile runtime is current, so the unprofiled
+/// hot path pays one relaxed load and a no-op drop.
 #[cfg(feature = "simd")]
 #[inline]
-pub(crate) fn record_hs_mark_scan_ns(ns: u64) {
-    keyhog_profile::add_counter(keyhog_profile::CounterId::Phase2PrefilterHsScanNs, ns);
+#[must_use]
+pub(crate) fn hs_mark_scan_span() -> keyhog_profile::CounterSpan {
+    keyhog_profile::counter_span(keyhog_profile::CounterId::Phase2PrefilterHsScanNs)
 }
 
-/// Add `ns` to the dropped host-loop accumulator.
+/// Time the dropped host-loop half of one mark call.
 #[cfg(feature = "simd")]
 #[inline]
-pub(crate) fn record_hs_mark_dropped_ns(ns: u64) {
-    keyhog_profile::add_counter(
-        keyhog_profile::CounterId::Phase2PrefilterDroppedHostNs,
-        ns,
-    );
+#[must_use]
+pub(crate) fn hs_mark_dropped_span() -> keyhog_profile::CounterSpan {
+    keyhog_profile::counter_span(keyhog_profile::CounterId::Phase2PrefilterDroppedHostNs)
 }
 
 /// Build an [`HsMarkSplit`] from one drained typed-metric batch

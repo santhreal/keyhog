@@ -1,12 +1,15 @@
-//! Unified scan profiler: one explicit switch, one hierarchical dump.
+//! Scanner-side view of the profiler: one hierarchical dump over profiler data.
 //!
-//! Replaces the old scattered per-pass atomic-counter hacks (each in a different
-//! file, each with its own incompatible dump) with one scanner-owned switch set
-//! explicitly by the CLI/library caller. It captures the whole pipeline in one
-//! run and emits one tree showing where every microsecond goes, including inside
-//! the phase-2 pass and how much of the cost is decode-recursion.
+//! No measurement is owned here. The switch is [`keyhog_profile::set_detail`],
+//! the clock and the counters are the profile runtime's, and the stage names are
+//! [`keyhog_profile::Stage`]'s. This module opens spans on the profiler's behalf
+//! and renders the tree the scanner cares about from one drain of profiler
+//! state. It used to carry two process-wide `AtomicBool` switches and a second
+//! fourteen-name stage vocabulary parallel to `Stage`; both are gone, because a
+//! number that drives a decision and a number an operator reads must be the same
+//! number.
 //!
-//! Model: only LEAF passes are timed directly (via the [`span`] RAII guard);
+//! Model: only LEAF stages are timed directly (via the [`span`] RAII guard);
 //! parent rows (scan / phase2 / phase2-capture) are SUMS of their leaves in
 //! [`dump`].
 //! Leaf passes never nest within each other (decode recursion re-enters as fresh
@@ -19,92 +22,60 @@
 //! Overhead when off: one cached-bool load per `span()` and a no-op `Drop`; no
 //! `Instant::now()` is taken on the hot path.
 
+use keyhog_profile::Stage;
 use std::cell::Cell;
-use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
-/// Leaf timing points. The ONLY spans measured directly; the hierarchy in
-/// [`dump`] derives parent totals by summing these.
-#[derive(Copy, Clone)]
-#[repr(usize)]
-pub(crate) enum P {
-    Preprocess = 0,
-    Phase1Triggers,
-    /// Accelerator-side trigger preparation and dispatch outside the shared
-    /// per-chunk phase-1 span (GPU coalescing, upload, kernel, readback, and
-    /// GPU admission). Zero for CPU-only scans.
-    BackendDispatch,
-    Hot,
-    Confirmed,
-    /// Always-active RegexSet prefilter, the anchorless detectors that run on
-    /// EVERY chunk (the cost the old label hid).
-    Phase2Prefilter,
-    /// Keyword Aho-Corasick prefilter (gates keyword-anchored phase-2 patterns).
-    Phase2KeywordAc,
-    /// Shared-anchor candidate scan (one AC over required-prefix literals).
-    Phase2SharedAc,
-    /// Anchored verification of shared-anchor candidates.
-    Phase2AnchoredVerify,
-    /// Whole-chunk extraction for active patterns with no usable anchor.
-    Phase2WholeChunk,
-    Generic,
-    Entropy,
-    Ml,
-    /// Decode pipeline: detect encoded blobs + spawn/scan decoded sub-chunks
-    /// (the recursion driver itself, excluding the sub-chunk phase-2 which lands
-    /// in the leaves above tagged at decode depth).
-    Decode,
-}
-
-const N: usize = 14;
-
-const NAMES: [&str; N] = [
-    "preprocess",
-    "phase1",
-    "backend-dispatch",
-    "hot",
-    "confirmed",
-    "phase2:prefilter",
-    "phase2:keyword-ac",
-    "phase2:shared-ac",
-    "phase2:verify",
-    "phase2:whole-chunk",
-    "generic",
-    "entropy",
-    "ml",
-    "decode",
+/// Leaf stages this dump renders, in print order. Each is a
+/// [`keyhog_profile::Stage`] and prints under [`Stage::as_str`], so the scanner
+/// keeps no second name for any of them.
+const LEAVES: [Stage; 14] = [
+    Stage::Preprocess,
+    Stage::Phase1Triggers,
+    // Accelerator-side trigger preparation and dispatch outside the shared
+    // per-chunk phase-1 span (GPU coalescing, upload, kernel, readback, and
+    // GPU admission). Zero for CPU-only scans.
+    Stage::BackendDispatch,
+    Stage::HotPatterns,
+    Stage::ConfirmedPatterns,
+    // Always-active RegexSet prefilter, the anchorless detectors that run on
+    // EVERY chunk (the cost the old label hid).
+    Stage::Phase2Prefilter,
+    // Keyword Aho-Corasick prefilter (gates keyword-anchored phase-2 patterns).
+    Stage::Phase2KeywordAc,
+    // Shared-anchor candidate scan (one AC over required-prefix literals).
+    Stage::Phase2SharedAc,
+    // Anchored verification of shared-anchor candidates.
+    Stage::Phase2AnchoredVerify,
+    // Whole-chunk extraction for active patterns with no usable anchor.
+    Stage::Phase2WholeChunk,
+    Stage::GenericDetection,
+    Stage::Entropy,
+    Stage::MachineLearning,
+    // Decode pipeline: detect encoded blobs + spawn/scan decoded sub-chunks
+    // (the recursion driver itself, excluding the sub-chunk phase-2 which lands
+    // in the leaves above tagged at decode depth).
+    Stage::Decode,
 ];
 
-static DETAILED_ENABLED: AtomicBool = AtomicBool::new(false);
-static PERF_TRACE_ENABLED: AtomicBool = AtomicBool::new(false);
+const N: usize = LEAVES.len();
 
-/// Enable or disable the scanner's detailed diagnostic profile collector.
-///
-/// This library API enables fixed stages and expensive per-pattern diagnostics
-/// together. The CLI uses it only for `--perf-trace`; `--profile` starts a
-/// [`keyhog_profile::Session`] directly so production profiling does not enable
-/// per-pattern hot-path accounting.
-pub fn set_profile_enabled(enabled: bool) {
-    DETAILED_ENABLED.store(enabled, Relaxed);
-    keyhog_profile::set_enabled(enabled);
+/// Row index of `stage` in [`LEAVES`], or `None` when this dump does not render
+/// it. Source, suppression, verification and reporting stages belong to the
+/// operator profile, not to the scanner tree.
+fn leaf_index(stage: Stage) -> Option<usize> {
+    LEAVES.iter().position(|&leaf| leaf == stage)
 }
 
-/// Enable or disable low-level phase timing traces for this process.
-///
-/// This is the explicit replacement for the old ambient environment hook used by
-/// GPU/perf benches and dispatch diagnostics.
-pub fn set_perf_trace_enabled(enabled: bool) {
-    PERF_TRACE_ENABLED.store(enabled, Relaxed);
-}
-
+/// True when stage spans and typed counters are recorded process-wide.
 pub(crate) fn enabled() -> bool {
-    DETAILED_ENABLED.load(Relaxed)
+    keyhog_profile::detail().records_stages()
 }
 
-// Every reader lives on a coalesced SIMD or GPU dispatch path; the public
-// setter above stays unconditional so benches and the CLI can always call it.
-#[cfg(any(feature = "simd", feature = "gpu", test))]
-pub(crate) fn perf_trace_enabled() -> bool {
-    PERF_TRACE_ENABLED.load(Relaxed)
+/// True when the expensive per-pattern, per-decoder and per-backend
+/// decomposition is on. This level pays a clock read per decoder call and per
+/// pattern batch, so it is deliberately a step above plain stage recording.
+pub(crate) fn diagnostic() -> bool {
+    keyhog_profile::detail().is_diagnostic()
 }
 
 thread_local! {
@@ -144,62 +115,11 @@ pub(crate) fn in_decode() -> bool {
 
 pub(crate) type Guard = keyhog_profile::Span;
 
-fn stage(point: P) -> keyhog_profile::Stage {
-    use keyhog_profile::Stage;
-    match point {
-        P::Preprocess => Stage::Preprocess,
-        P::Phase1Triggers => Stage::Phase1Triggers,
-        P::BackendDispatch => Stage::BackendDispatch,
-        P::Hot => Stage::HotPatterns,
-        P::Confirmed => Stage::ConfirmedPatterns,
-        P::Phase2Prefilter => Stage::Phase2Prefilter,
-        P::Phase2KeywordAc => Stage::Phase2KeywordAc,
-        P::Phase2SharedAc => Stage::Phase2SharedAc,
-        P::Phase2AnchoredVerify => Stage::Phase2AnchoredVerify,
-        P::Phase2WholeChunk => Stage::Phase2WholeChunk,
-        P::Generic => Stage::GenericDetection,
-        P::Entropy => Stage::Entropy,
-        P::Ml => Stage::MachineLearning,
-        P::Decode => Stage::Decode,
-    }
-}
-
-fn point_index(stage: keyhog_profile::Stage) -> Option<usize> {
-    use keyhog_profile::Stage;
-    Some(match stage {
-        Stage::Preprocess => P::Preprocess as usize,
-        Stage::Phase1Triggers => P::Phase1Triggers as usize,
-        Stage::BackendDispatch => P::BackendDispatch as usize,
-        Stage::HotPatterns => P::Hot as usize,
-        Stage::ConfirmedPatterns => P::Confirmed as usize,
-        Stage::Phase2Prefilter => P::Phase2Prefilter as usize,
-        Stage::Phase2KeywordAc => P::Phase2KeywordAc as usize,
-        Stage::Phase2SharedAc => P::Phase2SharedAc as usize,
-        Stage::Phase2AnchoredVerify => P::Phase2AnchoredVerify as usize,
-        Stage::Phase2WholeChunk => P::Phase2WholeChunk as usize,
-        Stage::GenericDetection => P::Generic as usize,
-        Stage::Entropy => P::Entropy as usize,
-        Stage::MachineLearning => P::Ml as usize,
-        Stage::Decode => P::Decode as usize,
-        Stage::SourceAcquire
-        | Stage::SourceWalk
-        | Stage::SourceRead
-        | Stage::SourceQueueWait
-        | Stage::ScannerQueueWait
-        | Stage::IncrementalLookup
-        | Stage::BackendSelect
-        | Stage::ResultMerge
-        | Stage::Suppression
-        | Stage::LiveVerification
-        | Stage::Reporting => return None,
-    })
-}
-
-/// Open a leaf span; records elapsed wall time into `point` on drop.
+/// Open a leaf span; records elapsed wall time into `stage` on drop.
 #[inline]
 #[must_use]
-pub(crate) fn span(point: P) -> Guard {
-    keyhog_profile::span(stage(point))
+pub(crate) fn span(stage: Stage) -> Guard {
+    keyhog_profile::span(stage)
 }
 
 /// Record bytes submitted to a completed backend route (for the throughput
@@ -214,50 +134,90 @@ pub(crate) fn add_derived_decoder_bytes(bytes: u64) {
     keyhog_profile::add_derived_decoder_bytes(bytes);
 }
 
-fn read_reset() -> ([u64; N], [u64; N], [u64; N], u64, u64) {
-    let mut ns = [0; N];
-    let mut calls = [0; N];
-    let mut ns_decode = [0; N];
+/// Stages this dump reports as "of which" rows: each is INCLUSIVE of leaves
+/// recorded underneath it, so summing one into the scan total would double
+/// count. Kept out of [`LEAVES`] for exactly that reason.
+const INCLUSIVE: [Stage; 2] = [Stage::BoundaryScan, Stage::AutorouteCalibration];
+
+struct Drained {
+    ns: [u64; N],
+    calls: [u64; N],
+    ns_decode: [u64; N],
+    inclusive_ns: [u64; INCLUSIVE.len()],
+    inclusive_calls: [u64; INCLUSIVE.len()],
+    bytes: u64,
+    files: u64,
+}
+
+fn read_reset() -> Drained {
+    let mut drained = Drained {
+        ns: [0; N],
+        calls: [0; N],
+        ns_decode: [0; N],
+        inclusive_ns: [0; INCLUSIVE.len()],
+        inclusive_calls: [0; INCLUSIVE.len()],
+        bytes: 0,
+        files: 0,
+    };
     for measurement in keyhog_profile::take_stage_measurements() {
-        let Some(index) = point_index(measurement.stage) else {
-            continue;
-        };
-        ns[index] = measurement.elapsed_ns;
-        calls[index] = measurement.calls;
-        ns_decode[index] = measurement.attributed_ns;
+        if let Some(index) = leaf_index(measurement.stage) {
+            drained.ns[index] = measurement.elapsed_ns;
+            drained.calls[index] = measurement.calls;
+            drained.ns_decode[index] = measurement.attributed_ns;
+        } else if let Some(index) = INCLUSIVE.iter().position(|&s| s == measurement.stage) {
+            drained.inclusive_ns[index] = measurement.elapsed_ns;
+            drained.inclusive_calls[index] = measurement.calls;
+        }
     }
     let (bytes, files) = keyhog_profile::take_input_totals();
-    (ns, calls, ns_decode, bytes, files)
+    drained.bytes = bytes;
+    drained.files = files;
+    drained
 }
 
 /// Discard all accumulated counters without printing (warm-up between runs).
-/// `keyhog_profile::reset` clears the stage counters, input totals, typed
-/// counters, and distributions; only the per-decoder named table (no labeled
-/// metric API exists for it) is still scanner-owned.
+///
+/// One call, because the profile runtime is now the only store: stage
+/// counters, input totals, typed counters, distributions, and the indexed
+/// per-decoder family all clear together. There is no scanner-side table left
+/// to forget.
 pub fn reset() {
     keyhog_profile::reset();
-    crate::decode::decoder_profile_reset();
+}
+
+/// Row index of a leaf this dump names directly. Const so the grouping tables
+/// below stay compile-time constants after the `P` enum was deleted.
+const fn row(stage: Stage) -> usize {
+    let mut index = 0;
+    while index < N {
+        if LEAVES[index] as usize == stage as usize {
+            return index;
+        }
+        index += 1;
+    }
+    panic!("dump grouping names a stage that is not a rendered leaf");
 }
 
 const PHASE2_CAPTURE_LEAVES: [usize; 5] = [
-    P::Phase2Prefilter as usize,
-    P::Phase2KeywordAc as usize,
-    P::Phase2SharedAc as usize,
-    P::Phase2AnchoredVerify as usize,
-    P::Phase2WholeChunk as usize,
+    row(Stage::Phase2Prefilter),
+    row(Stage::Phase2KeywordAc),
+    row(Stage::Phase2SharedAc),
+    row(Stage::Phase2AnchoredVerify),
+    row(Stage::Phase2WholeChunk),
 ];
 const PHASE2_LEAVES: [usize; 9] = [
-    P::Hot as usize,
-    P::Confirmed as usize,
-    P::Phase2Prefilter as usize,
-    P::Phase2KeywordAc as usize,
-    P::Phase2SharedAc as usize,
-    P::Phase2AnchoredVerify as usize,
-    P::Phase2WholeChunk as usize,
-    P::Generic as usize,
-    P::Entropy as usize,
+    row(Stage::HotPatterns),
+    row(Stage::ConfirmedPatterns),
+    row(Stage::Phase2Prefilter),
+    row(Stage::Phase2KeywordAc),
+    row(Stage::Phase2SharedAc),
+    row(Stage::Phase2AnchoredVerify),
+    row(Stage::Phase2WholeChunk),
+    row(Stage::GenericDetection),
+    row(Stage::Entropy),
 ];
-// `ml` is a phase-2 leaf too, listed separately so capture sub-leaves group.
+// `machine-learning` is a phase-2 leaf too, listed separately so the capture
+// sub-leaves group.
 
 /// Print and reset the unified profile tree. Safe to call when profiling was off
 /// (prints a single "disabled" line).
@@ -266,17 +226,25 @@ pub fn dump(label: &str) {
         eprintln!("[profile {label}] scanner profile switch is off; no data");
         return;
     }
-    let (ns, calls, ns_decode, bytes, files) = read_reset();
+    let Drained {
+        ns,
+        calls,
+        ns_decode,
+        inclusive_ns,
+        inclusive_calls,
+        bytes,
+        files,
+    } = read_reset();
     let ms = |i: usize| ns[i] as f64 / 1e6;
     let sum = |ids: &[usize]| ids.iter().map(|&i| ns[i]).sum::<u64>();
 
-    let phase2_ns = sum(&PHASE2_LEAVES) + ns[P::Ml as usize];
+    let phase2_ns = sum(&PHASE2_LEAVES) + ns[row(Stage::MachineLearning)];
     let capture_ns = sum(&PHASE2_CAPTURE_LEAVES);
-    let scan_ns = ns[P::Preprocess as usize]
-        + ns[P::Phase1Triggers as usize]
-        + ns[P::BackendDispatch as usize]
+    let scan_ns = ns[row(Stage::Preprocess)]
+        + ns[row(Stage::Phase1Triggers)]
+        + ns[row(Stage::BackendDispatch)]
         + phase2_ns
-        + ns[P::Decode as usize];
+        + ns[row(Stage::Decode)];
     let scan_ms = scan_ns as f64 / 1e6;
     let pct = |part: u64, whole: u64| {
         if whole > 0 {
@@ -303,8 +271,8 @@ pub fn dump(label: &str) {
         let c = calls[i];
         let dec = ns_decode[i];
         eprintln!(
-            "{indent}{:<16} {:>9.1} ms  {:>5.1}% parent  {:>6.1}% scan  calls={:<8} {:>6.0} ns/call  decode={:>4.1}%",
-            NAMES[i],
+            "{indent}{:<24} {:>9.1} ms  {:>5.1}% parent  {:>6.1}% scan  calls={:<8} {:>6.0} ns/call  decode={:>4.1}%",
+            LEAVES[i].as_str(),
             ms(i),
             pct(ns[i], parent_ns),
             pct(ns[i], scan_ns),
@@ -315,7 +283,7 @@ pub fn dump(label: &str) {
     };
     let parent = |name: &str, total: u64, indent: &str| {
         eprintln!(
-            "{indent}{:<16} {:>9.1} ms  {:>5.1}% scan",
+            "{indent}{:<24} {:>9.1} ms  {:>5.1}% scan",
             name,
             total as f64 / 1e6,
             pct(total, scan_ns),
@@ -341,18 +309,18 @@ pub fn dump(label: &str) {
     let hs_split: crate::engine::phase2::HsMarkSplit =
         crate::engine::phase2::hs_mark_split_from_typed(&typed);
 
-    leaf(P::Preprocess as usize, scan_ns, "  ");
-    leaf(P::Phase1Triggers as usize, scan_ns, "  ");
-    leaf(P::BackendDispatch as usize, scan_ns, "  ");
+    leaf(row(Stage::Preprocess), scan_ns, "  ");
+    leaf(row(Stage::Phase1Triggers), scan_ns, "  ");
+    leaf(row(Stage::BackendDispatch), scan_ns, "  ");
     parent("phase2", phase2_ns, "  ");
-    leaf(P::Hot as usize, phase2_ns, "    ");
-    leaf(P::Confirmed as usize, phase2_ns, "    ");
+    leaf(row(Stage::HotPatterns), phase2_ns, "    ");
+    leaf(row(Stage::ConfirmedPatterns), phase2_ns, "    ");
     parent("phase2-capture", capture_ns, "    ");
     for &i in &PHASE2_CAPTURE_LEAVES {
         leaf(i, capture_ns, "      ");
         // Attach the path decomposition directly under the prefilter leaf it
         // describes, so the dominant scan cost is diagnosable in place.
-        if i == P::Phase2Prefilter as usize && mark.calls > 0 {
+        if i == row(Stage::Phase2Prefilter) && mark.calls > 0 {
             let line = crate::engine::phase2::format_mark_decomposition(&mark);
             if mark.is_consistent() {
                 eprintln!("        ↳ {line}");
@@ -378,16 +346,34 @@ pub fn dump(label: &str) {
             }
         }
     }
-    leaf(P::Generic as usize, phase2_ns, "    ");
-    leaf(P::Entropy as usize, phase2_ns, "    ");
-    leaf(P::Ml as usize, phase2_ns, "    ");
-    leaf(P::Decode as usize, scan_ns, "  ");
+    leaf(row(Stage::GenericDetection), phase2_ns, "    ");
+    leaf(row(Stage::Entropy), phase2_ns, "    ");
+    leaf(row(Stage::MachineLearning), phase2_ns, "    ");
+    leaf(row(Stage::Decode), scan_ns, "  ");
 
     let decode_total: u64 = (0..N).map(|i| ns_decode[i]).sum();
     eprintln!(
         "  (of all leaf time, {:.1}% was recorded inside decode sub-chunk rescans)",
         pct(decode_total, scan_ns),
     );
+
+    // Inclusive stages, printed as "of which" so nobody adds them to the tree
+    // above. Seam rescan and calibration both re-enter the leaves they sit on
+    // top of, and both scale with chunk count rather than input size, so a
+    // many-small-files run is where they show up.
+    for (index, stage) in INCLUSIVE.iter().enumerate() {
+        let stage_ns = inclusive_ns[index];
+        if stage_ns == 0 {
+            continue;
+        }
+        eprintln!(
+            "  of which {:<22} {:>9.1} ms  {:>5.1}% scan  calls={} (inclusive of the leaves inside it)",
+            stage.as_str(),
+            stage_ns as f64 / 1e6,
+            pct(stage_ns, scan_ns),
+            inclusive_calls[index],
+        );
+    }
 
     // Fold in the auxiliary figures recorded on the hot path, all sourced from
     // the single typed/distribution drain above. Each section stays silent when
@@ -396,7 +382,7 @@ pub fn dump(label: &str) {
     {
         let (parents, subchunks, derived_bytes) =
             crate::engine::scan_postprocess::decode_recursion_from_typed(&typed);
-        let gen_ms = ns[P::Decode as usize] as f64 / 1e6;
+        let gen_ms = ns[row(Stage::Decode)] as f64 / 1e6;
         let scan_ms = decode_total as f64 / 1e6;
         if parents != 0 || subchunks != 0 || derived_bytes != 0 || gen_ms != 0.0 || scan_ms != 0.0
         {

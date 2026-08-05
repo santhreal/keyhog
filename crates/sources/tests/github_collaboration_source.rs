@@ -2,7 +2,7 @@
 
 use httpmock::{Method, MockServer};
 use keyhog_core::{Source, SourceCoverageGapKind, SourceError};
-use keyhog_sources::testing::{SourceTestApi as _, TestApi};
+use keyhog_sources::testing::{TestApi};
 use keyhog_sources::{GitHubCollaborationSelection, SourceLimits};
 
 mod support;
@@ -535,4 +535,72 @@ fn completed_listing_pages_survive_a_later_page_budget_failure() {
         })
     )));
     page_one.assert_calls(1);
+}
+
+#[test]
+fn release_selection_scans_draft_notes_and_asset_labels() {
+    let server = MockServer::start();
+    let releases = server.mock(|when, then| {
+        when.method(Method::GET)
+            .path("/repos/acme/rocket/releases")
+            .query_param("per_page", "100")
+            .query_param("page", "1")
+            .header("authorization", "Bearer test-token");
+        then.status(200).json_body(serde_json::json!([{
+            // A DRAFT release: `published_at` is null and the notes exist
+            // nowhere in the repository tree, so no clone-based source sees it.
+            // `name` is null too, so the tag has to supply the title line.
+            "id":42,"node_id":"RE_draft","tag_name":"v2.0.0-rc1","name":null,
+            "body":"upgrade steps\nexport DEPLOY_TOKEN=release-body-secret",
+            "author":{"login":"alice"},
+            "created_at":"2026-07-13T00:00:00Z","published_at":null,
+            "assets":[
+                {"name":"keyhog-linux-release-asset-secret.tar.gz","label":null},
+                {"name":"checksums.txt","label":"signed with release-label-secret"}
+            ]
+        }]));
+    });
+
+    let source = TestApi
+        .github_collaboration_source_with_endpoint(
+            "acme/rocket",
+            &server.url(""),
+            GitHubCollaborationSelection {
+                releases: true,
+                ..Default::default()
+            },
+            limits(10),
+        )
+        .expect("valid source");
+    let chunks: Vec<_> = source
+        .chunks()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("complete releases surface");
+
+    assert_eq!(chunks.len(), 1);
+    let chunk = &chunks[0];
+    assert_eq!(
+        chunk.metadata.path.as_deref(),
+        Some("github://acme/rocket/releases/42")
+    );
+    // A draft's identity and reported date both come from `created_at`, the
+    // only timestamp GitHub exposes for it.
+    assert_eq!(
+        chunk.metadata.commit.as_deref(),
+        Some("RE_draft@2026-07-13T00:00:00Z")
+    );
+    assert_eq!(
+        chunk.metadata.date.as_deref(),
+        Some("2026-07-13T00:00:00Z")
+    );
+    assert_eq!(chunk.metadata.author.as_deref(), Some("alice"));
+    assert!(chunk.data.contains("v2.0.0-rc1"), "{:?}", chunk.data);
+    assert!(chunk.data.contains("DEPLOY_TOKEN=release-body-secret"));
+    // Asset bytes are out of contract, but the enumerated asset names and
+    // labels are scanned so an asset is never absent from the record.
+    assert!(chunk.data.contains("keyhog-linux-release-asset-secret.tar.gz"));
+    assert!(chunk.data.contains("signed with release-label-secret"));
+    releases.assert_calls(1);
 }

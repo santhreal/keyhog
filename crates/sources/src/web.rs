@@ -571,7 +571,12 @@ fn send_with_pinned_redirects(
         };
         let resp = client.get(&current_url).send().map_err(|e| {
             let safe_url = redact_url(&current_url);
-            web_unreadable_error(format!("failed to fetch {safe_url}: {e}"))
+            // `{e}` alone would undo `safe_url`: `reqwest::Error`'s Display
+            // re-appends the request URL verbatim, userinfo and query included.
+            web_unreadable_error(format!(
+                "failed to fetch {safe_url}: {}",
+                crate::url_redaction::redact_http_error(e)
+            ))
         })?;
         if !resp.status().is_redirection() {
             return Ok(resp);
@@ -670,6 +675,20 @@ fn handle_json(
     }
 }
 
+/// Chunk-path form of a fetched URL.
+///
+/// The operator-supplied `--url` (and any redirect target derived from it) can
+/// carry `user:password@` userinfo or a credential query parameter
+/// (`?access_token=`, `?api_key=`, a presigned `?sig=`/`X-Amz-Signature`). This
+/// string becomes `file_path` on every finding from the fetch and is printed
+/// verbatim by text, JSON, SARIF, CSV, HTML, and JUnit output, so it is masked
+/// here, at the boundary that mints it, by the same owner every WebSource log
+/// line and error already routes through. A URL with nothing sensitive in it is
+/// returned unchanged.
+fn chunk_path(url: &str) -> std::sync::Arc<str> {
+    redact_url(url).as_ref().into()
+}
+
 fn web_text_chunk(body: String, url: &str) -> Chunk {
     Chunk {
         data: body.into(),
@@ -677,7 +696,7 @@ fn web_text_chunk(body: String, url: &str) -> Chunk {
             base_offset: 0,
             base_line: 0,
             source_type: "web:js".into(),
-            path: Some(url.into()),
+            path: Some(chunk_path(url)),
             commit: None,
             author: None,
             date: None,
@@ -807,7 +826,7 @@ fn expand_sourcemap_value(
                     base_offset: 0,
                     base_line: 0,
                     source_type: "web:sourcemap".into(),
-                    path: Some(format!("{url}!{source_name}").into()),
+                    path: Some(format!("{}!{source_name}", redact_url(url)).into()),
                     commit: None,
                     author: None,
                     date: None,
@@ -842,7 +861,7 @@ fn sourcemap_raw_chunk(body: String, url: &str) -> Chunk {
             base_offset: 0,
             base_line: 0,
             source_type: "web:sourcemap:raw".into(),
-            path: Some(url.into()),
+            path: Some(chunk_path(url)),
             commit: None,
             author: None,
             date: None,
@@ -893,7 +912,7 @@ fn handle_wasm(
             base_offset: 0,
             base_line: 0,
             source_type: "web:wasm".into(),
-            path: Some(url.into()),
+            path: Some(chunk_path(url)),
             commit: None,
             author: None,
             date: None,
