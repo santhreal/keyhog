@@ -152,11 +152,42 @@ pub(crate) fn suppresses_allowlist_match(allowlist: &keyhog_core::Allowlist, m: 
         || allowlist.ignored_detectors.contains(&*m.detector_id)
 }
 
+/// Order every match by a TOTAL key before dedup, so neither the reported order
+/// nor the surviving duplicate depends on the order the sources happened to
+/// enumerate in.
+///
+/// This used to sort on `Reverse(severity)` alone. Rust's sort is stable, so
+/// equal-severity matches kept their arrival order, and arrival order is
+/// enumeration order. That made two things silently load-bearing on the
+/// filesystem walk: the order findings print in, and which member of a
+/// duplicate group `dedup_matches` keeps. Enumeration was deterministic only
+/// because `FilesystemSource` drains the whole walk into a `Vec` and sorts it
+/// before yielding a single chunk, which costs a fully serial 0.24s barrier on
+/// a 15,000-file tree with every core idle.
+///
+/// Severity stays the leading term because dedup keeps the first member of a
+/// group and the highest severity must win. Everything after it is a
+/// tiebreaker that was previously supplied by luck: location first so output
+/// reads in file order, then detector and credential digest so two detectors
+/// firing at one offset still have one defined winner.
 pub(crate) fn dedup_for_report(
     mut matches: Vec<RawMatch>,
     scope: &DedupScope,
 ) -> Vec<DedupedMatch> {
-    matches.sort_by_key(|m| std::cmp::Reverse(m.severity));
+    matches.sort_by(|left, right| {
+        let l = &left.location;
+        let r = &right.location;
+        right
+            .severity
+            .cmp(&left.severity)
+            .then_with(|| l.source.cmp(&r.source))
+            .then_with(|| l.file_path.cmp(&r.file_path))
+            .then_with(|| l.commit.cmp(&r.commit))
+            .then_with(|| l.line.cmp(&r.line))
+            .then_with(|| l.offset.cmp(&r.offset))
+            .then_with(|| left.detector_id.cmp(&right.detector_id))
+            .then_with(|| left.credential_hash.cmp(&right.credential_hash))
+    });
     let deduped = keyhog_core::dedup_matches(matches, scope);
     keyhog_core::dedup_cross_detector(deduped)
 }
