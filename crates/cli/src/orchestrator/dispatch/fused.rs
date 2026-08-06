@@ -43,19 +43,17 @@ impl ActiveBackendRouter {
 impl ScanOrchestrator {
     /// Decide whether a scan runs on the fused parallel read+scan path.
     ///
-    /// Engaged for filesystem sources unless the operator explicitly forced a
-    /// GPU backend:
+    /// Engaged for filesystem and bounded-window stdin sources unless the
+    /// operator explicitly forced a GPU backend:
     /// * **GPU forced by the user** keeps the coalesced per-batch
     ///   pipeline so `gpu_parity` and the large-buffer dispatch are untouched.
-    ///   Default/auto filesystem scans stay fused. Persisted autoroute
-    ///   decisions are consumed per fused batch, where the exact workload key is
-    ///   known, so a GPU decision for one bucket cannot disable fused
-    ///   filesystem scanning globally.
-    /// * **Non-filesystem sources** (git, stdin, docker, ...) may emit
-    ///   *gapless* chunks where `scan_chunk_boundaries` is load-bearing; the
-    ///   fused path scans each chunk independently and relies on the
-    ///   filesystem source's 128 KiB window *overlap* (for which the boundary
-    ///   pass is already a no-op) to cover seam-straddling secrets.
+    ///   Default/auto scans stay fused. Persisted autoroute decisions are
+    ///   consumed per fused batch, where the exact workload key is known, so a
+    ///   GPU decision for one bucket cannot disable fused scanning globally.
+    /// * **Other non-filesystem sources** may emit *gapless* chunks where
+    ///   `scan_chunk_boundaries` is load-bearing. Stdin is eligible because its
+    ///   bounded windows overlap by the same 128 KiB used by filesystem
+    ///   windows; seam-straddling secrets are therefore present in one chunk.
     /// * `--batch-pipeline` forces the coalesced batch path (A/B + escape hatch).
     pub(super) fn should_use_fused_pipeline(&self, sources: &[Box<dyn Source>]) -> bool {
         if self.effective_config.batch_pipeline {
@@ -69,9 +67,13 @@ impl ScanOrchestrator {
             return false;
         }
         !sources.is_empty()
-            && sources
-                .iter()
-                .all(|s| s.as_any().is::<keyhog_sources::FilesystemSource>())
+            && sources.iter().all(|source| {
+                let source = source.as_any();
+                source.is::<keyhog_sources::FilesystemSource>()
+                    || source.is::<keyhog_sources::StdinSource>()
+                    || source.is::<keyhog_sources::ConfiguredStdinSource>()
+                    || source.is::<keyhog_sources::BufferedStdinSource>()
+            })
     }
 
     fn cached_backend_router(&self) -> CachedBackendRouter {
