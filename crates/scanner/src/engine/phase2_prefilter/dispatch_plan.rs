@@ -132,7 +132,6 @@ impl<'a> DispatchPlan<'a> {
         self.try_hyperscan
     }
 
-    #[cfg(feature = "simd")]
     #[inline]
     pub(super) fn skip_homoglyph(self) -> bool {
         self.skip_homoglyph
@@ -174,7 +173,11 @@ impl<'a> DispatchPlan<'a> {
         phase2_patterns: &[(crate::types::CompiledPattern, Vec<String>)],
     ) -> BatchMatcher<'b> {
         let unicode = || {
-            Phase2AlwaysActivePrefilter::batch_unicode_matcher(phase2_patterns, batch, self.truncate)
+            Phase2AlwaysActivePrefilter::batch_unicode_matcher(
+                phase2_patterns,
+                batch,
+                self.truncate,
+            )
         };
         if !self.use_ascii_matcher || batch.case_insensitive {
             return match unicode() {
