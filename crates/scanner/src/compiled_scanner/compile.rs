@@ -938,11 +938,13 @@ impl CompiledScanner {
                 .chain(state.phase2_patterns.iter().map(|(pattern, _)| pattern)),
         );
         #[cfg(feature = "gpu")]
-        let ac_match_upper_bounds: Vec<Option<usize>> = state
-            .ac_map
-            .iter()
-            .map(|pattern| regex_match_byte_upper_bound(pattern.regex.as_str()))
-            .collect();
+        let ac_match_upper_bounds = backend_state.gpu_availability().any().then(|| {
+            state
+                .ac_map
+                .iter()
+                .map(|pattern| regex_match_byte_upper_bound(pattern.regex.as_str()))
+                .collect()
+        });
 
         let structural_confirmed_patterns = CsrU32::from_pairs(
             detectors.len(),
@@ -1092,6 +1094,27 @@ mod tests {
             scanner.ac.is_none(),
             "exact SIMD ownership is native shards plus unsupported-pattern recovery"
         );
+    }
+
+    /// WHY: GPU-only matcher rows and lazy matcher cells used to be populated by
+    /// universal scanner construction even when autoroute had already selected
+    /// a host backend, multiplying inactive buffers across concurrent scans.
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn exact_host_scanners_omit_gpu_matcher_buffers() {
+        for backend in [
+            crate::hw_probe::ScanBackend::CpuFallback,
+            crate::hw_probe::ScanBackend::SimdCpu,
+        ] {
+            let scanner = CompiledScanner::compile_for_backend(vec![detector()], backend)
+                .expect("compile exact host scanner");
+
+            assert!(scanner.gpu_literals.is_none());
+            assert!(scanner.gpu_matcher.get().is_none());
+            assert!(scanner.ac_match_upper_bounds.is_none());
+            assert_eq!(scanner.gpu_max_literal_len, 0);
+            assert!(!scanner.backend_state.gpu_availability().any());
+        }
     }
 
     /// WHY: detector and pattern partitions used to retain one inner vector per row even when almost every row was empty.

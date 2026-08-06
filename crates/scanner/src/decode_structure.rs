@@ -113,7 +113,15 @@ impl DecodeEvidence {
 
 thread_local! {
     static DECODE_FACTS_CACHE: RefCell<HashMap<u64, DecodeEvidence>> =
-        RefCell::new(HashMap::with_capacity(256));
+        RefCell::new(HashMap::new());
+}
+
+#[cfg(test)]
+pub(crate) fn reset_decode_facts_cache_capacity_for_test() -> usize {
+    DECODE_FACTS_CACHE.with(|cache| {
+        *cache.borrow_mut() = HashMap::new();
+        cache.borrow().capacity()
+    })
 }
 
 /// Unified shape-only gate for the "uniform random base64 blob" class - the

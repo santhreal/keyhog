@@ -7,7 +7,7 @@ thread_local! {
     /// Reused per worker thread so offline base64 validation does not allocate
     /// for every candidate. Bytes are overwritten before the buffer is cleared.
     static BASE64_SCRATCH: std::cell::RefCell<Vec<u8>> =
-        std::cell::RefCell::new(Vec::with_capacity(128));
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 
 #[derive(Debug)]
@@ -468,6 +468,9 @@ fn validate_base64_payload(
         let decoded_len = result.map(|_| scratch.len());
         scratch.fill(0);
         scratch.clear();
+        if scratch.capacity() > crate::types::MAX_SCAN_CHUNK_BYTES {
+            *scratch = Vec::new();
+        }
         decoded_len
     });
     match decoded_len {
@@ -475,6 +478,18 @@ fn validate_base64_payload(
         // LAW10: malformed or undersized decoded payloads fail closed as `Invalid`; no finding is accepted through another validator.
         Ok(_) | Err(_) => ChecksumResult::Invalid,
     }
+}
+
+#[cfg(test)]
+pub(crate) fn base64_scratch_capacity_after_payload_for_test(payload: &str) -> usize {
+    let _ = validate_base64_payload(
+        payload,
+        keyhog_core::DetectorBase64Alphabet::Standard,
+        0,
+        usize::MAX,
+        0,
+    );
+    BASE64_SCRATCH.with_borrow(Vec::capacity)
 }
 
 #[inline]

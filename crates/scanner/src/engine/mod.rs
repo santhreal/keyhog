@@ -227,6 +227,9 @@ pub(crate) fn release_candidate_scratch(values: &mut Vec<(u32, u32)>) {
 }
 
 #[cfg(test)]
+#[path = "../../tests/unit/scratch_pool_retention.rs"]
+mod scratch_pool_retention;
+#[cfg(test)]
 #[path = "../../tests/unit/worker_scratch_bounds.rs"]
 mod worker_scratch_bounds;
 
@@ -483,11 +486,12 @@ pub struct CompiledScanner {
     /// by exact lists because `config` remains publicly mutable.
     pub(crate) assignment_keyword_matcher:
         std::sync::Mutex<crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache>,
-    /// Per-`ac_map` regex byte upper bound for GPU hit-local validation. `None`
-    /// means the detector regex is unbounded or unparsable by the AST bounder,
-    /// so GPU validation must keep the full prepared-chunk oracle.
+    /// Per-`ac_map` regex byte upper bound for GPU hit-local validation.
+    /// Host-only scanners retain `None`; GPU scanners retain one row per
+    /// confirmed pattern, where a row value of `None` means the regex is
+    /// unbounded or unparsable by the AST bounder.
     #[cfg(feature = "gpu")]
-    pub(crate) ac_match_upper_bounds: Vec<Option<usize>>,
+    pub(crate) ac_match_upper_bounds: Option<Vec<Option<usize>>>,
     pub(crate) ac_map: Vec<CompiledPattern>,
     /// Confirmed pattern indices whose exact capture proves a structural password
     /// slot, partitioned by detector for bounded generic-bridge lookup.

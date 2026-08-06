@@ -22,6 +22,29 @@ thread_local! {
     static KEYWORD_LINES_POOL: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
 }
 
+fn release_keyword_lines_scratch(mut lines: Vec<usize>) {
+    lines.clear();
+    if lines
+        .capacity()
+        .saturating_mul(std::mem::size_of::<usize>())
+        > super::MAX_RETAINED_WORKER_SCRATCH_BYTES
+    {
+        lines = Vec::new();
+    }
+    KEYWORD_LINES_POOL.with(|cell| cell.replace(lines));
+}
+
+#[cfg(test)]
+pub(crate) fn retained_keyword_line_bytes_after_for_test(requested_bytes: usize) -> usize {
+    let elements = requested_bytes.div_ceil(std::mem::size_of::<usize>());
+    release_keyword_lines_scratch(Vec::with_capacity(elements));
+    KEYWORD_LINES_POOL.with_borrow(|lines| {
+        lines
+            .capacity()
+            .saturating_mul(std::mem::size_of::<usize>())
+    })
+}
+
 impl CompiledScanner {
     /// Scans generic assignments after keyword, entropy, and placeholder admission.
     /// Named and generic evidence is reconciled by the shared resolution pass.
@@ -76,12 +99,11 @@ impl CompiledScanner {
         drop(prefilter);
         metrics::record_prefilter_call(lines_with_keyword.len());
         if lines_with_keyword.is_empty() {
-            // Preserve buffer capacity across chunks.
-            KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
+            release_keyword_lines_scratch(lines_with_keyword);
             return;
         }
         if crate::deadline::expired(deadline) {
-            KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
+            release_keyword_lines_scratch(lines_with_keyword);
             return;
         }
 
@@ -99,7 +121,7 @@ impl CompiledScanner {
                 line_iter,
                 crate::deadline::HOT_LOOP_DEADLINE_CADENCE,
             ) {
-                KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
+                release_keyword_lines_scratch(lines_with_keyword);
                 return;
             }
             let line_idx = lines_with_keyword[line_iter];
@@ -126,7 +148,7 @@ impl CompiledScanner {
                     capture_iter,
                     crate::deadline::HOT_LOOP_DEADLINE_CADENCE,
                 ) {
-                    KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
+                    release_keyword_lines_scratch(lines_with_keyword);
                     return;
                 }
                 metrics::record_regex_capture();
@@ -541,8 +563,6 @@ impl CompiledScanner {
             }
         }
         drop(extract);
-        // Return the scratch buffer to the pool, preserving its capacity for
-        // the next chunk this worker handles.
-        KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
+        release_keyword_lines_scratch(lines_with_keyword);
     }
 }

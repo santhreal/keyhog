@@ -11,6 +11,8 @@
 //! using `memchr::memchr2_iter` to skim past chunks where the first byte
 //! of the needle is absent.
 
+use zeroize::Zeroize;
+
 /// Case-insensitive `ends_with`, re-exported from the canonical owner
 /// [`keyhog_core::ascii_ci::ends_with_ignore_ascii_case`]. Scanner call sites
 /// keep the `crate::ascii_ci::` path while the logic lives in ONE place (shared
@@ -310,6 +312,8 @@ pub(crate) fn contains_path_segment_two(path: &str, a: &str, b: &str) -> bool {
     false
 }
 
+const MAX_RETAINED_UPPER_SCRATCH_BYTES: usize = crate::types::MAX_SCAN_CHUNK_BYTES;
+
 thread_local! {
     /// Per-thread reusable buffer for [`ascii_upper_scratch`]. `const`-initialised
     /// so access is a direct `__thread` read (no lazy-init branch on the hot path).
@@ -343,7 +347,15 @@ impl AsciiUpperScratch {
 impl Drop for AsciiUpperScratch {
     #[inline]
     fn drop(&mut self) {
-        UPPER_SCRATCH.with(|cell| *cell.borrow_mut() = std::mem::take(&mut self.0));
+        let mut returned = std::mem::take(&mut self.0);
+        returned.zeroize();
+        if returned.capacity() > MAX_RETAINED_UPPER_SCRATCH_BYTES {
+            return;
+        }
+        UPPER_SCRATCH.with(|cell| {
+            let mut displaced = cell.replace(returned);
+            displaced.zeroize();
+        });
     }
 }
 
@@ -356,4 +368,10 @@ pub(crate) fn ascii_upper_scratch(input: &str) -> AsciiUpperScratch {
     buf.push_str(input);
     buf.make_ascii_uppercase();
     AsciiUpperScratch(buf)
+}
+
+#[cfg(test)]
+pub(crate) fn retained_upper_scratch_capacity_after_for_test(input: &str) -> usize {
+    drop(ascii_upper_scratch(input));
+    UPPER_SCRATCH.with_borrow(String::capacity)
 }

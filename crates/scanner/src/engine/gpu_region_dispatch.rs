@@ -691,7 +691,9 @@ impl CompiledScanner {
                             text.as_str(),
                             rx,
                             None,
-                            self.ac_match_upper_bounds.get(det).copied().flatten(),
+                            self.ac_match_upper_bounds
+                                .as_ref()
+                                .and_then(|bounds| bounds.get(det).copied().flatten()),
                         ) {
                             set_trigger_bit(&mut triggers, ci, det, words);
                             gpu_underfire_recovered += 1;

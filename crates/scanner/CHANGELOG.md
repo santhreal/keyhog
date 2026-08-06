@@ -11,6 +11,8 @@
 - Bound caches to live workloads: the shared detector-regex index now weakly deduplicates only concurrently live scanners, while fragment-reassembly shards grow from one row on demand and release that capacity when a workload is cleared.
 - Release compiler-only keyword catalogs, warning strings, route-neutral literal tables, and decoded detector schemas before the compiled scanner enters health and scan-state measurement.
 - Return freed compiler arenas to the allocator once scanner construction completes. Mimalloc builds collect every Rayon worker heap and the caller heap; Linux glibc builds trim the process heap before runtime health measurement.
+- Keep GPU literal rows, regex-bound rows, matcher programs, peers, and dispatch scratch absent from exact CPU and SIMD scanners.
+- Make worker scratch lazy and bounded: uppercase, checksum-decode, generic-keyword, and decode-fact pools no longer retain hostile-input or eager per-thread allocations.
 
 - Move two large co-located test suites out of scanner source files and into the tests tree, shrinking `detector_ids.rs` from 414 lines to 127 and the Hyperscan scratch backend from 767 to 341. Both keep running against the crate-private state they exist to check, and both leave the inline-test allowlist, so the allowlist now names two fewer permanent exceptions.
 

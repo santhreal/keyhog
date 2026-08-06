@@ -7,6 +7,8 @@
 
 mod compiled;
 
+#[cfg(test)]
+pub(crate) use compiled::base64_scratch_capacity_after_payload_for_test;
 pub(crate) use compiled::{CompiledDetectorValidators, CompiledValidatorIndex};
 
 use std::sync::LazyLock;

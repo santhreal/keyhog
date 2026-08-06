@@ -288,6 +288,10 @@ deserializes these artifacts directly from the authenticated pack. It does not
 compile patterns, rebuild GPU literal rows, or construct an unselected backend.
 VYRE remains the sole owner of device programs, dispatch, and GPU-resident
 memory.
+An exact CPU or SIMD scanner also omits GPU literal rows, regex-bound rows,
+matcher programs, peer state, and upload/readback scratch. Those allocations
+exist only after an exact GPU route or calibration census selects a usable VYRE
+peer.
 
 An exact SIMD scanner does not retain the scalar phase-one automaton. Before
 first use, its lazy plan shares the canonical literal allocation with scanner
@@ -330,6 +334,7 @@ Scanner parsing and traversal are iterative, so the previous 8 MiB reservation
 only multiplied per-worker virtual memory without protecting a required call
 depth.
 
+
 Every mapped byte has one owner: pack metadata, detector IR, route classifier,
 regex programs, suppression policy, or the selected backend. Header, table, and
 alignment padding belong to pack metadata. The ownership ledger must sum to the
@@ -337,7 +342,13 @@ complete mapping length.
 
 Pack files use read-only shared mappings. Concurrent scanners fault the same immutable physical pages while they authenticate and hydrate a generation, rather than allocating one input copy per process. Each process retains only its owned decoded runtime after releasing the transient mapping.
 
-Worker-local scratch is lazy and route-scoped. Host anchor candidates retain at most one scan chunk, single-chunk VYRE upload/readback buffers retain at most one scan chunk, and coalesced VYRE buffers retain at most the portable dispatch grid. An outlier is zeroed where it can contain source bytes and released before that worker serves another route.
+Worker-local scratch is lazy and route-scoped. Uppercase, checksum-decode, and
+generic-keyword pools retain at most one scan chunk per worker; decode-fact maps
+start empty. Host anchor candidates retain at most one scan chunk. Single-chunk
+VYRE upload/readback buffers retain at most one scan chunk, while coalesced VYRE
+buffers retain at most the portable dispatch grid so repeated GPU batches do
+not reallocate. Outliers are zeroed where they can contain source bytes and
+released before that worker serves another route.
 
 ### Failure and recovery contract
 
