@@ -285,13 +285,11 @@ impl VyreOrchestrationProgram {
         }
         Ok(program)
     }
-    /// Decode the VYRE receipt carried by an execution-pack backend envelope.
-    pub fn decode_backend_section(
+    /// Return the canonical VYRE receipt carried by an execution-pack backend envelope.
+    pub fn backend_section_receipt(
         bytes: &[u8],
         expected_backend: ExecutionPackBackend,
-        expected_ir_digest: [u8; 32],
-        expected_identity: &VyreExecutionIdentity,
-    ) -> Result<Self, ExecutionPackError> {
+    ) -> Result<&[u8], ExecutionPackError> {
         const HEADER_LEN: usize = 17;
         if bytes.len() < HEADER_LEN || &bytes[..8] != b"KHVYRE\0\x01" {
             return Err(ExecutionPackError::InvalidPack(
@@ -315,8 +313,18 @@ impl VyreOrchestrationProgram {
                 "VYRE backend-program receipt length does not match its bytes".into(),
             ));
         }
+        Ok(&bytes[HEADER_LEN..])
+    }
+
+    /// Decode the VYRE receipt carried by an execution-pack backend envelope.
+    pub fn decode_backend_section(
+        bytes: &[u8],
+        expected_backend: ExecutionPackBackend,
+        expected_ir_digest: [u8; 32],
+        expected_identity: &VyreExecutionIdentity,
+    ) -> Result<Self, ExecutionPackError> {
         Self::decode(
-            &bytes[HEADER_LEN..],
+            Self::backend_section_receipt(bytes, expected_backend)?,
             expected_backend,
             expected_ir_digest,
             expected_identity,

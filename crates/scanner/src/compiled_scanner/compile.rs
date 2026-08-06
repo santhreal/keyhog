@@ -181,7 +181,26 @@ impl CompiledScanner {
             ));
         }
         let backend_program = section(Section::BackendProgram)?;
-        if *blake3::hash(backend_program).as_bytes() != identity.backend_digest {
+        let backend_identity_bytes = if identity.backend.is_gpu() {
+            #[cfg(feature = "gpu")]
+            {
+                crate::execution_pack::VyreOrchestrationProgram::backend_section_receipt(
+                    backend_program,
+                    identity.backend,
+                )
+                .map_err(|error| crate::error::ScanError::Config(error.to_string()))?
+            }
+            #[cfg(not(feature = "gpu"))]
+            {
+                return Err(crate::error::ScanError::Config(
+                    "execution pack selects GPU but this scanner was built without GPU support"
+                        .to_owned(),
+                ));
+            }
+        } else {
+            backend_program
+        };
+        if *blake3::hash(backend_identity_bytes).as_bytes() != identity.backend_digest {
             return Err(crate::error::ScanError::Config(
                 "execution pack BackendProgram identity does not match its header".to_owned(),
             ));
