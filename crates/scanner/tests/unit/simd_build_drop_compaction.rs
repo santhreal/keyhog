@@ -46,7 +46,10 @@ fn build_drop_reassigns_database_ids_and_preserves_canonical_mapping() {
 
     let serialized = scanner
         .serialize_database_shards()
-        .expect("compacted shards serialize");
+        .expect("compacted shards serialize")
+        .into_iter()
+        .map(crate::execution_pack::SerializedHyperscanShard::from)
+        .collect::<Vec<_>>();
     let restored = HsScanner::from_serialized_database_shards(
         &serialized,
         scanner.execution_pattern_map().to_vec(),
