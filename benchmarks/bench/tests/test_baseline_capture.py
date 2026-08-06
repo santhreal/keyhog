@@ -163,6 +163,20 @@ def test_filesystem_driver_selects_only_requested_route_and_policy(tmp_path: pat
     assert command[command.index("--max-file-size") + 1] == "512M"
 
 
+def test_binary_filesystem_driver_targets_the_regular_file(tmp_path: pathlib.Path) -> None:
+    """WHY: --binary accepts regular files, so passing the fixture directory turns a finding workload into an unreadable-source gap."""
+    command = filesystem_command(
+        _workload("filesystem-binary-strings"),
+        binary=tmp_path / "keyhog",
+        detectors=None,
+        fixture_root=tmp_path / "fixture",
+        output=tmp_path / "result.json",
+        backend="cpu",
+    )
+    assert "--binary" in command
+    assert command[-1] == str(tmp_path / "fixture" / "input" / "program.bin")
+
+
 def test_capture_runs_five_complete_process_trials_and_binds_binary(
     tmp_path: pathlib.Path,
 ) -> None:

@@ -340,6 +340,11 @@ def _filesystem_scan_roots(workload: Workload, fixture_root: pathlib.Path) -> li
     input_root = fixture_root / "input"
     if workload.workload_id == "filesystem-multiple-roots":
         return [str(input_root / f"root-{index}") for index in range(3)]
+    if workload.workload_id in {
+        "filesystem-binary-strings",
+        "filesystem-binary-decompiler",
+    }:
+        return [str(input_root / "program.bin")]
     return [str(input_root)]
 
 
