@@ -212,6 +212,16 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
         )));
         return WindowedMmapOutcome::Consumed;
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if meta.blocks().saturating_mul(512) < meta.len() {
+            // File-backed sparse holes remain charged to mmap RSS even after
+            // prefix advice on this kernel. The buffered window path keeps one
+            // owned window resident and preserves identical offsets/overlap.
+            return WindowedMmapOutcome::Fallback(file);
+        }
+    }
     // No re-flock: `open_file_safe` already holds the advisory LOCK_SH on this
     // fd (a shared lock we hold blocks any new LOCK_EX), so this was a redundant
     // syscall with a dead "locked by another process" branch. The lock persists
@@ -274,22 +284,16 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
 
     #[cfg(unix)]
     {
-        use std::os::unix::fs::MetadataExt;
-        let allocated_bytes = meta.blocks().saturating_mul(512);
-        let advice = if allocated_bytes < meta.len() {
-            // Sparse holes need no storage read-ahead. Sequential advice can
-            // fault hundreds of MiB of zero-backed pages ahead of the one live
-            // scanner window, multiplying RSS without reducing I/O.
-            libc::MADV_RANDOM
-        } else {
-            // Dense files are consumed front-to-back once; sequential readahead
-            // remains the throughput path and released prefixes lose LRU
-            // protection immediately below.
-            libc::MADV_SEQUENTIAL
-        };
-        // SAFETY: advisory call over the complete live read-only mapping.
+        // SAFETY: madvise on a valid mmap range; ignored if the kernel
+        // doesn't honor the hint. SEQUENTIAL doubles readahead and
+        // disables LRU protection on already-read pages - we walk
+        // front-to-back and never revisit, so eviction is correct.
         unsafe {
-            libc::madvise(mmap.as_ptr() as *mut libc::c_void, mmap.len(), advice);
+            libc::madvise(
+                mmap.as_ptr() as *mut libc::c_void,
+                mmap.len(),
+                libc::MADV_SEQUENTIAL,
+            );
         }
     }
 
