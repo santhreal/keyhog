@@ -84,6 +84,28 @@ struct SuppressionEnvelope {
     detector_ir_digest: [u8; 32],
     detector_count: u32,
 }
+trait MatcherEnvelopeIdentity {
+    fn version(&self) -> u16;
+    fn backend(&self) -> &str;
+}
+
+macro_rules! impl_matcher_envelope_identity {
+    ($($ty:ty),+ $(,)?) => {
+        $(
+            impl MatcherEnvelopeIdentity for $ty {
+                fn version(&self) -> u16 {
+                    self.version
+                }
+
+                fn backend(&self) -> &str {
+                    &self.backend
+                }
+            }
+        )+
+    };
+}
+
+impl_matcher_envelope_identity!(LiteralEnvelope, RegexEnvelope, SuppressionEnvelope);
 
 impl CompiledRouteMatcherSections {
     /// Serializes the canonical install-compiled matcher graph for one route.
@@ -465,17 +487,13 @@ fn decode_canonical<T>(
     backend: ExecutionPackBackend,
 ) -> Result<T, ExecutionPackError>
 where
-    T: serde::de::DeserializeOwned + Serialize,
+    T: serde::de::DeserializeOwned + Serialize + MatcherEnvelopeIdentity,
 {
     let decoded: T = serde_json::from_slice(bytes).map_err(|error| {
         ExecutionPackError::InvalidPack(format!("compiled route {name} is invalid JSON: {error}"))
     })?;
-    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
-        ExecutionPackError::InvalidPack(format!("compiled route {name} is invalid JSON: {error}"))
-    })?;
-    if value.get("version").and_then(serde_json::Value::as_u64)
-        != Some(u64::from(ROUTE_MATCHER_SECTION_VERSION))
-        || value.get("backend").and_then(serde_json::Value::as_str) != Some(backend_name(backend))
+    if decoded.version() != ROUTE_MATCHER_SECTION_VERSION
+        || decoded.backend() != backend_name(backend)
     {
         return Err(ExecutionPackError::Incompatible(format!(
             "compiled route {name} version or backend is incompatible"
