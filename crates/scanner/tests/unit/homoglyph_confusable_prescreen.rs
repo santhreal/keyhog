@@ -1,14 +1,13 @@
-//! The homoglyph-variant skip is keyed on "no confusable glyph is present",
-//! proved by a one-pass lead-byte test, not on "the chunk is pure ASCII".
+//! The homoglyph-variant skip is keyed on exact confusable membership, proved
+//! by a lead-byte prefilter followed by character membership when needed.
 //!
-//! The old proxy forced the full residual pattern set over every chunk with any
-//! non-ASCII byte. On this repository's own sources that was 858 of 945
-//! non-ASCII files paying for homoglyph batches that provably could not match,
-//! and those chunks were where `phase2:prefilter` spent its time.
+//! The old non-ASCII proxy forced the full residual pattern set over 858 of 945
+//! non-ASCII repository files. The later lead-byte-only proxy still admitted
+//! unrelated characters sharing a UTF-8 lead, including lossy `U+FFFD`, and
+//! retained roughly 50 MiB of Unicode matcher state for invalid text.
 //!
-//! The prescreen is only allowed to be a SOUND over-approximation: `false` must
-//! prove absence. These tests pin that direction, because a false negative
-//! silently drops every homoglyph-evasion finding in the chunk.
+//! A false negative silently drops every homoglyph-evasion finding, so these
+//! tests bind the prescreen to the matcher expansion map itself.
 
 use crate::homoglyph::{expand_homoglyphs, homoglyph_confusables, may_contain_confusable};
 
@@ -66,6 +65,7 @@ fn ordinary_non_ascii_source_text_clears_the_prescreen() {
         "// done ✅ shipped 🚀",
         "// em dash — and curly “quotes”",
         "// naïve café résumé",
+        "// lossy decode replacement \u{fffd}",
     ] {
         assert!(
             !may_contain_confusable(text),
@@ -80,7 +80,8 @@ fn ordinary_non_ascii_source_text_clears_the_prescreen() {
 #[test]
 fn a_confusable_buried_in_ordinary_non_ascii_text_is_detected() {
     let cyrillic_a = '\u{0410}';
-    let text = format!("// 日本語 ✅ 🚀 résumé\nAWS_ACCESS_KEY_ID = \"{cyrillic_a}KIAQYLPMN5HFIQR7XYA\"");
+    let text =
+        format!("// 日本語 ✅ 🚀 résumé\nAWS_ACCESS_KEY_ID = \"{cyrillic_a}KIAQYLPMN5HFIQR7XYA\"");
     assert!(
         may_contain_confusable(&text),
         "a Cyrillic capital A among ordinary non-ASCII text must be detected"

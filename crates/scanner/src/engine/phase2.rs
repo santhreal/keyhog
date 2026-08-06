@@ -445,7 +445,8 @@ pub(crate) const DECODE_FOCUS_MARGIN: usize = 64;
 /// actually contains a confusable glyph; every variant's base ASCII prefix is
 /// already owned by the anchor and confirmed paths. So the exact condition is
 /// "no confusable glyph is present", which
-/// [`crate::homoglyph::may_contain_confusable`] proves in one byte pass.
+/// [`crate::homoglyph::may_contain_confusable`] proves with a byte prefilter and
+/// exact character membership on the narrow candidate path.
 ///
 /// This used to test `chunk_is_ascii`, a much cruder proxy for the same fact.
 /// Any non-ASCII byte at all forced the full residual pattern set, even though

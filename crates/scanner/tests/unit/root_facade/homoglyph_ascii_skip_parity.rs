@@ -141,9 +141,15 @@ fn canonical(matches: &[RawMatch]) -> Vec<Key> {
     v
 }
 
-fn scanner() -> &'static CompiledScanner {
-    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
-    SCANNER.get_or_init(|| {
+fn scanner(backend: ScanBackend) -> &'static CompiledScanner {
+    static CPU_SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
+    static SIMD_SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
+    let cell = match backend {
+        ScanBackend::CpuFallback => &CPU_SCANNER,
+        ScanBackend::SimdCpu => &SIMD_SCANNER,
+        _ => panic!("homoglyph parity supports exact host backends only"),
+    };
+    cell.get_or_init(|| {
         let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
         detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
         for id in DETECTOR_IDS {
@@ -156,8 +162,8 @@ fn scanner() -> &'static CompiledScanner {
         // generated homoglyph regex instead of being rewritten to its base.
         let mut config = ScannerConfig::default();
         config.unicode_normalization = false;
-        CompiledScanner::compile(detectors)
-            .expect("compile")
+        CompiledScanner::compile_for_backend(detectors, backend)
+            .expect("compile exact parity scanner")
             .with_config(config)
     })
 }
@@ -235,7 +241,7 @@ fn report(on: &[Key], off: &[Key], input: &[u8]) -> String {
 #[test]
 fn homoglyph_ascii_skip_parity_default() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let scanner = scanner();
+    let scanner = scanner(ScanBackend::CpuFallback);
     scanner.clear_fragment_cache();
 
     let n: usize = std::env::var("KEYHOG_PARITY_N")
@@ -304,7 +310,7 @@ fn homoglyph_ascii_skip_parity_default() {
 #[test]
 fn homoglyph_ascii_skip_parity_hs_backend() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let scanner = scanner();
+    let scanner = scanner(ScanBackend::SimdCpu);
     scanner.clear_fragment_cache();
 
     let deterministic_cases = deterministic_ascii_cases();
@@ -344,7 +350,7 @@ fn homoglyph_ascii_skip_parity_hs_backend() {
 #[test]
 fn homoglyph_variant_unaffected_on_non_ascii() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let scanner = scanner();
+    let scanner = scanner(ScanBackend::CpuFallback);
     scanner.clear_fragment_cache();
     // Stripe `sk_live_` with Cyrillic small dze `ѕ` (U+0455) for the leading s.
     let credential = "\u{0455}k_live_0123456789abcdefABCDEFxy";

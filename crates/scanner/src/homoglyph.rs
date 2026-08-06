@@ -3,8 +3,8 @@
 //! Attackers may replace 'a' with Cyrillic 'а' to bypass simple regexes.
 //! This module provides a way to match patterns against homoglyph-expanded forms.
 
-use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::collections::{HashMap, HashSet};
+use std::sync::{LazyLock, OnceLock};
 
 /// Returns a map of ASCII characters to their common Unicode homoglyphs.
 fn homoglyph_map() -> &'static HashMap<char, Vec<char>> {
@@ -89,23 +89,28 @@ fn confusable_lead_bytes() -> &'static [bool; 256] {
     })
 }
 
-/// Whether `text` could contain any confusable glyph.
+fn exact_confusable_glyphs() -> &'static HashSet<char> {
+    static GLYPHS: LazyLock<HashSet<char>> =
+        LazyLock::new(|| homoglyph_map().values().flatten().copied().collect());
+    &GLYPHS
+}
+
+/// Whether `text` contains any confusable glyph.
 ///
-/// A one-pass byte test over [`confusable_lead_bytes`]. It is a sound
-/// over-approximation: `false` PROVES no confusable is present, because every
-/// confusable's UTF-8 encoding begins with one of those bytes. `true` only
-/// means one of a handful of Cyrillic, Greek, Latin-extended, or fullwidth
-/// lead bytes appeared, which some non-confusable characters in those blocks
-/// also use.
-///
-/// This is the exact condition the homoglyph-variant skip needs. Keying that
-/// skip on "the chunk is pure ASCII" was a far cruder proxy: on this
-/// repository's own sources, 945 of 5,592 files are non-ASCII but only 87 of
-/// them carry a confusable lead byte, so the proxy forced the full residual
-/// pattern set over 858 chunks that provably could not match a homoglyph.
+/// The byte table is a cheap sound prefilter. A matching UTF-8 lead byte is not
+/// sufficient by itself: unrelated characters such as the replacement glyph
+/// `U+FFFD` share the fullwidth block's `0xEF` lead. Those false positives used
+/// to compile and retain the complete Unicode residual matcher set for ordinary
+/// invalid-UTF-8 input. Candidate texts therefore receive one exact character
+/// membership pass against the same map that builds the matcher variants.
 pub(crate) fn may_contain_confusable(text: &str) -> bool {
     let leads = confusable_lead_bytes();
-    text.as_bytes().iter().any(|byte| leads[usize::from(*byte)])
+    if !text.as_bytes().iter().any(|byte| leads[usize::from(*byte)]) {
+        return false;
+    }
+    let confusables = exact_confusable_glyphs();
+    text.chars()
+        .any(|character| confusables.contains(&character))
 }
 
 /// Expand a regex pattern to include homoglyphs.
