@@ -12,17 +12,16 @@
 //! * lossy replacement of invalid / truncated UTF-8;
 //! * the default `SourceLimits::stdin_bytes` constant the source resolves to;
 //! * and, through a re-exec harness that pipes controlled bytes into a child
-//!   copy of this binary, that a *large under-cap* payload stays exactly ONE
-//!   chunk (stdin never splits on a boundary) with the whole-file metadata
-//!   constants, that empty stdin still yields one empty chunk, and that an
-//!   oversize configured cap yields exactly one wrapped `SourceError::Io` row.
+//!   copy of this binary, that large under-cap payloads use bounded overlapping
+//!   windows with exact absolute metadata, empty stdin still yields one empty
+//!   chunk, and an oversize configured cap yields one wrapped error row.
 //!
 //! Every assertion is a concrete expected value: exact bytes, exact lengths,
 //! exact error messages/kinds, exact metadata fields, exact skip-counter
 //! deltas, exact child process exit codes.
 
 use keyhog_core::{Source, SourceError};
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{BufferedStdinSource, SourceLimits, StdinSource};
 
 // ---------------------------------------------------------------------------
@@ -245,29 +244,33 @@ fn stdin_chunk_metadata_child() {
 #[test]
 #[ignore = "harness child: launched by a parent test that pipes a large under-cap payload"]
 fn stdin_large_chunk_child() {
-    // A large payload well under the cap must stay exactly ONE chunk: stdin is
-    // built on `std::iter::once`, so it never splits on a size boundary the way
-    // the windowed filesystem source does.
+    // Large stdin is spooled before scanning, then exposed through the same
+    // bounded 1 MiB / 128 KiB overlapping-window contract as large files.
     let len: usize = std::env::var("KEYHOG_TEST_STDIN_LEN")
         .expect("KEYHOG_TEST_STDIN_LEN must be set by the parent")
         .parse()
         .expect("KEYHOG_TEST_STDIN_LEN must parse as usize");
+    const WINDOW: usize = 1024 * 1024;
+    const OVERLAP: usize = 128 * 1024;
+    const STRIDE: usize = WINDOW - OVERLAP;
 
     let rows: Vec<_> = StdinSource.chunks().collect();
-    assert_eq!(
-        rows.len(),
-        1,
-        "a large under-cap payload must be one chunk, not many"
-    );
+    let expected_rows = 1 + len.saturating_sub(WINDOW).div_ceil(STRIDE);
+    assert_eq!(rows.len(), expected_rows);
 
-    let chunk = match rows.into_iter().next().unwrap() {
-        Ok(chunk) => chunk,
-        Err(err) => panic!("large stdin chunk must be Ok, got {err:?}"),
-    };
-    assert_eq!(chunk.data.len(), len);
-    assert_eq!(chunk.metadata.source_type.as_ref(), "stdin");
-    assert_eq!(chunk.metadata.base_offset, 0);
-    assert!(chunk.data.as_bytes().iter().all(|b| *b == b'A'));
+    let mut reconstructed = Vec::with_capacity(len);
+    for (index, row) in rows.into_iter().enumerate() {
+        let chunk = row.unwrap_or_else(|err| panic!("large stdin chunk must be Ok: {err:?}"));
+        let expected_offset = index * STRIDE;
+        assert_eq!(chunk.metadata.source_type.as_ref(), "stdin");
+        assert_eq!(chunk.metadata.base_offset, expected_offset);
+        assert_eq!(chunk.metadata.base_line, 0);
+        assert!(chunk.data.as_bytes().iter().all(|byte| *byte == b'A'));
+        let unique_start = usize::from(index != 0) * OVERLAP;
+        reconstructed.extend_from_slice(&chunk.data.as_bytes()[unique_start..]);
+    }
+    assert_eq!(reconstructed.len(), len);
+    assert!(reconstructed.iter().all(|byte| *byte == b'A'));
 }
 
 #[test]
@@ -307,12 +310,9 @@ fn stdin_over_limit_chunk_child() {
         )
     );
 }
-
-/// Re-exec this test binary to run one `#[ignore]`d child body with `input`
-/// piped to its stdin and `envs` set, returning the child's exit status.
-/// stdout/stderr are discarded so libtest output cannot fill a pipe and
-/// deadlock; the exit code is the sole oracle (0 = child asserts passed,
-/// 101 = a child assertion panicked).
+/// stdout is discarded so libtest output cannot fill a pipe; stderr is
+/// inherited so child assertion failures name the exact broken contract.
+/// The exit code remains the parent oracle (0 passed, 101 panicked).
 fn run_stdin_child(child: &str, input: &[u8], envs: &[(&str, &str)]) -> std::process::ExitStatus {
     use std::io::Write;
     use std::process::{Command, Stdio};
@@ -324,7 +324,7 @@ fn run_stdin_child(child: &str, input: &[u8], envs: &[(&str, &str)]) -> std::pro
         .arg("--ignored")
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(Stdio::inherit());
     for (key, value) in envs {
         cmd.env(key, value);
     }
@@ -368,19 +368,19 @@ fn empty_pipe_yields_one_empty_stdin_chunk() {
 }
 
 #[test]
-fn large_under_cap_payload_stays_single_chunk() {
-    // 256 KiB (>> the 64 KiB preallocation ceiling, << the 10 MiB cap) must
-    // arrive as ONE chunk: proof stdin never splits on a size boundary.
-    let payload = vec![b'A'; 262_144];
+fn large_under_cap_payload_uses_bounded_overlapping_windows() {
+    // 2.25 MiB exercises three bounded windows and their exact overlap while
+    // remaining below the 10 MiB source cap.
+    let payload = vec![b'A'; 2_359_296];
     let status = run_stdin_child(
         "stdin_large_chunk_child",
         &payload,
-        &[("KEYHOG_TEST_STDIN_LEN", "262144")],
+        &[("KEYHOG_TEST_STDIN_LEN", "2359296")],
     );
     assert_eq!(
         status.code(),
         Some(0),
-        "a 256 KiB under-cap payload must be exactly one stdin chunk"
+        "large stdin must preserve bytes through bounded overlapping windows"
     );
 }
 

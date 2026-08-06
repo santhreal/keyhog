@@ -1,9 +1,9 @@
-//! Standard input source: reads piped input as a single chunk for scanning.
+//! Standard input source: spools piped input and scans bounded windows.
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom, Write};
 
-/// Reads all of stdin as a single chunk.
+/// Spools stdin under its byte cap and emits bounded overlapping windows.
 ///
 /// # Examples
 ///
@@ -19,6 +19,17 @@ pub struct StdinSource;
 /// Stdin source with caller-resolved source limits.
 pub struct ConfiguredStdinSource {
     limits: crate::SourceLimits,
+}
+
+const STDIN_WINDOW_SIZE: usize = 1024 * 1024;
+const STDIN_WINDOW_OVERLAP: usize = 128 * 1024;
+
+struct SpooledStdinChunks {
+    file: std::fs::File,
+    len: usize,
+    next_offset: usize,
+    next_line: usize,
+    done: bool,
 }
 
 /// An already acquired stdin payload with the same decoding, limits, chunk
@@ -99,7 +110,107 @@ impl Source for BufferedStdinSource {
 }
 
 fn chunks_with_limit(max_bytes: usize) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>>> {
-    crate::gate_scan(|| one_stdin_chunk(read_stdin_limited(max_bytes)))
+    crate::gate_scan(|| match spool_stdin_limited(max_bytes) {
+        Ok((file, len)) => Box::new(SpooledStdinChunks {
+            file,
+            len,
+            next_offset: 0,
+            next_line: 0,
+            done: false,
+        }),
+        Err(error) => Box::new(std::iter::once(Err(SourceError::Io(error)))),
+    })
+}
+
+impl Iterator for SpooledStdinChunks {
+    type Item = Result<Chunk, SourceError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+
+        let start = self.next_offset;
+        let read_len = self.len.saturating_sub(start).min(STDIN_WINDOW_SIZE);
+        let mut bytes = vec![0; read_len];
+        if let Err(error) = self
+            .file
+            .seek(SeekFrom::Start(start as u64))
+            .and_then(|_| self.file.read_exact(&mut bytes))
+        {
+            self.done = true;
+            return Some(Err(SourceError::Io(error)));
+        }
+
+        let end = start + read_len;
+        let advanced = if end < self.len {
+            Some(read_len - STDIN_WINDOW_OVERLAP)
+        } else {
+            None
+        };
+        let advanced_lines = advanced
+            .map(|len| memchr::memchr_iter(b'\n', &bytes[..len]).count())
+            .unwrap_or(0);
+        let text = match String::from_utf8(bytes) {
+            Ok(text) => text,
+            Err(error) => String::from_utf8_lossy(&error.into_bytes()).into_owned(),
+        };
+        let base_line = self.next_line;
+        if end >= self.len {
+            self.done = true;
+        } else if let Some(advanced) = advanced {
+            self.next_line += advanced_lines;
+            self.next_offset += advanced;
+        }
+
+        Some(Ok(Chunk {
+            data: text.into(),
+            metadata: ChunkMetadata {
+                base_offset: start,
+                base_line,
+                source_type: "stdin".into(),
+                path: None,
+                commit: None,
+                author: None,
+                date: None,
+                mtime_ns: None,
+                size_bytes: None,
+                decoded_span: None,
+            },
+        }))
+    }
+}
+
+fn spool_stdin_limited(max_bytes: usize) -> std::io::Result<(std::fs::File, usize)> {
+    let _acquire = crate::profile::acquire_span();
+    let mut input = std::io::stdin().lock();
+    let mut file = tempfile::tempfile()?;
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut total = 0usize;
+    let _buffering = crate::profile::read_span();
+
+    loop {
+        let read = input.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        total = total.checked_add(read).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "stdin byte count overflow")
+        })?;
+        if total > max_bytes {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            return Err(std::io::Error::other(format!(
+                "stdin exceeds {} byte limit",
+                max_bytes
+            )));
+        }
+        file.write_all(&buffer[..read])?;
+    }
+    drop(_buffering);
+
+    crate::profile::add_input_units(1);
+    crate::profile::add_input_bytes(total as u64);
+    Ok((file, total))
 }
 
 fn one_stdin_chunk(
@@ -112,27 +223,23 @@ fn one_stdin_chunk(
             crate::profile::add_input_units(1);
             crate::profile::add_input_bytes(data.len() as u64);
             Ok(Chunk {
-            data: data.into(),
-            metadata: ChunkMetadata {
-                base_offset: 0,
-                base_line: 0,
-                source_type: "stdin".into(),
-                path: None,
-                commit: None,
-                author: None,
-                date: None,
-                mtime_ns: None,
-                size_bytes: None,
-                decoded_span: None,
-            },
+                data: data.into(),
+                metadata: ChunkMetadata {
+                    base_offset: 0,
+                    base_line: 0,
+                    source_type: "stdin".into(),
+                    path: None,
+                    commit: None,
+                    author: None,
+                    date: None,
+                    mtime_ns: None,
+                    size_bytes: None,
+                    decoded_span: None,
+                },
             })
         }
         Err(error) => Err(SourceError::Io(error)),
     }))
-}
-
-fn read_stdin_limited(max_bytes: usize) -> std::io::Result<String> {
-    read_to_string_limited(&mut std::io::stdin().lock(), max_bytes)
 }
 
 pub(crate) fn read_to_string_limited(
@@ -148,9 +255,8 @@ pub(crate) fn read_to_string_limited(
     })?;
     // Read at most `max_bytes + 1` so oversized stdin is rejected before we
     // hand a giant buffer to the scanner.
-    // stdin has no bounded-queue handoff inside this adapter (the single
-    // chunk is returned synchronously), so backpressure has no span site here;
-    // the CLI-level channel send carries SourceQueueWait instead.
+    // Buffered callers return one synchronous chunk, so there is no internal
+    // queue handoff; the CLI source channel records any downstream wait.
     let _buffering = crate::profile::read_span();
     let read = crate::capped_read::read_to_cap(reader, cap, None)?;
     drop(_buffering);

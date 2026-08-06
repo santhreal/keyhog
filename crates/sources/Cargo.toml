@@ -32,15 +32,14 @@ git = ["gix", "dep:ignore"]
 # S3 request signing delegates to the single SigV4 owner instead of carrying
 # source-local forks.
 web = ["dep:reqwest", "dep:keyhog-verifier", "dep:brotli"]
-github = ["git", "dep:reqwest", "dep:tempfile", "dep:keyhog-verifier"]
+github = ["git", "dep:reqwest", "dep:keyhog-verifier"]
 gitlab = [
     "git",
     "dep:reqwest",
-    "dep:tempfile",
     "dep:urlencoding",
     "dep:keyhog-verifier",
 ]
-bitbucket = ["git", "dep:reqwest", "dep:tempfile", "dep:keyhog-verifier"]
+bitbucket = ["git", "dep:reqwest", "dep:keyhog-verifier"]
 slack = ["dep:reqwest"]
 azure = [
     "dep:reqwest",
@@ -66,8 +65,8 @@ s3 = [
 # `tar` is now an unconditional dependency (used by the always-on filesystem
 # tarball-unpack path), so the docker feature only pulls in its workspace and
 # subprocess timeout support.
-docker = ["dep:tempfile", "dep:wait-timeout"]
-binary = ["dep:goblin", "dep:tempfile", "dep:glob", "dep:wait-timeout"]  # ELF/PE/Mach-O + Ghidra decompiler
+docker = ["dep:wait-timeout"]
+binary = ["dep:goblin", "dep:glob", "dep:wait-timeout"]  # ELF/PE/Mach-O + Ghidra decompiler
 
 [dependencies]
 keyhog-core = { workspace = true }
@@ -167,7 +166,6 @@ workspace = true
 
 [dependencies.tempfile]
 workspace = true
-optional = true
 
 [dependencies.quick-xml]
 workspace = true

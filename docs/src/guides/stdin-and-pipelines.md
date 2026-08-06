@@ -197,15 +197,12 @@ Raise it when a larger stream is intentional:
 keyhog scan --stdin --limit-stdin-bytes 20M < big.json
 ```
 
-An 11 MB input then reports 11000036 bytes in one chunk. The whole stream is
-one chunk regardless of size, so a large stdin scan is single-threaded on that
-input. Write the input to a file and scan the path when you want the file to be
-split into windows and scanned in parallel:
-
-```sh
-kubectl get secret app -o yaml > /tmp/secret.yaml
-keyhog scan /tmp/secret.yaml
-```
+An 11 MB input is first spooled to an anonymous temporary file so the limit is
+validated before any partial result can escape. KeyHog then scans overlapping
+1 MiB windows with 128 KiB of boundary coverage. Memory stays bounded, findings
+retain absolute offsets and line numbers, and independent windows can use the
+configured scan workers. The anonymous file is removed automatically when the
+source closes.
 
 `--limit-stdin-bytes` applies only to `--stdin`. It does not bound a directory
 scan.
