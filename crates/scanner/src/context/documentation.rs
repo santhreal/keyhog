@@ -3,40 +3,54 @@ use super::inference::has_assignment_operator;
 const DOCSTRING_TOGGLE_REMAINDER: usize = 2;
 const DOCSTRING_TOGGLE_MATCH: usize = 1;
 
-/// Mark lines that appear to be documentation or docstrings.
-pub(crate) fn documentation_line_flags(lines: &[&str]) -> Vec<bool> {
-    let mut flags = vec![false; lines.len()];
-    let mut in_markdown_code_block = false;
-    let mut in_docstring = false;
+/// Stateful documentation classifier shared by borrowed and indexed line views.
+pub(super) struct DocumentationClassifier {
+    in_markdown_code_block: bool,
+    in_docstring: bool,
+}
 
-    for (idx, line) in lines.iter().enumerate() {
+impl DocumentationClassifier {
+    pub(super) const fn new() -> Self {
+        Self {
+            in_markdown_code_block: false,
+            in_docstring: false,
+        }
+    }
+
+    pub(super) fn classify(&mut self, line: &str) -> bool {
         let trimmed = line.trim();
         let is_fence = trimmed.starts_with("```");
         let docstring_segment = before_line_comment(trimmed);
         let triple_count = docstring_delimiter_count(docstring_segment);
-        let self_contained_docstring = !in_docstring
+        let self_contained_docstring = !self.in_docstring
             && triple_count >= DOCSTRING_TOGGLE_REMAINDER
             && triple_count % DOCSTRING_TOGGLE_REMAINDER == 0
             && opens_docstring(docstring_segment);
-        if is_fence || in_markdown_code_block || in_docstring || self_contained_docstring {
-            flags[idx] = true;
-        }
+        let documentation = is_fence
+            || self.in_markdown_code_block
+            || self.in_docstring
+            || self_contained_docstring;
 
         if is_fence {
-            in_markdown_code_block = !in_markdown_code_block;
+            self.in_markdown_code_block = !self.in_markdown_code_block;
         }
         if triple_count % DOCSTRING_TOGGLE_REMAINDER == DOCSTRING_TOGGLE_MATCH {
-            if in_docstring {
+            if self.in_docstring {
                 if closes_docstring(docstring_segment) {
-                    in_docstring = false;
+                    self.in_docstring = false;
                 }
             } else {
-                in_docstring = opens_docstring(docstring_segment);
+                self.in_docstring = opens_docstring(docstring_segment);
             }
         }
+        documentation
     }
+}
 
-    flags
+/// Mark lines that appear to be documentation or docstrings.
+pub(crate) fn documentation_line_flags(lines: &[&str]) -> Vec<bool> {
+    let mut classifier = DocumentationClassifier::new();
+    lines.iter().map(|line| classifier.classify(line)).collect()
 }
 
 fn docstring_delimiter_count(segment: &str) -> usize {

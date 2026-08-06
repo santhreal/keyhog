@@ -8,8 +8,9 @@ use std::hint::black_box;
 
 use keyhog_scanner::ml_scorer::{compute_features_for_detector_with_config, MlCandidateChannel};
 use keyhog_scanner::testing::{
-    compute_line_offsets, local_context_window, local_context_window_from_offsets,
-    ml_context_for_candidate, ml_score_features, queued_ml_features_with_line_offsets,
+    compact_line_index_for_test, compute_line_offsets, local_context_window,
+    local_context_window_from_offsets, ml_context_for_candidate, ml_score_features,
+    queued_ml_features_with_compact_index, CompactLineIndexForTest,
 };
 use keyhog_scanner::ScannerConfig;
 
@@ -61,7 +62,7 @@ fn measure_allocations<T>(run: impl FnOnce() -> T) -> (T, usize, usize) {
 
 fn assert_feature_and_score_parity(
     source: &str,
-    line_offsets: &[usize],
+    line_index: &CompactLineIndexForTest,
     line: usize,
     path: Option<&str>,
     credential: &str,
@@ -83,9 +84,9 @@ fn assert_feature_and_score_parity(
         detector,
         channel,
     );
-    let actual = queued_ml_features_with_line_offsets(
+    let actual = queued_ml_features_with_compact_index(
         source,
-        line_offsets,
+        line_index,
         line,
         path,
         credential,
@@ -162,10 +163,10 @@ fn borrowed_context_matches_owned_oracle_for_semantic_and_boundary_cases() {
     ];
 
     for (source, line, path, credential, radius, detector_id, channel) in cases {
-        let line_offsets = compute_line_offsets(source);
+        let line_index = compact_line_index_for_test(source).expect("fixture fits compact index");
         assert_feature_and_score_parity(
             source,
-            &line_offsets,
+            &line_index,
             line,
             path,
             credential,
@@ -191,10 +192,10 @@ fn virtual_path_source_boundaries_match_contiguous_context() {
     ];
     config.test_keywords = vec!["context.rs\nTWILIO".to_string()];
     let source = "TWILIO_AUTH_TOKEN=0123456789abcdef0123456789abcdef";
-    let line_offsets = compute_line_offsets(source);
+    let line_index = compact_line_index_for_test(source).expect("fixture fits compact index");
     assert_feature_and_score_parity(
         source,
-        &line_offsets,
+        &line_index,
         1,
         Some("src/context.rs"),
         CREDENTIAL,
@@ -216,10 +217,10 @@ fn nul_and_missing_boundaries_preserve_assignment_semantics() {
         ("\0=0123456789abcdef0123456789abcdef", 1.0),
         ("'=' 0123456789abcdef0123456789abcdef", 0.0),
     ] {
-        let line_offsets = compute_line_offsets(source);
+        let line_index = compact_line_index_for_test(source).expect("fixture fits compact index");
         assert_feature_and_score_parity(
             source,
-            &line_offsets,
+            &line_index,
             1,
             None,
             CREDENTIAL,
@@ -228,9 +229,9 @@ fn nul_and_missing_boundaries_preserve_assignment_semantics() {
             MlCandidateChannel::Entropy,
             &config,
         );
-        let actual = queued_ml_features_with_line_offsets(
+        let actual = queued_ml_features_with_compact_index(
             source,
-            &line_offsets,
+            &line_index,
             1,
             None,
             CREDENTIAL,
@@ -257,12 +258,12 @@ fn dense_candidates_keep_exact_feature_rows_and_scores() {
         writeln!(source, "TWILIO_AUTH_TOKEN_{index}={CREDENTIAL}")
             .expect("writing to String cannot fail");
     }
-    let line_offsets = compute_line_offsets(&source);
+    let line_index = compact_line_index_for_test(&source).expect("fixture fits compact index");
 
     for line in 1..=128 {
         assert_feature_and_score_parity(
             &source,
-            &line_offsets,
+            &line_index,
             line,
             Some("src/dense_twilio.rs"),
             CREDENTIAL,
@@ -284,15 +285,16 @@ fn feature_extraction_is_byte_bounded_and_allocation_free_after_warmup() {
     let config = ScannerConfig::default();
     let source = "€".repeat(200_000);
     let line_offsets = compute_line_offsets(&source);
+    let line_index = compact_line_index_for_test(&source).expect("fixture fits compact index");
     let old_window = local_context_window(&source, 1, 5);
     let borrowed_window = local_context_window_from_offsets(&source, &line_offsets, 1, 5);
     assert_eq!(borrowed_window, old_window);
     assert!(borrowed_window.len() <= 8 * 1024);
     assert!(borrowed_window.is_char_boundary(borrowed_window.len()));
 
-    let warm = queued_ml_features_with_line_offsets(
+    let warm = queued_ml_features_with_compact_index(
         &source,
-        &line_offsets,
+        &line_index,
         1,
         Some("src/huge_unicode.rs"),
         CREDENTIAL,
@@ -306,9 +308,9 @@ fn feature_extraction_is_byte_bounded_and_allocation_free_after_warmup() {
     let (retained_row, allocations, allocated_bytes) = measure_allocations(|| {
         let mut last = warm;
         for _ in 0..128 {
-            last = queued_ml_features_with_line_offsets(
+            last = queued_ml_features_with_compact_index(
                 &source,
-                &line_offsets,
+                &line_index,
                 1,
                 Some("src/huge_unicode.rs"),
                 CREDENTIAL,

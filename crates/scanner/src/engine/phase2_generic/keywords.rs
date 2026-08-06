@@ -109,8 +109,8 @@ impl GenericAssignmentKeywordPlan {
         Ok(Self { matcher, stems })
     }
 
-    pub(crate) fn hydrate(
-        detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+    pub(crate) fn hydrate_from<T: crate::assignment_keywords::DetectorPlanAssignmentSource>(
+        detectors: &[T],
     ) -> Result<Self, String> {
         let keywords = crate::assignment_keywords::derive_assignment_keywords_from_plan(detectors)?;
         let vendor_suffixes =
@@ -121,10 +121,10 @@ impl GenericAssignmentKeywordPlan {
             .iter()
             .filter(|detector| detector.owns_entropy_policy())
             .map(|detector| {
-                detector.max_len.ok_or_else(|| {
+                detector.max_len().ok_or_else(|| {
                     format!(
                         "generic entropy owner {:?} omits max_len; declare it in the detector TOML",
-                        detector.id
+                        detector.id()
                     )
                 })
             })
@@ -171,14 +171,17 @@ impl GenericAssignmentKeywordPlan {
 pub(crate) fn collect_generic_keyword_lines_with(
     stem_set: &GenericKeywordStemSet,
     text: &str,
-    out: &mut Vec<usize>,
+    out: &mut Vec<u32>,
 ) {
     let bytes = text.as_bytes();
     let mut idx = 0usize;
-    let mut line_idx = 0usize;
+    let mut line_idx = 0u32;
     while idx < bytes.len() {
         if bytes[idx] == b'\n' {
-            line_idx += 1;
+            let Some(next_line) = line_idx.checked_add(1) else {
+                return;
+            };
+            line_idx = next_line;
             idx += 1;
             continue;
         }
@@ -188,7 +191,10 @@ pub(crate) fn collect_generic_keyword_lines_with(
             match memchr::memchr(b'\n', &bytes[idx..]) {
                 Some(rel) => {
                     idx += rel + 1;
-                    line_idx += 1;
+                    let Some(next_line) = line_idx.checked_add(1) else {
+                        return;
+                    };
+                    line_idx = next_line;
                 }
                 None => break,
             }
@@ -204,23 +210,20 @@ pub(crate) fn collect_generic_keyword_lines_with(
 /// is byte-identical to the preprocessed text, so this helper performs mapping
 /// and deduplication only. Text scanning stays in [`collect_generic_keyword_lines`].
 pub(crate) fn collect_generic_keyword_lines_from_positions(
-    line_offsets: &[usize],
+    line_index: &crate::context::LineContextIndex,
     positions: &[u32],
-    out: &mut Vec<usize>,
+    out: &mut Vec<u32>,
 ) {
     out.clear();
-    if line_offsets.is_empty() {
+    if line_index.is_empty() {
         return;
     }
     for &pos in positions {
-        let pos = pos as usize;
-        // `partition_point` returns `0..=len`; `saturating_sub(1)` maps it into
-        // `0..=len-1` (the early return guarantees `len >= 1`), so every result
-        // is an in-range line index.
-        let line_idx = line_offsets
-            .partition_point(|&line_start| line_start <= pos)
-            .saturating_sub(1);
-        out.push(line_idx);
+        let line_idx = line_index.line_index_for_offset(pos as usize);
+        let Ok(line_id) = u32::try_from(line_idx) else {
+            return;
+        };
+        out.push(line_id);
     }
     out.sort_unstable();
     out.dedup();

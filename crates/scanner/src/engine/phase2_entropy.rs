@@ -32,8 +32,7 @@ impl CompiledScanner {
     pub(crate) fn scan_entropy_fallback(
         &self,
         preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        entropy_lines: &[&str],
+        line_index: &crate::context::LineContextIndex,
         chunk: &Chunk,
         scan_state: &mut ScanState,
     ) {
@@ -66,8 +65,9 @@ impl CompiledScanner {
                 self.detector_plans.generic_ownership().policy_keywords(),
             );
         let keyword_assignment_lines =
-            crate::entropy::keywords::find_keyword_assignment_lines_with_matcher(
-                &entropy_lines,
+            crate::entropy::keywords::find_keyword_assignment_line_ids_with_matcher(
+                &preprocessed.text,
+                line_index,
                 &keyword_matcher,
             );
         let has_secret_keyword_line = !keyword_assignment_lines.is_empty();
@@ -83,8 +83,9 @@ impl CompiledScanner {
             .and_then(|index| self.detector_plans.get(index).entropy.as_ref());
         let isolated_bare_candidate = !path_entropy_appropriate
             && generic_keyword_secret_policy.is_some_and(|policy| {
-                crate::entropy::scanner::has_isolated_bare_secret_candidate_with_lines_and_policy(
-                    &entropy_lines,
+                crate::entropy::scanner::has_isolated_bare_secret_candidate_indexed(
+                    &preprocessed.text,
+                    line_index,
                     self.config.entropy_threshold,
                     &self.config.placeholder_keywords,
                     policy.keyword_free_min_len,
@@ -123,7 +124,9 @@ impl CompiledScanner {
         // and removes the dominant clean/sparse-corpus tail cost.
         #[cfg(feature = "simd")]
         let lower_dash_app_password_candidate = path_entropy_appropriate
-            && crate::entropy::scanner::has_lower_dash_app_password_candidate_with_precomputed_keywords_and_policy(
+            && crate::entropy::scanner::has_lower_dash_app_password_candidate_indexed(
+                &preprocessed.text,
+                line_index,
                 &keyword_assignment_lines,
                 &self.config,
                 Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
@@ -134,12 +137,17 @@ impl CompiledScanner {
             );
         #[cfg(feature = "simd")]
         let has_unclaimed_entropy_run = if restrict_source_entropy_to_assignments {
-            keyword_assignment_lines.iter().any(|(line_index, line)| {
-                !skip_lines.contains(line_index)
-                    && super::scan_filters::has_high_entropy_run_at_least(
-                        line.as_bytes(),
-                        self.config.min_secret_len,
-                    )
+            keyword_assignment_lines.iter().any(|&line_id| {
+                let line_index_value = line_id as usize;
+                !skip_lines.contains(&line_index_value)
+                    && line_index
+                        .line(&preprocessed.text, line_index_value)
+                        .is_some_and(|line| {
+                            super::scan_filters::has_high_entropy_run_at_least(
+                                line.as_bytes(),
+                                self.config.min_secret_len,
+                            )
+                        })
             })
         } else if skip_lines.is_empty() {
             super::scan_filters::has_high_entropy_run_at_least(
@@ -147,13 +155,16 @@ impl CompiledScanner {
                 self.config.min_secret_len,
             )
         } else {
-            entropy_lines.iter().enumerate().any(|(line_index, line)| {
-                !skip_lines.contains(&line_index)
-                    && super::scan_filters::has_high_entropy_run_at_least(
-                        line.as_bytes(),
-                        self.config.min_secret_len,
-                    )
-            })
+            line_index
+                .lines(&preprocessed.text)
+                .enumerate()
+                .any(|(line_index_value, line)| {
+                    !skip_lines.contains(&line_index_value)
+                        && super::scan_filters::has_high_entropy_run_at_least(
+                            line.as_bytes(),
+                            self.config.min_secret_len,
+                        )
+                })
         };
         #[cfg(feature = "simd")]
         if !isolated_bare_candidate
@@ -170,29 +181,28 @@ impl CompiledScanner {
             .is_some_and(crate::confidence::is_sensitive_path);
         let keyword_free_threshold = self.keyword_free_entropy_threshold(sensitive_path);
 
-        let entropy_matches =
-            crate::entropy::scanner::find_classified_entropy_secrets_with_precomputed_keywords_and_policy(
-                &entropy_lines,
-                line_offsets,
-                &keyword_assignment_lines,
-                self.config.min_secret_len,
-                usize::from(!restrict_source_entropy_to_assignments),
-                self.config.entropy_threshold,
-                keyword_free_threshold,
-                &self.config.secret_keywords,
-                &self.config.test_keywords,
-                &self.config.placeholder_keywords,
-                Some(&skip_lines),
-                Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
-                    &self.detector_plans.generic_ownership(),
-                    &self.detector_plans,
-                )),
-                if restrict_source_entropy_to_assignments {
-                    crate::entropy::scanner::KeywordFreeLineScope::KeywordAssignments
-                } else {
-                    crate::entropy::scanner::KeywordFreeLineScope::All
-                },
-            );
+        let entropy_matches = crate::entropy::scanner::find_classified_entropy_secrets_indexed(
+            &preprocessed.text,
+            line_index,
+            &keyword_assignment_lines,
+            self.config.min_secret_len,
+            usize::from(!restrict_source_entropy_to_assignments),
+            self.config.entropy_threshold,
+            keyword_free_threshold,
+            &self.config.secret_keywords,
+            &self.config.test_keywords,
+            &self.config.placeholder_keywords,
+            Some(&skip_lines),
+            Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
+                &self.detector_plans.generic_ownership(),
+                &self.detector_plans,
+            )),
+            if restrict_source_entropy_to_assignments {
+                crate::entropy::scanner::KeywordFreeLineScope::KeywordAssignments
+            } else {
+                crate::entropy::scanner::KeywordFreeLineScope::All
+            },
+        );
         for classified_match in entropy_matches {
             let declared_credential_context = classified_match.is_credential_context;
             let same_line_credential_context = classified_match.is_same_line_credential_context;
@@ -253,11 +263,9 @@ impl CompiledScanner {
                 compiled_policy.entropy_very_high,
                 compiled_policy.fallback_confidence,
             );
-            let mapped_line = crate::pipeline::match_line_number(
-                preprocessed,
-                line_offsets,
-                entropy_match.offset,
-            );
+            let mapped_line = preprocessed
+                .line_for_offset(entropy_match.offset)
+                .unwrap_or_else(|| line_index.line_number_for_offset(entropy_match.offset));
             let source_offset = preprocessed.source_offset_for_match(
                 &chunk.data,
                 entropy_match.offset,
@@ -274,7 +282,7 @@ impl CompiledScanner {
             if let Some(shape_stage) = entropy_match_suppression_stage(
                 &entropy_match,
                 preprocessed,
-                line_offsets,
+                line_index,
                 chunk,
                 declared_credential_context,
                 same_line_credential_context,
@@ -301,7 +309,7 @@ impl CompiledScanner {
             if crate::generic_keyword_owner::entropy_candidate_owned_by_named_assignment(
                 self.detector_plans.generic_named_assignment_keywords(),
                 &entropy_match.value,
-                entropy_value_line(&entropy_match, preprocessed, line_offsets),
+                entropy_value_line(&entropy_match, preprocessed, line_index),
             ) {
                 let entropy_ctx = crate::adjudicate::MatchCtx::for_entropy_fallback(
                     crate::adjudicate::EntropyFallbackSignal::NamedDetectorOwnedAssignment,
@@ -392,7 +400,7 @@ impl CompiledScanner {
                 let policy = entropy_ml_policy;
                 let ml_features = crate::types::ml_features_for_candidate(
                     &preprocessed.text,
-                    line_offsets,
+                    line_index,
                     entropy_match.line,
                     chunk.metadata.path.as_deref(),
                     &entropy_match.value,

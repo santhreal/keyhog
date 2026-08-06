@@ -66,62 +66,6 @@ pub(super) fn build_hot_pattern_slots(
 }
 
 #[cfg(feature = "simdsieve")]
-pub(super) fn hydrate_hot_pattern_slots(
-    detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
-    ac_map: &[CompiledPattern],
-) -> Result<Vec<crate::simdsieve_prefilter::HotPatternSlot>> {
-    use crate::simdsieve_prefilter::{hydrate_hot_pattern_validator, HotPatternSlot};
-    let total = detectors
-        .iter()
-        .map(|detector| detector.simdsieve_prefixes.len())
-        .sum::<usize>();
-    if total > 16 {
-        return Err(crate::error::ScanError::Config(format!(
-            "hydrated detector plan declares {total} simdsieve prefixes, but simdsieve supports at most 16"
-        )));
-    }
-    let mut seen = std::collections::HashSet::with_capacity(total);
-    let mut slots = Vec::with_capacity(total);
-    for detector in detectors {
-        if detector.simdsieve_prefixes.is_empty() {
-            continue;
-        }
-        let validator = hydrate_hot_pattern_validator(detector)?;
-        for prefix in &detector.simdsieve_prefixes {
-            if !seen.insert(prefix.as_str()) {
-                return Err(crate::error::ScanError::Config(format!(
-                    "simdsieve prefix {prefix:?} is declared by more than one hydrated detector"
-                )));
-            }
-            let detector_index = detectors
-                .iter()
-                .position(|candidate| candidate.id == detector.id)
-                .expect("hydrated detector exists");
-            let ac_map_index = ac_map
-                .iter()
-                .position(|entry| {
-                    entry.detector_index == detector_index
-                        && crate::compiler::compiler_prefix::extract_literal_prefixes(
-                            entry.regex.as_str(),
-                        )
-                        .iter()
-                        .any(|literal| literal == prefix)
-                })
-                .ok_or_else(|| {
-                    crate::error::ScanError::Config(format!(
-                        "detector {} declares simdsieve prefix {prefix:?}, but no compiled pattern exposes it",
-                        detector.id
-                    ))
-                })?;
-            slots.push(HotPatternSlot {
-                prefix: prefix.as_bytes().into(),
-                validator: validator.clone(),
-                ac_map_index,
-            });
-        }
-    }
-    Ok(slots)
-}
 
 /// One-shot guard so the CUDA acquisition warning fires once per process.
 #[cfg(all(target_os = "linux", feature = "gpu"))]
@@ -177,3 +121,76 @@ fn nvidia_userland_present() -> bool {
 #[cfg(test)]
 #[path = "../../tests/unit/compiled_scanner_compile_helpers.rs"]
 mod tests;
+
+#[cfg(feature = "simdsieve")]
+pub(super) struct StreamingHotPatternSlots {
+    seen: std::collections::HashSet<String>,
+    slots: Vec<crate::simdsieve_prefilter::HotPatternSlot>,
+}
+
+#[cfg(feature = "simdsieve")]
+impl StreamingHotPatternSlots {
+    pub(super) fn new() -> Self {
+        Self {
+            seen: std::collections::HashSet::with_capacity(16),
+            slots: Vec::with_capacity(16),
+        }
+    }
+
+    pub(super) fn push(
+        &mut self,
+        detector_index: usize,
+        detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
+        ac_map: &[CompiledPattern],
+    ) -> Result<()> {
+        use crate::simdsieve_prefilter::{hydrate_hot_pattern_validator, HotPatternSlot};
+
+        if self
+            .slots
+            .len()
+            .saturating_add(detector.simdsieve_prefixes.len())
+            > 16
+        {
+            return Err(crate::error::ScanError::Config(
+                "hydrated detector plan declares more than 16 simdsieve prefixes".to_owned(),
+            ));
+        }
+        if detector.simdsieve_prefixes.is_empty() {
+            return Ok(());
+        }
+        let validator = hydrate_hot_pattern_validator(detector)?;
+        for prefix in &detector.simdsieve_prefixes {
+            if !self.seen.insert(prefix.clone()) {
+                return Err(crate::error::ScanError::Config(format!(
+                    "simdsieve prefix {prefix:?} is declared by more than one hydrated detector"
+                )));
+            }
+            let ac_map_index = ac_map
+                .iter()
+                .position(|entry| {
+                    entry.detector_index == detector_index
+                        && crate::compiler::compiler_prefix::extract_literal_prefixes(
+                            entry.regex.as_str(),
+                        )
+                        .iter()
+                        .any(|literal| literal == prefix)
+                })
+                .ok_or_else(|| {
+                    crate::error::ScanError::Config(format!(
+                        "detector {} declares simdsieve prefix {prefix:?}, but no compiled pattern exposes it",
+                        detector.id
+                    ))
+                })?;
+            self.slots.push(HotPatternSlot {
+                prefix: prefix.as_bytes().into(),
+                validator: validator.clone(),
+                ac_map_index,
+            });
+        }
+        Ok(())
+    }
+
+    pub(super) fn finish(self) -> Vec<crate::simdsieve_prefilter::HotPatternSlot> {
+        self.slots
+    }
+}

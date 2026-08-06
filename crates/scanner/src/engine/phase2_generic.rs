@@ -2,7 +2,6 @@ use super::*;
 use std::sync::Mutex;
 
 pub(crate) mod keywords;
-mod line_mapping;
 mod metrics;
 mod pattern;
 
@@ -10,7 +9,6 @@ use self::keywords::{
     collect_generic_keyword_lines_from_positions, collect_generic_keyword_lines_with,
     is_strong_keyword_anchored_encoded_text_secret,
 };
-use self::line_mapping::line_at_index;
 pub(crate) use self::metrics::{format_generic_profile, generic_profile_from_typed};
 pub(crate) use self::pattern::{
     build_generic_re, compile_generic_re_with_max, compile_generic_re_with_policy,
@@ -18,20 +16,18 @@ pub(crate) use self::pattern::{
 };
 
 const MAX_IDLE_KEYWORD_LINE_BUFFERS: usize = 4;
-static KEYWORD_LINES_POOL: Mutex<Vec<Vec<usize>>> = Mutex::new(Vec::new());
+static KEYWORD_LINES_POOL: Mutex<Vec<Vec<u32>>> = Mutex::new(Vec::new());
 
-fn normalize_keyword_lines_scratch(lines: &mut Vec<usize>) {
+fn normalize_keyword_lines_scratch(lines: &mut Vec<u32>) {
     lines.clear();
-    if lines
-        .capacity()
-        .saturating_mul(std::mem::size_of::<usize>())
+    if lines.capacity().saturating_mul(std::mem::size_of::<u32>())
         > super::MAX_RETAINED_WORKER_SCRATCH_BYTES
     {
         *lines = Vec::new();
     }
 }
 
-fn take_keyword_lines_scratch() -> Vec<usize> {
+fn take_keyword_lines_scratch() -> Vec<u32> {
     KEYWORD_LINES_POOL
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -39,7 +35,7 @@ fn take_keyword_lines_scratch() -> Vec<usize> {
         .unwrap_or_default()
 }
 
-fn release_keyword_lines_scratch(mut lines: Vec<usize>) {
+fn release_keyword_lines_scratch(mut lines: Vec<u32>) {
     normalize_keyword_lines_scratch(&mut lines);
     if lines.capacity() == 0 {
         return;
@@ -54,12 +50,10 @@ fn release_keyword_lines_scratch(mut lines: Vec<usize>) {
 
 #[cfg(test)]
 pub(crate) fn retained_keyword_line_bytes_after_for_test(requested_bytes: usize) -> usize {
-    let elements = requested_bytes.div_ceil(std::mem::size_of::<usize>());
+    let elements = requested_bytes.div_ceil(std::mem::size_of::<u32>());
     let mut lines = Vec::with_capacity(elements);
     normalize_keyword_lines_scratch(&mut lines);
-    lines
-        .capacity()
-        .saturating_mul(std::mem::size_of::<usize>())
+    lines.capacity().saturating_mul(std::mem::size_of::<u32>())
 }
 
 impl CompiledScanner {
@@ -68,9 +62,7 @@ impl CompiledScanner {
     pub(crate) fn scan_generic_assignments(
         &self,
         preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
+        line_index: &crate::context::LineContextIndex,
         chunk: &Chunk,
         scan_state: &mut ScanState,
         generic_keyword_positions: Option<&[u32]>,
@@ -101,7 +93,7 @@ impl CompiledScanner {
         let prefilter = metrics::prefilter_span();
         if let Some(positions) = generic_keyword_positions {
             collect_generic_keyword_lines_from_positions(
-                line_offsets,
+                line_index,
                 positions,
                 &mut lines_with_keyword,
             );
@@ -129,8 +121,6 @@ impl CompiledScanner {
         // explicitly at the end so the measured interval still stops exactly
         // where the old call did, before the buffer returns to the pool.
         let extract = metrics::extract_span();
-        let mut preprocessed_code_lines_cache: Option<Vec<&str>> = None;
-        let mut preprocessed_documentation_lines_cache: Option<Vec<bool>> = None;
         for line_iter in 0..lines_with_keyword.len() {
             if crate::deadline::expired_on_cadence(
                 deadline,
@@ -140,11 +130,11 @@ impl CompiledScanner {
                 release_keyword_lines_scratch(lines_with_keyword);
                 return;
             }
-            let line_idx = lines_with_keyword[line_iter];
-            let Some(&line_offset) = line_offsets.get(line_idx) else {
+            let line_idx = lines_with_keyword[line_iter] as usize;
+            let Some(line_offset) = line_index.line_start(line_idx) else {
                 continue;
             };
-            let Some(raw_line) = line_at_index(scan_text, line_offsets, line_idx) else {
+            let Some(raw_line) = line_index.line(scan_text, line_idx) else {
                 continue;
             };
             // Extract from normalized text so in-value zero-width characters cannot
@@ -207,9 +197,9 @@ impl CompiledScanner {
                     self.detector_plans.generic_ownership().resolve(keyword)
                 else {
                     tracing::error!(
-                        keyword,
-                        "compiled generic assignment matched without a detector owner; dropping candidate"
-                    );
+                    keyword,
+                    "compiled generic assignment matched without a detector owner; dropping candidate"
+                );
                     continue;
                 };
                 let owning_detector_index = owner_resolution.owning_index;
@@ -249,9 +239,9 @@ impl CompiledScanner {
                 }
                 let Some(owning_policy) = detector_plan.entropy.as_ref() else {
                     tracing::error!(
-                        detector_id = metadata.0.as_ref(),
-                        "generic assignment owner has no compiled entropy policy; dropping candidate"
-                    );
+                    detector_id = metadata.0.as_ref(),
+                    "generic assignment owner has no compiled entropy policy; dropping candidate"
+                );
                     continue;
                 };
                 let transport_decoded =
@@ -403,36 +393,12 @@ impl CompiledScanner {
                     continue;
                 }
 
-                // Context suppression: test files get lower confidence. On the
-                // byte-identical common path, reuse the lines and documentation
-                // flags already computed by the phase-2 caller; recomputing
-                // documentation flags for every generic candidate was
-                // O(candidates * lines). Synthesized structured/multiline text
-                // still builds its own cached context view so appended lines
-                // keep correct line indices.
-                let context = if identity_offsets {
-                    crate::context::infer_context_with_documentation(
-                        code_lines,
-                        line_idx,
-                        chunk.metadata.path.as_deref(),
-                        documentation_lines,
-                    )
-                } else {
-                    let preprocessed_code_lines = preprocessed_code_lines_cache
-                        .get_or_insert_with(|| scan_text.lines().collect());
-                    let preprocessed_documentation_lines = preprocessed_documentation_lines_cache
-                        .get_or_insert_with(|| {
-                            crate::context::documentation_line_flags(
-                                preprocessed_code_lines.as_slice(),
-                            )
-                        });
-                    crate::context::infer_context_with_documentation(
-                        preprocessed_code_lines.as_slice(),
-                        line_idx,
-                        chunk.metadata.path.as_deref(),
-                        preprocessed_documentation_lines.as_slice(),
-                    )
-                };
+                let context = crate::context::infer_context_with_index(
+                    scan_text,
+                    line_index,
+                    line_idx,
+                    chunk.metadata.path.as_deref(),
+                );
                 let policy_conf = crate::confidence::policy::generic_assignment_confidence(
                     context,
                     self.config.scan_comments,
@@ -458,11 +424,9 @@ impl CompiledScanner {
                 // line, plus the line's start in the chunk, plus the
                 // chunk's base offset in the original file (non-zero on
                 // windowed >64 MiB scans).
-                let mapped_line = crate::pipeline::match_line_number(
-                    preprocessed,
-                    line_offsets,
-                    preprocessed_offset,
-                );
+                let mapped_line = preprocessed
+                    .line_for_offset(preprocessed_offset)
+                    .unwrap_or_else(|| line_index.line_number_for_offset(preprocessed_offset));
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, preprocessed_offset, value);
                 let Some(absolute_offset) =
@@ -500,7 +464,7 @@ impl CompiledScanner {
                 {
                     let ml_features = crate::types::ml_features_for_candidate(
                         scan_text,
-                        line_offsets,
+                        line_index,
                         line_idx,
                         chunk.metadata.path.as_deref(),
                         value,

@@ -64,9 +64,7 @@ impl CompiledScanner {
         detector_plan: &crate::detector_plan::CompiledDetectorPlan,
         data: &str,
         preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
+        line_index: &crate::context::LineContextIndex,
         chunk: &Chunk,
         scan_state: &mut ScanState,
         credential: &str,
@@ -83,7 +81,9 @@ impl CompiledScanner {
                 detector_plan.validators.validate(candidate, pattern_proven)
             },
         );
-        let line = match_line_number(preprocessed, line_offsets, credential_start);
+        let line = preprocessed
+            .line_for_offset(credential_start)
+            .unwrap_or_else(|| line_index.line_number_for_offset(credential_start));
         let execution_policy = &detector_plan.execution;
         let is_generic = execution_policy.is_generic;
         let whole_value = is_generic.then(|| {
@@ -152,8 +152,9 @@ impl CompiledScanner {
         {
             return;
         }
-        let false_positive_context = context::is_false_positive_context(
-            code_lines,
+        let false_positive_context = context::is_false_positive_context_indexed(
+            &preprocessed.text,
+            line_index,
             line.saturating_sub(PREVIOUS_LINE_DISTANCE),
             chunk.metadata.path.as_deref(),
         ) || context::is_false_positive_match_context(
@@ -176,11 +177,11 @@ impl CompiledScanner {
             return;
         }
 
-        let inferred_context = context::infer_context_with_documentation(
-            code_lines,
+        let inferred_context = context::infer_context_with_index(
+            &preprocessed.text,
+            line_index,
             line.saturating_sub(PREVIOUS_LINE_DISTANCE),
             chunk.metadata.path.as_deref(),
-            documentation_lines,
         );
         // Combine the construction-time detector base with the explicit policy
         // bit compiled beside this exact regex. Index mismatch is an internal
@@ -226,17 +227,17 @@ impl CompiledScanner {
                     match_end,
                 ));
         let named_suppression_ctx =
-            crate::suppression::NamedDetectorSuppressionCtx::with_weak_anchor_and_key_material_policy(
-                chunk.metadata.path.as_deref(),
-                inferred_context,
-                Some(chunk.metadata.source_type.as_ref()),
-                detector_plan.suppression.as_ref(),
-                !is_generic,
-                weak_anchor,
-                structural_password_slot,
-                allow_canonical_hex_key_material,
-                allow_validated_binary_credential,
-            );
+        crate::suppression::NamedDetectorSuppressionCtx::with_weak_anchor_and_key_material_policy(
+            chunk.metadata.path.as_deref(),
+            inferred_context,
+            Some(chunk.metadata.source_type.as_ref()),
+            detector_plan.suppression.as_ref(),
+            !is_generic,
+            weak_anchor,
+            structural_password_slot,
+            allow_canonical_hex_key_material,
+            allow_validated_binary_credential,
+        );
         let match_ctx = crate::adjudicate::MatchCtx::for_named_detector(named_suppression_ctx);
         if crate::adjudicate::record_suppression(
             chunk.metadata.path.as_deref(),
@@ -471,7 +472,7 @@ impl CompiledScanner {
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let ml_features = crate::types::ml_features_for_candidate(
                     data,
-                    line_offsets,
+                    line_index,
                     line,
                     chunk.metadata.path.as_deref(),
                     credential,

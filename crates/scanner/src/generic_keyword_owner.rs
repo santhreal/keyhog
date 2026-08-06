@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-trait GenericDetectorSource {
+pub(crate) trait GenericDetectorSource {
     fn id(&self) -> &str;
     fn kind(&self) -> DetectorKind;
     fn entropy_roles(&self) -> &[keyhog_core::EntropyDetectionRole];
@@ -52,6 +52,33 @@ impl GenericDetectorSource for DetectorSpec {
 }
 
 impl GenericDetectorSource for crate::execution_pack::detector_plan::DetectorPlanRecord {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn kind(&self) -> DetectorKind {
+        self.kind
+    }
+    fn entropy_roles(&self) -> &[keyhog_core::EntropyDetectionRole] {
+        &self.entropy_roles
+    }
+    fn generic_vendor_suffixes(&self) -> &[String] {
+        &self.generic_vendor_suffixes
+    }
+    fn entropy_policy_priority(&self) -> Option<u16> {
+        self.entropy_policy_priority
+    }
+    fn keywords(&self) -> &[String] {
+        &self.keywords
+    }
+    fn canonical_hex_key_material(&self) -> &[keyhog_core::CanonicalHexKeyMaterialSpec] {
+        &self.canonical_hex_key_material
+    }
+    fn service(&self) -> &str {
+        &self.service
+    }
+}
+
+impl GenericDetectorSource for crate::detector_plan::StreamingDetectorPlanSummary {
     fn id(&self) -> &str {
         &self.id
     }
@@ -162,13 +189,7 @@ impl GenericOwningDetectorIndex {
         Self::build_from(detectors)
     }
 
-    pub(crate) fn hydrate(
-        detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
-    ) -> Result<Self, String> {
-        Self::build_from(detectors)
-    }
-
-    fn build_from<T: GenericDetectorSource>(detectors: &[T]) -> Result<Self, String> {
+    pub(crate) fn build_from<T: GenericDetectorSource>(detectors: &[T]) -> Result<Self, String> {
         let mut stable_order: Vec<usize> = (0..detectors.len()).collect();
         stable_order.sort_unstable_by(|left, right| {
             detectors[*left]
@@ -379,13 +400,7 @@ pub(crate) fn build_generic_named_assignment_keywords(detectors: &[DetectorSpec]
     build_named_assignment_keywords_from(detectors)
 }
 
-pub(crate) fn hydrate_generic_named_assignment_keywords(
-    detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
-) -> Vec<Arc<str>> {
-    build_named_assignment_keywords_from(detectors)
-}
-
-fn build_named_assignment_keywords_from<T: GenericDetectorSource>(
+pub(crate) fn build_named_assignment_keywords_from<T: GenericDetectorSource>(
     detectors: &[T],
 ) -> Vec<Arc<str>> {
     let mut owned = BTreeSet::<String>::new();

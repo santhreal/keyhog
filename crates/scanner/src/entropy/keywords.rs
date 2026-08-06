@@ -49,6 +49,22 @@ pub(crate) fn find_keyword_assignment_lines_with_matcher<'a>(
         })
         .collect()
 }
+pub(crate) fn find_keyword_assignment_line_ids_with_matcher(
+    text: &str,
+    line_index: &crate::context::LineContextIndex,
+    matcher: &AssignmentKeywordMatcher,
+) -> Vec<u32> {
+    line_index
+        .lines(text)
+        .enumerate()
+        .filter_map(|(line_idx, line)| {
+            if !is_declared_keyword_assignment_line(line, matcher) {
+                return None;
+            }
+            u32::try_from(line_idx).ok()
+        })
+        .collect()
+}
 
 fn is_declared_keyword_assignment_line(line: &str, matcher: &AssignmentKeywordMatcher) -> bool {
     let trimmed = line.trim();

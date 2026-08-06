@@ -1,7 +1,7 @@
-use keyhog_scanner::testing::{code_lines_from_offsets_for_test, compute_line_offsets};
+use keyhog_scanner::testing::code_lines_from_compact_index_for_test;
 
 #[test]
-fn code_lines_from_offsets_matches_str_lines() {
+fn compact_line_index_matches_str_lines() {
     for text in [
         "",
         "one",
@@ -14,8 +14,8 @@ fn code_lines_from_offsets_matches_str_lines() {
         "one\r\ntwo\r",
         "one\r",
     ] {
-        let offsets = compute_line_offsets(text);
-        let derived = code_lines_from_offsets_for_test(text, &offsets);
+        let derived =
+            code_lines_from_compact_index_for_test(text).expect("fixture fits compact index");
         let expected: Vec<&str> = text.lines().collect();
         assert_eq!(derived, expected, "line split mismatch for {text:?}");
     }

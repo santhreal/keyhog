@@ -183,18 +183,76 @@ fn derive_unique_phase2_suffixes(
     )
 }
 
-pub(crate) fn derive_assignment_keywords_from_plan(
-    detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+pub(crate) trait DetectorPlanAssignmentSource {
+    fn id(&self) -> &str;
+    fn kind(&self) -> keyhog_core::DetectorKind;
+    fn owns_entropy_policy(&self) -> bool;
+    fn keywords(&self) -> &[String];
+    fn vendor_suffixes(&self) -> &[String];
+    fn tail_suffixes(&self) -> &[String];
+    fn max_len(&self) -> Option<usize>;
+}
+
+impl DetectorPlanAssignmentSource for crate::execution_pack::detector_plan::DetectorPlanRecord {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn kind(&self) -> keyhog_core::DetectorKind {
+        self.kind
+    }
+    fn owns_entropy_policy(&self) -> bool {
+        self.owns_entropy_policy()
+    }
+    fn keywords(&self) -> &[String] {
+        &self.keywords
+    }
+    fn vendor_suffixes(&self) -> &[String] {
+        &self.generic_vendor_suffixes
+    }
+    fn tail_suffixes(&self) -> &[String] {
+        &self.generic_assignment_tail_suffixes
+    }
+    fn max_len(&self) -> Option<usize> {
+        self.max_len
+    }
+}
+
+impl DetectorPlanAssignmentSource for crate::detector_plan::StreamingDetectorPlanSummary {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn kind(&self) -> keyhog_core::DetectorKind {
+        self.kind
+    }
+    fn owns_entropy_policy(&self) -> bool {
+        self.owns_entropy_policy()
+    }
+    fn keywords(&self) -> &[String] {
+        &self.keywords
+    }
+    fn vendor_suffixes(&self) -> &[String] {
+        &self.generic_vendor_suffixes
+    }
+    fn tail_suffixes(&self) -> &[String] {
+        &self.generic_assignment_tail_suffixes
+    }
+    fn max_len(&self) -> Option<usize> {
+        self.max_len
+    }
+}
+
+pub(crate) fn derive_assignment_keywords_from_plan<T: DetectorPlanAssignmentSource>(
+    detectors: &[T],
 ) -> Result<Vec<String>, String> {
     let mut ordered = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     let mut owners = 0usize;
     for detector in detectors {
-        if !detector.owns_entropy_policy() {
+        if !DetectorPlanAssignmentSource::owns_entropy_policy(detector) {
             continue;
         }
         owners += 1;
-        for keyword in &detector.keywords {
+        for keyword in detector.keywords() {
             for spelling in separator_spellings(&keyword.to_ascii_lowercase()) {
                 if seen.insert(spelling.clone()) {
                     ordered.push(spelling);
@@ -215,8 +273,8 @@ pub(crate) fn derive_assignment_keywords_from_plan(
     )
 }
 
-pub(crate) fn derive_generic_suffixes_from_plan(
-    detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+pub(crate) fn derive_generic_suffixes_from_plan<T: DetectorPlanAssignmentSource>(
+    detectors: &[T],
     tail: bool,
 ) -> Result<Vec<String>, String> {
     let field = if tail {
@@ -232,38 +290,38 @@ pub(crate) fn derive_generic_suffixes_from_plan(
     let mut owner = None;
     for detector in detectors {
         let values = if tail {
-            &detector.generic_assignment_tail_suffixes
+            detector.tail_suffixes()
         } else {
-            &detector.generic_vendor_suffixes
+            detector.vendor_suffixes()
         };
         if values.is_empty() {
             continue;
         }
-        if detector.kind != keyhog_core::DetectorKind::Phase2Generic {
+        if detector.kind() != keyhog_core::DetectorKind::Phase2Generic {
             return Err(format!(
                 "detector {:?} declares {field} but is not phase2-generic",
-                detector.id
+                detector.id()
             ));
         }
         if let Some(previous) = owner {
             return Err(format!(
                 "detectors {previous:?} and {:?} both declare {field}",
-                detector.id
+                detector.id()
             ));
         }
-        owner = Some(detector.id.as_str());
+        owner = Some(detector.id());
     }
     let Some(owner) = owner else {
         return Ok(Vec::new());
     };
     let detector = detectors
         .iter()
-        .find(|detector| detector.id == owner)
+        .find(|detector| detector.id() == owner)
         .expect("validated plan owner");
     let values = if tail {
-        detector.generic_assignment_tail_suffixes.clone()
+        detector.tail_suffixes().to_vec()
     } else {
-        detector.generic_vendor_suffixes.clone()
+        detector.vendor_suffixes().to_vec()
     };
     crate::tier_b_list::parse_token_list(
         values,

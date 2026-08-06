@@ -170,7 +170,9 @@ impl Phase2AlwaysActivePrefilter {
                 self.indices_for(runtime_scope),
                 &program,
             )?;
-            let mut packed = packed_slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut packed = packed_slot
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if packed.replace(program).is_some() {
                 return Err(format!(
                     "packed phase-two scope {expected_scope:?} was installed more than once"
@@ -223,9 +225,10 @@ impl Phase2AlwaysActivePrefilter {
             PrefilterScope::AnchorResidual => {
                 (&self.hs_anchor_residual, &self.packed_hs_anchor_residual)
             }
-            PrefilterScope::LocalizedResidual => {
-                (&self.hs_localized_residual, &self.packed_hs_localized_residual)
-            }
+            PrefilterScope::LocalizedResidual => (
+                &self.hs_localized_residual,
+                &self.packed_hs_localized_residual,
+            ),
         };
         slot.get_or_init(|| {
             let packed = packed_slot
@@ -399,28 +402,32 @@ impl Phase2AlwaysActivePrefilter {
         }
     }
 
-    /// Compute a pattern's gate-eligible required-prefix literals for the given
-    /// case partition. Plain (homoglyph) patterns are matched on the ASCII path
-    /// via their ASCII-FOLDED form, so their prefix literals must be extracted
-    /// from that folded source, extracting from the unicode form would yield
-    /// non-ASCII members that never appear in folded matching. `None` => the
-    /// pattern is NOT gate-eligible and must run unconditionally.
+    /// Compute a pattern's gate-eligible required boundary literals for the
+    /// given case partition. Prefer prefixes, which are also reusable by the
+    /// anchor localizer, then fall back to finite required suffixes for patterns
+    /// that have no usable prefix. Either boundary is a sound absence proof.
+    ///
+    /// Plain (homoglyph) patterns are matched on the ASCII path via their
+    /// ASCII-FOLDED form, so literals must be extracted from that folded source.
+    /// `None` means the pattern is not gate-eligible and must run
+    /// unconditionally.
     fn pattern_gate_literals(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         index: usize,
         case_insensitive: bool,
     ) -> Option<Vec<Vec<u8>>> {
         let (pattern, _) = phase2_patterns.get(index)?;
-        if case_insensitive {
-            gate_prefix_literals(pattern.regex.as_str())
+        let folded;
+        let source = if case_insensitive {
+            pattern.regex.as_str()
         } else {
-            // Plain batch: gate on the ASCII-folded form (the matcher used on
-            // ASCII chunks). The fold MUST equal what `build_ascii_alternate`
-            // compiles so the gate describes the running matcher, hence the one
-            // shared `ascii_fold_regex_src`.
-            let folded = ascii_fold_regex_src(pattern.regex.as_str());
-            gate_prefix_literals(&folded)
-        }
+            folded = ascii_fold_regex_src(pattern.regex.as_str());
+            &folded
+        };
+        gate_prefix_literals(source).or_else(|| {
+            let suffixes = super::suffix_gate_literals(source);
+            (!suffixes.is_empty()).then(|| suffixes.into_iter().map(String::into_bytes).collect())
+        })
     }
 
     fn build_partition(
@@ -431,10 +438,9 @@ impl Phase2AlwaysActivePrefilter {
         batches: &mut Vec<PrefilterBatch>,
         gate_lits: &mut Vec<Vec<u8>>,
     ) {
-        // Split the partition into gate-eligible vs not so each compiled batch is
-        // homogeneous: a `gateable` batch contains ONLY patterns that provably
-        // require one of their prefix literals, making the combined-AC no-hit a
-        // sound skip oracle for the whole batch.
+        // Split the partition into homogeneous batches. A `gateable` batch
+        // contains only patterns that provably require one of their boundary
+        // literals, making the combined-AC no-hit a sound skip oracle.
         let mut eligible: Vec<usize> = Vec::new();
         let mut other: Vec<usize> = Vec::new();
         for &i in indices {

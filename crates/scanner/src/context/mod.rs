@@ -8,23 +8,25 @@
 mod documentation;
 mod false_positive;
 mod inference;
+mod line_index;
 mod placeholder;
 
 pub(crate) use documentation::documentation_line_flags;
 #[cfg(test)]
 pub(crate) use false_positive::parse_disclaimer_phrases;
 pub(crate) use false_positive::{
-    has_disclaimer_comment_bytes, is_false_positive_context, is_false_positive_match_context,
-    is_integrity_hash_bytes,
+    has_disclaimer_comment_bytes, is_false_positive_context, is_false_positive_context_indexed,
+    is_false_positive_match_context, is_integrity_hash_bytes,
 };
 // The only consumer is the entropy-fallback suppression gate.
 #[cfg(feature = "entropy")]
 pub(crate) use false_positive::is_public_pem_block_at;
 pub use inference::infer_context;
-pub(crate) use inference::infer_context_with_documentation;
+pub(crate) use inference::infer_context_with_index;
 #[cfg(test)]
 pub(crate) use inference::parse_test_path_rules;
 pub(crate) use inference::{is_in_test_function, is_rust_fn_signature, strip_comment_prefix};
+pub(crate) use line_index::LineContextIndex;
 pub(crate) use placeholder::is_known_example_credential;
 #[cfg(feature = "entropy")]
 pub(crate) use placeholder::is_monotonic_sequence_placeholder;

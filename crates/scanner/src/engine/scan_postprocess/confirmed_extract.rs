@@ -83,9 +83,7 @@ impl CompiledScanner {
         &self,
         confirmed_patterns: &[usize],
         preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
+        line_index: &crate::context::LineContextIndex,
         chunk: &Chunk,
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
@@ -226,9 +224,7 @@ impl CompiledScanner {
                                     re,
                                     group,
                                     preprocessed,
-                                    line_offsets,
-                                    code_lines,
-                                    documentation_lines,
+                                    line_index,
                                     chunk,
                                     scan_state,
                                     deadline,
@@ -236,9 +232,7 @@ impl CompiledScanner {
                                 None => self.extract_matches_inner(
                                     entry,
                                     preprocessed,
-                                    line_offsets,
-                                    code_lines,
-                                    documentation_lines,
+                                    line_index,
                                     chunk,
                                     scan_state,
                                     None,
@@ -290,10 +284,10 @@ impl CompiledScanner {
             // and panic on any phase-2 index. Assert the contract; fail closed
             // (skip) in release rather than index out of bounds.
             debug_assert!(
-                pat_idx < self.ac_map.len(),
-                "extract_confirmed_patterns got phase-2 index {pat_idx} (ac_map len {}); callers must filter to ac_map-only",
-                self.ac_map.len()
-            );
+            pat_idx < self.ac_map.len(),
+            "extract_confirmed_patterns got phase-2 index {pat_idx} (ac_map len {}); callers must filter to ac_map-only",
+            self.ac_map.len()
+        );
             let Some(entry) = self.ac_map.get(pat_idx) else {
                 continue;
             };
@@ -305,9 +299,7 @@ impl CompiledScanner {
             self.extract_matches_inner(
                 entry,
                 preprocessed,
-                line_offsets,
-                code_lines,
-                documentation_lines,
+                line_index,
                 chunk,
                 scan_state,
                 None,

@@ -12,7 +12,7 @@ use crate::suppression::path_filter::{
 pub(crate) fn entropy_match_suppression_stage(
     entropy_match: &crate::entropy::EntropyMatch,
     preprocessed: &ScannerPreprocessedText<'_>,
-    line_offsets: &[usize],
+    line_index: &crate::context::LineContextIndex,
     chunk: &Chunk,
     declared_credential_context: bool,
     same_line_credential_context: bool,
@@ -53,7 +53,7 @@ pub(crate) fn entropy_match_suppression_stage(
     let same_line_credential_assignment = value_line_has_same_line_credential_keyword(
         entropy_match,
         preprocessed,
-        line_offsets,
+        line_index,
         same_line_credential_context,
     );
     if source_entropy_requires_same_line_credential
@@ -71,7 +71,7 @@ pub(crate) fn entropy_match_suppression_stage(
         return Some(EntropyShapeStage::CaesarSource);
     }
     let same_line_high_signal_assignment_owner =
-        value_line_has_random_byte_blob_owner(entropy_match, preprocessed, line_offsets);
+        value_line_has_random_byte_blob_owner(entropy_match, preprocessed, line_index);
     // Canonical pure-hex admission is detector-owned. Model authority may
     // arbitrate an admitted candidate, but it cannot manufacture a missing
     // detector policy or widen its declared lengths/keywords.
@@ -130,7 +130,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // This gate requires both signals; punctuation by itself is not classified
     // as prose here.
     if entropy_match.value.ends_with(['.', '!', '?'])
-        && entropy_value_line(entropy_match, preprocessed, line_offsets)
+        && entropy_value_line(entropy_match, preprocessed, line_index)
             .is_some_and(crate::suppression::decision::looks_like_prose_whitespace_run)
     {
         return Some(EntropyShapeStage::EnglishProse);
@@ -263,9 +263,8 @@ pub(crate) fn entropy_match_suppression_stage(
     // where KEY names a blockchain or network public identifier
     // (`SOLANA_BAT_MINT_ADDRS=EPeU…1Tpz`, `OWNER_PUBKEY=…`,
     // `CONTRACT_ADDRESS=0x…`, `WALLET=…`). These are PUBLIC
-    // identifiers, not credentials. Cheap line lookup via the
-    // preprocessed text + line_offsets table.
-    if let Some(line_text) = entropy_value_line(entropy_match, preprocessed, line_offsets) {
+    // identifiers, not credentials. Cheap lookup uses the compact line index.
+    if let Some(line_text) = entropy_value_line(entropy_match, preprocessed, line_index) {
         if execution_policy.line_has_public_identifier_assignment(line_text.as_bytes()) {
             return Some(EntropyShapeStage::BlockchainOrNetworkAddress);
         }

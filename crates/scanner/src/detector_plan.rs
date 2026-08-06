@@ -58,6 +58,79 @@ impl DetectorPlanSource for crate::execution_pack::detector_plan::DetectorPlanRe
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct StreamingDetectorPlanSummary {
+    pub(crate) id: Arc<str>,
+    pub(crate) service: Arc<str>,
+    pub(crate) kind: keyhog_core::DetectorKind,
+    pub(crate) private_key_block: bool,
+    pub(crate) resolution_priority: i16,
+    pub(crate) entropy_fallback: Option<keyhog_core::EntropyFallbackMetadata>,
+    pub(crate) detector_relations: Vec<keyhog_core::DetectorRelationSpec>,
+    pub(crate) decode_transforms: keyhog_core::DetectorDecodeTransformSpec,
+    pub(crate) keywords: Vec<String>,
+    pub(crate) generic_vendor_suffixes: Vec<String>,
+    pub(crate) generic_assignment_tail_suffixes: Vec<String>,
+    pub(crate) max_len: Option<usize>,
+    pub(crate) entropy_policy_priority: Option<u16>,
+    pub(crate) entropy_roles: Vec<keyhog_core::EntropyDetectionRole>,
+    pub(crate) canonical_hex_key_material: Vec<keyhog_core::CanonicalHexKeyMaterialSpec>,
+    pub(crate) public_identifier_assignment_markers: Vec<String>,
+}
+
+impl StreamingDetectorPlanSummary {
+    fn from_record(
+        record: crate::execution_pack::detector_plan::DetectorPlanRecord,
+        metadata: &CompiledDetectorMetadata,
+    ) -> Self {
+        Self {
+            id: Arc::clone(&metadata.0),
+            service: Arc::clone(&metadata.2),
+            kind: record.kind,
+            private_key_block: record.private_key_block,
+            resolution_priority: record.resolution_priority,
+            entropy_fallback: record.entropy_fallback,
+            detector_relations: record.detector_relations,
+            decode_transforms: record.decode_transforms,
+            keywords: record.keywords,
+            generic_vendor_suffixes: record.generic_vendor_suffixes,
+            generic_assignment_tail_suffixes: record.generic_assignment_tail_suffixes,
+            max_len: record.max_len,
+            entropy_policy_priority: record.entropy_policy_priority,
+            entropy_roles: record.entropy_roles,
+            canonical_hex_key_material: record.canonical_hex_key_material,
+            public_identifier_assignment_markers: record.public_identifier_assignment_markers,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn owns_entropy_policy(&self) -> bool {
+        self.kind == keyhog_core::DetectorKind::Phase2Generic
+            || self.entropy_policy_priority.is_some()
+    }
+}
+
+impl DetectorPlanSource for StreamingDetectorPlanSummary {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn kind(&self) -> keyhog_core::DetectorKind {
+        self.kind
+    }
+    fn private_key_block(&self) -> bool {
+        self.private_key_block
+    }
+    fn resolution_priority(&self) -> i16 {
+        self.resolution_priority
+    }
+    fn entropy_fallback(&self) -> Option<&keyhog_core::EntropyFallbackMetadata> {
+        self.entropy_fallback.as_ref()
+    }
+    fn detector_relations(&self) -> &[keyhog_core::DetectorRelationSpec] {
+        &self.detector_relations
+    }
+}
+
 pub(crate) type CompiledDetectorMetadata = (Arc<str>, Arc<str>, Arc<str>);
 
 fn intern_detector_identity(
@@ -97,13 +170,6 @@ pub(crate) struct DetectorResolutionIndex {
 impl DetectorResolutionIndex {
     pub(crate) fn compile(
         detectors: &[DetectorSpec],
-        interner: &crate::static_intern::StaticInterner,
-    ) -> Result<Self, String> {
-        Self::compile_from(detectors, interner)
-    }
-
-    fn hydrate(
-        detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
         interner: &crate::static_intern::StaticInterner,
     ) -> Result<Self, String> {
         Self::compile_from(detectors, interner)
@@ -178,13 +244,6 @@ pub(crate) struct CompiledDetectorRelationIndex {
 impl CompiledDetectorRelationIndex {
     fn compile(
         detectors: &[DetectorSpec],
-        interner: &crate::static_intern::StaticInterner,
-    ) -> Result<Self, String> {
-        Self::compile_from(detectors, interner)
-    }
-
-    fn hydrate(
-        detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
         interner: &crate::static_intern::StaticInterner,
     ) -> Result<Self, String> {
         Self::compile_from(detectors, interner)
@@ -373,6 +432,110 @@ pub(crate) struct CompiledDetectorPlans {
     public_identifier_assignment_markers: Box<[Box<[u8]>]>,
 }
 
+pub(crate) struct StreamingCompiledDetectorPlansBuilder {
+    by_detector_index: Vec<CompiledDetectorPlan>,
+    summaries: Vec<StreamingDetectorPlanSummary>,
+}
+
+impl StreamingCompiledDetectorPlansBuilder {
+    pub(crate) fn with_capacity(detector_count: usize) -> Self {
+        Self {
+            by_detector_index: Vec::with_capacity(detector_count),
+            summaries: Vec::with_capacity(detector_count),
+        }
+    }
+
+    pub(crate) fn push(
+        &mut self,
+        record: crate::execution_pack::detector_plan::DetectorPlanRecord,
+        companions: Vec<crate::types::CompiledCompanion>,
+        interner: &crate::static_intern::StaticInterner,
+    ) -> Result<(), String> {
+        #[cfg(not(feature = "entropy"))]
+        if record.owns_entropy_policy() {
+            return Err(format!(
+                "scanner was built without the `entropy` feature, but hydrated detector entropy policy is enabled for {}; reinstall with a compatible scanner",
+                record.id
+            ));
+        }
+        let plan = hydrate_detector_plan(&record, companions, interner)?;
+        let has_weak_pattern = match plan.weak_anchor_base {
+            crate::suppression::WeakAnchorBase::Always => true,
+            crate::suppression::WeakAnchorBase::PerPattern => {
+                record.patterns.iter().any(|pattern| pattern.weak_anchor)
+            }
+            crate::suppression::WeakAnchorBase::Never => false,
+        };
+        if has_weak_pattern && plan.entropy_floor.is_none() {
+            return Err(format!(
+                "weak-anchor detector omits detector-local entropy_high/entropy_floor policy: {}",
+                record.id
+            ));
+        }
+        let summary = StreamingDetectorPlanSummary::from_record(record, &plan.metadata);
+        self.by_detector_index.push(plan);
+        self.summaries.push(summary);
+        Ok(())
+    }
+
+    pub(crate) fn finish(
+        self,
+        interner: &crate::static_intern::StaticInterner,
+        decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
+    ) -> Result<CompiledDetectorPlans, String> {
+        let by_detector_index = self.by_detector_index.into_boxed_slice();
+        let summaries = self.summaries;
+        let generic_assignment = by_detector_index
+            .iter()
+            .any(|plan| plan.execution.is_generic)
+            .then(|| {
+                crate::engine::phase2_generic::keywords::GenericAssignmentKeywordPlan::hydrate_from(
+                    &summaries,
+                )
+            })
+            .transpose()?;
+        let generic_named_assignment_keywords =
+            crate::generic_keyword_owner::build_named_assignment_keywords_from(&summaries)
+                .into_boxed_slice();
+        let generic_ownership =
+            crate::generic_keyword_owner::GenericOwningDetectorIndex::build_from(&summaries)?;
+        let resolution = DetectorResolutionIndex::compile_from(&summaries, interner)?;
+        let detector_relations = CompiledDetectorRelationIndex::compile_from(&summaries, interner)?;
+        let validator_index = crate::checksum::CompiledValidatorIndex::compile(
+            by_detector_index.iter().map(|plan| &plan.validators),
+        );
+        let decode_transforms = Arc::new(
+            crate::decode::policy::CompiledDecodeTransformPolicy::hydrate_summaries(&summaries)?,
+        );
+        let mut public_identifier_assignment_markers: Vec<Box<[u8]>> = Vec::new();
+        for marker in summaries
+            .iter()
+            .flat_map(|detector| &detector.public_identifier_assignment_markers)
+        {
+            let bytes = marker.as_bytes();
+            if !public_identifier_assignment_markers
+                .iter()
+                .any(|compiled| compiled.eq_ignore_ascii_case(bytes))
+            {
+                public_identifier_assignment_markers.push(bytes.into());
+            }
+        }
+        Ok(CompiledDetectorPlans {
+            by_detector_index,
+            resolution,
+            detector_relations,
+            validator_index,
+            decode_transforms,
+            decoder_plan,
+            generic_assignment,
+            generic_named_assignment_keywords,
+            generic_ownership,
+            public_identifier_assignment_markers: public_identifier_assignment_markers
+                .into_boxed_slice(),
+        })
+    }
+}
+
 impl CompiledDetectorPlans {
     pub(crate) fn compile(
         detectors: &[DetectorSpec],
@@ -425,73 +588,6 @@ impl CompiledDetectorPlans {
         );
         let decode_transforms =
             Arc::new(crate::decode::policy::CompiledDecodeTransformPolicy::compile(detectors)?);
-        let mut public_identifier_assignment_markers: Vec<Box<[u8]>> = Vec::new();
-        for marker in detectors
-            .iter()
-            .flat_map(|detector| &detector.public_identifier_assignment_markers)
-        {
-            let bytes = marker.as_bytes();
-            if !public_identifier_assignment_markers
-                .iter()
-                .any(|compiled| compiled.eq_ignore_ascii_case(bytes))
-            {
-                public_identifier_assignment_markers.push(bytes.into());
-            }
-        }
-        Ok(Self {
-            by_detector_index,
-            resolution,
-            detector_relations,
-            validator_index,
-            decode_transforms,
-            decoder_plan,
-            generic_assignment,
-            generic_named_assignment_keywords,
-            generic_ownership,
-            public_identifier_assignment_markers: public_identifier_assignment_markers
-                .into_boxed_slice(),
-        })
-    }
-
-    pub(crate) fn hydrate(
-        detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
-        interner: &crate::static_intern::StaticInterner,
-        companions: Vec<Vec<crate::types::CompiledCompanion>>,
-        decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
-    ) -> Result<Self, String> {
-        if companions.len() != detectors.len() {
-            return Err(format!(
-                "compiled companion rows ({}) do not match detector-plan count ({})",
-                companions.len(),
-                detectors.len()
-            ));
-        }
-        let by_detector_index = detectors
-            .iter()
-            .zip(companions)
-            .map(|(detector, companions)| hydrate_detector_plan(detector, companions, interner))
-            .collect::<Result<Box<[_]>, String>>()?;
-        let generic_assignment = by_detector_index
-            .iter()
-            .any(|plan| plan.execution.is_generic)
-            .then(|| {
-                crate::engine::phase2_generic::keywords::GenericAssignmentKeywordPlan::hydrate(
-                    detectors,
-                )
-            })
-            .transpose()?;
-        let generic_named_assignment_keywords =
-            crate::generic_keyword_owner::hydrate_generic_named_assignment_keywords(detectors)
-                .into_boxed_slice();
-        let generic_ownership =
-            crate::generic_keyword_owner::GenericOwningDetectorIndex::hydrate(detectors)?;
-        let resolution = DetectorResolutionIndex::hydrate(detectors, interner)?;
-        let detector_relations = CompiledDetectorRelationIndex::hydrate(detectors, interner)?;
-        let validator_index = crate::checksum::CompiledValidatorIndex::compile(
-            by_detector_index.iter().map(|plan| &plan.validators),
-        );
-        let decode_transforms =
-            Arc::new(crate::decode::policy::CompiledDecodeTransformPolicy::hydrate(detectors)?);
         let mut public_identifier_assignment_markers: Vec<Box<[u8]>> = Vec::new();
         for marker in detectors
             .iter()

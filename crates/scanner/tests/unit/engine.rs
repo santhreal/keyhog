@@ -794,17 +794,13 @@ fn generic_assignment_prefilter_collects_gpu_position_lines_once() {
         "token and SECRET both on one line\n",
         "webhook_url = 'two'"
     );
-    let offsets = keyhog_scanner::testing::compute_line_offsets(text);
     let positions = [
         text.find("API_KEY").unwrap() as u32,
         text.find("token").unwrap() as u32,
         text.find("SECRET").unwrap() as u32,
         text.find("webhook").unwrap() as u32,
     ];
-    let mut lines = Vec::new();
-    keyhog_scanner::engine::phase2_generic::keywords::collect_generic_keyword_lines_from_positions(
-        &offsets, &positions, &mut lines,
-    );
+    let lines = keyhog_scanner::testing::generic_keyword_lines_from_positions(text, &positions);
     assert_eq!(lines, vec![1, 2, 3]);
 }
 

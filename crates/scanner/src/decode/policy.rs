@@ -33,8 +33,8 @@ impl CompiledDecodeTransformPolicy {
         Self::compile_prefixes(reverse, caesar)
     }
 
-    pub(crate) fn hydrate(
-        detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+    pub(crate) fn hydrate_summaries(
+        detectors: &[crate::detector_plan::StreamingDetectorPlanSummary],
     ) -> Result<Self, String> {
         for detector in detectors {
             let issues = detector.decode_transforms.validate();

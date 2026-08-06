@@ -154,7 +154,6 @@ mod windowed_support;
 // too. Gate the
 // import to match, or non-simd builds (the `portable` feature used for the
 // macOS/Windows/musl release assets) fail with E0432.
-pub(crate) use backend_prepared::code_lines_from_offsets;
 pub(crate) use backend_prepared::PreparedChunk;
 #[cfg(feature = "simd")]
 pub(crate) use backend_prepared::{
@@ -176,7 +175,6 @@ pub use windowed_support::{
 };
 
 use crate::compiled_scanner::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
-use crate::pipeline::*;
 use crate::types::*;
 use aho_corasick::AhoCorasick;
 use keyhog_core::{Chunk, RawMatch};

@@ -11,10 +11,10 @@ use crate::types::ScannerPreprocessedText;
 pub(super) fn value_line_has_same_line_credential_keyword(
     entropy_match: &crate::entropy::EntropyMatch,
     preprocessed: &ScannerPreprocessedText<'_>,
-    line_offsets: &[usize],
+    line_index: &crate::context::LineContextIndex,
     same_line_credential_context: bool,
 ) -> bool {
-    let Some(line_text) = entropy_value_line(entropy_match, preprocessed, line_offsets) else {
+    let Some(line_text) = entropy_value_line(entropy_match, preprocessed, line_index) else {
         return false;
     };
     same_line_credential_context
@@ -28,9 +28,9 @@ pub(super) fn value_line_has_same_line_credential_keyword(
 pub(super) fn value_line_has_random_byte_blob_owner(
     entropy_match: &crate::entropy::EntropyMatch,
     preprocessed: &ScannerPreprocessedText<'_>,
-    line_offsets: &[usize],
+    line_index: &crate::context::LineContextIndex,
 ) -> bool {
-    let Some(line_text) = entropy_value_line(entropy_match, preprocessed, line_offsets) else {
+    let Some(line_text) = entropy_value_line(entropy_match, preprocessed, line_index) else {
         return false;
     };
     value_owned_by_local_key_matching(line_text, &entropy_match.value, |normalized| {
@@ -41,18 +41,12 @@ pub(super) fn value_line_has_random_byte_blob_owner(
 pub(crate) fn entropy_value_line<'a>(
     entropy_match: &crate::entropy::EntropyMatch,
     preprocessed: &'a ScannerPreprocessedText<'_>,
-    line_offsets: &[usize],
+    line_index: &crate::context::LineContextIndex,
 ) -> Option<&'a str> {
     let line_idx = entropy_match.line.saturating_sub(1);
-    if let Some(&line_start) = line_offsets.get(line_idx) {
-        let line_end = line_offsets
-            .get(line_idx + 1)
-            .copied()
-            .unwrap_or(preprocessed.text.len()); // LAW10: bounds-checked next-line offset; last line => end-of-text span, recall-safe boundary default
-        if let Some(line_text) = preprocessed.text.get(line_start..line_end) {
-            if line_text.contains(entropy_match.value.as_str()) {
-                return Some(line_text);
-            }
+    if let Some(line_text) = line_index.line(&preprocessed.text, line_idx) {
+        if line_text.contains(entropy_match.value.as_str()) {
+            return Some(line_text);
         }
     }
 

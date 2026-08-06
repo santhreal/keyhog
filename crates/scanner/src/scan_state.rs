@@ -27,7 +27,7 @@ pub(crate) fn ml_context_for_candidate(
 #[cfg(feature = "ml")]
 pub(crate) fn ml_features_for_candidate(
     text: &str,
-    line_offsets: &[usize],
+    line_index: &crate::context::LineContextIndex,
     line: usize,
     file_path: Option<&str>,
     credential: &str,
@@ -40,12 +40,7 @@ pub(crate) fn ml_features_for_candidate(
     if credential.is_empty() {
         return [0.0; crate::ml_scorer::NUM_FEATURES];
     }
-    let text_context = crate::pipeline::local_context_window_from_offsets(
-        text,
-        line_offsets,
-        line,
-        context_radius_lines,
-    );
+    let text_context = line_index.context_window(text, line, context_radius_lines);
     crate::ml_scorer::ml_features::compute_features_for_compiled_detector_from_source_window(
         credential,
         text_context,

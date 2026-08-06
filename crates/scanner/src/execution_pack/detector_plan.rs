@@ -3,22 +3,46 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-pub const DETECTOR_PLAN_SECTION_VERSION: u16 = 1;
+pub const DETECTOR_PLAN_SECTION_VERSION: u16 = 2;
+const DETECTOR_PLAN_MAGIC: [u8; 8] = *b"KHDPPLAN";
+const DETECTOR_PLAN_HEADER_LEN: usize = 146;
 const MAX_DETECTORS: usize = 16_384;
 const MAX_DECODERS: usize = 256;
+const MAX_DECODER_IDENTITY_BYTES: usize = 256;
+const MAX_RECORD_BYTES: usize = 8 * 1024 * 1024;
 const MAX_SECTION_BYTES: usize = 64 * 1024 * 1024;
 static DETECTOR_SPEC_SCHEMA_RECONSTRUCTIONS: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
+thread_local! {
+    static LIVE_WIRE_ROWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static PEAK_LIVE_WIRE_ROWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 #[doc(hidden)]
 pub fn detector_spec_schema_reconstructions() -> usize {
     DETECTOR_SPEC_SCHEMA_RECONSTRUCTIONS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+#[doc(hidden)]
+pub fn detector_plan_live_wire_rows() -> usize {
+    LIVE_WIRE_ROWS.get()
+}
+
+#[doc(hidden)]
+pub fn detector_plan_peak_live_wire_rows() -> usize {
+    PEAK_LIVE_WIRE_ROWS.get()
+}
+
+#[cfg(test)]
+pub(crate) fn reset_detector_plan_ownership_telemetry() {
+    assert_eq!(detector_plan_live_wire_rows(), 0);
+    PEAK_LIVE_WIRE_ROWS.set(0);
+}
+
 /// Explicit stable source facts required to rebuild one compiled detector plan.
 /// Self-tests, verification configuration, and other non-runtime schema fields
 /// are intentionally absent.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DetectorPlanRecord {
     pub id: String,
@@ -72,7 +96,7 @@ pub(crate) struct DetectorPlanRecord {
 }
 
 impl DetectorPlanRecord {
-    fn compile(spec: &keyhog_core::DetectorSpec) -> Self {
+    pub(crate) fn compile(spec: &keyhog_core::DetectorSpec) -> Self {
         Self {
             id: spec.id.clone(),
             name: spec.name.clone(),
@@ -193,37 +217,41 @@ impl DetectorPlanRecord {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct DetectorPlanEnvelope {
-    version: u16,
-    detector_ir_digest: [u8; 32],
-    compiled_plan_digest: [u8; 32],
-    detector_count: u32,
-    detector_order_digest: [u8; 32],
-    decoder_identities: Vec<String>,
-    detectors: Vec<DetectorPlanRecord>,
-}
-
 #[derive(Clone, Debug)]
 pub struct CompiledDetectorPlanSection {
     bytes: Vec<u8>,
 }
 
 #[derive(Debug)]
-pub(crate) struct HydratedDetectorPlanSection {
-    detectors: Arc<[DetectorPlanRecord]>,
-    decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
-    detector_ir_digest: [u8; 32],
-    compiled_plan_digest: [u8; 32],
+pub(crate) struct HydratedDetectorPlanHeader {
+    pub(crate) decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
+    pub(crate) detector_ir_digest: [u8; 32],
+    pub(crate) compiled_plan_digest: [u8; 32],
+    pub(crate) detector_count: usize,
+}
+
+struct WireRowResidency;
+
+impl WireRowResidency {
+    fn enter() -> Self {
+        LIVE_WIRE_ROWS.set(LIVE_WIRE_ROWS.get() + 1);
+        PEAK_LIVE_WIRE_ROWS.set(PEAK_LIVE_WIRE_ROWS.get().max(LIVE_WIRE_ROWS.get()));
+        Self
+    }
+}
+
+impl Drop for WireRowResidency {
+    fn drop(&mut self) {
+        LIVE_WIRE_ROWS.set(LIVE_WIRE_ROWS.get() - 1);
+    }
 }
 
 impl CompiledDetectorPlanSection {
     pub fn compile(ir: &CanonicalDetectorExecutionIr) -> Result<Self, ExecutionPackError> {
-        if ir.detectors().len() > MAX_DETECTORS {
+        let detector_count = ir.detectors().len();
+        if detector_count > MAX_DETECTORS {
             return Err(ExecutionPackError::InvalidCompilerInput(format!(
-                "detector plan has {} detectors; maximum is {MAX_DETECTORS}",
-                ir.detectors().len()
+                "detector plan has {detector_count} detectors; maximum is {MAX_DETECTORS}"
             )));
         }
         let decoder_plan = crate::decode::CompiledDecoderPlan::snapshot().map_err(|error| {
@@ -238,33 +266,72 @@ impl CompiledDetectorPlanSection {
                 decoder_identities.len()
             )));
         }
-        let detectors = ir
-            .detectors()
-            .iter()
-            .map(DetectorPlanRecord::compile)
-            .collect::<Vec<_>>();
-        let detector_count = u32::try_from(detectors.len()).map_err(|_| {
+        let detector_count = u32::try_from(detector_count).map_err(|_| {
             ExecutionPackError::InvalidCompilerInput("detector-plan count exceeds u32".to_owned())
         })?;
-        let envelope = DetectorPlanEnvelope {
-            version: DETECTOR_PLAN_SECTION_VERSION,
-            detector_ir_digest: ir.digest(),
-            compiled_plan_digest: crate::compiled_scanner::detector_digest::from_execution_plan(
-                keyhog_core::compute_spec_hash(ir.detectors()),
-                decoder_plan.identity(),
-            ),
+        let compiled_plan_digest = crate::compiled_scanner::detector_digest::from_execution_plan(
+            keyhog_core::compute_spec_hash(ir.detectors()),
+            decoder_plan.identity(),
+        );
+        let order_digest =
+            detector_order_digest(ir.detectors().iter().map(|detector| detector.id.as_str()));
+        let decoder_count = decoder_identities.len() as u16;
+        let mut payload_hasher = detector_payload_hasher(
+            ir.digest(),
+            compiled_plan_digest,
+            order_digest,
             detector_count,
-            detector_order_digest: detector_order_digest(detectors.iter().map(|d| d.id.as_str())),
-            decoder_identities,
-            detectors,
-        };
-        let bytes = canonical_json(&envelope, "serialize")?;
-        if bytes.len() > MAX_SECTION_BYTES {
-            return Err(ExecutionPackError::InvalidCompilerInput(format!(
-                "detector-plan section is {} bytes; maximum is {MAX_SECTION_BYTES}",
-                bytes.len()
-            )));
+            decoder_count,
+        );
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&DETECTOR_PLAN_MAGIC);
+        bytes.extend_from_slice(&DETECTOR_PLAN_SECTION_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(&ir.digest());
+        bytes.extend_from_slice(&compiled_plan_digest);
+        bytes.extend_from_slice(&order_digest);
+        bytes.extend_from_slice(&[0u8; 32]);
+        bytes.extend_from_slice(&detector_count.to_le_bytes());
+        bytes.extend_from_slice(&decoder_count.to_le_bytes());
+        debug_assert_eq!(bytes.len(), DETECTOR_PLAN_HEADER_LEN);
+
+        for identity in decoder_identities {
+            let identity_bytes = identity.as_bytes();
+            if identity_bytes.is_empty() || identity_bytes.len() > MAX_DECODER_IDENTITY_BYTES {
+                return Err(ExecutionPackError::InvalidCompilerInput(format!(
+                    "decoder identity has {} bytes; expected 1..={MAX_DECODER_IDENTITY_BYTES}",
+                    identity_bytes.len()
+                )));
+            }
+            let length = (identity_bytes.len() as u16).to_le_bytes();
+            payload_hasher.update(&length);
+            payload_hasher.update(identity_bytes);
+            bytes.extend_from_slice(&length);
+            bytes.extend_from_slice(identity_bytes);
         }
+        for detector in ir.detectors() {
+            let record = DetectorPlanRecord::compile(detector);
+            let payload = canonical_json(&record, "serialize detector-plan record")?;
+            if payload.len() > MAX_RECORD_BYTES {
+                return Err(ExecutionPackError::InvalidCompilerInput(format!(
+                    "detector-plan record {:?} is {} bytes; maximum is {MAX_RECORD_BYTES}",
+                    detector.id,
+                    payload.len()
+                )));
+            }
+            let length = (payload.len() as u32).to_le_bytes();
+            payload_hasher.update(&length);
+            payload_hasher.update(&payload);
+            bytes.extend_from_slice(&length);
+            bytes.extend_from_slice(&payload);
+            if bytes.len() > MAX_SECTION_BYTES {
+                return Err(ExecutionPackError::InvalidCompilerInput(format!(
+                    "detector-plan section is {} bytes; maximum is {MAX_SECTION_BYTES}",
+                    bytes.len()
+                )));
+            }
+        }
+        bytes[108..140].copy_from_slice(payload_hasher.finalize().as_bytes());
         Ok(Self { bytes })
     }
 
@@ -272,149 +339,249 @@ impl CompiledDetectorPlanSection {
         &self.bytes
     }
 
-    pub(crate) fn decode(
+    pub(crate) fn stream_records<F>(
         bytes: &[u8],
         expected_detector_ir_digest: [u8; 32],
-    ) -> Result<HydratedDetectorPlanSection, ExecutionPackError> {
+        mut visit: F,
+    ) -> Result<HydratedDetectorPlanHeader, ExecutionPackError>
+    where
+        F: FnMut(usize, DetectorPlanRecord) -> Result<(), ExecutionPackError>,
+    {
         if bytes.len() > MAX_SECTION_BYTES {
             return Err(ExecutionPackError::InvalidPack(format!(
                 "detector-plan section is {} bytes; maximum is {MAX_SECTION_BYTES}",
                 bytes.len()
             )));
         }
-        let envelope: DetectorPlanEnvelope = serde_json::from_slice(bytes).map_err(|error| {
-            ExecutionPackError::InvalidPack(format!(
-                "detector-plan section is invalid or truncated: {error}"
-            ))
-        })?;
-        if envelope.version != DETECTOR_PLAN_SECTION_VERSION {
+        if bytes.len() < DETECTOR_PLAN_HEADER_LEN {
+            return Err(ExecutionPackError::InvalidPack(
+                "detector-plan section is truncated before its fixed header".to_owned(),
+            ));
+        }
+        if bytes[..8] != DETECTOR_PLAN_MAGIC {
+            return Err(ExecutionPackError::InvalidPack(
+                "detector-plan section has invalid magic".to_owned(),
+            ));
+        }
+        let version = u16::from_le_bytes([bytes[8], bytes[9]]);
+        if version != DETECTOR_PLAN_SECTION_VERSION {
             return Err(ExecutionPackError::Incompatible(format!(
-                "detector-plan version {} is unsupported; this binary requires {}",
-                envelope.version, DETECTOR_PLAN_SECTION_VERSION
+                "detector-plan version {version} is unsupported; this binary requires {DETECTOR_PLAN_SECTION_VERSION}"
             )));
         }
-        if envelope.detector_ir_digest != expected_detector_ir_digest {
+        if bytes[10..12] != [0, 0] {
+            return Err(ExecutionPackError::Incompatible(
+                "detector-plan section uses unsupported flags".to_owned(),
+            ));
+        }
+        let detector_ir_digest = read_digest(bytes, 12);
+        if detector_ir_digest != expected_detector_ir_digest {
             return Err(ExecutionPackError::Incompatible(
                 "detector plan belongs to another DetectorIr digest".to_owned(),
             ));
         }
-        if envelope.detectors.len() > MAX_DETECTORS {
+        let compiled_plan_digest = read_digest(bytes, 44);
+        let expected_order_digest = read_digest(bytes, 76);
+        let expected_payload_digest = read_digest(bytes, 108);
+        let detector_count = u32::from_le_bytes(
+            bytes[140..144]
+                .try_into()
+                .expect("fixed detector-plan header bounds"),
+        ) as usize;
+        if detector_count > MAX_DETECTORS {
             return Err(ExecutionPackError::InvalidPack(format!(
-                "detector plan has {} detectors; maximum is {MAX_DETECTORS}",
-                envelope.detectors.len()
+                "detector plan has {detector_count} detectors; maximum is {MAX_DETECTORS}"
             )));
         }
-        if envelope.detector_count as usize != envelope.detectors.len() {
+        let decoder_count = u16::from_le_bytes([bytes[144], bytes[145]]) as usize;
+        if decoder_count > MAX_DECODERS {
             return Err(ExecutionPackError::InvalidPack(format!(
-                "detector-plan count {} does not match its {} detector rows",
-                envelope.detector_count,
-                envelope.detectors.len()
+                "detector plan has {decoder_count} decoder identities; maximum is {MAX_DECODERS}"
             )));
         }
-        if envelope.decoder_identities.len() > MAX_DECODERS {
+        let mut cursor = DETECTOR_PLAN_HEADER_LEN;
+        let mut decoder_identities = Vec::with_capacity(decoder_count);
+        let mut unique_decoders = BTreeSet::new();
+        let mut payload_hasher = detector_payload_hasher(
+            detector_ir_digest,
+            compiled_plan_digest,
+            expected_order_digest,
+            detector_count as u32,
+            decoder_count as u16,
+        );
+        for _ in 0..decoder_count {
+            let length_bytes = take(bytes, &mut cursor, 2, "decoder identity length")?;
+            payload_hasher.update(length_bytes);
+            let length = u16::from_le_bytes([length_bytes[0], length_bytes[1]]) as usize;
+            if length == 0 || length > MAX_DECODER_IDENTITY_BYTES {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "detector-plan decoder identity has {length} bytes; expected 1..={MAX_DECODER_IDENTITY_BYTES}"
+                )));
+            }
+            let raw = take(bytes, &mut cursor, length, "decoder identity")?;
+            payload_hasher.update(raw);
+            let identity = std::str::from_utf8(raw).map_err(|error| {
+                ExecutionPackError::InvalidPack(format!(
+                    "detector-plan decoder identity is not UTF-8: {error}"
+                ))
+            })?;
+            if !unique_decoders.insert(identity) {
+                return Err(ExecutionPackError::InvalidPack(
+                    "detector plan contains a duplicate decoder identity".to_owned(),
+                ));
+            }
+            decoder_identities.push(identity.to_owned());
+        }
+        let decoder_plan =
+            crate::decode::CompiledDecoderPlan::from_stable_identities(&decoder_identities)
+                .map_err(|error| ExecutionPackError::Incompatible(error.to_string()))?;
+
+        let mut order_hasher = detector_order_hasher();
+        let mut previous_id: Option<String> = None;
+        for index in 0..detector_count {
+            let length_bytes = take(bytes, &mut cursor, 4, "detector record length")?;
+            payload_hasher.update(length_bytes);
+            let payload_len = u32::from_le_bytes(
+                length_bytes
+                    .try_into()
+                    .expect("four-byte detector record length"),
+            ) as usize;
+            if payload_len == 0 || payload_len > MAX_RECORD_BYTES {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "detector-plan record {index} has {payload_len} bytes; expected 1..={MAX_RECORD_BYTES}"
+                )));
+            }
+            let payload = take(bytes, &mut cursor, payload_len, "detector record payload")?;
+            payload_hasher.update(payload);
+            let record: DetectorPlanRecord = serde_json::from_slice(payload).map_err(|error| {
+                ExecutionPackError::InvalidPack(format!(
+                    "detector-plan record {index} is invalid or truncated: {error}"
+                ))
+            })?;
+            if canonical_json(&record, "re-serialize detector-plan record")? != payload {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "detector-plan record {index} is not canonical JSON"
+                )));
+            }
+            if record.id.is_empty()
+                || previous_id
+                    .as_deref()
+                    .is_some_and(|previous| previous >= record.id.as_str())
+            {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "detector-plan record {index} has an empty, duplicate, or noncanonical detector ID"
+                )));
+            }
+            update_detector_order_hasher(&mut order_hasher, &record.id);
+            previous_id = Some(record.id.clone());
+            let _residency = WireRowResidency::enter();
+            visit(index, record)?;
+        }
+        if cursor != bytes.len() {
             return Err(ExecutionPackError::InvalidPack(format!(
-                "detector plan has {} decoder identities; maximum is {MAX_DECODERS}",
-                envelope.decoder_identities.len()
+                "detector-plan section has {} trailing bytes",
+                bytes.len() - cursor
             )));
         }
-        let mut decoder_identities = BTreeSet::new();
-        if envelope
-            .decoder_identities
-            .iter()
-            .any(|identity| identity.is_empty() || !decoder_identities.insert(identity.as_str()))
-        {
+        if *payload_hasher.finalize().as_bytes() != expected_payload_digest {
             return Err(ExecutionPackError::InvalidPack(
-                "detector plan contains an empty or duplicate decoder identity".to_owned(),
+                "detector-plan payload digest does not match its framed rows".to_owned(),
             ));
         }
-        let mut detector_ids = BTreeSet::new();
-        let mut previous: Option<&str> = None;
-        for detector in &envelope.detectors {
-            if detector.id.is_empty() || !detector_ids.insert(detector.id.as_str()) {
-                return Err(ExecutionPackError::InvalidPack(
-                    "detector plan contains an empty or duplicate detector ID".to_owned(),
-                ));
-            }
-            if previous.is_some_and(|id| id >= detector.id.as_str()) {
-                return Err(ExecutionPackError::InvalidPack(
-                    "detector-plan detector order is not canonical".to_owned(),
-                ));
-            }
-            previous = Some(detector.id.as_str());
-        }
-        let order_digest = detector_order_digest(envelope.detectors.iter().map(|d| d.id.as_str()));
-        if order_digest != envelope.detector_order_digest {
+        if *order_hasher.finalize().as_bytes() != expected_order_digest {
             return Err(ExecutionPackError::InvalidPack(
                 "detector-plan detector order digest does not match its rows".to_owned(),
             ));
         }
-        if canonical_json(&envelope, "re-serialize")? != bytes {
+        Ok(HydratedDetectorPlanHeader {
+            decoder_plan: Arc::new(decoder_plan),
+            detector_ir_digest,
+            compiled_plan_digest,
+            detector_count,
+        })
+    }
+
+    pub(crate) fn decode_schema(
+        bytes: &[u8],
+        expected_detector_ir_digest: [u8; 32],
+    ) -> Result<(Arc<[keyhog_core::DetectorSpec]>, HydratedDetectorPlanHeader), ExecutionPackError>
+    {
+        let mut detectors = Vec::new();
+        let header = Self::stream_records(bytes, expected_detector_ir_digest, |_, record| {
+            DETECTOR_SPEC_SCHEMA_RECONSTRUCTIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            detectors.push(record.into_detector_spec());
+            Ok(())
+        })?;
+        if detectors.len() != header.detector_count {
             return Err(ExecutionPackError::InvalidPack(
-                "detector-plan section is not canonical JSON".to_owned(),
+                "detector-plan row count changed during schema reconstruction".to_owned(),
             ));
         }
-        let decoder_plan = crate::decode::CompiledDecoderPlan::from_stable_identities(
-            &envelope.decoder_identities,
-        )
-        .map_err(|error| ExecutionPackError::Incompatible(error.to_string()))?;
-        Ok(HydratedDetectorPlanSection {
-            detectors: envelope.detectors.into(),
-            decoder_plan: Arc::new(decoder_plan),
-            detector_ir_digest: envelope.detector_ir_digest,
-            compiled_plan_digest: envelope.compiled_plan_digest,
-        })
+        Ok((detectors.into(), header))
     }
 }
 
-impl HydratedDetectorPlanSection {
-    pub(crate) fn into_direct_parts(
-        self,
-    ) -> (
-        Arc<[DetectorPlanRecord]>,
-        Arc<crate::decode::CompiledDecoderPlan>,
-        [u8; 32],
-    ) {
-        (self.detectors, self.decoder_plan, self.compiled_plan_digest)
-    }
+fn read_digest(bytes: &[u8], offset: usize) -> [u8; 32] {
+    bytes[offset..offset + 32]
+        .try_into()
+        .expect("fixed detector-plan header bounds")
+}
 
-    pub(crate) fn into_schema_parts(
-        self,
-    ) -> (
-        Arc<[keyhog_core::DetectorSpec]>,
-        Arc<crate::decode::CompiledDecoderPlan>,
-    ) {
-        DETECTOR_SPEC_SCHEMA_RECONSTRUCTIONS
-            .fetch_add(self.detectors.len(), std::sync::atomic::Ordering::Relaxed);
-        let detectors = self
-            .detectors
-            .iter()
-            .cloned()
-            .map(DetectorPlanRecord::into_detector_spec)
-            .collect::<Vec<_>>()
-            .into();
-        (detectors, self.decoder_plan)
-    }
+fn take<'a>(
+    bytes: &'a [u8],
+    cursor: &mut usize,
+    length: usize,
+    field: &str,
+) -> Result<&'a [u8], ExecutionPackError> {
+    let end = cursor.checked_add(length).ok_or_else(|| {
+        ExecutionPackError::InvalidPack(format!("detector-plan {field} length overflows"))
+    })?;
+    let value = bytes.get(*cursor..end).ok_or_else(|| {
+        ExecutionPackError::InvalidPack(format!("detector-plan section is truncated in {field}"))
+    })?;
+    *cursor = end;
+    Ok(value)
+}
 
-    pub(crate) const fn detector_ir_digest(&self) -> [u8; 32] {
-        self.detector_ir_digest
-    }
+fn detector_payload_hasher(
+    detector_ir_digest: [u8; 32],
+    compiled_plan_digest: [u8; 32],
+    detector_order_digest: [u8; 32],
+    detector_count: u32,
+    decoder_count: u16,
+) -> blake3::Hasher {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"keyhog-detector-plan-payload-v2\0");
+    hasher.update(&detector_ir_digest);
+    hasher.update(&compiled_plan_digest);
+    hasher.update(&detector_order_digest);
+    hasher.update(&detector_count.to_le_bytes());
+    hasher.update(&decoder_count.to_le_bytes());
+    hasher
+}
+
+fn detector_order_hasher() -> blake3::Hasher {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"keyhog-detector-plan-order-v1\0");
+    hasher
+}
+
+fn update_detector_order_hasher(hasher: &mut blake3::Hasher, id: &str) {
+    hasher.update(&(id.len() as u64).to_le_bytes());
+    hasher.update(id.as_bytes());
 }
 
 fn detector_order_digest<'a>(ids: impl Iterator<Item = &'a str>) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"keyhog-detector-plan-order-v1\0");
+    let mut hasher = detector_order_hasher();
     for id in ids {
-        hasher.update(&(id.len() as u64).to_le_bytes());
-        hasher.update(id.as_bytes());
+        update_detector_order_hasher(&mut hasher, id);
     }
     *hasher.finalize().as_bytes()
 }
 
 fn canonical_json<T: Serialize>(value: &T, operation: &str) -> Result<Vec<u8>, ExecutionPackError> {
     serde_json::to_vec(value).map_err(|error| {
-        ExecutionPackError::InvalidCompilerInput(format!(
-            "cannot {operation} detector-plan section: {error}"
-        ))
+        ExecutionPackError::InvalidCompilerInput(format!("cannot {operation}: {error}"))
     })
 }
 
@@ -446,53 +613,89 @@ mod tests {
     }
 
     #[test]
-    fn detector_plan_round_trip_binds_count_order_and_digest() {
+    fn detector_plan_round_trip_streams_one_canonical_row_at_a_time() {
         let (section, digest) = section();
-        let hydrated =
-            CompiledDetectorPlanSection::decode(section.as_bytes(), digest).expect("decode");
-        assert_eq!(hydrated.detector_ir_digest(), digest);
-        assert_eq!(hydrated.detectors().len(), 2);
-        assert_eq!(hydrated.detectors()[0].id, "a-plan");
-        assert_eq!(hydrated.detectors()[1].id, "b-plan");
+        reset_detector_plan_ownership_telemetry();
+        let mut ids = Vec::new();
+        let header =
+            CompiledDetectorPlanSection::stream_records(section.as_bytes(), digest, |_, record| {
+                ids.push(record.id);
+                Ok(())
+            })
+            .expect("decode");
+        assert_eq!(header.detector_ir_digest, digest);
+        assert_eq!(header.detector_count, 2);
+        assert_eq!(ids, ["a-plan", "b-plan"]);
+        assert_eq!(detector_plan_live_wire_rows(), 0);
+        assert_eq!(detector_plan_peak_live_wire_rows(), 1);
 
         let mut wrong_digest = digest;
         wrong_digest[0] ^= 0xff;
-        assert!(
-            CompiledDetectorPlanSection::decode(section.as_bytes(), wrong_digest)
-                .expect_err("DetectorIr digest drift must fail")
-                .to_string()
-                .contains("another DetectorIr digest")
-        );
+        assert!(CompiledDetectorPlanSection::stream_records(
+            section.as_bytes(),
+            wrong_digest,
+            |_, _| Ok(())
+        )
+        .expect_err("DetectorIr digest drift must fail")
+        .to_string()
+        .contains("another DetectorIr digest"));
     }
 
     #[test]
-    fn detector_plan_rejects_version_count_order_and_truncation() {
+    fn detector_plan_rejects_framing_identity_row_and_trailing_corruption() {
         let (section, digest) = section();
+
         let mut version = section.as_bytes().to_vec();
-        replace_once(&mut version, b"\"version\":1", b"\"version\":9");
-        assert!(CompiledDetectorPlanSection::decode(&version, digest)
-            .expect_err("version drift must fail")
-            .to_string()
-            .contains("version 9"));
+        version[8..10].copy_from_slice(&9u16.to_le_bytes());
+        assert!(
+            CompiledDetectorPlanSection::stream_records(&version, digest, |_, _| Ok(()))
+                .expect_err("version drift must fail")
+                .to_string()
+                .contains("version 9")
+        );
 
         let mut count = section.as_bytes().to_vec();
-        replace_once(&mut count, b"\"detector_count\":2", b"\"detector_count\":9");
-        assert!(CompiledDetectorPlanSection::decode(&count, digest)
-            .expect_err("count drift must fail")
-            .to_string()
-            .contains("does not match"));
+        count[140..144].copy_from_slice(&9u32.to_le_bytes());
+        assert!(
+            CompiledDetectorPlanSection::stream_records(&count, digest, |_, _| Ok(()))
+                .expect_err("count drift must fail")
+                .to_string()
+                .contains("truncated")
+        );
 
         let mut order = section.as_bytes().to_vec();
         replace_once(&mut order, b"\"id\":\"a-plan\"", b"\"id\":\"z-plan\"");
-        assert!(CompiledDetectorPlanSection::decode(&order, digest)
-            .expect_err("order drift must fail")
-            .to_string()
-            .contains("order"));
+        assert!(
+            CompiledDetectorPlanSection::stream_records(&order, digest, |_, _| Ok(()))
+                .expect_err("order drift must fail")
+                .to_string()
+                .contains("noncanonical")
+        );
+
+        let mut compiled_digest = section.as_bytes().to_vec();
+        compiled_digest[44] ^= 0xff;
+        assert!(
+            CompiledDetectorPlanSection::stream_records(&compiled_digest, digest, |_, _| Ok(()))
+                .expect_err("compiled digest corruption must fail")
+                .to_string()
+                .contains("payload digest")
+        );
 
         let truncated = &section.as_bytes()[..section.as_bytes().len() - 1];
-        assert!(CompiledDetectorPlanSection::decode(truncated, digest)
-            .expect_err("truncation must fail")
-            .to_string()
-            .contains("truncated"));
+        assert!(
+            CompiledDetectorPlanSection::stream_records(truncated, digest, |_, _| Ok(()))
+                .expect_err("truncation must fail")
+                .to_string()
+                .contains("truncated")
+        );
+
+        let mut trailing = section.as_bytes().to_vec();
+        trailing.push(0);
+        assert!(
+            CompiledDetectorPlanSection::stream_records(&trailing, digest, |_, _| Ok(()))
+                .expect_err("trailing bytes must fail")
+                .to_string()
+                .contains("trailing")
+        );
     }
 }

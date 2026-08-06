@@ -1,7 +1,7 @@
 #[cfg(all(target_os = "linux", feature = "gpu"))]
 use super::compile_helpers::surface_cuda_acquisition_failure;
 #[cfg(feature = "simdsieve")]
-use super::compile_helpers::{build_hot_pattern_slots, hydrate_hot_pattern_slots};
+use super::compile_helpers::{build_hot_pattern_slots, StreamingHotPatternSlots};
 use super::*;
 use crate::compiler::compiler_build::CompileState;
 #[cfg(feature = "simd")]
@@ -11,6 +11,16 @@ type PackedSimdProgram = ();
 struct PackedVyreProgramSource<'a> {
     bytes: &'a [u8],
     pack_identity: crate::execution_pack::ExecutionPackIdentity,
+}
+
+struct PackedDetectorPlanPrelude<'a> {
+    detector_ids: Vec<String>,
+    static_intern_strings: Vec<String>,
+    decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
+    detector_ir_digest: [u8; 32],
+    compiled_plan_digest: [u8; 32],
+    detector_count: usize,
+    section_bytes: &'a [u8],
 }
 
 fn selected_gpu_peer(backend: crate::hw_probe::ScanBackend) -> SelectedGpuPeer {
@@ -201,19 +211,41 @@ impl CompiledScanner {
                 "execution pack is missing required detector-plan section".to_owned(),
             )
         })?;
-        let hydrated = crate::execution_pack::CompiledDetectorPlanSection::decode(
+        let mut detector_ids = Vec::new();
+        let mut static_intern_strings = Vec::new();
+        let header = crate::execution_pack::CompiledDetectorPlanSection::stream_records(
             bytes,
             pack.identity().detector_digest,
+            |_, record| {
+                detector_ids.push(record.id.clone());
+                static_intern_strings.push(record.name);
+                static_intern_strings.push(record.service);
+                if let Some(metadata) = record.entropy_fallback {
+                    static_intern_strings.push(metadata.id);
+                    static_intern_strings.push(metadata.name);
+                    static_intern_strings.push(metadata.service);
+                }
+                static_intern_strings.extend(record.companion_names);
+                Ok(())
+            },
         )
         .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
-        let (records, decoder_plan, compiled_plan_digest) = hydrated.into_direct_parts();
+        let prelude = PackedDetectorPlanPrelude {
+            detector_ids,
+            static_intern_strings,
+            decoder_plan: header.decoder_plan,
+            detector_ir_digest: header.detector_ir_digest,
+            compiled_plan_digest: header.compiled_plan_digest,
+            detector_count: header.detector_count,
+            section_bytes: bytes,
+        };
         Self::compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning_inner(
             Vec::<DetectorSpec>::new().into(),
             pack,
             GpuInitPolicy::SelectedBackend(execution_backend(pack.identity().backend)),
             tuning_config,
-            Some(decoder_plan),
-            Some((records, compiled_plan_digest)),
+            None,
+            Some(prelude),
         )
     }
 
@@ -229,24 +261,24 @@ impl CompiledScanner {
                 "execution pack is missing required detector-plan section".to_owned(),
             )
         })?;
-        let hydrated = crate::execution_pack::CompiledDetectorPlanSection::decode(
-            section_bytes,
-            pack.identity().detector_digest,
-        )
-        .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
-        if hydrated.detector_ir_digest() != pack.identity().detector_digest {
+        let (detectors, header) =
+            crate::execution_pack::CompiledDetectorPlanSection::decode_schema(
+                section_bytes,
+                pack.identity().detector_digest,
+            )
+            .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+        if header.detector_ir_digest != pack.identity().detector_digest {
             return Err(crate::error::ScanError::Config(
                 "execution pack detector plan identity does not match its header".to_owned(),
             ));
         }
-        let (detectors, decoder_plan) = hydrated.into_schema_parts();
         let scanner =
             Self::compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning_inner(
                 Arc::clone(&detectors),
                 pack,
                 GpuInitPolicy::SelectedBackend(execution_backend(pack.identity().backend)),
                 tuning_config,
-                Some(decoder_plan),
+                Some((header.decoder_plan, header.compiled_plan_digest)),
                 None,
             )?;
         Ok((scanner, detectors))
@@ -288,11 +320,8 @@ impl CompiledScanner {
         pack: &crate::execution_pack::ExecutionPack,
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
-        decoder_plan: Option<Arc<crate::decode::CompiledDecoderPlan>>,
-        packed_detector_records: Option<(
-            Arc<[crate::execution_pack::detector_plan::DetectorPlanRecord]>,
-            [u8; 32],
-        )>,
+        decoder_plan: Option<(Arc<crate::decode::CompiledDecoderPlan>, [u8; 32])>,
+        packed_detector_plan: Option<PackedDetectorPlanPrelude>,
     ) -> Result<Self> {
         use crate::execution_pack::ExecutionPackSectionKind as Section;
 
@@ -381,10 +410,11 @@ impl CompiledScanner {
             bytes: backend_program,
             pack_identity: identity,
         });
-        let state = if let Some((records, _)) = packed_detector_records.as_ref() {
-            let detector_ids = records
+        let state = if let Some(prelude) = packed_detector_plan.as_ref() {
+            let detector_ids = prelude
+                .detector_ids
                 .iter()
-                .map(|detector| detector.id.as_str())
+                .map(String::as_str)
                 .collect::<Vec<_>>();
             crate::execution_pack::matcher_sections::decode_compile_state_sections_from_ids(
                 identity.backend,
@@ -419,7 +449,7 @@ impl CompiledScanner {
             packed_simd_program,
             packed_vyre_program,
             decoder_plan,
-            packed_detector_records,
+            packed_detector_plan,
         )
     }
 
@@ -430,35 +460,29 @@ impl CompiledScanner {
         packed_state: Option<CompileState>,
         mut packed_simd_program: Option<PackedSimdProgram>,
         packed_vyre_program: Option<PackedVyreProgramSource<'_>>,
-        packed_decoder_plan: Option<Arc<crate::decode::CompiledDecoderPlan>>,
-        packed_detector_records: Option<(
-            Arc<[crate::execution_pack::detector_plan::DetectorPlanRecord]>,
-            [u8; 32],
-        )>,
+        packed_decoder_plan: Option<(Arc<crate::decode::CompiledDecoderPlan>, [u8; 32])>,
+        mut packed_detector_plan: Option<PackedDetectorPlanPrelude<'_>>,
     ) -> Result<Self> {
-        if packed_detector_records.is_none() {
+        if packed_detector_plan.is_none() {
             if packed_state.is_none() {
                 super::validation::validate_detector_corpus(&detectors)
                     .map_err(crate::error::ScanError::Config)?;
             }
             crate::entropy::policy::validate_feature_compatibility(&detectors)
                 .map_err(crate::error::ScanError::Config)?;
-        } else {
-            crate::entropy::policy::validate_plan_feature_compatibility(
-                &packed_detector_records
-                    .as_ref()
-                    .expect("checked packed detector records")
-                    .0,
-            )
-            .map_err(crate::error::ScanError::Config)?;
         }
-        let decoder_plan = match packed_decoder_plan {
-            Some(plan) => plan,
-            None => Arc::new(
-                crate::decode::CompiledDecoderPlan::snapshot().map_err(|error| {
+        let packed_schema_digest = packed_decoder_plan.as_ref().map(|(_, digest)| *digest);
+        let decoder_plan = match (
+            packed_decoder_plan.map(|(plan, _)| plan),
+            packed_detector_plan.as_ref(),
+        ) {
+            (Some(plan), _) => plan,
+            (None, Some(prelude)) => Arc::clone(&prelude.decoder_plan),
+            (None, None) => Arc::new(crate::decode::CompiledDecoderPlan::snapshot().map_err(
+                |error| {
                     crate::error::ScanError::Config(format!("invalid decoder registry: {error}"))
-                })?,
-            ),
+                },
+            )?),
         };
         // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
         #[cfg(not(feature = "simd"))]
@@ -470,33 +494,17 @@ impl CompiledScanner {
         // Build the canonical detector execution plan before any backend
         // projection. Backends consume only derived matcher inputs from this
         // owner and never reinterpret detector TOML independently.
-        let static_intern_strings =
-            if let Some((records, _)) = packed_detector_records.as_ref() {
-                records
-                    .iter()
-                    .flat_map(|detector| {
-                        [
-                            detector.id.as_str(),
-                            detector.name.as_str(),
-                            detector.service.as_str(),
-                        ]
-                        .into_iter()
-                        .chain(detector.entropy_fallback.as_ref().into_iter().flat_map(
-                            |metadata| {
-                                [
-                                    metadata.id.as_str(),
-                                    metadata.name.as_str(),
-                                    metadata.service.as_str(),
-                                ]
-                            },
-                        ))
-                        .chain(detector.companion_names.iter().map(String::as_str))
-                    })
-                    .collect::<Vec<_>>()
+        let static_intern =
+            if let Some(prelude) = packed_detector_plan.as_ref() {
+                Arc::new(crate::static_intern::StaticInterner::from_detector_strings(
+                    prelude
+                        .detector_ids
+                        .iter()
+                        .chain(prelude.static_intern_strings.iter()),
+                ))
             } else {
-                detectors
-                    .iter()
-                    .flat_map(|detector| {
+                Arc::new(crate::static_intern::StaticInterner::from_detector_strings(
+                    detectors.iter().flat_map(|detector| {
                         [
                             detector.id.as_str(),
                             detector.name.as_str(),
@@ -518,12 +526,13 @@ impl CompiledScanner {
                                 .iter()
                                 .map(|companion| companion.name.as_str()),
                         )
-                    })
-                    .collect::<Vec<_>>()
+                    }),
+                ))
             };
-        let static_intern = Arc::new(crate::static_intern::StaticInterner::from_detector_strings(
-            static_intern_strings,
-        ));
+        if let Some(prelude) = packed_detector_plan.as_mut() {
+            prelude.detector_ids = Vec::new();
+            prelude.static_intern_strings = Vec::new();
+        }
         for companions in &mut state.companions {
             for companion in companions {
                 companion.name =
@@ -537,21 +546,69 @@ impl CompiledScanner {
                         })?;
             }
         }
+        #[cfg(feature = "simdsieve")]
+        let mut streamed_hot_pattern_slots = None;
         let (compiled_plan_digest, detector_plans, detector_count) =
-            if let Some((records, packed_digest)) = packed_detector_records.as_ref() {
-                let plans = crate::detector_plan::CompiledDetectorPlans::hydrate(
-                    records,
-                    static_intern.as_ref(),
-                    state.companions,
-                    decoder_plan,
+            if let Some(prelude) = packed_detector_plan.take() {
+                let mut companions = std::mem::take(&mut state.companions).into_iter();
+                let mut builder =
+                    crate::detector_plan::StreamingCompiledDetectorPlansBuilder::with_capacity(
+                        prelude.detector_count,
+                    );
+                #[cfg(feature = "simdsieve")]
+                let mut hot_slots = StreamingHotPatternSlots::new();
+                let header = crate::execution_pack::CompiledDetectorPlanSection::stream_records(
+                    prelude.section_bytes,
+                    prelude.detector_ir_digest,
+                    |index, record| {
+                        #[cfg(feature = "simdsieve")]
+                        hot_slots
+                            .push(index, &record, &state.ac_map)
+                            .map_err(|error| {
+                                crate::execution_pack::ExecutionPackError::InvalidPack(
+                                    error.to_string(),
+                                )
+                            })?;
+                        let companion_row = companions.next().ok_or_else(|| {
+                            crate::execution_pack::ExecutionPackError::InvalidPack(format!(
+                                "detector-plan record {index} has no compiled companion row"
+                            ))
+                        })?;
+                        builder
+                            .push(record, companion_row, static_intern.as_ref())
+                            .map_err(|error| {
+                                crate::execution_pack::ExecutionPackError::InvalidPack(format!(
+                                    "cannot hydrate detector-plan record {index}: {error}"
+                                ))
+                            })
+                    },
                 )
-                .map_err(crate::error::ScanError::Config)?;
-                (*packed_digest, plans, records.len())
+                .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+                if companions.next().is_some()
+                    || header.detector_count != prelude.detector_count
+                    || header.compiled_plan_digest != prelude.compiled_plan_digest
+                    || header.decoder_plan.identity() != prelude.decoder_plan.identity()
+                {
+                    return Err(crate::error::ScanError::Config(
+                        "detector-plan framing changed between ordered validation and hydration"
+                            .to_owned(),
+                    ));
+                }
+                let plans = builder
+                    .finish(static_intern.as_ref(), header.decoder_plan)
+                    .map_err(crate::error::ScanError::Config)?;
+                #[cfg(feature = "simdsieve")]
+                {
+                    streamed_hot_pattern_slots = Some(hot_slots.finish());
+                }
+                (prelude.compiled_plan_digest, plans, prelude.detector_count)
             } else {
-                let digest = super::detector_digest::from_execution_plan(
-                    keyhog_core::compute_spec_hash(&detectors),
-                    decoder_plan.identity(),
-                );
+                let digest = packed_schema_digest.unwrap_or_else(|| {
+                    super::detector_digest::from_execution_plan(
+                        keyhog_core::compute_spec_hash(&detectors),
+                        decoder_plan.identity(),
+                    )
+                });
                 let plans = crate::detector_plan::CompiledDetectorPlans::compile_with_decoder_plan(
                     &detectors,
                     static_intern.as_ref(),
@@ -567,55 +624,33 @@ impl CompiledScanner {
             &state.phase2_patterns,
             detector_count,
         )?;
-        // Lower the last detector-schema-dependent validations before building
-        // route runtime indexes. Installed schemas are compiler inputs; keeping
-        // them alive while allocating the retained graph inflates peak RSS.
-        let missing_weak_anchor_floors =
-            if let Some((records, _)) = packed_detector_records.as_ref() {
-                records
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, detector)| {
-                        let has_weak_pattern = match detector_plans.get(index).weak_anchor_base {
-                            crate::suppression::WeakAnchorBase::Always => true,
-                            crate::suppression::WeakAnchorBase::PerPattern => {
-                                detector.patterns.iter().any(|pattern| pattern.weak_anchor)
-                            }
-                            crate::suppression::WeakAnchorBase::Never => false,
-                        };
-                        (has_weak_pattern && detector_plans.get(index).entropy_floor.is_none())
-                            .then_some(detector.id.as_str())
-                    })
-                    .collect::<Vec<_>>()
-            } else {
-                detectors
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, detector)| {
-                        let has_weak_pattern = match detector_plans.get(index).weak_anchor_base {
-                            crate::suppression::WeakAnchorBase::Always => true,
-                            crate::suppression::WeakAnchorBase::PerPattern => {
-                                detector.patterns.iter().any(|pattern| pattern.weak_anchor)
-                            }
-                            crate::suppression::WeakAnchorBase::Never => false,
-                        };
-                        (has_weak_pattern && detector_plans.get(index).entropy_floor.is_none())
-                            .then_some(detector.id.as_str())
-                    })
-                    .collect::<Vec<_>>()
-            };
-        if !missing_weak_anchor_floors.is_empty() {
-            return Err(crate::error::ScanError::Config(format!(
-                "weak-anchor detectors omit detector-local entropy_high/entropy_floor policy: {}",
-                missing_weak_anchor_floors.join(", ")
-            )));
+        if packed_detector_plan.is_none() && !detectors.is_empty() {
+            let missing_weak_anchor_floors = detectors
+                .iter()
+                .enumerate()
+                .filter_map(|(index, detector)| {
+                    let has_weak_pattern = match detector_plans.get(index).weak_anchor_base {
+                        crate::suppression::WeakAnchorBase::Always => true,
+                        crate::suppression::WeakAnchorBase::PerPattern => {
+                            detector.patterns.iter().any(|pattern| pattern.weak_anchor)
+                        }
+                        crate::suppression::WeakAnchorBase::Never => false,
+                    };
+                    (has_weak_pattern && detector_plans.get(index).entropy_floor.is_none())
+                        .then_some(detector.id.as_str())
+                })
+                .collect::<Vec<_>>();
+            if !missing_weak_anchor_floors.is_empty() {
+                return Err(crate::error::ScanError::Config(format!(
+                    "weak-anchor detectors omit detector-local entropy_high/entropy_floor policy: {}",
+                    missing_weak_anchor_floors.join(", ")
+                )));
+            }
         }
-        drop(missing_weak_anchor_floors);
         #[cfg(feature = "simdsieve")]
-        let hot_pattern_slots = if let Some((records, _)) = packed_detector_records.as_ref() {
-            hydrate_hot_pattern_slots(records, &state.ac_map)?
-        } else {
-            build_hot_pattern_slots(&detectors, &state.ac_map)?
+        let hot_pattern_slots = match streamed_hot_pattern_slots {
+            Some(slots) => slots,
+            None => build_hot_pattern_slots(&detectors, &state.ac_map)?,
         };
         #[cfg(feature = "simdsieve")]
         let hot_confirmed_by_pattern = {
@@ -628,7 +663,6 @@ impl CompiledScanner {
         #[cfg(not(feature = "simdsieve"))]
         let hot_confirmed_by_pattern = vec![false; state.ac_map.len()];
         drop(detectors);
-        drop(packed_detector_records);
         let ac = if matches!(
             gpu_policy,
             GpuInitPolicy::SelectedBackend(crate::hw_probe::ScanBackend::SimdCpu)

@@ -1,6 +1,5 @@
 use super::phase2::Phase2AlwaysActiveGpuEvidence;
 use super::*;
-use crate::context;
 use crate::hw_probe::ScanBackend;
 use keyhog_core::RawMatch;
 
@@ -55,13 +54,7 @@ impl CompiledScanner {
         if crate::deadline::expired(deadline) {
             return ScanState::with_static_intern(self.static_intern.clone());
         }
-        // Borrow cached line offsets; downstream consumers take `&[usize]`.
-        let line_offsets: &[usize] = prepared.line_offsets();
-        let code_lines = prepared.code_lines(line_offsets);
-        // Needed by both the hot SIMD accelerator and phase-2 capture paths so
-        // every canonical detector candidate uses the same context-aware
-        // suppression/adjudication chain.
-        let documentation_lines = context::documentation_line_flags(&code_lines);
+        let line_index = prepared.line_index();
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
 
         // Unified profiler; phase-2 capture has its own internal sub-spans.
@@ -71,9 +64,7 @@ impl CompiledScanner {
             self.scan_hot_patterns_fast(
                 &prepared.preprocessed.text,
                 &prepared.preprocessed,
-                line_offsets,
-                &code_lines,
-                &documentation_lines,
+                line_index,
                 prepared.chunk,
                 &mut scan_state,
             );
@@ -156,9 +147,7 @@ impl CompiledScanner {
             self.extract_confirmed_patterns(
                 &confirmed_patterns,
                 &prepared.preprocessed,
-                line_offsets,
-                &code_lines,
-                &documentation_lines,
+                line_index,
                 prepared.chunk,
                 &mut scan_state,
                 deadline,
@@ -197,9 +186,7 @@ impl CompiledScanner {
         match focus {
             Some(span) => self.scan_phase2_patterns_focused(
                 &prepared.preprocessed,
-                line_offsets,
-                &code_lines,
-                &documentation_lines,
+                line_index,
                 prepared.chunk,
                 &mut scan_state,
                 deadline,
@@ -210,9 +197,7 @@ impl CompiledScanner {
             ),
             None => self.scan_phase2_patterns(
                 &prepared.preprocessed,
-                line_offsets,
-                &code_lines,
-                &documentation_lines,
+                line_index,
                 prepared.chunk,
                 &mut scan_state,
                 deadline,
@@ -229,9 +214,7 @@ impl CompiledScanner {
             let _g = profile::span(keyhog_profile::Stage::GenericDetection);
             self.scan_generic_assignments(
                 &prepared.preprocessed,
-                line_offsets,
-                &code_lines,
-                &documentation_lines,
+                line_index,
                 prepared.chunk,
                 &mut scan_state,
                 generic_keyword_positions,
@@ -247,8 +230,7 @@ impl CompiledScanner {
             let _g = profile::span(keyhog_profile::Stage::Entropy);
             self.scan_entropy_fallback(
                 &prepared.preprocessed,
-                line_offsets,
-                &code_lines,
+                line_index,
                 prepared.chunk,
                 &mut scan_state,
             );
@@ -269,15 +251,11 @@ impl CompiledScanner {
     #[cfg(test)]
     pub(crate) fn debug_scan_phase2_only(&self, chunk: &keyhog_core::Chunk) -> Vec<RawMatch> {
         let prepared = self.prepare_chunk(chunk);
-        let line_offsets: &[usize] = prepared.line_offsets();
-        let code_lines = prepared.code_lines(line_offsets);
-        let documentation_lines = context::documentation_line_flags(&code_lines);
+        let line_index = prepared.line_index();
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
         self.scan_phase2_patterns(
             &prepared.preprocessed,
-            line_offsets,
-            &code_lines,
-            &documentation_lines,
+            line_index,
             prepared.chunk,
             &mut scan_state,
             None,

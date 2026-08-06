@@ -123,11 +123,34 @@ pub(crate) fn infer_context_with_documentation(
     file_path: Option<&str>,
     documentation_lines: &[bool],
 ) -> CodeContext {
-    if line_idx >= lines.len() {
+    infer_context_from_lines(lines, line_idx, file_path, |idx| {
+        documentation_lines.get(idx).copied().unwrap_or(false)
+    })
+}
+
+pub(crate) fn infer_context_with_index(
+    text: &str,
+    index: &super::line_index::LineContextIndex,
+    line_idx: usize,
+    file_path: Option<&str>,
+) -> CodeContext {
+    infer_context_from_lines(&index.view(text), line_idx, file_path, |idx| {
+        index.is_documentation(idx)
+    })
+}
+
+fn infer_context_from_lines(
+    lines: &(impl super::line_index::LineSource + ?Sized),
+    line_idx: usize,
+    file_path: Option<&str>,
+    is_documentation: impl Fn(usize) -> bool,
+) -> CodeContext {
+    if line_idx >= lines.line_count() {
         return CodeContext::Unknown;
     }
-
-    let line = lines[line_idx];
+    let Some(line) = lines.line_at(line_idx) else {
+        return CodeContext::Unknown;
+    };
     let trimmed = line.trim();
 
     if file_path.is_some_and(is_test_file) {
@@ -142,15 +165,10 @@ pub(crate) fn infer_context_with_documentation(
     if is_comment_line(trimmed) {
         return CodeContext::Comment;
     }
-    if documentation_lines
-        .get(line_idx)
-        .copied()
-        .is_some_and(|v| v)
-    {
-        // Law 10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
+    if is_documentation(line_idx) {
         return CodeContext::Documentation;
     }
-    if is_in_test_function(lines, line_idx) {
+    if is_in_test_function_lines(lines, line_idx) {
         return CodeContext::TestCode;
     }
     if is_assignment_line(trimmed) {
@@ -322,23 +340,35 @@ fn is_comparison_operator(trimmed: &str, pos: usize, operator: &str) -> bool {
     matches!(before, Some('=' | '!' | '>' | '<')) || matches!(after, Some('='))
 }
 
-fn is_in_encrypted_block(lines: &[&str], line_idx: usize) -> bool {
-    // Slice the exact lookback window instead of `.take(line_idx+1).skip(start)`
-    // (which walks from line 0, O(line_idx)); the slice is O(window). Bounds
-    // clamped so a `line_idx` past the end can't panic.
-    let end = (line_idx + 1).min(lines.len());
+fn is_in_encrypted_block(
+    lines: &(impl super::line_index::LineSource + ?Sized),
+    line_idx: usize,
+) -> bool {
+    let end = line_idx.saturating_add(1).min(lines.line_count());
     let start = line_idx
         .saturating_sub(ENCRYPTED_BLOCK_LOOKBACK_LINES)
         .min(end);
-    lines[start..end]
-        .iter()
-        .any(|line| is_encrypted_marker_line(line.trim()))
+    (start..end).any(|idx| {
+        lines
+            .line_at(idx)
+            .is_some_and(|line| is_encrypted_marker_line(line.trim()))
+    })
 }
 
 pub(crate) fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
+    is_in_test_function_lines(lines, line_idx)
+}
+
+fn is_in_test_function_lines(
+    lines: &(impl super::line_index::LineSource + ?Sized),
+    line_idx: usize,
+) -> bool {
     let start = line_idx.saturating_sub(TEST_FUNCTION_LOOKBACK_LINES);
     for candidate_line_idx in (start..line_idx).rev() {
-        let trimmed = lines[candidate_line_idx].trim();
+        let Some(candidate_line) = lines.line_at(candidate_line_idx) else {
+            continue;
+        };
+        let trimmed = candidate_line.trim();
 
         if INFERENCE_MARKERS
             .test_function_prefixes
@@ -378,7 +408,10 @@ pub(crate) fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
             // enclosing signature) and is capped so a pathological all-blank
             // prefix cannot make it walk to the file start.
             let block_start = candidate_line_idx.saturating_sub(ATTR_BLOCK_LOOKBACK);
-            for pre_line in lines[block_start..candidate_line_idx].iter().rev() {
+            for pre_line_idx in (block_start..candidate_line_idx).rev() {
+                let Some(pre_line) = lines.line_at(pre_line_idx) else {
+                    continue;
+                };
                 let pre_trimmed = pre_line.trim();
                 if pre_trimmed.is_empty() {
                     continue;

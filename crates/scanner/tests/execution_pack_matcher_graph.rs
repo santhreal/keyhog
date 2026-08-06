@@ -247,6 +247,25 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     let detectors = detectors();
     let ordinary = CompiledScanner::compile(detectors.clone()).expect("compile ordinary scanner");
     let (directory, pack) = mapped_pack(&detectors, None);
+    let schema_reconstructions_before =
+        keyhog_scanner::execution_pack::detector_plan::detector_spec_schema_reconstructions();
+    let direct = CompiledScanner::compile_from_execution_pack(&pack)
+        .expect("stream detector plan directly from mapped execution pack");
+    assert_eq!(
+        keyhog_scanner::execution_pack::detector_plan::detector_spec_schema_reconstructions(),
+        schema_reconstructions_before,
+        "normal installed-pack hydration must not reconstruct DetectorSpec"
+    );
+    assert_eq!(
+        keyhog_scanner::execution_pack::detector_plan::detector_plan_live_wire_rows(),
+        0,
+        "no detector-plan wire row may survive hydration"
+    );
+    assert_eq!(
+        keyhog_scanner::execution_pack::detector_plan::detector_plan_peak_live_wire_rows(),
+        1,
+        "direct hydration may own only the current framed wire row"
+    );
     let before =
         keyhog_scanner::execution_pack::matcher_sections::compile_state_builder_invocations();
     let (packed, decoded_detectors) =
@@ -307,6 +326,10 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     assert_eq!(
         packed.scan(&input).expect("scan packed route"),
         ordinary.scan(&input).expect("scan ordinary route")
+    );
+    assert_eq!(
+        direct.scan(&input).expect("scan direct streamed route"),
+        ordinary.scan(&input).expect("rescan ordinary direct route")
     );
     assert_eq!(
         shared.scan(&input).expect("scan shared packed route"),

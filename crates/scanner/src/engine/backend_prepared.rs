@@ -13,57 +13,18 @@ pub(crate) struct PreparedChunk<'a> {
     /// passthrough common path, no per-chunk full-body copy, and owns a
     /// synthesized `String` only on the structured/multiline-join paths.
     pub(crate) preprocessed: ScannerPreprocessedText<'a>,
-    /// Cached `compute_line_offsets(&preprocessed.text)`. Both the
-    /// triggered-pattern path and the pattern-hits path used to call
-    /// `compute_line_offsets` separately, walking the entire
-    /// preprocessed text twice per chunk to count newlines. Cache
-    /// it once at first access via OnceLock so the second caller
-    /// hits a memoized Vec instead of re-scanning. Task #93.
-    pub(crate) line_offsets: std::sync::OnceLock<Vec<usize>>,
+    /// Lazily built compact line starts and documentation classification for
+    /// `preprocessed.text`.
+    pub(crate) line_index: std::sync::OnceLock<crate::context::LineContextIndex>,
 }
 
 impl<'a> PreparedChunk<'a> {
-    /// Lazily-computed cumulative line-start offsets for the
-    /// preprocessed text. Cheap to call repeatedly; the first call
-    /// walks the text once, subsequent calls return a borrow into
-    /// the cached Vec.
-    pub(crate) fn line_offsets(&self) -> &[usize] {
-        self.line_offsets
-            .get_or_init(|| compute_line_offsets(&self.preprocessed.text))
+    pub(crate) fn line_index(&self) -> &crate::context::LineContextIndex {
+        self.line_index.get_or_init(|| {
+            crate::context::LineContextIndex::try_new(&self.preprocessed.text)
+                .expect("preprocessed chunk length exceeds the checked u32 line-index boundary")
+        })
     }
-
-    pub(crate) fn code_lines(&self, line_offsets: &[usize]) -> Vec<&str> {
-        // `line_offsets` describes `preprocessed.text` (see `line_offsets()`), and
-        // match line numbers are derived from those same offsets, so the per-line
-        // slices used for comment/documentation context inference MUST come from
-        // `preprocessed.text` too. Slicing raw `chunk.data` when preprocessing
-        // rewrote the bytes (structured extraction, multiline join) drifts the
-        // line text against the offset table, misclassifying which line a match
-        // sits on. On the passthrough path the two buffers are byte-identical, so
-        // this is also the single line-walk shared with `line_offsets`.
-        code_lines_from_offsets(&self.preprocessed.text, line_offsets)
-    }
-}
-
-pub(crate) fn code_lines_from_offsets<'a>(text: &'a str, line_offsets: &[usize]) -> Vec<&'a str> {
-    let mut lines = Vec::with_capacity(line_offsets.len());
-    for (idx, &start) in line_offsets.iter().enumerate() {
-        if start >= text.len() {
-            break;
-        }
-        let has_next_line = idx + 1 < line_offsets.len();
-        let end = if has_next_line {
-            line_offsets[idx + 1].saturating_sub(1)
-        } else {
-            text.len()
-        };
-        let mut line = &text[start..end];
-        if has_next_line && line.as_bytes().last() == Some(&b'\r') {
-            line = &line[..line.len() - 1];
-        }
-        lines.push(line);
-    }
-    lines
 }
 
 #[cfg(feature = "simd")]
@@ -379,52 +340,49 @@ impl SimdPhase1CompilePlan {
 }
 
 #[cfg(test)]
-mod code_lines_tests {
+mod line_index_tests {
     use super::*;
     use keyhog_core::Chunk;
     use std::sync::OnceLock;
 
-    // KH-1226: `line_offsets` is computed on `preprocessed.text`, and every match
-    // line number is derived from that same offset table, so `code_lines` must
-    // slice `preprocessed.text` even when preprocessing rewrote the bytes.
-    // Slicing raw `chunk.data` there drifted the per-line comment/documentation
-    // context text against the offsets, misclassifying which line a match sits
-    // on. This pins the aligned-buffer contract.
+    /// WHY: line context must use the rewritten preprocessed bytes whose offsets
+    /// locate matches, never the differently shaped raw chunk.
     #[test]
-    fn code_lines_follow_preprocessed_text_not_raw_chunk_when_bytes_differ() {
+    fn line_index_follows_preprocessed_text_not_raw_chunk_when_bytes_differ() {
         let raw = "AAAAAA\nBBBBBB\nCCCCCC";
         let preprocessed_text = "xxx\nyyy\nzzz";
-        assert_ne!(raw.as_bytes(), preprocessed_text.as_bytes());
-
         let chunk: Chunk = raw.to_string().into();
         let prepared = PreparedChunk {
             chunk: &chunk,
             preprocessed: ScannerPreprocessedText::passthrough(preprocessed_text),
-            line_offsets: OnceLock::new(),
+            line_index: OnceLock::new(),
         };
 
-        let offsets = prepared.line_offsets().to_vec();
-        let lines = prepared.code_lines(&offsets);
-        // Lines come from the preprocessed buffer the offsets describe, one entry
-        // per offset, never the raw chunk lines that would misalign context.
+        let lines: Vec<_> = prepared
+            .line_index()
+            .lines(&prepared.preprocessed.text)
+            .collect();
         assert_eq!(lines, ["xxx", "yyy", "zzz"]);
-        assert!(!lines.iter().any(|l| l.starts_with('A')));
+        assert!(!lines.iter().any(|line| line.starts_with('A')));
+        assert_eq!(prepared.line_index().line_number_for_offset(5), 2);
     }
 
-    // Passthrough (preprocessed == raw): the same aligned slice, exercised through
-    // the single offset table shared with `line_offsets()`.
     #[test]
-    fn code_lines_passthrough_slices_shared_offset_table() {
+    fn passthrough_lines_are_sliced_on_demand() {
         let text = "key = one\nother = two\nlast = three";
         let chunk: Chunk = text.to_string().into();
         let prepared = PreparedChunk {
             chunk: &chunk,
             preprocessed: ScannerPreprocessedText::passthrough(text),
-            line_offsets: OnceLock::new(),
+            line_index: OnceLock::new(),
         };
-        let offsets = prepared.line_offsets().to_vec();
-        let lines = prepared.code_lines(&offsets);
-        assert_eq!(lines, ["key = one", "other = two", "last = three"]);
+        assert_eq!(
+            prepared
+                .line_index()
+                .lines(&prepared.preprocessed.text)
+                .collect::<Vec<_>>(),
+            ["key = one", "other = two", "last = three"]
+        );
     }
 }
 

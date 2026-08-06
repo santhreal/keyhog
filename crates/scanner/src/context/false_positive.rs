@@ -265,15 +265,30 @@ pub(crate) fn is_false_positive_context(
     line_idx: usize,
     file_path: Option<&str>,
 ) -> bool {
-    if line_idx >= lines.len() {
+    is_false_positive_context_lines(lines, line_idx, file_path)
+}
+
+pub(crate) fn is_false_positive_context_indexed(
+    text: &str,
+    index: &super::line_index::LineContextIndex,
+    line_idx: usize,
+    file_path: Option<&str>,
+) -> bool {
+    is_false_positive_context_lines(&index.view(text), line_idx, file_path)
+}
+
+fn is_false_positive_context_lines(
+    lines: &(impl super::line_index::LineSource + ?Sized),
+    line_idx: usize,
+    file_path: Option<&str>,
+) -> bool {
+    if line_idx >= lines.line_count() {
         return false;
     }
-
-    // Operate on raw bytes against pre-lowered needles via `ci_find`. The
-    // previous shape allocated a `String` per current line + per surrounding
-    // line (radius up to 8) on every match; on a 100 KiB dense-hit chunk that
-    // was ~24k transient `String`s landing in the per-match hot path.
-    let line_bytes = lines[line_idx].as_bytes();
+    let Some(line) = lines.line_at(line_idx) else {
+        return false;
+    };
+    let line_bytes = line.as_bytes();
 
     is_go_sum_checksum_bytes(line_bytes, file_path)
         || is_integrity_hash_bytes(line_bytes)
@@ -381,7 +396,11 @@ fn contains_sri_hash_value(bytes: &[u8], prefix: &[u8]) -> bool {
     false
 }
 
-fn is_configmap_binary_data_context(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {
+fn is_configmap_binary_data_context(
+    lines: &(impl super::line_index::LineSource + ?Sized),
+    line_idx: usize,
+    line_bytes: &[u8],
+) -> bool {
     is_configmap_binary_data_value_line(line_bytes)
         && is_inside_configmap_binary_data_block(lines, line_idx)
 }
@@ -398,8 +417,11 @@ fn is_configmap_binary_data_context(lines: &[&str], line_idx: usize, line_bytes:
 /// worst-case work stays small.
 const BLOCK_HEADER_LOOKBACK: usize = 4096;
 
-fn is_inside_configmap_binary_data_block(lines: &[&str], line_idx: usize) -> bool {
-    let Some(current_line) = lines.get(line_idx) else {
+fn is_inside_configmap_binary_data_block(
+    lines: &(impl super::line_index::LineSource + ?Sized),
+    line_idx: usize,
+) -> bool {
+    let Some(current_line) = lines.line_at(line_idx) else {
         return false;
     };
     let current_indent = leading_ascii_space_count(current_line.as_bytes());
@@ -407,7 +429,10 @@ fn is_inside_configmap_binary_data_block(lines: &[&str], line_idx: usize) -> boo
         return false;
     }
     let start = line_idx.saturating_sub(BLOCK_HEADER_LOOKBACK);
-    for candidate in lines[start..line_idx].iter().rev() {
+    for candidate_idx in (start..line_idx).rev() {
+        let Some(candidate) = lines.line_at(candidate_idx) else {
+            continue;
+        };
         let bytes = candidate.as_bytes();
         let trimmed = trim_ascii_bytes(bytes);
         if trimmed.is_empty() {
@@ -417,7 +442,6 @@ fn is_inside_configmap_binary_data_block(lines: &[&str], line_idx: usize) -> boo
         if indent >= current_indent {
             continue;
         }
-        // `trimmed` is already whitespace-stripped by the caller.
         return trimmed.eq_ignore_ascii_case(b"binarydata:");
     }
     false
@@ -471,7 +495,7 @@ fn is_base64_scalar(bytes: &[u8]) -> bool {
 const GIT_LFS_POINTER_LOOKAROUND_LINES: usize = 3;
 
 fn is_git_lfs_pointer_context_with_lines(
-    lines: &[&str],
+    lines: &(impl super::line_index::LineSource + ?Sized),
     line_idx: usize,
     line_bytes: &[u8],
 ) -> bool {
@@ -606,24 +630,18 @@ fn header_name_matches<T: AsRef<[u8]>>(bytes: &[u8], allowed: &[T]) -> bool {
 }
 
 fn nearby_lines_contain(
-    lines: &[&str],
+    lines: &(impl super::line_index::LineSource + ?Sized),
     line_idx: usize,
     lookback_lines: usize,
     predicate: impl Fn(&str) -> bool,
 ) -> bool {
-    // Slice the exact lookback window `[start, line_idx]` instead of
-    // `.take(line_idx+1).skip(start)`, which (because `Take` defeats
-    // `slice::Iter`'s O(1) `nth`) walks from line 0 and discards `start` lines
-    // O(line_idx) for a line deep in a file. The slice is O(window). Bounds are
-    // clamped so a `line_idx` past the end can never panic (matches the old
-    // iterator's saturating behavior).
-    let end = (line_idx + 1).min(lines.len());
+    let end = line_idx.saturating_add(1).min(lines.line_count());
     let start = line_idx.saturating_sub(lookback_lines).min(end);
-    lines[start..end].iter().copied().any(predicate)
+    (start..end).any(|idx| lines.line_at(idx).is_some_and(&predicate))
 }
 
 fn following_lines_contain(
-    lines: &[&str],
+    lines: &(impl super::line_index::LineSource + ?Sized),
     line_idx: usize,
     lookahead_lines: usize,
     predicate: impl Fn(&str) -> bool,
@@ -632,6 +650,6 @@ fn following_lines_contain(
     let end = line_idx
         .saturating_add(lookahead_lines)
         .saturating_add(1)
-        .min(lines.len());
-    start < end && lines[start..end].iter().copied().any(predicate)
+        .min(lines.line_count());
+    start < end && (start..end).any(|idx| lines.line_at(idx).is_some_and(&predicate))
 }

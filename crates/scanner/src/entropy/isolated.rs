@@ -68,8 +68,9 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_policy(
 }
 
 #[cfg(feature = "entropy")]
-pub(crate) fn has_isolated_bare_secret_candidate_with_lines_and_policy(
-    lines: &[&str],
+pub(crate) fn has_isolated_bare_secret_candidate_indexed(
+    text: &str,
+    line_index: &crate::context::LineContextIndex,
     entropy_threshold: f64,
     placeholder_keywords: &[String],
     min_len: usize,
@@ -77,7 +78,7 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_lines_and_policy(
 ) -> bool {
     let candidate_policy = IsolatedCandidatePolicy::from_compiled(plausibility_policy);
     let threshold = isolated_bare_entropy_threshold(entropy_threshold, candidate_policy);
-    lines.iter().any(|line| {
+    line_index.lines(text).any(|line| {
         line_has_isolated_bare_secret_candidate(
             line,
             threshold,

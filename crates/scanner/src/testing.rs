@@ -2628,8 +2628,17 @@ pub use crate::engine::{
 };
 #[cfg(test)]
 pub(crate) use crate::homoglyph::expand_homoglyphs;
-pub fn code_lines_from_offsets_for_test<'a>(text: &'a str, line_offsets: &[usize]) -> Vec<&'a str> {
-    crate::engine::code_lines_from_offsets(text, line_offsets)
+pub struct CompactLineIndexForTest(crate::context::LineContextIndex);
+
+pub fn compact_line_index_for_test(text: &str) -> Result<CompactLineIndexForTest, &'static str> {
+    crate::context::LineContextIndex::try_new(text)
+        .map(CompactLineIndexForTest)
+        .map_err(|_| "text exceeds compact line-index capacity")
+}
+
+pub fn code_lines_from_compact_index_for_test(text: &str) -> Result<Vec<&str>, &'static str> {
+    let index = compact_line_index_for_test(text)?;
+    Ok(index.0.lines(text).collect())
 }
 pub fn ascii_fold_regex_src_for_test(src: &str) -> String {
     crate::engine::phase2::ascii_fold_regex_src(src)
@@ -2733,6 +2742,15 @@ pub fn csr_from_rows_roundtrip_for_test(rows: Vec<Vec<usize>>) -> Vec<Vec<u32>> 
         .collect()
 }
 pub use crate::pipeline::compute_line_offsets;
+pub fn generic_keyword_lines_from_positions(text: &str, positions: &[u32]) -> Vec<u32> {
+    let index = crate::context::LineContextIndex::try_new(text)
+        .expect("scanner test chunks must fit the checked u32 line-index boundary");
+    let mut lines = Vec::new();
+    crate::engine::phase2_generic::keywords::collect_generic_keyword_lines_from_positions(
+        &index, positions, &mut lines,
+    );
+    lines
+}
 pub fn normalize_chunk_data(data: &str) -> std::borrow::Cow<'_, str> {
     crate::normalize_chunk_data(data)
 }
@@ -3094,10 +3112,11 @@ pub fn queued_ml_features(
     detector_id: &str,
     entropy_channel: bool,
 ) -> [f32; crate::ml_scorer::NUM_FEATURES] {
-    let line_offsets = crate::pipeline::compute_line_offsets(text);
-    queued_ml_features_with_line_offsets(
+    let line_index =
+        compact_line_index_for_test(text).expect("scanner chunks must fit compact line indexes");
+    queued_ml_features_with_compact_index(
         text,
-        &line_offsets,
+        &line_index,
         line,
         file_path,
         credential,
@@ -3110,9 +3129,9 @@ pub fn queued_ml_features(
 
 #[cfg(feature = "ml")]
 #[allow(clippy::too_many_arguments)]
-pub fn queued_ml_features_with_line_offsets(
+pub fn queued_ml_features_with_compact_index(
     text: &str,
-    line_offsets: &[usize],
+    line_index: &CompactLineIndexForTest,
     line: usize,
     file_path: Option<&str>,
     credential: &str,
@@ -3128,7 +3147,7 @@ pub fn queued_ml_features_with_line_offsets(
         crate::ml_scorer::ml_features::CompiledDetectorMlFeatures::compile(detector);
     crate::scan_state::ml_features_for_candidate(
         text,
-        line_offsets,
+        &line_index.0,
         line,
         file_path,
         credential,

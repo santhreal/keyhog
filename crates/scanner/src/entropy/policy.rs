@@ -106,31 +106,6 @@ pub(crate) const fn validate_feature_compatibility(
     Ok(())
 }
 
-#[cfg(not(feature = "entropy"))]
-pub(crate) fn validate_plan_feature_compatibility(
-    detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
-) -> Result<(), String> {
-    let entropy_detectors = detectors
-        .iter()
-        .filter(|detector| detector.owns_entropy_policy())
-        .map(|detector| detector.id.as_str())
-        .collect::<Vec<_>>();
-    if entropy_detectors.is_empty() {
-        return Ok(());
-    }
-    Err(format!(
-        "scanner was built without the `entropy` feature, but hydrated detector entropy policy is enabled for {}; reinstall with a compatible scanner",
-        entropy_detectors.join(", ")
-    ))
-}
-
-#[cfg(feature = "entropy")]
-pub(crate) const fn validate_plan_feature_compatibility(
-    _detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
-) -> Result<(), String> {
-    Ok(())
-}
-
 /// Length-bucketed detector floor compiled into parallel primitive arrays.
 /// Runtime lookup performs one binary search and never walks optional TOML
 /// fields or substitutes a scanner-owned threshold.

@@ -7,8 +7,7 @@ pub(crate) use super::isolated::{
 };
 #[cfg(feature = "entropy")]
 pub(crate) use super::isolated::{
-    has_isolated_bare_secret_candidate_with_lines_and_policy,
-    has_isolated_bare_secret_candidate_with_policy,
+    has_isolated_bare_secret_candidate_indexed, has_isolated_bare_secret_candidate_with_policy,
 };
 use super::{
     keywords::*, shannon_entropy, ClassifiedEntropyMatch, EntropyMatch, FIRST_SOURCE_LINE_NUMBER,
@@ -405,6 +404,50 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords_and_policy(
     .collect()
 }
 
+trait EntropyLines {
+    fn len(&self) -> usize;
+    fn line(&self, line_idx: usize) -> Option<&str>;
+    fn offset(&self, line_idx: usize) -> Option<usize>;
+}
+
+struct BorrowedEntropyLines<'a> {
+    lines: &'a [&'a str],
+    offsets: &'a [usize],
+}
+
+impl EntropyLines for BorrowedEntropyLines<'_> {
+    fn len(&self) -> usize {
+        self.lines.len()
+    }
+
+    fn line(&self, line_idx: usize) -> Option<&str> {
+        self.lines.get(line_idx).copied()
+    }
+
+    fn offset(&self, line_idx: usize) -> Option<usize> {
+        self.offsets.get(line_idx).copied()
+    }
+}
+
+struct IndexedEntropyLines<'a> {
+    text: &'a str,
+    index: &'a crate::context::LineContextIndex,
+}
+
+impl EntropyLines for IndexedEntropyLines<'_> {
+    fn len(&self) -> usize {
+        self.index.line_count()
+    }
+
+    fn line(&self, line_idx: usize) -> Option<&str> {
+        self.index.line(self.text, line_idx)
+    }
+
+    fn offset(&self, line_idx: usize) -> Option<usize> {
+        self.index.line_start(line_idx)
+    }
+}
+
 /// Production entropy candidates with the exact credential-context decision
 /// made during generation. The internal wrapper keeps the public match shape
 /// stable while suppression consumes the same detector/config classification.
@@ -428,13 +471,87 @@ pub(crate) fn find_classified_entropy_secrets_with_precomputed_keywords_and_poli
         line_offsets.len() >= lines.len(),
         "entropy line offsets must cover every split line"
     );
+    let keyword_line_ids: Vec<u32> = keyword_lines
+        .iter()
+        .map(|(line_idx, _)| {
+            u32::try_from(*line_idx).expect("entropy line index exceeds the checked u32 boundary")
+        })
+        .collect();
+    find_classified_entropy_secrets_from_lines(
+        &BorrowedEntropyLines {
+            lines,
+            offsets: line_offsets,
+        },
+        &keyword_line_ids,
+        min_length,
+        context_lines,
+        entropy_threshold,
+        keyword_free_threshold,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+        skip_lines,
+        active_policy,
+        keyword_free_line_scope,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn find_classified_entropy_secrets_indexed(
+    text: &str,
+    line_index: &crate::context::LineContextIndex,
+    keyword_line_ids: &[u32],
+    min_length: usize,
+    context_lines: usize,
+    entropy_threshold: f64,
+    keyword_free_threshold: Option<f64>,
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+    skip_lines: Option<&std::collections::HashSet<usize>>,
+    active_policy: Option<ActiveDetectorPolicy<'_>>,
+    keyword_free_line_scope: KeywordFreeLineScope,
+) -> Vec<ClassifiedEntropyMatch> {
+    find_classified_entropy_secrets_from_lines(
+        &IndexedEntropyLines {
+            text,
+            index: line_index,
+        },
+        keyword_line_ids,
+        min_length,
+        context_lines,
+        entropy_threshold,
+        keyword_free_threshold,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+        skip_lines,
+        active_policy,
+        keyword_free_line_scope,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn find_classified_entropy_secrets_from_lines(
+    lines: &impl EntropyLines,
+    keyword_line_ids: &[u32],
+    min_length: usize,
+    context_lines: usize,
+    entropy_threshold: f64,
+    keyword_free_threshold: Option<f64>,
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+    skip_lines: Option<&std::collections::HashSet<usize>>,
+    active_policy: Option<ActiveDetectorPolicy<'_>>,
+    keyword_free_line_scope: KeywordFreeLineScope,
+) -> Vec<ClassifiedEntropyMatch> {
     let mut matches = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
     scan_keyword_contexts(
         lines,
-        line_offsets,
-        keyword_lines,
+        keyword_line_ids,
         min_length,
         context_lines,
         entropy_threshold,
@@ -448,8 +565,7 @@ pub(crate) fn find_classified_entropy_secrets_with_precomputed_keywords_and_poli
     );
     scan_keyword_free_candidates(
         lines,
-        line_offsets,
-        keyword_lines,
+        keyword_line_ids,
         entropy_threshold,
         keyword_free_threshold,
         &mut seen,
@@ -464,9 +580,8 @@ pub(crate) fn find_classified_entropy_secrets_with_precomputed_keywords_and_poli
 
 #[allow(clippy::too_many_arguments)]
 fn scan_keyword_contexts(
-    lines: &[&str],
-    line_offsets: &[usize],
-    keyword_lines: &[(usize, &str)],
+    lines: &impl EntropyLines,
+    keyword_line_ids: &[u32],
     min_length: usize,
     context_lines: usize,
     entropy_threshold: f64,
@@ -478,7 +593,11 @@ fn scan_keyword_contexts(
     skip_lines: Option<&std::collections::HashSet<usize>>,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) {
-    for (keyword_line_index, keyword_line) in keyword_lines {
+    for &keyword_line_id in keyword_line_ids {
+        let keyword_line_index = keyword_line_id as usize;
+        let Some(keyword_line) = lines.line(keyword_line_index) else {
+            continue;
+        };
         let Some(context) = keyword_context_with_policy(
             keyword_line,
             min_length,
@@ -489,30 +608,35 @@ fn scan_keyword_contexts(
             continue;
         };
         let start = keyword_line_index.saturating_sub(context_lines);
-        let end = (*keyword_line_index + context_lines + 1).min(lines.len());
+        let end = keyword_line_index
+            .saturating_add(context_lines)
+            .saturating_add(1)
+            .min(lines.len());
         for line_idx in start..end {
-            if line_idx != *keyword_line_index
-                && keyword_lines
-                    .binary_search_by_key(&line_idx, |(index, _)| *index)
-                    .is_ok()
+            if line_idx != keyword_line_index
+                && u32::try_from(line_idx)
+                    .ok()
+                    .is_some_and(|id| keyword_line_ids.binary_search(&id).is_ok())
             {
                 continue;
             }
-            if let Some(skip) = skip_lines {
-                if skip.contains(&line_idx) {
-                    continue;
-                }
+            if skip_lines.is_some_and(|skip| skip.contains(&line_idx)) {
+                continue;
             }
+            let (Some(line), Some(line_offset)) = (lines.line(line_idx), lines.offset(line_idx))
+            else {
+                continue;
+            };
             collect_line_candidates(
-                lines[line_idx],
+                line,
                 line_idx,
-                line_offsets[line_idx],
+                line_offset,
                 &context,
                 seen,
                 matches,
                 placeholder_keywords,
                 active_policy,
-                line_idx == *keyword_line_index && context.is_credential_context,
+                line_idx == keyword_line_index && context.is_credential_context,
             );
         }
     }
@@ -580,9 +704,8 @@ pub(super) const BYTE_CLASS: [u8; 256] = {
 };
 
 fn scan_keyword_free_candidates(
-    lines: &[&str],
-    line_offsets: &[usize],
-    keyword_lines: &[(usize, &str)],
+    lines: &impl EntropyLines,
+    keyword_line_ids: &[u32],
     entropy_threshold: f64,
     keyword_free_threshold: Option<f64>,
     seen: &mut std::collections::HashSet<String>,
@@ -637,18 +760,24 @@ fn scan_keyword_free_candidates(
     });
     let dogfood_enabled = crate::telemetry::is_dogfood_enabled();
     let mut keyword_line_cursor = 0usize;
-    for (line_idx, line) in lines.iter().enumerate() {
+    for line_idx in 0..lines.len() {
+        let Ok(line_id) = u32::try_from(line_idx) else {
+            return;
+        };
+        let Some(line) = lines.line(line_idx) else {
+            continue;
+        };
         if matches!(
             keyword_free_line_scope,
             KeywordFreeLineScope::KeywordAssignments
         ) {
-            while keyword_line_cursor < keyword_lines.len()
-                && keyword_lines[keyword_line_cursor].0 < line_idx
+            while keyword_line_cursor < keyword_line_ids.len()
+                && keyword_line_ids[keyword_line_cursor] < line_id
             {
                 keyword_line_cursor += 1;
             }
-            if keyword_line_cursor == keyword_lines.len()
-                || keyword_lines[keyword_line_cursor].0 != line_idx
+            if keyword_line_cursor == keyword_line_ids.len()
+                || keyword_line_ids[keyword_line_cursor] != line_id
             {
                 continue;
             }
@@ -745,11 +874,13 @@ fn scan_keyword_free_candidates(
             continue;
         }
         if isolated_admit {
-            if let Some(isolated_token_context) = isolated_token_context.as_ref() {
+            if let (Some(isolated_token_context), Some(line_offset)) =
+                (isolated_token_context.as_ref(), lines.offset(line_idx))
+            {
                 collect_isolated_bare_candidates_inner(
                     line,
                     line_idx,
-                    line_offsets[line_idx],
+                    line_offset,
                     isolated_token_context,
                     seen,
                     matches,
@@ -757,13 +888,14 @@ fn scan_keyword_free_candidates(
                 );
             }
         }
-        if let Some(keyword_free_context) =
-            keyword_free_context.as_ref().filter(|_| keyword_free_admit)
-        {
+        if let (Some(keyword_free_context), Some(line_offset)) = (
+            keyword_free_context.as_ref().filter(|_| keyword_free_admit),
+            lines.offset(line_idx),
+        ) {
             collect_line_candidates_inner(
                 line,
                 line_idx,
-                line_offsets[line_idx],
+                line_offset,
                 keyword_free_context,
                 seen,
                 matches,
@@ -775,23 +907,37 @@ fn scan_keyword_free_candidates(
     }
 }
 
-/// Resolves the prefilter's detector thresholds from the active corpus using
-/// precomputed keyword assignment lines. The
-/// prefilter can decide whether phase 2 runs at all, so consulting embedded
-/// defaults here would be a silent policy override rather than an optimization.
 #[cfg(feature = "simd")]
 #[cfg(feature = "entropy")]
-pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_and_policy(
-    keyword_lines: &[(usize, &str)],
+pub(crate) fn has_lower_dash_app_password_candidate_indexed(
+    text: &str,
+    line_index: &crate::context::LineContextIndex,
+    keyword_line_ids: &[u32],
+    config: &crate::ScannerConfig,
+    active_policy: Option<ActiveDetectorPolicy<'_>>,
+    excluded_lines: &std::collections::HashSet<usize>,
+) -> bool {
+    has_lower_dash_app_password_candidate_from_lines(
+        keyword_line_ids.iter().filter_map(|&line_id| {
+            let line_idx = line_id as usize;
+            line_index.line(text, line_idx).map(|line| (line_idx, line))
+        }),
+        config,
+        active_policy,
+        excluded_lines,
+    )
+}
+
+#[cfg(feature = "simd")]
+#[cfg(feature = "entropy")]
+fn has_lower_dash_app_password_candidate_from_lines<'a>(
+    keyword_lines: impl Iterator<Item = (usize, &'a str)>,
     config: &crate::ScannerConfig,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
     excluded_lines: &std::collections::HashSet<usize>,
 ) -> bool {
     for (line_index, keyword_line) in keyword_lines {
-        if excluded_lines.contains(line_index) {
-            continue;
-        }
-        if is_likely_innocuous_line(keyword_line) {
+        if excluded_lines.contains(&line_index) || is_likely_innocuous_line(keyword_line) {
             continue;
         }
         let Some(context) = keyword_context_with_policy(

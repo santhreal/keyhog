@@ -187,7 +187,7 @@ impl CompiledScanner {
         PreparedChunk {
             chunk,
             preprocessed,
-            line_offsets: std::sync::OnceLock::new(),
+            line_index: std::sync::OnceLock::new(),
         }
     }
 }

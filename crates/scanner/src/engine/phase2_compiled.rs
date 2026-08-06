@@ -16,9 +16,7 @@ impl CompiledScanner {
     pub(crate) fn scan_phase2_patterns(
         &self,
         preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
+        line_index: &crate::context::LineContextIndex,
         chunk: &Chunk,
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
@@ -42,9 +40,7 @@ impl CompiledScanner {
                 self.scan_phase2_with_anchors(
                     anchor_idx,
                     preprocessed,
-                    line_offsets,
-                    code_lines,
-                    documentation_lines,
+                    line_index,
                     chunk,
                     scan_state,
                     deadline,
@@ -62,9 +58,7 @@ impl CompiledScanner {
         {
             self.scan_large_phase2_patterns(
                 preprocessed,
-                line_offsets,
-                code_lines,
-                documentation_lines,
+                line_index,
                 chunk,
                 scan_state,
                 deadline,
@@ -88,9 +82,7 @@ impl CompiledScanner {
                 this.extract_active_phase2_patterns(
                     active_patterns,
                     preprocessed,
-                    line_offsets,
-                    code_lines,
-                    documentation_lines,
+                    line_index,
                     chunk,
                     scan_state,
                     deadline,
@@ -120,9 +112,7 @@ impl CompiledScanner {
     pub(crate) fn scan_phase2_patterns_focused(
         &self,
         preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
+        line_index: &crate::context::LineContextIndex,
         chunk: &Chunk,
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
@@ -153,9 +143,7 @@ impl CompiledScanner {
         if fe - fs >= text.len() {
             self.scan_phase2_patterns(
                 preprocessed,
-                line_offsets,
-                code_lines,
-                documentation_lines,
+                line_index,
                 chunk,
                 scan_state,
                 deadline,
@@ -177,9 +165,7 @@ impl CompiledScanner {
                 self.scan_phase2_with_anchors(
                     anchor_idx,
                     preprocessed,
-                    line_offsets,
-                    code_lines,
-                    documentation_lines,
+                    line_index,
                     chunk,
                     scan_state,
                     deadline,
@@ -217,9 +203,7 @@ impl CompiledScanner {
                     this.extract_matches_inner(
                         entry,
                         preprocessed,
-                        line_offsets,
-                        code_lines,
-                        documentation_lines,
+                        line_index,
                         chunk,
                         scan_state,
                         cursor,
@@ -308,7 +292,7 @@ impl CompiledScanner {
         // No keyword AC compiled => `populate_active_phase2` marks EVERY
         // phase-2 pattern (its `else` arm), so the answer is unconditionally
         // yes; skip the scan.
-        let Some(keyword_ac) = &self.phase2_keyword_ac else {
+        let Some(keyword_ac) = &self.route_classification.phase2_keyword_ac else {
             return true;
         };
         // Boolean admission: does any phase-2 keyword OR any always-active
@@ -388,7 +372,7 @@ impl CompiledScanner {
         always_active_absence_proven: bool,
         route: crate::ScanExecutionRoute,
     ) {
-        if let Some(keyword_ac) = &self.phase2_keyword_ac {
+        if let Some(keyword_ac) = &self.route_classification.phase2_keyword_ac {
             // Always-active patterns (no >=4-char keyword) would each run their
             // capture regex over the whole chunk. Gate them through a combined
             // RegexSet so only patterns that can actually match are activated;
@@ -493,9 +477,7 @@ impl CompiledScanner {
         &self,
         active_patterns: &[usize],
         preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
+        line_index: &crate::context::LineContextIndex,
         chunk: &Chunk,
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
@@ -514,9 +496,7 @@ impl CompiledScanner {
             self.extract_matches_inner(
                 entry,
                 preprocessed,
-                line_offsets,
-                code_lines,
-                documentation_lines,
+                line_index,
                 chunk,
                 scan_state,
                 None,
@@ -536,9 +516,7 @@ impl CompiledScanner {
     fn scan_large_phase2_patterns(
         &self,
         preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
+        line_index: &crate::context::LineContextIndex,
         chunk: &Chunk,
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
@@ -561,9 +539,7 @@ impl CompiledScanner {
                 this.extract_active_phase2_patterns(
                     active_set,
                     preprocessed,
-                    line_offsets,
-                    code_lines,
-                    documentation_lines,
+                    line_index,
                     chunk,
                     scan_state,
                     deadline,
