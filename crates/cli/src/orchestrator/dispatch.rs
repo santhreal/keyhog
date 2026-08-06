@@ -14,16 +14,19 @@ mod fused;
 mod pipeline;
 use anyhow::Result;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
-pub(crate) use backend::inspect_autoroute_cache;
 pub(crate) use backend::AutorouteReadiness;
-pub(crate) use backend::{autoroute_cache_stats, render_cache_summary, render_missing_buckets};
 pub(crate) use backend::AutorouteStateRecovery;
 pub(crate) use backend::BackendRecoveryPlan;
-pub(crate) use backend::StagedAutorouteCache;
+pub(crate) use backend::{autoroute_cache_stats, render_cache_summary, render_missing_buckets};
 pub(crate) use backend::{
     autoroute_engine_identity, autoroute_executable_identity, autoroute_gpu_artifact_identity,
     AutorouteMeasurementObserver, AutorouteMeasurementReceipt, CachedBackendRouter,
 };
+pub(crate) use backend::{
+    bind_autoroute_cache_to_execution_packs, load_execution_pack_generation_binding,
+    StagedAutorouteCache,
+};
+pub(crate) use backend::{canonical_source_classes, inspect_autoroute_cache};
 use backend::{
     is_gpu_backend, AutorouteRoutingError, AutorouteRoutingErrorKind, BackendSelection,
     MeasuredBackendRouter,
@@ -232,7 +235,9 @@ impl CoalescedBatchRouter {
         }
         match self {
             Self::Explicit(_) => Ok(()),
-            Self::Measured(router) => Self::lock(router).quarantine_recovered_route(selection, recovery),
+            Self::Measured(router) => {
+                Self::lock(router).quarantine_recovered_route(selection, recovery)
+            }
         }
     }
 
@@ -622,6 +627,9 @@ pub(crate) fn scan_selected_batch(
     execution_route: keyhog_scanner::ScanExecutionRoute,
     recovery_plan: Option<BackendRecoveryPlan>,
 ) -> keyhog_scanner::Result<SelectedBatchScan> {
+    if !batch.is_empty() && scanner.prepare_phase2_anchor_batch(execution_route) {
+        super::run::release_allocator_arenas_after_construction();
+    }
     let (mut per_chunk, mut recovery, gpu_recovery_receipts) = match scanner
         .scan_coalesced_with_backend_admission_route_and_recovery(
             batch,

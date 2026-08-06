@@ -39,6 +39,7 @@ use crate::anchored_regex::AnchoredRegex;
 use crate::types::*;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use regex_syntax::hir::literal::{ExtractKind, Extractor};
+use std::sync::{Mutex, OnceLock};
 
 /// Cap on distinct (ASCII-lowercased) required-prefix literals per pattern.
 /// Canonical ASCII detector patterns with optional separators/case spellings
@@ -48,15 +49,54 @@ use regex_syntax::hir::literal::{ExtractKind, Extractor};
 const MAX_LITERALS_PER_PATTERN: usize = 32;
 pub(crate) const CONFIRMED_MAX_LITERALS_PER_PATTERN: usize = 8;
 
+struct LazyAnchorAc {
+    literals: Mutex<Option<Box<[String]>>>,
+    ascii_case_insensitive: bool,
+    label: &'static str,
+    cell: OnceLock<AhoCorasick>,
+}
+
+impl LazyAnchorAc {
+    fn new(literals: Vec<String>, ascii_case_insensitive: bool, label: &'static str) -> Self {
+        Self {
+            literals: Mutex::new(Some(literals.into_boxed_slice())),
+            ascii_case_insensitive,
+            label,
+            cell: OnceLock::new(),
+        }
+    }
+
+    fn get(&self) -> (&AhoCorasick, bool) {
+        let already_initialized = self.cell.get().is_some();
+        let anchor = self.cell.get_or_init(|| {
+            let literals = self
+                .literals
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .take()
+                .expect("lazy phase-2 anchor literals must exist before initialization");
+            AhoCorasickBuilder::new()
+                .match_kind(MatchKind::Standard)
+                .ascii_case_insensitive(self.ascii_case_insensitive)
+                .build(&literals)
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "BUILD-INVARIANT VIOLATION: {} Aho-Corasick failed to compile: {error}",
+                        self.label
+                    )
+                })
+        });
+        (anchor, !already_initialized)
+    }
+}
+
 /// Per-scanner index that drives shared-anchor phase-2 localization AND
 /// replaces the always-active RegexSet prefilter for eligible patterns.
 pub(crate) struct Phase2AnchorIndex {
-    /// One automaton over every eligible pattern's required-prefix literals,
-    /// ASCII-case-insensitive (so a lowercase literal anchors all case variants
-    /// the case-insensitive detector regex would match). Scanned once per chunk
-    /// with `find_overlapping_iter` so overlapping literals (`sk-` vs `sk-ant-`)
-    /// all report.
-    anchor_ac: Option<AhoCorasick>,
+    /// One lazily built automaton over every eligible pattern's required-prefix
+    /// literals. The first-bigram gate runs before initialization, so empty and
+    /// no-candidate scans never materialize this dominant startup owner.
+    anchor_ac: Option<LazyAnchorAc>,
     /// First-bigram prescreen for `anchor_ac`.
     anchor_first_bigram: Option<FirstBigramSet>,
     /// `anchor_ac` pattern id -> phase-2 indices that declared this literal.
@@ -88,14 +128,10 @@ pub(crate) struct Phase2AnchorIndex {
     eligible_count: usize,
 
     // --- Localized homoglyph path (ASCII chunks only) ---
-    /// Case-SENSITIVE Aho-Corasick over the plain (homoglyph) patterns' FOLDED
-    /// leading literals (`[sѕｓ][kкκｋ]_…` → fold `[s][k]_[l]…` → `{sk_live_}`).
-    /// On a pure-ASCII chunk every homoglyph match begins
-    /// with one of these, so the AC gives candidate START positions; each is
-    /// verified by `extract_anchored` (O(match), so dense over-marking from a
-    /// short literal is cheap quick-fails, NOT whole-chunk scans). Replaces the
-    /// plain RegexSet batches on ASCII chunks.
-    plain_anchor_ac: Option<AhoCorasick>,
+    /// Lazily built case-sensitive Aho-Corasick over the plain (homoglyph)
+    /// patterns' folded leading literals. Disabled or no-candidate scans retain
+    /// only the compact literal source until this localizer is actually used.
+    plain_anchor_ac: Option<LazyAnchorAc>,
     /// First-bigram prescreen for `plain_anchor_ac`.
     plain_anchor_first_bigram: Option<FirstBigramSet>,
     /// `plain_anchor_ac` literal id -> plain phase-2 indices.
@@ -108,6 +144,19 @@ pub(crate) struct Phase2AnchorIndex {
 impl Phase2AnchorIndex {
     pub(crate) fn eligible_count(&self) -> usize {
         self.eligible_count
+    }
+    /// Build scan-time automata before a non-empty batch allocates per-chunk
+    /// scratch. Empty sources keep only compact literal rows. Returns whether
+    /// this call materialized any new automaton.
+    pub(crate) fn materialize_for_batch(&self, plain_localizer: bool) -> bool {
+        let mut materialized = self.anchor_ac.as_ref().is_some_and(|anchor| anchor.get().1);
+        if plain_localizer {
+            materialized |= self
+                .plain_anchor_ac
+                .as_ref()
+                .is_some_and(|anchor| anchor.get().1);
+        }
+        materialized
     }
 
     #[inline]
@@ -247,25 +296,8 @@ impl Phase2AnchorIndex {
         // -insensitive so a single lowercase literal anchors all case variants.
         let anchor_first_bigram = (!literals.is_empty())
             .then(|| FirstBigramSet::from_literals(literals.iter().map(String::as_bytes), true));
-        let anchor_ac = if literals.is_empty() {
-            None
-        } else {
-            match AhoCorasickBuilder::new()
-                .match_kind(MatchKind::Standard)
-                .ascii_case_insensitive(true)
-                .build(&literals)
-            {
-                Ok(ac) => Some(ac),
-                Err(error) => {
-                    tracing::warn!(
-                        literals = literals.len(),
-                        %error,
-                        "phase-2 shared-anchor Aho-Corasick build failed; shared-anchor optimization disabled for case-insensitive patterns (recall preserved)"
-                    );
-                    None
-                }
-            }
-        };
+        let anchor_ac = (!literals.is_empty())
+            .then(|| LazyAnchorAc::new(literals, true, "phase-2 shared-anchor"));
         let always_anchor_first_bigram = (!always_literals.is_empty()).then(|| {
             FirstBigramSet::from_literals(always_literals.iter().map(String::as_bytes), true)
         });
@@ -294,24 +326,8 @@ impl Phase2AnchorIndex {
         let plain_anchor_first_bigram = (!plain_literals.is_empty()).then(|| {
             FirstBigramSet::from_literals(plain_literals.iter().map(String::as_bytes), false)
         });
-        let plain_anchor_ac = if plain_literals.is_empty() {
-            None
-        } else {
-            match AhoCorasickBuilder::new()
-                .match_kind(MatchKind::Standard)
-                .build(&plain_literals)
-            {
-                Ok(ac) => Some(ac),
-                Err(error) => {
-                    tracing::warn!(
-                        literals = plain_literals.len(),
-                        %error,
-                        "phase-2 plain-anchor Aho-Corasick build failed; plain localizer disabled (recall preserved)"
-                    );
-                    None
-                }
-            }
-        };
+        let plain_anchor_ac = (!plain_literals.is_empty())
+            .then(|| LazyAnchorAc::new(plain_literals, false, "phase-2 plain-anchor"));
 
         Some(Self {
             anchor_ac,
@@ -351,9 +367,6 @@ impl Phase2AnchorIndex {
         out: &mut Vec<(u32, u32)>,
     ) {
         out.clear();
-        let Some(ac) = &self.anchor_ac else {
-            return;
-        };
         if self
             .anchor_first_bigram
             .as_ref()
@@ -361,6 +374,9 @@ impl Phase2AnchorIndex {
         {
             return;
         }
+        let Some(ac) = self.anchor_ac.as_ref().map(|anchor| anchor.get().0) else {
+            return;
+        };
         for m in ac.find_overlapping_iter(text) {
             let lit_id = m.pattern().as_usize();
             let pos = m.start() as u32;
@@ -471,9 +487,6 @@ impl Phase2AnchorIndex {
         out: &mut Vec<(u32, u32)>,
     ) {
         out.clear();
-        let Some(ac) = &self.plain_anchor_ac else {
-            return;
-        };
         if self
             .plain_anchor_first_bigram
             .as_ref()
@@ -481,6 +494,9 @@ impl Phase2AnchorIndex {
         {
             return;
         }
+        let Some(ac) = self.plain_anchor_ac.as_ref().map(|anchor| anchor.get().0) else {
+            return;
+        };
         for m in ac.find_overlapping_iter(text) {
             let lit_id = m.pattern().as_usize();
             let pos = m.start() as u32;
