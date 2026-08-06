@@ -10,12 +10,12 @@ use std::sync::OnceLock;
 mod mark_stats;
 #[cfg(feature = "simd")]
 pub(crate) use mark_stats::record_mark_hs_served;
+#[cfg(test)]
+pub(crate) use mark_stats::take_mark_stats;
 pub(crate) use mark_stats::{
     format_mark_decomposition, mark_snapshot_from_typed, record_mark_call, record_mark_gate_skip,
     record_mark_perpattern_work, record_mark_regexset_served, MarkSnapshot,
 };
-#[cfg(test)]
-pub(crate) use mark_stats::take_mark_stats;
 
 mod hs_mark_timing;
 pub(crate) use hs_mark_timing::{format_hs_mark_split, hs_mark_split_from_typed, HsMarkSplit};
@@ -418,12 +418,24 @@ pub(crate) struct Phase2AlwaysActivePrefilter {
     /// Lazy Hyperscan engine for the full legacy/admission scope.
     #[cfg(feature = "simd")]
     pub(crate) hs: OnceLock<Option<Phase2HsEngine>>,
+    /// Authenticated packed program retained until the full scope is first used.
+    #[cfg(feature = "simd")]
+    pub(crate) packed_hs:
+        std::sync::Mutex<Option<crate::execution_pack::simd_program::HyperscanPhase2ScopeProgram>>,
     /// Hyperscan engine over only patterns not owned by the main anchor path.
     #[cfg(feature = "simd")]
     pub(crate) hs_anchor_residual: OnceLock<Option<Phase2HsEngine>>,
+    /// Authenticated packed program retained until the anchor residual is first used.
+    #[cfg(feature = "simd")]
+    pub(crate) packed_hs_anchor_residual:
+        std::sync::Mutex<Option<crate::execution_pack::simd_program::HyperscanPhase2ScopeProgram>>,
     /// Hyperscan engine over only patterns not owned by either ASCII localizer.
     #[cfg(feature = "simd")]
     pub(crate) hs_localized_residual: OnceLock<Option<Phase2HsEngine>>,
+    /// Authenticated packed program retained until the localized residual is first used.
+    #[cfg(feature = "simd")]
+    pub(crate) packed_hs_localized_residual:
+        std::sync::Mutex<Option<crate::execution_pack::simd_program::HyperscanPhase2ScopeProgram>>,
 }
 
 /// Bytes of already-scanned parent context kept on each side of the decoded span

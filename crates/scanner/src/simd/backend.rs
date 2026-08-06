@@ -1020,6 +1020,23 @@ impl HsScanner {
         }
     }
 
+    /// Validate authenticated native shard headers against this Hyperscan
+    /// runtime without constructing their much larger database allocations.
+    pub(crate) fn validate_serialized_database_shards(
+        serialized_shards: &[Vec<u8>],
+    ) -> Result<(), String> {
+        use hyperscan::Serialized;
+
+        for (index, bytes) in serialized_shards.iter().enumerate() {
+            bytes.size().map_err(|error| {
+                format!(
+                    "packed Hyperscan shard {index} is incompatible or corrupt; reinstall and recalibrate: {error}"
+                )
+            })?;
+        }
+        Ok(())
+    }
+
     /// Recreates an immutable scanner from authenticated execution-pack shards.
     ///
     /// This path is deliberately strict: serialized native databases never fall

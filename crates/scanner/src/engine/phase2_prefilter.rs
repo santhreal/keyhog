@@ -92,11 +92,7 @@ impl Phase2AlwaysActivePrefilter {
             "compiled scanner invariant violation: phase-2 always-active index out of range"
         );
         let [valid_always_active_indices, anchor_residual_indices, localized_residual_indices] =
-            canonical_phase2_scope_indices(
-                phase2_patterns,
-                always_active_indices,
-                anchor_index,
-            );
+            canonical_phase2_scope_indices(phase2_patterns, always_active_indices, anchor_index);
         Some(Self {
             valid_always_active_indices,
             anchor_residual_indices,
@@ -108,9 +104,15 @@ impl Phase2AlwaysActivePrefilter {
             #[cfg(feature = "simd")]
             hs: std::sync::OnceLock::new(),
             #[cfg(feature = "simd")]
+            packed_hs: std::sync::Mutex::new(None),
+            #[cfg(feature = "simd")]
             hs_anchor_residual: std::sync::OnceLock::new(),
             #[cfg(feature = "simd")]
+            packed_hs_anchor_residual: std::sync::Mutex::new(None),
+            #[cfg(feature = "simd")]
             hs_localized_residual: std::sync::OnceLock::new(),
+            #[cfg(feature = "simd")]
+            packed_hs_localized_residual: std::sync::Mutex::new(None),
         })
     }
 
@@ -141,34 +143,39 @@ impl Phase2AlwaysActivePrefilter {
             (
                 crate::execution_pack::simd_program::HyperscanPhase2Scope::Full,
                 PrefilterScope::Full,
-                &self.hs,
+                &self.packed_hs,
             ),
             (
                 crate::execution_pack::simd_program::HyperscanPhase2Scope::AnchorResidual,
                 PrefilterScope::AnchorResidual,
-                &self.hs_anchor_residual,
+                &self.packed_hs_anchor_residual,
             ),
             (
                 crate::execution_pack::simd_program::HyperscanPhase2Scope::LocalizedResidual,
                 PrefilterScope::LocalizedResidual,
-                &self.hs_localized_residual,
+                &self.packed_hs_localized_residual,
             ),
         ];
-        for (program, (expected_scope, runtime_scope, slot)) in programs.into_iter().zip(slots) {
+        for (program, (expected_scope, runtime_scope, packed_slot)) in
+            programs.into_iter().zip(slots)
+        {
             if program.scope != expected_scope {
                 return Err(format!(
                     "packed phase-two scope ordering is invalid: expected {expected_scope:?}, found {:?}",
                     program.scope
                 ));
             }
-            let engine = Phase2HsEngine::from_program(
+            Phase2HsEngine::validate_program(
                 phase2_patterns,
                 self.indices_for(runtime_scope),
-                program,
+                &program,
             )?;
-            slot.set(engine).map_err(|_| {
-                format!("packed phase-two scope {expected_scope:?} was installed more than once")
-            })?;
+            let mut packed = packed_slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            if packed.replace(program).is_some() {
+                return Err(format!(
+                    "packed phase-two scope {expected_scope:?} was installed more than once"
+                ));
+            }
         }
         Ok(())
     }
@@ -211,13 +218,39 @@ impl Phase2AlwaysActivePrefilter {
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         scope: PrefilterScope,
     ) -> Option<&'a Phase2HsEngine> {
-        let slot = match scope {
-            PrefilterScope::Full => &self.hs,
-            PrefilterScope::AnchorResidual => &self.hs_anchor_residual,
-            PrefilterScope::LocalizedResidual => &self.hs_localized_residual,
+        let (slot, packed_slot) = match scope {
+            PrefilterScope::Full => (&self.hs, &self.packed_hs),
+            PrefilterScope::AnchorResidual => {
+                (&self.hs_anchor_residual, &self.packed_hs_anchor_residual)
+            }
+            PrefilterScope::LocalizedResidual => {
+                (&self.hs_localized_residual, &self.packed_hs_localized_residual)
+            }
         };
-        slot.get_or_init(|| Phase2HsEngine::build(phase2_patterns, self.indices_for(scope)))
-            .as_ref()
+        slot.get_or_init(|| {
+            let packed = packed_slot
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take();
+            match packed {
+                Some(program) => match Phase2HsEngine::from_program(
+                    phase2_patterns,
+                    self.indices_for(scope),
+                    program,
+                ) {
+                    Ok(engine) => engine,
+                    Err(error) => {
+                        tracing::warn!(
+                            %error,
+                            "packed HS always-active prefilter initialization failed; using RegexSet path"
+                        );
+                        None
+                    }
+                },
+                None => Phase2HsEngine::build(phase2_patterns, self.indices_for(scope)),
+            }
+        })
+        .as_ref()
     }
 
     fn compile_portable(
@@ -560,9 +593,7 @@ impl Phase2AlwaysActivePrefilter {
         slot.get_or_init(|| {
             if truncate {
                 Self::build_ascii_alternate_trunc(phase2_patterns, &batch.phase2_indices)
-                    .or_else(|| {
-                        Self::build_ascii_alternate(phase2_patterns, &batch.phase2_indices)
-                    })
+                    .or_else(|| Self::build_ascii_alternate(phase2_patterns, &batch.phase2_indices))
             } else {
                 Self::build_ascii_alternate(phase2_patterns, &batch.phase2_indices)
             }

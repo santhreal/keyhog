@@ -1322,42 +1322,17 @@ impl ScanOrchestrator {
             return Ok(std::process::ExitCode::from(EXIT_REQUIRE_GPU_UNMET));
         }
 
-        let calibration_mode = self.effective_config.autoroute_calibration;
-        if calibration_mode {
-            // LAW10: calibration prewarm skip is perf-only and recall-safe
-            // because calibration measures all eligible backends directly.
-            tracing::debug!(
-                target: "keyhog::routing",
-                "backend prewarm skipped during autoroute calibration"
-            );
-        } else if let Some(preferred) = self.effective_config.backend_override {
-            // An automatic route is keyed by the real workload bucket and must
-            // come from persisted fastest-correct evidence. At this point no
-            // chunks have been collected, so a zero-byte heuristic cannot know
-            // which calibrated backend the dispatcher will select. Prewarm only
-            // explicit diagnostic overrides; automatic backends initialize when
-            // the cache-backed router resolves the first real batch.
-            // The prewarm dispatches to the backend once, so its cost belongs
-            // to the profiler's backend-dispatch stage. It used to carry a
-            // private `Instant` whose only consumer was the `elapsed_ms` field
-            // of this debug line, which meant prewarm time was measurable only
-            // by turning on a log target and never appeared in a profile.
-            let warmed = {
-                let _warm_span = keyhog_profile::span(keyhog_profile::Stage::BackendDispatch);
-                self.scanner.warm_backend(preferred)
-            };
-            tracing::debug!(
-                target: "keyhog::routing",
-                backend = preferred.label(),
-                warmed,
-                "backend warmed"
-            );
-        } else {
-            tracing::debug!(
-                target: "keyhog::routing",
-                "automatic backend prewarm awaits the persisted workload decision"
-            );
-        }
+        // A backend owns no work until the first real batch. Eagerly warming an
+        // explicit diagnostic override compiled every lazy regex and
+        // deserialized every native SIMD database even for empty or rejected
+        // inputs. Dispatch performs the same fail-closed initialization once it
+        // has bytes, so keep zero-byte scans free of backend runtime state.
+        tracing::debug!(
+            target: "keyhog::routing",
+            calibration_mode = self.effective_config.autoroute_calibration,
+            explicit_backend = ?self.effective_config.backend_override,
+            "backend materialization awaits the first real batch"
+        );
 
         if self.args.benchmark {
             // Name the GPU that produced the GPU row so the operator can tell

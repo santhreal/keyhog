@@ -392,11 +392,11 @@ impl HyperscanSimdExecutionProgram {
             phase2_scopes,
         };
         program.validate_structure()?;
-        if program.canonical_bytes()?.as_slice() != bytes {
-            return Err(ExecutionPackError::InvalidPack(
-                "Hyperscan SIMD execution program is not canonically encoded".into(),
-            ));
-        }
+        // Every field has one fixed-width encoding, byte fields carry exact
+        // lengths, reserved bytes are zero, rows are canonically ordered, and
+        // trailing bytes are rejected above. Re-encoding here previously
+        // allocated a second copy of every native shard, adding the entire
+        // backend section to scan-time peak RSS without strengthening parsing.
         Ok(program)
     }
 
