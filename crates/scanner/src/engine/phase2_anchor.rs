@@ -200,6 +200,11 @@ impl Phase2AnchorIndex {
                 }
             }
         }
+        // The ID maps duplicate every literal string. Release them before CSR
+        // and automaton construction so startup never retains both compiler-only
+        // lookup tables and the Aho-Corasick builder graph at peak.
+        drop(literal_ids);
+        drop(plain_literal_ids);
 
         let literal_patterns = super::CsrU32::from_pairs(literals.len(), literal_pattern_pairs);
         let plain_literal_patterns =
