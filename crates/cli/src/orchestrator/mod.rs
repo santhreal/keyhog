@@ -1399,13 +1399,13 @@ impl ScanOrchestrator {
             let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
             let compiled = if disabled_detectors.is_empty() {
                 match detector_execution_pack.as_ref() {
-                    Some(pack) => CompiledScanner::
-                        compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning(
-                            Arc::clone(&detectors),
+                    Some(pack) => {
+                        CompiledScanner::compile_from_execution_pack_with_gpu_policy_and_tuning(
                             pack,
                             gpu_init_policy,
                             &effective_config.scanner_tuning,
-                        ),
+                        )
+                    }
                     None => CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
                         Arc::clone(&detectors),
                         gpu_init_policy,
@@ -1422,10 +1422,7 @@ impl ScanOrchestrator {
             Arc::new(
                 compiled
                     .with_context(|| {
-                        format!(
-                            "materializing scanner from {} detector specs",
-                            detectors.len()
-                        )
+                        format!("materializing scanner for {} detectors", detectors.len())
                     })?
                     .with_config(effective_config.engine_scanner_config())
                     .with_tuning_config(effective_config.scanner_tuning.clone()),

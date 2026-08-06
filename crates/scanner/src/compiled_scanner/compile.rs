@@ -205,6 +205,20 @@ impl CompiledScanner {
         pack: &crate::execution_pack::ExecutionPack,
         tuning_config: &ScannerTuningConfig,
     ) -> Result<Self> {
+        Self::compile_from_execution_pack_with_gpu_policy_and_tuning(
+            pack,
+            GpuInitPolicy::SelectedBackend(execution_backend(pack.identity().backend)),
+            tuning_config,
+        )
+    }
+
+    /// Construct a tuned scanner directly from a mapped execution pack while
+    /// preserving the caller's already-resolved GPU initialization policy.
+    pub fn compile_from_execution_pack_with_gpu_policy_and_tuning(
+        pack: &crate::execution_pack::ExecutionPack,
+        gpu_policy: GpuInitPolicy,
+        tuning_config: &ScannerTuningConfig,
+    ) -> Result<Self> {
         use crate::execution_pack::ExecutionPackSectionKind as Section;
         let bytes = pack.section(Section::DetectorPlan).ok_or_else(|| {
             crate::error::ScanError::Config(
@@ -242,7 +256,7 @@ impl CompiledScanner {
         Self::compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning_inner(
             Vec::<DetectorSpec>::new().into(),
             pack,
-            GpuInitPolicy::SelectedBackend(execution_backend(pack.identity().backend)),
+            gpu_policy,
             tuning_config,
             None,
             Some(prelude),
