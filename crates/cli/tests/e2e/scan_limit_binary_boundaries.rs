@@ -56,7 +56,9 @@ fn limit_binary_read_bytes_reads_an_exactly_sized_binary_and_surfaces_a_truncate
     // Nul padding on both ends keeps this a binary as far as content sniffing
     // is concerned while leaving two printable runs the strings extractor
     // recovers.
-    let body = format!("\0\0AWS_ACCESS_KEY_ID = \"{HEAD_KEY}\"\0\0\0\0AWS_ACCESS_KEY_ID = \"{TAIL_KEY}\"\0\0");
+    let body = format!(
+        "\0\0AWS_ACCESS_KEY_ID = \"{HEAD_KEY}\"\0\0\0\0AWS_ACCESS_KEY_ID = \"{TAIL_KEY}\"\0\0"
+    );
     std::fs::write(&target, &body).expect("write binary fixture");
     let exact = body.len();
 
@@ -77,6 +79,10 @@ fn limit_binary_read_bytes_reads_an_exactly_sized_binary_and_surfaces_a_truncate
         "nothing was truncated, so nothing may be reported truncated; \
          stderr={at_cap_stderr}"
     );
+    assert!(
+        !at_cap_stderr.contains("skipped: detected as binary"),
+        "an explicit --binary scan covered this file and must not also report the plain-filesystem binary skip; stderr={at_cap_stderr}"
+    );
 
     let over_cap = scan_binary_target(
         &target,
@@ -86,8 +92,7 @@ fn limit_binary_read_bytes_reads_an_exactly_sized_binary_and_surfaces_a_truncate
     let over_stdout = stdout_of(&over_cap);
     let over_stderr = stderr_of(&over_cap);
     assert!(
-        over_stderr.contains("strings-read cap")
-            && over_stderr.contains("were not scanned")
+        over_stderr.contains("strings-read cap") && over_stderr.contains("were not scanned")
             || over_stderr.contains("only the first"),
         "a truncated binary read must be SURFACED: the unread tail is a \
          coverage gap; stderr={over_stderr}"

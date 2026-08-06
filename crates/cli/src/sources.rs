@@ -101,6 +101,7 @@ pub(crate) fn merge_scan_ignore_paths(
 
 #[cfg(any(
     feature = "web",
+    feature = "slack",
     feature = "github",
     feature = "gitlab",
     feature = "bitbucket",
@@ -120,6 +121,7 @@ fn source_http_config(args: &ScanArgs, ua_suffix: &str) -> keyhog_sources::http:
 
 #[cfg(not(any(
     feature = "web",
+    feature = "slack",
     feature = "github",
     feature = "gitlab",
     feature = "bitbucket",
@@ -279,9 +281,18 @@ pub(crate) fn profiling_source_identity(
     #[cfg(feature = "github")]
     {
         target.field_option_str("github.org", args.github_org.as_deref());
+        target.field_option_str("github.api_endpoint", args.github_api_endpoint.as_deref());
         target.field_option_str(
             "github.collaboration.repository",
             args.github_collaboration.as_deref(),
+        );
+        target.field_option_str(
+            "github.collaboration.api_endpoint",
+            args.github_api_endpoint.as_deref(),
+        );
+        target.field_option_str(
+            "github.collaboration.wiki_url",
+            args.github_wiki_url.as_deref(),
         );
         if args.github_collaboration.is_some() {
             target.field_bool("github.collaboration.all", args.github_all);
@@ -293,6 +304,7 @@ pub(crate) fn profiling_source_identity(
             target.field_bool("github.collaboration.discussions", args.github_discussions);
             target.field_bool("github.collaboration.wiki", args.github_wiki);
             target.field_bool("github.collaboration.gists", args.github_gists);
+            target.field_bool("github.collaboration.releases", args.github_releases);
         }
     }
     #[cfg(feature = "gitlab")]
@@ -414,13 +426,14 @@ pub(crate) fn build_sources(
             if let Some(idx) = merkle.as_ref() {
                 fs_source = fs_source.with_merkle_skip(idx.clone());
             }
-            sources.push(Box::new(fs_source));
             #[cfg(feature = "binary")]
             if args.binary {
                 sources.push(Box::new(
                     keyhog_sources::BinarySource::new(root.clone()).with_limits(source_limits),
                 ));
+                continue;
             }
+            sources.push(Box::new(fs_source));
         }
     }
 
@@ -476,7 +489,10 @@ pub(crate) fn build_sources(
             HostedCredentialEnv::GithubToken,
         )?
         .context("GitHub organization source requires --github-token or KEYHOG_GITHUB_TOKEN")?;
-        let params = format!("{org}\n{token}");
+        let params = match &args.github_api_endpoint {
+            Some(endpoint) => format!("{org}\n{token}\n{endpoint}"),
+            None => format!("{org}\n{token}"),
+        };
         sources.push(
             keyhog_sources::create_source_with_http_config_limits_and_policy(
                 "github-org",
@@ -503,11 +519,17 @@ pub(crate) fn build_sources(
             gists: args.github_all || args.github_gists,
             releases: args.github_all || args.github_releases,
         };
-        sources.push(Box::new(
+        let mut source =
             keyhog_sources::GitHubCollaborationSource::new(repository, token, selection)?
                 .with_http_config(source_http_config(args, "github-collaboration"))
-                .with_limits(source_limits),
-        ));
+                .with_limits(source_limits);
+        if let Some(endpoint) = &args.github_api_endpoint {
+            source = source.with_endpoint(endpoint);
+        }
+        if let Some(url) = &args.github_wiki_url {
+            source = source.with_wiki_clone_url(url);
+        }
+        sources.push(Box::new(source));
     }
 
     #[cfg(feature = "gitlab")]
@@ -759,10 +781,11 @@ fn validate_source_flag_combinations(args: &ScanArgs, _has_path_source: bool) ->
             || args.github_pull_requests
             || args.github_discussions
             || args.github_wiki
-            || args.github_gists)
+            || args.github_gists
+            || args.github_releases)
     {
         anyhow::bail!(
-            "--github-collaboration requires an explicit surface. Fix: add --github-all, or one or more of --github-issues, --github-pull-requests, --github-discussions, --github-wiki, or --github-gists."
+            "--github-collaboration requires an explicit surface. Fix: add --github-all, or one or more of --github-issues, --github-pull-requests, --github-discussions, --github-wiki, --github-gists, or --github-releases."
         );
     }
 
