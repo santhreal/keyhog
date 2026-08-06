@@ -137,6 +137,21 @@ impl CompiledScanner {
         pack: &crate::execution_pack::ExecutionPack,
         tuning_config: &ScannerTuningConfig,
     ) -> Result<Self> {
+        Self::compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning(
+            detectors,
+            pack,
+            GpuInitPolicy::SelectedBackend(execution_backend(pack.identity().backend)),
+            tuning_config,
+        )
+    }
+
+    /// Hydrate route-neutral matchers from a mapped pack before autoroute selects a backend.
+    pub fn compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning(
+        detectors: Arc<[DetectorSpec]>,
+        pack: &crate::execution_pack::ExecutionPack,
+        gpu_policy: GpuInitPolicy,
+        tuning_config: &ScannerTuningConfig,
+    ) -> Result<Self> {
         use crate::execution_pack::ExecutionPackSectionKind as Section;
 
         let identity = pack.identity();
@@ -194,7 +209,7 @@ impl CompiledScanner {
         .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
         Self::compile_shared_with_state_source(
             detectors,
-            GpuInitPolicy::SelectedBackend(execution_backend(identity.backend)),
+            gpu_policy,
             tuning_config,
             Some(state),
         )

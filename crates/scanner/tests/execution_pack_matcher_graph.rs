@@ -263,6 +263,20 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
         keyhog_scanner::execution_pack::matcher_sections::compile_state_builder_invocations(),
         before_shared
     );
+    let before_autoroute =
+        keyhog_scanner::execution_pack::matcher_sections::compile_state_builder_invocations();
+    let autoroute = CompiledScanner::
+        compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning(
+            std::sync::Arc::clone(&decoded_detectors),
+            &pack,
+            keyhog_scanner::GpuInitPolicy::FromRuntimePolicy,
+            &Default::default(),
+        )
+        .expect("hydrate autoroute matchers from the CPU correctness pack");
+    assert_eq!(
+        keyhog_scanner::execution_pack::matcher_sections::compile_state_builder_invocations(),
+        before_autoroute
+    );
     let input = chunk(
         "account=tenant_7\ntoken=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHORLESS-CD34",
     );
@@ -273,6 +287,10 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     assert_eq!(
         shared.scan(&input).expect("scan shared packed route"),
         ordinary.scan(&input).expect("rescan ordinary route")
+    );
+    assert_eq!(
+        autoroute.scan(&input).expect("scan autoroute packed route"),
+        ordinary.scan(&input).expect("rescan ordinary autoroute route")
     );
 }
 

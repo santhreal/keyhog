@@ -1370,29 +1370,15 @@ impl ScanOrchestrator {
         };
         let scanner = {
             let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
-            let packed_route_matches = detector_execution_pack.as_ref().is_some_and(|pack| {
-                matches!(
-                    (pack.identity().backend, gpu_init_policy),
-                    (
-                        keyhog_scanner::execution_pack::ExecutionPackBackend::Cpu,
-                        GpuInitPolicy::SelectedBackend(
-                            keyhog_scanner::hw_probe::ScanBackend::CpuFallback
-                        )
-                    ) | (
-                        keyhog_scanner::execution_pack::ExecutionPackBackend::Simd,
-                        GpuInitPolicy::SelectedBackend(
-                            keyhog_scanner::hw_probe::ScanBackend::SimdCpu
-                        )
-                    )
-                )
-            });
-            let compiled = if disabled_detectors.is_empty() && packed_route_matches {
+            let compiled = if disabled_detectors.is_empty() {
                 match detector_execution_pack.as_ref() {
-                    Some(pack) => CompiledScanner::compile_shared_from_execution_pack_with_tuning(
-                        Arc::clone(&detectors),
-                        pack,
-                        &effective_config.scanner_tuning,
-                    ),
+                    Some(pack) => CompiledScanner::
+                        compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning(
+                            Arc::clone(&detectors),
+                            pack,
+                            gpu_init_policy,
+                            &effective_config.scanner_tuning,
+                        ),
                     None => CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
                         Arc::clone(&detectors),
                         gpu_init_policy,
