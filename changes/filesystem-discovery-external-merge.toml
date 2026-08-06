@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Large unbounded Unix filesystem walks external-merge deterministic native-byte path metadata through bounded temporary runs instead of retaining one row and sort index per file."
+crates = ["sources"]
