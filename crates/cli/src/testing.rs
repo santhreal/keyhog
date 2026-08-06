@@ -1246,10 +1246,11 @@ impl CliTestApi for TestApi {
         let detectors = keyhog_core::load_embedded_detectors_or_fail()?;
         let forced = crate::orchestrator::explicit_backend_override(Some(backend))?
             .ok_or_else(|| anyhow::anyhow!("'{backend}' is auto, not an explicit backend"))?;
-        let runtime = crate::orchestrator::compile_default_scan_runtime(detectors, |e| {
-            anyhow::anyhow!("{e}")
-        })?
-        .with_backend_override(Some(forced));
+        let runtime =
+            crate::orchestrator::compile_default_scan_runtime(detectors, Some(forced), |e| {
+                anyhow::anyhow!("{e}")
+            })?
+            .with_backend_override(Some(forced));
         let chunk = keyhog_core::Chunk {
             data: body.to_string().into(),
             metadata: keyhog_core::ChunkMetadata {

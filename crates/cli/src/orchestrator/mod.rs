@@ -730,10 +730,13 @@ impl DefaultScanRuntime {
 
 pub(crate) fn compile_default_scan_runtime(
     detectors: Vec<DetectorSpec>,
+    backend_override: Option<keyhog_scanner::ScanBackend>,
     map_compile_error: impl FnOnce(&keyhog_scanner::ScanError) -> anyhow::Error,
 ) -> Result<DefaultScanRuntime> {
+    let backend = backend_override.unwrap_or(keyhog_scanner::ScanBackend::CpuFallback);
     let scanner = Arc::new(
-        CompiledScanner::compile(detectors.clone()).map_err(|error| map_compile_error(&error))?,
+        CompiledScanner::compile_for_backend(detectors.clone(), backend)
+            .map_err(|error| map_compile_error(&error))?,
     );
     Ok(DefaultScanRuntime::new(scanner, &detectors))
 }

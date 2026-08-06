@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Persistent daemon and watch runtimes now compile the exact forced backend, so explicit SIMD startup owns a usable Hyperscan plan instead of a CPU-only scanner."
+crates = ["cli"]

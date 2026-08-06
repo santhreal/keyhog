@@ -491,6 +491,7 @@ fn compile_daemon_scan_runtime(
 )> {
     let scan_runtime = crate::orchestrator::compile_default_scan_runtime(
         detectors,
+        backend_override,
         crate::orchestrator::daemon_compile_failure,
     )?
     .prepare_persistent_daemon(backend_override)?;
