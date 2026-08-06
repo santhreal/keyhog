@@ -773,6 +773,10 @@ impl CompiledScanner {
         #[cfg(not(feature = "gpu"))]
         let gpu_literals: Option<Arc<Vec<Vec<u8>>>> = None;
 
+        // GPU literal planning is the final consumer. Release synthesized
+        // keyword strings before compiling the remaining retained indexes.
+        drop(phase2_keywords);
+
         // Compile one ownership plan for the always-active phase-2 set. The full
         // scope serves legacy extraction and admission; anchored extraction uses
         // residual scopes that omit patterns already owned by its localizers.
@@ -820,6 +824,7 @@ impl CompiledScanner {
         );
 
         log_quality_warnings(&state.quality_warnings);
+        drop(std::mem::take(&mut state.quality_warnings));
 
         let extra_keyword_count: usize = state
             .phase2_patterns
@@ -880,6 +885,11 @@ impl CompiledScanner {
         #[cfg(feature = "simd")]
         let simd_candidate_available = simd_compile_plan.is_some();
 
+        // Exact CPU/GPU routes do not retain the canonical literal strings;
+        // SIMD moved them into its lazy plan above. Release either residual
+        // allocation before the retained scanner graph is finalized.
+        drop(std::mem::take(&mut state.ac_literals));
+
         // Pre-resolve the detector-wide weak-anchor base once. The per-pattern
         // bit is compiled beside its regex, so mixed detectors protect only the
         // patterns that declare the policy. Built before `detectors` is moved.
@@ -904,6 +914,7 @@ impl CompiledScanner {
                 missing_weak_anchor_floors.join(", ")
             )));
         }
+        drop(missing_weak_anchor_floors);
         // Resolve the detector-owned hot-prefix table once, then mark its exact
         // confirmed delegates. Limiting suppression to the delegate is
         // recall-safe when one detector has overlapping regexes at one offset.
@@ -956,6 +967,11 @@ impl CompiledScanner {
                     },
                 ),
             );
+
+        // Every detector-authored policy has now been lowered into compact
+        // runtime owners. The decoded schema is compiler input, not scanner
+        // health state.
+        drop(detectors);
         let gpu_matcher = OnceLock::new();
         #[cfg(feature = "gpu")]
         if let Some(matcher) = packed_gpu_matcher {

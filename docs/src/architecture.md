@@ -315,6 +315,11 @@ one scope row, grow geometrically only as distinct `(prefix, path)` scopes
 arrive, keep the existing hard ceiling, and shrink to the minimum when the
 workload cache is cleared.
 
+Scanner construction releases compiler-only keyword catalogs, diagnostics,
+route-neutral literal strings, and decoded detector schemas as soon as their
+final runtime owner has been built. These inputs are gone before the compiled
+scanner crosses into health and scan-state measurement.
+
 Every mapped byte has one owner: pack metadata, detector IR, route classifier,
 regex programs, suppression policy, or the selected backend. Header, table, and
 alignment padding belong to pack metadata. The ownership ledger must sum to the
