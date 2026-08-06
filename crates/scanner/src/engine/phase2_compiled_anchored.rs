@@ -221,7 +221,8 @@ impl CompiledScanner {
                     // Candidates are sorted by (pattern, pos); verify each
                     // pattern's contiguous run together so its per-pattern
                     // signal cache is built at most once.
-                    let _verify_g = super::profile::span(keyhog_profile::Stage::Phase2AnchoredVerify);
+                    let _verify_g =
+                        super::profile::span(keyhog_profile::Stage::Phase2AnchoredVerify);
                     this.verify_anchored_candidates(
                         anchor_idx,
                         &cands[..],
@@ -235,6 +236,7 @@ impl CompiledScanner {
                         deadline,
                         prof,
                     );
+                    super::release_candidate_scratch(&mut cands);
                 });
 
                 // Localized plain-pattern path (ASCII chunks): verify live
@@ -265,7 +267,8 @@ impl CompiledScanner {
                             }
                         }
                         {
-                            let _g = super::profile::span(keyhog_profile::Stage::Phase2AnchoredVerify);
+                            let _g =
+                                super::profile::span(keyhog_profile::Stage::Phase2AnchoredVerify);
                             this.verify_anchored_candidates(
                                 anchor_idx,
                                 &cands[..],
@@ -280,6 +283,7 @@ impl CompiledScanner {
                                 prof,
                             );
                         }
+                        super::release_candidate_scratch(&mut cands);
                     });
                     {
                         let _g = super::profile::span(keyhog_profile::Stage::Phase2WholeChunk);

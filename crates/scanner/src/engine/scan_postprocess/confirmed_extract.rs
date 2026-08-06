@@ -270,6 +270,7 @@ impl CompiledScanner {
                         }
                         i = j;
                     }
+                    super::release_candidate_scratch(&mut candidates);
                 });
             }
         }

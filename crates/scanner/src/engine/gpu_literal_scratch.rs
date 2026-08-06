@@ -37,6 +37,14 @@ pub(in crate::engine) fn zero_scan_dispatch_scratch(
 ) {
     scratch.haystack_bytes.zeroize();
     scratch.hit_bytes.zeroize();
+    scratch.haystack_bytes.clear();
+    scratch.hit_bytes.clear();
+    if scratch.haystack_bytes.capacity() > crate::types::MAX_SCAN_CHUNK_BYTES {
+        scratch.haystack_bytes = Vec::new();
+    }
+    if scratch.hit_bytes.capacity() > crate::types::MAX_SCAN_CHUNK_BYTES {
+        scratch.hit_bytes = Vec::new();
+    }
 }
 
 fn with_gpu_literal_scratch<R>(

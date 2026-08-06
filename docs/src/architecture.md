@@ -282,6 +282,8 @@ complete mapping length.
 
 Pack files use read-only shared mappings. Concurrent scanners fault the same immutable physical pages while they authenticate and hydrate a generation, rather than allocating one input copy per process. Each process retains only its owned decoded runtime after releasing the transient mapping.
 
+Worker-local scratch is lazy and route-scoped. Host anchor candidates retain at most one scan chunk, single-chunk VYRE upload/readback buffers retain at most one scan chunk, and coalesced VYRE buffers retain at most the portable dispatch grid. An outlier is zeroed where it can contain source bytes and released before that worker serves another route.
+
 ### Failure and recovery contract
 
 KeyHog separates trust failures from recoverable execution failures:

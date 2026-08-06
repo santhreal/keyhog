@@ -16,6 +16,24 @@ impl RegionPresenceScratch {
     pub(super) fn is_empty(&self) -> bool {
         self.haystack.is_empty() && self.region_starts.is_empty()
     }
+
+    #[cfg(test)]
+    pub(super) fn reserve_outlier_for_test(&mut self) {
+        self.haystack
+            .reserve_exact(WGPU_BYTE_SCAN_DISPATCH_LIMIT + 1);
+        self.region_starts
+            .reserve_exact(WGPU_BYTE_SCAN_DISPATCH_LIMIT / std::mem::size_of::<u32>() + 1);
+    }
+
+    #[cfg(test)]
+    pub(super) fn retained_bytes_for_test(&self) -> (usize, usize) {
+        (
+            self.haystack.capacity(),
+            self.region_starts
+                .capacity()
+                .saturating_mul(std::mem::size_of::<u32>()),
+        )
+    }
 }
 
 thread_local! {
@@ -88,6 +106,18 @@ impl Drop for ZeroRegionPresenceScratch<'_> {
         self.scratch.haystack.fill(0);
         self.scratch.haystack.clear();
         self.scratch.region_starts.clear();
+        if self.scratch.haystack.capacity() > WGPU_BYTE_SCAN_DISPATCH_LIMIT {
+            self.scratch.haystack = Vec::new();
+        }
+        if self
+            .scratch
+            .region_starts
+            .capacity()
+            .saturating_mul(std::mem::size_of::<u32>())
+            > WGPU_BYTE_SCAN_DISPATCH_LIMIT
+        {
+            self.scratch.region_starts = Vec::new();
+        }
     }
 }
 
