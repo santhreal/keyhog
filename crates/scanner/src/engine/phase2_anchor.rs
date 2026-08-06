@@ -39,7 +39,7 @@ use crate::anchored_regex::AnchoredRegex;
 use crate::types::*;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use regex_syntax::hir::literal::{ExtractKind, Extractor};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Cap on distinct (ASCII-lowercased) required-prefix literals per pattern.
 /// Canonical ASCII detector patterns with optional separators/case spellings
@@ -50,14 +50,14 @@ const MAX_LITERALS_PER_PATTERN: usize = 32;
 pub(crate) const CONFIRMED_MAX_LITERALS_PER_PATTERN: usize = 8;
 
 struct LazyAnchorAc {
-    literals: Mutex<Option<Box<[String]>>>,
+    literals: Mutex<Option<Box<[Arc<str>]>>>,
     ascii_case_insensitive: bool,
     label: &'static str,
     cell: OnceLock<AhoCorasick>,
 }
 
 impl LazyAnchorAc {
-    fn new(literals: Vec<String>, ascii_case_insensitive: bool, label: &'static str) -> Self {
+    fn new(literals: Vec<Arc<str>>, ascii_case_insensitive: bool, label: &'static str) -> Self {
         Self {
             literals: Mutex::new(Some(literals.into_boxed_slice())),
             ascii_case_insensitive,
@@ -78,7 +78,7 @@ impl LazyAnchorAc {
             AhoCorasickBuilder::new()
                 .match_kind(MatchKind::Standard)
                 .ascii_case_insensitive(self.ascii_case_insensitive)
-                .build(&literals)
+                .build(literals.iter().map(|literal| literal.as_bytes()))
                 .unwrap_or_else(|error| {
                     panic!(
                         "BUILD-INVARIANT VIOLATION: {} Aho-Corasick failed to compile: {error}",
@@ -88,6 +88,21 @@ impl LazyAnchorAc {
         });
         (anchor, !already_initialized)
     }
+}
+
+fn intern_anchor_literal(
+    ids: &mut std::collections::HashMap<Arc<str>, usize>,
+    literals: &mut Vec<Arc<str>>,
+    literal: &str,
+) -> usize {
+    if let Some(&id) = ids.get(literal) {
+        return id;
+    }
+    let literal: Arc<str> = Arc::from(literal);
+    let id = literals.len();
+    literals.push(Arc::clone(&literal));
+    ids.insert(literal, id);
+    id
 }
 
 /// Per-scanner index that drives shared-anchor phase-2 localization AND
@@ -193,15 +208,15 @@ impl Phase2AnchorIndex {
         let mut eligible = vec![false; phase2_patterns.len()];
         let mut anchored: Vec<Option<AnchoredRegex>> =
             (0..phase2_patterns.len()).map(|_| None).collect();
-        // Dedup literal string -> ac pattern id (ci eligible path).
-        let mut literal_ids: std::collections::HashMap<String, usize> =
+        // The compiler map and retained literal row share each unique source.
+        let mut literal_ids: std::collections::HashMap<Arc<str>, usize> =
             std::collections::HashMap::new();
-        let mut literals: Vec<String> = Vec::new();
+        let mut literals: Vec<Arc<str>> = Vec::new();
         let mut literal_pattern_pairs = Vec::new();
         // Plain (homoglyph) localized path: separate case-sensitive AC.
-        let mut plain_literal_ids: std::collections::HashMap<String, usize> =
+        let mut plain_literal_ids: std::collections::HashMap<Arc<str>, usize> =
             std::collections::HashMap::new();
-        let mut plain_literals: Vec<String> = Vec::new();
+        let mut plain_literals: Vec<Arc<str>> = Vec::new();
         let mut plain_literal_pattern_pairs = Vec::new();
         let mut plain_always_mark: Vec<u32> = Vec::new();
 
@@ -210,10 +225,7 @@ impl Phase2AnchorIndex {
             if let Some(pattern_literals) = required_prefix_literals(pattern.regex.as_str()) {
                 // Register every literal and map it back to this pattern.
                 for lit in &pattern_literals {
-                    let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
-                        literals.push(lit.clone());
-                        literals.len() - 1
-                    });
+                    let id = intern_anchor_literal(&mut literal_ids, &mut literals, lit);
                     literal_pattern_pairs.push((id, idx));
                 }
                 eligible[idx] = true;
@@ -231,10 +243,11 @@ impl Phase2AnchorIndex {
                 match leading_literals_of_folded(&folded_src) {
                     Some(lits) => {
                         for lit in &lits {
-                            let id = *plain_literal_ids.entry(lit.clone()).or_insert_with(|| {
-                                plain_literals.push(lit.clone());
-                                plain_literals.len() - 1
-                            });
+                            let id = intern_anchor_literal(
+                                &mut plain_literal_ids,
+                                &mut plain_literals,
+                                lit,
+                            );
                             plain_literal_pattern_pairs.push((id, idx));
                         }
                         // Verify with the FOLDED (ASCII) regex `\A(?:fold)`, not
@@ -249,9 +262,8 @@ impl Phase2AnchorIndex {
                 }
             }
         }
-        // The ID maps duplicate every literal string. Release them before CSR
-        // and automaton construction so startup never retains both compiler-only
-        // lookup tables and the Aho-Corasick builder graph at peak.
+        // Drop compiler lookup tables before CSR and automaton construction;
+        // their shared source allocations remain owned by the compact rows.
         drop(literal_ids);
         drop(plain_literal_ids);
 
@@ -282,7 +294,7 @@ impl Phase2AnchorIndex {
                 if matches!(always_active_eligible.get(pattern as usize), Some(true)) {
                     if !retained_literal {
                         if let Some(literal) = literals.get(literal_id) {
-                            always_literals.push(literal.clone());
+                            always_literals.push(literal.to_string());
                         }
                         retained_literal = true;
                     }
@@ -294,8 +306,9 @@ impl Phase2AnchorIndex {
             super::CsrU32::from_pairs(always_literals.len(), always_literal_pattern_pairs);
         // MatchKind::Standard is required for find_overlapping_iter; ASCII-case
         // -insensitive so a single lowercase literal anchors all case variants.
-        let anchor_first_bigram = (!literals.is_empty())
-            .then(|| FirstBigramSet::from_literals(literals.iter().map(String::as_bytes), true));
+        let anchor_first_bigram = (!literals.is_empty()).then(|| {
+            FirstBigramSet::from_literals(literals.iter().map(|literal| literal.as_bytes()), true)
+        });
         let anchor_ac = (!literals.is_empty())
             .then(|| LazyAnchorAc::new(literals, true, "phase-2 shared-anchor"));
         let always_anchor_first_bigram = (!always_literals.is_empty()).then(|| {
@@ -324,7 +337,10 @@ impl Phase2AnchorIndex {
         // ASCII members, e.g. `[s]` from `[sѕｓ]`, so case-sensitivity is already
         // encoded).
         let plain_anchor_first_bigram = (!plain_literals.is_empty()).then(|| {
-            FirstBigramSet::from_literals(plain_literals.iter().map(String::as_bytes), false)
+            FirstBigramSet::from_literals(
+                plain_literals.iter().map(|literal| literal.as_bytes()),
+                false,
+            )
         });
         let plain_anchor_ac = (!plain_literals.is_empty())
             .then(|| LazyAnchorAc::new(plain_literals, false, "phase-2 plain-anchor"));
