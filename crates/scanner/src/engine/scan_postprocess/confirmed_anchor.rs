@@ -15,6 +15,7 @@ use super::super::CompiledScanner;
 use crate::anchored_regex::AnchoredRegex;
 use crate::types::CompiledPattern;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind};
+use std::sync::OnceLock;
 
 impl CompiledScanner {
     #[cfg(test)]
@@ -38,7 +39,7 @@ impl CompiledScanner {
 }
 
 pub(crate) struct ConfirmedAnchorIndex {
-    anchor_ac: AhoCorasick,
+    anchor_ac: OnceLock<AhoCorasick>,
     anchor_first_bigram: FirstBigramSet,
     anchor_literals: Vec<String>,
     literal_patterns: super::super::CsrU32,
@@ -86,34 +87,7 @@ impl ConfirmedAnchorIndex {
         let anchor_first_bigram =
             FirstBigramSet::from_literals(literals.iter().map(String::as_bytes), true);
 
-        // The contiguous NFA avoids retaining the catalog-wide DFA's multi-MiB
-        // transition table while preserving overlapping-match semantics.
-        let anchor_ac = match AhoCorasickBuilder::new()
-            .match_kind(MatchKind::Standard)
-            .kind(Some(AhoCorasickKind::ContiguousNFA))
-            .ascii_case_insensitive(true)
-            .build(&literals)
-        {
-            Ok(ac) => ac,
-            Err(error) => {
-                // The literal set is derived from compile-time-constant detector
-                // prefixes, so an `AhoCorasick` build failure here is a
-                // build-invariant violation. Surface it on the SAME loud channel
-                // as the sibling prefilters (Law 10), a bare `tracing::warn!`
-                // with no subscriber is silent, exactly the swallow the anchored
-                // verifier fail-closed sweep removed. Confirmed localization is a
-                // pure optimization with a whole-chunk fallback, so this stays a
-                // loud, recorded, recall-preserving degrade (not a panic).
-                crate::prefilter_degrade::warn_prefilter_disabled(
-                    &format!(
-                        "confirmed shared-anchor Aho-Corasick ({} literals)",
-                        literals.len()
-                    ),
-                    &error,
-                );
-                return None;
-            }
-        };
+        let anchor_ac = OnceLock::new();
 
         Some(Self {
             anchor_ac,
@@ -133,10 +107,30 @@ impl ConfirmedAnchorIndex {
     pub(crate) fn anchor_literals(&self) -> &[String] {
         &self.anchor_literals
     }
+    pub(crate) fn materialize(&self) -> bool {
+        let already_initialized = self.anchor_ac.get().is_some();
+        self.anchor();
+        !already_initialized
+    }
+
+    fn anchor(&self) -> &AhoCorasick {
+        self.anchor_ac.get_or_init(|| {
+            AhoCorasickBuilder::new()
+                .match_kind(MatchKind::Standard)
+                .kind(Some(AhoCorasickKind::ContiguousNFA))
+                .ascii_case_insensitive(true)
+                .build(&self.anchor_literals)
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "BUILD-INVARIANT VIOLATION: confirmed shared-anchor Aho-Corasick failed to compile: {error}"
+                    )
+                })
+        })
+    }
 
     #[cfg(test)]
     pub(crate) fn anchor_kind(&self) -> AhoCorasickKind {
-        self.anchor_ac.kind()
+        self.anchor().kind()
     }
 
     #[inline]
@@ -161,7 +155,7 @@ impl ConfirmedAnchorIndex {
         if !self.anchor_first_bigram.may_have_match(text) {
             return;
         }
-        for mat in self.anchor_ac.find_overlapping_iter(text) {
+        for mat in self.anchor().find_overlapping_iter(text) {
             let literal_idx = mat.pattern().as_usize();
             let pos = mat.start() as u32;
             if let Some(patterns) = self.literal_patterns.get(literal_idx) {

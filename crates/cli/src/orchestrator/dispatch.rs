@@ -627,7 +627,7 @@ pub(crate) fn scan_selected_batch(
     execution_route: keyhog_scanner::ScanExecutionRoute,
     recovery_plan: Option<BackendRecoveryPlan>,
 ) -> keyhog_scanner::Result<SelectedBatchScan> {
-    if !batch.is_empty() && scanner.prepare_phase2_anchor_batch(execution_route) {
+    if !batch.is_empty() && scanner.prepare_anchor_batch(execution_route) {
         super::run::release_allocator_arenas_after_construction();
     }
     let (mut per_chunk, mut recovery, gpu_recovery_receipts) = match scanner

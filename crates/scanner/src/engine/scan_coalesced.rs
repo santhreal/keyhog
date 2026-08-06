@@ -86,13 +86,18 @@ impl CompiledScanner {
         self.post_process_matches(chunk, &mut matches, None, route)?;
         Ok(Some(matches))
     }
-    /// Materialize lazy phase-two anchors before a non-empty batch allocates
-    /// per-chunk scratch. Returns whether new automata were built.
+    /// Materialize lazy anchors before a non-empty batch allocates per-chunk
+    /// scratch. Returns whether new automata were built.
     #[doc(hidden)]
-    pub fn prepare_phase2_anchor_batch(&self, route: crate::ScanExecutionRoute) -> bool {
-        self.phase2_anchor_index
+    pub fn prepare_anchor_batch(&self, route: crate::ScanExecutionRoute) -> bool {
+        let phase2 = self
+            .phase2_anchor_index
             .as_ref()
-            .is_some_and(|index| index.materialize_for_batch(route.phase2_plain_localizer))
+            .is_some_and(|index| index.materialize_for_batch(route.phase2_plain_localizer));
+        let confirmed = self.confirmed_anchor_index.as_ref().is_some_and(
+            super::scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex::materialize,
+        );
+        phase2 || confirmed
     }
 
     /// High-throughput coalesced scan using exactly the selected backend.
@@ -194,7 +199,7 @@ impl CompiledScanner {
             )));
         }
         if !chunks.is_empty() {
-            self.prepare_phase2_anchor_batch(route);
+            self.prepare_anchor_batch(route);
         }
         let (validated_plan, admission_recovery) = if backend.is_gpu() {
             // GPU region-presence dispatch owns trigger admission and does not
