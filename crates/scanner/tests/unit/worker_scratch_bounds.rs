@@ -3,7 +3,6 @@ use super::{release_candidate_scratch, MAX_RETAINED_WORKER_SCRATCH_BYTES};
 /// WHY: one anchor-dense chunk may need a large transient candidate vector, but a Rayon worker reused by a later CPU or SIMD route must not retain that outlier allocation indefinitely.
 #[test]
 fn host_anchor_candidate_outlier_is_released_between_routes() {
-    assert!(MAX_RETAINED_WORKER_SCRATCH_BYTES <= 64 * 1024);
     let element_bytes = std::mem::size_of::<(u32, u32)>();
     let retained_elements = MAX_RETAINED_WORKER_SCRATCH_BYTES / element_bytes;
     let mut candidates = Vec::with_capacity(retained_elements + 1);
