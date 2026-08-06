@@ -219,12 +219,12 @@ fn mapped_pack(
     (directory, pack)
 }
 
-/// WHY: the scan-time entry must decode borrowed mapped sections, validate every section identity, and preserve the canonical scanner result without rebuilding routes.
+/// WHY: every packed scanner must own all runtime state after construction; keeping the authenticated mmap alive duplicates the selected policy and lets future borrowed-section dependencies hide until an installed long-lived process drops its source generation.
 #[test]
 fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     let detectors = detectors();
     let ordinary = CompiledScanner::compile(detectors.clone()).expect("compile ordinary scanner");
-    let (_directory, pack) = mapped_pack(&detectors, None);
+    let (directory, pack) = mapped_pack(&detectors, None);
     let before =
         keyhog_scanner::execution_pack::matcher_sections::compile_state_builder_invocations();
     let (packed, decoded_detectors) =
@@ -277,6 +277,8 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
         keyhog_scanner::execution_pack::matcher_sections::compile_state_builder_invocations(),
         before_autoroute
     );
+    drop(pack);
+    drop(directory);
     let input = chunk(
         "account=tenant_7\ntoken=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHORLESS-CD34",
     );
