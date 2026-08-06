@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Large filesystem windows now decode through bounded overlapping subwindows, recovering encoded credentials beyond the default decode working-set ceiling without raising that ceiling."
+crates = ["scanner", "sources"]
