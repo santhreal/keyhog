@@ -86,9 +86,11 @@ impl ConfirmedAnchorIndex {
         let anchor_first_bigram =
             FirstBigramSet::from_literals(literals.iter().map(String::as_bytes), true);
 
+        // The contiguous NFA avoids retaining the catalog-wide DFA's multi-MiB
+        // transition table while preserving overlapping-match semantics.
         let anchor_ac = match AhoCorasickBuilder::new()
             .match_kind(MatchKind::Standard)
-            .kind(Some(AhoCorasickKind::DFA))
+            .kind(Some(AhoCorasickKind::ContiguousNFA))
             .ascii_case_insensitive(true)
             .build(&literals)
         {
