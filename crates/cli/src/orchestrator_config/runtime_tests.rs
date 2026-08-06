@@ -1,8 +1,9 @@
 #[cfg(test)]
 use super::{
-    fused_depth_default, gpu_runtime_policy_for_backend_override, gpu_runtime_policy_from_args,
+    default_filesystem_worker_threads, fused_depth_default,
+    gpu_runtime_policy_for_backend_override, gpu_runtime_policy_from_args,
     require_keyhog_owned_rayon_pool, sanitise_thread_count, thread_pool_needs_initialization,
-    KEYHOG_WORKER_STACK_BYTES,
+    FUSED_BATCH_BYTES, KEYHOG_WORKER_STACK_BYTES,
 };
 #[cfg(test)]
 use crate::args::ScanArgs;
@@ -85,6 +86,50 @@ fn sanitise_thread_count_rejects_zero() {
 fn fused_default_allows_only_active_and_blocked_send_batches() {
     assert_eq!(fused_depth_default(1), 0);
     assert_eq!(fused_depth_default(256), 0);
+}
+
+#[cfg(test)]
+#[test]
+fn filesystem_worker_default_tracks_available_window_parallelism() -> anyhow::Result<()> {
+    let empty = tempfile::tempdir()?;
+    assert_eq!(
+        default_filesystem_worker_threads(&[empty.path().to_path_buf()], 16),
+        1
+    );
+
+    let tiny = tempfile::tempdir()?;
+    std::fs::write(tiny.path().join("tiny.txt"), b"ordinary\n")?;
+    assert_eq!(
+        default_filesystem_worker_threads(&[tiny.path().to_path_buf()], 16),
+        1
+    );
+
+    let large = tempfile::tempdir()?;
+    let large_file = std::fs::File::create(large.path().join("large.bin"))?;
+    large_file.set_len((FUSED_BATCH_BYTES * 3) as u64)?;
+    assert_eq!(
+        default_filesystem_worker_threads(&[large.path().to_path_buf()], 16),
+        3
+    );
+
+    let many = tempfile::tempdir()?;
+    for index in 0..20 {
+        std::fs::write(many.path().join(format!("{index}.txt")), b"x")?;
+    }
+    assert_eq!(
+        default_filesystem_worker_threads(&[many.path().to_path_buf()], 8),
+        8
+    );
+    Ok(())
+}
+
+#[cfg(test)]
+#[test]
+fn filesystem_worker_default_retains_host_width_on_metadata_failure() -> anyhow::Result<()> {
+    let root = tempfile::tempdir()?;
+    let missing = root.path().join("missing");
+    assert_eq!(default_filesystem_worker_threads(&[missing], 12), 12);
+    Ok(())
 }
 
 #[cfg(test)]

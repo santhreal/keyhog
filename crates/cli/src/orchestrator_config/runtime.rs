@@ -31,15 +31,14 @@ pub(crate) const FUSED_BATCH_DEFAULT: usize = 32;
 /// Byte ceiling on one fused filesystem batch, applied alongside
 /// [`FUSED_BATCH_DEFAULT`].
 ///
-/// The fused consumer executes one batch at a time while the source reader
-/// fills one queued batch. A 1 MiB byte ceiling keeps a large-file window and
-/// its scan scratch single-owned; small-file batches remain bounded by the
-/// 32-chunk count.
+/// The fused consumer executes one batch at a time while the source-reader
+/// boundary remains a rendezvous. A 16 MiB ceiling exposes one 1 MiB window to
+/// each default host worker; tiny-file batches remain bounded by 32 chunks.
 ///
 /// Compile-time rather than configurable on purpose: it is hashed into the
 /// autoroute identity, so a change here invalidates persisted calibration
 /// instead of replaying decisions measured under different batching.
-pub(crate) const FUSED_BATCH_BYTES: usize = 1024 * 1024;
+pub(crate) const FUSED_BATCH_BYTES: usize = 16 * 1024 * 1024;
 
 /// Default rendezvous depth for fused filesystem batches. The producer may
 /// finish one batch while the consumer scans the active batch, but no third
@@ -254,14 +253,71 @@ pub(crate) fn keyhog_worker_threads() -> usize {
         .unwrap_or(1)
 }
 
-pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) -> Result<usize> {
-    // Resolution order: --threads / [scan].threads > physical core count.
-    // Physical cores are the right default for CPU-bound regex: SMT siblings
-    // share execution units, so doubling threads mostly doubles cache pressure.
+/// Resolve the default worker width from the filesystem work that can actually
+/// run concurrently. Explicit thread configuration bypasses this estimator.
+///
+/// The walk stops as soon as `physical_cores` one-window work units are found,
+/// so large trees pay only bounded metadata work. Errors retain the host-width
+/// default; source construction owns the operator-facing filesystem diagnostic.
+pub(crate) fn default_filesystem_worker_threads(roots: &[PathBuf], physical_cores: usize) -> usize {
+    let ceiling = physical_cores.max(1);
+    let mut units = 0_usize;
+    let mut pending = roots.to_vec();
+    while let Some(path) = pending.pop() {
+        let metadata = match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(_) => return ceiling,
+        };
+        let file_type = metadata.file_type();
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_file() {
+            let file_units = metadata
+                .len()
+                .max(1)
+                .div_ceil(FUSED_BATCH_BYTES as u64)
+                .min(ceiling as u64) as usize;
+            units = units.saturating_add(file_units);
+            if units >= ceiling {
+                return ceiling;
+            }
+            continue;
+        }
+        if file_type.is_dir() {
+            let entries = match std::fs::read_dir(path) {
+                Ok(entries) => entries,
+                Err(_) => return ceiling,
+            };
+            for entry in entries {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(_) => return ceiling,
+                };
+                pending.push(entry.path());
+            }
+        }
+    }
+    units.clamp(1, ceiling)
+}
+
+pub(crate) fn configure_threads(
+    threads: Option<usize>,
+    physical_cores: usize,
+    workload_default: Option<usize>,
+) -> Result<usize> {
+    // Resolution order: --threads / [scan].threads > workload width > physical
+    // core count. The workload width keeps tiny scans from constructing idle
+    // workers whose stacks and allocator arenas cannot contribute throughput.
     let (n, source) = if let Some(t) = threads {
         (
             sanitise_thread_count(t, physical_cores, "cli-arg"),
             "cli-arg",
+        )
+    } else if let Some(t) = workload_default {
+        (
+            sanitise_thread_count(t, physical_cores, "workload"),
+            "workload",
         )
     } else {
         (physical_cores.max(1), "physical-cores")
