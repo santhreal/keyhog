@@ -35,10 +35,7 @@ fn detector(id: &str, regex: String, literal: &str) -> DetectorSpec {
 }
 
 fn detectors() -> Vec<DetectorSpec> {
-    let recovery_regex = format!(
-        "{}RECOVERY_[A-Z0-9]{{8}}",
-        "(?:)".repeat(130)
-    );
+    let recovery_regex = format!("{}RECOVERY_[A-Z0-9]{{8}}", "(?:)".repeat(130));
     assert!(recovery_regex.len() > 500);
     vec![
         detector(
@@ -114,16 +111,13 @@ fn packed_simd_rejects_authenticated_but_invalid_native_shard_bytes() {
             .serialized_shards
             .first_mut()
             .expect("fixture has a supported native shard");
-        std::sync::Arc::make_mut(shard)[0] ^= 0xff;
+        shard.make_mut()[0] ^= 0xff;
     });
     let scanner = CompiledScanner::compile_from_execution_pack(&pack)
         .expect("shard deserialization is deferred until first SIMD use");
     let before = HyperscanSimdExecutionProgram::compile_with_opts_invocations();
     let error = scanner
-        .scan_with_backend(
-            &chunk("PACKED_ALPHA_ABCDEFGH"),
-            ScanBackend::SimdCpu,
-        )
+        .scan_with_backend(&chunk("PACKED_ALPHA_ABCDEFGH"), ScanBackend::SimdCpu)
         .expect_err("corrupt native shard must fail closed");
     assert!(error.to_string().contains("incompatible or corrupt"));
     assert_eq!(
@@ -160,7 +154,9 @@ fn packed_simd_rejects_swapped_canonical_ac_mapping_identities() {
         Ok(_) => panic!("mapping identity drift must fail scanner construction"),
         Err(error) => error,
     };
-    assert!(error.to_string().contains("identity does not match canonical AC index"));
+    assert!(error
+        .to_string()
+        .contains("identity does not match canonical AC index"));
 }
 
 /// WHY: a native mapping cannot relabel a database row as another detector because that would silently attribute the same matched bytes to the wrong finding policy.
@@ -176,7 +172,9 @@ fn packed_simd_rejects_detector_mapping_identity_drift() {
         Ok(_) => panic!("detector identity drift must fail scanner construction"),
         Err(error) => error,
     };
-    assert!(error.to_string().contains("detector identity does not match"));
+    assert!(error
+        .to_string()
+        .contains("detector identity does not match"));
 }
 
 /// WHY: install-compiled shards replace only database construction, so positive, negative, byte-boundary, and unsupported-pattern recovery findings must remain exactly equal to the ordinary scanner.
@@ -184,33 +182,22 @@ fn packed_simd_rejects_detector_mapping_identity_drift() {
 fn packed_simd_native_shards_preserve_exact_findings_and_unsupported_recovery() {
     let _guard = serialized_tests();
     let detectors = detectors();
-    let ordinary = CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::CpuFallback)
-        .expect("compile ordinary scalar scanner");
+    let ordinary =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::CpuFallback)
+            .expect("compile ordinary scalar scanner");
     let (_directory, pack) = mapped_pack(&detectors, |_| {});
     let packed = CompiledScanner::compile_from_execution_pack(&pack)
         .expect("construct scanner from native SIMD pack");
     for (text, expected_findings) in [
-        (
-            "PACKED_ALPHA_ABCDEFGH",
-            &[("packed-alpha", 0usize)][..],
-        ),
+        ("PACKED_ALPHA_ABCDEFGH", &[("packed-alpha", 0usize)][..]),
         (
             "prefix PACKED_BETA_1234 suffix",
             &[("packed-beta", 7usize)][..],
         ),
-        (
-            "RECOVERY_Z9Y8X7W6",
-            &[("packed-recovery", 0usize)][..],
-        ),
+        ("RECOVERY_Z9Y8X7W6", &[("packed-recovery", 0usize)][..]),
         ("PACKED_ALPHA_ABCDEFG", &[][..]),
-        (
-            "packed_alpha_abcdefgh",
-            &[("packed-alpha", 0usize)][..],
-        ),
-        (
-            "xPACKED_ALPHA_ABCDEFGHy",
-            &[("packed-alpha", 1usize)][..],
-        ),
+        ("packed_alpha_abcdefgh", &[("packed-alpha", 0usize)][..]),
+        ("xPACKED_ALPHA_ABCDEFGHy", &[("packed-alpha", 1usize)][..]),
         (
             "PACKED_BETA_0000\nRECOVERY_1234ABCD\nPACKED_ALPHA_ZYXWVUTS",
             &[
@@ -228,7 +215,10 @@ fn packed_simd_native_shards_preserve_exact_findings_and_unsupported_recovery() 
             .iter()
             .map(|finding| (finding.detector_id.as_ref(), finding.location.offset))
             .collect::<Vec<_>>();
-        assert_eq!(observed, expected_findings, "ordinary fixture truth for {text:?}");
+        assert_eq!(
+            observed, expected_findings,
+            "ordinary fixture truth for {text:?}"
+        );
         let actual = packed
             .scan_with_backend(&input, ScanBackend::SimdCpu)
             .expect("packed SIMD scan");

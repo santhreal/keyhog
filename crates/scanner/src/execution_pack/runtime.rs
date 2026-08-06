@@ -42,8 +42,51 @@ impl ExecutionPackByteLedger {
     }
 }
 
+#[derive(Clone)]
+pub struct ExecutionPackMappedBytes {
+    mapping: std::sync::Arc<Mmap>,
+    range: Range<usize>,
+}
+
+impl ExecutionPackMappedBytes {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.mapping[self.range.clone()]
+    }
+}
+
+impl std::fmt::Debug for ExecutionPackMappedBytes {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ExecutionPackMappedBytes")
+            .field("len", &self.range.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::ops::Deref for ExecutionPackMappedBytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_bytes()
+    }
+}
+
+impl AsRef<[u8]> for ExecutionPackMappedBytes {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl PartialEq for ExecutionPackMappedBytes {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_bytes() == other.as_bytes()
+    }
+}
+
+impl Eq for ExecutionPackMappedBytes {}
+
 pub struct ExecutionPack {
-    mapping: Mmap,
+    mapping: std::sync::Arc<Mmap>,
     path: PathBuf,
     identity: ExecutionPackIdentity,
     content_digest: [u8; 32],
@@ -147,6 +190,18 @@ impl ExecutionPack {
             bytes,
             "discard decoded shard pages",
         )
+    }
+    /// Retain an immutable zero-copy view of a validated field in this pack.
+    /// The view keeps the mapping alive after the pack metadata is dropped.
+    pub fn mapped_bytes(
+        &self,
+        bytes: &[u8],
+    ) -> Result<ExecutionPackMappedBytes, ExecutionPackError> {
+        let range = mapping_slice_range(&self.mapping, bytes)?;
+        Ok(ExecutionPackMappedBytes {
+            mapping: std::sync::Arc::clone(&self.mapping),
+            range,
+        })
     }
 
     pub const fn identity(&self) -> ExecutionPackIdentity {
@@ -387,7 +442,7 @@ impl ExecutionPack {
             }
         }
         Ok(Self {
-            mapping,
+            mapping: std::sync::Arc::new(mapping),
             path,
             identity,
             content_digest,
@@ -511,15 +566,7 @@ fn update_mapping_and_release(
     Ok(())
 }
 
-fn release_mapping_slice(
-    mapping: &Mmap,
-    path: &Path,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<(), ExecutionPackError> {
-    if bytes.is_empty() {
-        return Ok(());
-    }
+fn mapping_slice_range(mapping: &Mmap, bytes: &[u8]) -> Result<Range<usize>, ExecutionPackError> {
     let mapping_start = mapping.as_ptr() as usize;
     let mapping_end = mapping_start
         .checked_add(mapping.len())
@@ -533,6 +580,19 @@ fn release_mapping_slice(
             "decoded pack slice is outside its immutable mapping".into(),
         ));
     }
+    Ok((bytes_start - mapping_start)..(bytes_end - mapping_start))
+}
+
+fn release_mapping_slice(
+    mapping: &Mmap,
+    path: &Path,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<(), ExecutionPackError> {
+    if bytes.is_empty() {
+        return Ok(());
+    }
+    let range = mapping_slice_range(mapping, bytes)?;
     #[cfg(unix)]
     {
         let probed = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
@@ -546,8 +606,8 @@ fn release_mapping_slice(
                 "host page size is zero".into(),
             ));
         }
-        let relative_start = bytes_start - mapping_start;
-        let relative_end = bytes_end - mapping_start;
+        let relative_start = range.start;
+        let relative_end = range.end;
         let aligned_start = relative_start.div_ceil(page).saturating_mul(page);
         let aligned_end = relative_end - (relative_end % page);
         if aligned_start < aligned_end {

@@ -5,7 +5,59 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 const MAGIC: &[u8; 8] = b"KHSIMD\0\x03";
 pub const HYPERSCAN_SIMD_PROGRAM_VERSION: u16 = 3;
-pub type SerializedHyperscanShard = std::sync::Arc<[u8]>;
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum SerializedHyperscanShardStorage {
+    Owned(std::sync::Arc<[u8]>),
+    Mapped(super::runtime::ExecutionPackMappedBytes),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SerializedHyperscanShard(SerializedHyperscanShardStorage);
+
+impl SerializedHyperscanShard {
+    fn from_mapped(bytes: super::runtime::ExecutionPackMappedBytes) -> Self {
+        Self(SerializedHyperscanShardStorage::Mapped(bytes))
+    }
+
+    pub fn make_mut(&mut self) -> &mut [u8] {
+        if let SerializedHyperscanShardStorage::Mapped(mapped) = &self.0 {
+            self.0 = SerializedHyperscanShardStorage::Owned(std::sync::Arc::from(mapped.as_ref()));
+        }
+        let SerializedHyperscanShardStorage::Owned(bytes) = &mut self.0 else {
+            unreachable!("mapped shard converted to owned storage")
+        };
+        std::sync::Arc::make_mut(bytes)
+    }
+}
+
+impl From<Vec<u8>> for SerializedHyperscanShard {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self(SerializedHyperscanShardStorage::Owned(bytes.into()))
+    }
+}
+
+impl From<&[u8]> for SerializedHyperscanShard {
+    fn from(bytes: &[u8]) -> Self {
+        Self(SerializedHyperscanShardStorage::Owned(bytes.into()))
+    }
+}
+
+impl std::ops::Deref for SerializedHyperscanShard {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match &self.0 {
+            SerializedHyperscanShardStorage::Owned(bytes) => bytes,
+            SerializedHyperscanShardStorage::Mapped(bytes) => bytes,
+        }
+    }
+}
+
+impl AsRef<[u8]> for SerializedHyperscanShard {
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
 const SHARD_STREAM_CHUNK_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -278,13 +330,46 @@ impl HyperscanSimdExecutionProgram {
 
     #[cfg(feature = "simd")]
     pub fn decode(bytes: &[u8], expected_ir_digest: [u8; 32]) -> Result<Self, ExecutionPackError> {
-        Self::decode_with_release(bytes, expected_ir_digest, |_| Ok(()))
+        Self::decode_with_storage(bytes, expected_ir_digest, |_| Ok(None), |_| Ok(()))
     }
 
     #[cfg(feature = "simd")]
     pub fn decode_with_release(
         bytes: &[u8],
         expected_ir_digest: [u8; 32],
+        release: impl FnMut(&[u8]) -> Result<(), ExecutionPackError>,
+    ) -> Result<Self, ExecutionPackError> {
+        Self::decode_with_storage(bytes, expected_ir_digest, |_| Ok(None), release)
+    }
+
+    #[cfg(feature = "simd")]
+    pub fn decode_mapped_with_release(
+        bytes: &[u8],
+        expected_ir_digest: [u8; 32],
+        mut mapped: impl FnMut(
+            &[u8],
+        )
+            -> Result<super::runtime::ExecutionPackMappedBytes, ExecutionPackError>,
+        release: impl FnMut(&[u8]) -> Result<(), ExecutionPackError>,
+    ) -> Result<Self, ExecutionPackError> {
+        Self::decode_with_storage(
+            bytes,
+            expected_ir_digest,
+            |bytes| mapped(bytes).map(Some),
+            release,
+        )
+    }
+
+    #[cfg(feature = "simd")]
+    fn decode_with_storage(
+        bytes: &[u8],
+        expected_ir_digest: [u8; 32],
+        mut mapped: impl FnMut(
+            &[u8],
+        ) -> Result<
+            Option<super::runtime::ExecutionPackMappedBytes>,
+            ExecutionPackError,
+        >,
         mut release: impl FnMut(&[u8]) -> Result<(), ExecutionPackError>,
     ) -> Result<Self, ExecutionPackError> {
         let mut cursor = Cursor::new(bytes);
@@ -358,6 +443,7 @@ impl HyperscanSimdExecutionProgram {
                 index,
                 "Hyperscan SIMD",
                 &mut shard_interner,
+                &mut mapped,
                 &mut release,
             )?);
         }
@@ -379,8 +465,10 @@ impl HyperscanSimdExecutionProgram {
                 ));
             }
             let pattern_indices = cursor.indices("Hyperscan phase-two scope mapping")?;
-            let full = read_phase2_database(&mut cursor, &mut shard_interner, &mut release)?;
-            let ascii_lean = read_phase2_database(&mut cursor, &mut shard_interner, &mut release)?;
+            let full =
+                read_phase2_database(&mut cursor, &mut shard_interner, &mut mapped, &mut release)?;
+            let ascii_lean =
+                read_phase2_database(&mut cursor, &mut shard_interner, &mut mapped, &mut release)?;
             phase2_scopes.push(HyperscanPhase2ScopeProgram {
                 scope,
                 pattern_indices,
@@ -607,6 +695,12 @@ fn read_shared_shard(
     index: usize,
     label: &str,
     interner: &mut HashMap<[u8; 32], SerializedHyperscanShard>,
+    mapped: &mut impl FnMut(
+        &[u8],
+    ) -> Result<
+        Option<super::runtime::ExecutionPackMappedBytes>,
+        ExecutionPackError,
+    >,
     release: &mut impl FnMut(&[u8]) -> Result<(), ExecutionPackError>,
 ) -> Result<SerializedHyperscanShard, ExecutionPackError> {
     let expected_digest: [u8; 32] = cursor.take(32)?.try_into().expect("fixed digest");
@@ -635,7 +729,20 @@ fn read_shared_shard(
                 "{label} shard {index} collides with different authenticated bytes"
             )));
         }
-        std::sync::Arc::clone(shared)
+        shared.clone()
+    } else if let Some(mapped) = mapped(bytes)? {
+        for chunk in bytes.chunks(SHARD_STREAM_CHUNK_BYTES) {
+            hasher.update(chunk);
+            release(chunk)?;
+        }
+        if *hasher.finalize().as_bytes() != expected_digest {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{label} shard {index} is corrupt; its content digest does not match"
+            )));
+        }
+        let shared = SerializedHyperscanShard::from_mapped(mapped);
+        interner.insert(expected_digest, shared.clone());
+        shared
     } else {
         let mut owned = std::sync::Arc::<[u8]>::new_uninit_slice(bytes.len());
         let target = std::sync::Arc::get_mut(&mut owned)
@@ -660,8 +767,10 @@ fn read_shared_shard(
                 "{label} shard {index} is corrupt; its content digest does not match"
             )));
         }
-        let shared = unsafe { owned.assume_init() };
-        interner.insert(expected_digest, std::sync::Arc::clone(&shared));
+        let shared = SerializedHyperscanShard(SerializedHyperscanShardStorage::Owned(unsafe {
+            owned.assume_init()
+        }));
+        interner.insert(expected_digest, shared.clone());
         shared
     };
     Ok(shared)
@@ -670,6 +779,12 @@ fn read_shared_shard(
 fn read_phase2_database(
     cursor: &mut Cursor<'_>,
     interner: &mut HashMap<[u8; 32], SerializedHyperscanShard>,
+    mapped: &mut impl FnMut(
+        &[u8],
+    ) -> Result<
+        Option<super::runtime::ExecutionPackMappedBytes>,
+        ExecutionPackError,
+    >,
     release: &mut impl FnMut(&[u8]) -> Result<(), ExecutionPackError>,
 ) -> Result<Option<HyperscanPhase2DatabaseProgram>, ExecutionPackError> {
     match cursor.take(1)?[0] {
@@ -685,6 +800,7 @@ fn read_phase2_database(
                     index,
                     "Hyperscan phase-two",
                     interner,
+                    mapped,
                     release,
                 )?);
             }

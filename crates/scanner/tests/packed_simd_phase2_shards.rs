@@ -116,8 +116,9 @@ fn tuning(anchor: bool, localize_plain: bool) -> ScannerTuningConfig {
 fn packed_phase_two_all_scopes_preserve_findings_without_runtime_compilation() {
     let _guard = serialized_tests();
     let detectors = detectors();
-    let reference = CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::CpuFallback)
-        .expect("compile scalar reference");
+    let reference =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::CpuFallback)
+            .expect("compile scalar reference");
     let (_directory, pack) = mapped_pack(&detectors, |_| {});
     let after_install = HyperscanSimdExecutionProgram::compile_with_opts_invocations();
 
@@ -194,7 +195,7 @@ fn packed_phase_two_rejects_corrupt_native_shard_without_compilation() {
             .serialized_shards
             .first_mut()
             .expect("full phase-two shard");
-        std::sync::Arc::make_mut(shard)[0] ^= 0xff;
+        shard.make_mut()[0] ^= 0xff;
     });
     let before = HyperscanSimdExecutionProgram::compile_with_opts_invocations();
     let error = match CompiledScanner::compile_from_execution_pack(&pack) {
