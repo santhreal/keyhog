@@ -26,6 +26,17 @@ pub(crate) struct CompileState {
     pub(crate) quality_warnings: Vec<String>,
 }
 
+#[cfg(test)]
+impl CompileState {
+    pub(crate) fn retained_vector_storage(&self) -> [(usize, usize); 3] {
+        [
+            (self.ac_literals.len(), self.ac_literals.capacity()),
+            (self.ac_map.len(), self.ac_map.capacity()),
+            (self.phase2_patterns.len(), self.phase2_patterns.capacity()),
+        ]
+    }
+}
+
 pub(crate) fn validate_compiled_pattern_detector_indices(
     ac_map: &[CompiledPattern],
     phase2_patterns: &[(CompiledPattern, Vec<String>)],
@@ -291,6 +302,9 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
         }
     }
 
+    ac_literals.shrink_to_fit();
+    ac_map.shrink_to_fit();
+    phase2_patterns.shrink_to_fit();
     Ok(CompileState {
         ac_literals,
         ac_map,

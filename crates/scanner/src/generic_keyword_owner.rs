@@ -188,6 +188,10 @@ impl GenericOwningDetectorIndex {
                 }
             }
         }
+        policy_exact.shrink_to_fit();
+        policy_normalized.shrink_to_fit();
+        canonical_exact.shrink_to_fit();
+        canonical_normalized.shrink_to_fit();
         Ok(Self {
             policy_exact,
             policy_normalized,

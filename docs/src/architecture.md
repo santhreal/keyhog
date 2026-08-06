@@ -303,6 +303,11 @@ heap allocation and pointer-sized header per detector or pattern.
 Their builders ingest flat row/value pairs, so scanner construction also avoids
 temporary per-row vectors.
 
+Frozen runtime indexes retain only populated rows and final-sized storage.
+Detector-relation maps omit detectors with no relations, metadata and generic
+ownership maps release duplicate-heavy builder capacity, and matcher vectors
+discard geometric growth slack before entering the compiled scanner.
+
 Every mapped byte has one owner: pack metadata, detector IR, route classifier,
 regex programs, suppression policy, or the selected backend. Header, table, and
 alignment padding belong to pack metadata. The ownership ledger must sum to the

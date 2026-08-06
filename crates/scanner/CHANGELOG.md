@@ -7,6 +7,7 @@
 - Store each interned detector metadata string in one lookup-map key instead of a parallel arena and index, and reuse those allocations for resolution and cross-detector relation identities.
 - Remove the overlapping scalar phase-one automaton from exact SIMD scanners. Lazy SIMD plans now share the canonical literal table, phase-two keyword catalogs borrow detector-owned strings, and alphabet and GPU plan construction no longer clone temporary literal tables.
 - Store SIMD pattern mappings, confirmed-suffix rows, and structural detector partitions as flat `u32` offset tables built from flat row/value pairs instead of allocating one heap vector per row.
+- Right-size frozen scanner storage after construction: omit empty detector-relation map rows, release duplicate-heavy interner and generic-ownership map capacity, and discard matcher-vector growth slack before retention.
 
 - Move two large co-located test suites out of scanner source files and into the tests tree, shrinking `detector_ids.rs` from 414 lines to 127 and the Hyperscan scratch backend from 767 to 341. Both keep running against the crate-private state they exist to check, and both leave the inline-test allowlist, so the allowlist now names two fewer permanent exceptions.
 

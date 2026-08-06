@@ -91,6 +91,7 @@ impl StaticInterner {
                 index.insert(Arc::from(value.as_str()), ());
             }
         }
+        index.shrink_to_fit();
         Self { index }
     }
 
@@ -109,6 +110,11 @@ impl StaticInterner {
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.index.len()
+    }
+    /// Retained map capacity, exposed only for ownership regression tests.
+    #[cfg(test)]
+    pub(crate) fn capacity(&self) -> usize {
+        self.index.capacity()
     }
 }
 

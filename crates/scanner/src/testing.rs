@@ -4421,6 +4421,10 @@ impl StaticInterner {
     pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
+
+    pub(crate) fn capacity(&self) -> usize {
+        self.0.capacity()
+    }
 }
 
 #[cfg(test)]

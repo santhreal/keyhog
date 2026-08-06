@@ -42,6 +42,17 @@ fn deduplicates_input() {
     assert_eq!(intern.lookup("aws"), intern.lookup("aws"));
 }
 
+/// WHY: detector metadata contains many duplicate service/name values; the frozen map must not retain capacity sized for the duplicate-heavy input stream.
+#[test]
+fn releases_duplicate_heavy_builder_capacity() {
+    let intern = StaticInterner::from_detector_strings(std::iter::repeat("aws").take(4096));
+
+    assert!(
+        intern.capacity() < 1024,
+        "deduplicated static metadata must not retain the 4096-row input capacity"
+    );
+}
+
 /// Repeated metadata lookup must clone the map-key allocation directly. The
 /// interner must not retain a second parallel arena owner for every string.
 #[test]

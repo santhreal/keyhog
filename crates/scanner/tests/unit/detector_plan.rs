@@ -3,6 +3,12 @@ fn unified_plan_preserves_every_detector_local_compilation_owner() {
     let detectors = keyhog_core::embedded_detector_specs();
     let state = crate::compiler::build_compile_state(detectors)
         .expect("embedded detector compile state must build");
+    for (len, capacity) in state.retained_vector_storage() {
+        assert_eq!(
+            capacity, len,
+            "compiled matcher vectors must not retain geometric growth slack"
+        );
+    }
     let strings = detectors
         .iter()
         .flat_map(|detector| {
@@ -35,6 +41,21 @@ fn unified_plan_preserves_every_detector_local_compilation_owner() {
     )
     .expect("embedded detector plans must compile");
 
+    let expected_resolution_rows = detectors.len()
+        + detectors
+            .iter()
+            .filter(|detector| detector.entropy_fallback.is_some())
+            .count();
+    let expected_relation_owner_rows = detectors
+        .iter()
+        .filter(|detector| !detector.detector_relations.is_empty())
+        .count();
+    let (resolution_storage, relation_storage) = plans.retained_index_storage();
+    assert_eq!(resolution_storage.0, expected_resolution_rows);
+    assert_eq!(relation_storage.0, expected_relation_owner_rows);
+    assert!(resolution_storage.1 >= resolution_storage.0);
+    assert!(relation_storage.1 >= relation_storage.0);
+
     assert_eq!(plans.len(), detectors.len());
     for (index, detector) in detectors.iter().enumerate() {
         let plan = plans.get(index);
@@ -47,26 +68,33 @@ fn unified_plan_preserves_every_detector_local_compilation_owner() {
             "resolution identity must reuse the plan metadata allocation for {}",
             detector.id
         );
-        let (owner_ptr, relation_ptrs) = plans
-            .relation_identity_ptrs(&detector.id)
-            .expect("every detector has a relation-index owner row");
-        assert_eq!(
-            owner_ptr,
-            plan.metadata.0.as_ptr(),
-            "relation owner must reuse the plan metadata allocation for {}",
-            detector.id
-        );
-        for (target, target_ptr) in relation_ptrs {
-            assert_eq!(
-                target_ptr,
-                plans
-                    .find_by_id(target)
-                    .expect("validated relation target has a detector plan")
-                    .metadata
-                    .0
-                    .as_ptr(),
-                "relation target must reuse the target plan metadata allocation"
+        let relation_row = plans.relation_identity_ptrs(&detector.id);
+        if detector.detector_relations.is_empty() {
+            assert!(
+                relation_row.is_none(),
+                "detectors without relations must not retain empty hash-map rows"
             );
+        } else {
+            let (owner_ptr, relation_ptrs) =
+                relation_row.expect("relation owners must retain one compiled row");
+            assert_eq!(
+                owner_ptr,
+                plan.metadata.0.as_ptr(),
+                "relation owner must reuse the plan metadata allocation for {}",
+                detector.id
+            );
+            for (target, target_ptr) in relation_ptrs {
+                assert_eq!(
+                    target_ptr,
+                    plans
+                        .find_by_id(target)
+                        .expect("validated relation target has a detector plan")
+                        .metadata
+                        .0
+                        .as_ptr(),
+                    "relation target must reuse the target plan metadata allocation"
+                );
+            }
         }
         assert_eq!(
             plan.entropy_metadata.as_ref().map(|metadata| (

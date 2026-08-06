@@ -48,7 +48,12 @@ impl DetectorResolutionIndex {
         detectors: &[DetectorSpec],
         interner: &crate::static_intern::StaticInterner,
     ) -> Result<Self, String> {
-        let mut by_id = HashMap::with_capacity(detectors.len() * 2);
+        let expected_rows = detectors.len()
+            + detectors
+                .iter()
+                .filter(|detector| detector.entropy_fallback.is_some())
+                .count();
+        let mut by_id = HashMap::with_capacity(expected_rows);
         for detector in detectors {
             let class = if detector.private_key_block {
                 DetectorResolutionClass::PrivateKeyBlock
@@ -76,6 +81,7 @@ impl DetectorResolutionIndex {
                 )?;
             }
         }
+        by_id.shrink_to_fit();
         Ok(Self { by_id })
     }
 
@@ -113,7 +119,11 @@ impl CompiledDetectorRelationIndex {
             .iter()
             .map(|detector| detector.id.as_str())
             .collect::<HashSet<_>>();
-        let mut by_owner = HashMap::with_capacity(detectors.len());
+        let relation_owner_count = detectors
+            .iter()
+            .filter(|detector| !detector.detector_relations.is_empty())
+            .count();
+        let mut by_owner = HashMap::with_capacity(relation_owner_count);
         let mut graph = HashMap::<&str, Vec<&str>>::with_capacity(detectors.len());
         let mut declared = HashMap::<(&str, &str), keyhog_core::DetectorRelationKind>::new();
         let mut indegree = detector_ids
@@ -188,10 +198,12 @@ impl CompiledDetectorRelationIndex {
                         .expect("validated target has an indegree row") += 1;
                 }
             }
-            by_owner.insert(
-                intern_detector_identity(interner, &detector.id, "relation owner")?,
-                compiled.into_boxed_slice(),
-            );
+            if !compiled.is_empty() {
+                by_owner.insert(
+                    intern_detector_identity(interner, &detector.id, "relation owner")?,
+                    compiled.into_boxed_slice(),
+                );
+            }
         }
 
         let mut ready = indegree
@@ -504,6 +516,19 @@ impl CompiledDetectorPlans {
                         .collect(),
                 )
             })
+    }
+    #[cfg(test)]
+    pub(crate) fn retained_index_storage(&self) -> ((usize, usize), (usize, usize)) {
+        (
+            (
+                self.resolution.by_id.len(),
+                self.resolution.by_id.capacity(),
+            ),
+            (
+                self.detector_relations.by_owner.len(),
+                self.detector_relations.by_owner.capacity(),
+            ),
+        )
     }
 
     #[inline]
