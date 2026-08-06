@@ -238,10 +238,12 @@ install or update
   parity-proven packs -> installation-key signatures -> atomic pack generation
   binary + authenticated packs + pack-bound calibration -> one published generation
 
+normal scan startup
+  route decision -> authenticate one selected mapped pack
+  selected sections -> owned route classifier + selected detector runtime
+  discard authenticated mapping pages -> release mapping after hydration
 normal scan
-  source adapter -> chunks -> mapped route classifier
-  classifier + exact host/workload identity -> persisted route decision
-  route decision -> one selected mapped pack -> detector runtime -> RawMatch
+  source adapter -> chunks -> owned route classifier -> selected runtime -> RawMatch
   RawMatch -> CLI post-filter -> verifier -> reporter
 ```
 
@@ -250,8 +252,8 @@ The arrows are ownership boundaries:
 | Owner | May depend on | Must not depend on |
 |---|---|---|
 | Install compiler | Detector schema, validators, pack codec, every eligible backend compiler | Source adapters, reporters, ordinary scan state |
-| Route classifier | Mapped literal index, decoder identity, chunk metadata | Backend materialization, detector TOML parsing, reporting |
-| Selected detector runtime | Canonical detector IR, selected policy/backend sections, VYRE orchestration for GPU | Source adapters, autoroute persistence, CLI, reporters, an unselected backend |
+| Route classifier | Authenticated literal index, decoder identity, chunk metadata | Backend materialization, detector TOML parsing, reporting |
+| Selected detector runtime | Authenticated canonical detector IR, selected policy/backend sections, VYRE orchestration for GPU | Source adapters, autoroute persistence, CLI, reporters, an unselected backend |
 | Source adapters | Core chunk and source contracts | Scanner internals, execution packs, reporters |
 | CLI orchestrator | Sources, route decisions, selected runtime, verifier, reporters | Detector-local execution ownership |
 | Reporters | Redacted findings and coverage state | Detector compilation, source acquisition, backend selection |
@@ -262,10 +264,7 @@ The installer writes a protected 32-byte signing key, builds every policy pack i
 
 Calibration authenticates the installed manifest and every detached pack signature before measuring routes. The versioned autoroute cache stores the manifest digest and every policy/backend pack identity. A missing policy pack, a replaced manifest, changed pack bytes, a different installation key, or binary, target, feature, and detector drift invalidates the calibration transaction.
 
-A normal installed scan maps the policy pack, authenticates it, and decodes canonical detector execution IR instead of parsing the embedded TOML corpus. It retains the read-only mapping for the scan lifetime. Detector specs move once from decoded IR into shared ownership used by the orchestrator and scanner compiler; startup no longer clones the complete corpus for scanner construction. Normal one-shot scans also skip eager regex cache warming; explicit resident and calibration paths retain their deliberate warm transition. A normal scan never parses detector TOML, compiles regex or backend programs,
-benchmarks a route, or maps a losing backend. A missing, stale, incompatible, or
-incomplete generation is an invalid autoroute state. It is not permission to
-construct the old universal scanner or replay through another backend.
+A normal installed scan maps one policy pack, authenticates it, and decodes canonical detector execution IR instead of parsing the embedded TOML corpus. Authentication pages are discarded before section hydration. Each section faults back only when decoded into owned runtime state, and the mapping is released before the scan begins. Detector specs move once from decoded IR into shared ownership used by the orchestrator and scanner compiler; startup no longer clones the complete corpus for scanner construction. Normal one-shot scans also skip eager regex cache warming; explicit resident and calibration paths retain their deliberate warm transition. A normal scan never parses detector TOML, compiles regex or backend programs, benchmarks a route, or maps a losing backend. A missing, stale, incompatible, or incomplete generation is an invalid autoroute state. It is not permission to construct the old universal scanner or replay through another backend.
 
 CPU sections contain canonical scalar programs. SIMD sections contain signed
 native Hyperscan shards for phase one and every phase-two scope. GPU sections
