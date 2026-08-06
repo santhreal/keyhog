@@ -258,20 +258,24 @@ fn stdin_json_clean_is_exactly_bracket_pair_exit_0() {
     );
 }
 
-/// json boundary: EMPTY stdin (zero bytes) is a valid clean scan -> exit 0 and
-/// an empty array, not an error or hang.
+/// json boundary: empty stdin covers zero bytes, so KeyHog writes the empty
+/// findings array but exits 13 instead of reporting an unearned clean scan.
 #[test]
-fn stdin_json_empty_input_exit_0_empty_array() {
+fn stdin_json_empty_input_exits_partial_with_empty_array() {
     let (code, out, err) = run_stdin(b"", "json");
     assert_eq!(
         code,
-        Some(0),
-        "empty stdin must scan cleanly and exit 0; stderr={err}"
+        Some(13),
+        "empty stdin must report incomplete coverage; stderr={err}"
     );
     assert_eq!(
         out.trim_end(),
         "[]",
-        "empty stdin json report must be the bracket pair, got: {out:?}"
+        "empty stdin json report must remain the bracket pair, got: {out:?}"
+    );
+    assert!(
+        err.contains("ZERO bytes") && err.contains("input coverage was incomplete"),
+        "empty stdin must explain why the result is not clean; stderr={err}"
     );
 }
 
