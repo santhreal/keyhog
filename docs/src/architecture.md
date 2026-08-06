@@ -280,6 +280,8 @@ regex programs, suppression policy, or the selected backend. Header, table, and
 alignment padding belong to pack metadata. The ownership ledger must sum to the
 complete mapping length.
 
+Pack files use read-only shared mappings. Concurrent scanners fault the same immutable physical pages while they authenticate and hydrate a generation, rather than allocating one input copy per process. Each process retains only its owned decoded runtime after releasing the transient mapping.
+
 ### Failure and recovery contract
 
 KeyHog separates trust failures from recoverable execution failures:

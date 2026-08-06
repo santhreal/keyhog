@@ -23,31 +23,39 @@ fn identity() -> ExecutionPackIdentity {
     )
 }
 
-fn mapped_rss_kib(path: &Path) -> u64 {
+fn mapped_metric_kib(path: &Path, metric: &str) -> u64 {
     let canonical = path.canonicalize().expect("canonical pack path");
     let path = canonical.to_string_lossy();
     let smaps = fs::read_to_string("/proc/self/smaps").expect("read process smaps");
     let mut selected = false;
-    let mut rss = 0_u64;
+    let mut total = 0_u64;
     for line in smaps.lines() {
         if line.contains(path.as_ref()) {
             selected = true;
-        } else if selected && line.starts_with("Rss:") {
-            rss += line
+        } else if selected && line.starts_with(metric) {
+            total += line
                 .split_whitespace()
                 .nth(1)
-                .expect("Rss value")
+                .expect("smaps metric value")
                 .parse::<u64>()
-                .expect("numeric Rss value");
+                .expect("numeric smaps metric value");
             selected = false;
         }
     }
-    rss
+    total
 }
 
-/// WHY: authenticating a large native backend program must not leave every pack page resident while decoded scanner state is built; only a section the runtime actually touches may fault back into RSS.
-#[test]
-fn authenticated_pack_discards_validation_pages_before_lazy_section_access() {
+fn mapped_rss_kib(path: &Path) -> u64 {
+    mapped_metric_kib(path, "Rss:")
+}
+
+fn large_authenticated_pack(
+) -> (
+    tempfile::TempDir,
+    std::path::PathBuf,
+    std::path::PathBuf,
+    ExecutionPackSigningKey,
+) {
     let backend_program = vec![0xA5; LARGE_PROGRAM_BYTES];
     let sections = [
         CompileSection {
@@ -92,8 +100,13 @@ fn authenticated_pack_discards_validation_pages_before_lazy_section_access() {
         signature.canonical_bytes().expect("encode signature"),
     )
     .expect("write signature");
-    drop(compiled);
-    drop(backend_program);
+    (directory, pack_path, signature_path, signing_key)
+}
+
+/// WHY: authenticating a large native backend program must not leave every pack page resident while decoded scanner state is built; only a section the runtime actually touches may fault back into RSS.
+#[test]
+fn authenticated_pack_discards_validation_pages_before_lazy_section_access() {
+    let (_directory, pack_path, signature_path, signing_key) = large_authenticated_pack();
 
     let pack = ExecutionPack::open_authenticated(
         &pack_path,
@@ -130,4 +143,80 @@ fn authenticated_pack_discards_validation_pages_before_lazy_section_access() {
         rss_after_program > (LARGE_PROGRAM_BYTES as u64 / 1024) / 2,
         "control walk faulted only {rss_after_program} KiB, so the RSS probe did not observe mapped pages"
     );
+}
+
+/// WHY: separate KeyHog processes must charge one physical copy of immutable execution-pack pages; private heap hydration for the same serialized program multiplies fleet memory by process count.
+#[test]
+fn faulted_execution_pack_pages_are_shared_across_processes() {
+    let (_directory, pack_path, signature_path, signing_key) = large_authenticated_pack();
+    let pack = ExecutionPack::open_authenticated(
+        &pack_path,
+        &signature_path,
+        identity(),
+        &signing_key,
+    )
+    .expect("open authenticated pack");
+    let program = pack
+        .section(ExecutionPackSectionKind::BackendProgram)
+        .expect("backend program section");
+    let pointer = program.as_ptr();
+    let length = program.len();
+    let mut child_ready = [0; 2];
+    let mut child_release = [0; 2];
+    assert_eq!(unsafe { libc::pipe(child_ready.as_mut_ptr()) }, 0);
+    assert_eq!(unsafe { libc::pipe(child_release.as_mut_ptr()) }, 0);
+
+    let child = unsafe { libc::fork() };
+    assert!(child >= 0, "fork failed: {}", std::io::Error::last_os_error());
+    if child == 0 {
+        unsafe {
+            libc::close(child_ready[0]);
+            libc::close(child_release[1]);
+            let mut checksum = 0_u8;
+            let mut offset = 0;
+            while offset < length {
+                checksum ^= std::ptr::read_volatile(pointer.add(offset));
+                offset += 4096;
+            }
+            let ready = [checksum];
+            if libc::write(child_ready[1], ready.as_ptr().cast(), 1) != 1 {
+                libc::_exit(120);
+            }
+            let mut release = [0_u8];
+            if libc::read(child_release[0], release.as_mut_ptr().cast(), 1) != 1 {
+                libc::_exit(121);
+            }
+            libc::_exit(0);
+        }
+    }
+
+    unsafe {
+        libc::close(child_ready[1]);
+        libc::close(child_release[0]);
+    }
+    let mut ready = [0_u8];
+    assert_eq!(
+        unsafe { libc::read(child_ready[0], ready.as_mut_ptr().cast(), 1) },
+        1
+    );
+    let checksum = program
+        .chunks(4096)
+        .fold(0_u64, |sum, page| sum.wrapping_add(u64::from(page[0])));
+    std::hint::black_box(checksum);
+    let shared_clean = mapped_metric_kib(&pack_path, "Shared_Clean:");
+    assert!(
+        shared_clean > (LARGE_PROGRAM_BYTES as u64 / 1024) / 2,
+        \"only {shared_clean} KiB of the {LARGE_PROGRAM_BYTES}-byte pack is shared clean while two processes hold every page\"
+    );
+    assert_eq!(
+        unsafe { libc::write(child_release[1], [1_u8].as_ptr().cast(), 1) },
+        1
+    );
+    let mut status = 0;
+    assert_eq!(unsafe { libc::waitpid(child, &mut status, 0) }, child);
+    assert_eq!(status, 0, "child exited with wait status {status}");
+    unsafe {
+        libc::close(child_ready[0]);
+        libc::close(child_release[1]);
+    }
 }
