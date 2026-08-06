@@ -31,31 +31,21 @@ pub(crate) const FUSED_BATCH_DEFAULT: usize = 32;
 /// Byte ceiling on one fused filesystem batch, applied alongside
 /// [`FUSED_BATCH_DEFAULT`].
 ///
-/// `FUSED_BATCH_DEFAULT` is a chunk COUNT, and a chunk's size differs by two
-/// orders of magnitude between regimes: ~4 KiB for a small source file versus a
-/// full 1 MiB window from the large-file path. Counting only chunks therefore
-/// described ~128 KiB per batch on a small-file corpus but ~32 MiB on one big
-/// file, and since every bound from here to the workers is also a chunk count
-/// (`fused_depth` batches queued, plus one batch resident per worker), the
-/// large-file regime carried over a gigabyte of queue headroom and split a
-/// 300 MiB file into only ~11 work units for 32 cores.
-///
-/// 4 MiB keeps a batch small enough that a 32-core box gets tens of work units
-/// from a single large file, while sitting far above any small-file batch (32
-/// chunks would each have to average 128 KiB to reach it), so small-file
-/// batching, and its tuning, is left exactly as it was.
+/// The fused consumer executes one batch at a time while the source reader
+/// fills one queued batch. A 16 MiB byte ceiling gives all worker threads a
+/// large-file window without retaining one batch per worker; small-file batches
+/// remain bounded by the 32-chunk count.
 ///
 /// Compile-time rather than configurable on purpose: it is hashed into the
 /// autoroute identity, so a change here invalidates persisted calibration
-/// instead of silently replaying decisions measured under different batching.
-pub(crate) const FUSED_BATCH_BYTES: usize = 4 * 1024 * 1024;
+/// instead of replaying decisions measured under different batching.
+pub(crate) const FUSED_BATCH_BYTES: usize = 16 * 1024 * 1024;
 
-/// Default bounded-channel depth for fused filesystem batches.
-pub(crate) fn fused_depth_default(worker_threads: usize) -> usize {
-    worker_threads
-        .saturating_add(3)
-        .saturating_div(4)
-        .clamp(2, 8)
+/// Default bounded-channel depth for fused filesystem batches. One producer
+/// batch overlaps the active scanner batch without multiplying source bytes by
+/// the worker count.
+pub(crate) fn fused_depth_default(_worker_threads: usize) -> usize {
+    1
 }
 
 pub(crate) fn parse_backend_override(

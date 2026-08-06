@@ -115,15 +115,10 @@ impl ScanOrchestrator {
         (hw_caps, pattern_count, rules_digest, config_digest)
     }
 
-    /// Fused parallel read+scan: stream chunks off the source's parallel
-    /// reader pool and scan each on the global rayon pool via `par_bridge`,
-    /// so I/O and CPU overlap continuously across all cores with no
-    /// single-thread drain and no per-batch barrier.
-    ///
-    /// A small drain thread bridges the source's non-`Send` chunk iterator
-    /// into a bounded `Send` channel that the global pool consumes; the
-    /// reader pool (dedicated, inside the source) and the global scan pool
-    /// are distinct, so neither starves the other.
+    /// Fused parallel read+scan: a dedicated reader fills one bounded batch
+    /// while `scan_coalesced` spreads the active batch over the global Rayon
+    /// pool. Source I/O and scanning overlap without retaining one source batch
+    /// per worker.
     pub(super) fn scan_sources_fused(
         &self,
         sources: Vec<Box<dyn Source>>,
@@ -131,7 +126,6 @@ impl ScanOrchestrator {
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
         incremental_path: Option<std::path::PathBuf>,
     ) -> Result<Vec<RawMatch>> {
-        use rayon::iter::{ParallelBridge, ParallelIterator};
         use std::sync::atomic::{AtomicUsize, Ordering};
 
         keyhog_sources::reset_skipped_over_max_size();
@@ -168,36 +162,15 @@ impl ScanOrchestrator {
 
         let skipped_unchanged = Arc::new(AtomicUsize::new(0));
 
-        // Bridge the source's `!Send` chunk iterator into a `Send` channel of
-        // BATCHES that the global pool consumes via `par_bridge`. Reusing
-        // `scan_coalesced` per batch keeps the finding set bit-identical to the
-        // coalesced batch path (same scan entry, same phase-1 HS prefilter +
-        // no-hit gating); parallelising ACROSS batches removes the single
-        // scanner-thread bottleneck that pinned a 32-core box at ~9 cores.
-        // `scan_coalesced` already calls the HS prefilter concurrently from its
-        // own internal `par_iter`, so invoking it from several batch workers at
-        // once is the same proven concurrency model, just wider. Batches are
-        // small enough that the outer `par_bridge` keeps every core busy and
-        // large enough to amortise scan_coalesced's per-batch phase/collect
-        // cost. The drain thread only groups chunks + enforces the 512 MiB
-        // ceiling; merkle hashing + scanning run in parallel in the consumer.
+        // Bridge the source's `!Send` chunk iterator into one bounded queued
+        // batch. `scan_coalesced` already parallelizes both scan phases across
+        // the global worker pool, so consuming batches serially preserves full
+        // inner parallelism without nested `par_bridge` workers each retaining
+        // another source batch and its scan scratch.
         //
-        // Measured flat optimum on small-file filesystem corpora: 32 chunks
-        // amortises the nested `scan_coalesced` phase costs better than 16
-        // without the RSS bump seen at 64; buffering at roughly one batch per
-        // four workers lets the drain thread stay ahead without letting
-        // small-file corpora prefetch thousands of windows into RAM. Verified on
-        // the full kernel tree (94k files, 32-core box): 4.25 s wall / 1833 % CPU
-        // (~18 cores, 9.6x over single-thread), finding set byte-identical to the
-        // coalesced batch path (7.12 s / 749 %).
-        // FUSED_BATCH and the channel depth are Tier-A throughput knobs.
-        // `scan_coalesced` runs its OWN two-phase `par_iter` over each batch, so
-        // `par_bridge` over batches nests parallelism: the batch size trades
-        // par_bridge cursor-mutex contention (smaller = more locking) against the
-        // inner par_iter's per-batch fork-join barrier granularity (larger = more
-        // work amortising each barrier). Explicit CLI/TOML config owns these
-        // values so `keyhog config --effective`, autoroute identity, and the
-        // hot path cannot drift behind ambient process env.
+        // The count and byte ceilings trade fork/join amortization against
+        // resident source bytes. Explicit CLI/TOML config owns the count and
+        // queue depth so effective config and autoroute identity cannot drift.
         let fused_batch = self.effective_config.fused_batch;
         let fused_depth = self
             .effective_config
@@ -249,8 +222,7 @@ impl ScanOrchestrator {
                     ) else {
                         continue;
                     };
-                    if route_state
-                        .should_split_before(&c, source_keeps_chunk_identities_contiguous)
+                    if route_state.should_split_before(&c, source_keeps_chunk_identities_contiguous)
                     {
                         let send_result = {
                             let _profile_span =
@@ -314,8 +286,7 @@ impl ScanOrchestrator {
 
         let findings: Vec<RawMatch> = rx
             .into_iter()
-            .par_bridge()
-            .flat_map_iter(|batch| {
+            .flat_map(|batch| {
                 let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
                 let route_failed = match routing_error_ref.lock() {
                     Ok(guard) => guard.is_some(),
