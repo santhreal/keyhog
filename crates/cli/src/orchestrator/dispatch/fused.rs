@@ -40,6 +40,19 @@ impl ActiveBackendRouter {
     }
 }
 
+const STDIN_FUSED_BATCH_BYTES: usize = 4 * 1024 * 1024;
+
+fn is_stdin_source(source: &dyn Source) -> bool {
+    let source = source.as_any();
+    source.is::<keyhog_sources::StdinSource>()
+        || source.is::<keyhog_sources::ConfiguredStdinSource>()
+        || source.is::<keyhog_sources::BufferedStdinSource>()
+}
+
+fn supports_fused_dispatch(source: &dyn Source) -> bool {
+    source.as_any().is::<keyhog_sources::FilesystemSource>() || is_stdin_source(source)
+}
+
 impl ScanOrchestrator {
     /// Decide whether a scan runs on the fused parallel read+scan path.
     ///
@@ -67,13 +80,9 @@ impl ScanOrchestrator {
             return false;
         }
         !sources.is_empty()
-            && sources.iter().all(|source| {
-                let source = source.as_any();
-                source.is::<keyhog_sources::FilesystemSource>()
-                    || source.is::<keyhog_sources::StdinSource>()
-                    || source.is::<keyhog_sources::ConfiguredStdinSource>()
-                    || source.is::<keyhog_sources::BufferedStdinSource>()
-            })
+            && sources
+                .iter()
+                .all(|source| supports_fused_dispatch(source.as_ref()))
     }
 
     fn cached_backend_router(&self) -> CachedBackendRouter {
@@ -174,6 +183,17 @@ impl ScanOrchestrator {
         // resident source bytes. Explicit CLI/TOML config owns the count and
         // queue depth so effective config and autoroute identity cannot drift.
         let fused_batch = self.effective_config.fused_batch;
+        // Stdin windows are already bounded to 1 MiB. Group four of them so
+        // `scan_coalesced` amortizes fork/join and gate setup while the
+        // rendezvous channel keeps the live source payload below 5 MiB.
+        let fused_batch_bytes = if sources
+            .iter()
+            .all(|source| is_stdin_source(source.as_ref()))
+        {
+            STDIN_FUSED_BATCH_BYTES
+        } else {
+            crate::orchestrator_config::FUSED_BATCH_BYTES
+        };
         let fused_depth = self
             .effective_config
             .fused_depth
@@ -241,8 +261,7 @@ impl ScanOrchestrator {
                     route_state.push(&c);
                     batch_bytes = batch_bytes.saturating_add(c.data.len());
                     batch.push(c);
-                    if batch.len() >= fused_batch
-                        || batch_bytes >= crate::orchestrator_config::FUSED_BATCH_BYTES
+                    if batch.len() >= fused_batch || batch_bytes >= fused_batch_bytes
                     {
                         let send_result = {
                             let _profile_span =
