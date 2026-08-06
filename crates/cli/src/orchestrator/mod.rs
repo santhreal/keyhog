@@ -1190,16 +1190,38 @@ impl ScanOrchestrator {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
             if !detectors_path.exists() && requested_detector_mode.is_none() {
                 let policy = execution_pack_policy_for_args(&args);
-                let pack_backend = match effective_config.backend_override {
-                    Some(keyhog_scanner::hw_probe::ScanBackend::SimdCpu) => {
-                        keyhog_scanner::execution_pack::ExecutionPackBackend::Simd
+                let installed = match effective_config.backend_override {
+                    Some(backend) => {
+                        let pack_backend = match backend {
+                            keyhog_scanner::hw_probe::ScanBackend::CpuFallback => {
+                                keyhog_scanner::execution_pack::ExecutionPackBackend::Cpu
+                            }
+                            keyhog_scanner::hw_probe::ScanBackend::SimdCpu => {
+                                keyhog_scanner::execution_pack::ExecutionPackBackend::Simd
+                            }
+                            keyhog_scanner::hw_probe::ScanBackend::GpuCuda => {
+                                keyhog_scanner::execution_pack::ExecutionPackBackend::GpuCuda
+                            }
+                            keyhog_scanner::hw_probe::ScanBackend::GpuWgpu => {
+                                keyhog_scanner::execution_pack::ExecutionPackBackend::GpuWgpu
+                            }
+                            keyhog_scanner::hw_probe::ScanBackend::GpuMetal => {
+                                keyhog_scanner::execution_pack::ExecutionPackBackend::GpuMetal
+                            }
+                            _ => anyhow::bail!(
+                                "the selected scan backend has no execution-pack identity"
+                            ),
+                        };
+                        crate::execution_pack_install::
+                            load_installed_detector_execution_pack_for_backend(
+                                policy,
+                                pack_backend,
+                            )
                     }
-                    _ => keyhog_scanner::execution_pack::ExecutionPackBackend::Cpu,
+                    None => crate::execution_pack_install::
+                        load_installed_preferred_detector_execution_pack(policy),
                 };
-                match crate::execution_pack_install::load_installed_detector_execution_pack_for_backend(
-                    policy,
-                    pack_backend,
-                ) {
+                match installed {
                     Ok(installed) => {
                         let embedded_count = installed.ir.detectors().len();
                         let detectors = installed.ir.into_detectors();

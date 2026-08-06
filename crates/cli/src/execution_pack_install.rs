@@ -126,6 +126,27 @@ pub(crate) fn load_installed_execution_pack(
         })?;
     authenticate_manifest_pack(&directory, &manifest, row, &signing_key)
 }
+pub(crate) fn load_installed_preferred_matcher_pack(
+    policy: ExecutionPackPolicy,
+) -> Result<ExecutionPack> {
+    let directory = installed_execution_pack_directory()?;
+    let (_, manifest, signing_key) = load_manifest(&directory)?;
+    let policy = policy_name(policy);
+    let row = manifest
+        .packs
+        .iter()
+        .find(|row| row.policy == policy && row.backend == "simd")
+        .or_else(|| {
+            manifest
+                .packs
+                .iter()
+                .find(|row| row.policy == policy && row.backend == "cpu")
+        })
+        .with_context(|| {
+            format!("installed generation has no {policy} SIMD or CPU execution pack")
+        })?;
+    authenticate_manifest_pack(&directory, &manifest, row, &signing_key)
+}
 
 
 pub(crate) fn load_installed_detector_execution_pack_for_backend(
@@ -133,6 +154,19 @@ pub(crate) fn load_installed_detector_execution_pack_for_backend(
     backend: ExecutionPackBackend,
 ) -> Result<InstalledDetectorExecutionPack> {
     let pack = load_installed_execution_pack(policy, backend)?;
+    let ir_bytes = pack
+        .section(ExecutionPackSectionKind::DetectorIr)
+        .context("installed execution pack has no detector IR section")?;
+    let ir = CanonicalDetectorExecutionIr::decode(ir_bytes).map_err(anyhow::Error::msg)?;
+    if ir.digest() != pack.identity().detector_digest {
+        bail!("installed detector IR identity does not match its authenticated pack");
+    }
+    Ok(InstalledDetectorExecutionPack { pack, ir })
+}
+pub(crate) fn load_installed_preferred_detector_execution_pack(
+    policy: ExecutionPackPolicy,
+) -> Result<InstalledDetectorExecutionPack> {
+    let pack = load_installed_preferred_matcher_pack(policy)?;
     let ir_bytes = pack
         .section(ExecutionPackSectionKind::DetectorIr)
         .context("installed execution pack has no detector IR section")?;
