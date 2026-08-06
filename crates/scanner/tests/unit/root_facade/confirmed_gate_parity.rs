@@ -189,34 +189,46 @@ fn confirmed_gate_parity_default() {
 #[test]
 fn suffix_gate_filters_anchored_cold_regexes() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
-    let scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::CpuFallback)
-        .expect("compile exact CPU scanner");
-    let chunk = chunk_of(
-        b"GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789AB\n",
-        "anchored-cold-regexes",
-    );
+    let detector = keyhog_core::DetectorSpec {
+        id: "suffix-gate-cold-fixture".into(),
+        name: "Suffix gate cold fixture".into(),
+        service: "test".into(),
+        patterns: vec![keyhog_core::PatternSpec {
+            regex: r"ANCHOR_[A-Z0-9]{8}_REQUIRED_SUFFIX".into(),
+            required_literals: vec!["ANCHOR_".into()],
+            ..Default::default()
+        }],
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
+    };
+    let gated =
+        CompiledScanner::compile_for_backend(vec![detector.clone()], ScanBackend::CpuFallback)
+            .expect("compile exact gated CPU scanner");
+    let ungated = CompiledScanner::compile_for_backend(vec![detector], ScanBackend::CpuFallback)
+        .expect("compile exact ungated CPU scanner");
+    let chunk = chunk_of(b"ANCHOR_12345678_absent\n", "anchored-cold-regexes");
 
-    keyhog_scanner::testing::set_confirmed_suffix_gate(&scanner, Some(true));
+    keyhog_scanner::testing::set_confirmed_suffix_gate(&gated, Some(true));
     let before_on = keyhog_scanner::testing::lazy_regex_compile_events();
-    let on = canonical(&[scanner
+    let on = canonical(&[gated
         .scan_with_backend(&chunk, ScanBackend::CpuFallback)
         .expect("gate-on scan succeeds")]);
     let compiled_with_gate =
         keyhog_scanner::testing::lazy_regex_compile_events().saturating_sub(before_on);
 
-    keyhog_scanner::testing::set_confirmed_suffix_gate(&scanner, Some(false));
+    keyhog_scanner::testing::set_confirmed_suffix_gate(&ungated, Some(false));
     let before_off = keyhog_scanner::testing::lazy_regex_compile_events();
-    let off = canonical(&[scanner
+    let off = canonical(&[ungated
         .scan_with_backend(&chunk, ScanBackend::CpuFallback)
         .expect("gate-off scan succeeds")]);
     let compiled_without_gate =
         keyhog_scanner::testing::lazy_regex_compile_events().saturating_sub(before_off);
 
+    keyhog_scanner::testing::set_confirmed_suffix_gate(&gated, None);
+    keyhog_scanner::testing::set_confirmed_suffix_gate(&ungated, None);
     assert_eq!(on, off, "suffix gating must preserve findings");
     assert!(
         compiled_without_gate > compiled_with_gate,
-        "gate-on compiled {compiled_with_gate} cold regexes; disabling it compiled only \
-         {compiled_without_gate} additional regexes"
+        "gate-on compiled {compiled_with_gate} cold regexes; gate-off compiled \
+         {compiled_without_gate} cold regexes"
     );
 }
