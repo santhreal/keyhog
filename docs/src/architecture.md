@@ -334,6 +334,11 @@ Scanner parsing and traversal are iterative, so the previous 8 MiB reservation
 only multiplied per-worker virtual memory without protecting a required call
 depth.
 
+With live verification disabled, the orchestrator retains only the resolved
+policy needed for configuration and receipt identity. Detector verification
+graphs are dropped after scanner construction; verifier candidate queues,
+caches, HTTP clients, and OOB state are constructed only inside the enabled
+postprocess path.
 
 Every mapped byte has one owner: pack metadata, detector IR, route classifier,
 regex programs, suppression policy, or the selected backend. Header, table, and

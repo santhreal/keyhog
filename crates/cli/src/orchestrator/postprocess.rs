@@ -5,6 +5,17 @@ use anyhow::Context;
 use anyhow::Result;
 use keyhog_core::{DedupScope, DedupedMatch, RawMatch, VerificationResult, VerifiedFinding};
 
+#[cfg(feature = "verify")]
+fn require_verifier_plans(
+    plans: Option<&[keyhog_core::DetectorSpec]>,
+) -> Result<&[keyhog_core::DetectorSpec]> {
+    plans.ok_or_else(|| {
+        anyhow::anyhow!(
+            "verification was requested without retained detector plans; rerun the scan"
+        )
+    })
+}
+
 /// Offline (no-verify, no-network) structural metadata for a finding's
 /// credential, surfaced on every scan-output route.
 ///
@@ -414,6 +425,10 @@ impl ScanOrchestrator {
         use std::io::IsTerminal;
         use std::time::Duration;
 
+        // Validate retained ownership before allocating candidate collections,
+        // changing verifier globals, or constructing any HTTP/OOB runtime.
+        let detector_specs = require_verifier_plans(self.verifier_detectors.as_deref())?;
+
         const MIN_VERIFY_CONFIDENCE: f64 = 0.3;
         let mut verify_candidates = groups;
         let skip_candidates: Vec<_> = verify_candidates
@@ -452,11 +467,6 @@ impl ScanOrchestrator {
             );
         }
 
-        let detector_specs = self.verifier_detectors.as_deref().ok_or_else(|| {
-            anyhow::anyhow!(
-                "verification was requested without retained detector plans; rerun the scan"
-            )
-        })?;
         let mut verifier = VerificationEngine::new(
             detector_specs,
             VerifyConfig {
@@ -554,3 +564,7 @@ impl ScanOrchestrator {
         Ok(findings)
     }
 }
+
+#[cfg(all(test, feature = "verify"))]
+#[path = "../../tests/unit/orchestrator/postprocess_verifier_plans.rs"]
+mod tests;

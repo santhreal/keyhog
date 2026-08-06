@@ -6,13 +6,29 @@ use super::support::{
 #[cfg(feature = "verify")]
 use clap::Parser;
 use keyhog::testing::{CliTestApi as _, API};
-use keyhog_core::Source;
+use keyhog_core::{OobProtocol, OobSpec, Source, VerifySpec};
+
+fn make_detector_with_verifier_plan() -> keyhog_core::DetectorSpec {
+    let mut detector = make_detector();
+    detector.verify = Some(VerifySpec {
+        service: "test".into(),
+        url: Some("https://verify.example.test/probe?callback={{interactsh.url}}".into()),
+        allowed_domains: vec!["verify.example.test".into()],
+        oob: Some(OobSpec {
+            protocol: OobProtocol::Http,
+            timeout_secs: Some(17),
+            policy: Default::default(),
+        }),
+        ..Default::default()
+    });
+    detector
+}
 
 /// A non-verifying scan must release the flexible detector specifications while
 /// the compiled scanner retains the exact metadata needed for emitted matches.
 #[test]
 fn non_verifying_orchestrator_releases_detector_specs_after_compilation() {
-    let orchestrator = make_orchestrator(vec![make_detector()]);
+    let orchestrator = make_orchestrator(vec![make_detector_with_verifier_plan()]);
     assert_eq!(API.scan_orchestrator_detector_count(&orchestrator), 1);
     assert_eq!(
         API.scan_orchestrator_retained_detector_specs(&orchestrator),
@@ -47,7 +63,8 @@ fn non_verifying_orchestrator_releases_detector_specs_after_compilation() {
 fn verifying_orchestrator_retains_detector_specs_for_verifier_plans() {
     let args = keyhog::args::ScanArgs::try_parse_from(["scan", "--verify"])
         .expect("parse verifying scan arguments");
-    let orchestrator = super::support::make_orchestrator_with_args(vec![make_detector()], args);
+    let orchestrator =
+        super::support::make_orchestrator_with_args(vec![make_detector_with_verifier_plan()], args);
 
     assert_eq!(API.scan_orchestrator_detector_count(&orchestrator), 1);
     assert_eq!(
