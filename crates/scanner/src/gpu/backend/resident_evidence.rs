@@ -5,7 +5,7 @@
 //! Capacity grows geometrically from the real batch instead of reserving the
 //! scanner's full input budget at startup.
 
-use crate::engine::CompiledScanner;
+use crate::engine::{CompiledScanner, ScannerBackendState};
 use crate::gpu::evidence;
 use zeroize::Zeroize;
 
@@ -471,9 +471,7 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
                     match timed.device_ns {
                         Some(device_ns) => {
                             evidence::record_kernel(device_ns);
-                            evidence::record_queue_wait(
-                                timed.wall_ns.saturating_sub(device_ns),
-                            );
+                            evidence::record_queue_wait(timed.wall_ns.saturating_sub(device_ns));
                         }
                         None => {
                             evidence::report_capability_unsupported(
@@ -605,11 +603,24 @@ impl CompiledScanner {
     pub(crate) fn reset_gpu_resident_literal_for_calibration(
         &self,
     ) -> std::result::Result<(), String> {
+        let slots: &[(&str, &std::sync::Mutex<GpuResidentLiteralSlot>)] = match &self.backend_state
+        {
+            ScannerBackendState::Census {
+                resident_literal_cuda,
+                resident_literal_wgpu,
+                ..
+            } => &[
+                ("cuda", resident_literal_cuda),
+                ("wgpu", resident_literal_wgpu),
+            ],
+            ScannerBackendState::SelectedGpu {
+                peer,
+                resident_literal,
+            } => &[(peer.backend().label(), resident_literal)],
+            ScannerBackendState::SelectedHost(_) | ScannerBackendState::Disabled => &[],
+        };
         let mut failures = Vec::new();
-        for (backend, slot) in [
-            ("cuda", &self.gpu_resident_literal_cuda),
-            ("wgpu", &self.gpu_resident_literal_wgpu),
-        ] {
+        for (backend, slot) in slots {
             if let Err(error) = reset_resident_literal_slot(slot) {
                 failures.push(format!("{backend}: {error}"));
             }
@@ -628,11 +639,25 @@ impl CompiledScanner {
         &self,
         backend: crate::hw_probe::ScanBackend,
     ) -> Option<&std::sync::Mutex<GpuResidentLiteralSlot>> {
-        match backend {
-            crate::hw_probe::ScanBackend::GpuCuda => Some(&self.gpu_resident_literal_cuda),
-            crate::hw_probe::ScanBackend::GpuMetal => Some(&self.gpu_resident_literal_metal),
-            crate::hw_probe::ScanBackend::GpuWgpu => Some(&self.gpu_resident_literal_wgpu),
-            _ => None,
+        match &self.backend_state {
+            ScannerBackendState::Census {
+                resident_literal_cuda,
+                resident_literal_metal,
+                resident_literal_wgpu,
+                ..
+            } => match backend {
+                crate::hw_probe::ScanBackend::GpuCuda => Some(resident_literal_cuda),
+                crate::hw_probe::ScanBackend::GpuMetal => Some(resident_literal_metal),
+                crate::hw_probe::ScanBackend::GpuWgpu => Some(resident_literal_wgpu),
+                _ => None,
+            },
+            ScannerBackendState::SelectedGpu {
+                peer,
+                resident_literal,
+            } if peer.backend() == backend => Some(resident_literal),
+            ScannerBackendState::SelectedGpu { .. }
+            | ScannerBackendState::SelectedHost(_)
+            | ScannerBackendState::Disabled => None,
         }
     }
 }
@@ -667,28 +692,38 @@ fn reset_resident_literal_slot(
     }
 }
 
+fn release_resident_literal_slot(slot: &mut std::sync::Mutex<GpuResidentLiteralSlot>) {
+    let state = match slot.get_mut() {
+        Ok(slot) => std::mem::replace(slot, GpuResidentLiteralSlot::Empty),
+        Err(poisoned) => std::mem::replace(poisoned.into_inner(), GpuResidentLiteralSlot::Empty),
+    };
+    match state {
+        GpuResidentLiteralSlot::Ready(state) => {
+            if let Err(error) = state.free() {
+                eprintln!("keyhog: GPU resident literal cleanup failed: {error}");
+                tracing::warn!(target: "keyhog::gpu", %error, "GPU resident literal cleanup failed");
+            }
+        }
+        GpuResidentLiteralSlot::Borrowed(mut state) => state.clear_host_buffers(),
+        GpuResidentLiteralSlot::Empty | GpuResidentLiteralSlot::Failed(_) => {}
+    }
+}
+
 impl Drop for CompiledScanner {
     fn drop(&mut self) {
-        for slot in [
-            &mut self.gpu_resident_literal_cuda,
-            &mut self.gpu_resident_literal_wgpu,
-        ] {
-            let state = match slot.get_mut() {
-                Ok(slot) => std::mem::replace(slot, GpuResidentLiteralSlot::Empty),
-                Err(poisoned) => {
-                    std::mem::replace(poisoned.into_inner(), GpuResidentLiteralSlot::Empty)
-                }
-            };
-            match state {
-                GpuResidentLiteralSlot::Ready(state) => {
-                    if let Err(error) = state.free() {
-                        eprintln!("keyhog: GPU resident literal cleanup failed: {error}");
-                        tracing::warn!(target: "keyhog::gpu", %error, "GPU resident literal cleanup failed");
-                    }
-                }
-                GpuResidentLiteralSlot::Borrowed(mut state) => state.clear_host_buffers(),
-                GpuResidentLiteralSlot::Empty | GpuResidentLiteralSlot::Failed(_) => {}
+        match &mut self.backend_state {
+            ScannerBackendState::Census {
+                resident_literal_cuda,
+                resident_literal_wgpu,
+                ..
+            } => {
+                release_resident_literal_slot(resident_literal_cuda);
+                release_resident_literal_slot(resident_literal_wgpu);
             }
+            ScannerBackendState::SelectedGpu {
+                resident_literal, ..
+            } => release_resident_literal_slot(resident_literal),
+            ScannerBackendState::SelectedHost(_) | ScannerBackendState::Disabled => {}
         }
     }
 }

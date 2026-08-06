@@ -5,7 +5,7 @@ pub(crate) use crate::gpu::load_dynamic_library;
 #[cfg(all(feature = "gpu", target_os = "linux"))]
 pub(crate) use crate::gpu::probe_cuda_peer;
 pub use crate::gpu::GpuBackendAvailability;
-pub(crate) use crate::gpu::{GpuBackendAcquisitionFailure, GpuBackendPeers};
+pub(crate) use crate::gpu::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
 use crate::hw_probe::ScanBackend;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -15,6 +15,9 @@ pub enum GpuInitPolicy {
     /// Census GPU peers regardless of the disabled-GPU policy. The selected
     /// execution backend is still materialized lazily.
     ForceEnabled,
+    /// Compile for one route selected before scanner construction. CPU and SIMD
+    /// skip GPU state; GPU routes retain only their named VYRE peer.
+    SelectedBackend(ScanBackend),
     /// Skip CUDA, Metal, and WGPU census and acquisition. Used when the selected CLI path
     /// cannot route to GPU, avoiding startup and RSS overhead without changing
     /// scan results.

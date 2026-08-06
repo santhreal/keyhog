@@ -110,17 +110,17 @@ mod phase2_gpu_dfa;
 pub(crate) use phase2_gpu_dfa::Phase2GpuDfaCatalogCache;
 #[cfg(feature = "simd")]
 mod phase2_hs;
-#[cfg(feature = "simd")]
-pub(crate) use phase2_hs::compile_phase2_scope_program;
 #[cfg(feature = "gpu")]
 pub(crate) use crate::gpu_input_budget;
+#[cfg(feature = "simd")]
+pub(crate) use phase2_hs::compile_phase2_scope_program;
 #[cfg(all(test, feature = "simd"))]
 pub(crate) use phase2_hs::hs_prefilter_requires_host_regex as hs_prefilter_requires_host_regex_for_test;
 #[cfg(all(test, feature = "simd"))]
 pub(crate) use phase2_hs::Phase2HsEngine;
 mod phase2_prefilter;
-pub(crate) use phase2_prefilter::canonical_phase2_scope_indices;
 pub(crate) use crate::phase2_truncate;
+pub(crate) use phase2_prefilter::canonical_phase2_scope_indices;
 mod process;
 pub(crate) use crate::scan_profile as profile;
 mod recovery;
@@ -175,7 +175,7 @@ pub use windowed_support::{
     window_chunk, window_end_offset, window_ranges,
 };
 
-use crate::compiled_scanner::{GpuBackendAcquisitionFailure, GpuBackendPeers};
+use crate::compiled_scanner::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
 use crate::pipeline::*;
 use crate::types::*;
 use aho_corasick::AhoCorasick;
@@ -215,30 +215,228 @@ pub use phase1_admission::{
     Phase1AdmissionPlan, Phase1AdmissionSummary, Phase2KeywordTriggerSummary,
 };
 
+pub(crate) enum ScannerBackendState {
+    /// Install-time calibration retains the complete peer census until route cutover.
+    Census {
+        peers: GpuBackendPeers,
+        failures: Vec<GpuBackendAcquisitionFailure>,
+        #[cfg(feature = "gpu")]
+        resident_literal_cuda: std::sync::Mutex<GpuResidentLiteralSlot>,
+        #[cfg(feature = "gpu")]
+        resident_literal_metal: std::sync::Mutex<GpuResidentLiteralSlot>,
+        #[cfg(feature = "gpu")]
+        resident_literal_wgpu: std::sync::Mutex<GpuResidentLiteralSlot>,
+    },
+    SelectedHost(crate::hw_probe::ScanBackend),
+    SelectedGpu {
+        peer: SelectedGpuPeer,
+        #[cfg(feature = "gpu")]
+        resident_literal: std::sync::Mutex<GpuResidentLiteralSlot>,
+    },
+    Disabled,
+}
+
+impl ScannerBackendState {
+    pub(crate) fn selected_backend(&self) -> Option<crate::hw_probe::ScanBackend> {
+        match self {
+            Self::SelectedHost(backend) => Some(*backend),
+            Self::SelectedGpu { peer, .. } => Some(peer.backend()),
+            Self::Census { .. } | Self::Disabled => None,
+        }
+    }
+
+    pub(crate) fn gpu_backend(
+        &self,
+        backend: crate::hw_probe::ScanBackend,
+    ) -> Option<&Arc<dyn vyre::VyreBackend>> {
+        match self {
+            Self::Census { peers, .. } => peers.get(backend),
+            Self::SelectedGpu { peer, .. } => peer.get(backend),
+            Self::SelectedHost(_) | Self::Disabled => None,
+        }
+    }
+
+    pub(crate) fn gpu_backend_available(&self, backend: crate::hw_probe::ScanBackend) -> bool {
+        match self {
+            Self::Census { peers, .. } => match backend {
+                crate::hw_probe::ScanBackend::GpuCuda => peers.cuda_available,
+                crate::hw_probe::ScanBackend::GpuMetal => peers.metal_available,
+                crate::hw_probe::ScanBackend::GpuWgpu => peers.wgpu_available,
+                _ => false,
+            },
+            Self::SelectedGpu { peer, .. } => peer.backend() == backend && peer.available,
+            Self::SelectedHost(_) | Self::Disabled => false,
+        }
+    }
+
+    pub(crate) fn gpu_backend_acquired(&self, backend: crate::hw_probe::ScanBackend) -> bool {
+        match self {
+            Self::Census { peers, .. } => peers.initialized(backend).is_some(),
+            Self::SelectedGpu { peer, .. } => peer.initialized(backend).is_some(),
+            Self::SelectedHost(_) | Self::Disabled => false,
+        }
+    }
+
+    pub(crate) fn gpu_backend_device_identity(
+        &self,
+        backend: crate::hw_probe::ScanBackend,
+    ) -> Option<String> {
+        match self {
+            Self::Census { peers, .. } => peers
+                .initialized(backend)
+                .and_then(|peer| peer.device_identity.clone())
+                .or_else(|| match backend {
+                    crate::hw_probe::ScanBackend::GpuCuda => peers.cuda_device_identity.clone(),
+                    crate::hw_probe::ScanBackend::GpuMetal => peers.metal_device_identity.clone(),
+                    crate::hw_probe::ScanBackend::GpuWgpu => peers.wgpu_device_identity.clone(),
+                    _ => None,
+                }),
+            Self::SelectedGpu { peer, .. } if peer.backend() == backend => peer
+                .initialized(backend)
+                .and_then(|acquired| acquired.device_identity.clone())
+                .or_else(|| peer.device_identity.clone()),
+            Self::SelectedGpu { .. } | Self::SelectedHost(_) | Self::Disabled => None,
+        }
+    }
+
+    pub(crate) fn gpu_backend_runtime_identity(
+        &self,
+        backend: crate::hw_probe::ScanBackend,
+    ) -> Option<String> {
+        match self {
+            Self::Census { peers, .. } => match backend {
+                crate::hw_probe::ScanBackend::GpuCuda => peers.cuda_runtime_identity.clone(),
+                crate::hw_probe::ScanBackend::GpuMetal => peers.metal_runtime_identity.clone(),
+                crate::hw_probe::ScanBackend::GpuWgpu => peers.wgpu_runtime_identity.clone(),
+                _ => None,
+            },
+            Self::SelectedGpu { peer, .. } if peer.backend() == backend => {
+                peer.runtime_identity.clone()
+            }
+            Self::SelectedGpu { .. } | Self::SelectedHost(_) | Self::Disabled => None,
+        }
+    }
+
+    pub(crate) fn gpu_backend_is_software(&self, backend: crate::hw_probe::ScanBackend) -> bool {
+        match self {
+            Self::Census { peers, .. } => peers.initialized(backend).map_or_else(
+                || backend == crate::hw_probe::ScanBackend::GpuWgpu && peers.wgpu_is_software,
+                |peer| peer.is_software,
+            ),
+            Self::SelectedGpu { peer, .. } if peer.backend() == backend => peer
+                .initialized(backend)
+                .map_or(peer.is_software, |acquired| acquired.is_software),
+            Self::SelectedGpu { .. } | Self::SelectedHost(_) | Self::Disabled => true,
+        }
+    }
+
+    pub(crate) fn gpu_backend_initialization_error(
+        &self,
+        backend: crate::hw_probe::ScanBackend,
+    ) -> Option<&str> {
+        match self {
+            Self::Census {
+                peers, failures, ..
+            } => peers.initialization_error(backend).or_else(|| {
+                failures
+                    .iter()
+                    .find(|failure| {
+                        failure.backend
+                            == match backend {
+                                crate::hw_probe::ScanBackend::GpuCuda => "cuda",
+                                crate::hw_probe::ScanBackend::GpuMetal => "metal",
+                                crate::hw_probe::ScanBackend::GpuWgpu => "wgpu",
+                                _ => return false,
+                            }
+                    })
+                    .map(|failure| failure.diagnostic.as_str())
+            }),
+            Self::SelectedGpu { peer, .. } => peer.initialization_error(backend),
+            Self::SelectedHost(_) | Self::Disabled => None,
+        }
+    }
+
+    pub(crate) fn gpu_availability(&self) -> crate::gpu::GpuBackendAvailability {
+        match self {
+            Self::Census { peers, .. } => peers.availability(),
+            Self::SelectedGpu { peer, .. } => {
+                let available = peer.available;
+                crate::gpu::GpuBackendAvailability {
+                    cuda: peer.backend() == crate::hw_probe::ScanBackend::GpuCuda && available,
+                    metal: peer.backend() == crate::hw_probe::ScanBackend::GpuMetal && available,
+                    wgpu: peer.backend() == crate::hw_probe::ScanBackend::GpuWgpu && available,
+                }
+            }
+            Self::SelectedHost(_) | Self::Disabled => crate::gpu::GpuBackendAvailability::default(),
+        }
+    }
+
+    pub(crate) fn gpu_candidate_backends(
+        &self,
+    ) -> impl Iterator<Item = crate::hw_probe::ScanBackend> {
+        let backends = match self {
+            Self::Census { .. } => [
+                Some(crate::hw_probe::ScanBackend::GpuCuda),
+                Some(crate::hw_probe::ScanBackend::GpuMetal),
+                Some(crate::hw_probe::ScanBackend::GpuWgpu),
+            ],
+            Self::SelectedGpu { peer, .. } => [Some(peer.backend()), None, None],
+            Self::SelectedHost(_) | Self::Disabled => [None, None, None],
+        };
+        backends.into_iter().flatten()
+    }
+
+    #[cfg(feature = "gpu")]
+    pub(crate) fn gpu_backend_adapter_identity(
+        &self,
+        backend: crate::hw_probe::ScanBackend,
+    ) -> Option<(u32, u32, bool, Option<&str>)> {
+        let peer = match self {
+            Self::Census { peers, .. } => peers.initialized(backend),
+            Self::SelectedGpu { peer, .. } => peer.initialized(backend),
+            Self::SelectedHost(_) | Self::Disabled => None,
+        }?;
+        Some((
+            peer.adapter_vendor,
+            peer.adapter_device,
+            peer.is_software,
+            peer.device_identity.as_deref(),
+        ))
+    }
+
+    #[cfg(feature = "gpu")]
+    pub(crate) fn gpu_resident_timed_dispatch_supported(
+        &self,
+        backend: crate::hw_probe::ScanBackend,
+    ) -> bool {
+        match self {
+            Self::Census { peers, .. } => peers.resident_timed_dispatch_supported(backend),
+            Self::SelectedGpu { peer, .. } => peer.resident_timed_dispatch_supported(backend),
+            Self::SelectedHost(_) | Self::Disabled => false,
+        }
+    }
+}
+
+impl CompiledScanner {
+    pub(crate) fn selected_backend(&self) -> Option<crate::hw_probe::ScanBackend> {
+        self.backend_state.selected_backend()
+    }
+
+    pub(crate) fn gpu_backend(
+        &self,
+        backend: crate::hw_probe::ScanBackend,
+    ) -> Option<&Arc<dyn vyre::VyreBackend>> {
+        self.backend_state.gpu_backend(backend)
+    }
+}
+
 pub struct CompiledScanner {
-    /// Exact top-level backend this scanner materialized. `None` exists only
-    /// for the install-time calibration compiler that must measure every peer.
-    pub(crate) selected_backend: Option<crate::hw_probe::ScanBackend>,
-    /// Versioned projection of the canonical validated scan-execution hash.
-    /// Autoroute and runtime receipts consume this stored identity so every
-    /// execution-affecting detector policy change invalidates stale evidence.
-    pub(crate) detector_digest: u64,
-    /// Complete BLAKE3 identity for the compiled detector and decoder execution plan.
-    pub(crate) compiled_plan_digest: [u8; 32],
-    pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,
-    pub(crate) ac: Option<AhoCorasick>,
-    pub(crate) gpu_backends: GpuBackendPeers,
-    pub(crate) gpu_acquisition_failures: Vec<GpuBackendAcquisitionFailure>,
+    /// Exact selected route or the temporary all-peer calibration census.
+    pub(crate) backend_state: ScannerBackendState,
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     #[cfg(feature = "gpu")]
     pub(crate) gpu_max_literal_len: usize,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
-    #[cfg(feature = "gpu")]
-    pub(crate) gpu_resident_literal_cuda: std::sync::Mutex<GpuResidentLiteralSlot>,
-    #[cfg(feature = "gpu")]
-    pub(crate) gpu_resident_literal_metal: std::sync::Mutex<GpuResidentLiteralSlot>,
-    #[cfg(feature = "gpu")]
-    pub(crate) gpu_resident_literal_wgpu: std::sync::Mutex<GpuResidentLiteralSlot>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) gpu_degrade_count: std::sync::atomic::AtomicU64,
     /// One-time backend-neutral GPU literal-program preparation measured by

@@ -13,6 +13,86 @@ struct PackedVyreProgramSource<'a> {
     pack_identity: crate::execution_pack::ExecutionPackIdentity,
 }
 
+fn selected_gpu_peer(backend: crate::hw_probe::ScanBackend) -> SelectedGpuPeer {
+    let mut peer = SelectedGpuPeer::new(backend);
+    #[cfg(not(feature = "gpu"))]
+    {
+        peer.mark_unavailable(format!(
+            "{} is unavailable because this scanner was built without GPU support",
+            backend.label()
+        ));
+        return peer;
+    }
+    #[cfg(feature = "gpu")]
+    match backend {
+        crate::hw_probe::ScanBackend::GpuCuda => {
+            #[cfg(target_os = "linux")]
+            match super::types::probe_cuda_peer() {
+                Ok(caps) => {
+                    let device_identity = format!(
+                        "{}:ordinal={}:cc={}.{}:vram={}",
+                        caps.name,
+                        caps.ordinal,
+                        caps.compute_capability.0,
+                        caps.compute_capability.1,
+                        caps.total_memory
+                    );
+                    let runtime_identity = linux_cuda_runtime_identity()
+                        .map_err(|diagnostic| {
+                            tracing::warn!(
+                                target: "keyhog::routing",
+                                %diagnostic,
+                                "CUDA peer acquired without reproducible runtime identity"
+                            );
+                        })
+                        .ok();
+                    peer.mark_available(device_identity, runtime_identity, false);
+                }
+                Err(error) => {
+                    surface_cuda_acquisition_failure(&error);
+                    peer.mark_unavailable(error.to_string());
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            peer.mark_unavailable(format!(
+                "native CUDA peer acquisition is unavailable on {}; use WGPU or a supported Linux CUDA host",
+                std::env::consts::OS
+            ));
+        }
+        crate::hw_probe::ScanBackend::GpuMetal => {
+            #[cfg(target_os = "macos")]
+            match crate::gpu::gpu_adapter_probe() {
+                Some(probe) => peer.mark_available(
+                    probe.device_identity,
+                    Some(format!(
+                        "vyre-metal={};{}",
+                        env!("KEYHOG_VYRE_METAL_VERSION"),
+                        probe.runtime_identity
+                    )),
+                    false,
+                ),
+                None => peer
+                    .mark_unavailable("native Metal adapter census found no adapters".to_string()),
+            }
+            #[cfg(not(target_os = "macos"))]
+            peer.mark_unavailable(format!(
+                "native Metal peer acquisition is unavailable on {}; use WGPU or a macOS host",
+                std::env::consts::OS
+            ));
+        }
+        crate::hw_probe::ScanBackend::GpuWgpu => match crate::gpu::gpu_adapter_probe() {
+            Some(probe) => peer.mark_available(
+                probe.device_identity,
+                Some(probe.runtime_identity),
+                probe.is_software,
+            ),
+            None => peer.mark_unavailable("WGPU adapter census found no adapters".to_string()),
+        },
+        _ => unreachable!("selected GPU peer requires a GPU backend"),
+    }
+    peer
+}
+
 impl CompiledScanner {
     /// Compile the deterministic scalar library route. Hardware autoroute is an
     /// installer/runtime concern and must select a route before construction.
@@ -374,10 +454,6 @@ impl CompiledScanner {
             GpuInitPolicy::SelectedBackend(backend) => Some(backend),
             _ => None,
         };
-        let selected_gpu = match gpu_policy {
-            GpuInitPolicy::SelectedBackend(backend) if backend.is_gpu() => Some(backend),
-            _ => None,
-        };
         if gpu_disabled {
             let disabled_by_policy = matches!(gpu_policy, GpuInitPolicy::ForceDisabled);
             if disabled_by_policy {
@@ -392,132 +468,138 @@ impl CompiledScanner {
                 );
             }
         }
-        #[cfg(feature = "gpu")]
-        let (gpu_backends, gpu_acquisition_failures) = if !gpu_disabled {
-            let mut peers = GpuBackendPeers::default();
-            let mut failures = Vec::new();
-            let probe_cuda =
-                selected_gpu.is_none_or(|backend| backend == crate::hw_probe::ScanBackend::GpuCuda);
-            let probe_wgpu =
-                selected_gpu.is_none_or(|backend| backend == crate::hw_probe::ScanBackend::GpuWgpu);
-            let probe_metal = selected_gpu
-                .is_none_or(|backend| backend == crate::hw_probe::ScanBackend::GpuMetal);
-            #[cfg(not(target_os = "linux"))]
-            if probe_cuda {
-                failures.push(GpuBackendAcquisitionFailure {
-                backend: "cuda",
-                diagnostic: format!(
-                    "native CUDA peer acquisition is unavailable on {}; use WGPU or a supported Linux CUDA host",
-                    std::env::consts::OS
-                ),
-            });
+        let backend_state = match gpu_policy {
+            GpuInitPolicy::SelectedBackend(backend) if backend.is_gpu() => {
+                ScannerBackendState::SelectedGpu {
+                    peer: selected_gpu_peer(backend),
+                    #[cfg(feature = "gpu")]
+                    resident_literal: std::sync::Mutex::new(GpuResidentLiteralSlot::Empty),
+                }
             }
-            #[cfg(not(target_os = "macos"))]
-            if probe_metal {
-                failures.push(GpuBackendAcquisitionFailure {
-                    backend: "metal",
-                    diagnostic: format!(
-                    "native Metal peer acquisition is unavailable on {}; use WGPU or a macOS host",
-                    std::env::consts::OS
-                ),
-                });
-            }
-            if probe_cuda {
-                #[cfg(target_os = "linux")]
-                {
-                    match super::types::probe_cuda_peer() {
-                        Ok(caps) => {
-                            peers.cuda_available = true;
-                            peers.cuda_device_identity = Some(format!(
-                                "{}:ordinal={}:cc={}.{}:vram={}",
-                                caps.name,
-                                caps.ordinal,
-                                caps.compute_capability.0,
-                                caps.compute_capability.1,
-                                caps.total_memory
-                            ));
-                            match linux_cuda_runtime_identity() {
-                                Ok(identity) => peers.cuda_runtime_identity = Some(identity),
-                                Err(diagnostic) => {
-                                    tracing::warn!(
-                                        target: "keyhog::routing",
-                                        %diagnostic,
-                                        "CUDA peer acquired without reproducible runtime identity"
-                                    );
+            GpuInitPolicy::SelectedBackend(backend) => ScannerBackendState::SelectedHost(backend),
+            GpuInitPolicy::ForceDisabled => ScannerBackendState::Disabled,
+            GpuInitPolicy::FromRuntimePolicy | GpuInitPolicy::ForceEnabled => {
+                #[cfg(feature = "gpu")]
+                let (peers, failures) = {
+                    let mut peers = GpuBackendPeers::default();
+                    let mut failures = Vec::new();
+                    if !gpu_disabled {
+                        #[cfg(not(target_os = "linux"))]
+                        failures.push(GpuBackendAcquisitionFailure {
+                            backend: "cuda",
+                            diagnostic: format!(
+                                "native CUDA peer acquisition is unavailable on {}; use WGPU or a supported Linux CUDA host",
+                                std::env::consts::OS
+                            ),
+                        });
+                        #[cfg(not(target_os = "macos"))]
+                        failures.push(GpuBackendAcquisitionFailure {
+                            backend: "metal",
+                            diagnostic: format!(
+                                "native Metal peer acquisition is unavailable on {}; use WGPU or a macOS host",
+                                std::env::consts::OS
+                            ),
+                        });
+                        #[cfg(target_os = "linux")]
+                        match super::types::probe_cuda_peer() {
+                            Ok(caps) => {
+                                peers.cuda_available = true;
+                                peers.cuda_device_identity = Some(format!(
+                                    "{}:ordinal={}:cc={}.{}:vram={}",
+                                    caps.name,
+                                    caps.ordinal,
+                                    caps.compute_capability.0,
+                                    caps.compute_capability.1,
+                                    caps.total_memory
+                                ));
+                                match linux_cuda_runtime_identity() {
+                                    Ok(identity) => peers.cuda_runtime_identity = Some(identity),
+                                    Err(diagnostic) => {
+                                        tracing::warn!(
+                                            target: "keyhog::routing",
+                                            %diagnostic,
+                                            "CUDA peer acquired without reproducible runtime identity"
+                                        );
+                                    }
                                 }
+                                tracing::debug!(
+                                    target: "keyhog::routing",
+                                    "CUDA peer identity probed"
+                                );
                             }
-                            tracing::debug!(target: "keyhog::routing", "CUDA peer identity probed");
+                            Err(error) => {
+                                surface_cuda_acquisition_failure(&error);
+                                failures.push(GpuBackendAcquisitionFailure {
+                                    backend: "cuda",
+                                    diagnostic: error.to_string(),
+                                });
+                            }
                         }
-                        Err(error) => {
-                            surface_cuda_acquisition_failure(&error);
+                        if let Some(probe) = crate::gpu::gpu_adapter_probe() {
+                            peers.wgpu_available = true;
+                            peers.wgpu_device_identity = Some(probe.device_identity.clone());
+                            peers.wgpu_runtime_identity = Some(probe.runtime_identity.clone());
+                            peers.wgpu_is_software = probe.is_software;
+                            #[cfg(target_os = "macos")]
+                            {
+                                peers.metal_available = true;
+                                peers.metal_device_identity = Some(probe.device_identity.clone());
+                                peers.metal_runtime_identity = Some(format!(
+                                    "vyre-metal={};{}",
+                                    env!("KEYHOG_VYRE_METAL_VERSION"),
+                                    probe.runtime_identity
+                                ));
+                                tracing::debug!(
+                                    target: "keyhog::routing",
+                                    "native Metal peer identity probed"
+                                );
+                            }
+                            tracing::debug!(
+                                target: "keyhog::routing",
+                                "WGPU peer identity probed"
+                            );
+                        } else {
                             failures.push(GpuBackendAcquisitionFailure {
-                                backend: "cuda",
-                                diagnostic: error.to_string(),
+                                backend: "wgpu",
+                                diagnostic: "WGPU adapter census found no adapters".to_string(),
+                            });
+                            #[cfg(target_os = "macos")]
+                            failures.push(GpuBackendAcquisitionFailure {
+                                backend: "metal",
+                                diagnostic: "native Metal adapter census found no adapters"
+                                    .to_string(),
                             });
                         }
                     }
+                    (peers, failures)
+                };
+                #[cfg(not(feature = "gpu"))]
+                let (peers, failures) = {
+                    let _ = gpu_disabled;
+                    (GpuBackendPeers::default(), Vec::new())
+                };
+                ScannerBackendState::Census {
+                    peers,
+                    failures,
+                    #[cfg(feature = "gpu")]
+                    resident_literal_cuda: std::sync::Mutex::new(GpuResidentLiteralSlot::Empty),
+                    #[cfg(feature = "gpu")]
+                    resident_literal_metal: std::sync::Mutex::new(GpuResidentLiteralSlot::Empty),
+                    #[cfg(feature = "gpu")]
+                    resident_literal_wgpu: std::sync::Mutex::new(GpuResidentLiteralSlot::Empty),
                 }
             }
-            if probe_wgpu || probe_metal {
-                if let Some(probe) = crate::gpu::gpu_adapter_probe() {
-                    if probe_wgpu {
-                        peers.wgpu_available = true;
-                        peers.wgpu_device_identity = Some(probe.device_identity.clone());
-                        peers.wgpu_runtime_identity = Some(probe.runtime_identity.clone());
-                        peers.wgpu_is_software = probe.is_software;
-                    }
-                    #[cfg(target_os = "macos")]
-                    if probe_metal {
-                        peers.metal_available = true;
-                        peers.metal_device_identity = Some(probe.device_identity.clone());
-                        peers.metal_runtime_identity = Some(format!(
-                            "vyre-metal={};{}",
-                            env!("KEYHOG_VYRE_METAL_VERSION"),
-                            probe.runtime_identity
-                        ));
-                        tracing::debug!(target: "keyhog::routing", "native Metal peer identity probed");
-                    }
-                    if probe_wgpu {
-                        tracing::debug!(target: "keyhog::routing", "WGPU peer identity probed");
-                    }
-                } else {
-                    if probe_wgpu {
-                        failures.push(GpuBackendAcquisitionFailure {
-                            backend: "wgpu",
-                            diagnostic: "WGPU adapter census found no adapters".to_string(),
-                        });
-                    }
-                    #[cfg(target_os = "macos")]
-                    if probe_metal {
-                        failures.push(GpuBackendAcquisitionFailure {
-                            backend: "metal",
-                            diagnostic: "native Metal adapter census found no adapters".to_string(),
-                        });
-                    }
-                }
-            }
-            (peers, failures)
-        } else {
-            (GpuBackendPeers::default(), Vec::new())
-        };
-
-        // Lean (no-`gpu`) build: never link the wgpu / CUDA drivers, never
-        // probe Vulkan at startup. The hw_probe still reports its findings so
-        // downstream routing surfaces resolved GPU-policy semantics, but no
-        // backend is acquired. `gpu_disabled` stays read so the cfg-aware
-        // dead-code warning is suppressed without an `_ =` decoration.
-        #[cfg(not(feature = "gpu"))]
-        let (gpu_backends, gpu_acquisition_failures) = {
-            let _ = gpu_disabled; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
-            (GpuBackendPeers::default(), Vec::new())
         };
         #[cfg(feature = "gpu")]
         let packed_gpu_artifact = if let Some(source) = packed_vyre_program {
-            let selected = selected_gpu.ok_or_else(|| {
-                crate::error::ScanError::Config(
-                    "a packed VYRE program requires its exact GPU backend to be selected".into(),
-                )
-            })?;
+            let selected = selected_backend
+                .filter(|backend| backend.is_gpu())
+                .ok_or_else(|| {
+                    crate::error::ScanError::Config(
+                        "a packed VYRE program requires its exact GPU backend to be selected"
+                            .into(),
+                    )
+                })?;
             let expected_backend = execution_backend(source.pack_identity.backend);
             if selected != expected_backend {
                 return Err(crate::error::ScanError::Config(format!(
@@ -525,48 +607,33 @@ impl CompiledScanner {
                     source.pack_identity.backend, selected
                 )));
             }
-            gpu_backends.get(selected).ok_or_else(|| {
+            backend_state.gpu_backend(selected).ok_or_else(|| {
                 crate::error::ScanError::Config(format!(
                     "selected packed VYRE peer {selected:?} could not be acquired: {}",
-                    gpu_backends
-                        .initialization_error(selected)
+                    backend_state
+                        .gpu_backend_initialization_error(selected)
                         .unwrap_or("backend unavailable")
                 ))
             })?;
-            let acquired = gpu_backends.initialized(selected).ok_or_else(|| {
-                crate::error::ScanError::Config(format!(
+            if !backend_state.gpu_backend_acquired(selected) {
+                return Err(crate::error::ScanError::Config(format!(
                     "selected packed VYRE peer {selected:?} was not retained after acquisition"
-                ))
-            })?;
-            if acquired.is_software {
+                )));
+            }
+            if backend_state.gpu_backend_is_software(selected) {
                 return Err(crate::error::ScanError::Config(format!(
                     "selected packed VYRE peer {selected:?} is a software adapter"
                 )));
             }
-            let (runtime_identity, census_device_identity) = match selected {
-                crate::hw_probe::ScanBackend::GpuCuda => (
-                    gpu_backends.cuda_runtime_identity.as_deref(),
-                    gpu_backends.cuda_device_identity.as_deref(),
-                ),
-                crate::hw_probe::ScanBackend::GpuMetal => (
-                    gpu_backends.metal_runtime_identity.as_deref(),
-                    gpu_backends.metal_device_identity.as_deref(),
-                ),
-                crate::hw_probe::ScanBackend::GpuWgpu => (
-                    gpu_backends.wgpu_runtime_identity.as_deref(),
-                    gpu_backends.wgpu_device_identity.as_deref(),
-                ),
-                _ => unreachable!("selected GPU checked above"),
-            };
-            let runtime_identity = runtime_identity.ok_or_else(|| {
-                crate::error::ScanError::Config(format!(
-                    "selected packed VYRE peer {selected:?} has no runtime identity"
-                ))
-            })?;
-            let device_identity = acquired
-                .device_identity
-                .as_deref()
-                .or(census_device_identity)
+            let runtime_identity = backend_state
+                .gpu_backend_runtime_identity(selected)
+                .ok_or_else(|| {
+                    crate::error::ScanError::Config(format!(
+                        "selected packed VYRE peer {selected:?} has no runtime identity"
+                    ))
+                })?;
+            let device_identity = backend_state
+                .gpu_backend_device_identity(selected)
                 .ok_or_else(|| {
                     crate::error::ScanError::Config(format!(
                         "selected packed VYRE peer {selected:?} has no device identity"
@@ -577,8 +644,8 @@ impl CompiledScanner {
                 crate::execution_pack::VyreExecutionIdentity::for_selected_peer(
                     source.pack_identity.backend,
                     source.pack_identity.target_digest,
-                    runtime_identity,
-                    device_identity,
+                    &runtime_identity,
+                    &device_identity,
                     &hardware_identity,
                 )
                 .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
@@ -700,7 +767,7 @@ impl CompiledScanner {
                 );
                 (None, Some(artifact.matcher), artifact.max_literal_len)
             } else {
-                let literals = if gpu_backends.availability().any() {
+                let literals = if backend_state.gpu_availability().any() {
                     let phase2_always_anchor_literals = phase2_anchor_index
                         .as_ref()
                         .map_or(&[] as &[String], |index| index.always_anchor_literals());
@@ -878,22 +945,14 @@ impl CompiledScanner {
             }
         }
         let scanner = Self {
-            selected_backend,
+            backend_state,
             detector_digest,
             compiled_plan_digest,
             ac,
-            gpu_backends,
-            gpu_acquisition_failures,
             gpu_literals,
             #[cfg(feature = "gpu")]
             gpu_max_literal_len,
             gpu_matcher,
-            #[cfg(feature = "gpu")]
-            gpu_resident_literal_cuda: std::sync::Mutex::new(GpuResidentLiteralSlot::Empty),
-            #[cfg(feature = "gpu")]
-            gpu_resident_literal_metal: std::sync::Mutex::new(GpuResidentLiteralSlot::Empty),
-            #[cfg(feature = "gpu")]
-            gpu_resident_literal_wgpu: std::sync::Mutex::new(GpuResidentLiteralSlot::Empty),
             gpu_last_degrade_reason: std::sync::Mutex::new(None),
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
             autoroute_gpu_shared_cold_ns: std::sync::atomic::AtomicU64::new(0),

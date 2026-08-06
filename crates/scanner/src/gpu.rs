@@ -41,7 +41,7 @@ pub(crate) use backend::with_test_resident_dispatch_failure;
 pub use backend::GpuBackendAvailability;
 #[cfg(feature = "gpu")]
 pub(crate) use backend::{scan_gpu_literal_evidence_by_region_resident, GpuResidentLiteralSlot};
-pub(crate) use backend::{GpuBackendAcquisitionFailure, GpuBackendPeers};
+pub(crate) use backend::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
 type RecoveryReceiptCounter = std::sync::Arc<std::sync::atomic::AtomicU64>;
 
 thread_local! {

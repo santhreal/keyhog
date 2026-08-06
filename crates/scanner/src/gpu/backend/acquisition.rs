@@ -62,6 +62,95 @@ pub(crate) struct GpuBackendPeers {
     pub(crate) wgpu_is_software: bool,
 }
 
+pub(crate) struct SelectedGpuPeer {
+    backend: ScanBackend,
+    acquisition: OnceLock<Result<AcquiredGpuPeer, String>>,
+    pub(crate) available: bool,
+    pub(crate) device_identity: Option<String>,
+    pub(crate) runtime_identity: Option<String>,
+    pub(crate) is_software: bool,
+    initialization_error: Option<String>,
+}
+
+impl SelectedGpuPeer {
+    pub(crate) fn new(backend: ScanBackend) -> Self {
+        debug_assert!(backend.is_gpu());
+        Self {
+            backend,
+            acquisition: OnceLock::new(),
+            available: false,
+            device_identity: None,
+            runtime_identity: None,
+            is_software: false,
+            initialization_error: None,
+        }
+    }
+
+    pub(crate) fn mark_available(
+        &mut self,
+        device_identity: String,
+        runtime_identity: Option<String>,
+        is_software: bool,
+    ) {
+        self.available = true;
+        self.device_identity = Some(device_identity);
+        self.runtime_identity = runtime_identity;
+        self.is_software = is_software;
+        self.initialization_error = None;
+    }
+
+    pub(crate) fn mark_unavailable(&mut self, diagnostic: String) {
+        self.available = false;
+        self.initialization_error = Some(diagnostic);
+    }
+
+    pub(crate) fn backend(&self) -> ScanBackend {
+        self.backend
+    }
+
+    pub(crate) fn get(&self, backend: ScanBackend) -> Option<&Arc<dyn vyre::VyreBackend>> {
+        if backend != self.backend {
+            return None;
+        }
+        let result = lazy_acquire(self.available, &self.acquisition, || acquire_peer(backend))?;
+        match result {
+            Ok(peer) => Some(&peer.backend),
+            Err(error) => {
+                tracing::error!(
+                    target: "keyhog::routing",
+                    ?backend,
+                    diagnostic = %error,
+                    "selected GPU backend acquisition failed"
+                );
+                None
+            }
+        }
+    }
+
+    pub(crate) fn initialized(&self, backend: ScanBackend) -> Option<&AcquiredGpuPeer> {
+        if backend != self.backend {
+            return None;
+        }
+        self.acquisition.get()?.as_ref().ok()
+    }
+
+    pub(crate) fn initialization_error(&self, backend: ScanBackend) -> Option<&str> {
+        if backend != self.backend {
+            return None;
+        }
+        self.acquisition
+            .get()
+            .and_then(|result| result.as_ref().err().map(String::as_str))
+            .or(self.initialization_error.as_deref())
+    }
+
+    #[cfg(feature = "gpu")]
+    pub(crate) fn resident_timed_dispatch_supported(&self, backend: ScanBackend) -> bool {
+        self.initialized(backend)
+            .is_some_and(|peer| peer.resident_timed_dispatch_supported)
+    }
+}
+
 impl Default for GpuBackendPeers {
     fn default() -> Self {
         Self {
@@ -91,6 +180,15 @@ pub(super) fn lazy_acquire<T, E>(
         return None;
     }
     Some(slot.get_or_init(acquire))
+}
+
+fn acquire_peer(backend: ScanBackend) -> Result<AcquiredGpuPeer, String> {
+    match backend {
+        ScanBackend::GpuCuda => acquire_cuda_peer(),
+        ScanBackend::GpuMetal => acquire_metal_peer(),
+        ScanBackend::GpuWgpu => acquire_wgpu_peer(),
+        _ => Err(format!("{} is not a GPU backend", backend.label())),
+    }
 }
 
 impl GpuBackendPeers {

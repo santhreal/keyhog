@@ -5,13 +5,13 @@
 //! differences are reported as `GpuCapabilityUnsupported` events instead of
 //! diverging into per-backend counters. Typed identity and capability evidence
 //! fires on the FIRST GPU dispatch that executes under each profile runtime
-//! (keyed by the runtime's unique context id), never at acquisition: a
-//! CPU-only scan on a GPU host still acquires peers during scanner compile,
-//! and acquisition-time recording would break the "CPU scans stay silent"
-//! contract. String identity facets (adapter name, driver, driver_info) have
-//! no string-typed profile API; they ride the existing daemon warm identity
-//! (`GpuBackendPeers::*_identity`) and tracing, while the typed channel carries
-//! the numeric facets (backend kind, PCI vendor/device ids).
+//! (keyed by the runtime's unique context id), never at acquisition. A
+//! selected CPU scanner retains no GPU peer, while the calibration scanner
+//! may census peers without dispatching them. Acquisition-time recording would
+//! break the "CPU scans stay silent" contract. String identity facets (adapter
+//! name, driver, driver_info) have no string-typed profile API; they ride the
+//! scanner backend state's warm identity and tracing, while the typed channel
+//! carries the numeric facets (backend kind, PCI vendor/device ids).
 //!
 //! Retained state: two process-wide residency atomics (exact, lossless) and
 //! one bounded per-context dedup set ([`MAX_RECORDED_CONTEXTS`]); overflow of

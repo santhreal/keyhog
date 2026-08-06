@@ -317,7 +317,7 @@ impl CompiledScanner {
         let Some(matcher) = self.gpu_matcher() else {
             return dispatch_failure("gpu literal matcher not built for this scanner".to_string());
         };
-        let Some(gpu_backend) = self.gpu_backends.get(route) else {
+        let Some(gpu_backend) = self.gpu_backend(route) else {
             return dispatch_failure(self.gpu_backend_unavailable_reason(route));
         };
         // Presence bitmap is the phase-1 path: no per-hit triples and no match

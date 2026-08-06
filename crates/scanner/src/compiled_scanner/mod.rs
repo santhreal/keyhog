@@ -15,12 +15,11 @@ pub use types::{
     CompiledDetectorEvidenceRelation, CompiledEvidencePlan, CompiledEvidenceRelation,
     CompiledScannerRuntime, GpuBackendAvailability, GpuBackendCandidateStatus, GpuInitPolicy,
 };
-pub(crate) use types::{GpuBackendAcquisitionFailure, GpuBackendPeers};
+pub(crate) use types::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
 
 use crate::compiler::*;
 #[cfg(feature = "simd")]
 use crate::engine::build_simd_compile_plan;
-use crate::engine::CompiledScanner;
 #[cfg(all(test, feature = "simd"))]
 use crate::engine::Phase2HsEngine;
 use crate::engine::{
@@ -31,6 +30,7 @@ use crate::engine::{
 use crate::engine::{
     regex_match_byte_upper_bound, GpuResidentLiteralSlot, Phase2GpuDfaCatalogCache,
 };
+use crate::engine::{CompiledScanner, ScannerBackendState};
 use crate::error::Result;
 use crate::types::*;
 use keyhog_core::{Chunk, DetectorSpec, RawMatch};

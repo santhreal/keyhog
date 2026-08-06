@@ -178,9 +178,8 @@ impl CompiledScanner {
         }
         self.simd_prefilter
             .get_or_init(|| {
-                let cold = keyhog_profile::decision_timer(
-                    keyhog_profile::Stage::AutorouteCalibration,
-                );
+                let cold =
+                    keyhog_profile::decision_timer(keyhog_profile::Stage::AutorouteCalibration);
                 let plan = self
                     .simd_compile_plan
                     .lock()
@@ -550,7 +549,7 @@ impl CompiledScanner {
             detector_digest: self.detector_digest(),
             compiled_plan_digest: self.compiled_plan_digest,
             preferred_backend: self.preferred_backend_label(),
-            gpu_backends: self.gpu_backends.availability(),
+            gpu_backends: self.backend_state.gpu_availability(),
             gpu_degrade_count: self.gpu_degrade_count(),
         }
     }
@@ -602,7 +601,7 @@ impl CompiledScanner {
     /// requests. It is never called from the per-chunk scan path.
     #[must_use]
     pub fn bigram_prefilter_status(&self) -> crate::bigram_bloom::BigramPrefilterStatus {
-        self.bigram_bloom.status()
+        self.route_classification.bigram_bloom.status()
     }
 
     /// Measure Layer-0.5 rejection over one explicitly named diagnostic corpus.
@@ -618,7 +617,7 @@ impl CompiledScanner {
     where
         I: IntoIterator<Item = &'a [u8]>,
     {
-        self.bigram_bloom.corpus_status(
+        self.route_classification.bigram_bloom.corpus_status(
             corpus_name,
             inputs,
             crate::engine::BIGRAM_BLOOM_MIN_CHUNK_BYTES,
@@ -658,72 +657,35 @@ impl CompiledScanner {
         self.detector_digest
     }
 
-    /// Every compiled GPU driver peer and its census and initialization state.
+    /// GPU peers retained by this scanner's backend state.
     #[must_use]
     pub fn gpu_backend_candidates(&self) -> Vec<GpuBackendCandidateStatus> {
         use crate::hw_probe::ScanBackend;
-        [
-            ScanBackend::GpuCuda,
-            ScanBackend::GpuMetal,
-            ScanBackend::GpuWgpu,
-        ]
-        .into_iter()
-        .map(|backend| {
-            let acquired = self.gpu_backends.initialized(backend);
-            let available = match backend {
-                ScanBackend::GpuCuda => self.gpu_backends.cuda_available,
-                ScanBackend::GpuMetal => self.gpu_backends.metal_available,
-                ScanBackend::GpuWgpu => self.gpu_backends.wgpu_available,
-                _ => false,
-            };
-            let acquisition_error = self
-                .gpu_backends
-                .initialization_error(backend)
-                .map(str::to_owned)
-                .or_else(|| {
-                    self.gpu_acquisition_failures
-                        .iter()
-                        .find(|failure| failure.backend == backend_driver_name(backend))
-                        .map(|failure| failure.diagnostic.clone())
-                });
-            GpuBackendCandidateStatus {
-                backend,
-                available,
-                acquired: acquired.is_some(),
-                driver_id: available.then(|| backend_driver_name(backend)),
-                driver_version: available.then(|| match backend {
-                    ScanBackend::GpuCuda => env!("KEYHOG_VYRE_CUDA_VERSION"),
-                    ScanBackend::GpuMetal => env!("KEYHOG_VYRE_METAL_VERSION"),
-                    ScanBackend::GpuWgpu => env!("KEYHOG_VYRE_WGPU_VERSION"),
-                    _ => unreachable!("candidate list contains only GPU backends"),
-                }),
-                device_identity: acquired
-                    .and_then(|peer| peer.device_identity.clone())
-                    .or_else(|| match backend {
-                        ScanBackend::GpuCuda => self.gpu_backends.cuda_device_identity.clone(),
-                        ScanBackend::GpuMetal => self.gpu_backends.metal_device_identity.clone(),
-                        ScanBackend::GpuWgpu => self.gpu_backends.wgpu_device_identity.clone(),
-                        _ => None,
+        self.backend_state
+            .gpu_candidate_backends()
+            .map(|backend| {
+                let available = self.backend_state.gpu_backend_available(backend);
+                GpuBackendCandidateStatus {
+                    backend,
+                    available,
+                    acquired: self.backend_state.gpu_backend_acquired(backend),
+                    driver_id: available.then(|| backend_driver_name(backend)),
+                    driver_version: available.then(|| match backend {
+                        ScanBackend::GpuCuda => env!("KEYHOG_VYRE_CUDA_VERSION"),
+                        ScanBackend::GpuMetal => env!("KEYHOG_VYRE_METAL_VERSION"),
+                        ScanBackend::GpuWgpu => env!("KEYHOG_VYRE_WGPU_VERSION"),
+                        _ => unreachable!("candidate state contains only GPU backends"),
                     }),
-                runtime_identity: match backend {
-                    ScanBackend::GpuCuda => self.gpu_backends.cuda_runtime_identity.clone(),
-                    ScanBackend::GpuMetal => self.gpu_backends.metal_runtime_identity.clone(),
-                    ScanBackend::GpuWgpu => self.gpu_backends.wgpu_runtime_identity.clone(),
-                    _ => None,
-                },
-                is_software: acquired.map_or_else(
-                    || match backend {
-                        ScanBackend::GpuCuda => false,
-                        ScanBackend::GpuMetal => false,
-                        ScanBackend::GpuWgpu => self.gpu_backends.wgpu_is_software,
-                        _ => true,
-                    },
-                    |peer| peer.is_software,
-                ),
-                acquisition_error,
-            }
-        })
-        .collect()
+                    device_identity: self.backend_state.gpu_backend_device_identity(backend),
+                    runtime_identity: self.backend_state.gpu_backend_runtime_identity(backend),
+                    is_software: self.backend_state.gpu_backend_is_software(backend),
+                    acquisition_error: self
+                        .backend_state
+                        .gpu_backend_initialization_error(backend)
+                        .map(str::to_owned),
+                }
+            })
+            .collect()
     }
 
     /// Materialize one GPU route and return the identity of the exact peer that

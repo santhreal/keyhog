@@ -20,7 +20,7 @@ pub(crate) use acquisition::load_dynamic_library;
 #[cfg(all(feature = "gpu", target_os = "linux"))]
 pub(crate) use acquisition::probe_cuda_peer;
 pub use acquisition::GpuBackendAvailability;
-pub(crate) use acquisition::{GpuBackendAcquisitionFailure, GpuBackendPeers};
+pub(crate) use acquisition::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
 
 #[cfg(feature = "gpu")]
 pub(crate) use acquisition::get_gpu;
@@ -59,8 +59,8 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 #[cfg(all(test, feature = "gpu"))]
-#[path = "../../tests/unit/gpu_backend.rs"]
-mod tests;
-#[cfg(all(test, feature = "gpu"))]
 #[path = "../../tests/unit/gpu_evidence_dispatch.rs"]
 mod gpu_evidence_dispatch_tests;
+#[cfg(all(test, feature = "gpu"))]
+#[path = "../../tests/unit/gpu_backend.rs"]
+mod tests;

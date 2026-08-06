@@ -95,26 +95,27 @@ impl CompiledScanner {
             );
         };
         let matcher_s = t_matcher.map_or(std::time::Duration::ZERO, |t| t.elapsed());
-        let Some(backend) = self.gpu_backends.get(route) else {
+        let Some(backend) = self.gpu_backend(route) else {
             return dispatch_failure(self.gpu_backend_unavailable_reason(route));
         };
-        let resident_timed_dispatch_supported =
-            self.gpu_backends.resident_timed_dispatch_supported(route);
+        let resident_timed_dispatch_supported = self
+            .backend_state
+            .gpu_resident_timed_dispatch_supported(route);
         let backend_code = crate::gpu::evidence::backend_code(backend.id());
         // Typed identity + capability evidence on the first dispatch under
         // each profile runtime; string facets ride the daemon warm identity.
-        if let Some(peer) = self.gpu_backends.initialized(route) {
-            crate::gpu::evidence::record_adapter_identity(
-                &crate::gpu::evidence::AdapterIdentity {
-                    backend_code,
-                    vendor: peer.adapter_vendor,
-                    device: peer.adapter_device,
-                    is_software: peer.is_software,
-                    name: peer.device_identity.as_deref().unwrap_or(backend.id()),
-                    driver: "",
-                    driver_info: "",
-                },
-            );
+        if let Some((vendor, device, is_software, name)) =
+            self.backend_state.gpu_backend_adapter_identity(route)
+        {
+            crate::gpu::evidence::record_adapter_identity(&crate::gpu::evidence::AdapterIdentity {
+                backend_code,
+                vendor,
+                device,
+                is_software,
+                name: name.unwrap_or(backend.id()),
+                driver: "",
+                driver_info: "",
+            });
         }
         crate::gpu::evidence::report_counter_caps_unsupported(backend_code);
         if !resident_timed_dispatch_supported {

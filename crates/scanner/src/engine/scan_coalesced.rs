@@ -164,6 +164,14 @@ impl CompiledScanner {
         #[cfg(feature = "gpu")] recover_gpu_dispatch_faults: bool,
         #[cfg(not(feature = "gpu"))] _recover_gpu_dispatch_faults: bool,
     ) -> crate::error::Result<super::CoalescedScanOutcome> {
+        if let Some(materialized) = self.selected_backend() {
+            if materialized != backend {
+                return Err(crate::error::ScanError::BackendPlanMismatch {
+                    materialized: materialized.label(),
+                    requested: backend.label(),
+                });
+            }
+        }
         let expected_residual_backend = if backend.is_gpu() {
             crate::hw_probe::ScanBackend::CpuFallback
         } else {
