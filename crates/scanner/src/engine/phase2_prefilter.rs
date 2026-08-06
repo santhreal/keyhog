@@ -14,6 +14,30 @@ use dispatch_plan::{BatchMatcher, DispatchConfig, DispatchPlan, PrefilterScope};
 use gating::{combined_gate_decision, CombinedGateDecision};
 use std::sync::atomic::Ordering::Relaxed;
 
+pub(crate) fn canonical_phase2_scope_indices(
+    phase2_patterns: &[(CompiledPattern, Vec<String>)],
+    always_active_indices: &[usize],
+    anchor_index: Option<&super::phase2_anchor::Phase2AnchorIndex>,
+) -> [Vec<usize>; 3] {
+    let anchor_residual = always_active_indices
+        .iter()
+        .copied()
+        .filter(|&index| {
+            !anchor_index.is_some_and(|anchors| anchors.is_always_active_eligible(index))
+        })
+        .collect::<Vec<_>>();
+    let localized_residual = anchor_residual
+        .iter()
+        .copied()
+        .filter(|&index| phase2_patterns[index].0.regex.is_case_insensitive())
+        .collect::<Vec<_>>();
+    [
+        always_active_indices.to_vec(),
+        anchor_residual,
+        localized_residual,
+    ]
+}
+
 impl Phase2AlwaysActivePrefilter {
     /// Patterns per RegexSet batch. A single set over all ~2.7k always-active
     /// patterns blows the compiled-program size limit, so the set is batched.
@@ -67,20 +91,14 @@ impl Phase2AlwaysActivePrefilter {
                 .all(|&index| index < phase2_patterns.len()),
             "compiled scanner invariant violation: phase-2 always-active index out of range"
         );
-        let anchor_residual_indices = always_active_indices
-            .iter()
-            .copied()
-            .filter(|&index| {
-                !anchor_index.is_some_and(|anchors| anchors.is_always_active_eligible(index))
-            })
-            .collect::<Vec<_>>();
-        let localized_residual_indices = anchor_residual_indices
-            .iter()
-            .copied()
-            .filter(|&index| phase2_patterns[index].0.regex.is_case_insensitive())
-            .collect::<Vec<_>>();
+        let [valid_always_active_indices, anchor_residual_indices, localized_residual_indices] =
+            canonical_phase2_scope_indices(
+                phase2_patterns,
+                always_active_indices,
+                anchor_index,
+            );
         Some(Self {
-            valid_always_active_indices: always_active_indices.to_vec(),
+            valid_always_active_indices,
             anchor_residual_indices,
             localized_residual_indices,
             portable: std::sync::OnceLock::new(),
@@ -105,6 +123,54 @@ impl Phase2AlwaysActivePrefilter {
         ]
         .into_iter()
         .any(|slot| slot.get().is_some_and(Option::is_some))
+    }
+
+    #[cfg(feature = "simd")]
+    pub(crate) fn install_hyperscan_programs(
+        &self,
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        programs: Vec<crate::execution_pack::simd_program::HyperscanPhase2ScopeProgram>,
+    ) -> std::result::Result<(), String> {
+        if programs.len() != 3 {
+            return Err(format!(
+                "packed SIMD program has {} phase-two scopes; exactly 3 are required",
+                programs.len()
+            ));
+        }
+        let slots = [
+            (
+                crate::execution_pack::simd_program::HyperscanPhase2Scope::Full,
+                PrefilterScope::Full,
+                &self.hs,
+            ),
+            (
+                crate::execution_pack::simd_program::HyperscanPhase2Scope::AnchorResidual,
+                PrefilterScope::AnchorResidual,
+                &self.hs_anchor_residual,
+            ),
+            (
+                crate::execution_pack::simd_program::HyperscanPhase2Scope::LocalizedResidual,
+                PrefilterScope::LocalizedResidual,
+                &self.hs_localized_residual,
+            ),
+        ];
+        for (program, (expected_scope, runtime_scope, slot)) in programs.into_iter().zip(slots) {
+            if program.scope != expected_scope {
+                return Err(format!(
+                    "packed phase-two scope ordering is invalid: expected {expected_scope:?}, found {:?}",
+                    program.scope
+                ));
+            }
+            let engine = Phase2HsEngine::from_program(
+                phase2_patterns,
+                self.indices_for(runtime_scope),
+                program,
+            )?;
+            slot.set(engine).map_err(|_| {
+                format!("packed phase-two scope {expected_scope:?} was installed more than once")
+            })?;
+        }
+        Ok(())
     }
 
     fn combined_gate<'a>(

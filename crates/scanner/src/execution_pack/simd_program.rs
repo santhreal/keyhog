@@ -3,8 +3,8 @@
 use super::{CanonicalDetectorExecutionIr, ExecutionPackError, ScalarCpuExecutionProgram};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-const MAGIC: &[u8; 8] = b"KHSIMD\0\x02";
-pub const HYPERSCAN_SIMD_PROGRAM_VERSION: u16 = 2;
+const MAGIC: &[u8; 8] = b"KHSIMD\0\x03";
+pub const HYPERSCAN_SIMD_PROGRAM_VERSION: u16 = 3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HyperscanPatternProgram {
@@ -19,6 +19,40 @@ pub struct HyperscanPatternProgram {
     pub ac_map_indices: Vec<u32>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum HyperscanPhase2Scope {
+    Full = 0,
+    AnchorResidual = 1,
+    LocalizedResidual = 2,
+}
+
+impl HyperscanPhase2Scope {
+    const ALL: [Self; 3] = [
+        Self::Full,
+        Self::AnchorResidual,
+        Self::LocalizedResidual,
+    ];
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HyperscanPhase2DatabaseProgram {
+    /// Canonical phase-two indices submitted to Hyperscan, in database input-id order.
+    pub pattern_indices: Vec<u32>,
+    /// Input IDs rejected by Hyperscan and retained on the host regex path.
+    pub unsupported_pattern_ids: Vec<u32>,
+    pub serialized_shards: Vec<Vec<u8>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HyperscanPhase2ScopeProgram {
+    pub scope: HyperscanPhase2Scope,
+    /// Exact runtime ownership indices for this scope, including host-only patterns.
+    pub pattern_indices: Vec<u32>,
+    pub full: Option<HyperscanPhase2DatabaseProgram>,
+    pub ascii_lean: Option<HyperscanPhase2DatabaseProgram>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HyperscanSimdExecutionProgram {
     pub version: u16,
@@ -26,6 +60,7 @@ pub struct HyperscanSimdExecutionProgram {
     pub patterns: Vec<HyperscanPatternProgram>,
     pub unsupported_pattern_ids: Vec<u32>,
     pub serialized_shards: Vec<Vec<u8>>,
+    pub phase2_scopes: Vec<HyperscanPhase2ScopeProgram>,
 }
 
 impl HyperscanSimdExecutionProgram {
@@ -151,12 +186,37 @@ impl HyperscanSimdExecutionProgram {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
+        let phase2_always_active =
+            crate::compiler::phase2_always_active_indices(&state.phase2_patterns);
+        let phase2_anchor = crate::engine::Phase2AnchorIndex::build(
+            &state.phase2_patterns,
+            &phase2_always_active,
+        );
+        let phase2_indices = crate::engine::canonical_phase2_scope_indices(
+            &state.phase2_patterns,
+            &phase2_always_active,
+            phase2_anchor.as_ref(),
+        );
+        let phase2_scopes = HyperscanPhase2Scope::ALL
+            .into_iter()
+            .zip(phase2_indices)
+            .map(|(scope, indices)| {
+                crate::engine::compile_phase2_scope_program(
+                    &state.phase2_patterns,
+                    scope,
+                    &indices,
+                )
+                .map_err(ExecutionPackError::InvalidPack)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         let program = Self {
             version: HYPERSCAN_SIMD_PROGRAM_VERSION,
             detector_ir_digest: ir.digest(),
             patterns,
             unsupported_pattern_ids,
             serialized_shards,
+            phase2_scopes,
         };
         program.validate_structure()?;
         Ok(program)
@@ -173,6 +233,9 @@ impl HyperscanSimdExecutionProgram {
         let shard_count = u32::try_from(self.serialized_shards.len()).map_err(|_| {
             ExecutionPackError::InvalidPack("Hyperscan shard count exceeds u32".into())
         })?;
+        let phase2_scope_count = u32::try_from(self.phase2_scopes.len()).map_err(|_| {
+            ExecutionPackError::InvalidPack("Hyperscan phase-two scope count exceeds u32".into())
+        })?;
         let mut out = Vec::new();
         out.extend_from_slice(MAGIC);
         out.extend_from_slice(&self.version.to_le_bytes());
@@ -181,6 +244,7 @@ impl HyperscanSimdExecutionProgram {
         out.extend_from_slice(&pattern_count.to_le_bytes());
         out.extend_from_slice(&unsupported_count.to_le_bytes());
         out.extend_from_slice(&shard_count.to_le_bytes());
+        out.extend_from_slice(&phase2_scope_count.to_le_bytes());
         for pattern in &self.patterns {
             out.extend_from_slice(&pattern.detector_index.to_le_bytes());
             out.extend_from_slice(&pattern.pattern_index.to_le_bytes());
@@ -196,6 +260,17 @@ impl HyperscanSimdExecutionProgram {
         for shard in &self.serialized_shards {
             out.extend_from_slice(blake3::hash(shard).as_bytes());
             write_bytes(&mut out, shard)?;
+        }
+        for scope in &self.phase2_scopes {
+            out.push(scope.scope as u8);
+            out.extend_from_slice(&[0; 3]);
+            write_indices(
+                &mut out,
+                &scope.pattern_indices,
+                "Hyperscan phase-two scope mapping",
+            )?;
+            write_phase2_database(&mut out, scope.full.as_ref())?;
+            write_phase2_database(&mut out, scope.ascii_lean.as_ref())?;
         }
         Ok(out)
     }
@@ -228,6 +303,7 @@ impl HyperscanSimdExecutionProgram {
         let pattern_count = cursor.count("SIMD pattern")?;
         let unsupported_count = cursor.count("SIMD unsupported")?;
         let shard_count = cursor.count("Hyperscan shard")?;
+        let phase2_scope_count = cursor.count("Hyperscan phase-two scope")?;
         let mut patterns = Vec::with_capacity(pattern_count);
         for _ in 0..pattern_count {
             let detector_index = cursor.u32()?;
@@ -275,6 +351,33 @@ impl HyperscanSimdExecutionProgram {
             }
             serialized_shards.push(shard);
         }
+        let mut phase2_scopes = Vec::with_capacity(phase2_scope_count);
+        for _ in 0..phase2_scope_count {
+            let scope = match cursor.take(1)?[0] {
+                0 => HyperscanPhase2Scope::Full,
+                1 => HyperscanPhase2Scope::AnchorResidual,
+                2 => HyperscanPhase2Scope::LocalizedResidual,
+                value => {
+                    return Err(ExecutionPackError::InvalidPack(format!(
+                        "Hyperscan phase-two scope id {value} is invalid"
+                    )))
+                }
+            };
+            if cursor.take(3)?.iter().any(|byte| *byte != 0) {
+                return Err(ExecutionPackError::InvalidPack(
+                    "Hyperscan phase-two scope reserved bytes are nonzero".into(),
+                ));
+            }
+            let pattern_indices = cursor.indices("Hyperscan phase-two scope mapping")?;
+            let full = read_phase2_database(&mut cursor)?;
+            let ascii_lean = read_phase2_database(&mut cursor)?;
+            phase2_scopes.push(HyperscanPhase2ScopeProgram {
+                scope,
+                pattern_indices,
+                full,
+                ascii_lean,
+            });
+        }
         if !cursor.is_empty() {
             return Err(ExecutionPackError::InvalidPack(
                 "Hyperscan SIMD program has trailing bytes".into(),
@@ -286,6 +389,7 @@ impl HyperscanSimdExecutionProgram {
             patterns,
             unsupported_pattern_ids,
             serialized_shards,
+            phase2_scopes,
         };
         program.validate_structure()?;
         if program.canonical_bytes()?.as_slice() != bytes {
@@ -362,6 +466,40 @@ impl HyperscanSimdExecutionProgram {
                 "SIMD program contains an empty native shard".into(),
             ));
         }
+        if self.phase2_scopes.len() != HyperscanPhase2Scope::ALL.len() {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "SIMD program has {} phase-two scopes; exactly {} are required",
+                self.phase2_scopes.len(),
+                HyperscanPhase2Scope::ALL.len()
+            )));
+        }
+        for (scope, expected_scope) in self
+            .phase2_scopes
+            .iter()
+            .zip(HyperscanPhase2Scope::ALL)
+        {
+            if scope.scope != expected_scope {
+                return Err(ExecutionPackError::InvalidPack(
+                    "SIMD phase-two scopes are not in canonical order".into(),
+                ));
+            }
+            validate_strict_indices(
+                &scope.pattern_indices,
+                &format!("SIMD phase-two {:?} scope mapping", scope.scope),
+            )?;
+            if let Some(database) = &scope.full {
+                validate_phase2_database(database, &scope.pattern_indices, "full")?;
+            }
+            if let Some(database) = &scope.ascii_lean {
+                validate_phase2_database(database, &scope.pattern_indices, "ASCII")?;
+            }
+            if scope.full.is_none() && scope.ascii_lean.is_some() {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "SIMD phase-two {:?} scope has an ASCII database without a full database",
+                    scope.scope
+                )));
+            }
+        }
         Ok(())
     }
 
@@ -369,6 +507,119 @@ impl HyperscanSimdExecutionProgram {
     #[cfg(feature = "simd")]
     pub fn compile_with_opts_invocations() -> usize {
         crate::simd::backend::HsScanner::compile_with_opts_invocations()
+    }
+}
+
+fn validate_phase2_database(
+    database: &HyperscanPhase2DatabaseProgram,
+    scope_indices: &[u32],
+    label: &str,
+) -> Result<(), ExecutionPackError> {
+    validate_strict_indices(
+        &database.pattern_indices,
+        &format!("SIMD phase-two {label} database mapping"),
+    )?;
+    if database
+        .pattern_indices
+        .iter()
+        .any(|index| scope_indices.binary_search(index).is_err())
+    {
+        return Err(ExecutionPackError::InvalidPack(format!(
+            "SIMD phase-two {label} database maps a pattern outside its scope"
+        )));
+    }
+    validate_strict_indices(
+        &database.unsupported_pattern_ids,
+        &format!("SIMD phase-two {label} unsupported IDs"),
+    )?;
+    if database
+        .unsupported_pattern_ids
+        .iter()
+        .any(|&id| id as usize >= database.pattern_indices.len())
+    {
+        return Err(ExecutionPackError::InvalidPack(format!(
+            "SIMD phase-two {label} database has an unsupported ID outside its mapping"
+        )));
+    }
+    let supported_count = database
+        .pattern_indices
+        .len()
+        .saturating_sub(database.unsupported_pattern_ids.len());
+    if database.serialized_shards.is_empty() != (supported_count == 0) {
+        return Err(ExecutionPackError::InvalidPack(format!(
+            "SIMD phase-two {label} database has {supported_count} supported pattern(s) but {} shard(s)",
+            database.serialized_shards.len()
+        )));
+    }
+    if database.serialized_shards.iter().any(Vec::is_empty) {
+        return Err(ExecutionPackError::InvalidPack(format!(
+            "SIMD phase-two {label} database contains an empty shard"
+        )));
+    }
+    Ok(())
+}
+
+fn write_phase2_database(
+    out: &mut Vec<u8>,
+    database: Option<&HyperscanPhase2DatabaseProgram>,
+) -> Result<(), ExecutionPackError> {
+    let Some(database) = database else {
+        out.push(0);
+        return Ok(());
+    };
+    out.push(1);
+    write_indices(
+        out,
+        &database.pattern_indices,
+        "Hyperscan phase-two database mapping",
+    )?;
+    write_indices(
+        out,
+        &database.unsupported_pattern_ids,
+        "Hyperscan phase-two unsupported IDs",
+    )?;
+    let shard_count = u32::try_from(database.serialized_shards.len()).map_err(|_| {
+        ExecutionPackError::InvalidPack("Hyperscan phase-two shard count exceeds u32".into())
+    })?;
+    out.extend_from_slice(&shard_count.to_le_bytes());
+    for shard in &database.serialized_shards {
+        out.extend_from_slice(blake3::hash(shard).as_bytes());
+        write_bytes(out, shard)?;
+    }
+    Ok(())
+}
+
+fn read_phase2_database(
+    cursor: &mut Cursor<'_>,
+) -> Result<Option<HyperscanPhase2DatabaseProgram>, ExecutionPackError> {
+    match cursor.take(1)?[0] {
+        0 => Ok(None),
+        1 => {
+            let pattern_indices = cursor.indices("Hyperscan phase-two database mapping")?;
+            let unsupported_pattern_ids =
+                cursor.indices("Hyperscan phase-two unsupported IDs")?;
+            let shard_count = cursor.count("Hyperscan phase-two shard")?;
+            let mut serialized_shards = Vec::with_capacity(shard_count);
+            for index in 0..shard_count {
+                let expected_digest: [u8; 32] =
+                    cursor.take(32)?.try_into().expect("fixed digest");
+                let shard = cursor.bytes()?.to_vec();
+                if *blake3::hash(&shard).as_bytes() != expected_digest {
+                    return Err(ExecutionPackError::InvalidPack(format!(
+                        "Hyperscan phase-two shard {index} is corrupt; its content digest does not match"
+                    )));
+                }
+                serialized_shards.push(shard);
+            }
+            Ok(Some(HyperscanPhase2DatabaseProgram {
+                pattern_indices,
+                unsupported_pattern_ids,
+                serialized_shards,
+            }))
+        }
+        value => Err(ExecutionPackError::InvalidPack(format!(
+            "Hyperscan phase-two database presence flag {value} is invalid"
+        ))),
     }
 }
 

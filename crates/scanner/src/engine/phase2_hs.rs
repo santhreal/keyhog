@@ -125,6 +125,80 @@ impl HsSubEngine {
         })
     }
 
+    fn from_program(
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        indices: &[usize],
+        program: crate::execution_pack::simd_program::HyperscanPhase2DatabaseProgram,
+    ) -> std::result::Result<Self, String> {
+        let expected = indices
+            .iter()
+            .copied()
+            .filter(|&index| {
+                !hs_prefilter_requires_host_regex(phase2_patterns[index].0.regex.as_str())
+            })
+            .collect::<Vec<_>>();
+        let observed = program
+            .pattern_indices
+            .iter()
+            .map(|&index| index as usize)
+            .collect::<Vec<_>>();
+        if observed != expected {
+            return Err("packed phase-two Hyperscan pattern mapping does not match the canonical runtime scope".into());
+        }
+        let unsupported = program
+            .unsupported_pattern_ids
+            .iter()
+            .map(|&id| id as usize)
+            .collect::<Vec<_>>();
+        if unsupported.windows(2).any(|pair| pair[0] >= pair[1])
+            || unsupported.iter().any(|&id| id >= expected.len())
+        {
+            return Err("packed phase-two Hyperscan unsupported mapping is invalid".into());
+        }
+        let unsupported_set = unsupported.iter().copied().collect::<std::collections::HashSet<_>>();
+        let pattern_map = expected
+            .iter()
+            .enumerate()
+            .filter(|(id, _)| !unsupported_set.contains(id))
+            .map(|(id, &phase2_index)| (id, phase2_index, id, false))
+            .collect::<Vec<_>>();
+        let scanner = HsScanner::from_serialized_database_shards(
+            &program.serialized_shards,
+            pattern_map,
+        )?;
+        let mut hs_to_phase2 = vec![0usize; scanner.pattern_count()];
+        for hs_id in 0..scanner.pattern_count() {
+            let Some((phase2_index, canonical_id, false)) = scanner.pattern_info(hs_id) else {
+                return Err(format!(
+                    "packed phase-two Hyperscan mapping row {hs_id} is invalid"
+                ));
+            };
+            if canonical_id >= expected.len() || expected[canonical_id] != phase2_index {
+                return Err(format!(
+                    "packed phase-two Hyperscan mapping row {hs_id} does not match canonical phase-two index {phase2_index}"
+                ));
+            }
+            hs_to_phase2[hs_id] = phase2_index;
+        }
+        let mut dropped = indices
+            .iter()
+            .copied()
+            .filter(|&index| {
+                hs_prefilter_requires_host_regex(phase2_patterns[index].0.regex.as_str())
+            })
+            .map(|index| (index, phase2_patterns[index].0.regex.clone()))
+            .collect::<Vec<_>>();
+        dropped.extend(unsupported.into_iter().map(|id| {
+            let index = expected[id];
+            (index, phase2_patterns[index].0.regex.clone())
+        }));
+        Ok(Self {
+            scanner,
+            hs_to_phase2,
+            dropped,
+        })
+    }
+
     #[inline]
     fn mark(
         &self,
@@ -238,6 +312,171 @@ impl Phase2HsEngine {
     ) -> std::result::Result<bool, String> {
         self.engine_for(skip_homoglyph_ascii).any_match(match_text)
     }
+}
+impl Phase2HsEngine {
+    pub(crate) fn from_program(
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        indices: &[usize],
+        program: crate::execution_pack::simd_program::HyperscanPhase2ScopeProgram,
+    ) -> std::result::Result<Option<Self>, String> {
+        let observed = program
+            .pattern_indices
+            .iter()
+            .map(|&index| index as usize)
+            .collect::<Vec<_>>();
+        if observed != indices {
+            return Err(format!(
+                "packed phase-two scope {:?} does not match canonical runtime ownership",
+                program.scope
+            ));
+        }
+        let Some(full_program) = program.full else {
+            if indices.iter().any(|&index| {
+                !hs_prefilter_requires_host_regex(phase2_patterns[index].0.regex.as_str())
+            }) {
+                return Err(format!(
+                    "packed phase-two scope {:?} is missing its full native database",
+                    program.scope
+                ));
+            }
+            if program.ascii_lean.is_some() {
+                return Err(format!(
+                    "packed phase-two scope {:?} has an ASCII database without a full database",
+                    program.scope
+                ));
+            }
+            return Ok(None);
+        };
+        let full = HsSubEngine::from_program(phase2_patterns, indices, full_program)?;
+        let non_homoglyph = indices
+            .iter()
+            .copied()
+            .filter(|&index| !phase2_patterns[index].0.homoglyph_variant)
+            .collect::<Vec<_>>();
+        let ascii_lean = if non_homoglyph.len() < indices.len() {
+            match program.ascii_lean {
+                Some(ascii_program) => Some(HsSubEngine::from_program(
+                    phase2_patterns,
+                    &non_homoglyph,
+                    ascii_program,
+                )?),
+                None => {
+                    if non_homoglyph.iter().any(|&index| {
+                        !hs_prefilter_requires_host_regex(
+                            phase2_patterns[index].0.regex.as_str(),
+                        )
+                    }) {
+                        return Err(format!(
+                            "packed phase-two scope {:?} is missing its canonical ASCII database",
+                            program.scope
+                        ));
+                    }
+                    None
+                }
+            }
+        } else {
+            if program.ascii_lean.is_some() {
+                return Err(format!(
+                    "packed phase-two scope {:?} has a non-canonical ASCII database",
+                    program.scope
+                ));
+            }
+            None
+        };
+        Ok(Some(Self { full, ascii_lean }))
+    }
+}
+
+pub(crate) fn compile_phase2_database_program(
+    phase2_patterns: &[(CompiledPattern, Vec<String>)],
+    indices: &[usize],
+) -> std::result::Result<Option<crate::execution_pack::simd_program::HyperscanPhase2DatabaseProgram>, String> {
+    let pattern_indices = indices
+        .iter()
+        .copied()
+        .filter(|&index| {
+            !hs_prefilter_requires_host_regex(phase2_patterns[index].0.regex.as_str())
+        })
+        .collect::<Vec<_>>();
+    if pattern_indices.is_empty() {
+        return Ok(None);
+    }
+    let caseless = pattern_indices
+        .iter()
+        .map(|&index| phase2_patterns[index].0.regex.is_case_insensitive())
+        .collect::<Vec<_>>();
+    let refs = pattern_indices
+        .iter()
+        .enumerate()
+        .map(|(id, &index)| (index, id, phase2_patterns[index].0.regex.as_str(), false))
+        .collect::<Vec<_>>();
+    let options = HsCompileOpts {
+        singlematch: true,
+        caseless: Some(&caseless),
+        shard_target: Some(usize::MAX),
+        utf8: false,
+        ucp: false,
+        parallel_prepare: false,
+    };
+    let (scanner, unsupported) = HsScanner::compile_with_opts(&refs, options)?;
+    let unsupported_set = unsupported.iter().copied().collect::<std::collections::HashSet<_>>();
+    let expected_map = pattern_indices
+        .iter()
+        .enumerate()
+        .filter(|(id, _)| !unsupported_set.contains(id))
+        .map(|(id, &index)| (id, index, id, false))
+        .collect::<Vec<_>>();
+    if scanner.execution_pattern_map() != expected_map {
+        return Err("Hyperscan compiler changed a canonical phase-two pattern mapping".into());
+    }
+    Ok(Some(
+        crate::execution_pack::simd_program::HyperscanPhase2DatabaseProgram {
+            pattern_indices: pattern_indices
+                .into_iter()
+                .map(|index| {
+                    u32::try_from(index)
+                        .map_err(|_| "phase-two pattern index exceeds u32".to_owned())
+                })
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+            unsupported_pattern_ids: unsupported
+                .into_iter()
+                .map(|id| {
+                    u32::try_from(id)
+                        .map_err(|_| "phase-two unsupported pattern id exceeds u32".to_owned())
+                })
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+            serialized_shards: scanner.serialize_database_shards()?,
+        },
+    ))
+}
+
+pub(crate) fn compile_phase2_scope_program(
+    phase2_patterns: &[(CompiledPattern, Vec<String>)],
+    scope: crate::execution_pack::simd_program::HyperscanPhase2Scope,
+    indices: &[usize],
+) -> std::result::Result<crate::execution_pack::simd_program::HyperscanPhase2ScopeProgram, String> {
+    let full = compile_phase2_database_program(phase2_patterns, indices)?;
+    let non_homoglyph = indices
+        .iter()
+        .copied()
+        .filter(|&index| !phase2_patterns[index].0.homoglyph_variant)
+        .collect::<Vec<_>>();
+    let ascii_lean = if non_homoglyph.len() < indices.len() {
+        compile_phase2_database_program(phase2_patterns, &non_homoglyph)?
+    } else {
+        None
+    };
+    Ok(crate::execution_pack::simd_program::HyperscanPhase2ScopeProgram {
+        scope,
+        pattern_indices: indices
+            .iter()
+            .map(|&index| {
+                u32::try_from(index).map_err(|_| "phase-two scope index exceeds u32".to_owned())
+            })
+            .collect::<std::result::Result<Vec<_>, _>>()?,
+        full,
+        ascii_lean,
+    })
 }
 
 pub(crate) fn hs_prefilter_requires_host_regex(src: &str) -> bool {

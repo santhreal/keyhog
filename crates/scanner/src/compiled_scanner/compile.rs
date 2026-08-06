@@ -234,7 +234,7 @@ impl CompiledScanner {
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
         packed_state: Option<CompileState>,
-        packed_simd_program: Option<PackedSimdProgram>,
+        mut packed_simd_program: Option<PackedSimdProgram>,
     ) -> Result<Self> {
         if packed_state.is_none() {
             super::validation::validate_detector_corpus(&detectors)
@@ -467,6 +467,11 @@ impl CompiledScanner {
         let prefix_propagation = CsrU32::from(build_prefix_propagation(&state.ac_literals));
         let same_prefix_patterns = CsrU32::from(build_same_prefix_patterns(&state.ac_literals));
 
+        #[cfg(feature = "simd")]
+        let packed_phase2_scopes = packed_simd_program
+            .as_mut()
+            .map(|program| std::mem::take(&mut program.phase2_scopes));
+
         // Development/custom corpora retain lazy compilation. An authenticated
         // SIMD pack instead owns exact native shards and canonical mappings.
         #[cfg(feature = "simd")]
@@ -578,6 +583,25 @@ impl CompiledScanner {
             &phase2_always_active_indices,
             phase2_anchor_index.as_ref(),
         );
+        #[cfg(feature = "simd")]
+        if let Some(programs) = packed_phase2_scopes {
+            match &phase2_always_active_prefilter {
+                Some(prefilter) => prefilter
+                    .install_hyperscan_programs(&state.phase2_patterns, programs)
+                    .map_err(crate::error::ScanError::Config)?,
+                None => {
+                    if programs.iter().any(|scope| {
+                        !scope.pattern_indices.is_empty()
+                            || scope.full.is_some()
+                            || scope.ascii_lean.is_some()
+                    }) {
+                        return Err(crate::error::ScanError::Config(
+                            "packed SIMD phase-two scopes are nonempty for a scanner with no always-active phase-two patterns".into(),
+                        ));
+                    }
+                }
+            }
+        }
         tracing::debug!(
             eligible = phase2_anchor_index
                 .as_ref()
