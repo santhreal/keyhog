@@ -1,8 +1,8 @@
 use super::{CompiledExecutionPack, ExecutionPackError};
 
-const SIGNATURE_MAGIC: &[u8; 8] = b"KHSIGN\0\x01";
-pub const EXECUTION_PACK_SIGNATURE_VERSION: u16 = 1;
-const SIGNATURE_DOMAIN: &[u8] = b"keyhog-execution-pack-signature-v1\0";
+const SIGNATURE_MAGIC: &[u8; 8] = b"KHSIGN\0\x02";
+pub const EXECUTION_PACK_SIGNATURE_VERSION: u16 = 2;
+const SIGNATURE_DOMAIN: &[u8] = b"keyhog-execution-pack-signature-v2\0";
 
 #[derive(Clone)]
 pub struct ExecutionPackSigningKey([u8; 32]);
@@ -32,7 +32,7 @@ impl ExecutionPackSigningKey {
 
     pub fn sign(&self, pack: &CompiledExecutionPack) -> ExecutionPackSignature {
         let pack_digest = *blake3::hash(pack.as_bytes()).as_bytes();
-        let signature = signature_bytes(&self.0, pack_digest, pack.as_bytes());
+        let signature = signature_bytes(&self.0, pack_digest);
         ExecutionPackSignature {
             version: EXECUTION_PACK_SIGNATURE_VERSION,
             key_id: self.key_id(),
@@ -46,18 +46,13 @@ impl ExecutionPackSigningKey {
         pack_bytes: &[u8],
         signature: &ExecutionPackSignature,
     ) -> Result<(), ExecutionPackError> {
-        let pack_digest = *blake3::hash(pack_bytes).as_bytes();
-        self.verify_streaming(signature, pack_digest, |hasher| {
-            hasher.update(pack_bytes);
-            Ok(())
-        })
+        self.verify_digest(signature, *blake3::hash(pack_bytes).as_bytes())
     }
 
-    pub(crate) fn verify_streaming(
+    pub(crate) fn verify_digest(
         &self,
         signature: &ExecutionPackSignature,
         pack_digest: [u8; 32],
-        update_signature: impl FnOnce(&mut blake3::Hasher) -> Result<(), ExecutionPackError>,
     ) -> Result<(), ExecutionPackError> {
         signature.validate_shape()?;
         if !constant_time_eq(&signature.key_id, &self.key_id()) {
@@ -71,11 +66,7 @@ impl ExecutionPackSigningKey {
                 "execution-pack signed digest does not match the pack bytes".into(),
             ));
         }
-        let mut hasher = blake3::Hasher::new_keyed(&self.0);
-        hasher.update(SIGNATURE_DOMAIN);
-        hasher.update(&pack_digest);
-        update_signature(&mut hasher)?;
-        let expected = *hasher.finalize().as_bytes();
+        let expected = signature_bytes(&self.0, pack_digest);
         if !constant_time_eq(&signature.signature, &expected) {
             return Err(ExecutionPackError::InvalidPack(
                 "execution-pack signature verification failed".into(),
@@ -152,11 +143,10 @@ impl ExecutionPackSignature {
     }
 }
 
-fn signature_bytes(key: &[u8; 32], pack_digest: [u8; 32], pack_bytes: &[u8]) -> [u8; 32] {
+fn signature_bytes(key: &[u8; 32], pack_digest: [u8; 32]) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new_keyed(key);
     hasher.update(SIGNATURE_DOMAIN);
     hasher.update(&pack_digest);
-    hasher.update(pack_bytes);
     *hasher.finalize().as_bytes()
 }
 
