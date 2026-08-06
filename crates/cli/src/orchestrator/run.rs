@@ -24,6 +24,12 @@ pub(super) fn release_allocator_arenas_after_construction() {
         fn mi_collect(force: bool);
     }
 
+    // Referencing the Rust allocator crate keeps its native link metadata in
+    // library-test binaries too; the production binary already references this
+    // type through its global allocator declaration.
+    let allocator_link = mimalloc::MiMalloc;
+    std::hint::black_box(&allocator_link);
+
     // Regex and matcher compilation runs on Rayon workers. Collect each
     // thread-local mimalloc heap, then the caller heap, so compiler pages do
     // not remain resident throughout a tiny scan.
