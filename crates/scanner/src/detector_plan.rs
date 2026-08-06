@@ -386,10 +386,10 @@ pub(crate) struct CompiledDetectorPlan {
     pub(crate) execution: crate::detector_execution_policy::CompiledDetectorExecutionPolicy,
     pub(crate) match_confidence: Arc<crate::confidence::policy::CompiledMatchConfidencePolicy>,
     pub(crate) key_material: crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
-    pub(crate) entropy_floor: Option<Box<crate::entropy::policy::CompiledEntropyFloorPolicy>>,
-    pub(crate) entropy: Option<Box<crate::entropy::policy::CompiledEntropyPolicy>>,
-    pub(crate) credential_shape: Option<Box<crate::credential_shapes::CredentialShapeRule>>,
-    pub(crate) suppression: Option<Box<crate::suppression::DetectorSuppressionPolicy>>,
+    pub(crate) entropy_floor: Option<crate::entropy::policy::CompiledEntropyFloorPolicy>,
+    pub(crate) entropy: Option<crate::entropy::policy::CompiledEntropyPolicy>,
+    pub(crate) credential_shape: Option<crate::credential_shapes::CredentialShapeRule>,
+    pub(crate) suppression: Option<crate::suppression::DetectorSuppressionPolicy>,
     pub(crate) validators: crate::checksum::CompiledDetectorValidators,
     pub(crate) weak_anchor_base: crate::suppression::WeakAnchorBase,
     pub(crate) companions: Box<[crate::types::CompiledCompanion]>,
@@ -908,13 +908,10 @@ fn compile_detector_plan(
             crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile(
                 detector,
             )?,
-        entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::compile(detector)?
-            .map(Box::new),
-        entropy: entropy.map(Box::new),
-        credential_shape: crate::credential_shapes::compile_detector_shape_rule(detector)?
-            .map(Box::new),
-        suppression: crate::suppression::DetectorSuppressionPolicy::compile(detector)?
-            .map(Box::new),
+        entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::compile(detector)?,
+        entropy,
+        credential_shape: crate::credential_shapes::compile_detector_shape_rule(detector)?,
+        suppression: crate::suppression::DetectorSuppressionPolicy::compile(detector)?,
         validators: crate::checksum::CompiledDetectorValidators::compile(detector)?,
         weak_anchor_base: crate::suppression::detector_weak_anchor_base(detector),
         companions: companions.into_boxed_slice(),
@@ -988,13 +985,10 @@ fn hydrate_detector_plan(
                 &detector.decoded_hex_key_material_lengths,
                 &detector.canonical_hex_key_material,
             )?,
-        entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::hydrate(detector)?
-            .map(Box::new),
-        entropy: entropy.map(Box::new),
-        credential_shape: crate::credential_shapes::hydrate_detector_shape_rule(detector)?
-            .map(Box::new),
-        suppression: crate::suppression::DetectorSuppressionPolicy::hydrate(detector)?
-            .map(Box::new),
+        entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::hydrate(detector)?,
+        entropy,
+        credential_shape: crate::credential_shapes::hydrate_detector_shape_rule(detector)?,
+        suppression: crate::suppression::DetectorSuppressionPolicy::hydrate(detector)?,
         validators: crate::checksum::CompiledDetectorValidators::hydrate(detector)?,
         weak_anchor_base,
         companions: companions.into_boxed_slice(),
