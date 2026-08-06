@@ -72,6 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     let entries = read_detector_entries(&toml_paths)?;
+    let detector_ids = detector_ids(&entries)?;
     let corpus_manifest_path = detectors_dir.join(DETECTOR_CORPUS_MANIFEST_FILE);
     let corpus_manifest = fs::read_to_string(&corpus_manifest_path).map_err(|error| {
         io::Error::new(
@@ -113,6 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     write_embedded_data(
         &output_path,
         &entries,
+        &detector_ids,
         &config_keywords,
         &decoder_names.decoder_names,
     )?;
@@ -263,9 +265,48 @@ fn write_string_slice(code: &mut String, name: &str, values: &[String]) {
     code.push_str("];\n");
 }
 
+fn detector_ids(entries: &[(String, String)]) -> io::Result<Vec<String>> {
+    let mut ids = Vec::with_capacity(entries.len());
+    for (name, content) in entries {
+        let document = toml::from_str::<toml::Value>(content).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("detector {name:?} is not valid TOML while indexing ids: {error}"),
+            )
+        })?;
+        let id = document
+            .get("detector")
+            .and_then(toml::Value::as_table)
+            .and_then(|detector| detector.get("id"))
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("detector {name:?} is missing non-string [detector].id"),
+                )
+            })?;
+        if id.trim().is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("detector {name:?} has an empty [detector].id"),
+            ));
+        }
+        ids.push(id.to_owned());
+    }
+    ids.sort_unstable();
+    if let Some(duplicate) = ids.windows(2).find(|pair| pair[0] == pair[1]) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("duplicate detector id {:?}", duplicate[0]),
+        ));
+    }
+    Ok(ids)
+}
+
 fn write_embedded_data(
     output_path: &Path,
     entries: &[(String, String)],
+    detector_ids: &[String],
     config_keywords: &ConfigKeywords,
     decoder_names: &[String],
 ) -> io::Result<()> {
@@ -274,6 +315,7 @@ fn write_embedded_data(
         code.push_str(&format!("    ({name:?}, {content:?}),\n"));
     }
     code.push_str("];\n");
+    write_string_slice(&mut code, "EMBEDDED_DETECTOR_IDS", detector_ids);
     write_string_slice(
         &mut code,
         "CONFIG_KNOWN_PREFIXES",

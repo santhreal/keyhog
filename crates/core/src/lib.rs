@@ -79,8 +79,8 @@ use std::borrow::Cow;
 
 pub use api::*;
 pub use detector_corpus::{
-    compose_detector_corpus, compute_detector_corpus_digest,
-    compute_detector_corpus_digest_for_schema, DetectorCorpusError, DetectorCorpusMode,
+    DetectorCorpusError, DetectorCorpusMode, compose_detector_corpus,
+    compute_detector_corpus_digest, compute_detector_corpus_digest_for_schema,
 };
 /// Auto-fix suggestion logic for SARIF output.
 mod auto_fix;
@@ -105,6 +105,11 @@ mod embedded {
 /// Returns detector TOML strings that can be parsed by the spec loader.
 pub(crate) fn embedded_detector_tomls() -> &'static [(&'static str, &'static str)] {
     embedded::EMBEDDED_DETECTORS
+}
+
+/// Sorted detector identities generated from the same embedded TOML corpus.
+pub(crate) fn embedded_detector_ids() -> &'static [&'static str] {
+    embedded::EMBEDDED_DETECTOR_IDS
 }
 
 /// Number of embedded detector specs (authoritative for banners and tests).

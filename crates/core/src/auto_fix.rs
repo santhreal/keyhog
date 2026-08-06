@@ -158,21 +158,18 @@ struct RemediationFile {
 // empty map would silently strip remediation advice (Law 10). `clippy::panic`
 // targets genuine runtime panics; this compile-time invariant is the exception.
 #[allow(clippy::panic)]
-static REMEDIATION_MAP: LazyLock<RemediationFile> =
-    LazyLock::new(|| {
-        match parse_remediation_file(
-            include_str!("../data/remediation.toml"),
-            "<embedded data/remediation.toml>",
-        ) {
-            Ok(parsed) => parsed,
-            Err(error) => {
-                panic!(
+static REMEDIATION_MAP: LazyLock<RemediationFile> = LazyLock::new(|| match parse_remediation_file(
+    include_str!("../data/remediation.toml"),
+    "<embedded data/remediation.toml>",
+) {
+    Ok(parsed) => parsed,
+    Err(error) => {
+        panic!(
             "keyhog: remediation map '<embedded data/remediation.toml>' is invalid: {error}. \
                  Fix: correct crates/core/data/remediation.toml and rebuild"
         );
-            }
-        }
-    });
+    }
+});
 
 /// The per-severity remediation fallback, resolved once into a rank-indexed total
 /// array. `REMEDIATION_MAP`'s initializer runs `validate_severity_remediation`,
@@ -332,17 +329,12 @@ fn validate_remediation_file(file: &RemediationFile, origin: &str) -> Result<(),
 }
 
 fn validate_detector_remediation(file: &RemediationFile, origin: &str) -> Result<(), String> {
-    let detectors = crate::load_embedded_detectors_or_fail()
-        .map_err(|error| format!("{origin} could not validate detector ids: {error}"))?;
-    let detector_ids = detectors
-        .iter()
-        .map(|detector| detector.id.as_str())
-        .collect::<BTreeSet<_>>();
+    let detector_ids = crate::embedded_detector_ids();
     let mut seen = BTreeSet::new();
     for (index, entry) in file.detector.iter().enumerate() {
         validate_non_empty("detector", index, "id", &entry.id, origin)?;
         validate_fields("detector", index, &entry.fields, origin)?;
-        if !detector_ids.contains(entry.id.as_str()) {
+        if detector_ids.binary_search(&entry.id.as_str()).is_err() {
             return Err(format!(
                 "{origin} [[detector]] row {index} references unknown detector id {:?}",
                 entry.id
