@@ -458,6 +458,14 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
                         );
                     }
                 };
+                if ranges.is_empty() {
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                    let _continue_scan = emit(Err(windowed_mmap_error(
+                        path,
+                        "sparse file has no allocated data; no bytes were scanned",
+                    )));
+                    return WindowedMmapOutcome::Consumed;
+                }
 
                 match for_each_sparse_window(&file, &ranges, window_size, overlap, |window| {
                     emit(Ok(window))
@@ -908,10 +916,11 @@ mod sparse_tests {
         );
     }
 
-    /// An all-hole regular file on a SEEK_DATA-capable filesystem emits no
-    /// windows and never routes through mmap or the buffered hole reader.
+    /// An all-hole regular file on a SEEK_DATA-capable filesystem emits an
+    /// explicit coverage error and never routes through mmap or the buffered
+    /// hole reader.
     #[test]
-    fn real_all_hole_file_emits_no_windows() {
+    fn real_all_hole_file_reports_unscanned_region() {
         const FILE_LEN: u64 = 16 * 1024 * 1024;
         let sparse = tempfile::NamedTempFile::new().expect("all-hole tempfile");
         sparse
@@ -926,13 +935,19 @@ mod sparse_tests {
                 .is_empty()
         );
 
-        let mut rows = 0usize;
-        let outcome = for_each_file_windowed_mmap(sparse.path(), 1024 * 1024, 128 * 1024, |_| {
-            rows += 1;
+        let mut windows = 0usize;
+        let mut errors = Vec::new();
+        let outcome = for_each_file_windowed_mmap(sparse.path(), 1024 * 1024, 128 * 1024, |row| {
+            match row {
+                Ok(_) => windows += 1,
+                Err(error) => errors.push(error.to_string()),
+            }
             true
         });
 
         assert!(matches!(outcome, WindowedMmapOutcome::Consumed));
-        assert_eq!(rows, 0);
+        assert_eq!(windows, 0);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("no allocated data"));
     }
 }
