@@ -173,25 +173,27 @@ fn compile_gpu_literal_artifact_plan(detectors: &[DetectorSpec]) -> Result<GpuLi
     let confirmed_anchor_literals = confirmed_anchor_index
         .as_ref()
         .map_or(&[] as &[String], |index| index.anchor_literals());
-    let generic_keyword_literals = if detectors.iter().any(DetectorSpec::owns_entropy_policy) {
-        phase2_generic::keywords::GenericAssignmentKeywordPlan::compile(detectors)
-            .map_err(crate::error::ScanError::Config)?
-            .stem_literals()
-            .map(str::to_owned)
-            .collect::<Vec<_>>()
+    let generic_keyword_plan = if detectors.iter().any(DetectorSpec::owns_entropy_policy) {
+        Some(
+            phase2_generic::keywords::GenericAssignmentKeywordPlan::compile(detectors)
+                .map_err(crate::error::ScanError::Config)?,
+        )
     } else {
-        Vec::new()
+        None
     };
 
     Ok(GpuLiteralArtifacts {
         literal: serialize_literal_rows(
             "lit-ci",
             build_gpu_literals(
-                &state.ac_literals,
-                &phase2_keywords,
-                phase2_always_anchor_literals,
-                confirmed_anchor_literals,
-                &generic_keyword_literals,
+                state.ac_literals.iter().map(String::as_bytes),
+                phase2_keywords.iter().map(|keyword| keyword.as_bytes()),
+                phase2_always_anchor_literals.iter().map(String::as_bytes),
+                confirmed_anchor_literals.iter().map(String::as_bytes),
+                generic_keyword_plan
+                    .iter()
+                    .flat_map(|plan| plan.stem_literals())
+                    .map(str::as_bytes),
             ),
         )?,
         positioned_literal: None,

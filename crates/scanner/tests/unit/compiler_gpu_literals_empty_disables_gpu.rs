@@ -6,7 +6,14 @@ use keyhog_scanner::testing::build_gpu_literals;
 fn compiler_gpu_literals_empty_disables_gpu() {
     let literals = vec!["ghp_".into(), String::new()];
     assert!(
-        build_gpu_literals(&literals, &[], &[], &[], &[]).is_none(),
+        build_gpu_literals(
+            literals.iter().map(String::as_bytes),
+            std::iter::empty(),
+            std::iter::empty(),
+            std::iter::empty(),
+            std::iter::empty(),
+        )
+        .is_none(),
         "empty literal must disable GPU literal set"
     );
 }
@@ -19,11 +26,11 @@ fn compiler_gpu_literals_append_only_presence_segments_after_detector_literals()
     let confirmed_anchors = vec!["ConfirmedAnchor".into()];
     let generic_keywords = vec!["GenericStem".into()];
     let built = build_gpu_literals(
-        &literals,
-        &phase2_keywords,
-        &phase2_always_anchors,
-        &confirmed_anchors,
-        &generic_keywords,
+        literals.iter().map(String::as_bytes),
+        phase2_keywords.iter().map(String::as_bytes),
+        phase2_always_anchors.iter().map(String::as_bytes),
+        confirmed_anchors.iter().map(String::as_bytes),
+        generic_keywords.iter().map(String::as_bytes),
     )
     .expect("gpu literals");
 

@@ -689,30 +689,6 @@ impl CompiledScanner {
             .as_mut()
             .map(|program| std::mem::take(&mut program.phase2_scopes));
 
-        // Development/custom corpora retain lazy compilation. An authenticated
-        // SIMD pack instead owns exact native shards and canonical mappings.
-        #[cfg(feature = "simd")]
-        let simd_compile_plan = if selected_backend
-            .is_none_or(|backend| backend == crate::hw_probe::ScanBackend::SimdCpu)
-        {
-            match packed_simd_program {
-                Some(program) => Some(
-                    crate::engine::build_packed_simd_compile_plan(
-                        program,
-                        &state.ac_map,
-                        &state.ac_literals,
-                        &detectors,
-                    )
-                    .map_err(crate::error::ScanError::Config)?,
-                ),
-                None => build_simd_compile_plan(&state.ac_map, &state.ac_literals, tuning_config),
-            }
-        } else {
-            None
-        };
-        #[cfg(feature = "simd")]
-        let simd_candidate_available = simd_compile_plan.is_some();
-
         let (phase2_keyword_ac, phase2_keyword_to_patterns, phase2_keywords) =
             build_phase2_keyword_ac(&state.phase2_patterns);
         let phase2_keyword_count = phase2_keywords.len();
@@ -755,13 +731,10 @@ impl CompiledScanner {
         #[cfg(feature = "gpu")]
         let confirmed_anchor_literal_count = confirmed_anchor_literals.len();
         #[cfg(feature = "gpu")]
-        let generic_keyword_literals = detector_plans
-            .generic_assignment()
-            .map(|plan| plan.stem_literals().map(str::to_owned).collect::<Vec<_>>())
-            // LAW10: absence means the validated corpus has no generic assignment owner, so there is no generic matcher or recall surface to populate.
-            .unwrap_or_default();
+        let generic_keyword_plan = detector_plans.generic_assignment();
         #[cfg(feature = "gpu")]
-        let generic_keyword_literal_count = generic_keyword_literals.len();
+        let generic_keyword_literal_count =
+            generic_keyword_plan.map_or(0, |plan| plan.stem_literals().count());
         let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
         #[cfg(feature = "gpu")]
         let (gpu_literals, packed_gpu_matcher, gpu_max_literal_len) =
@@ -779,11 +752,14 @@ impl CompiledScanner {
                         .as_ref()
                         .map_or(&[] as &[String], |index| index.always_anchor_literals());
                     build_gpu_literals(
-                        &state.ac_literals,
-                        &phase2_keywords,
-                        phase2_always_anchor_literals,
-                        confirmed_anchor_literals,
-                        &generic_keyword_literals,
+                        state.ac_literals.iter().map(String::as_bytes),
+                        phase2_keywords.iter().map(|keyword| keyword.as_bytes()),
+                        phase2_always_anchor_literals.iter().map(String::as_bytes),
+                        confirmed_anchor_literals.iter().map(String::as_bytes),
+                        generic_keyword_plan
+                            .into_iter()
+                            .flat_map(|plan| plan.stem_literals())
+                            .map(str::as_bytes),
                     )
                 } else {
                     None
@@ -846,28 +822,22 @@ impl CompiledScanner {
 
         log_quality_warnings(&state.quality_warnings);
 
-        let mut alphabet_targets = state.ac_literals.clone();
-        // Reserve the exact keyword total up front and clone each keyword
-        // straight in (`iter().cloned()`), instead of materializing a throwaway
-        // `Vec<String>` per phase-2 pattern via `keywords.clone()` and growing
-        // `alphabet_targets` by repeated reallocation (Law 7). Byte-identical:
-        // the same keyword strings land in the same order.
         let extra_keyword_count: usize = state
             .phase2_patterns
             .iter()
             .map(|(_, keywords)| keywords.len())
             .sum();
-        alphabet_targets.reserve(extra_keyword_count);
-        for (_, keywords) in &state.phase2_patterns {
-            alphabet_targets.extend(keywords.iter().cloned());
-        }
-        let alphabet_screen = if alphabet_targets.is_empty() {
-            None
-        } else {
-            Some(crate::alphabet_filter::AlphabetScreen::new(
-                &alphabet_targets,
-            ))
-        };
+        let alphabet_target_count = state.ac_literals.len() + extra_keyword_count;
+        let alphabet_screen = (alphabet_target_count > 0).then(|| {
+            crate::alphabet_filter::AlphabetScreen::from_byte_slices(
+                state.ac_literals.iter().map(String::as_bytes).chain(
+                    state
+                        .phase2_patterns
+                        .iter()
+                        .flat_map(|(_, keywords)| keywords.iter().map(String::as_bytes)),
+                ),
+            )
+        });
 
         // Only direct AC alternatives belong to the selective literal gate.
         // Prefixless/dynamic phase-2 patterns stay in the explicit always-admit
@@ -878,6 +848,38 @@ impl CompiledScanner {
             popcount = bigram_bloom.popcount(),
             "selective literal-anchor bloom built (65536 slots / 8 KB)"
         );
+        // Development/custom corpora retain lazy compilation. An authenticated
+        // SIMD pack instead owns exact native shards and canonical mappings.
+        // Move the canonical literal allocation only after every route-neutral
+        // index has consumed it; the lazy SIMD plan then shares one Arc owner
+        // instead of cloning the complete table until first backend use.
+        #[cfg(feature = "simd")]
+        let simd_compile_plan = if selected_backend
+            .is_none_or(|backend| backend == crate::hw_probe::ScanBackend::SimdCpu)
+        {
+            let ac_literals: std::sync::Arc<[String]> =
+                std::mem::take(&mut state.ac_literals).into();
+            match packed_simd_program {
+                Some(program) => Some(
+                    crate::engine::build_packed_simd_compile_plan(
+                        program,
+                        &state.ac_map,
+                        std::sync::Arc::clone(&ac_literals),
+                        &detectors,
+                    )
+                    .map_err(crate::error::ScanError::Config)?,
+                ),
+                None => build_simd_compile_plan(
+                    &state.ac_map,
+                    std::sync::Arc::clone(&ac_literals),
+                    tuning_config,
+                ),
+            }
+        } else {
+            None
+        };
+        #[cfg(feature = "simd")]
+        let simd_candidate_available = simd_compile_plan.is_some();
 
         // Pre-resolve the detector-wide weak-anchor base once. The per-pattern
         // bit is compiled beside its regex, so mixed detectors protect only the

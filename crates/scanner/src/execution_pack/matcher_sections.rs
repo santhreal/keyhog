@@ -16,7 +16,6 @@ pub fn compile_state_builder_invocations() -> usize {
     build_compile_state_invocations()
 }
 
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompiledRouteMatcherSections {
     pub backend: ExecutionPackBackend,
@@ -132,10 +131,10 @@ impl CompiledRouteMatcherSections {
                                 .map(u32::try_from)
                                 .transpose()
                                 .map_err(|_| {
-                                    ExecutionPackError::InvalidCompilerInput(
-                                        "companion capture group exceeds u32".to_owned(),
-                                    )
-                                })?,
+                                ExecutionPackError::InvalidCompilerInput(
+                                    "companion capture group exceeds u32".to_owned(),
+                                )
+                            })?,
                             within_lines: u32::try_from(companion.within_lines).map_err(|_| {
                                 ExecutionPackError::InvalidCompilerInput(
                                     "companion line distance exceeds u32".to_owned(),
@@ -299,12 +298,7 @@ pub(crate) fn decode_compile_state_sections(
     expected_detector_ir_digest: [u8; 32],
     detectors: &[keyhog_core::DetectorSpec],
 ) -> Result<CompileState, ExecutionPackError> {
-    validate_compile_state_sections(
-        backend,
-        literal_index,
-        regex_programs,
-        suppression_policy,
-    )?;
+    validate_compile_state_sections(backend, literal_index, regex_programs, suppression_policy)?;
     let literal: LiteralEnvelope = decode_canonical("literal index", literal_index, backend)?;
     let regex: RegexEnvelope = decode_canonical("regex programs", regex_programs, backend)?;
     let suppression: SuppressionEnvelope =
@@ -343,12 +337,7 @@ pub(crate) fn decode_compile_state_sections(
         .enumerate()
         .map(|(index, packed)| {
             Ok((
-                unpack_pattern(
-                    packed.pattern,
-                    detectors.len(),
-                    "phase2_patterns",
-                    index,
-                )?,
+                unpack_pattern(packed.pattern, detectors.len(), "phase2_patterns", index)?,
                 packed.keywords,
             ))
         })
@@ -382,15 +371,11 @@ fn pack_pattern(pattern: &CompiledPattern) -> Result<PackedPattern, ExecutionPac
         })?,
         regex: pattern.regex.as_str().to_owned(),
         case_insensitive: pattern.regex.is_case_insensitive(),
-        group: pattern
-            .group
-            .map(u32::try_from)
-            .transpose()
-            .map_err(|_| {
-                ExecutionPackError::InvalidCompilerInput(
-                    "compiled pattern capture group exceeds u32".to_owned(),
-                )
-            })?,
+        group: pattern.group.map(u32::try_from).transpose().map_err(|_| {
+            ExecutionPackError::InvalidCompilerInput(
+                "compiled pattern capture group exceeds u32".to_owned(),
+            )
+        })?,
         client_safe: pattern.client_safe,
         weak_anchor: pattern.weak_anchor,
         structural_password_slot: pattern.structural_password_slot,
@@ -466,19 +451,14 @@ where
     T: serde::de::DeserializeOwned + Serialize,
 {
     let decoded: T = serde_json::from_slice(bytes).map_err(|error| {
-        ExecutionPackError::InvalidPack(format!(
-            "compiled route {name} is invalid JSON: {error}"
-        ))
+        ExecutionPackError::InvalidPack(format!("compiled route {name} is invalid JSON: {error}"))
     })?;
     let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
-        ExecutionPackError::InvalidPack(format!(
-            "compiled route {name} is invalid JSON: {error}"
-        ))
+        ExecutionPackError::InvalidPack(format!("compiled route {name} is invalid JSON: {error}"))
     })?;
     if value.get("version").and_then(serde_json::Value::as_u64)
         != Some(u64::from(ROUTE_MATCHER_SECTION_VERSION))
-        || value.get("backend").and_then(serde_json::Value::as_str)
-            != Some(backend_name(backend))
+        || value.get("backend").and_then(serde_json::Value::as_str) != Some(backend_name(backend))
     {
         return Err(ExecutionPackError::Incompatible(format!(
             "compiled route {name} version or backend is incompatible"

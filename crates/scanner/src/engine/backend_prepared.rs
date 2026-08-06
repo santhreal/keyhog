@@ -140,7 +140,7 @@ enum SimdPhase1PlanSource {
 pub(crate) struct SimdPhase1CompilePlan {
     source: SimdPhase1PlanSource,
     index_map: Vec<Vec<usize>>,
-    ac_literals: Box<[String]>,
+    ac_literals: std::sync::Arc<[String]>,
 }
 
 #[cfg(feature = "simd")]
@@ -191,7 +191,7 @@ impl SimdRecoveryPrefilter {
 /// database. The exact selected backend materializes this plan on first use.
 pub(crate) fn build_simd_compile_plan(
     ac_map: &[CompiledPattern],
-    ac_literals: &[String],
+    ac_literals: std::sync::Arc<[String]>,
     tuning: &crate::scanner_config::ScannerTuningConfig,
 ) -> Option<SimdPhase1CompilePlan> {
     use std::collections::HashMap;
@@ -224,7 +224,7 @@ pub(crate) fn build_simd_compile_plan(
             shard_target: tuning.hs_shard_target,
         },
         index_map,
-        ac_literals: ac_literals.to_vec().into_boxed_slice(),
+        ac_literals,
     })
 }
 
@@ -232,7 +232,7 @@ pub(crate) fn build_simd_compile_plan(
 pub(crate) fn build_packed_simd_compile_plan(
     program: crate::execution_pack::HyperscanSimdExecutionProgram,
     ac_map: &[CompiledPattern],
-    ac_literals: &[String],
+    ac_literals: std::sync::Arc<[String]>,
     detectors: &[keyhog_core::DetectorSpec],
 ) -> std::result::Result<SimdPhase1CompilePlan, String> {
     let scalar_patterns = detectors
@@ -292,9 +292,10 @@ pub(crate) fn build_packed_simd_compile_plan(
             covered_ac[index] = true;
             mapped.push(index);
         }
-        let first = mapped.first().copied().ok_or_else(|| {
-            format!("packed SIMD pattern {hs_id} has no canonical AC mapping")
-        })?;
+        let first = mapped
+            .first()
+            .copied()
+            .ok_or_else(|| format!("packed SIMD pattern {hs_id} has no canonical AC mapping"))?;
         if ac_map[first].detector_index != pattern.detector_index as usize {
             return Err(format!(
                 "packed SIMD pattern {hs_id} detector identity does not match its first canonical AC row"
@@ -313,7 +314,10 @@ pub(crate) fn build_packed_simd_compile_plan(
         .iter()
         .map(|&id| id as usize)
         .collect::<Vec<_>>();
-    let unsupported_set = unsupported.iter().copied().collect::<std::collections::HashSet<_>>();
+    let unsupported_set = unsupported
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
     let pattern_map = program
         .patterns
         .iter()
@@ -336,7 +340,7 @@ pub(crate) fn build_packed_simd_compile_plan(
             unsupported_pattern_ids: unsupported.into_boxed_slice(),
         },
         index_map,
-        ac_literals: ac_literals.to_vec().into_boxed_slice(),
+        ac_literals,
     })
 }
 
@@ -445,5 +449,40 @@ mod code_lines_tests {
         let offsets = prepared.line_offsets().to_vec();
         let lines = prepared.code_lines(&offsets);
         assert_eq!(lines, ["key = one", "other = two", "last = three"]);
+    }
+}
+
+#[cfg(all(test, feature = "simd"))]
+mod simd_literal_ownership_tests {
+    use super::*;
+
+    fn pattern(regex: &str) -> CompiledPattern {
+        CompiledPattern {
+            detector_index: 0,
+            regex: LazyRegex::detector(regex),
+            group: None,
+            client_safe: false,
+            weak_anchor: false,
+            structural_password_slot: false,
+            match_proves_keyword_nearby: false,
+            homoglyph_variant: false,
+        }
+    }
+
+    /// WHY: copying every canonical literal into the lazy SIMD plan doubled the complete literal table until first backend use.
+    #[test]
+    fn simd_compile_plan_shares_the_canonical_literal_table() {
+        let literals: std::sync::Arc<[String]> = vec!["STATIC_SECRET_".to_owned()].into();
+        let plan = build_simd_compile_plan(
+            &[pattern(r"STATIC_SECRET_[A-Z0-9]{16}")],
+            std::sync::Arc::clone(&literals),
+            &crate::scanner_config::ScannerTuningConfig::default(),
+        )
+        .expect("fixture produces a SIMD plan");
+
+        assert!(
+            std::sync::Arc::ptr_eq(&plan.ac_literals, &literals),
+            "SIMD plan must share the canonical literal allocation"
+        );
     }
 }

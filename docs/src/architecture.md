@@ -289,6 +289,13 @@ compile patterns, rebuild GPU literal rows, or construct an unselected backend.
 VYRE remains the sole owner of device programs, dispatch, and GPU-resident
 memory.
 
+An exact SIMD scanner does not retain the scalar phase-one automaton. Before
+first use, its lazy plan shares the canonical literal allocation with scanner
+construction. After materialization, it retains native Hyperscan shards and
+only the literals rejected by Hyperscan for exact host recovery. Phase-two
+keyword catalogs and alphabet screens borrow detector-owned strings while they
+build. Only synthesized keyword stems and VYRE matcher rows allocate new bytes.
+
 Every mapped byte has one owner: pack metadata, detector IR, route classifier,
 regex programs, suppression policy, or the selected backend. Header, table, and
 alignment padding belong to pack metadata. The ownership ledger must sum to the

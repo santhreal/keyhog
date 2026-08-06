@@ -5,6 +5,7 @@ use crate::types::*;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec};
 use regex::Regex;
+use std::borrow::Cow;
 static BUILD_GPU_LITERALS_INVOCATIONS: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
@@ -34,17 +35,17 @@ pub(crate) fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCora
 
 /// Keep GPU literal inputs in KeyHog order so VYRE match pattern IDs map back
 /// to `ac_map` without an adapter table.
-pub(crate) fn build_gpu_literals(
-    ac_literals: &[String],
-    phase2_keywords: &[String],
-    phase2_always_anchor_literals: &[String],
-    confirmed_anchor_literals: &[String],
-    generic_keyword_literals: &[String],
+pub(crate) fn build_gpu_literals<'a>(
+    ac_literals: impl IntoIterator<Item = &'a [u8]>,
+    phase2_keywords: impl IntoIterator<Item = &'a [u8]>,
+    phase2_always_anchor_literals: impl IntoIterator<Item = &'a [u8]>,
+    confirmed_anchor_literals: impl IntoIterator<Item = &'a [u8]>,
+    generic_keyword_literals: impl IntoIterator<Item = &'a [u8]>,
 ) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
     BUILD_GPU_LITERALS_INVOCATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     build_gpu_literal_rows(
         ac_literals
-            .iter()
+            .into_iter()
             .chain(phase2_keywords)
             .chain(phase2_always_anchor_literals)
             .chain(confirmed_anchor_literals)
@@ -58,7 +59,7 @@ pub(crate) fn build_gpu_literals(
 static GPU_LITERAL_EMPTY_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
 fn build_gpu_literal_rows<'a>(
-    literals: impl Iterator<Item = &'a String>,
+    literals: impl Iterator<Item = &'a [u8]>,
     label: &'static str,
 ) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
     // VYRE compiles this set case-insensitively, matching Hyperscan's CASELESS
@@ -83,7 +84,7 @@ prefix entry). Use --require-gpu when GPU acceleration is mandatory."
             }
             return None;
         }
-        rows.push(literal.as_bytes().to_vec());
+        rows.push(literal.to_vec());
     }
     if rows.is_empty() {
         None
@@ -113,13 +114,29 @@ pub(crate) fn build_prefix_propagation(literals: &[String]) -> Vec<Vec<usize>> {
     crate::prefix_trie::build_propagation_table(literals)
 }
 
-pub(crate) fn build_phase2_keyword_ac(
-    phase2_patterns: &[(CompiledPattern, Vec<String>)],
-) -> (Option<AhoCorasick>, Vec<Vec<usize>>, Vec<String>) {
+pub(crate) fn build_phase2_keyword_ac<'a>(
+    phase2_patterns: &'a [(CompiledPattern, Vec<String>)],
+) -> (Option<AhoCorasick>, Vec<Vec<usize>>, Vec<Cow<'a, str>>) {
     let mut all_keywords = Vec::new();
     let mut keyword_to_patterns = Vec::new();
-    let mut keyword_map: std::collections::HashMap<String, usize> =
-        std::collections::HashMap::new();
+    let mut keyword_map: std::collections::HashMap<Cow<'a, str>, usize, ahash::RandomState> =
+        std::collections::HashMap::with_hasher(ahash::RandomState::new());
+
+    let mut add_candidate = |candidate: Cow<'a, str>, pattern_idx: usize| {
+        use std::collections::hash_map::Entry;
+
+        let idx = match keyword_map.entry(candidate) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => {
+                let idx = all_keywords.len();
+                all_keywords.push(entry.key().clone());
+                keyword_to_patterns.push(Vec::new());
+                entry.insert(idx);
+                idx
+            }
+        };
+        keyword_to_patterns[idx].push(pattern_idx);
+    };
 
     for (pattern_idx, (pattern, keywords)) in phase2_patterns.iter().enumerate() {
         let allows_repeated_separator =
@@ -135,9 +152,8 @@ pub(crate) fn build_phase2_keyword_ac(
             // gain on mailchimp was small. The right fix for
             // those detectors is per-detector keyword tightening,
             // not a global threshold change.
-            let mut candidates = Vec::with_capacity(2);
             if kw.len() >= 4 {
-                candidates.push(kw.clone());
+                add_candidate(Cow::Borrowed(kw.as_str()), pattern_idx);
             }
             // When the detector-authored regex accepts repeated separators
             // (`SA__API__KEY`), its joined TOML keyword cannot admit every
@@ -146,18 +162,10 @@ pub(crate) fn build_phase2_keyword_ac(
             // the match; this is routing only, not a second detection rule.
             if allows_repeated_separator {
                 if let Some(stem) = longest_compound_keyword_segment(kw) {
-                    if stem.len() >= 2 && !candidates.iter().any(|candidate| candidate == &stem) {
-                        candidates.push(stem);
+                    if stem.len() >= 2 && stem != *kw {
+                        add_candidate(Cow::Owned(stem), pattern_idx);
                     }
                 }
-            }
-            for candidate in candidates {
-                let idx = *keyword_map.entry(candidate.clone()).or_insert_with(|| {
-                    all_keywords.push(candidate.clone());
-                    keyword_to_patterns.push(Vec::new());
-                    all_keywords.len() - 1
-                });
-                keyword_to_patterns[idx].push(pattern_idx);
             }
         }
     }
@@ -169,7 +177,7 @@ pub(crate) fn build_phase2_keyword_ac(
     let keyword_count = all_keywords.len();
     let ac = match AhoCorasickBuilder::new()
         .ascii_case_insensitive(true)
-        .build(&all_keywords)
+        .build(all_keywords.iter().map(|keyword| keyword.as_bytes()))
     {
         Ok(ac) => Some(ac),
         Err(error) => {
@@ -493,4 +501,57 @@ pub(crate) fn compile_companion(
         requirement: spec.effective_requirement(),
         value_relation: spec.value_relation,
     })
+}
+#[cfg(test)]
+mod phase2_keyword_storage_tests {
+    use super::*;
+
+    fn pattern(regex: &str, keywords: &[String]) -> CompiledPattern {
+        compile_pattern(
+            0,
+            0,
+            &PatternSpec {
+                regex: regex.to_owned(),
+                ..PatternSpec::default()
+            },
+            "phase2-keyword-storage",
+            keywords,
+        )
+        .expect("compile phase-two storage fixture")
+    }
+
+    /// WHY: cloning every detector-authored keyword into the temporary AC catalog doubled its live string bytes during scanner construction.
+    #[test]
+    fn raw_phase2_keywords_borrow_the_canonical_compile_state_strings() {
+        let keywords = vec!["SERVICE_API_KEY".to_owned()];
+        let phase2 = vec![(
+            pattern(r"SERVICE_API_KEY[:=][A-Z0-9]{16}", &keywords),
+            keywords,
+        )];
+        let (_, mapping, stored) = build_phase2_keyword_ac(&phase2);
+
+        assert_eq!(mapping, vec![vec![0]]);
+        let Cow::Borrowed(borrowed) = &stored[0] else {
+            panic!("detector-authored keyword was copied instead of borrowed");
+        };
+        assert!(
+            std::ptr::eq(borrowed.as_ptr(), phase2[0].1[0].as_ptr()),
+            "borrowed keyword must point at the canonical compile-state allocation"
+        );
+    }
+
+    /// WHY: repeated-separator regexes still need their synthesized stem to own its bytes while raw keywords remain borrowed and both keep exact pattern mappings.
+    #[test]
+    fn derived_phase2_stems_own_only_synthesized_bytes() {
+        let keywords = vec!["SERVICE_API_KEY".to_owned()];
+        let phase2 = vec![(
+            pattern(r"SERVICE[_\-.]+API[_\-.]+KEY[:=][A-Z0-9]{16}", &keywords),
+            keywords,
+        )];
+        let (_, mapping, stored) = build_phase2_keyword_ac(&phase2);
+
+        assert_eq!(mapping, vec![vec![0], vec![0]]);
+        assert!(matches!(&stored[0], Cow::Borrowed("SERVICE_API_KEY")));
+        assert!(matches!(&stored[1], Cow::Owned(stem) if stem == "service"));
+    }
 }

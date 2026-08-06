@@ -18,7 +18,6 @@ pub(crate) fn build_compile_state_invocations() -> usize {
     BUILD_COMPILE_STATE_INVOCATIONS.get()
 }
 
-
 pub(crate) struct CompileState {
     pub(crate) ac_literals: Vec<String>,
     pub(crate) ac_map: Vec<CompiledPattern>,

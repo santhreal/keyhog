@@ -158,9 +158,13 @@ impl AlphabetScreen {
     /// String path didn't either: it operated on chars yet collected into
     /// a String whose bytes were still scanned as bytes here).
     pub(crate) fn new(targets: &[String]) -> Self {
+        Self::from_byte_slices(targets.iter().map(String::as_bytes))
+    }
+
+    pub(crate) fn from_byte_slices<'a>(targets: impl IntoIterator<Item = &'a [u8]>) -> Self {
         let mut mask = [0u64; 4];
         for target in targets {
-            for &b in target.as_bytes() {
+            for &b in target {
                 mask[(b / 64) as usize] |= 1 << (b % 64);
                 if b.is_ascii_alphabetic() {
                     let flipped = b ^ 0x20;
