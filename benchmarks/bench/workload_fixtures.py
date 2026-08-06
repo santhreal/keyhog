@@ -199,8 +199,17 @@ def _filesystem_fixture(
         return [_answer(deep_relative)], False
     if wid == "filesystem-one-long-line":
         size = _scaled(50 * 1024 * 1024, scale, len(CANARY_LINE))
-        payload = CANARY_LINE.rstrip(b"\n")
-        _write_sized(input_root / "single-line.json", size, payload)
+        path = input_root / "single-line.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        prefix = CANARY_LINE.rstrip(b"\n") + b" "
+        with path.open("wb") as handle:
+            handle.write(prefix[:size])
+            remaining = size - min(size, len(prefix))
+            block = b"x" * (64 * 1024)
+            while remaining:
+                chunk = block[:remaining]
+                handle.write(chunk)
+                remaining -= len(chunk)
         return [_answer("single-line.json")], True
     if wid == "filesystem-over-size-limit":
         size = _scaled(101 * 1024 * 1024, scale, len(CANARY_LINE))

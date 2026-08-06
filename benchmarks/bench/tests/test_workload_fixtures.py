@@ -168,6 +168,24 @@ def test_stdin_fixture_sizes_preserve_tiny_medium_and_bounded_large_regimes(
         assert receipt.expected_findings == 1
 
 
+def test_one_long_line_fixture_is_one_line_with_a_delimited_canary(
+    tmp_path: pathlib.Path,
+) -> None:
+    """WHY: newline-bearing filler or an alphanumeric byte after the canary turns this into an ordinary-line workload or invalidates the expected credential."""
+    catalog = load_workload_catalog(CATALOG_PATH)
+    workload = next(
+        item
+        for item in catalog.workloads
+        if item.workload_id == "filesystem-one-long-line"
+    )
+    receipt = materialize_fixture(workload, tmp_path, scale=0.001)
+    payload = (receipt.root / "input/single-line.json").read_bytes()
+    assert len(payload) == int(50 * 1024 * 1024 * 0.001)
+    assert payload.startswith(f"GITHUB_TOKEN={CANARY} ".encode())
+    assert b"\n" not in payload
+    assert receipt.expected_findings == 1
+    assert receipt.expected_coverage_gap is True
+
 def test_fixture_oracles_require_expected_coverage_gaps(
     tmp_path: pathlib.Path,
 ) -> None:

@@ -238,7 +238,7 @@
       "expected_findings": 1,
       "input_bytes": 52428800,
       "input_files": 1,
-      "input_sha256": "b8d54a0af09343532f3feed219c8e7177802fac5d9b828f754cb9872aa30c86e",
+      "input_sha256": "33a9e0c73deddc6fd15b8736e45521351914e6524dcc99ec49c5e418a9a8c3e2",
       "schema_version": 1,
       "workload_id": "filesystem-one-long-line"
     },
