@@ -253,12 +253,12 @@ struct Shard {
 /// Thread-safe: every database is immutable after compilation. Scratch state
 /// is held in the thread-local cache (`scan::SCRATCH_TLS`) keyed by scanner
 /// identity, so a dropped scanner cannot leak or be aliased by another.
-/// The public scan/lookup surface is unchanged from the single-database
-/// version - `pattern_info`/`pattern_count` still index a single global
-/// `pattern_map` keyed by the HS pattern id, because each shard's patterns
-/// carry their ORIGINAL global id, so a match from any shard maps back
-/// through the same table and the scan output is the union of all shards in
-/// original-byte space.
+/// `pattern_info`/`pattern_count` index one global `pattern_map` keyed by
+/// dense Hyperscan database ID. If shard building rejects patterns, the
+/// supported patterns and mapping rows are compacted together, IDs are
+/// reassigned, and every shard is rebuilt. Mapping rows retain their original
+/// caller IDs for canonical recovery while matches from every shard use the
+/// same dense database-ID space.
 ///
 /// # Examples
 ///
@@ -269,12 +269,12 @@ struct Shard {
 /// ```
 pub(crate) struct HsScanner {
     /// Independently-compiled shard databases. Their union over a scan is
-    /// exactly the set of matches a single all-patterns database would
-    /// produce (Hyperscan match ids are the global pattern ids, which are
-    /// disjoint across shards).
+    /// exactly the set of supported matches a single all-patterns database
+    /// would produce. Hyperscan match IDs are dense global database IDs,
+    /// disjoint across shards.
     shards: Vec<Shard>,
-    /// Map from HS pattern ID to (input_index, detector_index, pattern_index, has_group).
-    /// Global and shared across shards - unchanged from the single-db build.
+    /// Dense map from Hyperscan database ID to
+    /// (original input index, detector index, pattern index, has_group).
     pattern_map: Vec<(usize, usize, usize, bool)>,
     /// Distinct id for this scanner instance, used to key the thread-local
     /// per-shard scratch cache so two scanners never share scratches.
@@ -599,7 +599,7 @@ impl HsScanner {
         shard_count: usize,
         cache_key: &str,
         cache_dir: &std::path::Path,
-    ) -> Vec<Result<(BlockDatabase, Vec<usize>), String>> {
+    ) -> Vec<Result<(Option<BlockDatabase>, Vec<usize>), String>> {
         // Lazy phase-2 compilation can begin while a Rayon scan worker holds
         // thread-local active-pattern scratch. Nested parallel compilation
         // lets that worker steal another scan job and re-enter the scratch
@@ -631,16 +631,18 @@ impl HsScanner {
         shard_idx: usize,
         cache_key: &str,
         cache_dir: &std::path::Path,
-    ) -> Result<(BlockDatabase, Vec<usize>), String> {
+    ) -> Result<(Option<BlockDatabase>, Vec<usize>), String> {
         let shard_key = Self::shard_cache_key(cache_key, shard_count, shard_idx, &pats);
         let cache_path = cache_dir.join(keyhog_core::hyperscan_cache_filename(&shard_key));
 
         if let Some((db, dropped)) = Self::load_cached_shard(&cache_path, shard_idx, pats.len()) {
-            return Ok((db, dropped));
+            return Ok((Some(db), dropped));
         }
 
         let (db, dropped) = Self::compile_hs_db(&pats)?;
-        Self::persist_cached_shard(&db, &dropped, &cache_path, shard_idx);
+        if let Some(db) = db.as_ref() {
+            Self::persist_cached_shard(db, &dropped, &cache_path, shard_idx);
+        }
         Ok((db, dropped))
     }
 
@@ -801,39 +803,71 @@ impl HsScanner {
 
     fn assemble_scanner_shards(
         shard_count: usize,
-        shard_results: Vec<Result<(BlockDatabase, Vec<usize>), String>>,
-        unsupported: &mut Vec<usize>,
-        pattern_map: &[(usize, usize, usize, bool)],
-    ) -> Result<Vec<Shard>, String> {
+        shard_results: Vec<Result<(Option<BlockDatabase>, Vec<usize>), String>>,
+    ) -> Result<(Vec<Shard>, Vec<usize>), String> {
         let mut shards = Vec::with_capacity(shard_count);
-        for (shard_idx, result) in shard_results.into_iter().enumerate() {
+        let mut dropped_ids = Vec::new();
+        for result in shard_results {
             let (db, dropped) = result?;
-            unsupported.extend(Self::caller_pattern_indices_for_dropped(
-                dropped,
-                pattern_map,
-                shard_idx,
-            )?);
-            shards.push(Shard { db });
+            dropped_ids.extend(dropped);
+            if let Some(db) = db {
+                shards.push(Shard { db });
+            }
         }
-        Ok(shards)
+        Ok((shards, dropped_ids))
     }
 
-    fn caller_pattern_indices_for_dropped(
-        dropped: Vec<usize>,
-        pattern_map: &[(usize, usize, usize, bool)],
-        shard_idx: usize,
+    fn compact_after_build_drops(
+        hs_pats: &mut Vec<Pattern>,
+        pattern_map: &mut Vec<(usize, usize, usize, bool)>,
+        dropped_ids: &[usize],
     ) -> Result<Vec<usize>, String> {
-        dropped
-            .into_iter()
-            .map(|hs_id| {
-                pattern_map.get(hs_id).map(|(input_idx, _, _, _)| *input_idx).ok_or_else(|| {
-                    format!(
-                        "hyperscan shard {shard_idx} returned dropped pattern id {hs_id} outside pattern map len {}",
-                        pattern_map.len()
-                    )
-                })
-            })
-            .collect()
+        if hs_pats.len() != pattern_map.len() {
+            return Err(format!(
+                "hyperscan pattern/map length mismatch before compaction: {} patterns for {} mapping rows",
+                hs_pats.len(),
+                pattern_map.len()
+            ));
+        }
+
+        let mut dropped = vec![false; pattern_map.len()];
+        for &database_id in dropped_ids {
+            let Some(slot) = dropped.get_mut(database_id) else {
+                return Err(format!(
+                    "hyperscan returned dropped pattern id {database_id} outside pattern map len {}",
+                    pattern_map.len()
+                ));
+            };
+            if std::mem::replace(slot, true) {
+                return Err(format!(
+                    "hyperscan returned duplicate dropped pattern id {database_id}"
+                ));
+            }
+        }
+
+        let old_patterns = std::mem::take(hs_pats);
+        let old_map = std::mem::take(pattern_map);
+        let mut unsupported = Vec::with_capacity(dropped_ids.len());
+        hs_pats.reserve(old_patterns.len().saturating_sub(dropped_ids.len()));
+        pattern_map.reserve(old_map.len().saturating_sub(dropped_ids.len()));
+        for (old_database_id, (mut pattern, mapping)) in
+            old_patterns.into_iter().zip(old_map).enumerate()
+        {
+            if pattern.id != Some(old_database_id) {
+                return Err(format!(
+                    "hyperscan pattern id mismatch before compaction: row {old_database_id} carries {:?}",
+                    pattern.id
+                ));
+            }
+            if dropped[old_database_id] {
+                unsupported.push(mapping.0);
+                continue;
+            }
+            pattern.id = Some(pattern_map.len());
+            hs_pats.push(pattern);
+            pattern_map.push(mapping);
+        }
+        Ok(unsupported)
     }
 
     /// Width of the current Rayon executor. It caps compile sharding and
@@ -870,10 +904,35 @@ impl HsScanner {
         opts: HsCompileOpts<'_>,
     ) -> Result<(Self, Vec<usize>), String> {
         COMPILE_WITH_OPTS_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
+        Self::compile_with_opts_inner(patterns, opts, None)
+    }
+
+    #[cfg(test)]
+    fn compile_with_forced_build_drop(
+        patterns: &[(usize, usize, &str, bool)],
+        opts: HsCompileOpts<'_>,
+        database_id: usize,
+    ) -> Result<(Self, Vec<usize>), String> {
+        Self::compile_with_opts_inner(patterns, opts, Some((database_id, false)))
+    }
+    #[cfg(test)]
+    fn compile_with_forced_retryable_build_drop(
+        patterns: &[(usize, usize, &str, bool)],
+        opts: HsCompileOpts<'_>,
+        database_id: usize,
+    ) -> Result<(Self, Vec<usize>), String> {
+        Self::compile_with_opts_inner(patterns, opts, Some((database_id, true)))
+    }
+
+    fn compile_with_opts_inner(
+        patterns: &[(usize, usize, &str, bool)],
+        opts: HsCompileOpts<'_>,
+        mut forced_build_drop: Option<(usize, bool)>,
+    ) -> Result<(Self, Vec<usize>), String> {
         Self::validate_compile_opts(patterns.len(), opts)?;
         let PreparedPatterns {
-            hs_pats,
-            pattern_map,
+            mut hs_pats,
+            mut pattern_map,
             mut unsupported,
         } = Self::prepare_patterns(patterns, opts);
 
@@ -890,32 +949,75 @@ impl HsScanner {
         }
 
         let cache_dir = resolve_cache_dir()?;
+        let mut minimum_shard_count = 1usize;
+        loop {
+            let cache_key = Self::compile_cache_key(&hs_pats, opts);
+            let max_shard_count = Self::executor_width().min(hs_pats.len());
+            let shard_count = Self::compile_shard_count(hs_pats.len(), opts)
+                .max(minimum_shard_count)
+                .min(max_shard_count);
+            let shard_pats = Self::partition_patterns_lpt(&hs_pats, shard_count);
+            let shard_results =
+                Self::compile_cached_shards(shard_pats, shard_count, &cache_key, &cache_dir);
+            let (shards, mut dropped_ids) =
+                Self::assemble_scanner_shards(shard_count, shard_results)?;
+            let forced_drop = forced_build_drop.take();
+            if let Some((database_id, _)) = forced_drop {
+                dropped_ids.push(database_id);
+            }
 
-        let cache_key = Self::compile_cache_key(&hs_pats, opts);
-        let shard_count = Self::compile_shard_count(hs_pats.len(), opts);
-        let shard_pats = Self::partition_patterns_lpt(&hs_pats, shard_count);
-        let shard_results =
-            Self::compile_cached_shards(shard_pats, shard_count, &cache_key, &cache_dir);
-        let shards = Self::assemble_scanner_shards(
-            shard_count,
-            shard_results,
-            &mut unsupported,
-            &pattern_map,
-        )?;
+            if dropped_ids.is_empty() {
+                unsupported.sort_unstable();
+                if unsupported.windows(2).any(|ids| ids[0] == ids[1]) {
+                    return Err(
+                        "hyperscan produced duplicate unsupported canonical pattern ids".into(),
+                    );
+                }
+                return Ok((
+                    Self {
+                        shards,
+                        pattern_map,
+                        scanner_id: SCANNER_ID_SEQ.fetch_add(1, Ordering::Relaxed),
+                        scratch_owner: Arc::new(()),
+                    },
+                    unsupported,
+                ));
+            }
 
-        // The materializer (`SimdPhase1CompilePlan`) already logs
-        // `unsupported.len()` via tracing::info!, and consumers that
-        // need the count get the Vec returned alongside. No need to
-        // store a redundant copy on the scanner itself.
-        Ok((
-            Self {
-                shards,
-                pattern_map,
-                scanner_id: SCANNER_ID_SEQ.fetch_add(1, Ordering::Relaxed),
-                scratch_owner: Arc::new(()),
-            },
-            unsupported,
-        ))
+            // A combined database may exceed Hyperscan's internal limits even
+            // though every pattern is supported independently. Repartition
+            // before declaring any row unsupported so exact scalar recovery is
+            // reserved for patterns that still fail in the narrowest shards.
+            // The non-retryable forced-drop seam reaches compaction directly.
+            let retryable_drop = forced_drop.map_or(true, |(_, retryable)| retryable);
+            if retryable_drop && shard_count < max_shard_count {
+                minimum_shard_count = shard_count.saturating_mul(2).min(max_shard_count);
+                continue;
+            }
+
+            unsupported.extend(Self::compact_after_build_drops(
+                &mut hs_pats,
+                &mut pattern_map,
+                &dropped_ids,
+            )?);
+            if hs_pats.is_empty() {
+                unsupported.sort_unstable();
+                if unsupported.windows(2).any(|ids| ids[0] == ids[1]) {
+                    return Err(
+                        "hyperscan produced duplicate unsupported canonical pattern ids".into(),
+                    );
+                }
+                return Ok((
+                    Self {
+                        shards: Vec::new(),
+                        pattern_map,
+                        scanner_id: SCANNER_ID_SEQ.fetch_add(1, Ordering::Relaxed),
+                        scratch_owner: Arc::new(()),
+                    },
+                    unsupported,
+                ));
+            }
+        }
     }
 
     /// Recreates an immutable scanner from authenticated execution-pack shards.
@@ -988,7 +1090,9 @@ impl HsScanner {
                     .db
                     .serialize()
                     .map(|serialized| serialized.as_ref().to_vec())
-                    .map_err(|error| format!("Hyperscan shard {index} serialization failed: {error}"))
+                    .map_err(|error| {
+                        format!("Hyperscan shard {index} serialization failed: {error}")
+                    })
             })
             .collect()
     }
@@ -1000,38 +1104,50 @@ impl HsScanner {
 
     /// Build one shard's `BlockDatabase`, returning the database and the
     /// GLOBAL pattern ids it had to drop (over-long or an unsupported
-    /// construct Hyperscan rejects only at build time). The dropped ids are
-    /// returned to the caller for literal recovery so the pattern is never
-    /// silently lost. Because sharding makes each shard far smaller
-    /// than the old single combined database, the size-limit retry below
-    /// almost never fires now - which strictly REDUCES the set of patterns
-    /// dropped for "Pattern too large", improving recall, never hurting it.
-    fn compile_hs_db(hs_pats: &[Pattern]) -> Result<(BlockDatabase, Vec<usize>), String> {
+    /// construct Hyperscan rejects only at build time). A shard that rejects
+    /// its final pattern returns no database and routes that pattern through
+    /// caller-owned scalar recovery.
+    fn compile_hs_db(hs_pats: &[Pattern]) -> Result<(Option<BlockDatabase>, Vec<usize>), String> {
         let mut attempts = hs_pats.to_vec();
         let mut dropped: Vec<usize> = Vec::new();
         let started = std::time::Instant::now();
-        let db: BlockDatabase = loop {
+        let db = loop {
             let patterns_obj = Patterns(std::mem::take(&mut attempts));
             match Builder::build::<BlockMode>(&patterns_obj) {
-                Ok(db) => break db,
-                Err(_) if patterns_obj.0.len() > 1 => {
-                    // Compile retry records dropped IDs for caller-owned literal recovery.
-                    // Reclaim ownership for the next attempt.
+                Ok(db) => break Some(db),
+                Err(error) => {
                     attempts = patterns_obj.0;
+                    if attempts.len() == 1 {
+                        let Some(removed) = attempts.pop() else {
+                            return Err(
+                                "hyperscan singleton retry lost its only pattern".to_owned()
+                            );
+                        };
+                        let database_id = removed.id.ok_or_else(|| {
+                            "hyperscan singleton pattern is missing its database id".to_owned()
+                        })?;
+                        dropped.push(database_id);
+                        tracing::debug!(
+                            %error,
+                            database_id,
+                            "pattern rejected while building hyperscan shard; caller retains scalar recovery"
+                        );
+                        break None;
+                    }
+
                     // Remove the longest/most expensive expressions first.
-                    // The old reverse sort + pop accidentally removed the
-                    // shortest expressions, while its `> 100` threshold made a
-                    // single unsupported expression fatal in ordinary shards.
                     attempts.sort_by_key(|p| p.expression.len());
                     let remove_count = (attempts.len() / RETRY_DROP_DIVISOR).max(1);
                     for _ in 0..remove_count {
                         if let Some(removed) = attempts.pop() {
-                            dropped.push(removed.id.unwrap_or(0)); // LAW10: ids are assigned above; fallback id is unreachable and only affects the returned dropped-ID list.
+                            let database_id = removed.id.ok_or_else(|| {
+                                "hyperscan retry pattern is missing its database id".to_owned()
+                            })?;
+                            dropped.push(database_id);
                         }
                     }
-                    attempts.sort_by_key(|p| p.id.unwrap_or(0)); // LAW10: ids are assigned above; fallback id is unreachable and preserves deterministic retry order.
+                    attempts.sort_by_key(|p| p.id);
                 }
-                Err(e) => return Err(format!("hyperscan compile: {e}")),
             }
         };
         tracing::info!(
@@ -1162,3 +1278,7 @@ fn counted_repeat_upper_bound(bytes: &[u8], open: usize) -> Option<(u64, usize)>
         _ => None,
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/simd_build_drop_compaction.rs"]
+mod build_drop_compaction_tests;

@@ -36,8 +36,8 @@ fn chunk_at(text: &str, path: &str, base_line: usize) -> Chunk {
     chunk
 }
 
-fn reassembly_scanner() -> CompiledScanner {
-    CompiledScanner::compile(vec![DetectorSpec {
+fn reassembly_detector() -> DetectorSpec {
+    DetectorSpec {
         id: "demo-reassembled-token".into(),
         name: "Demo Reassembled Token".into(),
         service: "demo".into(),
@@ -53,8 +53,11 @@ fn reassembly_scanner() -> CompiledScanner {
         }],
         keywords: vec!["api_key".into()],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()
-    }])
-    .expect("compile demo scanner")
+    }
+}
+
+fn reassembly_scanner() -> CompiledScanner {
+    CompiledScanner::compile(vec![reassembly_detector()]).expect("compile demo scanner")
 }
 
 /// Two assignment fragments of the same secret in separate chunks of one batch
@@ -89,6 +92,30 @@ fn coalesced_reassembles_cross_chunk_fragments() {
          fragment join (abcde12345 + FGHIJ67890 -> abcde12345FGHIJ67890); got {} \
 The line-based fragment join was dropped on the coalesced tail",
         coalesced_reassembled
+    );
+}
+
+/// WHY: exact installed-pack scanners retain only the selected matcher route, so a synthetic
+/// scalar substitution dropped reassembled findings from SIMD scans.
+#[test]
+fn exact_simd_route_reassembles_with_selected_matcher_state() {
+    let scanner =
+        CompiledScanner::compile_for_backend(vec![reassembly_detector()], ScanBackend::SimdCpu)
+            .expect("compile exact SIMD scanner");
+    let chunks = vec![
+        chunk("api_key_part1 = \"abcde12345\"", "frag.env"),
+        chunk("api_key_part2 = \"FGHIJ67890\"", "frag.env"),
+    ];
+
+    let findings = scanner
+        .scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu)
+        .expect("exact SIMD route scans reassembled candidate");
+    assert!(
+        findings
+            .iter()
+            .flatten()
+            .any(|finding| finding.detector_id.ends_with(":reassembled")),
+        "exact SIMD route must retain the reassembled finding"
     );
 }
 

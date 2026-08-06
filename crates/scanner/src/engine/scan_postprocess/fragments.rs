@@ -108,21 +108,13 @@ impl CompiledScanner {
                         metadata: chunk.metadata.clone(),
                     };
 
-                    // Tiny synthesized chunk - NEVER dispatch through
-                    // GPU even if an exact GPU backend is set; the
-                    // per-dispatch overhead (~10-100 ms) is orders of
-                    // magnitude larger than scanning ~50 bytes on the
-                    // CPU. The previous flow leaked the env override
-                    // into `select_backend_for_file` and turned a
-                    // 64 MiB messy-corpus scan into ~60 s of synthetic
-                    // GPU launches.
-                    let backend = crate::hw_probe::ScanBackend::CpuFallback;
-                    let synthetic_route = crate::ScanExecutionRoute {
-                        decode_backend: backend,
-                        ..route
-                    };
+                    // Re-scan through the selected execution route. Exact
+                    // execution-pack scanners own only that route's matcher
+                    // state, so substituting scalar CPU here silently loses
+                    // reassembled findings on SIMD/GPU scanners.
+                    let backend = route.decode_backend;
                     let mut reassembled_matches =
-                        self.scan_inner(&synthetic_chunk, backend, deadline, synthetic_route)?;
+                        self.scan_inner(&synthetic_chunk, backend, deadline, route)?;
                     if crate::deadline::expired(deadline) {
                         return Ok(());
                     }
