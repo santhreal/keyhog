@@ -384,7 +384,7 @@ pub(crate) struct CompiledDetectorPlan {
     pub(crate) metadata: CompiledDetectorMetadata,
     pub(crate) entropy_metadata: Option<CompiledDetectorMetadata>,
     pub(crate) execution: crate::detector_execution_policy::CompiledDetectorExecutionPolicy,
-    pub(crate) match_confidence: Arc<crate::confidence::policy::CompiledMatchConfidencePolicy>,
+    match_confidence_index: u8,
     pub(crate) key_material: crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
     pub(crate) entropy_floor: Option<crate::entropy::policy::CompiledEntropyFloorPolicy>,
     pub(crate) entropy: Option<crate::entropy::policy::CompiledEntropyPolicy>,
@@ -418,21 +418,23 @@ impl CompiledDetectorPlan {
 }
 
 fn intern_confidence_policy(
-    policies: &mut Vec<Arc<crate::confidence::policy::CompiledMatchConfidencePolicy>>,
+    policies: &mut Vec<crate::confidence::policy::CompiledMatchConfidencePolicy>,
     policy: crate::confidence::policy::CompiledMatchConfidencePolicy,
-) -> Arc<crate::confidence::policy::CompiledMatchConfidencePolicy> {
-    if let Some(shared) = policies.iter().find(|shared| shared.as_ref() == &policy) {
-        Arc::clone(shared)
-    } else {
-        let shared = Arc::new(policy);
-        policies.push(Arc::clone(&shared));
-        shared
+) -> Result<u8, String> {
+    if let Some(index) = policies.iter().position(|shared| shared == &policy) {
+        return u8::try_from(index)
+            .map_err(|_| "compiled confidence policy index exceeds u8".to_string());
     }
+    let index = u8::try_from(policies.len())
+        .map_err(|_| "compiled confidence policy count exceeds u8".to_string())?;
+    policies.push(policy);
+    Ok(index)
 }
 
 #[derive(Debug)]
 pub(crate) struct CompiledDetectorPlans {
     by_detector_index: Box<[CompiledDetectorPlan]>,
+    confidence_policies: Box<[crate::confidence::policy::CompiledMatchConfidencePolicy]>,
     resolution: DetectorResolutionIndex,
     detector_relations: CompiledDetectorRelationIndex,
     validator_index: crate::checksum::CompiledValidatorIndex,
@@ -448,7 +450,7 @@ pub(crate) struct CompiledDetectorPlans {
 pub(crate) struct StreamingCompiledDetectorPlansBuilder {
     by_detector_index: Vec<CompiledDetectorPlan>,
     summaries: Vec<StreamingDetectorPlanSummary>,
-    confidence_policies: Vec<Arc<crate::confidence::policy::CompiledMatchConfidencePolicy>>,
+    confidence_policies: Vec<crate::confidence::policy::CompiledMatchConfidencePolicy>,
 }
 
 impl StreamingCompiledDetectorPlansBuilder {
@@ -501,6 +503,7 @@ impl StreamingCompiledDetectorPlansBuilder {
     ) -> Result<CompiledDetectorPlans, String> {
         let by_detector_index = self.by_detector_index.into_boxed_slice();
         let summaries = self.summaries;
+        let confidence_policies = self.confidence_policies.into_boxed_slice();
         let generic_assignment = by_detector_index
             .iter()
             .any(|plan| plan.execution.is_generic)
@@ -538,6 +541,7 @@ impl StreamingCompiledDetectorPlansBuilder {
         }
         Ok(CompiledDetectorPlans {
             by_detector_index,
+            confidence_policies,
             resolution,
             detector_relations,
             validator_index,
@@ -625,6 +629,7 @@ impl CompiledDetectorPlans {
         }
         Ok(Self {
             by_detector_index,
+            confidence_policies: confidence_policies.into_boxed_slice(),
             resolution,
             detector_relations,
             validator_index,
@@ -704,6 +709,15 @@ impl CompiledDetectorPlans {
     #[inline]
     pub(crate) fn get(&self, detector_index: usize) -> &CompiledDetectorPlan {
         &self.by_detector_index[detector_index]
+    }
+
+    #[inline]
+    pub(crate) fn match_confidence(
+        &self,
+        detector_index: usize,
+    ) -> &crate::confidence::policy::CompiledMatchConfidencePolicy {
+        let policy_index = self.by_detector_index[detector_index].match_confidence_index;
+        &self.confidence_policies[usize::from(policy_index)]
     }
 
     pub(crate) fn find_by_id(&self, detector_id: &str) -> Option<&CompiledDetectorPlan> {
@@ -870,7 +884,7 @@ fn compile_detector_plan(
     detector: &DetectorSpec,
     companions: Vec<crate::types::CompiledCompanion>,
     interner: &crate::static_intern::StaticInterner,
-    confidence_policies: &mut Vec<Arc<crate::confidence::policy::CompiledMatchConfidencePolicy>>,
+    confidence_policies: &mut Vec<crate::confidence::policy::CompiledMatchConfidencePolicy>,
 ) -> Result<CompiledDetectorPlan, String> {
     let execution =
         crate::detector_execution_policy::CompiledDetectorExecutionPolicy::compile(detector)?;
@@ -900,10 +914,10 @@ fn compile_detector_plan(
             })
             .transpose()?,
         execution,
-        match_confidence: intern_confidence_policy(
+        match_confidence_index: intern_confidence_policy(
             confidence_policies,
             crate::confidence::policy::CompiledMatchConfidencePolicy::compile(detector)?,
-        ),
+        )?,
         key_material:
             crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile(
                 detector,
@@ -924,7 +938,7 @@ fn hydrate_detector_plan(
     detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
     companions: Vec<crate::types::CompiledCompanion>,
     interner: &crate::static_intern::StaticInterner,
-    confidence_policies: &mut Vec<Arc<crate::confidence::policy::CompiledMatchConfidencePolicy>>,
+    confidence_policies: &mut Vec<crate::confidence::policy::CompiledMatchConfidencePolicy>,
 ) -> Result<CompiledDetectorPlan, String> {
     let execution = crate::detector_execution_policy::CompiledDetectorExecutionPolicy::hydrate(
         &detector.id,
@@ -970,14 +984,14 @@ fn hydrate_detector_plan(
             })
             .transpose()?,
         execution,
-        match_confidence: intern_confidence_policy(
+        match_confidence_index: intern_confidence_policy(
             confidence_policies,
             crate::confidence::policy::CompiledMatchConfidencePolicy::hydrate(
                 &detector.id,
                 detector.owns_entropy_policy(),
                 detector.match_confidence,
             )?,
-        ),
+        )?,
         key_material:
             crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::hydrate(
                 &detector.id,

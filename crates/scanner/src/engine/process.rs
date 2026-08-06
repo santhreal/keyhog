@@ -85,6 +85,7 @@ impl CompiledScanner {
             .line_for_offset(credential_start)
             .unwrap_or_else(|| line_index.line_number_for_offset(credential_start));
         let execution_policy = &detector_plan.execution;
+        let match_confidence = self.detector_plans.match_confidence(entry.detector_index);
         let is_generic = execution_policy.is_generic;
         let whole_value = is_generic.then(|| {
             let source_start =
@@ -131,10 +132,7 @@ impl CompiledScanner {
             apply_generic_candidate_gates,
             execution_policy.length,
             detector_plan.credential_shape.as_ref(),
-            detector_plan
-                .match_confidence
-                .post_match()
-                .degenerate_run_min_length,
+            match_confidence.post_match().degenerate_run_min_length,
             credential,
             whole_value_len,
             partial_assignment_value,
@@ -397,7 +395,7 @@ impl CompiledScanner {
                 has_companion: !companions.is_empty(),
                 code_context: inferred_context,
                 penalize_test_paths: self.config.penalize_test_paths,
-                confidence: &detector_plan.match_confidence,
+                confidence: &match_confidence,
                 named_anchor_floor_eligible: !weak_anchor,
                 #[cfg(feature = "ml")]
                 ml_mode: detector_ml_mode,
@@ -427,10 +425,9 @@ impl CompiledScanner {
                         confidence: policy_conf,
                         min_confidence_floor,
                         penalize_test_paths: self.config.penalize_test_paths,
-                        context_suppression_threshold: detector_plan
-                            .match_confidence
+                        context_suppression_threshold: match_confidence
                             .context_suppression_threshold(inferred_context),
-                        post_match: detector_plan.match_confidence.post_match(),
+                        post_match: match_confidence.post_match(),
                         file_path: chunk.metadata.path.as_deref(),
                         is_named_detector,
                         is_generic_detector: is_generic,
@@ -499,10 +496,8 @@ impl CompiledScanner {
                     heuristic_conf,
                     code_context,
                     context_multiplier,
-                    detector_plan
-                        .match_confidence
-                        .context_suppression_threshold(code_context),
-                    detector_plan.match_confidence.post_match(),
+                    match_confidence.context_suppression_threshold(code_context),
+                    match_confidence.post_match(),
                     ml_features,
                     detector_ml_policy.effective_weight(&self.config),
                     min_confidence_floor,

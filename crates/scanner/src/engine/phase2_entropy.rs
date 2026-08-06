@@ -223,6 +223,7 @@ impl CompiledScanner {
                 continue;
             };
             let detector_plan = self.detector_plans.get(policy_detector_index);
+            let match_confidence = self.detector_plans.match_confidence(policy_detector_index);
             let execution_policy = &detector_plan.execution;
             let Some(compiled_policy) = detector_plan.entropy.as_ref() else {
                 tracing::error!(
@@ -291,10 +292,7 @@ impl CompiledScanner {
                 bpe_bound,
                 compiled_policy,
                 execution_policy,
-                detector_plan
-                    .match_confidence
-                    .post_match()
-                    .degenerate_run_min_length,
+                match_confidence.post_match().degenerate_run_min_length,
             ) {
                 let entropy_ctx = crate::adjudicate::MatchCtx::for_entropy_fallback(
                     crate::adjudicate::EntropyFallbackSignal::ValueShape(shape_stage),
@@ -427,13 +425,10 @@ impl CompiledScanner {
                 scan_state.push_entropy_ml_pending(
                     pending_raw_match,
                     policy_conf,
-                    detector_plan
-                        .match_confidence
-                        .context_multiplier(crate::context::CodeContext::Unknown),
-                    detector_plan
-                        .match_confidence
+                    match_confidence.context_multiplier(crate::context::CodeContext::Unknown),
+                    match_confidence
                         .context_suppression_threshold(crate::context::CodeContext::Unknown),
-                    detector_plan.match_confidence.post_match(),
+                    match_confidence.post_match(),
                     ml_features,
                     policy.effective_weight(&self.config),
                     min_confidence_floor,
@@ -455,10 +450,9 @@ impl CompiledScanner {
                     confidence: policy_conf,
                     min_confidence_floor,
                     penalize_test_paths: self.config.penalize_test_paths,
-                    context_suppression_threshold: detector_plan
-                        .match_confidence
+                    context_suppression_threshold: match_confidence
                         .context_suppression_threshold(crate::context::CodeContext::Unknown),
-                    post_match: detector_plan.match_confidence.post_match(),
+                    post_match: match_confidence.post_match(),
                     file_path: chunk.metadata.path.as_deref(),
                     is_named_detector: false,
                     is_generic_detector: true,

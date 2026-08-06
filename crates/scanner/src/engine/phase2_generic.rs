@@ -204,6 +204,7 @@ impl CompiledScanner {
                 };
                 let owning_detector_index = owner_resolution.owning_index;
                 let detector_plan = self.detector_plans.get(owning_detector_index);
+                let match_confidence = self.detector_plans.match_confidence(owning_detector_index);
                 let execution_policy = &detector_plan.execution;
                 let metadata = &detector_plan.metadata;
                 let preprocessed_offset = line_offset + whole_value.start;
@@ -492,11 +493,9 @@ impl CompiledScanner {
                         pending_raw_match,
                         policy_conf,
                         context,
-                        detector_plan.match_confidence.context_multiplier(context),
-                        detector_plan
-                            .match_confidence
-                            .context_suppression_threshold(context),
-                        detector_plan.match_confidence.post_match(),
+                        match_confidence.context_multiplier(context),
+                        match_confidence.context_suppression_threshold(context),
+                        match_confidence.post_match(),
                         ml_features,
                         ml_policy.effective_weight(&self.config),
                         min_confidence_floor,
@@ -522,10 +521,9 @@ impl CompiledScanner {
                         confidence: policy_conf,
                         min_confidence_floor,
                         penalize_test_paths: self.config.penalize_test_paths,
-                        context_suppression_threshold: detector_plan
-                            .match_confidence
+                        context_suppression_threshold: match_confidence
                             .context_suppression_threshold(context),
-                        post_match: detector_plan.match_confidence.post_match(),
+                        post_match: match_confidence.post_match(),
                         file_path: chunk.metadata.path.as_deref(),
                         is_named_detector: false,
                         is_generic_detector: true,
