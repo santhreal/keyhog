@@ -2,13 +2,11 @@ use keyhog_core::DetectorSpec;
 use keyhog_scanner::execution_pack::{
     compile_deep_policy_execution_packs, compile_default_policy_execution_packs,
     compile_fast_policy_execution_packs, compile_precision_policy_execution_packs,
-    BackendProgramArtifact,
-    CanonicalDetectorExecutionIr, BackendExecutionArtifact, ExecutionPack,
-    ExecutionPackBackend, ExecutionPackPolicy, ExecutionPackSectionKind,
-    CompiledNativeBackendPrograms, HyperscanSimdExecutionProgram, PackGenerationIdentity,
-    ScalarCpuExecutionProgram, PackFindingParityEvidence, ExecutionPackSignature,
-    ExecutionPackSigningKey,
-    CompiledVyreBackendProgram, VyreExecutionIdentity, VyreOrchestrationProgram,
+    BackendExecutionArtifact, BackendProgramArtifact, CanonicalDetectorExecutionIr,
+    CompiledNativeBackendPrograms, CompiledVyreBackendProgram, ExecutionPack, ExecutionPackBackend,
+    ExecutionPackPolicy, ExecutionPackSectionKind, ExecutionPackSignature, ExecutionPackSigningKey,
+    HyperscanSimdExecutionProgram, PackFindingParityEvidence, PackGenerationIdentity,
+    ScalarCpuExecutionProgram, VyreExecutionIdentity, VyreOrchestrationProgram,
 };
 use std::fs;
 
@@ -42,11 +40,31 @@ fn route<'a>(
 ) -> BackendExecutionArtifact<'a> {
     let (literal_index, regex_programs, suppression_policy): (&[u8], &[u8], &[u8]) =
         match program.backend() {
-            ExecutionPackBackend::Cpu => (b"cpu-literal-index-v1", b"cpu-regex-programs-v1", b"cpu-suppression-v1"),
-            ExecutionPackBackend::Simd => (b"simd-literal-map-v1", b"simd-regex-programs-v1", b"simd-suppression-v1"),
-            ExecutionPackBackend::GpuCuda => (b"cuda-literal-map-v1", b"cuda-regex-programs-v1", b"cuda-suppression-v1"),
-            ExecutionPackBackend::GpuWgpu => (b"wgpu-literal-map-v1", b"wgpu-regex-programs-v1", b"wgpu-suppression-v1"),
-            ExecutionPackBackend::GpuMetal => (b"metal-literal-map-v1", b"metal-regex-programs-v1", b"metal-suppression-v1"),
+            ExecutionPackBackend::Cpu => (
+                b"cpu-literal-index-v1",
+                b"cpu-regex-programs-v1",
+                b"cpu-suppression-v1",
+            ),
+            ExecutionPackBackend::Simd => (
+                b"simd-literal-map-v1",
+                b"simd-regex-programs-v1",
+                b"simd-suppression-v1",
+            ),
+            ExecutionPackBackend::GpuCuda => (
+                b"cuda-literal-map-v1",
+                b"cuda-regex-programs-v1",
+                b"cuda-suppression-v1",
+            ),
+            ExecutionPackBackend::GpuWgpu => (
+                b"wgpu-literal-map-v1",
+                b"wgpu-regex-programs-v1",
+                b"wgpu-suppression-v1",
+            ),
+            ExecutionPackBackend::GpuMetal => (
+                b"metal-literal-map-v1",
+                b"metal-regex-programs-v1",
+                b"metal-suppression-v1",
+            ),
         };
     let parity = PackFindingParityEvidence::prove_route(
         program.backend(),
@@ -103,8 +121,13 @@ fn default_policy_compiles_every_eligible_backend_pack() {
             orchestration_receipt: b"metal-vyre-receipt-v1",
         },
     ];
-    let compiled = compile_default_policy_execution_packs(generation(), &signing_key(), &ir, &routes(&ir, generation(), &backends))
-        .expect("compile default packs");
+    let compiled = compile_default_policy_execution_packs(
+        generation(),
+        &signing_key(),
+        &ir,
+        &routes(&ir, generation(), &backends),
+    )
+    .expect("compile default packs");
 
     assert_eq!(compiled.policy, ExecutionPackPolicy::Default);
     assert_eq!(compiled.packs.len(), 5);
@@ -119,7 +142,10 @@ fn default_policy_compiles_every_eligible_backend_pack() {
         assert_eq!(pack.identity().target_digest, generation().target_digest);
         assert_eq!(pack.identity().binary_digest, generation().binary_digest);
         assert_eq!(pack.identity().feature_digest, generation().feature_digest);
-        assert_eq!(pack.identity().backend_digest, *blake3::hash(artifact_bytes(artifact)).as_bytes());
+        assert_eq!(
+            pack.identity().backend_digest,
+            *blake3::hash(artifact_bytes(artifact)).as_bytes()
+        );
         let path = directory.path().join(format!("{backend:?}.khpack"));
         fs::write(&path, pack.as_bytes()).expect("publish pack");
         let mapped = ExecutionPack::open(&path, pack.identity()).expect("map generated pack");
@@ -143,10 +169,16 @@ fn default_policy_rejects_generation_without_cpu_correctness_pack() {
         generation(),
         &signing_key(),
         &ir,
-        &routes(&ir, generation(), &[BackendProgramArtifact::Simd(b"simd-program-v1")]),
+        &routes(
+            &ir,
+            generation(),
+            &[BackendProgramArtifact::Simd(b"simd-program-v1")],
+        ),
     )
     .expect_err("missing CPU pack must fail");
-    assert!(error.to_string().contains("mandatory scalar correctness pack"));
+    assert!(error
+        .to_string()
+        .contains("mandatory scalar correctness pack"));
 }
 
 /// WHY: duplicate backend rows make publication order decide which executable bytes win, so generation must reject them before writing any pack.
@@ -157,10 +189,14 @@ fn default_policy_rejects_duplicate_backend_programs() {
         generation(),
         &signing_key(),
         &ir,
-        &routes(&ir, generation(), &[
-            BackendProgramArtifact::Cpu(b"cpu-one"),
-            BackendProgramArtifact::Cpu(b"cpu-two"),
-        ]),
+        &routes(
+            &ir,
+            generation(),
+            &[
+                BackendProgramArtifact::Cpu(b"cpu-one"),
+                BackendProgramArtifact::Cpu(b"cpu-two"),
+            ],
+        ),
     )
     .expect_err("duplicate CPU packs must fail");
     assert!(error.to_string().contains("repeats backend Cpu"));
@@ -175,7 +211,6 @@ fn artifact_bytes(artifact: BackendProgramArtifact<'_>) -> &[u8] {
         } => orchestration_receipt,
     }
 }
-
 
 /// WHY: fast is a separately calibrated execution contract; it must not reuse default-policy identity even when a backend compiler happens to emit equal bytes.
 #[test]
@@ -204,10 +239,30 @@ fn assert_policy_generation(policy: ExecutionPackPolicy) {
         BackendProgramArtifact::Simd(b"simd-program-v1"),
     ];
     let compiled = match policy {
-        ExecutionPackPolicy::Fast => compile_fast_policy_execution_packs(generation, &signing_key(), &ir, &routes(&ir, generation, &backends)),
-        ExecutionPackPolicy::Deep => compile_deep_policy_execution_packs(generation, &signing_key(), &ir, &routes(&ir, generation, &backends)),
-        ExecutionPackPolicy::Precision => compile_precision_policy_execution_packs(generation, &signing_key(), &ir, &routes(&ir, generation, &backends)),
-        ExecutionPackPolicy::Default => compile_default_policy_execution_packs(generation, &signing_key(), &ir, &routes(&ir, generation, &backends)),
+        ExecutionPackPolicy::Fast => compile_fast_policy_execution_packs(
+            generation,
+            &signing_key(),
+            &ir,
+            &routes(&ir, generation, &backends),
+        ),
+        ExecutionPackPolicy::Deep => compile_deep_policy_execution_packs(
+            generation,
+            &signing_key(),
+            &ir,
+            &routes(&ir, generation, &backends),
+        ),
+        ExecutionPackPolicy::Precision => compile_precision_policy_execution_packs(
+            generation,
+            &signing_key(),
+            &ir,
+            &routes(&ir, generation, &backends),
+        ),
+        ExecutionPackPolicy::Default => compile_default_policy_execution_packs(
+            generation,
+            &signing_key(),
+            &ir,
+            &routes(&ir, generation, &backends),
+        ),
     }
     .expect("compile policy packs");
     assert_eq!(compiled.policy, policy);
@@ -218,7 +273,6 @@ fn assert_policy_generation(policy: ExecutionPackPolicy) {
         assert_eq!(candidate.pack.identity().backend, candidate.backend);
     }
 }
-
 
 /// WHY: scalar packs are the exact parity oracle, so they must contain normalized detector-indexed pattern programs rather than detector TOML or an opaque placeholder.
 #[test]
@@ -246,7 +300,8 @@ fn scalar_cpu_program_compiles_exact_detector_pattern_contract() {
     assert!(pattern.structural_password_slot);
 
     let bytes = program.canonical_bytes().expect("encode scalar program");
-    let decoded = ScalarCpuExecutionProgram::decode(&bytes, ir.digest()).expect("decode scalar program");
+    let decoded =
+        ScalarCpuExecutionProgram::decode(&bytes, ir.digest()).expect("decode scalar program");
     assert_eq!(decoded, program);
 }
 
@@ -266,11 +321,18 @@ fn default_cpu_pack_embeds_compiled_scalar_program() {
         generation(),
         &signing_key(),
         &ir,
-        &routes(&ir, generation(), &[BackendProgramArtifact::Cpu(&cpu_bytes)]),
+        &routes(
+            &ir,
+            generation(),
+            &[BackendProgramArtifact::Cpu(&cpu_bytes)],
+        ),
     )
     .expect("compile CPU pack");
     let pack = packs.get(ExecutionPackBackend::Cpu).expect("CPU pack");
-    assert_eq!(pack.identity().backend_digest, *blake3::hash(&cpu_bytes).as_bytes());
+    assert_eq!(
+        pack.identity().backend_digest,
+        *blake3::hash(&cpu_bytes).as_bytes()
+    );
     let directory = tempfile::tempdir().expect("temporary directory");
     let path = directory.path().join("cpu.khpack");
     fs::write(&path, pack.as_bytes()).expect("publish CPU pack");
@@ -279,7 +341,8 @@ fn default_cpu_pack_embeds_compiled_scalar_program() {
         .section(ExecutionPackSectionKind::BackendProgram)
         .expect("CPU program section");
     assert_eq!(embedded, cpu_bytes);
-    ScalarCpuExecutionProgram::decode(embedded, ir.digest()).expect("validate embedded CPU program");
+    ScalarCpuExecutionProgram::decode(embedded, ir.digest())
+        .expect("validate embedded CPU program");
 }
 
 /// WHY: a scalar program compiled from another detector generation cannot serve as this pack's correctness oracle.
@@ -292,9 +355,10 @@ fn scalar_cpu_program_rejects_detector_ir_mismatch() {
         .expect("encode scalar program");
     let error = ScalarCpuExecutionProgram::decode(&bytes, [0x99; 32])
         .expect_err("detector mismatch must fail");
-    assert!(error.to_string().contains("detector IR identity does not match"));
+    assert!(error
+        .to_string()
+        .contains("detector IR identity does not match"));
 }
-
 
 /// WHY: install-time SIMD generation must persist real deserializable Hyperscan databases, not regex source or fixture bytes.
 #[cfg(feature = "simd")]
@@ -321,6 +385,28 @@ fn native_compiler_embeds_deserializable_hyperscan_shards() {
     assert!(original.reports_start);
     assert!(simd.unsupported_pattern_ids.is_empty());
     assert!(!simd.serialized_shards.is_empty());
+    let expected_release_lengths: Vec<usize> = simd
+        .serialized_shards
+        .iter()
+        .chain(simd.phase2_scopes.iter().flat_map(|scope| {
+            scope
+                .full
+                .iter()
+                .chain(scope.ascii_lean.iter())
+                .flat_map(|database| database.serialized_shards.iter())
+        }))
+        .map(|shard| shard.len())
+        .collect();
+    let mut released_lengths = Vec::new();
+    HyperscanSimdExecutionProgram::decode_with_release(native.simd_bytes(), ir.digest(), |bytes| {
+        released_lengths.push(bytes.len());
+        Ok(())
+    })
+    .expect("decode and release native shard fields");
+    assert_eq!(
+        released_lengths, expected_release_lengths,
+        "every serialized shard occurrence must release its mapped bytes immediately after decode"
+    );
 
     let artifacts = native.artifacts();
     assert_eq!(artifacts.len(), 2);
@@ -332,7 +418,10 @@ fn native_compiler_embeds_deserializable_hyperscan_shards() {
     )
     .expect("compile native execution packs");
     let pack = packs.get(ExecutionPackBackend::Simd).expect("SIMD pack");
-    assert_eq!(pack.identity().backend_digest, *blake3::hash(native.simd_bytes()).as_bytes());
+    assert_eq!(
+        pack.identity().backend_digest,
+        *blake3::hash(native.simd_bytes()).as_bytes()
+    );
     let directory = tempfile::tempdir().expect("temporary directory");
     let path = directory.path().join("simd.khpack");
     fs::write(&path, pack.as_bytes()).expect("publish SIMD pack");
@@ -364,7 +453,6 @@ fn hyperscan_program_rejects_corrupt_serialized_database() {
     assert!(error.to_string().contains("corrupt"));
 }
 
-
 #[cfg(feature = "gpu")]
 fn gpu_detector_ir() -> CanonicalDetectorExecutionIr {
     let mut spec = detector("alpha");
@@ -394,12 +482,9 @@ fn vyre_identity(backend: ExecutionPackBackend) -> VyreExecutionIdentity {
 fn cuda_pack_contains_exact_vyre_orchestration_program() {
     let ir = gpu_detector_ir();
     let identity = vyre_identity(ExecutionPackBackend::GpuCuda);
-    let program = CompiledVyreBackendProgram::compile(
-        &ir,
-        ExecutionPackBackend::GpuCuda,
-        identity.clone(),
-    )
-    .expect("compile CUDA VYRE program");
+    let program =
+        CompiledVyreBackendProgram::compile(&ir, ExecutionPackBackend::GpuCuda, identity.clone())
+            .expect("compile CUDA VYRE program");
     let decoded = VyreOrchestrationProgram::decode(
         program.bytes(),
         ExecutionPackBackend::GpuCuda,
@@ -409,7 +494,10 @@ fn cuda_pack_contains_exact_vyre_orchestration_program() {
     .expect("decode CUDA VYRE program");
     assert_eq!(decoded.backend, ExecutionPackBackend::GpuCuda);
     assert!(decoded.matcher_pattern_count > 0);
-    assert_eq!(decoded.matcher_digest, *blake3::hash(&decoded.matcher_bytes).as_bytes());
+    assert_eq!(
+        decoded.matcher_digest,
+        *blake3::hash(&decoded.matcher_bytes).as_bytes()
+    );
 
     let cpu = CompiledNativeBackendPrograms::compile(&ir).expect("compile CPU oracle");
     let artifacts = [cpu.artifacts()[0], program.artifact()];
@@ -425,7 +513,9 @@ fn cuda_pack_contains_exact_vyre_orchestration_program() {
     let path = directory.path().join("cuda.khpack");
     fs::write(&path, pack.as_bytes()).expect("publish CUDA pack");
     let mapped = ExecutionPack::open(&path, pack.identity()).expect("map CUDA pack");
-    let envelope = mapped.section(ExecutionPackSectionKind::BackendProgram).expect("GPU section");
+    let envelope = mapped
+        .section(ExecutionPackSectionKind::BackendProgram)
+        .expect("GPU section");
     assert_eq!(&envelope[..8], b"KHVYRE\0\x01");
     assert_eq!(envelope[8], ExecutionPackBackend::GpuCuda as u8);
 }
@@ -436,12 +526,9 @@ fn cuda_pack_contains_exact_vyre_orchestration_program() {
 fn cuda_program_rejects_device_identity_drift() {
     let ir = gpu_detector_ir();
     let identity = vyre_identity(ExecutionPackBackend::GpuCuda);
-    let program = CompiledVyreBackendProgram::compile(
-        &ir,
-        ExecutionPackBackend::GpuCuda,
-        identity.clone(),
-    )
-    .expect("compile CUDA VYRE program");
+    let program =
+        CompiledVyreBackendProgram::compile(&ir, ExecutionPackBackend::GpuCuda, identity.clone())
+            .expect("compile CUDA VYRE program");
     let mut stale = identity;
     stale.device_identity = "device=replaced".to_owned();
     let error = VyreOrchestrationProgram::decode(
@@ -451,9 +538,10 @@ fn cuda_program_rejects_device_identity_drift() {
         &stale,
     )
     .expect_err("stale CUDA device must fail");
-    assert!(error.to_string().contains("execution identity does not match"));
+    assert!(error
+        .to_string()
+        .contains("execution identity does not match"));
 }
-
 
 /// WHY: WGPU is a distinct calibrated VYRE peer, so its pack must preserve WGPU driver and adapter identity instead of reusing CUDA evidence.
 #[cfg(feature = "gpu")]
@@ -461,12 +549,9 @@ fn cuda_program_rejects_device_identity_drift() {
 fn wgpu_pack_contains_exact_vyre_orchestration_program() {
     let ir = gpu_detector_ir();
     let identity = vyre_identity(ExecutionPackBackend::GpuWgpu);
-    let program = CompiledVyreBackendProgram::compile(
-        &ir,
-        ExecutionPackBackend::GpuWgpu,
-        identity.clone(),
-    )
-    .expect("compile WGPU VYRE program");
+    let program =
+        CompiledVyreBackendProgram::compile(&ir, ExecutionPackBackend::GpuWgpu, identity.clone())
+            .expect("compile WGPU VYRE program");
     let decoded = VyreOrchestrationProgram::decode(
         program.bytes(),
         ExecutionPackBackend::GpuWgpu,
@@ -476,7 +561,10 @@ fn wgpu_pack_contains_exact_vyre_orchestration_program() {
     .expect("decode WGPU VYRE program");
     assert_eq!(decoded.backend, ExecutionPackBackend::GpuWgpu);
     assert!(decoded.matcher_pattern_count > 0);
-    assert_eq!(decoded.matcher_digest, *blake3::hash(&decoded.matcher_bytes).as_bytes());
+    assert_eq!(
+        decoded.matcher_digest,
+        *blake3::hash(&decoded.matcher_bytes).as_bytes()
+    );
 }
 
 /// WHY: backend relabeling would run a VYRE plan against unproved runtime semantics, so CUDA and WGPU receipts are never interchangeable.
@@ -485,12 +573,9 @@ fn wgpu_pack_contains_exact_vyre_orchestration_program() {
 fn wgpu_program_rejects_cuda_backend_relabeling() {
     let ir = gpu_detector_ir();
     let identity = vyre_identity(ExecutionPackBackend::GpuWgpu);
-    let program = CompiledVyreBackendProgram::compile(
-        &ir,
-        ExecutionPackBackend::GpuWgpu,
-        identity.clone(),
-    )
-    .expect("compile WGPU VYRE program");
+    let program =
+        CompiledVyreBackendProgram::compile(&ir, ExecutionPackBackend::GpuWgpu, identity.clone())
+            .expect("compile WGPU VYRE program");
     let error = VyreOrchestrationProgram::decode(
         program.bytes(),
         ExecutionPackBackend::GpuCuda,
@@ -501,19 +586,15 @@ fn wgpu_program_rejects_cuda_backend_relabeling() {
     assert!(error.to_string().contains("not selected GpuCuda"));
 }
 
-
 /// WHY: Metal is a native VYRE peer with its own compiled driver identity and cannot inherit WGPU portability evidence.
 #[cfg(feature = "gpu")]
 #[test]
 fn metal_pack_contains_exact_vyre_orchestration_program() {
     let ir = gpu_detector_ir();
     let identity = vyre_identity(ExecutionPackBackend::GpuMetal);
-    let program = CompiledVyreBackendProgram::compile(
-        &ir,
-        ExecutionPackBackend::GpuMetal,
-        identity.clone(),
-    )
-    .expect("compile Metal VYRE program");
+    let program =
+        CompiledVyreBackendProgram::compile(&ir, ExecutionPackBackend::GpuMetal, identity.clone())
+            .expect("compile Metal VYRE program");
     let decoded = VyreOrchestrationProgram::decode(
         program.bytes(),
         ExecutionPackBackend::GpuMetal,
@@ -523,7 +604,10 @@ fn metal_pack_contains_exact_vyre_orchestration_program() {
     .expect("decode Metal VYRE program");
     assert_eq!(decoded.backend, ExecutionPackBackend::GpuMetal);
     assert!(decoded.matcher_pattern_count > 0);
-    assert_eq!(decoded.matcher_digest, *blake3::hash(&decoded.matcher_bytes).as_bytes());
+    assert_eq!(
+        decoded.matcher_digest,
+        *blake3::hash(&decoded.matcher_bytes).as_bytes()
+    );
 }
 
 /// WHY: a VYRE matcher is useful only with the exact linked Metal driver, so stale driver receipts fail before dispatch.
@@ -532,12 +616,9 @@ fn metal_pack_contains_exact_vyre_orchestration_program() {
 fn metal_program_rejects_driver_identity_drift() {
     let ir = gpu_detector_ir();
     let identity = vyre_identity(ExecutionPackBackend::GpuMetal);
-    let program = CompiledVyreBackendProgram::compile(
-        &ir,
-        ExecutionPackBackend::GpuMetal,
-        identity.clone(),
-    )
-    .expect("compile Metal VYRE program");
+    let program =
+        CompiledVyreBackendProgram::compile(&ir, ExecutionPackBackend::GpuMetal, identity.clone())
+            .expect("compile Metal VYRE program");
     let mut stale = identity;
     stale.driver_version = "0.0.0-stale".to_owned();
     let error = VyreOrchestrationProgram::decode(
@@ -550,7 +631,6 @@ fn metal_program_rejects_driver_identity_drift() {
     assert!(error.to_string().contains("driver version"));
 }
 
-
 /// WHY: one universal matcher graph restores the original peak-memory defect, so each backend pack must retain only its own route-specific structures.
 #[test]
 fn backend_packs_embed_only_their_route_required_matcher_sections() {
@@ -560,20 +640,27 @@ fn backend_packs_embed_only_their_route_required_matcher_sections() {
         BackendProgramArtifact::Simd(b"simd-program-v1"),
     ];
     let route_artifacts = routes(&ir, generation(), &backends);
-    let packs = compile_default_policy_execution_packs(generation(), &signing_key(), &ir, &route_artifacts)
-        .expect("compile route-specific packs");
+    let packs =
+        compile_default_policy_execution_packs(generation(), &signing_key(), &ir, &route_artifacts)
+            .expect("compile route-specific packs");
     let directory = tempfile::tempdir().expect("temporary directory");
     for route in route_artifacts {
         let pack = packs.get(route.backend()).expect("backend pack");
-        let path = directory.path().join(format!("{:?}.khpack", route.backend()));
+        let path = directory
+            .path()
+            .join(format!("{:?}.khpack", route.backend()));
         fs::write(&path, pack.as_bytes()).expect("publish pack");
         let mapped = ExecutionPack::open(&path, pack.identity()).expect("map pack");
         assert_eq!(
-            mapped.section(ExecutionPackSectionKind::LiteralIndex).expect("literal section"),
+            mapped
+                .section(ExecutionPackSectionKind::LiteralIndex)
+                .expect("literal section"),
             route.literal_index
         );
         assert_eq!(
-            mapped.section(ExecutionPackSectionKind::RegexPrograms).expect("regex section"),
+            mapped
+                .section(ExecutionPackSectionKind::RegexPrograms)
+                .expect("regex section"),
             route.regex_programs
         );
         let other = routes(&ir, generation(), &backends)
@@ -581,7 +668,10 @@ fn backend_packs_embed_only_their_route_required_matcher_sections() {
             .find(|candidate| candidate.backend() != route.backend())
             .expect("peer route");
         assert_ne!(route.literal_index, other.literal_index);
-        assert!(!pack.as_bytes().windows(other.literal_index.len()).any(|bytes| bytes == other.literal_index));
+        assert!(!pack
+            .as_bytes()
+            .windows(other.literal_index.len())
+            .any(|bytes| bytes == other.literal_index));
     }
 }
 
@@ -598,9 +688,10 @@ fn route_generation_rejects_empty_required_matcher_structure() {
     let routes = [incomplete];
     let error = compile_default_policy_execution_packs(generation(), &signing_key(), &ir, &routes)
         .expect_err("incomplete route graph must fail");
-    assert!(error.to_string().contains("empty route-required regex programs"));
+    assert!(error
+        .to_string()
+        .contains("empty route-required regex programs"));
 }
-
 
 /// WHY: publication is forbidden when an accelerated route changes even one canonical finding byte relative to scalar execution.
 #[test]
@@ -620,7 +711,9 @@ fn parity_evidence_rejects_different_candidate_findings() {
         b"simd-suppression-v1",
     )
     .expect_err("finding mismatch must fail before publication");
-    assert!(error.to_string().contains("candidate findings differ from scalar oracle"));
+    assert!(error
+        .to_string()
+        .contains("candidate findings differ from scalar oracle"));
 }
 
 /// WHY: parity evidence applies to exact matcher bytes, so changing a section after calibration invalidates publication even if findings once matched.
@@ -632,7 +725,9 @@ fn generation_rejects_parity_receipt_after_route_bytes_change() {
     route.regex_programs = b"cpu-regex-programs-v2-uncalibrated";
     let error = compile_default_policy_execution_packs(generation(), &signing_key(), &ir, &[route])
         .expect_err("changed route bytes must invalidate parity");
-    assert!(error.to_string().contains("stale or belongs to another route"));
+    assert!(error
+        .to_string()
+        .contains("stale or belongs to another route"));
 }
 
 /// WHY: fixture provenance is part of the proof boundary, so an all-zero fixture identity can never authorize pack publication.
@@ -656,7 +751,6 @@ fn parity_evidence_rejects_missing_fixture_identity() {
     assert!(error.to_string().contains("fixture identity is empty"));
 }
 
-
 /// WHY: every published pack requires an authenticated sidecar bound to the exact pack bytes and installation key identity.
 #[test]
 fn generated_pack_signature_round_trips_and_verifies() {
@@ -671,11 +765,18 @@ fn generated_pack_signature_round_trips_and_verifies() {
     )
     .expect("compile signed pack");
     let candidate = &compiled.packs[0];
-    let signature_bytes = candidate.signature.canonical_bytes().expect("encode signature");
+    let signature_bytes = candidate
+        .signature
+        .canonical_bytes()
+        .expect("encode signature");
     let decoded = ExecutionPackSignature::decode(&signature_bytes).expect("decode signature");
     assert_eq!(decoded, candidate.signature);
-    assert_eq!(decoded.pack_digest, *blake3::hash(candidate.pack.as_bytes()).as_bytes());
-    key.verify(candidate.pack.as_bytes(), &decoded).expect("verify signed pack");
+    assert_eq!(
+        decoded.pack_digest,
+        *blake3::hash(candidate.pack.as_bytes()).as_bytes()
+    );
+    key.verify(candidate.pack.as_bytes(), &decoded)
+        .expect("verify signed pack");
 }
 
 /// WHY: a pack byte changed after signing is corruption, even if a caller has not yet parsed the changed section.
@@ -695,7 +796,9 @@ fn signature_rejects_tampered_pack_bytes() {
     let mut bytes = candidate.pack.as_bytes().to_vec();
     let last = bytes.len() - 1;
     bytes[last] ^= 0x01;
-    let error = key.verify(&bytes, &candidate.signature).expect_err("tampered pack must fail");
+    let error = key
+        .verify(&bytes, &candidate.signature)
+        .expect_err("tampered pack must fail");
     assert!(error.to_string().contains("signed digest does not match"));
 }
 

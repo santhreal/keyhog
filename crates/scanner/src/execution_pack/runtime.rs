@@ -61,13 +61,12 @@ impl ExecutionPack {
         // The mapping is read-only and the file handle is never exposed for mutation.
         // Install/update publication must rename an immutable generation into place;
         // replacing the path cannot change pages held by this mapping.
-        let mapping = unsafe { MmapOptions::new().map(&file) }.map_err(|source| {
-            ExecutionPackError::Io {
+        let mapping =
+            unsafe { MmapOptions::new().map(&file) }.map_err(|source| ExecutionPackError::Io {
                 operation: "map",
                 path: path.to_path_buf(),
                 source,
-            }
-        })?;
+            })?;
         Self::from_mapping(mapping, path.to_path_buf(), expected)
     }
 
@@ -97,13 +96,12 @@ impl ExecutionPack {
             path: path.to_path_buf(),
             source,
         })?;
-        let mapping = unsafe { MmapOptions::new().map(&file) }.map_err(|source| {
-            ExecutionPackError::Io {
+        let mapping =
+            unsafe { MmapOptions::new().map(&file) }.map_err(|source| ExecutionPackError::Io {
                 operation: "map",
                 path: path.to_path_buf(),
                 source,
-            }
-        })?;
+            })?;
         let expected = decode_identity_header(mapping.as_ref(), path)?;
         let pack = Self::from_mapping(mapping, path.to_path_buf(), expected)?;
         authenticate_pack_signature(&pack, signature_path.as_ref(), signing_key)?;
@@ -135,6 +133,63 @@ impl ExecutionPack {
         }
         Ok(())
     }
+    /// Drop full pages covered by one decoded section field while retaining the
+    /// immutable mapping and any partial edge pages. Callers must pass a slice
+    /// borrowed from this pack; rejecting foreign slices prevents `madvise`
+    /// from touching allocator-owned memory.
+    pub fn release_mapped_bytes(&self, bytes: &[u8]) -> Result<(), ExecutionPackError> {
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        let mapping_start = self.mapping.as_ptr() as usize;
+        let mapping_end = mapping_start
+            .checked_add(self.mapping.len())
+            .ok_or_else(|| ExecutionPackError::InvalidPack("mapped pack range overflows".into()))?;
+        let bytes_start = bytes.as_ptr() as usize;
+        let bytes_end = bytes_start.checked_add(bytes.len()).ok_or_else(|| {
+            ExecutionPackError::InvalidPack("decoded pack slice range overflows".into())
+        })?;
+        if bytes_start < mapping_start || bytes_end > mapping_end {
+            return Err(ExecutionPackError::InvalidPack(
+                "decoded pack slice is outside its immutable mapping".into(),
+            ));
+        }
+        #[cfg(unix)]
+        {
+            let probed = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+            let page = usize::try_from(probed).map_err(|_| ExecutionPackError::Io {
+                operation: "query page size for decoded-page discard",
+                path: self.path.clone(),
+                source: std::io::Error::last_os_error(),
+            })?;
+            if page == 0 {
+                return Err(ExecutionPackError::InvalidPack(
+                    "host page size is zero".into(),
+                ));
+            }
+            let relative_start = bytes_start - mapping_start;
+            let relative_end = bytes_end - mapping_start;
+            let aligned_start = relative_start.div_ceil(page).saturating_mul(page);
+            let aligned_end = relative_end - (relative_end % page);
+            if aligned_start < aligned_end {
+                let result = unsafe {
+                    libc::madvise(
+                        self.mapping.as_ptr().add(aligned_start) as *mut libc::c_void,
+                        aligned_end - aligned_start,
+                        libc::MADV_DONTNEED,
+                    )
+                };
+                if result != 0 {
+                    return Err(ExecutionPackError::Io {
+                        operation: "discard decoded shard pages",
+                        path: self.path.clone(),
+                        source: std::io::Error::last_os_error(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
 
     pub const fn identity(&self) -> ExecutionPackIdentity {
         self.identity
@@ -147,7 +202,6 @@ impl ExecutionPack {
     pub fn path(&self) -> &Path {
         &self.path
     }
-
 
     /// Attribute every mapped byte to one architectural owner. File-backed
     /// pages may not all be physically resident at once; this ledger defines
@@ -177,7 +231,10 @@ impl ExecutionPack {
             mapped_bytes,
             ownership: totals
                 .into_iter()
-                .map(|(owner, mapped_bytes)| ResidentByteOwnership { owner, mapped_bytes })
+                .map(|(owner, mapped_bytes)| ResidentByteOwnership {
+                    owner,
+                    mapped_bytes,
+                })
                 .collect(),
         }
     }
@@ -225,7 +282,10 @@ impl ExecutionPack {
                 EXECUTION_PACK_HEADER_LEN
             )));
         }
-        if bytes[314..EXECUTION_PACK_HEADER_LEN].iter().any(|byte| *byte != 0) {
+        if bytes[314..EXECUTION_PACK_HEADER_LEN]
+            .iter()
+            .any(|byte| *byte != 0)
+        {
             return Err(ExecutionPackError::Incompatible(format!(
                 "{} uses nonzero reserved execution-pack header bytes",
                 path.display()
@@ -427,11 +487,12 @@ fn authenticate_pack_signature(
         )));
     }
     let mut bytes = [0u8; 112];
-    file.read_exact(&mut bytes).map_err(|source| ExecutionPackError::Io {
-        operation: "read signature for",
-        path: signature_path.to_path_buf(),
-        source,
-    })?;
+    file.read_exact(&mut bytes)
+        .map_err(|source| ExecutionPackError::Io {
+            operation: "read signature for",
+            path: signature_path.to_path_buf(),
+            source,
+        })?;
     let signature = ExecutionPackSignature::decode(&bytes)?;
     signing_key.verify(pack.mapping.as_ref(), &signature)
 }
@@ -477,13 +538,23 @@ fn read_u16(bytes: &[u8], offset: usize) -> u16 {
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> u32 {
-    u32::from_le_bytes(bytes[offset..offset + 4].try_into().expect("bounded header"))
+    u32::from_le_bytes(
+        bytes[offset..offset + 4]
+            .try_into()
+            .expect("bounded header"),
+    )
 }
 
 fn read_u64(bytes: &[u8], offset: usize) -> u64 {
-    u64::from_le_bytes(bytes[offset..offset + 8].try_into().expect("bounded header"))
+    u64::from_le_bytes(
+        bytes[offset..offset + 8]
+            .try_into()
+            .expect("bounded header"),
+    )
 }
 
 fn array32(bytes: &[u8], offset: usize) -> [u8; 32] {
-    bytes[offset..offset + 32].try_into().expect("bounded header")
+    bytes[offset..offset + 32]
+        .try_into()
+        .expect("bounded header")
 }

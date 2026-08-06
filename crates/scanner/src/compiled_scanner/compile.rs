@@ -298,9 +298,10 @@ impl CompiledScanner {
                 #[cfg(feature = "simd")]
                 {
                     Some(
-                        crate::execution_pack::HyperscanSimdExecutionProgram::decode(
+                        crate::execution_pack::HyperscanSimdExecutionProgram::decode_with_release(
                             backend_program,
                             identity.detector_digest,
+                            |bytes| pack.release_mapped_bytes(bytes),
                         )
                         .map_err(|error| crate::error::ScanError::Config(error.to_string()))?,
                     )
