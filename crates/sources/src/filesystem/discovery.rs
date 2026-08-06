@@ -385,6 +385,11 @@ impl CompactEntriesBuilder {
 
     fn finish(mut self) -> Result<CompactEntries, SourceError> {
         self.flush_run()?;
+        // The final run has moved every row into the spool. Release its sort
+        // slabs before mapping and seeding the merge so those two ownership
+        // phases do not overlap at the walk's resident-memory high-water mark.
+        self.rows = Vec::new();
+        self.path_bytes = Vec::new();
         self.spool.flush().map_err(SourceError::Io)?;
         if self.total_rows == 0 {
             return Ok(CompactEntries::empty(self.root));
