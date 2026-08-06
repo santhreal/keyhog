@@ -254,7 +254,7 @@
     },
     {
       "answer_sha256": "2972b7a1281f6d01f59088ce825373d5a106ad5fee35427cd39710ef066d1b05",
-      "expected_coverage_gap": false,
+      "expected_coverage_gap": true,
       "expected_findings": 1,
       "input_bytes": 314572800,
       "input_files": 1,

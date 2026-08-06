@@ -175,6 +175,7 @@ def test_fixture_oracles_require_expected_coverage_gaps(
     catalog = load_workload_catalog(CATALOG_PATH)
     gap_ids = {
         "filesystem-empty-directory",
+        "filesystem-single-large-file",
         "stdin-empty",
         "stdin-large-bounded",
         "git-shallow-clone",
@@ -184,7 +185,8 @@ def test_fixture_oracles_require_expected_coverage_gaps(
     }
     for workload_id in gap_ids:
         workload = next(item for item in catalog.workloads if item.workload_id == workload_id)
-        assert materialize_fixture(workload, tmp_path).expected_coverage_gap is True
+        scale = 0.001 if workload_id == "filesystem-single-large-file" else 1.0
+        assert materialize_fixture(workload, tmp_path, scale=scale).expected_coverage_gap is True
     complete = next(item for item in catalog.workloads if item.workload_id == "stdin-medium")
     assert materialize_fixture(complete, tmp_path).expected_coverage_gap is False
 
