@@ -325,6 +325,11 @@ is exposed. Mimalloc builds collect every Rayon worker heap plus the caller
 heap; Linux glibc builds trim the process heap. Collection runs once at scanner
 construction, never in the per-chunk scan path.
 
+The KeyHog-owned Rayon pool reserves the standard 2 MiB Rust worker stack.
+Scanner parsing and traversal are iterative, so the previous 8 MiB reservation
+only multiplied per-worker virtual memory without protecting a required call
+depth.
+
 Every mapped byte has one owner: pack metadata, detector IR, route classifier,
 regex programs, suppression policy, or the selected backend. Header, table, and
 alignment padding belong to pack metadata. The ownership ledger must sum to the

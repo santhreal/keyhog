@@ -3,6 +3,7 @@
 ## 0.5.68 - 2026-08-05
 
 - Scanner source files freed of large co-located test suites.
+- Reduced KeyHog-owned Rayon worker stack reservations from 8 MiB to the standard 2 MiB after moving scanner traversal to bounded iterative state.
 
 ## 0.5.67 - 2026-08-05
 

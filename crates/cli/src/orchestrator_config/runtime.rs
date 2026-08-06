@@ -7,6 +7,11 @@ use std::path::PathBuf;
 /// the OS scheduler without speeding the scan up.
 pub(crate) const MAX_THREADS_CAP: usize = 256;
 
+/// KeyHog workers use the platform-standard Rust stack reservation. Scanner
+/// parsing and traversal are iterative; reserving 8 MiB per worker multiplied
+/// address-space and allocator commitment without a corresponding call depth.
+pub(crate) const KEYHOG_WORKER_STACK_BYTES: usize = 2 * 1024 * 1024;
+
 /// Documented conventional ML threshold value.
 ///
 /// `ScanArgs::ml_threshold` is optional so the runtime can distinguish an
@@ -286,7 +291,7 @@ pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) -
 
     let builder = rayon::ThreadPoolBuilder::new()
         .num_threads(n)
-        .stack_size(8 * 1024 * 1024)
+        .stack_size(KEYHOG_WORKER_STACK_BYTES)
         .thread_name(|i| format!("keyhog-worker-{i}"));
 
     require_keyhog_owned_rayon_pool(
@@ -318,7 +323,7 @@ fn require_keyhog_owned_rayon_pool<E: std::fmt::Display>(
     build_result.map_err(|error| {
         let actual = actual_threads();
         anyhow::anyhow!(
-            "Rayon worker pool was initialized outside KeyHog with {actual} threads, but this scan requires a KeyHog-owned pool with {requested} threads ({source}) and 8 MiB worker stacks ({error}). Fix: configure KeyHog before any library initializes Rayon's global pool or start this scan in a separate process"
+            "Rayon worker pool was initialized outside KeyHog with {actual} threads, but this scan requires a KeyHog-owned pool with {requested} threads ({source}) and 2 MiB worker stacks ({error}). Fix: configure KeyHog before any library initializes Rayon's global pool or start this scan in a separate process"
         )
     })
 }

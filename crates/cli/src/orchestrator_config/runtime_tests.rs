@@ -2,6 +2,7 @@
 use super::{
     gpu_runtime_policy_for_backend_override, gpu_runtime_policy_from_args,
     require_keyhog_owned_rayon_pool, sanitise_thread_count, thread_pool_needs_initialization,
+    KEYHOG_WORKER_STACK_BYTES,
 };
 #[cfg(test)]
 use crate::args::ScanArgs;
@@ -81,6 +82,12 @@ fn sanitise_thread_count_rejects_zero() {
 
 #[cfg(test)]
 #[test]
+fn worker_stack_reservation_matches_the_bounded_runtime_contract() {
+    assert_eq!(KEYHOG_WORKER_STACK_BYTES, 2 * 1024 * 1024);
+}
+
+#[cfg(test)]
+#[test]
 fn externally_owned_same_width_rayon_pool_is_rejected() -> anyhow::Result<()> {
     let error = match require_keyhog_owned_rayon_pool(Err("already initialized"), 16, "test", || 16)
     {
@@ -90,7 +97,7 @@ fn externally_owned_same_width_rayon_pool_is_rejected() -> anyhow::Result<()> {
     assert!(
         error.contains("initialized outside KeyHog")
             && error.contains("KeyHog-owned pool with 16 threads")
-            && error.contains("8 MiB worker stacks"),
+            && error.contains("2 MiB worker stacks"),
         "same-width external ownership must fail closed with the unverifiable setting: {error}"
     );
     Ok(())
