@@ -8,8 +8,8 @@
 //!
 //! Construction now chooses one mandatory anchor for every direct-matcher
 //! literal alternative. Alternatives shorter than eight bytes use one exact
-//! ASCII-case-insensitive automaton; longer alternatives select the rarest
-//! eight-byte window measured across the compiled literal corpus, with
+//! ASCII-case-insensitive automaton; longer alternatives select the least-common
+//! eight-byte window measured by a bounded deterministic frequency sketch, with
 //! deterministic byte and position tie-breaking. Every complete alternative
 //! therefore contains its selected anchor. Empty/unextractable alternatives
 //! invalidate this gate and fail open.
@@ -89,6 +89,7 @@ const SATURATION_THRESHOLD_SLOTS: u32 =
     (TABLE_SLOTS * SATURATION_NUMERATOR + SATURATION_DENOMINATOR - 1) / SATURATION_DENOMINATOR;
 
 const MAX_ANCHOR_BYTES: usize = 8;
+const FREQUENCY_SLOTS: usize = TABLE_SLOTS as usize;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct AnchorKey {
@@ -161,9 +162,11 @@ impl BigramBloom {
 
     /// Build one mandatory anchor for every literal alternative.
     ///
-    /// Long-anchor candidate frequency is measured over the complete compiled
-    /// literal corpus. A hash collision or common selected anchor only causes
-    /// extra admissions. Short alternatives use exact matching. An empty
+    /// A fixed two-probe saturating frequency sketch ranks long-anchor
+    /// candidates without retaining one hash-table row per corpus window.
+    /// Collisions only choose a less selective mandatory window; they cannot
+    /// reject a literal-bearing chunk. Short alternatives use exact matching.
+    /// An empty
     /// alternative cannot provide a rejection proof, so construction marks the
     /// filter invalid and every query fails open.
     pub(crate) fn from_literal_prefixes(literals: &[String]) -> Self {
@@ -171,7 +174,7 @@ impl BigramBloom {
             return Self::invalid_for_test();
         }
 
-        let mut frequencies = std::collections::HashMap::<AnchorKey, u32>::new();
+        let mut frequencies = Box::new([0u16; FREQUENCY_SLOTS]);
         let mut short_literals = Vec::<&[u8]>::new();
         for literal in literals {
             let bytes = literal.as_bytes();
@@ -181,10 +184,11 @@ impl BigramBloom {
             }
             for window in bytes.windows(MAX_ANCHOR_BYTES) {
                 let key = AnchorKey::from_slice(window);
-                frequencies
-                    .entry(key)
-                    .and_modify(|count| *count = count.saturating_add(1))
-                    .or_insert(1);
+                let [first, second] = ngram_slots(key.as_slice());
+                frequencies[first] = frequencies[first].saturating_add(1);
+                if second != first {
+                    frequencies[second] = frequencies[second].saturating_add(1);
+                }
             }
         }
 
@@ -213,9 +217,8 @@ impl BigramBloom {
             let mut selected = None;
             for (position, window) in bytes.windows(MAX_ANCHOR_BYTES).enumerate() {
                 let key = AnchorKey::from_slice(window);
-                let Some(frequency) = frequencies.get(&key).copied() else {
-                    return Self::invalid_for_test();
-                };
+                let [first, second] = ngram_slots(key.as_slice());
+                let frequency = frequencies[first].min(frequencies[second]);
                 let candidate = (frequency, key, position);
                 if selected.is_none_or(|current| candidate < current) {
                     selected = Some(candidate);

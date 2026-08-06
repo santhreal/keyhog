@@ -32,6 +32,22 @@ fn every_literal_alternative_remains_reachable() {
     assert!(!filter.maybe_overlaps(b"zzzzzzzzzzzzzzzzzzzzzzzzzz"));
 }
 
+/// WHY: a bounded frequency sketch may overcount collisions, but it must still
+/// prefer detector-specific mandatory windows over a repeated corpus prefix.
+#[test]
+fn frequency_ranking_rejects_a_shared_prefix_without_its_unique_tail() {
+    let literals = [
+        "COMMON__ALPHA_service_key",
+        "COMMON__BRAVO_access_token",
+        "COMMON__CHARLIE_client_secret",
+    ];
+    let filter = bloom(&literals);
+    for literal in literals {
+        assert!(filter.maybe_overlaps(literal.as_bytes()));
+    }
+    assert!(!filter.maybe_overlaps(b"COMMON__"));
+}
+
 #[test]
 fn selected_anchor_is_ascii_case_insensitive() {
     let filter = bloom(&["AbCd_"]);

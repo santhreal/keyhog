@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Selective anchor construction uses a bounded deterministic frequency sketch instead of retaining every corpus window, reducing scanner startup memory without changing recall."
+crates = ["scanner"]
