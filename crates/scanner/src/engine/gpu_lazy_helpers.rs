@@ -37,6 +37,7 @@ pub(super) fn compile_gpu_literal_set(
     literals: &Arc<Vec<Vec<u8>>>,
     cache_prefix: &str,
 ) -> crate::error::Result<vyre_libs::scan::GpuLiteralSet> {
+    crate::gpu_literal_artifacts::record_runtime_gpu_literal_compiler_invocation();
     let literal_refs: Vec<&[u8]> = literals.iter().map(|v| v.as_slice()).collect();
     let cache_key =
         super::gpu_cache::gpu_matcher_cache_key_with_prefix(cache_prefix, &literal_refs);

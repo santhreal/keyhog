@@ -5,6 +5,12 @@ use crate::types::*;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec};
 use regex::Regex;
+static BUILD_GPU_LITERALS_INVOCATIONS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+pub(crate) fn build_gpu_literals_invocations() -> usize {
+    BUILD_GPU_LITERALS_INVOCATIONS.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 pub(crate) fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCorasick>> {
     if literals.is_empty() {
@@ -35,6 +41,7 @@ pub(crate) fn build_gpu_literals(
     confirmed_anchor_literals: &[String],
     generic_keyword_literals: &[String],
 ) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
+    BUILD_GPU_LITERALS_INVOCATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     build_gpu_literal_rows(
         ac_literals
             .iter()
@@ -301,13 +308,12 @@ pub(crate) fn compile_pattern(
     // each, through the shared process-wide regex cache. `shared_regex_compile`
     // (not `shared_regex`) keeps this throwaway validation build out of that
     // cache so the cache holds only patterns a scan actually used.
-    let validated = shared_regex_compile(spec.regex.as_str()).map_err(|source| {
-        ScanError::RegexCompile {
+    let validated =
+        shared_regex_compile(spec.regex.as_str()).map_err(|source| ScanError::RegexCompile {
             detector_id: detector_id.to_string(),
             index: pattern_index,
             source,
-        }
-    })?;
+        })?;
     // Validate the declared capture group is a real index in THIS regex.
     // `captures_len()` counts the implicit whole-match group 0 plus every
     // explicit group, so a valid `group` satisfies `group < captures_len`. An

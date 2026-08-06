@@ -14,8 +14,19 @@ use crate::error::{Result, ScanError};
 use crate::gpu_matcher_cache as gpu_cache;
 use crate::scanner_config::ScannerTuningConfig;
 use keyhog_core::DetectorSpec;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use vyre_libs::scan::GpuLiteralSet;
+
+static INSTALL_COMPILED_INVOCATIONS: AtomicUsize = AtomicUsize::new(0);
+static RUNTIME_COMPILER_INVOCATIONS: AtomicUsize = AtomicUsize::new(0);
+
+pub(crate) struct InstalledGpuLiteralArtifact {
+    pub(crate) matcher: GpuLiteralSet,
+    pub(crate) cache_key: Arc<str>,
+    pub(crate) pattern_count: usize,
+    pub(crate) max_literal_len: usize,
+}
 
 /// Serialized VYRE literal matcher plus the cache identity used by runtime.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -40,6 +51,74 @@ pub struct GpuLiteralArtifacts {
     /// Legacy separate positioned matcher. New artifacts leave this absent
     /// because positioned evidence is compiled into `literal`.
     pub positioned_literal: Option<GpuLiteralArtifact>,
+}
+
+pub(crate) fn install_compiled_gpu_literal_artifact(
+    cache_key: String,
+    pattern_count: u32,
+    matcher_bytes: &[u8],
+) -> Result<InstalledGpuLiteralArtifact> {
+    INSTALL_COMPILED_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
+    if !cache_key.starts_with("lit-ci-") {
+        return Err(ScanError::Gpu(format!(
+            "packed GPU matcher cache key {cache_key:?} is not a fused case-insensitive matcher key"
+        )));
+    }
+    let matcher = GpuLiteralSet::from_bytes(matcher_bytes).map_err(|error| {
+        ScanError::Gpu(format!(
+            "failed to install the packed VYRE GPU matcher {cache_key}: {error}. Fix: reinstall and recalibrate the execution pack."
+        ))
+    })?;
+    if !matcher.case_insensitive {
+        return Err(ScanError::Gpu(format!(
+            "packed VYRE GPU matcher {cache_key} is not case-insensitive; reinstall and recalibrate"
+        )));
+    }
+    let pattern_count = usize::try_from(pattern_count).map_err(|_| {
+        ScanError::Gpu("packed VYRE matcher pattern count does not fit this target".into())
+    })?;
+    if matcher.pattern_lengths.len() != pattern_count {
+        return Err(ScanError::Gpu(format!(
+            "packed VYRE GPU matcher {cache_key} declares {pattern_count} patterns but contains {}; reinstall and recalibrate",
+            matcher.pattern_lengths.len()
+        )));
+    }
+    let max_literal_len = matcher
+        .pattern_lengths
+        .iter()
+        .copied()
+        .max()
+        .and_then(|length| usize::try_from(length).ok())
+        .ok_or_else(|| {
+            ScanError::Gpu(format!(
+                "packed VYRE GPU matcher {cache_key} contains no valid literal lengths; reinstall and recalibrate"
+            ))
+        })?;
+    Ok(InstalledGpuLiteralArtifact {
+        matcher,
+        cache_key: cache_key.into(),
+        pattern_count,
+        max_literal_len,
+    })
+}
+
+pub(crate) fn record_runtime_gpu_literal_compiler_invocation() {
+    RUNTIME_COMPILER_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
+}
+
+#[doc(hidden)]
+pub fn install_compiled_gpu_literal_invocations() -> usize {
+    INSTALL_COMPILED_INVOCATIONS.load(Ordering::Relaxed)
+}
+
+#[doc(hidden)]
+pub fn runtime_gpu_literal_compiler_invocations() -> usize {
+    RUNTIME_COMPILER_INVOCATIONS.load(Ordering::Relaxed)
+}
+
+#[doc(hidden)]
+pub fn gpu_literal_plan_compiler_invocations() -> usize {
+    crate::compiler::compiler_compile::build_gpu_literals_invocations()
 }
 
 /// Canonical runtime directory for serialized GPU literal matcher artifacts.

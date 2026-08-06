@@ -223,10 +223,15 @@ fn acquire_metal_peer() -> Result<AcquiredGpuPeer, String> {
         )
     })?
     .map_err(|error| error.to_string())?;
+    let device_identity = crate::gpu::gpu_adapter_probe()
+        .map(|probe| probe.device_identity)
+        .ok_or_else(|| {
+            "native Metal peer acquired but its exact adapter identity is unavailable".to_string()
+        })?;
     tracing::info!(target: "keyhog::routing", "selected native Metal peer backend acquired");
     Ok(AcquiredGpuPeer {
         backend: Arc::from(backend),
-        device_identity: Some("Apple Metal default device".to_string()),
+        device_identity: Some(device_identity),
         is_software: false,
         resident_timed_dispatch_supported: false,
         // Metal implies an Apple device; the Metal acquisition API does not

@@ -8,7 +8,10 @@ use crate::compiler::compiler_build::CompileState;
 type PackedSimdProgram = crate::execution_pack::HyperscanSimdExecutionProgram;
 #[cfg(not(feature = "simd"))]
 type PackedSimdProgram = ();
-
+struct PackedVyreProgramSource<'a> {
+    bytes: &'a [u8],
+    pack_identity: crate::execution_pack::ExecutionPackIdentity,
+}
 
 impl CompiledScanner {
     /// Compile the deterministic scalar library route. Hardware autoroute is an
@@ -45,11 +48,7 @@ impl CompiledScanner {
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
     ) -> Result<Self> {
-        Self::compile_shared_with_gpu_policy_and_tuning(
-            detectors.into(),
-            gpu_policy,
-            tuning_config,
-        )
+        Self::compile_shared_with_gpu_policy_and_tuning(detectors.into(), gpu_policy, tuning_config)
     }
 
     /// Compile from shared detector ownership without cloning the corpus.
@@ -58,7 +57,14 @@ impl CompiledScanner {
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
     ) -> Result<Self> {
-        Self::compile_shared_with_state_source(detectors, gpu_policy, tuning_config, None, None)
+        Self::compile_shared_with_state_source(
+            detectors,
+            gpu_policy,
+            tuning_config,
+            None,
+            None,
+            None,
+        )
     }
 
     /// Construct a scanner from the canonical matcher graph compiled into an execution pack.
@@ -88,6 +94,7 @@ impl CompiledScanner {
             GpuInitPolicy::SelectedBackend(backend),
             tuning_config,
             Some(state),
+            None,
             None,
         )
     }
@@ -211,6 +218,10 @@ impl CompiledScanner {
             | crate::execution_pack::ExecutionPackBackend::GpuWgpu
             | crate::execution_pack::ExecutionPackBackend::GpuMetal => None,
         };
+        let packed_vyre_program = identity.backend.is_gpu().then(|| PackedVyreProgramSource {
+            bytes: backend_program,
+            pack_identity: identity,
+        });
         let state = crate::execution_pack::matcher_sections::decode_compile_state_sections(
             identity.backend,
             section(Section::LiteralIndex)?,
@@ -226,6 +237,7 @@ impl CompiledScanner {
             tuning_config,
             Some(state),
             packed_simd_program,
+            packed_vyre_program,
         )
     }
 
@@ -235,6 +247,7 @@ impl CompiledScanner {
         tuning_config: &ScannerTuningConfig,
         packed_state: Option<CompileState>,
         mut packed_simd_program: Option<PackedSimdProgram>,
+        packed_vyre_program: Option<PackedVyreProgramSource<'_>>,
     ) -> Result<Self> {
         if packed_state.is_none() {
             super::validation::validate_detector_corpus(&detectors)
@@ -364,25 +377,32 @@ impl CompiledScanner {
         let (gpu_backends, gpu_acquisition_failures) = if !gpu_disabled {
             let mut peers = GpuBackendPeers::default();
             let mut failures = Vec::new();
-            let probe_cuda = selected_gpu.is_none_or(|backend| backend == crate::hw_probe::ScanBackend::GpuCuda);
-            let probe_wgpu = selected_gpu.is_none_or(|backend| backend == crate::hw_probe::ScanBackend::GpuWgpu);
-            let probe_metal = selected_gpu.is_none_or(|backend| backend == crate::hw_probe::ScanBackend::GpuMetal);
+            let probe_cuda =
+                selected_gpu.is_none_or(|backend| backend == crate::hw_probe::ScanBackend::GpuCuda);
+            let probe_wgpu =
+                selected_gpu.is_none_or(|backend| backend == crate::hw_probe::ScanBackend::GpuWgpu);
+            let probe_metal = selected_gpu
+                .is_none_or(|backend| backend == crate::hw_probe::ScanBackend::GpuMetal);
             #[cfg(not(target_os = "linux"))]
-            if probe_cuda { failures.push(GpuBackendAcquisitionFailure {
+            if probe_cuda {
+                failures.push(GpuBackendAcquisitionFailure {
                 backend: "cuda",
                 diagnostic: format!(
                     "native CUDA peer acquisition is unavailable on {}; use WGPU or a supported Linux CUDA host",
                     std::env::consts::OS
                 ),
-            }); }
+            });
+            }
             #[cfg(not(target_os = "macos"))]
-            if probe_metal { failures.push(GpuBackendAcquisitionFailure {
-                backend: "metal",
-                diagnostic: format!(
+            if probe_metal {
+                failures.push(GpuBackendAcquisitionFailure {
+                    backend: "metal",
+                    diagnostic: format!(
                     "native Metal peer acquisition is unavailable on {}; use WGPU or a macOS host",
                     std::env::consts::OS
                 ),
-            }); }
+                });
+            }
             if probe_cuda {
                 #[cfg(target_os = "linux")]
                 {
@@ -419,36 +439,44 @@ impl CompiledScanner {
                     }
                 }
             }
-            if probe_wgpu || probe_metal { if let Some(probe) = crate::gpu::gpu_adapter_probe() {
-                if probe_wgpu {
-                    peers.wgpu_available = true;
-                    peers.wgpu_device_identity = Some(probe.device_identity.clone());
-                    peers.wgpu_runtime_identity = Some(probe.runtime_identity.clone());
-                    peers.wgpu_is_software = probe.is_software;
+            if probe_wgpu || probe_metal {
+                if let Some(probe) = crate::gpu::gpu_adapter_probe() {
+                    if probe_wgpu {
+                        peers.wgpu_available = true;
+                        peers.wgpu_device_identity = Some(probe.device_identity.clone());
+                        peers.wgpu_runtime_identity = Some(probe.runtime_identity.clone());
+                        peers.wgpu_is_software = probe.is_software;
+                    }
+                    #[cfg(target_os = "macos")]
+                    if probe_metal {
+                        peers.metal_available = true;
+                        peers.metal_device_identity = Some(probe.device_identity.clone());
+                        peers.metal_runtime_identity = Some(format!(
+                            "vyre-metal={};{}",
+                            env!("KEYHOG_VYRE_METAL_VERSION"),
+                            probe.runtime_identity
+                        ));
+                        tracing::debug!(target: "keyhog::routing", "native Metal peer identity probed");
+                    }
+                    if probe_wgpu {
+                        tracing::debug!(target: "keyhog::routing", "WGPU peer identity probed");
+                    }
+                } else {
+                    if probe_wgpu {
+                        failures.push(GpuBackendAcquisitionFailure {
+                            backend: "wgpu",
+                            diagnostic: "WGPU adapter census found no adapters".to_string(),
+                        });
+                    }
+                    #[cfg(target_os = "macos")]
+                    if probe_metal {
+                        failures.push(GpuBackendAcquisitionFailure {
+                            backend: "metal",
+                            diagnostic: "native Metal adapter census found no adapters".to_string(),
+                        });
+                    }
                 }
-                #[cfg(target_os = "macos")]
-                if probe_metal {
-                    peers.metal_available = true;
-                    peers.metal_device_identity = Some(probe.device_identity.clone());
-                    peers.metal_runtime_identity = Some(format!(
-                        "vyre-metal={};{}",
-                        env!("KEYHOG_VYRE_METAL_VERSION"),
-                        probe.runtime_identity
-                    ));
-                    tracing::debug!(target: "keyhog::routing", "native Metal peer identity probed");
-                }
-                if probe_wgpu { tracing::debug!(target: "keyhog::routing", "WGPU peer identity probed"); }
-            } else {
-                if probe_wgpu { failures.push(GpuBackendAcquisitionFailure {
-                    backend: "wgpu",
-                    diagnostic: "WGPU adapter census found no adapters".to_string(),
-                }); }
-                #[cfg(target_os = "macos")]
-                if probe_metal { failures.push(GpuBackendAcquisitionFailure {
-                    backend: "metal",
-                    diagnostic: "native Metal adapter census found no adapters".to_string(),
-                }); }
-            } }
+            }
             (peers, failures)
         } else {
             (GpuBackendPeers::default(), Vec::new())
@@ -464,6 +492,102 @@ impl CompiledScanner {
             let _ = gpu_disabled; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
             (GpuBackendPeers::default(), Vec::new())
         };
+        #[cfg(feature = "gpu")]
+        let packed_gpu_artifact = if let Some(source) = packed_vyre_program {
+            let selected = selected_gpu.ok_or_else(|| {
+                crate::error::ScanError::Config(
+                    "a packed VYRE program requires its exact GPU backend to be selected".into(),
+                )
+            })?;
+            let expected_backend = execution_backend(source.pack_identity.backend);
+            if selected != expected_backend {
+                return Err(crate::error::ScanError::Config(format!(
+                    "packed VYRE backend {:?} does not match selected backend {:?}",
+                    source.pack_identity.backend, selected
+                )));
+            }
+            gpu_backends.get(selected).ok_or_else(|| {
+                crate::error::ScanError::Config(format!(
+                    "selected packed VYRE peer {selected:?} could not be acquired: {}",
+                    gpu_backends
+                        .initialization_error(selected)
+                        .unwrap_or("backend unavailable")
+                ))
+            })?;
+            let acquired = gpu_backends.initialized(selected).ok_or_else(|| {
+                crate::error::ScanError::Config(format!(
+                    "selected packed VYRE peer {selected:?} was not retained after acquisition"
+                ))
+            })?;
+            if acquired.is_software {
+                return Err(crate::error::ScanError::Config(format!(
+                    "selected packed VYRE peer {selected:?} is a software adapter"
+                )));
+            }
+            let (runtime_identity, census_device_identity) = match selected {
+                crate::hw_probe::ScanBackend::GpuCuda => (
+                    gpu_backends.cuda_runtime_identity.as_deref(),
+                    gpu_backends.cuda_device_identity.as_deref(),
+                ),
+                crate::hw_probe::ScanBackend::GpuMetal => (
+                    gpu_backends.metal_runtime_identity.as_deref(),
+                    gpu_backends.metal_device_identity.as_deref(),
+                ),
+                crate::hw_probe::ScanBackend::GpuWgpu => (
+                    gpu_backends.wgpu_runtime_identity.as_deref(),
+                    gpu_backends.wgpu_device_identity.as_deref(),
+                ),
+                _ => unreachable!("selected GPU checked above"),
+            };
+            let runtime_identity = runtime_identity.ok_or_else(|| {
+                crate::error::ScanError::Config(format!(
+                    "selected packed VYRE peer {selected:?} has no runtime identity"
+                ))
+            })?;
+            let device_identity = acquired
+                .device_identity
+                .as_deref()
+                .or(census_device_identity)
+                .ok_or_else(|| {
+                    crate::error::ScanError::Config(format!(
+                        "selected packed VYRE peer {selected:?} has no device identity"
+                    ))
+                })?;
+            let hardware_identity = format!("{:?}", crate::hw_probe::probe_hardware());
+            let expected_identity =
+                crate::execution_pack::VyreExecutionIdentity::for_selected_peer(
+                    source.pack_identity.backend,
+                    source.pack_identity.target_digest,
+                    runtime_identity,
+                    device_identity,
+                    &hardware_identity,
+                )
+                .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+            let program = crate::execution_pack::VyreOrchestrationProgram::decode(
+                &source.bytes,
+                source.pack_identity.backend,
+                source.pack_identity.detector_digest,
+                &expected_identity,
+            )
+            .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+            Some(
+                crate::gpu_literal_artifacts::install_compiled_gpu_literal_artifact(
+                    program.matcher_cache_key,
+                    program.matcher_pattern_count,
+                    &program.matcher_bytes,
+                )?,
+            )
+        } else {
+            None
+        };
+        #[cfg(not(feature = "gpu"))]
+        if packed_vyre_program.is_some() {
+            return Err(crate::error::ScanError::Config(
+                "execution pack selects VYRE GPU but this scanner was built without GPU support"
+                    .into(),
+            ));
+        }
+
         let prefix_propagation = CsrU32::from(build_prefix_propagation(&state.ac_literals));
         let same_prefix_patterns = CsrU32::from(build_same_prefix_patterns(&state.ac_literals));
 
@@ -488,11 +612,7 @@ impl CompiledScanner {
                     )
                     .map_err(crate::error::ScanError::Config)?,
                 ),
-                None => build_simd_compile_plan(
-                    &state.ac_map,
-                    &state.ac_literals,
-                    tuning_config,
-                ),
+                None => build_simd_compile_plan(&state.ac_map, &state.ac_literals, tuning_config),
             }
         } else {
             None
@@ -551,28 +671,39 @@ impl CompiledScanner {
         let generic_keyword_literal_count = generic_keyword_literals.len();
         let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
         #[cfg(feature = "gpu")]
-        let gpu_literals = if gpu_backends.availability().any() {
-            let phase2_always_anchor_literals = phase2_anchor_index
-                .as_ref()
-                .map_or(&[] as &[String], |index| index.always_anchor_literals());
-            build_gpu_literals(
-                &state.ac_literals,
-                &phase2_keywords,
-                phase2_always_anchor_literals,
-                confirmed_anchor_literals,
-                &generic_keyword_literals,
-            )
-        } else {
-            None
-        };
+        let (gpu_literals, packed_gpu_matcher, gpu_max_literal_len) =
+            if let Some(artifact) = packed_gpu_artifact {
+                tracing::debug!(
+                    target: "keyhog::routing",
+                    cache_key = %artifact.cache_key,
+                    pattern_count = artifact.pattern_count,
+                    "installed authenticated packed VYRE matcher"
+                );
+                (None, Some(artifact.matcher), artifact.max_literal_len)
+            } else {
+                let literals = if gpu_backends.availability().any() {
+                    let phase2_always_anchor_literals = phase2_anchor_index
+                        .as_ref()
+                        .map_or(&[] as &[String], |index| index.always_anchor_literals());
+                    build_gpu_literals(
+                        &state.ac_literals,
+                        &phase2_keywords,
+                        phase2_always_anchor_literals,
+                        confirmed_anchor_literals,
+                        &generic_keyword_literals,
+                    )
+                } else {
+                    None
+                };
+                let max_literal_len = literals.as_ref().map_or(0, |literals| {
+                    literals
+                        .iter()
+                        .fold(0, |longest, literal| longest.max(literal.len()))
+                });
+                (literals, None, max_literal_len)
+            };
         #[cfg(not(feature = "gpu"))]
         let gpu_literals: Option<Arc<Vec<Vec<u8>>>> = None;
-        #[cfg(feature = "gpu")]
-        let gpu_max_literal_len = gpu_literals.as_ref().map_or(0, |literals| {
-            literals
-                .iter()
-                .fold(0, |longest, literal| longest.max(literal.len()))
-        });
 
         // Compile one ownership plan for the always-active phase-2 set. The full
         // scope serves legacy extraction and admission; anchored extraction uses
@@ -720,6 +851,13 @@ impl CompiledScanner {
                 structural_phase2_patterns[pattern.detector_index].push(pattern_index);
             }
         }
+        let gpu_matcher = OnceLock::new();
+        #[cfg(feature = "gpu")]
+        if let Some(matcher) = packed_gpu_matcher {
+            if gpu_matcher.set(Some(matcher)).is_err() {
+                unreachable!("new packed GPU matcher cell was already initialized");
+            }
+        }
         let scanner = Self {
             selected_backend,
             detector_digest,
@@ -730,7 +868,7 @@ impl CompiledScanner {
             gpu_literals,
             #[cfg(feature = "gpu")]
             gpu_max_literal_len,
-            gpu_matcher: OnceLock::new(),
+            gpu_matcher,
             #[cfg(feature = "gpu")]
             gpu_resident_literal_cuda: std::sync::Mutex::new(GpuResidentLiteralSlot::Empty),
             #[cfg(feature = "gpu")]
@@ -782,11 +920,13 @@ impl CompiledScanner {
             #[cfg(feature = "simdsieve")]
             hot_pattern_slots,
             config: ScannerConfig::default(),
-            route_classification: Arc::new(crate::engine::phase1_admission::RouteClassificationPlan {
-                alphabet_screen,
-                bigram_bloom,
-                phase2_keyword_ac,
-            }),
+            route_classification: Arc::new(
+                crate::engine::phase1_admission::RouteClassificationPlan {
+                    alphabet_screen,
+                    bigram_bloom,
+                    phase2_keyword_ac,
+                },
+            ),
             fragment_cache: crate::fragment_cache::FragmentCache::new(1000),
         };
 
@@ -814,9 +954,7 @@ fn execution_backend(
         crate::execution_pack::ExecutionPackBackend::Cpu => {
             crate::hw_probe::ScanBackend::CpuFallback
         }
-        crate::execution_pack::ExecutionPackBackend::Simd => {
-            crate::hw_probe::ScanBackend::SimdCpu
-        }
+        crate::execution_pack::ExecutionPackBackend::Simd => crate::hw_probe::ScanBackend::SimdCpu,
         crate::execution_pack::ExecutionPackBackend::GpuCuda => {
             crate::hw_probe::ScanBackend::GpuCuda
         }
