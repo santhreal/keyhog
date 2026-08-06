@@ -463,7 +463,11 @@ fn read_pending(
     let path_len_and_binary = read_u32_le(mmap, run.cursor + 8);
     let path_end = header_end + (path_len_and_binary & PATH_LEN_MASK) as usize;
     let relative = Path::new(OsStr::from_bytes(&mmap[header_end..path_end]));
-    let path = root.join(relative);
+    let path = if relative.as_os_str().is_empty() {
+        root.to_path_buf()
+    } else {
+        root.join(relative)
+    };
     run.cursor = path_end;
     run.remaining -= 1;
     debug_assert!(run.cursor <= run.end);

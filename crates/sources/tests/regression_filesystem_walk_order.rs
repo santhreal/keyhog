@@ -1,10 +1,9 @@
 //! Enumeration order is reproducible, and that is load-bearing.
 //!
-//! `FilesystemSource::chunks` stores unbounded Unix walk metadata in one
-//! common-root path slab plus compact row and order tables. It sorts row
-//! indexes by native relative-path bytes, then reconstructs one `FileEntry` at
-//! a time for the reader pool. This avoids retaining one absolute `PathBuf`
-//! allocation per file without changing the externally observed order.
+//! `FilesystemSource::chunks` external-merges bounded native-byte path runs for
+//! unbounded Unix walks, then reconstructs one `FileEntry` at a time for the
+//! reader pool. This avoids retaining one absolute `PathBuf` allocation per
+//! file without changing the externally observed order.
 //!
 //! The sort is not tidiness: batch composition follows chunk arrival order,
 //! and autoroute keys persisted decisions by batch shape. Filesystem iteration
@@ -146,6 +145,29 @@ fn non_utf8_paths_survive_compact_sorted_discovery_exactly_once() {
         rows,
         ["value = 0\n", "value = 1\n", "value = 2\n"],
         "native path ordering and file identity must survive compact discovery"
+    );
+}
+
+/// A file used directly as the scan root has an empty relative path.
+///
+/// Joining that empty path back onto the file root adds a trailing separator,
+/// turning the file into an invalid directory path and producing zero coverage.
+#[test]
+fn direct_file_root_survives_empty_relative_path_reconstruction() {
+    let tree = TempDir::new().expect("tempdir");
+    let file = tree.path().join("secret.env");
+    std::fs::write(&file, b"direct-file-root\n").expect("write direct file");
+
+    let chunks = FilesystemSource::new(file)
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("direct file root remains readable");
+
+    assert_eq!(chunks.len(), 1, "direct file root must yield one chunk");
+    assert_eq!(
+        chunks[0].data.as_str(),
+        "direct-file-root\n",
+        "empty relative-path reconstruction must reopen the file itself"
     );
 }
 
