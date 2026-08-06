@@ -198,7 +198,7 @@ pub(crate) fn build_simd_compile_plan(
 
     let mut regex_to_hs_id: HashMap<String, usize> = HashMap::new();
     let mut hs_patterns = Vec::new();
-    let mut index_map: Vec<Vec<usize>> = Vec::new();
+    let mut index_pairs = Vec::with_capacity(ac_map.len());
 
     for (idx, entry) in ac_map.iter().enumerate() {
         let regex_str = entry.regex.as_str();
@@ -212,18 +212,18 @@ pub(crate) fn build_simd_compile_plan(
                     regex: regex_str.to_string(),
                     reports_start: entry.group.is_some(),
                 });
-                index_map.push(Vec::new());
                 id
             });
-        index_map[hs_id].push(idx);
+        index_pairs.push((hs_id, idx));
     }
 
+    let pattern_count = hs_patterns.len();
     (!hs_patterns.is_empty()).then(|| SimdPhase1CompilePlan {
         source: SimdPhase1PlanSource::Compile {
             patterns: hs_patterns.into_boxed_slice(),
             shard_target: tuning.hs_shard_target,
         },
-        index_map: super::CsrU32::from(index_map),
+        index_map: super::CsrU32::from_pairs(pattern_count, index_pairs),
         ac_literals,
     })
 }
@@ -246,7 +246,7 @@ pub(crate) fn build_packed_simd_compile_plan(
         })
         .collect::<Vec<_>>();
     let mut covered_ac = vec![false; ac_map.len()];
-    let mut index_map = Vec::with_capacity(program.patterns.len());
+    let mut index_pairs = Vec::with_capacity(ac_map.len());
 
     for (hs_id, pattern) in program.patterns.iter().enumerate() {
         if pattern.pattern_index as usize != hs_id {
@@ -268,7 +268,7 @@ pub(crate) fn build_packed_simd_compile_plan(
             ));
         }
 
-        let mut mapped = Vec::with_capacity(pattern.ac_map_indices.len());
+        let mut first = None;
         for &raw_index in &pattern.ac_map_indices {
             let index = raw_index as usize;
             let entry = ac_map.get(index).ok_or_else(|| {
@@ -290,18 +290,16 @@ pub(crate) fn build_packed_simd_compile_plan(
                 ));
             }
             covered_ac[index] = true;
-            mapped.push(index);
+            first.get_or_insert(index);
+            index_pairs.push((hs_id, index));
         }
-        let first = mapped
-            .first()
-            .copied()
+        let first = first
             .ok_or_else(|| format!("packed SIMD pattern {hs_id} has no canonical AC mapping"))?;
         if ac_map[first].detector_index != pattern.detector_index as usize {
             return Err(format!(
                 "packed SIMD pattern {hs_id} detector identity does not match its first canonical AC row"
             ));
         }
-        index_map.push(mapped);
     }
     if let Some(index) = covered_ac.iter().position(|covered| !covered) {
         return Err(format!(
@@ -332,6 +330,7 @@ pub(crate) fn build_packed_simd_compile_plan(
             )
         })
         .collect();
+    let pattern_count = program.patterns.len();
 
     Ok(SimdPhase1CompilePlan {
         source: SimdPhase1PlanSource::Serialized {
@@ -339,7 +338,7 @@ pub(crate) fn build_packed_simd_compile_plan(
             pattern_map,
             unsupported_pattern_ids: unsupported.into_boxed_slice(),
         },
-        index_map: super::CsrU32::from(index_map),
+        index_map: super::CsrU32::from_pairs(pattern_count, index_pairs),
         ac_literals,
     })
 }

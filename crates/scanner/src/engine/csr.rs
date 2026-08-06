@@ -54,6 +54,44 @@ impl CsrU32 {
         Self { data, offsets }
     }
 
+    /// Build from flat `(row, value)` pairs without allocating one vector per
+    /// logical row. Pair order within each row is preserved.
+    pub(crate) fn from_pairs(
+        row_count: usize,
+        pairs: impl IntoIterator<Item = (usize, usize)>,
+    ) -> Self {
+        assert!(
+            row_count <= u32::MAX as usize,
+            "CSR row count exceeds the u32 offset representation"
+        );
+        let mut pairs = pairs
+            .into_iter()
+            .map(|(row, value)| {
+                assert!(row < row_count, "CSR pair row {row} exceeds {row_count}");
+                assert!(
+                    value <= u32::MAX as usize,
+                    "CSR value exceeds the u32 representation"
+                );
+                (row, value as u32)
+            })
+            .collect::<Vec<_>>();
+        pairs.sort_by_key(|(row, _)| *row);
+
+        let mut data = Vec::with_capacity(pairs.len());
+        let mut offsets = Vec::with_capacity(row_count + 1);
+        offsets.push(0);
+        let mut cursor = 0;
+        for row in 0..row_count {
+            while cursor < pairs.len() && pairs[cursor].0 == row {
+                data.push(pairs[cursor].1);
+                cursor += 1;
+            }
+            offsets.push(data.len() as u32);
+        }
+        debug_assert_eq!(cursor, pairs.len());
+        Self { data, offsets }
+    }
+
     /// Row `i` as a contiguous slice, or `None` when `i` is out of range.
     /// Replaces `Vec::get(i) -> Option<&Vec<usize>>` on the hot lookup path.
     #[inline]
@@ -126,10 +164,10 @@ impl std::ops::Index<usize> for CsrU32 {
 mod tests {
     use super::CsrU32;
 
-    /// WHY: suffix and structural indexes now enter CSR as `u32` rows, so empty boundaries and exact row order must survive flattening without an intermediate `usize` table.
+    /// WHY: flat relation builders emit interleaved row/value pairs, so compaction must restore row order while preserving encounter order inside each row.
     #[test]
-    fn u32_rows_roundtrip_with_exact_two_vector_storage() {
-        let table = CsrU32::from(vec![vec![4u32, 9], Vec::new(), vec![2, 7]]);
+    fn flat_pairs_roundtrip_with_exact_two_vector_storage() {
+        let table = CsrU32::from_pairs(3, [(2, 2), (0, 4), (2, 7), (0, 9)]);
 
         assert_eq!(table.len(), 3);
         assert!(!table.is_empty());

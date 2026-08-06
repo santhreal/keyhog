@@ -62,7 +62,7 @@ pub(crate) fn build_confirmed_suffix_gate(
     use std::collections::HashMap;
     let mut literals: Vec<String> = Vec::new();
     let mut literal_id: HashMap<String, usize> = HashMap::new();
-    let mut per_pattern: Vec<Vec<u32>> = vec![Vec::new(); ac_map.len()];
+    let mut pattern_literal_pairs = Vec::new();
     // The embedded corpus has ~6-15% duplicate regex sources; cache the suffix
     // extraction per source so we parse each unique pattern at most once.
     let mut src_cache: HashMap<&str, Vec<String>> = HashMap::new();
@@ -80,11 +80,14 @@ pub(crate) fn build_confirmed_suffix_gate(
                 literals.push(lit.clone());
                 literals.len() - 1
             });
-            per_pattern[i].push(id as u32);
+            pattern_literal_pairs.push((i, id));
         }
     }
     if literals.is_empty() {
-        return (None, super::CsrU32::from(per_pattern));
+        return (
+            None,
+            super::CsrU32::from_pairs(ac_map.len(), pattern_literal_pairs),
+        );
     }
     let ac = match aho_corasick::AhoCorasickBuilder::new()
         .match_kind(aho_corasick::MatchKind::Standard)
@@ -101,5 +104,8 @@ pub(crate) fn build_confirmed_suffix_gate(
             None
         }
     };
-    (ac, super::CsrU32::from(per_pattern))
+    (
+        ac,
+        super::CsrU32::from_pairs(ac_map.len(), pattern_literal_pairs),
+    )
 }

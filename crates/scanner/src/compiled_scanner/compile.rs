@@ -681,8 +681,8 @@ impl CompiledScanner {
             ));
         }
 
-        let prefix_propagation = CsrU32::from(build_prefix_propagation(&state.ac_literals));
-        let same_prefix_patterns = CsrU32::from(build_same_prefix_patterns(&state.ac_literals));
+        let prefix_propagation = build_prefix_propagation(&state.ac_literals);
+        let same_prefix_patterns = build_same_prefix_patterns(&state.ac_literals);
 
         #[cfg(feature = "simd")]
         let packed_phase2_scopes = packed_simd_program
@@ -692,7 +692,6 @@ impl CompiledScanner {
         let (phase2_keyword_ac, phase2_keyword_to_patterns, phase2_keywords) =
             build_phase2_keyword_ac(&state.phase2_patterns);
         let phase2_keyword_count = phase2_keywords.len();
-        let phase2_keyword_to_patterns = CsrU32::from(phase2_keyword_to_patterns);
         // Precompute always-active phase-2 indices so the per-chunk hot path
         // seeds the sparse active set without scanning the full phase-2 table.
         let phase2_always_active_indices = phase2_always_active_indices(&state.phase2_patterns);
@@ -934,20 +933,29 @@ impl CompiledScanner {
             .map(|pattern| regex_match_byte_upper_bound(pattern.regex.as_str()))
             .collect();
 
-        let mut structural_confirmed_patterns = vec![Vec::new(); detectors.len()];
-        for (pattern_index, pattern) in state.ac_map.iter().enumerate() {
-            if pattern.structural_password_slot {
-                structural_confirmed_patterns[pattern.detector_index].push(pattern_index);
-            }
-        }
-        let mut structural_phase2_patterns = vec![Vec::new(); detectors.len()];
-        for (pattern_index, (pattern, _)) in state.phase2_patterns.iter().enumerate() {
-            if pattern.structural_password_slot {
-                structural_phase2_patterns[pattern.detector_index].push(pattern_index);
-            }
-        }
-        let structural_confirmed_patterns = CsrU32::from(structural_confirmed_patterns);
-        let structural_phase2_patterns = CsrU32::from(structural_phase2_patterns);
+        let structural_confirmed_patterns = CsrU32::from_pairs(
+            detectors.len(),
+            state
+                .ac_map
+                .iter()
+                .enumerate()
+                .filter_map(|(pattern_index, pattern)| {
+                    pattern
+                        .structural_password_slot
+                        .then_some((pattern.detector_index, pattern_index))
+                }),
+        );
+        let structural_phase2_patterns =
+            CsrU32::from_pairs(
+                detectors.len(),
+                state.phase2_patterns.iter().enumerate().filter_map(
+                    |(pattern_index, (pattern, _))| {
+                        pattern
+                            .structural_password_slot
+                            .then_some((pattern.detector_index, pattern_index))
+                    },
+                ),
+            );
         let gpu_matcher = OnceLock::new();
         #[cfg(feature = "gpu")]
         if let Some(matcher) = packed_gpu_matcher {

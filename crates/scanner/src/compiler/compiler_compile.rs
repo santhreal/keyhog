@@ -94,31 +94,42 @@ prefix entry). Use --require-gpu when GPU acceleration is mandatory."
     }
 }
 
-pub(crate) fn build_same_prefix_patterns(literals: &[String]) -> Vec<Vec<usize>> {
+pub(crate) fn build_same_prefix_patterns(literals: &[String]) -> crate::engine::CsrU32 {
     let mut groups: std::collections::HashMap<&str, Vec<usize>> = std::collections::HashMap::new();
-    for (i, lit) in literals.iter().enumerate() {
-        groups.entry(lit.as_str()).or_default().push(i);
+    for (index, literal) in literals.iter().enumerate() {
+        groups.entry(literal.as_str()).or_default().push(index);
     }
-    let mut map = vec![Vec::new(); literals.len()];
-    for indices in groups.values() {
-        if indices.len() > 1 {
-            for &i in indices {
-                map[i] = indices.iter().copied().filter(|&j| j != i).collect();
-            }
+    let mut pairs = Vec::new();
+    for indices in groups.values().filter(|indices| indices.len() > 1) {
+        for &row in indices {
+            pairs.extend(
+                indices
+                    .iter()
+                    .copied()
+                    .filter(|&other| other != row)
+                    .map(|other| (row, other)),
+            );
         }
     }
-    map
+    crate::engine::CsrU32::from_pairs(literals.len(), pairs)
 }
 
-pub(crate) fn build_prefix_propagation(literals: &[String]) -> Vec<Vec<usize>> {
-    crate::prefix_trie::build_propagation_table(literals)
+pub(crate) fn build_prefix_propagation(literals: &[String]) -> crate::engine::CsrU32 {
+    crate::engine::CsrU32::from_pairs(
+        literals.len(),
+        crate::prefix_trie::build_propagation_pairs(literals),
+    )
 }
 
 pub(crate) fn build_phase2_keyword_ac<'a>(
     phase2_patterns: &'a [(CompiledPattern, Vec<String>)],
-) -> (Option<AhoCorasick>, Vec<Vec<usize>>, Vec<Cow<'a, str>>) {
+) -> (
+    Option<AhoCorasick>,
+    crate::engine::CsrU32,
+    Vec<Cow<'a, str>>,
+) {
     let mut all_keywords = Vec::new();
-    let mut keyword_to_patterns = Vec::new();
+    let mut keyword_pattern_pairs = Vec::new();
     let mut keyword_map: std::collections::HashMap<Cow<'a, str>, usize, ahash::RandomState> =
         std::collections::HashMap::with_hasher(ahash::RandomState::new());
 
@@ -130,12 +141,11 @@ pub(crate) fn build_phase2_keyword_ac<'a>(
             Entry::Vacant(entry) => {
                 let idx = all_keywords.len();
                 all_keywords.push(entry.key().clone());
-                keyword_to_patterns.push(Vec::new());
                 entry.insert(idx);
                 idx
             }
         };
-        keyword_to_patterns[idx].push(pattern_idx);
+        keyword_pattern_pairs.push((idx, pattern_idx));
     };
 
     for (pattern_idx, (pattern, keywords)) in phase2_patterns.iter().enumerate() {
@@ -171,7 +181,11 @@ pub(crate) fn build_phase2_keyword_ac<'a>(
     }
 
     if all_keywords.is_empty() {
-        return (None, Vec::new(), Vec::new());
+        return (
+            None,
+            crate::engine::CsrU32::from_pairs(0, std::iter::empty()),
+            Vec::new(),
+        );
     }
 
     let keyword_count = all_keywords.len();
@@ -190,7 +204,11 @@ pub(crate) fn build_phase2_keyword_ac<'a>(
         }
     };
 
-    (ac, keyword_to_patterns, all_keywords)
+    (
+        ac,
+        crate::engine::CsrU32::from_pairs(all_keywords.len(), keyword_pattern_pairs),
+        all_keywords,
+    )
 }
 
 fn longest_compound_keyword_segment(keyword: &str) -> Option<String> {
@@ -530,7 +548,7 @@ mod phase2_keyword_storage_tests {
         )];
         let (_, mapping, stored) = build_phase2_keyword_ac(&phase2);
 
-        assert_eq!(mapping, vec![vec![0]]);
+        assert_eq!(mapping.iter().collect::<Vec<_>>(), vec![&[0][..]]);
         let Cow::Borrowed(borrowed) = &stored[0] else {
             panic!("detector-authored keyword was copied instead of borrowed");
         };
@@ -550,7 +568,7 @@ mod phase2_keyword_storage_tests {
         )];
         let (_, mapping, stored) = build_phase2_keyword_ac(&phase2);
 
-        assert_eq!(mapping, vec![vec![0], vec![0]]);
+        assert_eq!(mapping.iter().collect::<Vec<_>>(), vec![&[0][..], &[0][..]]);
         assert!(matches!(&stored[0], Cow::Borrowed("SERVICE_API_KEY")));
         assert!(matches!(&stored[1], Cow::Owned(stem) if stem == "service"));
     }

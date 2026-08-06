@@ -1,20 +1,18 @@
-//! Regression: `collect_propagation` moves `descendant_indices` into the last
-//! pattern slot at each trie node instead of cloning for every pattern (Law 7
-//! the common single-pattern node now does zero clones), and the move changes no
-//! output (Law 6).
+//! Regression: production prefix propagation emits flat `(row, value)` pairs
+//! directly into CSR instead of allocating one descendant vector per literal.
+//! The test facade reconstructs rows only so the established oracle remains
+//! readable; both paths share the same pair builder.
 //!
 //! The propagation table answers "for prefix i, which prefixes are strict
 //! superstrings of it?". Fixtures use linear chains (each node has one child) so
-//! the descendant order is deterministic (no HashMap sibling-order ambiguity),
-//! letting us pin the exact table. The duplicate-prefix fixture exercises the
-//! clone-then-move path (a node with two patterns).
+//! descendant order is deterministic. Duplicate-prefix fixtures prove
+//! co-terminal patterns are not incorrectly treated as strict descendants.
 
 use keyhog_scanner::testing::build_propagation_table_for_test as build;
 
 #[test]
 fn linear_chain_propagation_is_exact_single_pattern_nodes() {
-    // a -> ab -> abc : each node holds exactly one pattern, so the move-on-last
-    // path runs with no clone.
+    // a -> ab -> abc: each row receives only its strict descendants.
     let table = build(&["a".to_string(), "ab".to_string(), "abc".to_string()]);
     assert_eq!(
         table,

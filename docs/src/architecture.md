@@ -300,6 +300,8 @@ Detector-indexed matcher relationships use flat `u32` data plus row offsets.
 SIMD pattern mappings, confirmed-suffix rows, and structural detector
 partitions therefore retain two contiguous vectors per table rather than one
 heap allocation and pointer-sized header per detector or pattern.
+Their builders ingest flat row/value pairs, so scanner construction also avoids
+temporary per-row vectors.
 
 Every mapped byte has one owner: pack metadata, detector IR, route classifier,
 regex programs, suppression policy, or the selected backend. Header, table, and

@@ -34,39 +34,55 @@ struct TrieNode {
 /// assert_eq!(table.len(), 2);
 /// ```
 pub(crate) fn build_propagation_table(prefixes: &[String]) -> Vec<Vec<usize>> {
-    let mut root = TrieNode::default();
-    for (idx, prefix) in prefixes.iter().enumerate() {
-        let mut node = &mut root;
-        for ch in prefix.chars() {
-            node = node.children.entry(ch).or_default();
-        }
-        node.pattern_indices.push(idx);
+    let mut rows = vec![Vec::new(); prefixes.len()];
+    for (row, value) in build_propagation_pairs(prefixes) {
+        rows[row].push(value);
     }
-
-    let mut propagation: Vec<Vec<usize>> = vec![Vec::new(); prefixes.len()];
-    collect_propagation(&root, &mut propagation);
-    propagation
+    rows
 }
 
-fn collect_propagation(node: &TrieNode, propagation: &mut [Vec<usize>]) -> Vec<usize> {
-    let mut subtree_indices = node.pattern_indices.clone();
-    let mut descendant_indices = Vec::new();
-
-    for child in node.children.values() {
-        let child_subtree = collect_propagation(child, propagation);
-        descendant_indices.extend_from_slice(&child_subtree);
-        subtree_indices.extend_from_slice(&child_subtree);
-    }
-
-    // Each pattern ending at this node gets the descendant superstrings. The
-    // last one moves `descendant_indices` (it is unused after this), so the
-    // common single-pattern-per-node trie does zero clones here.
-    if let Some((&last, rest)) = node.pattern_indices.split_last() {
-        for &idx in rest {
-            propagation[idx] = descendant_indices.clone();
+pub(crate) fn build_propagation_pairs(prefixes: &[String]) -> Vec<(usize, usize)> {
+    let root = build_trie(prefixes);
+    let mut pairs = Vec::new();
+    for (row, prefix) in prefixes.iter().enumerate() {
+        let Some(node) = find_node(&root, prefix) else {
+            continue;
+        };
+        for child in node.children.values() {
+            collect_descendant_pairs(child, row, &mut pairs);
         }
-        propagation[last] = descendant_indices;
     }
+    pairs
+}
 
-    subtree_indices
+fn build_trie(prefixes: &[String]) -> TrieNode {
+    let mut root = TrieNode::default();
+    for (index, prefix) in prefixes.iter().enumerate() {
+        let mut node = &mut root;
+        for character in prefix.chars() {
+            node = node.children.entry(character).or_default();
+        }
+        node.pattern_indices.push(index);
+    }
+    root
+}
+
+fn find_node<'a>(root: &'a TrieNode, prefix: &str) -> Option<&'a TrieNode> {
+    let mut node = root;
+    for character in prefix.chars() {
+        node = node.children.get(&character)?;
+    }
+    Some(node)
+}
+
+fn collect_descendant_pairs(node: &TrieNode, row: usize, pairs: &mut Vec<(usize, usize)>) {
+    pairs.extend(
+        node.pattern_indices
+            .iter()
+            .copied()
+            .map(|value| (row, value)),
+    );
+    for child in node.children.values() {
+        collect_descendant_pairs(child, row, pairs);
+    }
 }
