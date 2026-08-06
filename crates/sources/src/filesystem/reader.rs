@@ -36,11 +36,10 @@ const READER_PART_FLUSH_BYTES: usize = 1024 * 1024;
 /// Bounds the other shape: an archive or decode path that yields thousands of
 /// individually tiny chunks would otherwise never trip the byte threshold.
 const READER_PART_FLUSH_CHUNKS: usize = 64;
-/// Maximum queued entry parts and decoded chunks between the reader crew and
-/// scanner. Each large-file item can own 1 MiB, so each boundary admits one
-/// window while reader I/O overlaps scanning without multiplying resident
-/// source bytes.
-const READER_QUEUE_DEPTH: usize = 1;
+/// Rendezvous boundary between the reader crew and scanner. A blocked sender
+/// may overlap one decoded window with the active scan, but no additional
+/// 1 MiB window remains queued and resident.
+const READER_QUEUE_DEPTH: usize = 0;
 
 /// One ordered slice of a single walk entry's chunks:
 /// `(seq, part, is_last, chunks)`.
