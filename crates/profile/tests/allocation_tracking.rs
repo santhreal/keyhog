@@ -273,6 +273,16 @@ mod tracked {
             summed_bytes, totals.allocated_bytes,
             "per-stage byte attribution must sum to the recorded total"
         );
+        let summed_live_bytes: u64 = system
+            .allocation
+            .stages
+            .iter()
+            .map(|stage| stage.live_bytes)
+            .sum();
+        assert_eq!(
+            summed_live_bytes, totals.live_bytes,
+            "every retained allocation must have exactly one stage or root owner"
+        );
 
         let typed = runtime.take_session_typed_metrics();
         let find = |metric: MetricId| {

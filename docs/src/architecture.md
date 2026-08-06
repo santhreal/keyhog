@@ -174,6 +174,13 @@ the deduplicated vector in place, and baseline suppression compacts the final
 finding vector in place. A stage may allocate indexes or output slots, but it
 does not clone the complete old graph while building a replacement graph.
 
+An `allocation-profile` build assigns every retained heap allocation to the
+innermost active profile stage. Its allocation header preserves that owner when
+another stage or thread frees the value. Allocations outside a stage belong to
+the explicit root owner. Stage and root live-byte totals must equal the process
+allocator total, so retained memory cannot disappear into an unattributed
+remainder.
+
 The accelerated batch path is **two-phase and coalesced**. A file with no
 phase-one hit stops only when the shared no-hit admission proof also rules out
 phase-two patterns, generic assignments, and enabled entropy analysis. This
