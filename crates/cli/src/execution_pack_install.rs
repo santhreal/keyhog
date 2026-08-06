@@ -76,17 +76,53 @@ pub(crate) fn current_binary_digest() -> Result<[u8; 32]> {
 }
 
 pub(crate) fn current_target_digest() -> [u8; 32] {
+    let hardware = keyhog_scanner::probe_hardware();
+    let physical_cores = hardware.physical_cores.to_le_bytes();
+    let logical_cores = hardware.logical_cores.to_le_bytes();
+    let feature_flags = [
+        u8::from(hardware.has_avx2),
+        u8::from(hardware.has_avx512),
+        u8::from(hardware.has_neon),
+        u8::from(hardware.hyperscan_available),
+    ];
+    let total_memory_mb = hardware.total_memory_mb.unwrap_or_default().to_le_bytes();
+    let option_flags = [
+        u8::from(hardware.total_memory_mb.is_some()),
+        u8::from(hardware.hyperscan_runtime_identity.is_some()),
+    ];
+    // Source and accelerator health are deliberately excluded. io_uring is a
+    // transient acquisition probe, while every VYRE pack authenticates its own
+    // exact runtime, driver, device, and hardware-limit identity. Binding either
+    // here made unrelated CPU/SIMD packs alternate between valid and stale.
     digest_parts(&[
+        b"keyhog-execution-pack-target-v2",
         std::env::consts::OS.as_bytes(),
         std::env::consts::ARCH.as_bytes(),
-        format!("{:?}", keyhog_scanner::probe_hardware()).as_bytes(),
+        &physical_cores,
+        &logical_cores,
+        &feature_flags,
+        &option_flags,
+        &total_memory_mb,
+        hardware
+            .hyperscan_runtime_identity
+            .as_deref()
+            .unwrap_or_default()
+            .as_bytes(),
     ])
 }
 
 pub(crate) fn current_feature_digest() -> [u8; 32] {
     digest_parts(&[
-        if cfg!(feature = "simd") { b"simd=1" } else { b"simd=0" },
-        if cfg!(feature = "gpu") { b"gpu=1" } else { b"gpu=0" },
+        if cfg!(feature = "simd") {
+            b"simd=1"
+        } else {
+            b"simd=0"
+        },
+        if cfg!(feature = "gpu") {
+            b"gpu=1"
+        } else {
+            b"gpu=0"
+        },
         env!("CARGO_PKG_VERSION").as_bytes(),
     ])
 }
@@ -114,9 +150,7 @@ pub(crate) fn load_installed_execution_pack(
     let row = manifest
         .packs
         .iter()
-        .find(|row| {
-            row.policy == policy_name(policy) && row.backend == backend_name(backend)
-        })
+        .find(|row| row.policy == policy_name(policy) && row.backend == backend_name(backend))
         .with_context(|| {
             format!(
                 "installed generation has no {} {} execution pack",
@@ -148,7 +182,6 @@ pub(crate) fn load_installed_preferred_matcher_pack(
     authenticate_manifest_pack(&directory, &manifest, row, &signing_key)
 }
 
-
 pub(crate) fn load_installed_detector_execution_pack_for_backend(
     policy: ExecutionPackPolicy,
     backend: ExecutionPackBackend,
@@ -177,7 +210,9 @@ pub(crate) fn load_installed_preferred_detector_execution_pack(
     Ok(InstalledDetectorExecutionPack { pack, ir })
 }
 
-pub(crate) fn load_authenticated_binding(directory: &Path) -> Result<ExecutionPackGenerationBinding> {
+pub(crate) fn load_authenticated_binding(
+    directory: &Path,
+) -> Result<ExecutionPackGenerationBinding> {
     let (bytes, manifest, signing_key) = load_manifest(directory)?;
     let mut identities = BTreeSet::new();
     for row in &manifest.packs {
@@ -205,18 +240,31 @@ fn load_manifest(
     directory: &Path,
 ) -> Result<(Vec<u8>, InstallPackManifest, ExecutionPackSigningKey)> {
     let manifest_path = directory.join("manifest.json");
-    let metadata = fs::symlink_metadata(&manifest_path)
-        .with_context(|| format!("inspecting execution-pack manifest {}", manifest_path.display()))?;
-    if !metadata.file_type().is_file() || metadata.len() == 0 || metadata.len() > MAX_MANIFEST_BYTES {
+    let metadata = fs::symlink_metadata(&manifest_path).with_context(|| {
+        format!(
+            "inspecting execution-pack manifest {}",
+            manifest_path.display()
+        )
+    })?;
+    if !metadata.file_type().is_file() || metadata.len() == 0 || metadata.len() > MAX_MANIFEST_BYTES
+    {
         bail!(
             "execution-pack manifest {} must be a nonempty regular file no larger than {MAX_MANIFEST_BYTES} bytes",
             manifest_path.display()
         );
     }
-    let bytes = fs::read(&manifest_path)
-        .with_context(|| format!("reading execution-pack manifest {}", manifest_path.display()))?;
-    let manifest: InstallPackManifest = serde_json::from_slice(&bytes)
-        .with_context(|| format!("parsing execution-pack manifest {}", manifest_path.display()))?;
+    let bytes = fs::read(&manifest_path).with_context(|| {
+        format!(
+            "reading execution-pack manifest {}",
+            manifest_path.display()
+        )
+    })?;
+    let manifest: InstallPackManifest = serde_json::from_slice(&bytes).with_context(|| {
+        format!(
+            "parsing execution-pack manifest {}",
+            manifest_path.display()
+        )
+    })?;
     if manifest.version != MANIFEST_VERSION {
         bail!(
             "execution-pack manifest version {} is unsupported; reinstall with version {MANIFEST_VERSION}",
@@ -227,25 +275,42 @@ fn load_manifest(
         bail!("execution-pack manifest contains no packs");
     }
     for (name, actual, expected) in [
-        ("binary", manifest.binary_digest.as_str(), keyhog_core::hex_encode(&current_binary_digest()?)),
-        ("target", manifest.target_digest.as_str(), keyhog_core::hex_encode(&current_target_digest())),
-        ("feature", manifest.feature_digest.as_str(), keyhog_core::hex_encode(&current_feature_digest())),
+        (
+            "binary",
+            manifest.binary_digest.as_str(),
+            keyhog_core::hex_encode(&current_binary_digest()?),
+        ),
+        (
+            "target",
+            manifest.target_digest.as_str(),
+            keyhog_core::hex_encode(&current_target_digest()),
+        ),
+        (
+            "feature",
+            manifest.feature_digest.as_str(),
+            keyhog_core::hex_encode(&current_feature_digest()),
+        ),
     ] {
         if actual != expected {
-            bail!("execution-pack {name} identity is stale; rebuild packs with this binary before calibration");
+            bail!(
+                "execution-pack {name} identity is stale (manifest {actual}, host {expected}); \
+                 rebuild packs with this binary before calibration"
+            );
         }
     }
     let key_path = directory
         .parent()
         .map(|parent| parent.join("signing.key"))
         .context("execution-pack generation has no installation root")?;
-    let key_bytes = fs::read(&key_path)
-        .with_context(|| format!("reading execution-pack verification key {}", key_path.display()))?;
-    let signing_key = ExecutionPackSigningKey::from_bytes(
-        key_bytes
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("execution-pack verification key must be exactly 32 bytes"))?,
-    )
+    let key_bytes = fs::read(&key_path).with_context(|| {
+        format!(
+            "reading execution-pack verification key {}",
+            key_path.display()
+        )
+    })?;
+    let signing_key = ExecutionPackSigningKey::from_bytes(key_bytes.try_into().map_err(|_| {
+        anyhow::anyhow!("execution-pack verification key must be exactly 32 bytes")
+    })?)
     .map_err(anyhow::Error::msg)?;
     Ok((bytes, manifest, signing_key))
 }
@@ -265,37 +330,72 @@ fn authenticate_manifest_pack(
     if !metadata.file_type().is_file() || metadata.len() != row.bytes as u64 {
         bail!(
             "execution pack {} has {} bytes, manifest requires {}",
-            pack_path.display(), metadata.len(), row.bytes
+            pack_path.display(),
+            metadata.len(),
+            row.bytes
         );
     }
-    let pack = ExecutionPack::open_authenticated_discover(
-        &pack_path,
-        &signature_path,
-        signing_key,
-    )
-    .map_err(anyhow::Error::msg)
-    .with_context(|| format!("authenticating execution pack {}", pack_path.display()))?;
+    let pack = ExecutionPack::open_authenticated_discover(&pack_path, &signature_path, signing_key)
+        .map_err(anyhow::Error::msg)
+        .with_context(|| format!("authenticating execution pack {}", pack_path.display()))?;
     let identity = pack.identity();
     for (name, actual, expected) in [
-        ("detector", keyhog_core::hex_encode(&identity.detector_digest), manifest.detector_digest.as_str()),
-        ("target", keyhog_core::hex_encode(&identity.target_digest), manifest.target_digest.as_str()),
-        ("binary", keyhog_core::hex_encode(&identity.binary_digest), manifest.binary_digest.as_str()),
-        ("feature", keyhog_core::hex_encode(&identity.feature_digest), manifest.feature_digest.as_str()),
-        ("identity", keyhog_core::hex_encode(&identity.digest()), row.identity_digest.as_str()),
-        ("content", keyhog_core::hex_encode(&pack.content_digest()), row.content_digest.as_str()),
+        (
+            "detector",
+            keyhog_core::hex_encode(&identity.detector_digest),
+            manifest.detector_digest.as_str(),
+        ),
+        (
+            "target",
+            keyhog_core::hex_encode(&identity.target_digest),
+            manifest.target_digest.as_str(),
+        ),
+        (
+            "binary",
+            keyhog_core::hex_encode(&identity.binary_digest),
+            manifest.binary_digest.as_str(),
+        ),
+        (
+            "feature",
+            keyhog_core::hex_encode(&identity.feature_digest),
+            manifest.feature_digest.as_str(),
+        ),
+        (
+            "identity",
+            keyhog_core::hex_encode(&identity.digest()),
+            row.identity_digest.as_str(),
+        ),
+        (
+            "content",
+            keyhog_core::hex_encode(&pack.content_digest()),
+            row.content_digest.as_str(),
+        ),
     ] {
         if actual != expected {
-            bail!("execution pack {} {name} identity does not match its manifest", pack_path.display());
+            bail!(
+                "execution pack {} {name} identity does not match its manifest",
+                pack_path.display()
+            );
         }
     }
     if policy_name(identity.policy) != row.policy || backend_name(identity.backend) != row.backend {
-        bail!("execution pack {} policy/backend identity does not match its manifest", pack_path.display());
+        bail!(
+            "execution pack {} policy/backend identity does not match its manifest",
+            pack_path.display()
+        );
     }
-    let signature_bytes = fs::read(&signature_path)
-        .with_context(|| format!("reading execution-pack signature {}", signature_path.display()))?;
+    let signature_bytes = fs::read(&signature_path).with_context(|| {
+        format!(
+            "reading execution-pack signature {}",
+            signature_path.display()
+        )
+    })?;
     let signature = ExecutionPackSignature::decode(&signature_bytes).map_err(anyhow::Error::msg)?;
     if keyhog_core::hex_encode(&signature.pack_digest) != row.signed_pack_digest {
-        bail!("execution pack {} signed digest does not match its manifest identity", pack_path.display());
+        bail!(
+            "execution pack {} signed digest does not match its manifest identity",
+            pack_path.display()
+        );
     }
     Ok(pack)
 }

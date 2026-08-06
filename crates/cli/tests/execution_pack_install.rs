@@ -41,11 +41,16 @@ fn hidden_install_command_publishes_authenticated_policy_generation() {
         .iter()
         .map(|row| row["policy"].as_str().expect("policy"))
         .collect();
-    assert_eq!(policies, ["deep", "default", "fast", "precision"].into_iter().collect());
+    assert_eq!(
+        policies,
+        ["deep", "default", "fast", "precision"]
+            .into_iter()
+            .collect()
+    );
     let allowed_backends = ["cpu", "simd", "gpu-cuda", "gpu-wgpu", "gpu-metal"];
-    assert!(packs.iter().all(|row| {
-        allowed_backends.contains(&row["backend"].as_str().expect("backend"))
-    }));
+    assert!(packs
+        .iter()
+        .all(|row| { allowed_backends.contains(&row["backend"].as_str().expect("backend")) }));
     for backend in packs
         .iter()
         .map(|row| row["backend"].as_str().expect("backend"))
@@ -63,10 +68,14 @@ fn hidden_install_command_publishes_authenticated_policy_generation() {
         let pack_path = output.join(row["file"].as_str().expect("pack file"));
         let signature_path = output.join(row["signature_file"].as_str().expect("signature file"));
         let pack_bytes = fs::read(&pack_path).expect("read pack");
-        assert_eq!(pack_bytes.len(), row["bytes"].as_u64().expect("pack bytes") as usize);
+        assert_eq!(
+            pack_bytes.len(),
+            row["bytes"].as_u64().expect("pack bytes") as usize
+        );
         let signature_bytes = fs::read(signature_path).expect("read signature");
         let signature = ExecutionPackSignature::decode(&signature_bytes).expect("decode signature");
-        key.verify(&pack_bytes, &signature).expect("authenticate installed pack");
+        key.verify(&pack_bytes, &signature)
+            .expect("authenticate installed pack");
         assert_eq!(
             keyhog_core::hex_encode(&signature.pack_digest),
             row["signed_pack_digest"].as_str().expect("signed digest")
@@ -74,7 +83,13 @@ fn hidden_install_command_publishes_authenticated_policy_generation() {
     }
 
     let calibrated = Command::new(env!("CARGO_BIN_EXE_keyhog"))
-        .args(["calibrate-autoroute", "--policy", "default", "--quiet", "--execution-packs"])
+        .args([
+            "calibrate-autoroute",
+            "--policy",
+            "default",
+            "--quiet",
+            "--execution-packs",
+        ])
         .arg(&output)
         .output()
         .expect("validate packs before calibration");
@@ -110,6 +125,7 @@ fn hidden_install_command_publishes_authenticated_policy_generation() {
             .arg(&scan_input)
             .env("XDG_CACHE_HOME", &cache_home)
             .env("KEYHOG_REQUIRE_EXECUTION_PACKS", "1")
+            .current_dir(directory.path())
             .output()
             .expect("scan through installed detector and matcher pack");
         assert_eq!(
@@ -131,7 +147,14 @@ fn hidden_install_command_publishes_authenticated_policy_generation() {
     let hidden_cpu_pack = output.join("default-cpu.khpack.hidden");
     fs::rename(&cpu_pack, &hidden_cpu_pack).expect("hide runtime detector pack");
     let missing = Command::new(env!("CARGO_BIN_EXE_keyhog"))
-        .args(["scan", "--backend", "cpu", "--format", "json-envelope", "--no-config"])
+        .args([
+            "scan",
+            "--backend",
+            "cpu",
+            "--format",
+            "json-envelope",
+            "--no-config",
+        ])
         .arg(&scan_input)
         .env("XDG_CACHE_HOME", &cache_home)
         .env("KEYHOG_REQUIRE_EXECUTION_PACKS", "1")
@@ -139,14 +162,19 @@ fn hidden_install_command_publishes_authenticated_policy_generation() {
         .expect("reject missing runtime detector pack");
     fs::rename(&hidden_cpu_pack, &cpu_pack).expect("restore runtime detector pack");
     assert_eq!(missing.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&missing.stderr).contains("loading authenticated detector execution pack"));
+    assert!(String::from_utf8_lossy(&missing.stderr)
+        .contains("loading authenticated detector execution pack"));
 
     let healthy = Command::new(env!("CARGO_BIN_EXE_keyhog"))
         .args(["doctor", "--autoroute-cache", "off"])
         .env("XDG_CACHE_HOME", &cache_home)
         .output()
         .expect("inspect installed execution generation");
-    assert!(healthy.status.success(), "doctor rejected authenticated packs: {}", String::from_utf8_lossy(&healthy.stdout));
+    assert!(
+        healthy.status.success(),
+        "doctor rejected authenticated packs: {}",
+        String::from_utf8_lossy(&healthy.stdout)
+    );
     let healthy_stdout = String::from_utf8_lossy(&healthy.stdout);
     assert!(healthy_stdout.contains("pack state") && healthy_stdout.contains("AUTHENTICATED"));
 
@@ -156,7 +184,13 @@ fn hidden_install_command_publishes_authenticated_policy_generation() {
     tampered[last] ^= 0x01;
     fs::write(&tampered_path, tampered).expect("tamper installed pack");
     let rejected = Command::new(env!("CARGO_BIN_EXE_keyhog"))
-        .args(["calibrate-autoroute", "--policy", "default", "--quiet", "--execution-packs"])
+        .args([
+            "calibrate-autoroute",
+            "--policy",
+            "default",
+            "--quiet",
+            "--execution-packs",
+        ])
         .arg(&output)
         .output()
         .expect("reject tampered packs before calibration");
@@ -195,8 +229,7 @@ fn hidden_install_command_rejects_exposed_signing_key() {
         .output()
         .expect("run install pack compiler");
     assert!(!result.status.success());
-    assert!(
-        String::from_utf8_lossy(&result.stderr).contains("must not grant group or other permissions")
-    );
+    assert!(String::from_utf8_lossy(&result.stderr)
+        .contains("must not grant group or other permissions"));
     assert!(!output.exists());
 }
