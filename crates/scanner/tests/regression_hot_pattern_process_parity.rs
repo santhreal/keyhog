@@ -13,6 +13,13 @@ fn scanner() -> CompiledScanner {
     CompiledScanner::compile(detectors).expect("scanner compile")
 }
 
+fn scanner_for_backend(backend: ScanBackend) -> CompiledScanner {
+    let detectors =
+        keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
+    CompiledScanner::compile_for_backend(detectors, backend)
+        .expect("exact backend scanner compiles")
+}
+
 fn scanner_without(detector_id: &str) -> CompiledScanner {
     let mut detectors =
         keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
@@ -40,21 +47,24 @@ fn scanner_with_cap(max_matches_per_chunk: usize) -> CompiledScanner {
         .with_config(config)
 }
 
-fn synthetic_hot_scanner(hot_prefix: bool) -> CompiledScanner {
-    CompiledScanner::compile(vec![DetectorSpec {
-        id: "synthetic-hot-dedup".into(),
-        name: "Synthetic Hot Dedup".into(),
-        service: "synthetic".into(),
-        severity: Severity::Critical,
-        patterns: vec![PatternSpec {
-            regex: r"ZEPHYR_[A-Z0-9]{16}".into(),
-            ..Default::default()
+fn synthetic_hot_scanner(hot_prefix: bool, backend: ScanBackend) -> CompiledScanner {
+    CompiledScanner::compile_for_backend(
+        vec![DetectorSpec {
+            id: "synthetic-hot-dedup".into(),
+            name: "Synthetic Hot Dedup".into(),
+            service: "synthetic".into(),
+            severity: Severity::Critical,
+            patterns: vec![PatternSpec {
+                regex: r"ZEPHYR_[A-Z0-9]{16}".into(),
+                ..Default::default()
+            }],
+            keywords: vec!["ZEPHYR_".into()],
+            simdsieve_prefixes: hot_prefix.then(|| "ZEPHYR_".into()).into_iter().collect(),
+            min_confidence: Some(0.0),
+            ..keyhog_scanner::testing::named_detector_fixture_defaults()
         }],
-        keywords: vec!["ZEPHYR_".into()],
-        simdsieve_prefixes: hot_prefix.then(|| "ZEPHYR_".into()).into_iter().collect(),
-        min_confidence: Some(0.0),
-        ..keyhog_scanner::testing::named_detector_fixture_defaults()
-    }])
+        backend,
+    )
     .expect("synthetic non-Stripe hot detector compiles")
 }
 
@@ -74,7 +84,7 @@ fn detector_owned_non_stripe_hot_prefix_emits_once_at_exact_nonzero_offset() {
     let expected_offset = 8192 + prefix.len();
 
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
-        let matches = synthetic_hot_scanner(true)
+        let matches = synthetic_hot_scanner(true, backend)
             .scan_with_backend(&chunk, backend)
             .expect("selected backend scan succeeds");
         let exact: Vec<_> = matches
@@ -106,7 +116,7 @@ fn detector_owned_hot_dedup_is_offset_scoped_not_detector_scoped() {
             ..Default::default()
         },
     };
-    let matches = synthetic_hot_scanner(true)
+    let matches = synthetic_hot_scanner(true, ScanBackend::SimdCpu)
         .scan_with_backend(&chunk, ScanBackend::SimdCpu)
         .expect("selected backend scan succeeds");
     let mut offsets: Vec<_> = matches
@@ -136,10 +146,10 @@ fn detector_owned_hot_and_confirmed_only_paths_emit_byte_identical_findings() {
             ..Default::default()
         },
     };
-    let hot = synthetic_hot_scanner(true)
+    let hot = synthetic_hot_scanner(true, ScanBackend::CpuFallback)
         .scan_with_backend(&chunk, ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
-    let confirmed_only = synthetic_hot_scanner(false)
+    let confirmed_only = synthetic_hot_scanner(false, ScanBackend::CpuFallback)
         .scan_with_backend(&chunk, ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
 
@@ -205,7 +215,7 @@ fn hot_openai_key_on_non_hex_oid_line_is_reported_on_both_backends() {
     };
 
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
-        let scanner = scanner();
+        let scanner = scanner_for_backend(backend);
         scanner.clear_fragment_cache();
         let matches = scanner
             .scan_with_backend(&chunk, backend)

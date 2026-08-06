@@ -44,6 +44,17 @@ fn shared() -> &'static CompiledScanner {
     SCANNER.get_or_init(scanner)
 }
 
+#[cfg(feature = "simd")]
+fn simd_shared() -> &'static CompiledScanner {
+    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
+    SCANNER.get_or_init(|| {
+        let detectors = keyhog_core::load_detectors(&support::paths::detector_dir())
+            .expect("detectors directory must load");
+        CompiledScanner::compile_for_backend(detectors, ScanBackend::SimdCpu)
+            .expect("exact SIMD scanner compiles")
+    })
+}
+
 // A real, entropy-bearing AWS access-key id (`AKIA` + 16 uppercase alnum). The
 // `aws-access-key` regex `(?-i)(AKIA|ASIA)[0-9A-Z]{16}\b` matches it directly;
 // it surfaces via the AC-literal trigger on every backend.
@@ -405,7 +416,7 @@ fn union_holds_on_explicit_simdcpu_backend() {
     let text = format!("aws_access_key_id = {AWS_KEY}\n{}", twilio_pair());
     let chunk = make_chunk(&text, "filesystem", "union-simdcpu.env");
 
-    let s = shared();
+    let s = simd_shared();
     s.clear_fragment_cache();
     let matches = s
         .scan_with_backend(&chunk, ScanBackend::SimdCpu)

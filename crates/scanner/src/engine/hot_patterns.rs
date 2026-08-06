@@ -108,7 +108,7 @@ impl CompiledScanner {
                 // validator owns the emitted token span; process_match owns
                 // every suppression, checksum, confidence, ML, and reporting
                 // policy after that.
-                let credential = match slot.validator.find(credential) {
+                let credential = match slot.validator.get().find(credential) {
                     // `^`-anchored, so any match starts at 0; trim the
                     // delimiter-bounded capture down to the real token.
                     Some(m) => {

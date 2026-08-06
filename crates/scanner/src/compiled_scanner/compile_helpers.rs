@@ -19,7 +19,7 @@ pub(super) fn build_hot_pattern_slots(
     detectors: &[DetectorSpec],
     ac_map: &[CompiledPattern],
 ) -> Result<Vec<crate::simdsieve_prefilter::HotPatternSlot>> {
-    use crate::simdsieve_prefilter::{build_hot_pattern_validator, HotPatternSlot};
+    use crate::simdsieve_prefilter::{build_hot_pattern_slot_validator, HotPatternSlot};
     let total = detectors
         .iter()
         .map(|d| d.simdsieve_prefixes.len())
@@ -35,7 +35,7 @@ pub(super) fn build_hot_pattern_slots(
         if detector.simdsieve_prefixes.is_empty() {
             continue;
         }
-        let validator = build_hot_pattern_validator(detector)?;
+        let validator = build_hot_pattern_slot_validator(detector)?;
         for prefix in &detector.simdsieve_prefixes {
             if !seen.insert(prefix.as_str()) {
                 return Err(crate::error::ScanError::Config(format!(

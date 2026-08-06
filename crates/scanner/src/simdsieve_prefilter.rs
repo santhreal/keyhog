@@ -43,7 +43,8 @@ pub(crate) struct HotPatternSlot {
     /// restores AC+regex parity so the fast path can't surface a token the
     /// detector's own regex rejects (the length floor alone let
     /// `ghp_…_…`/`xoxp-123-456-789-abc` through).
-    pub(crate) validator: regex::Regex,
+    /// Authenticated packed scans materialize it only on the first prefix hit.
+    pub(crate) validator: crate::types::LazyRegex,
     /// Canonical confirmed-pattern `ac_map` entry this slot accelerates.
     /// The SIMD hit is only an accelerator for `ac_map[i]` and delegates
     /// surviving candidates through `process_match`.
@@ -76,48 +77,61 @@ pub(crate) struct HotPatternSlot {
 pub(crate) fn build_hot_pattern_validator(
     detector: &keyhog_core::DetectorSpec,
 ) -> crate::error::Result<regex::Regex> {
-    build_hot_pattern_validator_parts(&detector.id, &detector.patterns)
+    let source = hot_pattern_validator_source_parts(&detector.id, &detector.patterns)?;
+    compile_hot_pattern_validator(&detector.id, &source)
+}
+
+pub(crate) fn build_hot_pattern_slot_validator(
+    detector: &keyhog_core::DetectorSpec,
+) -> crate::error::Result<crate::types::LazyRegex> {
+    let source = hot_pattern_validator_source_parts(&detector.id, &detector.patterns)?;
+    drop(compile_hot_pattern_validator(&detector.id, &source)?);
+    Ok(crate::types::LazyRegex::detector(source))
 }
 
 pub(crate) fn hydrate_hot_pattern_validator(
     detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
-) -> crate::error::Result<regex::Regex> {
-    build_hot_pattern_validator_parts(&detector.id, &detector.patterns)
+) -> crate::error::Result<crate::types::LazyRegex> {
+    let source = hot_pattern_validator_source_parts(&detector.id, &detector.patterns)?;
+    Ok(crate::types::LazyRegex::detector(source))
 }
 
-fn build_hot_pattern_validator_parts(
+fn hot_pattern_validator_source_parts(
     detector_id: &str,
     patterns: &[keyhog_core::PatternSpec],
-) -> crate::error::Result<regex::Regex> {
-    let alts: Vec<String> = patterns
-        .iter()
-        .map(|p| format!("(?:{})", p.regex))
-        .collect();
-    if alts.is_empty() {
+) -> crate::error::Result<String> {
+    if patterns.is_empty() {
         return Err(crate::error::ScanError::Config(format!(
             "detector {} declares simdsieve prefixes but has no regex patterns",
             detector_id
         )));
     }
-    // Anchor at the candidate start. The candidate always begins with
-    // the hot literal and every hot detector's regex begins with that
-    // same literal, so `^` is the correct anchor. The build flags
-    // mirror `compiler_compile::shared_regex_compile` exactly (the
-    // engine's own regex build) so validation semantics match the
-    // AC+regex path byte-for-byte: `case_insensitive(true)` as the
-    // default with inline `(?-i)` (AWS `AKIA`/`ASIA`) scoping within
-    // its own alternative, plus the same size and DFA limits.
-    let combined = format!("^(?:{})", alts.join("|"));
-    // Law 10: FAIL CLOSED on a build error, never `.ok()` it away. The
-    // old `.ok()` turned a build failure into a silent `None`, which the
-    // consumer (`engine/hot_patterns.rs`) demotes to the weak
-    // length-floor gate (an invisible precision loss on the hot path).
-    // The individual detector patterns are already validated on the
-    // primary compile path; the only NEW failure here is the combined
-    // alternation exceeding the size/DFA limit. If that happens the build
-    // is corrupt: abort scanner compile with a precise error rather than
-    // run a degraded fast path.
-    let re = regex::RegexBuilder::new(&combined)
+    let source_bytes = patterns
+        .iter()
+        .map(|pattern| pattern.regex.len().saturating_add(4))
+        .sum::<usize>();
+    let mut combined = String::with_capacity(source_bytes.saturating_add(5));
+    combined.push_str("^(?:");
+    for (index, pattern) in patterns.iter().enumerate() {
+        if index != 0 {
+            combined.push('|');
+        }
+        combined.push_str("(?:");
+        combined.push_str(&pattern.regex);
+        combined.push(')');
+    }
+    combined.push(')');
+    Ok(combined)
+}
+
+fn compile_hot_pattern_validator(
+    detector_id: &str,
+    source: &str,
+) -> crate::error::Result<regex::Regex> {
+    // Law 10: fail closed on a build error. Embedded/custom scanners validate
+    // before retaining the lazy source; authenticated packs carry that proof
+    // and materialize the same source only when its literal prefix occurs.
+    regex::RegexBuilder::new(source)
         .case_insensitive(true)
         .size_limit(crate::types::REGEX_SIZE_LIMIT_BYTES)
         .dfa_size_limit(crate::types::regex_dfa_limit())
@@ -127,8 +141,7 @@ fn build_hot_pattern_validator_parts(
             detector_id: detector_id.to_owned(),
             index: 0,
             source,
-        })?;
-    Ok(re)
+        })
 }
 
 /// Build validators for ALL detectors that declare simdsieve prefixes,

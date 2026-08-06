@@ -15,7 +15,7 @@ fn canonical_hot_patterns_delegate_to_process_match() {
     assert!(
         hot_patterns.contains("let slot = &self.hot_pattern_slots[pattern_idx];")
             && hot_patterns.contains("let ac_map_index = slot.ac_map_index;")
-            && hot_patterns.contains("match slot.validator.find(credential)")
+            && hot_patterns.contains("match slot.validator.get().find(credential)")
             && hot_patterns.contains("self.process_match(")
             && hot_patterns.contains("super::scan_filters::compute_pattern_signals("),
         "canonical hot-pattern hits must resolve one unified slot (validator + ac_map delegate \
@@ -60,11 +60,10 @@ fn canonical_hot_patterns_delegate_to_process_match() {
         "the prefilter table owner must not expose a synthetic direct hot-pattern emission switch"
     );
     assert!(
-        backend_triggered
-            .contains("let documentation_lines = context::documentation_line_flags(&code_lines);")
-            && backend_triggered.contains("&documentation_lines,")
+        backend_triggered.contains("let line_index = prepared.line_index();")
+            && backend_triggered.contains("line_index,")
             && backend_triggered
-                .find("documentation_line_flags")
+                .find("prepared.line_index()")
                 .unwrap_or(usize::MAX)
                 < backend_triggered
                     .find("scan_hot_patterns_fast(")
