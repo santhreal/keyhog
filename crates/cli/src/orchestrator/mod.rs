@@ -18,11 +18,10 @@ mod workflow_state;
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
     auto_discover_detectors, autoroute_config_digest, backend_override_cli_value,
-    configure_threads, default_filesystem_worker_threads, gpu_runtime_policy_from_args,
-    load_effective_detector_corpus, parse_backend_override, resolve_scan_config,
-    resolved_scan_config_for_scanner, validate_detector_mode_selection,
-    validate_explicit_detector_path, DetectorCorpusProvenance, ResolvedEngineRuntimeSettings,
-    ResolvedScanConfig,
+    configure_threads, gpu_runtime_policy_from_args, load_effective_detector_corpus,
+    parse_backend_override, resolve_scan_config, resolved_scan_config_for_scanner,
+    validate_detector_mode_selection, validate_explicit_detector_path, DetectorCorpusProvenance,
+    ResolvedEngineRuntimeSettings, ResolvedScanConfig,
 };
 use crate::style;
 use anyhow::{Context, Result};
@@ -852,7 +851,7 @@ fn setup_default_scan_runtime_with_rayon_policy(
     let hw = keyhog_scanner::hw_probe::probe_hardware();
     let worker_threads = match rayon_policy {
         RayonSetupPolicy::RequireKeyHogOwned => {
-            configure_threads(effective_config.threads, hw.physical_cores, None)?
+            configure_threads(effective_config.threads, hw.physical_cores)?
         }
         #[cfg(test)]
         RayonSetupPolicy::ReuseTestHarnessPool => {
@@ -1178,13 +1177,7 @@ impl ScanOrchestrator {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::BackendAcquire);
             keyhog_scanner::hw_probe::probe_hardware()
         };
-        let workload_threads = if args.stdin {
-            1
-        } else {
-            default_filesystem_worker_threads(&args.scan_roots(), hw.physical_cores)
-        };
-        let worker_threads =
-            configure_threads(args.threads, hw.physical_cores, Some(workload_threads))?;
+        let worker_threads = configure_threads(args.threads, hw.physical_cores)?;
         args.threads = Some(worker_threads);
         effective_config.threads = Some(worker_threads);
 
