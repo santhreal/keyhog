@@ -363,8 +363,8 @@ impl CompiledScanner {
                 ))
             })?;
             let scanner = prefilter.scanner();
-            // AC and HS trigger sets are incomparable; union then confirm.
-            let mut triggered_patterns = self.collect_triggered_patterns_cpu(_text);
+            let mut triggered_patterns =
+                super::trigger_bitmap::new_trigger_bitmap(self.ac_map.len());
             scanner
                 .scan_matches_result(_text.as_bytes(), |hs_id, _start, _end| {
                     if let Some(original_indices) = prefilter.original_indices(hs_id) {
@@ -381,6 +381,9 @@ impl CompiledScanner {
                         "selected Hyperscan trigger scan failed: {error}. The scan did not complete; rerun with `--backend cpu` or recalibrate autoroute"
                     ))
                 })?;
+            prefilter.for_each_recovery_match(_text.as_bytes(), |pattern_index| {
+                self.mark_triggered_pattern(&mut triggered_patterns, pattern_index);
+            });
             return Ok(triggered_patterns);
         }
 

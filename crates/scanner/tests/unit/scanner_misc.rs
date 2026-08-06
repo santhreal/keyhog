@@ -172,13 +172,24 @@ fn hyperscan_unsupported_confirmed_route_recovers_from_its_literal_plan() {
             })
             .collect::<Vec<_>>()
     };
+    let expected = vec![(
+        "simd-literal-recovery".into(),
+        credential.into(),
+        "header\n".len() + prefix.len(),
+    )];
+    assert_eq!(canonical(cpu), expected);
+    let simd_individual = scanner
+        .scan_inner(
+            &chunks[0],
+            keyhog_scanner::ScanBackend::SimdCpu,
+            None,
+            scanner.execution_route_for_backend(keyhog_scanner::ScanBackend::SimdCpu),
+        )
+        .expect("SIMD individual recovery scan succeeds");
     assert_eq!(
-        canonical(cpu),
-        [(
-            "simd-literal-recovery".into(),
-            credential.into(),
-            "header\n".len() + prefix.len(),
-        )]
+        canonical(vec![simd_individual]),
+        expected,
+        "single-chunk SIMD must execute the unsupported-pattern recovery index"
     );
     assert_eq!(
         canonical(simd),

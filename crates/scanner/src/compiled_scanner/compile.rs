@@ -431,7 +431,14 @@ impl CompiledScanner {
             &state.phase2_patterns,
             detectors.len(),
         )?;
-        let ac = build_ac_pattern_set(&state.ac_literals)?;
+        let ac = if matches!(
+            gpu_policy,
+            GpuInitPolicy::SelectedBackend(crate::hw_probe::ScanBackend::SimdCpu)
+        ) {
+            None
+        } else {
+            build_ac_pattern_set(&state.ac_literals)?
+        };
         // GPU is unconditional in the build; runtime probe decides whether to
         // actually use it. `gpu_available` is set by hw_probe based on adapter
         // detection (excluding software renderers like llvmpipe/lavapipe).
@@ -1022,6 +1029,41 @@ impl CompiledScanner {
     pub fn with_tuning_config(self, config: ScannerTuningConfig) -> Self {
         self.tuning.apply_config(&config);
         self
+    }
+}
+
+#[cfg(all(test, feature = "simd"))]
+mod tests {
+    use super::*;
+    use keyhog_core::{DetectorSpec, PatternSpec, Severity};
+
+    fn detector() -> DetectorSpec {
+        DetectorSpec {
+            id: "selected-simd-index-owner".into(),
+            name: "Selected SIMD Index Owner".into(),
+            service: "test".into(),
+            severity: Severity::Medium,
+            patterns: vec![PatternSpec {
+                regex: r"STATIC_SECRET_[0-9]+".into(),
+                ..Default::default()
+            }],
+            ..crate::testing::named_detector_fixture_defaults()
+        }
+    }
+
+    /// WHY: retaining the complete scalar automaton beside exact SIMD shards doubles phase-one matcher ownership and makes every single-chunk SIMD scan repeat the same trigger pass.
+    #[test]
+    fn exact_simd_scanner_omits_overlapping_scalar_literal_index() {
+        let scanner = CompiledScanner::compile_for_backend(
+            vec![detector()],
+            crate::hw_probe::ScanBackend::SimdCpu,
+        )
+        .expect("compile exact SIMD scanner");
+
+        assert!(
+            scanner.ac.is_none(),
+            "exact SIMD ownership is native shards plus unsupported-pattern recovery"
+        );
     }
 }
 
