@@ -563,7 +563,7 @@ impl CompiledScanner {
                     &hardware_identity,
                 )
                 .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
-            let program = crate::execution_pack::VyreOrchestrationProgram::decode(
+            let program = crate::execution_pack::VyreOrchestrationProgram::decode_backend_section(
                 &source.bytes,
                 source.pack_identity.backend,
                 source.pack_identity.detector_digest,
