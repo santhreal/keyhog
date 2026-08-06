@@ -11,11 +11,12 @@
 /// Naive: O(N²) - compare all pairs.
 /// Trie: O(N * L) where L is average prefix length - insert all prefixes,
 /// then for each prefix, all descendants in the trie are superstrings.
-use std::collections::HashMap;
 
 #[derive(Default)]
 struct TrieNode {
-    children: HashMap<char, TrieNode>,
+    /// `(character, node_index)` edges. Detector-prefix tries have tiny fanout
+    /// at almost every node, so a flat row avoids one hash table per byte.
+    children: Vec<(char, usize)>,
     /// AC pattern indices that end at this node.
     pattern_indices: Vec<usize>,
 }
@@ -42,47 +43,68 @@ pub(crate) fn build_propagation_table(prefixes: &[String]) -> Vec<Vec<usize>> {
 }
 
 pub(crate) fn build_propagation_pairs(prefixes: &[String]) -> Vec<(usize, usize)> {
-    let root = build_trie(prefixes);
+    let nodes = build_trie(prefixes);
     let mut pairs = Vec::new();
     for (row, prefix) in prefixes.iter().enumerate() {
-        let Some(node) = find_node(&root, prefix) else {
+        let Some(node_index) = find_node(&nodes, prefix) else {
             continue;
         };
-        for child in node.children.values() {
-            collect_descendant_pairs(child, row, &mut pairs);
+        for &(_, child_index) in &nodes[node_index].children {
+            collect_descendant_pairs(&nodes, child_index, row, &mut pairs);
         }
     }
     pairs
 }
 
-fn build_trie(prefixes: &[String]) -> TrieNode {
-    let mut root = TrieNode::default();
-    for (index, prefix) in prefixes.iter().enumerate() {
-        let mut node = &mut root;
+fn build_trie(prefixes: &[String]) -> Vec<TrieNode> {
+    let mut nodes = vec![TrieNode::default()];
+    for (pattern_index, prefix) in prefixes.iter().enumerate() {
+        let mut node_index = 0;
         for character in prefix.chars() {
-            node = node.children.entry(character).or_default();
+            let child_index = nodes[node_index]
+                .children
+                .iter()
+                .find_map(|&(candidate, index)| (candidate == character).then_some(index));
+            node_index = match child_index {
+                Some(index) => index,
+                None => {
+                    let index = nodes.len();
+                    nodes.push(TrieNode::default());
+                    nodes[node_index].children.push((character, index));
+                    index
+                }
+            };
         }
-        node.pattern_indices.push(index);
+        nodes[node_index].pattern_indices.push(pattern_index);
     }
-    root
+    nodes
 }
 
-fn find_node<'a>(root: &'a TrieNode, prefix: &str) -> Option<&'a TrieNode> {
-    let mut node = root;
+fn find_node(nodes: &[TrieNode], prefix: &str) -> Option<usize> {
+    let mut node_index = 0;
     for character in prefix.chars() {
-        node = node.children.get(&character)?;
+        node_index = nodes[node_index]
+            .children
+            .iter()
+            .find_map(|&(candidate, index)| (candidate == character).then_some(index))?;
     }
-    Some(node)
+    Some(node_index)
 }
 
-fn collect_descendant_pairs(node: &TrieNode, row: usize, pairs: &mut Vec<(usize, usize)>) {
+fn collect_descendant_pairs(
+    nodes: &[TrieNode],
+    node_index: usize,
+    row: usize,
+    pairs: &mut Vec<(usize, usize)>,
+) {
     pairs.extend(
-        node.pattern_indices
+        nodes[node_index]
+            .pattern_indices
             .iter()
             .copied()
             .map(|value| (row, value)),
     );
-    for child in node.children.values() {
-        collect_descendant_pairs(child, row, pairs);
+    for &(_, child_index) in &nodes[node_index].children {
+        collect_descendant_pairs(nodes, child_index, row, pairs);
     }
 }
