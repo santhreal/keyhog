@@ -44,15 +44,10 @@ impl CompiledCanonicalHexRule {
 
 /// Compact policy for one loaded detector.
 #[derive(Debug)]
-struct CompiledDetectorKeyMaterial {
+pub(crate) struct CompiledDetectorKeyMaterialPolicy {
     decoded_hex_lengths: Box<[usize]>,
     regex_hex_lengths: Box<[usize]>,
     canonical_hex_rules: Box<[CompiledCanonicalHexRule]>,
-}
-
-#[derive(Debug)]
-pub(crate) struct CompiledDetectorKeyMaterialPolicy {
-    compiled: Option<Box<CompiledDetectorKeyMaterial>>,
 }
 
 impl CompiledDetectorKeyMaterialPolicy {
@@ -87,44 +82,37 @@ impl CompiledDetectorKeyMaterialPolicy {
                 ));
             }
         }
-        if decoded_hex_key_material_lengths.is_empty() && canonical_hex_key_material.is_empty() {
-            return Ok(Self { compiled: None });
-        }
         Ok(Self {
-            compiled: Some(Box::new(CompiledDetectorKeyMaterial {
-                decoded_hex_lengths: sorted_lengths(decoded_hex_key_material_lengths),
-                regex_hex_lengths: if generic_policy {
-                    Box::default()
-                } else {
-                    sorted_unique_lengths(
-                        canonical_hex_key_material
-                            .iter()
-                            .filter(|rule| {
-                                rule.keywords.is_empty()
-                                    && rule.suffixes.is_empty()
-                                    && rule.excluded_keywords.is_empty()
-                            })
-                            .flat_map(|rule| rule.lengths.iter().copied()),
-                    )
-                },
-                canonical_hex_rules: canonical_hex_key_material
-                    .iter()
-                    .map(CompiledCanonicalHexRule::compile)
-                    .collect(),
-            })),
+            decoded_hex_lengths: sorted_lengths(decoded_hex_key_material_lengths),
+            regex_hex_lengths: if generic_policy {
+                Box::default()
+            } else {
+                sorted_unique_lengths(
+                    canonical_hex_key_material
+                        .iter()
+                        .filter(|rule| {
+                            rule.keywords.is_empty()
+                                && rule.suffixes.is_empty()
+                                && rule.excluded_keywords.is_empty()
+                        })
+                        .flat_map(|rule| rule.lengths.iter().copied()),
+                )
+            },
+            canonical_hex_rules: canonical_hex_key_material
+                .iter()
+                .map(CompiledCanonicalHexRule::compile)
+                .collect(),
         })
     }
 
     /// Whether this detector admits an exact assignment key and pure-hex value.
     #[inline]
     pub(crate) fn allows_canonical_hex(&self, keyword: &str, value: &str) -> bool {
-        self.compiled.as_deref().is_some_and(|compiled| {
-            value.bytes().all(|byte| byte.is_ascii_hexdigit())
-                && compiled
-                    .canonical_hex_rules
-                    .iter()
-                    .any(|rule| rule.admits(keyword, value.len()))
-        })
+        value.bytes().all(|byte| byte.is_ascii_hexdigit())
+            && self
+                .canonical_hex_rules
+                .iter()
+                .any(|rule| rule.admits(keyword, value.len()))
     }
 
     /// Whether this detector admits an already decoded pure-hex value.
@@ -138,9 +126,7 @@ impl CompiledDetectorKeyMaterialPolicy {
     /// is pure hex at the declared character count.
     #[inline]
     pub(crate) fn allows_decoded_hex_len(&self, decoded_len: Option<usize>) -> bool {
-        self.compiled.as_deref().is_some_and(|compiled| {
-            decoded_len.is_some_and(|len| compiled.decoded_hex_lengths.binary_search(&len).is_ok())
-        })
+        decoded_len.is_some_and(|len| self.decoded_hex_lengths.binary_search(&len).is_ok())
     }
 
     /// Whether a regex detector explicitly admits this already-proven pure-hex
@@ -149,9 +135,7 @@ impl CompiledDetectorKeyMaterialPolicy {
     /// widened into a length-only bypass here.
     #[inline]
     pub(crate) fn allows_canonical_hex_len(&self, value_len: usize) -> bool {
-        self.compiled
-            .as_deref()
-            .is_some_and(|compiled| compiled.regex_hex_lengths.binary_search(&value_len).is_ok())
+        self.regex_hex_lengths.binary_search(&value_len).is_ok()
     }
 }
 
