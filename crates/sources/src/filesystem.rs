@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+mod discovery;
 mod extract;
 #[cfg(fuzzing)]
 pub use extract::fuzz_extract_pdf_text;
@@ -352,104 +353,174 @@ fn collect_walk_archive_symlink_errors(
                 continue;
             }
         };
-        let mut paths: Vec<PathBuf> = Vec::new();
-        for entry in entries {
-            match entry {
-                Ok(entry) => paths.push(entry.path()),
-                Err(error) => {
-                    tracing::warn!(
-                        %error,
-                        "failed to read filesystem directory entry during archive-symlink audit"
-                    );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    errors.push(SourceError::Other(format!(
-                        "failed to inspect filesystem directory entry under '{}': {error}; entry was not scanned",
-                        display_path(&dir)
-                    )));
-                }
-            }
-        }
-        paths.sort();
 
-        for path in paths {
-            let relative_path = match path.strip_prefix(root) {
-                Ok(relative) => relative.to_string_lossy(),
-                Err(_) => path.to_string_lossy(), // LAW10: prefix mismatch only affects default-exclude classification; target bytes are never opened; recall-safe
-            };
-            if respect_default_excludes && filter::is_default_excluded(&relative_path) {
-                continue;
-            }
-
-            let metadata = match std::fs::symlink_metadata(&path) {
-                Ok(metadata) => metadata,
-                Err(error) => {
-                    tracing::warn!(
-                        path = %path.display(),
-                        %error,
-                        "failed to inspect filesystem path during archive-symlink audit"
-                    );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    errors.push(SourceError::Other(format!(
-                        "failed to inspect filesystem path '{}': {error}; path was not scanned",
-                        display_path(&path)
-                    )));
-                    continue;
-                }
-            };
-            let file_type = metadata.file_type();
-            let charge = if file_type.is_file() {
-                metadata.len().max(1)
-            } else {
-                1
-            };
-            if let Some(limit) = discovery_byte_limit {
-                let Some(total) = discovery_charge.checked_add(charge) else {
-                    return errors;
-                };
-                if total > limit {
+        if discovery_byte_limit.is_some() {
+            // Budgeted scans retain the previous path-sorted charging order.
+            let mut paths = entries
+                .filter_map(|entry| archive_walk_entry_path(&dir, entry, &mut errors))
+                .collect::<Vec<_>>();
+            paths.sort();
+            for path in paths {
+                if !inspect_walk_archive_path(
+                    path,
+                    root,
+                    respect_default_excludes,
+                    discovery_byte_limit,
+                    &mut discovery_charge,
+                    &mut stack,
+                    &mut errors,
+                ) {
                     return errors;
                 }
-                discovery_charge = total;
             }
-            if file_type.is_symlink() {
-                let path_is_expandable = is_expandable_path(&path);
-                let target = match resolved_link_target_for_classification(&path) {
-                    Ok(target) => target,
-                    Err(error) if path_is_expandable => {
-                        tracing::warn!(
-                            path = %path.display(),
-                            %error,
-                            "failed to inspect archive symlink target; refusing by link name"
-                        );
-                        path.clone()
+        } else {
+            // Ordinary unbounded scans inspect only non-files here. A regular
+            // entry cannot itself be an archive symlink, and every later open
+            // still uses the no-follow/read-time checks that close link swaps.
+            // Skipping its duplicate path allocation and metadata syscall is
+            // material on directories containing hundreds of thousands of
+            // ordinary files.
+            for entry in entries {
+                let path = match entry {
+                    Ok(entry) => {
+                        if entry.file_type().is_ok_and(|file_type| file_type.is_file()) {
+                            continue;
+                        }
+                        entry.path()
                     }
                     Err(error) => {
-                        tracing::warn!(
-                            path = %path.display(),
-                            %error,
-                            "failed to inspect symlink target during archive-symlink audit"
-                        );
-                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                        errors.push(symlink_target_classification_error(&path, &error));
-                        continue;
+                        let Some(path) = archive_walk_entry_path(&dir, Err(error), &mut errors)
+                        else {
+                            continue;
+                        };
+                        path
                     }
                 };
-                if path_is_expandable || is_expandable_path(&target) {
-                    tracing::warn!(
-                        path = %path.display(),
-                        target = %target.display(),
-                        "refusing archive symlink discovered during filesystem walk"
-                    );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    errors.push(archive_symlink_error(&path));
+                if !inspect_walk_archive_path(
+                    path,
+                    root,
+                    respect_default_excludes,
+                    discovery_byte_limit,
+                    &mut discovery_charge,
+                    &mut stack,
+                    &mut errors,
+                ) {
+                    return errors;
                 }
-            } else if file_type.is_dir() {
-                stack.push(path);
             }
         }
     }
 
     errors
+}
+
+fn archive_walk_entry_path(
+    dir: &Path,
+    entry: std::io::Result<std::fs::DirEntry>,
+    errors: &mut Vec<SourceError>,
+) -> Option<PathBuf> {
+    match entry {
+        Ok(entry) => Some(entry.path()),
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                "failed to read filesystem directory entry during archive-symlink audit"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            errors.push(SourceError::Other(format!(
+                "failed to inspect filesystem directory entry under '{}': {error}; entry was not scanned",
+                display_path(dir)
+            )));
+            None
+        }
+    }
+}
+
+fn inspect_walk_archive_path(
+    path: PathBuf,
+    root: &Path,
+    respect_default_excludes: bool,
+    discovery_byte_limit: Option<u64>,
+    discovery_charge: &mut u64,
+    stack: &mut Vec<PathBuf>,
+    errors: &mut Vec<SourceError>,
+) -> bool {
+    let relative_path = match path.strip_prefix(root) {
+        Ok(relative) => relative.to_string_lossy(),
+        Err(_) => path.to_string_lossy(),
+    };
+    if respect_default_excludes && filter::is_default_excluded(&relative_path) {
+        return true;
+    }
+
+    let metadata = match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                %error,
+                "failed to inspect filesystem path during archive-symlink audit"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            errors.push(SourceError::Other(format!(
+                "failed to inspect filesystem path '{}': {error}; path was not scanned",
+                display_path(&path)
+            )));
+            return true;
+        }
+    };
+    let file_type = metadata.file_type();
+    let charge = if file_type.is_file() {
+        metadata.len().max(1)
+    } else {
+        1
+    };
+    if let Some(limit) = discovery_byte_limit {
+        let Some(total) = discovery_charge.checked_add(charge) else {
+            return false;
+        };
+        if total > limit {
+            return false;
+        }
+        *discovery_charge = total;
+    }
+
+    if file_type.is_symlink() {
+        let path_is_expandable = is_expandable_path(&path);
+        let target = match resolved_link_target_for_classification(&path) {
+            Ok(target) => target,
+            Err(error) if path_is_expandable => {
+                tracing::warn!(
+                    path = %path.display(),
+                    %error,
+                    "failed to inspect archive symlink target; refusing by link name"
+                );
+                path.clone()
+            }
+            Err(error) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    %error,
+                    "failed to inspect symlink target during archive-symlink audit"
+                );
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                errors.push(symlink_target_classification_error(&path, &error));
+                return true;
+            }
+        };
+        if path_is_expandable || is_expandable_path(&target) {
+            tracing::warn!(
+                path = %path.display(),
+                target = %target.display(),
+                "refusing archive symlink discovered during filesystem walk"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            errors.push(archive_symlink_error(&path));
+        }
+    } else if file_type.is_dir() {
+        stack.push(path);
+    }
+    true
 }
 
 pub(crate) fn read_file_safe_capped_for_test(
@@ -814,7 +885,11 @@ impl Source for FilesystemSource {
             let _walk = crate::profile::walk_span();
             let mut source_errors = Vec::new();
             let mut entries = Vec::new();
-            for result in walker.walk_parallel(walk_thread_count()) {
+            // Read before `admit` takes a unique borrow of the budget.
+            let budgeted = discovery_budget.is_some();
+            // Returns false once discovery has admitted the first over-budget
+            // entry, which is the signal to stop walking.
+            let mut admit = |result: codewalk::error::Result<codewalk::FileEntry>| -> bool {
                 match result {
                     Ok(entry) => {
                         if let Some(remaining) = discovery_budget {
@@ -822,11 +897,12 @@ impl Source for FilesystemSource {
                             if charge > *remaining {
                                 discovery_limit_reached.store(true, Ordering::Relaxed);
                                 entries.push(entry);
-                                break;
+                                return false;
                             }
                             *remaining -= charge;
                         }
                         entries.push(entry);
+                        true
                     }
                     Err(error) => {
                         // An unreadable entry is an UNKNOWN, not a clean file. Count
@@ -839,6 +915,26 @@ impl Source for FilesystemSource {
                         source_errors.push(SourceError::Other(format!(
                             "failed to inspect filesystem entry: {error}; entry was not scanned"
                         )));
+                        true
+                    }
+                }
+            };
+            // A discovery budget is charged in ARRIVAL order and stops the walk
+            // at the first entry that crosses it, so which files are admitted
+            // is only well defined for a deterministic arrival order. A
+            // parallel walk would admit a different subset on every run of the
+            // same bounded scan. Budgeted discovery therefore stays serial; the
+            // unbounded walk, which is every ordinary scan, goes wide.
+            if budgeted {
+                for result in walker.walk_iter() {
+                    if !admit(result) {
+                        break;
+                    }
+                }
+            } else {
+                for result in walker.walk_parallel(walk_thread_count()) {
+                    if !admit(result) {
+                        break;
                     }
                 }
             }
@@ -1019,15 +1115,23 @@ impl Source for FilesystemSource {
                 self.respect_default_excludes,
                 self.discovery_byte_limit,
             ));
-            let (walk_entries, walk_errors) =
-                sorted_entries(walker, &mut discovery_budget, &self.discovery_limit_reached);
-            source_errors.extend(walk_errors);
-            // Real discovery counts: walked files and their on-disk bytes.
-            crate::profile::add_input_units(walk_entries.len() as u64);
-            crate::profile::add_input_bytes(
-                walk_entries.iter().map(|entry| entry.size).sum::<u64>(),
-            );
-            Box::new(walk_entries.into_iter())
+            if self.discovery_byte_limit.is_some() {
+                let (walk_entries, walk_errors) =
+                    sorted_entries(walker, &mut discovery_budget, &self.discovery_limit_reached);
+                source_errors.extend(walk_errors);
+                crate::profile::add_input_units(walk_entries.len() as u64);
+                crate::profile::add_input_bytes(
+                    walk_entries.iter().map(|entry| entry.size).sum::<u64>(),
+                );
+                Box::new(walk_entries.into_iter())
+            } else {
+                let (walk_entries, walk_errors, input_units, input_bytes) =
+                    discovery::collect_unbounded_sorted(walker, &self.root, walk_thread_count());
+                source_errors.extend(walk_errors);
+                crate::profile::add_input_units(input_units as u64);
+                crate::profile::add_input_bytes(input_bytes);
+                Box::new(walk_entries)
+            }
         };
 
         let merkle = self.merkle.clone();

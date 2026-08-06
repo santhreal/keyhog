@@ -1,25 +1,18 @@
 //! Enumeration order is reproducible, and that is load-bearing.
 //!
-//! `FilesystemSource::chunks` collects every entry and sorts by path before
-//! yielding. The sort is not tidiness: batch composition follows the order
-//! chunks arrive in, autoroute keys its persisted decisions by batch shape, and
-//! a walk that emitted the tree differently on each run would make a freshly
-//! calibrated cache miss on replay.
+//! `FilesystemSource::chunks` stores unbounded Unix walk metadata in one
+//! common-root path slab plus compact row and order tables. It sorts row
+//! indexes by native relative-path bytes, then reconstructs one `FileEntry` at
+//! a time for the reader pool. This avoids retaining one absolute `PathBuf`
+//! allocation per file without changing the externally observed order.
 //!
-//! Enumeration is also a prefix that blocks every read, so on many-small-file
-//! trees it is a fifth of the run: 0.24 s of a 1.14 s scan over 15,000 files.
-//! Swapping in `codewalk`'s parallel walker cuts that to 0.098 s and the whole
-//! scan to 1.07 s with byte-identical reports, and it was tried and reverted.
-//! A sibling test then saw two unreadable coverage gaps where it plants one.
-//! It passes in isolation and under `--test-threads=1`, and fails only under
-//! the default parallel harness, so something about the parallel walk disturbs
-//! the process-global skip counters across concurrent tests. The mechanism is
-//! not understood, and unreadable entries are a fail-closed recall surface, so
-//! the change is not shipped on a theory. KH-1587 holds the measurement, the
-//! ruled-out explanations, and what a future attempt has to prove.
+//! The sort is not tidiness: batch composition follows chunk arrival order,
+//! and autoroute keys persisted decisions by batch shape. Filesystem iteration
+//! order is not portable across filesystems, so relying on arrival order would
+//! make a freshly calibrated cache miss on replay.
 //!
-//! These pin what any future attempt has to preserve: the same set, exactly
-//! once, in sorted order, whatever the walk does underneath.
+//! These tests pin what compact discovery must preserve: the same set exactly
+//! once, sorted by native path, independent of walk or reader concurrency.
 
 use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
@@ -34,8 +27,11 @@ fn wide_tree() -> TempDir {
         let sub = dir.path().join(format!("dir{branch:02}"));
         std::fs::create_dir_all(&sub).expect("create subdir");
         for leaf in 0..40 {
-            std::fs::write(sub.join(format!("f{leaf:03}.txt")), format!("value = {leaf}\n"))
-                .expect("write leaf");
+            std::fs::write(
+                sub.join(format!("f{leaf:03}.txt")),
+                format!("value = {leaf}\n"),
+            )
+            .expect("write leaf");
         }
     }
     dir
@@ -59,7 +55,11 @@ fn enumeration_order_is_identical_across_repeated_walks() {
     let tree = wide_tree();
     let first = enumerate(tree.path());
 
-    assert_eq!(first.len(), 12 * 40, "every planted file must be enumerated");
+    assert_eq!(
+        first.len(),
+        12 * 40,
+        "every planted file must be enumerated"
+    );
 
     for run in 2..=20 {
         assert_eq!(
@@ -84,7 +84,10 @@ fn enumeration_order_is_sorted_by_path() {
     let mut expected = paths.clone();
     expected.sort();
 
-    assert_eq!(paths, expected, "entries must be yielded in sorted path order");
+    assert_eq!(
+        paths, expected,
+        "entries must be yielded in sorted path order"
+    );
 }
 
 /// Nothing is lost or duplicated.
@@ -104,6 +107,46 @@ fn the_walk_enumerates_every_file_exactly_once() {
         "a file was enumerated more than once"
     );
     assert_eq!(unique.len(), 12 * 40, "a file was missed");
+}
+
+/// Compact discovery stores native Unix path bytes, not lossy UTF-8.
+///
+/// A lossy path table could alias two distinct files and either drop one or
+/// read the wrong file after sorting.
+#[cfg(unix)]
+#[test]
+fn non_utf8_paths_survive_compact_sorted_discovery_exactly_once() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let tree = TempDir::new().expect("tempdir");
+    let raw_names = [
+        b"a-\x80.txt".to_vec(),
+        b"a-\x81.txt".to_vec(),
+        b"z-valid.txt".to_vec(),
+    ];
+    for (index, name) in raw_names.iter().enumerate() {
+        std::fs::write(
+            tree.path().join(std::ffi::OsString::from_vec(name.clone())),
+            format!("value = {index}\n"),
+        )
+        .expect("write non-UTF-8 path");
+    }
+
+    let rows = FilesystemSource::new(tree.path().to_path_buf())
+        .chunks()
+        .map(|row| {
+            row.expect("non-UTF-8 path remains readable")
+                .data
+                .as_str()
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        rows,
+        ["value = 0\n", "value = 1\n", "value = 2\n"],
+        "native path ordering and file identity must survive compact discovery"
+    );
 }
 
 /// A single reader thread does not change what is enumerated.
