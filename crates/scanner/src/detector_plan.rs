@@ -624,11 +624,11 @@ impl CompiledDetectorPlans {
         })
     }
 
-    pub(crate) fn companion_signature_sources(&self) -> impl Iterator<Item = &str> + '_ {
+    pub(crate) fn companion_signature_sources(&self) -> impl Iterator<Item = Arc<str>> + '_ {
         self.by_detector_index
             .iter()
             .flat_map(|plan| plan.companions.iter())
-            .map(|companion| companion.regex.as_str())
+            .map(|companion| companion.regex.cloned_source())
     }
 
     #[inline]

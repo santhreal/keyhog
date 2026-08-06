@@ -386,6 +386,10 @@ impl LazyRegex {
         &self.src
     }
 
+    pub(crate) fn cloned_source(&self) -> Arc<str> {
+        Arc::clone(&self.src)
+    }
+
     /// Whether this pattern is anchored by a distinctive literal prefix,
     /// memoized.
     ///

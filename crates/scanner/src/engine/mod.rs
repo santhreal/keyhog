@@ -624,12 +624,8 @@ impl CompiledScanner {
             .iter()
             .chain(self.phase2_patterns.iter().map(|(pattern, _)| pattern))
             .filter(|pattern| !pattern.homoglyph_variant)
-            .map(|pattern| Arc::from(pattern.regex.as_str()))
-            .chain(
-                self.detector_plans
-                    .companion_signature_sources()
-                    .map(Arc::from),
-            )
+            .map(|pattern| pattern.regex.cloned_source())
+            .chain(self.detector_plans.companion_signature_sources())
             .collect()
     }
 
