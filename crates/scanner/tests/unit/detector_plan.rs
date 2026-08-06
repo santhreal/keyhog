@@ -142,6 +142,67 @@ fn unified_plan_preserves_every_detector_local_compilation_owner() {
     }
 }
 
+/// Regression: installed-plan compilation must release each decoded schema row
+/// instead of overlapping the complete corpus with the retained runtime graph.
+#[test]
+fn draining_plan_compilation_releases_decoded_detector_schemas() {
+    let mut detectors = keyhog_core::embedded_detector_specs().to_vec();
+    let detector_count = detectors.len();
+    let state = crate::compiler::build_compile_state(&detectors)
+        .expect("embedded detector compile state must build");
+    let strings = detectors
+        .iter()
+        .flat_map(|detector| {
+            [
+                detector.id.as_str(),
+                detector.name.as_str(),
+                detector.service.as_str(),
+            ]
+            .into_iter()
+            .chain(
+                detector
+                    .entropy_fallback
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(|metadata| {
+                        [
+                            metadata.id.as_str(),
+                            metadata.name.as_str(),
+                            metadata.service.as_str(),
+                        ]
+                    }),
+            )
+            .chain(
+                detector
+                    .companions
+                    .iter()
+                    .map(|companion| companion.name.as_str()),
+            )
+        })
+        .collect::<Vec<_>>();
+    let interner = crate::static_intern::StaticInterner::from_detector_strings(strings);
+    let decoder_plan = std::sync::Arc::new(
+        crate::decode::CompiledDecoderPlan::snapshot().expect("decoder registry must compile"),
+    );
+
+    let plans = crate::detector_plan::CompiledDetectorPlans::compile_draining_with_decoder_plan(
+        &mut detectors,
+        &interner,
+        state.companions,
+        decoder_plan,
+    )
+    .expect("draining detector plans must compile");
+
+    assert_eq!(plans.len(), detector_count);
+    assert!(detectors.iter().all(|detector| {
+        detector.id.is_empty()
+            && detector.name.is_empty()
+            && detector.service.is_empty()
+            && detector.patterns.is_empty()
+            && detector.keywords.is_empty()
+    }));
+}
+
 #[test]
 fn unified_plan_rejects_missing_interned_detector_identity() {
     let detector = keyhog_core::DetectorSpec {

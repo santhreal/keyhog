@@ -358,7 +358,7 @@ impl CompiledScanner {
     }
 
     fn compile_shared_with_state_source(
-        detectors: Arc<[DetectorSpec]>,
+        mut detectors: Arc<[DetectorSpec]>,
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
         packed_state: Option<CompileState>,
@@ -435,35 +435,26 @@ impl CompiledScanner {
             decoder_plan.identity(),
         );
         let detector_digest = super::detector_digest::projection(compiled_plan_digest);
-        let detector_plans =
-            crate::detector_plan::CompiledDetectorPlans::compile_with_decoder_plan(
-                &detectors,
-                static_intern.as_ref(),
-                state.companions,
-                decoder_plan,
-            )
-            .map_err(crate::error::ScanError::Config)?;
+        let detector_count = detectors.len();
         validate_compiled_pattern_detector_indices(
             &state.ac_map,
             &state.phase2_patterns,
-            detectors.len(),
+            detector_count,
         )?;
-        let detector_count = detectors.len();
-        // Lower the last detector-schema-dependent validations before building
-        // route runtime indexes. Installed schemas are compiler inputs; keeping
-        // them alive while allocating the retained graph inflates peak RSS.
+        // Resolve the final schema-dependent validations before compact plan
+        // compilation so a sole installed corpus can be drained row by row.
         let missing_weak_anchor_floors = detectors
             .iter()
-            .enumerate()
-            .filter_map(|(index, detector)| {
-                let has_weak_pattern = match detector_plans.get(index).weak_anchor_base {
+            .filter_map(|detector| {
+                let has_weak_pattern = match crate::suppression::detector_weak_anchor_base(detector)
+                {
                     crate::suppression::WeakAnchorBase::Always => true,
                     crate::suppression::WeakAnchorBase::PerPattern => {
                         detector.patterns.iter().any(|pattern| pattern.weak_anchor)
                     }
                     crate::suppression::WeakAnchorBase::Never => false,
                 };
-                (has_weak_pattern && detector_plans.get(index).entropy_floor.is_none())
+                (has_weak_pattern && detector.entropy_floor.is_empty())
                     .then_some(detector.id.as_str())
             })
             .collect::<Vec<_>>();
@@ -486,6 +477,23 @@ impl CompiledScanner {
         };
         #[cfg(not(feature = "simdsieve"))]
         let hot_confirmed_by_pattern = vec![false; state.ac_map.len()];
+
+        let detector_plans = if let Some(detectors) = Arc::get_mut(&mut detectors) {
+            crate::detector_plan::CompiledDetectorPlans::compile_draining_with_decoder_plan(
+                detectors,
+                static_intern.as_ref(),
+                state.companions,
+                decoder_plan,
+            )
+        } else {
+            crate::detector_plan::CompiledDetectorPlans::compile_with_decoder_plan(
+                &detectors,
+                static_intern.as_ref(),
+                state.companions,
+                decoder_plan,
+            )
+        }
+        .map_err(crate::error::ScanError::Config)?;
         drop(detectors);
         let ac = if matches!(
             gpu_policy,

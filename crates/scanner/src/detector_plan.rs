@@ -320,63 +320,10 @@ impl CompiledDetectorPlans {
             ));
         }
         let by_detector_index = detectors
-                .iter()
-                .zip(companions)
-                .map(|(detector, companions)| {
-                    let execution = crate::detector_execution_policy::CompiledDetectorExecutionPolicy::compile(
-                        detector,
-                    )?;
-                    let entropy = crate::entropy::policy::compile_entropy_policy_with_length(
-                        detector,
-                        execution.length,
-                    )?;
-                    Ok(CompiledDetectorPlan {
-                        metadata: compile_metadata(
-                            interner,
-                            &detector.id,
-                            "primary",
-                            &detector.id,
-                            &detector.name,
-                            &detector.service,
-                        )?,
-                        entropy_metadata: detector
-                            .entropy_fallback
-                            .as_ref()
-                            .map(|metadata| {
-                                compile_metadata(
-                                    interner,
-                                    &detector.id,
-                                    "entropy fallback",
-                                    &metadata.id,
-                                    &metadata.name,
-                                    &metadata.service,
-                                )
-                            })
-                            .transpose()?,
-                        execution,
-                        match_confidence:
-                            crate::confidence::policy::CompiledMatchConfidencePolicy::compile(
-                                detector,
-                            )?,
-                        key_material:
-                            crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile(
-                                detector,
-                            )?,
-                        entropy_floor:
-                            crate::entropy::policy::CompiledEntropyFloorPolicy::compile(detector)?,
-                        entropy,
-                        credential_shape:
-                            crate::credential_shapes::compile_detector_shape_rule(detector)?,
-                        suppression:
-                            crate::suppression::DetectorSuppressionPolicy::compile(detector)?,
-                        validators: crate::checksum::CompiledDetectorValidators::compile(detector)?,
-                        weak_anchor_base: crate::suppression::detector_weak_anchor_base(detector),
-                        companions: companions.into_boxed_slice(),
-                        #[cfg(feature = "ml")]
-                        ml: crate::detector_ml_policy::CompiledDetectorMlPolicy::compile(detector),
-                    })
-                })
-                .collect::<Result<Box<[_]>, String>>()?;
+            .iter()
+            .zip(companions)
+            .map(|(detector, companions)| compile_detector_plan(detector, companions, interner))
+            .collect::<Result<Box<[_]>, String>>()?;
         let generic_assignment = by_detector_index
             .iter()
             .any(|plan| plan.execution.is_generic)
@@ -411,6 +358,82 @@ impl CompiledDetectorPlans {
                 public_identifier_assignment_markers.push(bytes.into());
             }
         }
+        Ok(Self {
+            by_detector_index,
+            resolution,
+            detector_relations,
+            validator_index,
+            decode_transforms,
+            decoder_plan,
+            generic_assignment,
+            generic_named_assignment_keywords,
+            generic_ownership,
+            public_identifier_assignment_markers: public_identifier_assignment_markers
+                .into_boxed_slice(),
+        })
+    }
+
+    /// Compile installed detector plans while releasing each decoded schema as
+    /// soon as its compact runtime plan exists.
+    pub(crate) fn compile_draining_with_decoder_plan(
+        detectors: &mut [DetectorSpec],
+        interner: &crate::static_intern::StaticInterner,
+        companions: Vec<Vec<crate::types::CompiledCompanion>>,
+        decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
+    ) -> Result<Self, String> {
+        if companions.len() != detectors.len() {
+            return Err(format!(
+                "compiled companion rows ({}) do not match detector count ({})",
+                companions.len(),
+                detectors.len()
+            ));
+        }
+
+        // Corpus-wide owners must observe the complete schemas. Build them
+        // before the per-detector drain starts.
+        let generic_assignment = detectors
+            .iter()
+            .any(DetectorSpec::owns_entropy_policy)
+            .then(|| {
+                crate::engine::phase2_generic::keywords::GenericAssignmentKeywordPlan::compile(
+                    detectors,
+                )
+            })
+            .transpose()?;
+        let generic_named_assignment_keywords =
+            crate::generic_keyword_owner::build_generic_named_assignment_keywords(detectors)
+                .into_boxed_slice();
+        let generic_ownership =
+            crate::generic_keyword_owner::GenericOwningDetectorIndex::build(detectors)?;
+        let resolution = DetectorResolutionIndex::compile(detectors, interner)?;
+        let detector_relations = CompiledDetectorRelationIndex::compile(detectors, interner)?;
+        let decode_transforms =
+            Arc::new(crate::decode::policy::CompiledDecodeTransformPolicy::compile(detectors)?);
+        let mut public_identifier_assignment_markers: Vec<Box<[u8]>> = Vec::new();
+        for marker in detectors
+            .iter()
+            .flat_map(|detector| &detector.public_identifier_assignment_markers)
+        {
+            let bytes = marker.as_bytes();
+            if !public_identifier_assignment_markers
+                .iter()
+                .any(|compiled| compiled.eq_ignore_ascii_case(bytes))
+            {
+                public_identifier_assignment_markers.push(bytes.into());
+            }
+        }
+
+        let by_detector_index = detectors
+            .iter_mut()
+            .zip(companions)
+            .map(|(detector, companions)| {
+                let detector = std::mem::take(detector);
+                compile_detector_plan(&detector, companions, interner)
+            })
+            .collect::<Result<Box<[_]>, String>>()?;
+        let validator_index = crate::checksum::CompiledValidatorIndex::compile(
+            by_detector_index.iter().map(|plan| &plan.validators),
+        );
         Ok(Self {
             by_detector_index,
             resolution,
@@ -637,6 +660,58 @@ fn insert_resolution_policy(
         ));
     }
     Ok(())
+}
+
+fn compile_detector_plan(
+    detector: &DetectorSpec,
+    companions: Vec<crate::types::CompiledCompanion>,
+    interner: &crate::static_intern::StaticInterner,
+) -> Result<CompiledDetectorPlan, String> {
+    let execution =
+        crate::detector_execution_policy::CompiledDetectorExecutionPolicy::compile(detector)?;
+    let entropy =
+        crate::entropy::policy::compile_entropy_policy_with_length(detector, execution.length)?;
+    Ok(CompiledDetectorPlan {
+        metadata: compile_metadata(
+            interner,
+            &detector.id,
+            "primary",
+            &detector.id,
+            &detector.name,
+            &detector.service,
+        )?,
+        entropy_metadata: detector
+            .entropy_fallback
+            .as_ref()
+            .map(|metadata| {
+                compile_metadata(
+                    interner,
+                    &detector.id,
+                    "entropy fallback",
+                    &metadata.id,
+                    &metadata.name,
+                    &metadata.service,
+                )
+            })
+            .transpose()?,
+        execution,
+        match_confidence: crate::confidence::policy::CompiledMatchConfidencePolicy::compile(
+            detector,
+        )?,
+        key_material:
+            crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile(
+                detector,
+            )?,
+        entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::compile(detector)?,
+        entropy,
+        credential_shape: crate::credential_shapes::compile_detector_shape_rule(detector)?,
+        suppression: crate::suppression::DetectorSuppressionPolicy::compile(detector)?,
+        validators: crate::checksum::CompiledDetectorValidators::compile(detector)?,
+        weak_anchor_base: crate::suppression::detector_weak_anchor_base(detector),
+        companions: companions.into_boxed_slice(),
+        #[cfg(feature = "ml")]
+        ml: crate::detector_ml_policy::CompiledDetectorMlPolicy::compile(detector),
+    })
 }
 
 fn compile_metadata(
