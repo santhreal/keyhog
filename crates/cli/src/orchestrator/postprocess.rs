@@ -452,8 +452,13 @@ impl ScanOrchestrator {
             );
         }
 
+        let detector_specs = self.verifier_detectors.as_deref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "verification was requested without retained detector plans; rerun the scan"
+            )
+        })?;
         let mut verifier = VerificationEngine::new(
-            &self.detectors,
+            detector_specs,
             VerifyConfig {
                 timeout: Duration::from_secs(verify.timeout_secs),
                 max_concurrent_per_service: verify.max_concurrent_per_service,

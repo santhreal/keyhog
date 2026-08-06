@@ -461,6 +461,8 @@ pub trait CliTestApi {
         orchestrator: &'a ScanOrchestrator,
     ) -> &'a CompiledScanner;
     fn scan_orchestrator_args<'a>(&self, orchestrator: &'a ScanOrchestrator) -> &'a ScanArgs;
+    fn scan_orchestrator_detector_count(&self, orchestrator: &ScanOrchestrator) -> usize;
+    fn scan_orchestrator_retained_detector_specs(&self, orchestrator: &ScanOrchestrator) -> usize;
     fn scan_orchestrator_scan_sources_for_test(
         &self,
         orchestrator: &ScanOrchestrator,
@@ -1372,6 +1374,24 @@ impl CliTestApi for TestApi {
     }
     fn scan_orchestrator_args<'a>(&self, orchestrator: &'a ScanOrchestrator) -> &'a ScanArgs {
         orchestrator.0.args()
+    }
+    fn scan_orchestrator_detector_count(&self, orchestrator: &ScanOrchestrator) -> usize {
+        orchestrator.0.detector_count
+    }
+    fn scan_orchestrator_retained_detector_specs(&self, orchestrator: &ScanOrchestrator) -> usize {
+        #[cfg(feature = "verify")]
+        {
+            orchestrator
+                .0
+                .verifier_detectors
+                .as_deref()
+                .map_or(0, <[DetectorSpec]>::len)
+        }
+        #[cfg(not(feature = "verify"))]
+        {
+            let _ = orchestrator;
+            0
+        }
     }
     fn scan_orchestrator_scan_sources_for_test(
         &self,

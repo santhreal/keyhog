@@ -14,6 +14,7 @@ pub mod build_scanner_config_respects_min_secret_len;
 pub mod build_scanner_config_respects_no_decode;
 pub mod build_scanner_config_respects_no_entropy;
 pub mod build_scanner_config_respects_no_ml;
+pub mod detector_corpus_retention;
 pub mod explicit_backend_cpu_fallback_aliases;
 pub mod explicit_backend_gpu_env_parsed;
 pub mod explicit_backend_retired_megascan_rejected;

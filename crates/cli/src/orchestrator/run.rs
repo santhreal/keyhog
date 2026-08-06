@@ -78,10 +78,11 @@ pub(super) fn resolve_scan_exit(outcome: ScanOutcome) -> u8 {
     }
 }
 
-fn profiler_build_identity() -> keyhog_profile::BuildIdentityV2 {
+pub(super) fn profiler_build_identity() -> keyhog_profile::BuildIdentityV2 {
     let mut features = Vec::new();
     for (enabled, name) in [
         (cfg!(feature = "mimalloc"), "mimalloc"),
+        (cfg!(feature = "allocation-profile"), "allocation-profile"),
         (cfg!(feature = "ci-lean"), "ci-lean"),
         (cfg!(feature = "portable"), "portable"),
         (cfg!(feature = "full"), "full"),
@@ -96,6 +97,7 @@ fn profiler_build_identity() -> keyhog_profile::BuildIdentityV2 {
         (cfg!(feature = "docker"), "docker"),
         (cfg!(feature = "binary"), "binary"),
         (cfg!(feature = "web"), "web"),
+        (cfg!(feature = "slack"), "slack"),
         (cfg!(feature = "verify"), "verify"),
         (cfg!(feature = "gpu"), "gpu"),
         (cfg!(feature = "simd"), "simd"),
@@ -377,12 +379,12 @@ fn profiler_cache_transitions(
         super::workflow_state::detector_transition(),
         super::workflow_state::merkle_load_transition(merkle_status),
         super::workflow_state::autoroute_transition(
-            orchestrator.effective_config.autoroute_cache_path.as_deref(),
+            orchestrator
+                .effective_config
+                .autoroute_cache_path
+                .as_deref(),
         ),
-        super::workflow_state::verifier_transition(
-            orchestrator.effective_config.report.verify,
-            0,
-        ),
+        super::workflow_state::verifier_transition(orchestrator.effective_config.report.verify, 0),
         super::workflow_state::daemon_transition(),
     ]
 }
@@ -546,17 +548,29 @@ struct OperatorProfile {
 impl OperatorProfile {
     fn start(
         enabled: bool,
+        mut early_session: Option<keyhog_profile::Session>,
+        early_build: Option<std::thread::JoinHandle<keyhog_profile::BuildIdentityV2>>,
         identity: keyhog_profile::RunIdentity,
         detectors: Option<keyhog_profile::DetectorIdentityV2>,
         config: Option<keyhog_profile::ConfigIdentityV2>,
         source: Option<keyhog_profile::SourceIdentityV2>,
         artifact_path: Option<std::path::PathBuf>,
     ) -> Result<Self> {
-        let build = enabled.then(profiler_build_identity);
-        let session = enabled
-            .then(|| keyhog_profile::Session::start(identity))
-            .transpose()
-            .map_err(anyhow::Error::new)?;
+        let build = enabled.then(|| {
+            early_build
+                .and_then(|capture| capture.join().ok())
+                .unwrap_or_else(profiler_build_identity)
+        });
+        let session = if enabled {
+            if let Some(session) = early_session.as_mut() {
+                *session.identity_mut() = identity;
+                early_session
+            } else {
+                Some(keyhog_profile::Session::start(identity).map_err(anyhow::Error::new)?)
+            }
+        } else {
+            None
+        };
         crate::set_operator_profile_active(session.is_some());
         Ok(Self {
             session,
@@ -677,7 +691,8 @@ impl OperatorProfile {
             let (unattributed_bytes, unattributed_units) = keyhog_profile::take_input_totals();
             let profile = session.finish(state);
             let typed_metrics = runtime.take_session_typed_metrics();
-            let report = profile.render_text();
+            let emit_text = self.artifact_path.is_none();
+            let report = emit_text.then(|| profile.render_text());
             // Rendering a profile must never be able to end a scan. The build
             // identity is captured when profiling is enabled, so the absent
             // case is unreachable; recapturing it is still cheaper than a
@@ -726,9 +741,13 @@ impl OperatorProfile {
             // evidence for it, and an operator who only reads the first line
             // still learns what limited the run.
             let insight = keyhog_profile::RunInsightV2::derive(&causal);
-            eprint!("{}", insight.render_summary());
+            if emit_text {
+                eprint!("{}", insight.render_summary());
+            }
             causal.insight = Some(insight);
-            eprint!("{report}");
+            if let Some(report) = report {
+                eprint!("{report}");
+            }
             // Workflow-state identity: the in-process orchestrator only runs
             // with the daemon route off (daemon-routed scans are served by
             // `run_via_daemon` and surface daemon request profiles instead),
@@ -774,11 +793,8 @@ impl OperatorProfile {
                         ) {
                             transition.transition
                         } else {
-                            super::workflow_state::verifier_transition(
-                                true,
-                                verifier_cache_hits,
-                            )
-                            .transition
+                            super::workflow_state::verifier_transition(true, verifier_cache_hits)
+                                .transition
                         }
                     }
                     _ => transition.transition,
@@ -803,8 +819,13 @@ impl OperatorProfile {
             if let Some(outcome) = self.outcome.take() {
                 causal.identity.outcome = outcome;
             }
+            let (partitions, dropped_partitions) = super::workflow_state::take_source_partitions();
             if let Some(path) = self.artifact_path.take() {
                 write_profile_artifact(&causal, &path);
+            }
+            if !emit_text {
+                crate::set_operator_profile_active(false);
+                return;
             }
             eprintln!(
                 "build binary_sha256={} feature_sha256={} target={} profile={} compiler={} allocator={} backends_sha256={}",
@@ -981,8 +1002,6 @@ impl OperatorProfile {
             // contributions recorded at the production seam, then the merge
             // line proving the partitions plus any unattributed remainder
             // sum back to the session aggregate.
-            let (partitions, dropped_partitions) =
-                super::workflow_state::take_source_partitions();
             let mut partition_units = 0_u64;
             let mut partition_bytes = 0_u64;
             for partition in &partitions {
@@ -1078,9 +1097,7 @@ impl ScanOrchestrator {
         // scanned while the scanner threw away the `sk_live_` key inside it. The
         // flag now means what it says. This must run after
         // `reset_scan_runtime_state`, which restores the default.
-        keyhog_scanner::telemetry::set_vendored_path_suppression(
-            !self.args.no_default_excludes,
-        );
+        keyhog_scanner::telemetry::set_vendored_path_suppression(!self.args.no_default_excludes);
         let start = Instant::now();
         let wall_start = chrono::Utc::now();
         let stderr_is_tty = std::io::stderr().is_terminal();
@@ -1216,7 +1233,7 @@ impl ScanOrchestrator {
         );
         if show_progress {
             if let Err(error) =
-                crate::write_banner(&mut std::io::stderr(), progress_ansi, self.detectors.len())
+                crate::write_banner(&mut std::io::stderr(), progress_ansi, self.detector_count)
             {
                 tracing::debug!(%error, "banner write error");
             }
@@ -1236,7 +1253,7 @@ impl ScanOrchestrator {
                 "⚡ {} | backend={backend_policy} | gpu={gpu_label}",
                 keyhog_scanner::hw_probe::startup_banner(
                     hw,
-                    self.detectors.len(),
+                    self.detector_count,
                     scanner_status.pattern_count,
                 )
             );
@@ -1366,8 +1383,12 @@ impl ScanOrchestrator {
             profile_enabled.then(|| profiler_config_identity(&self, protection_state));
         let source_identity =
             profile_enabled.then(|| crate::sources::profiling_source_identity(&self.args, &[]));
+        let early_profile_session = self.early_profile_session.take();
+        let early_profile_build = self.early_profile_build.take();
         let mut operator_profile = OperatorProfile::start(
             profile_enabled,
+            early_profile_session,
+            early_profile_build,
             profile_identity,
             detector_identity,
             config_identity,
@@ -1447,7 +1468,7 @@ impl ScanOrchestrator {
             self.filter_and_resolve(all_matches, &allowlist)?
         };
         operator_profile.transition(keyhog_profile::RunState::Verifying);
-        let findings_pre_rules = {
+        let mut findings = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::LiveVerification);
             self.finalize(filtered).await?
         };
@@ -1455,22 +1476,19 @@ impl ScanOrchestrator {
 
         let _suppression_span = keyhog_profile::span(keyhog_profile::Stage::Suppression);
         let rule_suppressor = load_rule_suppressor(self.args.path.as_deref())?;
-        let pre_rule_count = findings_pre_rules.len();
+        let pre_rule_count = findings.len();
         let hide_client_safe = self.effective_config.report.hide_client_safe;
         let mut client_safe_dropped = 0usize;
-        let findings: Vec<VerifiedFinding> = findings_pre_rules
-            .into_iter()
-            .filter(|f| {
-                if rule_suppressor.matches(f) {
-                    return false;
-                }
-                if hide_client_safe && f.severity == keyhog_core::Severity::ClientSafe {
-                    client_safe_dropped += 1;
-                    return false;
-                }
-                true
-            })
-            .collect();
+        findings.retain(|f| {
+            if rule_suppressor.matches(f) {
+                return false;
+            }
+            if hide_client_safe && f.severity == keyhog_core::Severity::ClientSafe {
+                client_safe_dropped += 1;
+                return false;
+            }
+            true
+        });
         drop(_suppression_span);
 
         // KH-GAP-096: a requested source that failed ENTIRELY, producing zero
@@ -1650,27 +1668,30 @@ impl ScanOrchestrator {
             } else {
                 Baseline::empty()
             };
-            let new_findings = baseline.filter_new(&findings);
-            let had_new = !new_findings.is_empty();
+            let keep = baseline.new_finding_mask(&findings);
+            let had_new = keep.iter().any(|keep| *keep);
+            let new_count = keep.iter().filter(|keep| **keep).count();
             baseline.merge(&findings);
             baseline.save(path)?;
             if show_progress {
                 eprintln!(
                     "\n📝 Baseline updated: added {} new entries at {}",
-                    new_findings.len(),
+                    new_count,
                     path.display()
                 );
             }
-            (new_findings, had_new)
+            Baseline::retain_mask(&mut findings, &keep);
+            (findings, had_new)
         } else if let Some(ref path) = self.args.baseline {
             let baseline = Baseline::load(path)?;
-            let filtered_findings = baseline.filter_new(&findings);
-            let suppressed_count = findings.len() - filtered_findings.len();
-            let has_new = !filtered_findings.is_empty();
+            let pre_baseline_count = findings.len();
+            baseline.retain_new(&mut findings);
+            let suppressed_count = pre_baseline_count - findings.len();
+            let has_new = !findings.is_empty();
             if show_progress && suppressed_count > 0 {
                 eprintln!("\n  Suppressed {} baseline finding(s)", suppressed_count);
             }
-            (filtered_findings, has_new)
+            (findings, has_new)
         } else {
             let has_findings = !findings.is_empty();
             (findings, has_findings)
@@ -1696,7 +1717,7 @@ impl ScanOrchestrator {
             start.elapsed().as_millis(),
             crate::SCANNED_CHUNKS.load(std::sync::atomic::Ordering::Relaxed),
             crate::SCANNED_BYTES.load(std::sync::atomic::Ordering::Relaxed),
-            self.detectors.len(),
+            self.detector_count,
             &self.detector_corpus_digest,
             &self.detector_corpus_provenance,
             Some(crate::orchestrator_config::autoroute_config_digest(
@@ -1824,6 +1845,10 @@ impl ScanOrchestrator {
         let outcome_status = outcome.status;
         operator_profile.set_outcome(outcome);
         operator_profile.set_verification(self.effective_config.report.verify, &report_findings);
+        {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::Teardown);
+            drop(self.scanner);
+        }
         operator_profile.finish(outcome_status);
         Ok(std::process::ExitCode::from(exit))
     }

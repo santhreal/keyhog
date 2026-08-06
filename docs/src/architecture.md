@@ -385,9 +385,14 @@ The same construction step compiles hot scalar execution facts such as generic
 classification, minimum length and confidence, severity, structural password
 slots, exact detector keywords, and public-identifier assignment markers.
 Emission paths address that cache-local record by detector index. Once all
-matchers and policies are built, `CompiledScanner` drops `DetectorSpec` itself;
-the flexible structure remains a configuration and introspection schema, not a
-second runtime policy owner.
+matchers and policies are built, `CompiledScanner` drops `DetectorSpec` itself.
+The CLI also releases the decoded detector corpus before a non-verifying scan;
+only `--verify` retains it for verifier-plan construction. The flexible
+structure remains a configuration, verification, and introspection schema, not
+a second owner during ordinary scanning.
+The interner owns each unique string once as a lookup-map key, with no parallel
+arena. Resolution and cross-detector relation indexes clone those same
+allocations instead of storing another copy of each detector ID.
 
 Every public scanner constructor reaches one full-corpus quality gate before it
 builds matchers or probes backends. This also applies when you construct

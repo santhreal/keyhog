@@ -1046,7 +1046,9 @@ fn execution_pack_policy_for_args(
 
 pub(crate) struct ScanOrchestrator {
     pub(crate) args: ScanArgs,
-    pub(crate) detectors: Arc<[DetectorSpec]>,
+    pub(crate) detector_count: usize,
+    #[cfg(feature = "verify")]
+    pub(crate) verifier_detectors: Option<Arc<[DetectorSpec]>>,
     pub(crate) detector_spec_hash: [u8; 32],
     pub(crate) detector_rules_digest: String,
     pub(crate) detector_corpus_digest: String,
@@ -1378,6 +1380,7 @@ impl ScanOrchestrator {
         let detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
         drop(detector_validation_span);
 
+        let detector_count = detectors.len();
         let detectors: Arc<[DetectorSpec]> = detectors.into();
 
         let gpu_init_policy = {
@@ -1423,8 +1426,14 @@ impl ScanOrchestrator {
             )
         };
 
-
         let signatures = collect_detector_signatures(&detectors);
+        #[cfg(feature = "verify")]
+        let verifier_detectors = effective_config
+            .report
+            .verify
+            .then_some(detectors);
+        #[cfg(not(feature = "verify"))]
+        drop(detectors);
 
         let test_fixture_suppressions = if args.no_suppress_test_fixtures {
             crate::test_fixture_suppressions::TestFixtureSuppressions::empty()
@@ -1433,7 +1442,9 @@ impl ScanOrchestrator {
         };
         Ok(Self {
             args,
-            detectors,
+            detector_count,
+            #[cfg(feature = "verify")]
+            verifier_detectors,
             detector_spec_hash,
             detector_rules_digest,
             detector_corpus_digest,
@@ -1568,9 +1579,16 @@ impl ScanOrchestrator {
             embedded_count: 0,
             custom_count: detectors.len(),
         };
+        let detector_count = detectors.len();
+        #[cfg(feature = "verify")]
+        let verifier_detectors = args.verify.then(|| detectors.into());
+        #[cfg(not(feature = "verify"))]
+        drop(detectors);
         Self {
             args,
-            detectors: detectors.into(),
+            detector_count,
+            #[cfg(feature = "verify")]
+            verifier_detectors,
             detector_spec_hash,
             detector_rules_digest,
             detector_corpus_provenance,
@@ -1584,7 +1602,7 @@ impl ScanOrchestrator {
             early_profile_session: None,
             early_profile_build: None,
             effective_config: ResolvedScanConfig {
-                backend_override: Some(keyhog_scanner::ScanBackend::SimdCpu),
+                backend_override: Some(keyhog_scanner::ScanBackend::CpuFallback),
                 batch_pipeline,
                 threads,
                 reader_threads,
