@@ -99,6 +99,234 @@ impl MappedPrefixReleaser {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SparseRange {
+    start: u64,
+    end: u64,
+}
+
+#[cfg(target_os = "linux")]
+fn seek_extent(file: &File, offset: u64, whence: libc::c_int) -> std::io::Result<Option<u64>> {
+    use std::os::fd::AsRawFd;
+
+    let offset = libc::off_t::try_from(offset).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "sparse extent offset is not representable by off_t",
+        )
+    })?;
+    loop {
+        // SAFETY: `file` owns a live regular-file descriptor and lseek does not
+        // dereference user pointers.
+        let found = unsafe { libc::lseek(file.as_raw_fd(), offset, whence) };
+        if found >= 0 {
+            return Ok(Some(found as u64));
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() == std::io::ErrorKind::Interrupted {
+            continue;
+        }
+        if whence == libc::SEEK_DATA && error.raw_os_error() == Some(libc::ENXIO) {
+            return Ok(None);
+        }
+        return Err(error);
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn discover_sparse_ranges_with(
+    file_len: u64,
+    overlap: u64,
+    mut seek: impl FnMut(u64, libc::c_int) -> std::io::Result<Option<u64>>,
+) -> std::io::Result<Vec<SparseRange>> {
+    let mut ranges: Vec<SparseRange> = Vec::new();
+    let mut cursor = 0u64;
+    while cursor < file_len {
+        let Some(data_start) = seek(cursor, libc::SEEK_DATA)? else {
+            break;
+        };
+        if data_start < cursor || data_start >= file_len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "filesystem returned an invalid SEEK_DATA offset",
+            ));
+        }
+        let Some(hole_start) = seek(data_start, libc::SEEK_HOLE)? else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "filesystem returned no SEEK_HOLE offset after data",
+            ));
+        };
+        if hole_start <= data_start {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "filesystem returned a non-advancing SEEK_HOLE offset",
+            ));
+        }
+
+        let expanded = SparseRange {
+            start: data_start.saturating_sub(overlap),
+            end: hole_start
+                .min(file_len)
+                .saturating_add(overlap)
+                .min(file_len),
+        };
+        if let Some(previous) = ranges.last_mut() {
+            if expanded.start <= previous.end {
+                previous.end = previous.end.max(expanded.end);
+            } else {
+                ranges.push(expanded);
+            }
+        } else {
+            ranges.push(expanded);
+        }
+        cursor = hole_start.min(file_len);
+    }
+    Ok(ranges)
+}
+
+#[cfg(target_os = "linux")]
+fn discover_sparse_ranges(
+    file: &File,
+    file_len: u64,
+    overlap: usize,
+) -> std::io::Result<Vec<SparseRange>> {
+    let overlap = u64::try_from(overlap).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "window overlap is not representable as a file offset",
+        )
+    })?;
+    discover_sparse_ranges_with(file_len, overlap, |offset, whence| {
+        seek_extent(file, offset, whence)
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn rewind_after_extent_query(file: &File) -> std::io::Result<()> {
+    match seek_extent(file, 0, libc::SEEK_SET)? {
+        Some(0) => Ok(()),
+        _ => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "failed to rewind after sparse extent query",
+        )),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn read_exact_at(file: &File, mut buffer: &mut [u8], mut offset: u64) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+
+    while !buffer.is_empty() {
+        match file.read_at(buffer, offset) {
+            Ok(0) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "file ended while reading an allocated sparse extent",
+                ));
+            }
+            Ok(read) => {
+                offset = offset.saturating_add(read as u64);
+                buffer = &mut buffer[read..];
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn for_each_sparse_window(
+    file: &File,
+    ranges: &[SparseRange],
+    window_size: usize,
+    overlap: usize,
+    mut emit: impl FnMut(FileWindow) -> bool,
+) -> Result<(), (std::io::Error, bool)> {
+    let stride = window_size - overlap;
+    let mut base_line = 0usize;
+    let mut emitted = false;
+
+    for range in ranges {
+        let mut offset = range.start;
+        while offset < range.end {
+            let remaining = range.end - offset;
+            let read_len = usize::try_from(remaining.min(window_size as u64)).map_err(|error| {
+                (
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+                    emitted,
+                )
+            })?;
+            let mut bytes = vec![0u8; read_len];
+            read_exact_at(file, &mut bytes, offset).map_err(|error| (error, emitted))?;
+            let absolute_offset = usize::try_from(offset).map_err(|error| {
+                (
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+                    emitted,
+                )
+            })?;
+            let reached_range_end = read_len < window_size || offset + read_len as u64 >= range.end;
+            let advanced_newlines = if reached_range_end {
+                bytecount_newlines(&bytes)
+            } else {
+                bytecount_newlines(&bytes[..stride])
+            };
+            let text = match String::from_utf8(bytes) {
+                Ok(text) => text,
+                Err(error) => String::from_utf8_lossy(error.as_bytes()).into_owned(),
+            };
+            emitted = true;
+            if !emit(FileWindow {
+                offset: absolute_offset,
+                base_line,
+                text,
+            }) {
+                return Ok(());
+            }
+
+            base_line += advanced_newlines;
+            if reached_range_end {
+                break;
+            }
+            offset += stride as u64;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn sparse_buffered_fallback(
+    file: File,
+    path: &Path,
+    error: std::io::Error,
+    stage: &'static str,
+    emit: &mut impl FnMut(Result<FileWindow, SourceError>) -> bool,
+) -> WindowedMmapOutcome {
+    tracing::warn!(
+        path = %path.display(),
+        %error,
+        stage,
+        "cannot use sparse extent streaming; falling back to buffered read"
+    );
+    if let Err(rewind_error) = rewind_after_extent_query(&file) {
+        tracing::warn!(
+            path = %path.display(),
+            %rewind_error,
+            "cannot rewind after sparse extent failure; skipping"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        let _continue_scan = emit(Err(windowed_mmap_error(
+            path,
+            format!("cannot rewind after sparse extent failure ({rewind_error})"),
+        )));
+        WindowedMmapOutcome::Consumed
+    } else {
+        WindowedMmapOutcome::Fallback(file)
+    }
+}
+
 /// Memory-map `path` and slice it into overlapping `window_size`-byte
 /// windows with `overlap` bytes shared between consecutive windows. The
 /// previous flow allocated a 64 MiB heap working buffer per big file
@@ -216,9 +444,55 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
     {
         use std::os::unix::fs::MetadataExt;
         if meta.blocks().saturating_mul(512) < meta.len() {
-            // File-backed sparse holes remain charged to mmap RSS even after
-            // prefix advice on this kernel. The buffered window path keeps one
-            // owned window resident and preserves identical offsets/overlap.
+            #[cfg(target_os = "linux")]
+            {
+                let ranges = match discover_sparse_ranges(&file, meta.len(), overlap) {
+                    Ok(ranges) => ranges,
+                    Err(error) => {
+                        return sparse_buffered_fallback(
+                            file,
+                            path,
+                            error,
+                            "extent discovery",
+                            &mut emit,
+                        );
+                    }
+                };
+
+                match for_each_sparse_window(&file, &ranges, window_size, overlap, |window| {
+                    emit(Ok(window))
+                }) {
+                    Ok(()) => {}
+                    Err((error, false)) => {
+                        return sparse_buffered_fallback(
+                            file,
+                            path,
+                            error,
+                            "first extent read",
+                            &mut emit,
+                        );
+                    }
+                    Err((error, true)) => {
+                        tracing::warn!(
+                            path = %path.display(),
+                            %error,
+                            "cannot continue sparse extent read; stopping scan of this file"
+                        );
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        let _continue_scan = emit(Err(windowed_mmap_error(
+                            path,
+                            format!("cannot continue sparse extent read ({error})"),
+                        )));
+                    }
+                }
+
+                use std::os::fd::AsRawFd;
+                // SAFETY: Simple advisory unlock FFI call.
+                unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
+                return WindowedMmapOutcome::Consumed;
+            }
+
+            #[cfg(not(target_os = "linux"))]
             return WindowedMmapOutcome::Fallback(file);
         }
     }
@@ -432,4 +706,233 @@ fn for_each_window(
         on_advance(offset);
     }
     true
+}
+#[cfg(all(test, target_os = "linux"))]
+mod sparse_tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use std::io::Write;
+    use std::os::unix::fs::{FileExt, MetadataExt};
+
+    fn scripted_ranges(
+        file_len: u64,
+        overlap: u64,
+        script: Vec<(u64, libc::c_int, std::io::Result<Option<u64>>)>,
+    ) -> std::io::Result<Vec<SparseRange>> {
+        let mut script = VecDeque::from(script);
+        let result = discover_sparse_ranges_with(file_len, overlap, |offset, whence| {
+            let (expected_offset, expected_whence, result) =
+                script.pop_front().expect("unexpected extent query");
+            assert_eq!(offset, expected_offset);
+            assert_eq!(whence, expected_whence);
+            result
+        });
+        assert!(script.is_empty(), "not all expected extent queries ran");
+        result
+    }
+
+    fn write_all_at(file: &File, mut bytes: &[u8], mut offset: u64) {
+        while !bytes.is_empty() {
+            let written = file.write_at(bytes, offset).expect("write sparse data");
+            assert_ne!(written, 0, "sparse data write made no progress");
+            bytes = &bytes[written..];
+            offset += written as u64;
+        }
+    }
+
+    /// Sparse extent context must be merged before reading so nearby data is
+    /// covered once rather than producing duplicate overlap-expanded ranges.
+    #[test]
+    fn overlap_expansion_merges_nearby_extents() {
+        let ranges = scripted_ranges(
+            2_000,
+            100,
+            vec![
+                (0, libc::SEEK_DATA, Ok(Some(200))),
+                (200, libc::SEEK_HOLE, Ok(Some(300))),
+                (300, libc::SEEK_DATA, Ok(Some(450))),
+                (450, libc::SEEK_HOLE, Ok(Some(500))),
+                (500, libc::SEEK_DATA, Ok(Some(1_000))),
+                (1_000, libc::SEEK_HOLE, Ok(Some(1_100))),
+                (1_100, libc::SEEK_DATA, Ok(None)),
+            ],
+        )
+        .expect("valid extent script");
+
+        assert_eq!(
+            ranges,
+            vec![
+                SparseRange {
+                    start: 100,
+                    end: 600
+                },
+                SparseRange {
+                    start: 900,
+                    end: 1_200
+                }
+            ]
+        );
+    }
+
+    /// SEEK_DATA reports ENXIO for an all-hole file; that is successful empty
+    /// coverage, not an extent-query error and not permission to read the hole.
+    #[test]
+    fn all_hole_extent_plan_is_empty() {
+        let ranges = scripted_ranges(
+            8 * 1024 * 1024,
+            128 * 1024,
+            vec![(0, libc::SEEK_DATA, Ok(None))],
+        )
+        .expect("all-hole extent plan");
+
+        assert!(ranges.is_empty());
+    }
+
+    /// Unsupported or failed extent discovery must stay an error so the
+    /// production caller selects its already-open buffered fallback.
+    #[test]
+    fn extent_query_errors_return_rewound_buffered_fallback() {
+        let error = scripted_ranges(
+            8 * 1024 * 1024,
+            128 * 1024,
+            vec![(
+                0,
+                libc::SEEK_DATA,
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Unsupported,
+                    "SEEK_DATA unsupported",
+                )),
+            )],
+        )
+        .expect_err("unsupported query must request fallback");
+        assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
+
+        let file = tempfile::tempfile().expect("fallback tempfile");
+        assert_eq!(
+            seek_extent(&file, 17, libc::SEEK_SET).expect("move file cursor"),
+            Some(17)
+        );
+        let mut emitted_error = false;
+        let outcome = sparse_buffered_fallback(
+            file,
+            Path::new("sparse-fallback-test"),
+            error,
+            "extent discovery",
+            &mut |_| {
+                emitted_error = true;
+                true
+            },
+        );
+        let WindowedMmapOutcome::Fallback(file) = outcome else {
+            panic!("extent-query failure did not select buffered fallback");
+        };
+        assert!(!emitted_error);
+        assert_eq!(
+            seek_extent(&file, 0, libc::SEEK_CUR).expect("query rewound cursor"),
+            Some(0)
+        );
+    }
+
+    /// A real sparse file must expose credentials in its first and last
+    /// allocated blocks at exact logical offsets without materializing its hole.
+    #[test]
+    fn sparse_file_streams_start_and_end_data_with_bounded_windows() {
+        const FILE_LEN: u64 = 32 * 1024 * 1024;
+        const WINDOW_SIZE: usize = 1024 * 1024;
+        const OVERLAP: usize = 128 * 1024;
+        const START_SECRET: &str = "START_CREDENTIAL=alpha\n";
+        const END_SECRET: &str = "END_CREDENTIAL=omega";
+
+        let mut sparse = tempfile::NamedTempFile::new().expect("sparse tempfile");
+        sparse
+            .as_file_mut()
+            .set_len(FILE_LEN)
+            .expect("set sparse length");
+        write_all_at(sparse.as_file(), START_SECRET.as_bytes(), 0);
+        let end_offset = FILE_LEN - END_SECRET.len() as u64;
+        write_all_at(sparse.as_file(), END_SECRET.as_bytes(), end_offset);
+        sparse.as_file_mut().flush().expect("flush sparse data");
+
+        let metadata = sparse.as_file().metadata().expect("sparse metadata");
+        assert!(
+            metadata.blocks().saturating_mul(512) < FILE_LEN / 4,
+            "test fixture did not remain sparse"
+        );
+        let ranges =
+            discover_sparse_ranges(sparse.as_file(), FILE_LEN, OVERLAP).expect("query extents");
+        let planned_bytes: u64 = ranges.iter().map(|range| range.end - range.start).sum();
+        assert!(
+            planned_bytes < FILE_LEN / 4,
+            "extent plan materialized too much of the sparse hole: {planned_bytes} bytes"
+        );
+
+        let mut offsets = Vec::new();
+        let mut emitted_bytes = 0usize;
+        let mut largest_window = 0usize;
+        let mut start_hits = Vec::new();
+        let mut end_hits = Vec::new();
+        let mut end_base_lines = Vec::new();
+        let mut errors = Vec::new();
+        let outcome = for_each_file_windowed_mmap(sparse.path(), WINDOW_SIZE, OVERLAP, |row| {
+            match row {
+                Ok(window) => {
+                    offsets.push(window.offset);
+                    emitted_bytes += window.text.len();
+                    largest_window = largest_window.max(window.text.len());
+                    if let Some(local) = window.text.find(START_SECRET) {
+                        start_hits.push(window.offset + local);
+                    }
+                    if let Some(local) = window.text.find(END_SECRET) {
+                        end_hits.push(window.offset + local);
+                        end_base_lines.push(window.base_line);
+                    }
+                }
+                Err(error) => errors.push(error.to_string()),
+            }
+            true
+        });
+
+        assert!(matches!(outcome, WindowedMmapOutcome::Consumed));
+        assert!(errors.is_empty(), "sparse scan errors: {errors:?}");
+        assert_eq!(start_hits, vec![0]);
+        assert_eq!(end_hits, vec![end_offset as usize]);
+        assert_eq!(end_base_lines, vec![1]);
+        assert!(largest_window <= WINDOW_SIZE);
+        assert!(
+            emitted_bytes < FILE_LEN as usize / 4,
+            "stream emitted too much sparse-hole data: {emitted_bytes} bytes"
+        );
+        assert!(
+            offsets.windows(2).all(|pair| pair[0] < pair[1]),
+            "sparse window offsets must be strictly increasing: {offsets:?}"
+        );
+    }
+
+    /// An all-hole regular file on a SEEK_DATA-capable filesystem emits no
+    /// windows and never routes through mmap or the buffered hole reader.
+    #[test]
+    fn real_all_hole_file_emits_no_windows() {
+        const FILE_LEN: u64 = 16 * 1024 * 1024;
+        let sparse = tempfile::NamedTempFile::new().expect("all-hole tempfile");
+        sparse
+            .as_file()
+            .set_len(FILE_LEN)
+            .expect("set sparse length");
+        let metadata = sparse.as_file().metadata().expect("all-hole metadata");
+        assert_eq!(metadata.blocks(), 0, "test fixture allocated data blocks");
+        assert!(
+            discover_sparse_ranges(sparse.as_file(), FILE_LEN, 128 * 1024)
+                .expect("query all-hole extents")
+                .is_empty()
+        );
+
+        let mut rows = 0usize;
+        let outcome = for_each_file_windowed_mmap(sparse.path(), 1024 * 1024, 128 * 1024, |_| {
+            rows += 1;
+            true
+        });
+
+        assert!(matches!(outcome, WindowedMmapOutcome::Consumed));
+        assert_eq!(rows, 0);
+    }
 }
