@@ -42,6 +42,33 @@ fn unified_plan_preserves_every_detector_local_compilation_owner() {
         assert_eq!(plan.metadata.1.as_ref(), detector.name);
         assert_eq!(plan.metadata.2.as_ref(), detector.service);
         assert_eq!(
+            plans.resolution_identity_ptr(&detector.id),
+            Some(plan.metadata.0.as_ptr()),
+            "resolution identity must reuse the plan metadata allocation for {}",
+            detector.id
+        );
+        let (owner_ptr, relation_ptrs) = plans
+            .relation_identity_ptrs(&detector.id)
+            .expect("every detector has a relation-index owner row");
+        assert_eq!(
+            owner_ptr,
+            plan.metadata.0.as_ptr(),
+            "relation owner must reuse the plan metadata allocation for {}",
+            detector.id
+        );
+        for (target, target_ptr) in relation_ptrs {
+            assert_eq!(
+                target_ptr,
+                plans
+                    .find_by_id(target)
+                    .expect("validated relation target has a detector plan")
+                    .metadata
+                    .0
+                    .as_ptr(),
+                "relation target must reuse the target plan metadata allocation"
+            );
+        }
+        assert_eq!(
             plan.entropy_metadata.as_ref().map(|metadata| (
                 metadata.0.as_ref(),
                 metadata.1.as_ref(),

@@ -84,7 +84,16 @@ static EMBEDDED_RESOLUTION_INDEX: LazyLock<
 > = LazyLock::new(|| {
     let detectors = keyhog_core::load_embedded_detectors_or_fail()
         .map_err(|error| format!("failed to load embedded detector resolution policy: {error}"))?;
-    crate::detector_plan::DetectorResolutionIndex::compile(&detectors)
+    let identities = detectors.iter().flat_map(|detector| {
+        std::iter::once(detector.id.as_str()).chain(
+            detector
+                .entropy_fallback
+                .as_ref()
+                .map(|metadata| metadata.id.as_str()),
+        )
+    });
+    let interner = crate::static_intern::StaticInterner::from_detector_strings(identities);
+    crate::detector_plan::DetectorResolutionIndex::compile(&detectors, &interner)
 });
 
 fn embedded_resolution_index(

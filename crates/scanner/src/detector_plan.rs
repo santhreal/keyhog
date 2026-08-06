@@ -9,6 +9,18 @@ use std::sync::Arc;
 
 pub(crate) type CompiledDetectorMetadata = (Arc<str>, Arc<str>, Arc<str>);
 
+fn intern_detector_identity(
+    interner: &crate::static_intern::StaticInterner,
+    detector_id: &str,
+    role: &str,
+) -> Result<Arc<str>, String> {
+    interner.lookup(detector_id).ok_or_else(|| {
+        format!(
+            "detector identity {detector_id:?} for {role} is missing from the scanner metadata interner"
+        )
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DetectorResolutionClass {
     Named,
@@ -32,7 +44,10 @@ pub(crate) struct DetectorResolutionIndex {
 }
 
 impl DetectorResolutionIndex {
-    pub(crate) fn compile(detectors: &[DetectorSpec]) -> Result<Self, String> {
+    pub(crate) fn compile(
+        detectors: &[DetectorSpec],
+        interner: &crate::static_intern::StaticInterner,
+    ) -> Result<Self, String> {
         let mut by_id = HashMap::with_capacity(detectors.len() * 2);
         for detector in detectors {
             let class = if detector.private_key_block {
@@ -44,7 +59,7 @@ impl DetectorResolutionIndex {
             };
             insert_resolution_policy(
                 &mut by_id,
-                Arc::from(detector.id.as_str()),
+                intern_detector_identity(interner, &detector.id, "resolution owner")?,
                 DetectorResolutionPolicy {
                     class,
                     priority: detector.resolution_priority,
@@ -53,7 +68,7 @@ impl DetectorResolutionIndex {
             if let Some(metadata) = &detector.entropy_fallback {
                 insert_resolution_policy(
                     &mut by_id,
-                    Arc::from(metadata.id.as_str()),
+                    intern_detector_identity(interner, &metadata.id, "entropy resolution owner")?,
                     DetectorResolutionPolicy {
                         class: DetectorResolutionClass::Entropy,
                         priority: detector.resolution_priority,
@@ -90,7 +105,10 @@ pub(crate) struct CompiledDetectorRelationIndex {
 }
 
 impl CompiledDetectorRelationIndex {
-    fn compile(detectors: &[DetectorSpec]) -> Result<Self, String> {
+    fn compile(
+        detectors: &[DetectorSpec],
+        interner: &crate::static_intern::StaticInterner,
+    ) -> Result<Self, String> {
         let detector_ids = detectors
             .iter()
             .map(|detector| detector.id.as_str())
@@ -153,7 +171,7 @@ impl CompiledDetectorRelationIndex {
                 }
                 declared.insert((detector.id.as_str(), target), relation.kind);
                 compiled.push(CompiledDetectorRelation {
-                    detector_id: Arc::from(target),
+                    detector_id: intern_detector_identity(interner, target, "relation target")?,
                     kind: relation.kind,
                     within_lines: relation.within_lines,
                     within_bytes: relation.within_bytes,
@@ -170,7 +188,10 @@ impl CompiledDetectorRelationIndex {
                         .expect("validated target has an indegree row") += 1;
                 }
             }
-            by_owner.insert(Arc::from(detector.id.as_str()), compiled.into_boxed_slice());
+            by_owner.insert(
+                intern_detector_identity(interner, &detector.id, "relation owner")?,
+                compiled.into_boxed_slice(),
+            );
         }
 
         let mut ready = indegree
@@ -358,8 +379,8 @@ impl CompiledDetectorPlans {
                 .into_boxed_slice();
         let generic_ownership =
             crate::generic_keyword_owner::GenericOwningDetectorIndex::build(detectors)?;
-        let resolution = DetectorResolutionIndex::compile(detectors)?;
-        let detector_relations = CompiledDetectorRelationIndex::compile(detectors)?;
+        let resolution = DetectorResolutionIndex::compile(detectors, interner)?;
+        let detector_relations = CompiledDetectorRelationIndex::compile(detectors, interner)?;
         let validator_index = crate::checksum::CompiledValidatorIndex::compile(
             by_detector_index.iter().map(|plan| &plan.validators),
         );
@@ -455,6 +476,34 @@ impl CompiledDetectorPlans {
     #[inline]
     pub(crate) fn len(&self) -> usize {
         self.by_detector_index.len()
+    }
+    #[cfg(test)]
+    pub(crate) fn resolution_identity_ptr(&self, detector_id: &str) -> Option<*const u8> {
+        self.resolution
+            .by_id
+            .get_key_value(detector_id)
+            .map(|(identity, _)| identity.as_ptr())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn relation_identity_ptrs(
+        &self,
+        owner: &str,
+    ) -> Option<(*const u8, Vec<(&str, *const u8)>)> {
+        self.detector_relations
+            .by_owner
+            .get_key_value(owner)
+            .map(|(owner, relations)| {
+                (
+                    owner.as_ptr(),
+                    relations
+                        .iter()
+                        .map(|relation| {
+                            (relation.detector_id.as_ref(), relation.detector_id.as_ptr())
+                        })
+                        .collect(),
+                )
+            })
     }
 
     #[inline]

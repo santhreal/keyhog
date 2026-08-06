@@ -21,19 +21,15 @@
 //! finding) that is twelve whole-key traversals per match - the dominant cost
 //! the locality tripwire pins.
 //!
-//! `lookup` now resolves through a single `ahash` map keyed by the interned
-//! string. `ahash` mixes the key in 8-byte words with hardware multiply/rotate
-//! ops rather than one function call per byte, so a lookup is ONE fast hash +
-//! one bucket compare instead of three byte-loops + a compare. The map stores
-//! the arena index, and we return `arena[idx].clone()` - byte-identical to the
-//! string the CHD path returned. The map is built once and read-only at scan
-//! time, so every rayon worker shares it lock-free (an `&HashMap` read needs no
-//! synchronization). For callers that already hold the detector index, the
-//! scanner caches the resolved triple by index and skips `lookup` entirely
-//! (`CompiledScanner::interned_detector_metadata`).
+//! `lookup` resolves through a single `ahash` map keyed by the interned
+//! `Arc<str>`. `ahash` mixes the key in 8-byte words with hardware
+//! multiply/rotate operations rather than one function call per byte, so a
+//! lookup is one fast hash plus one bucket comparison. The returned `Arc` is
+//! cloned directly from the map key. There is no parallel arena containing a
+//! second owner for every string. The map is built once and read-only at scan
+//! time, so every rayon worker shares it lock-free.
 
 use std::sync::Arc;
-
 
 /// The seed source types leaked once into `&'static str`, derived from the single
 /// parsed [`SEED_SOURCE_TYPES`] owner (no second `include_str!`/parse).
@@ -61,14 +57,13 @@ crate::tier_b_list::tier_b_vec!(
 /// construction; cloneable via `Arc` so every rayon worker shares
 /// one read-only instance.
 ///
-/// `index` maps each interned string to its slot in `arena`; it is read-only
-/// after construction, so concurrent `lookup`s need no synchronization. The
-/// `ahash` hasher gives a single fast (8-byte-word, hardware-mixed) hash per
-/// lookup instead of the CHD perfect hash's three per-byte hash passes.
+/// `index` owns each distinct string as its key and is read-only after
+/// construction, so concurrent lookups need no synchronization. The `ahash`
+/// hasher gives a single fast (8-byte-word, hardware-mixed) hash per lookup
+/// instead of the CHD perfect hash's three per-byte hash passes.
 #[derive(Default)]
 pub(crate) struct StaticInterner {
-    arena: Vec<Arc<str>>,
-    index: std::collections::HashMap<Arc<str>, u32, ahash::RandomState>,
+    index: std::collections::HashMap<Arc<str>, (), ahash::RandomState>,
 }
 
 impl StaticInterner {
@@ -80,31 +75,23 @@ impl StaticInterner {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        // Dedupe + freeze the input set. BTreeSet keeps the arena order stable
-        // and deterministic across runs (matters for any index-keyed cache the
-        // scanner derives from this arena, e.g. detector-plan metadata).
-        let mut all: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-        for s in detector_strings {
-            all.insert(s.as_ref().to_owned());
+        let mut values = detector_strings.into_iter();
+        let mut index = std::collections::HashMap::with_capacity_and_hasher(
+            values.size_hint().0.saturating_add(SEED_SOURCE_TYPES.len()),
+            ahash::RandomState::new(),
+        );
+        for value in values.by_ref() {
+            let value = value.as_ref();
+            if !index.contains_key(value) {
+                index.insert(Arc::from(value), ());
+            }
         }
-        for s in &*SEED_SOURCE_TYPES {
-            all.insert(s.clone());
+        for value in &*SEED_SOURCE_TYPES {
+            if !index.contains_key(value.as_str()) {
+                index.insert(Arc::from(value.as_str()), ());
+            }
         }
-
-        if all.is_empty() {
-            return Self::default();
-        }
-
-        let arena: Vec<Arc<str>> = all.iter().map(|s| Arc::from(s.as_str())).collect();
-        let mut index: std::collections::HashMap<Arc<str>, u32, ahash::RandomState> =
-            std::collections::HashMap::with_capacity_and_hasher(
-                arena.len(),
-                ahash::RandomState::new(),
-            );
-        for (i, arc) in arena.iter().enumerate() {
-            index.insert(Arc::clone(arc), i as u32);
-        }
-        Self { arena, index }
+        Self { index }
     }
 
     /// Single-hash lookup. Returns a clone of the pre-allocated `Arc<str>`
@@ -113,16 +100,15 @@ impl StaticInterner {
     /// `Arc<str>: Borrow<str>` makes `get(s)` allocation-free on hits.
     #[inline]
     pub(crate) fn lookup(&self, s: &str) -> Option<Arc<str>> {
-        let &idx = self.index.get(s)?;
-        // The index can only hold valid arena slots (populated from arena
-        // above), but keep the bounds-checked `get` for a total function.
-        self.arena.get(idx as usize).cloned()
+        self.index
+            .get_key_value(s)
+            .map(|(value, ())| Arc::clone(value))
     }
 
     /// Number of pre-interned strings.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        self.arena.len()
+        self.index.len()
     }
 }
 

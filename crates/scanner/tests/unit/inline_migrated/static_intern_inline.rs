@@ -42,14 +42,24 @@ fn deduplicates_input() {
     assert_eq!(intern.lookup("aws"), intern.lookup("aws"));
 }
 
+/// Repeated metadata lookup must clone the map-key allocation directly. The
+/// interner must not retain a second parallel arena owner for every string.
 #[test]
 fn returns_same_arc_on_repeated_lookup() {
     let intern = StaticInterner::from_detector_strings(["hello-detector"]);
     let a = intern.lookup("hello-detector").unwrap();
+    assert_eq!(
+        Arc::strong_count(&a),
+        2,
+        "one interner key and one caller must be the only Arc owners"
+    );
     let b = intern.lookup("hello-detector").unwrap();
-    // The Arc itself should be cloned from the same slot, not
-    // re-allocated (pointer-equality is the cheap proof).
     assert!(Arc::ptr_eq(&a, &b));
+    assert_eq!(
+        Arc::strong_count(&a),
+        3,
+        "a second lookup adds only its caller-owned Arc"
+    );
 }
 
 #[test]
