@@ -10,7 +10,7 @@ use keyhog_core::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const ROUTE_MATCHER_SECTION_VERSION: u16 = 2;
+pub const ROUTE_MATCHER_SECTION_VERSION: u16 = 3;
 #[doc(hidden)]
 pub fn compile_state_builder_invocations() -> usize {
     build_compile_state_invocations()
@@ -82,7 +82,7 @@ struct SuppressionEnvelope {
     version: u16,
     backend: String,
     detector_ir_digest: [u8; 32],
-    detectors: Vec<keyhog_core::DetectorSpec>,
+    detector_count: u32,
 }
 
 impl CompiledRouteMatcherSections {
@@ -180,18 +180,7 @@ impl CompiledRouteMatcherSections {
             version: ROUTE_MATCHER_SECTION_VERSION,
             backend: backend_name,
             detector_ir_digest: ir.digest(),
-            detectors: ir
-                .detectors()
-                .iter()
-                .cloned()
-                .map(|mut detector| {
-                    detector.tests.clear();
-                    detector.patterns.clear();
-                    detector.keywords.clear();
-                    detector.simdsieve_prefixes.clear();
-                    detector
-                })
-                .collect(),
+            detector_count,
         })?;
         Ok(Self {
             backend,
@@ -245,11 +234,28 @@ pub(crate) fn validate_compile_state_sections(
     regex_programs: &[u8],
     suppression_policy: &[u8],
 ) -> Result<(), ExecutionPackError> {
+    decode_validated_compile_state_sections(
+        backend,
+        literal_index,
+        regex_programs,
+        suppression_policy,
+    )
+    .map(|_| ())
+}
+
+fn decode_validated_compile_state_sections(
+    backend: ExecutionPackBackend,
+    literal_index: &[u8],
+    regex_programs: &[u8],
+    suppression_policy: &[u8],
+) -> Result<(LiteralEnvelope, RegexEnvelope, SuppressionEnvelope), ExecutionPackError> {
     let literal: LiteralEnvelope = decode_canonical("literal index", literal_index, backend)?;
     let regex: RegexEnvelope = decode_canonical("regex programs", regex_programs, backend)?;
     let suppression: SuppressionEnvelope =
         decode_canonical("suppression policy", suppression_policy, backend)?;
-    if literal.detector_count != regex.detector_count {
+    if literal.detector_count != regex.detector_count
+        || literal.detector_count != suppression.detector_count
+    {
         return Err(ExecutionPackError::InvalidPack(
             "compiled route matcher sections disagree on detector count".to_owned(),
         ));
@@ -268,11 +274,9 @@ pub(crate) fn validate_compile_state_sections(
             regex.ac_patterns.len()
         )));
     }
-    if suppression.detectors.len() != literal.detector_count as usize
-        || regex.companions.len() != literal.detector_count as usize
-    {
+    if regex.companions.len() != literal.detector_count as usize {
         return Err(ExecutionPackError::InvalidPack(
-            "compiled route companion or suppression detector cardinality is invalid".to_owned(),
+            "compiled route companion detector cardinality is invalid".to_owned(),
         ));
     }
     let mut seen = BTreeSet::new();
@@ -287,7 +291,7 @@ pub(crate) fn validate_compile_state_sections(
             )));
         }
     }
-    Ok(())
+    Ok((literal, regex, suppression))
 }
 
 pub(crate) fn decode_compile_state_sections(
@@ -298,11 +302,12 @@ pub(crate) fn decode_compile_state_sections(
     expected_detector_ir_digest: [u8; 32],
     detectors: &[keyhog_core::DetectorSpec],
 ) -> Result<CompileState, ExecutionPackError> {
-    validate_compile_state_sections(backend, literal_index, regex_programs, suppression_policy)?;
-    let literal: LiteralEnvelope = decode_canonical("literal index", literal_index, backend)?;
-    let regex: RegexEnvelope = decode_canonical("regex programs", regex_programs, backend)?;
-    let suppression: SuppressionEnvelope =
-        decode_canonical("suppression policy", suppression_policy, backend)?;
+    let (literal, regex, _suppression) = decode_validated_compile_state_sections(
+        backend,
+        literal_index,
+        regex_programs,
+        suppression_policy,
+    )?;
     if literal.detector_ir_digest != expected_detector_ir_digest {
         return Err(ExecutionPackError::Incompatible(
             "compiled route matcher graph belongs to another detector IR".to_owned(),
@@ -314,16 +319,6 @@ pub(crate) fn decode_compile_state_sections(
             literal.detector_count,
             detectors.len()
         )));
-    }
-    if !suppression
-        .detectors
-        .iter()
-        .zip(detectors)
-        .all(|(packed, detector)| packed.id == detector.id)
-    {
-        return Err(ExecutionPackError::Incompatible(
-            "compiled route detector ordering does not match runtime detector ownership".to_owned(),
-        ));
     }
     let ac_map = regex
         .ac_patterns

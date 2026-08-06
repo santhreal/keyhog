@@ -96,7 +96,9 @@ fn canonical_matcher_graph_round_trips_deterministically() {
     let detectors = detectors();
     let first = sections(&detectors);
     let second = sections(&detectors);
-    first.validate_canonical().expect("canonical sections validate");
+    first
+        .validate_canonical()
+        .expect("canonical sections validate");
     assert_eq!(first, second);
     CompiledScanner::compile_from_packed_matchers(detectors, &first)
         .expect("canonical graph decodes into scanner ownership");
@@ -104,11 +106,15 @@ fn canonical_matcher_graph_round_trips_deterministically() {
 
 /// WHY: route bytes are an authenticated runtime boundary, so incompatible schemas, backend drift, and valid-JSON index corruption must all fail before scanner construction.
 #[test]
-fn packed_matcher_graph_rejects_version_backend_and_detector_index_corruption() {
+fn packed_matcher_graph_rejects_version_backend_detector_count_and_index_corruption() {
     let detectors = detectors();
 
     let mut bad_version = sections(&detectors);
-    replace_once(&mut bad_version.literal_index, b"\"version\":2", b"\"version\":9");
+    replace_once(
+        &mut bad_version.literal_index,
+        b"\"version\":3",
+        b"\"version\":9",
+    );
     assert!(bad_version
         .validate_canonical()
         .expect_err("unknown version must fail")
@@ -116,12 +122,28 @@ fn packed_matcher_graph_rejects_version_backend_and_detector_index_corruption() 
         .contains("version or backend"));
 
     let mut bad_backend = sections(&detectors);
-    replace_once(&mut bad_backend.regex_programs, b"\"backend\":\"Cpu\"", b"\"backend\":\"Sim\"");
+    replace_once(
+        &mut bad_backend.regex_programs,
+        b"\"backend\":\"Cpu\"",
+        b"\"backend\":\"Sim\"",
+    );
     assert!(bad_backend
         .validate_canonical()
         .expect_err("backend drift must fail")
         .to_string()
         .contains("version or backend"));
+
+    let mut bad_count = sections(&detectors);
+    replace_once(
+        &mut bad_count.suppression_policy,
+        b"\"detector_count\":3",
+        b"\"detector_count\":9",
+    );
+    assert!(bad_count
+        .validate_canonical()
+        .expect_err("detector-count drift must fail")
+        .to_string()
+        .contains("disagree on detector count"));
 
     let mut bad_index = sections(&detectors);
     replace_once(
@@ -265,8 +287,8 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     );
     let before_autoroute =
         keyhog_scanner::execution_pack::matcher_sections::compile_state_builder_invocations();
-    let autoroute = CompiledScanner::
-        compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning(
+    let autoroute =
+        CompiledScanner::compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning(
             std::sync::Arc::clone(&decoded_detectors),
             &pack,
             keyhog_scanner::GpuInitPolicy::FromRuntimePolicy,
@@ -292,7 +314,9 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     );
     assert_eq!(
         autoroute.scan(&input).expect("scan autoroute packed route"),
-        ordinary.scan(&input).expect("rescan ordinary autoroute route")
+        ordinary
+            .scan(&input)
+            .expect("rescan ordinary autoroute route")
     );
 }
 
