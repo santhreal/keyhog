@@ -15,7 +15,8 @@ impl CompiledScanner {
     #[inline]
     pub(crate) fn chunk_needs_decode_postprocess(&self, chunk: &keyhog_core::Chunk) -> bool {
         self.config.max_decode_depth > 0
-            && chunk.data.len() <= self.config.max_decode_bytes
+            && (chunk.data.len() <= self.config.max_decode_bytes
+                || self.chunk_uses_bounded_decode_windows(chunk))
             && crate::decode::decoder_admission(
                 chunk,
                 self.detector_plans.decode_transforms(),
@@ -23,26 +24,30 @@ impl CompiledScanner {
             ) != crate::decode::DecodeAdmission::Impossible
     }
 
+    #[cfg(feature = "decode")]
+    #[inline]
+    pub(crate) fn chunk_uses_bounded_decode_windows(&self, chunk: &keyhog_core::Chunk) -> bool {
+        chunk.data.len() > self.config.max_decode_bytes
+            && self.config.max_decode_bytes >= 4
+            && chunk.metadata.source_type.as_ref() == "filesystem"
+    }
+
     #[cfg(not(feature = "decode"))]
     #[inline]
     pub(crate) fn chunk_needs_decode_postprocess(&self, _chunk: &keyhog_core::Chunk) -> bool {
         false
     }
-    /// Surface the decode-through pass that `chunk_needs_decode_postprocess`
-    /// declines purely because the chunk is larger than `max_decode_bytes`.
+    /// Surface a decode-through pass declined because its source cannot use
+    /// bounded decode windows and exceeds `max_decode_bytes`.
     ///
-    /// The raw bytes still get scanned, but nothing base64/hex/URL-encoded
-    /// inside an oversize chunk is recovered. Lowering `--decode-size-limit`
-    /// therefore drops findings, and before this counter existed it did so with
-    /// no operator-visible signal: the report just showed a smaller number.
+    /// Filesystem chunks are subdivided with overlap and retain this value as a
+    /// working-set ceiling. Other source types preserve the explicit whole-chunk
+    /// limit: their raw bytes are scanned, but encoded content is not recovered.
     ///
-    /// Deliberately keyed on size alone, not on `decoder_admission`. Admission is
-    /// an O(chunk) alphabet probe that the size gate currently short-circuits, so
-    /// probing here would add a full extra pass over every large chunk. The
-    /// decline is a fact regardless: the operator's own limit stopped the pass
-    /// from running, which is exactly what the coverage gap reports. With the
-    /// compiled 512 KiB default no ordinary chunk reaches it, so the counter
-    /// stays at zero unless a limit or a genuinely large input makes it true.
+    /// Deliberately keyed on size and source type, not on `decoder_admission`.
+    /// Admission is an O(chunk) alphabet probe; repeating it here would add a
+    /// full pass over each rejected chunk. The operator-selected limit is enough
+    /// to establish the decline.
     ///
     /// INVARIANT: this is called at exactly the sites that call
     /// `record_file_scanned`, and the two must stay paired. An earlier version of
@@ -60,7 +65,10 @@ impl CompiledScanner {
     #[cfg(feature = "decode")]
     #[inline]
     pub(crate) fn record_decode_size_decline(&self, chunk: &Chunk) {
-        if self.config.max_decode_depth > 0 && chunk.data.len() > self.config.max_decode_bytes {
+        if self.config.max_decode_depth > 0
+            && chunk.data.len() > self.config.max_decode_bytes
+            && !self.chunk_uses_bounded_decode_windows(chunk)
+        {
             crate::telemetry::record_decode_oversize_skip();
             tracing::warn!(
                 chunk_bytes = chunk.data.len(),
@@ -73,7 +81,6 @@ impl CompiledScanner {
     #[cfg(not(feature = "decode"))]
     #[inline]
     fn record_decode_size_decline(&self, _chunk: &Chunk) {}
-
 
     pub(crate) fn scan_inner(
         &self,

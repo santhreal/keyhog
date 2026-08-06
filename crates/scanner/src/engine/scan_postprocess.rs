@@ -55,140 +55,150 @@ impl CompiledScanner {
         }
 
         #[cfg(feature = "decode")]
-        if chunk.data.len() <= self.config.max_decode_bytes {
-            // Generation time is owned by the profile runtime's Decode stage
-            // span; rescan time by its Decoded attribution on every leaf span
-            // inside the rescans below. The counts/bytes are typed counters in
-            // the same runtime (no-ops when no runtime is active).
-            let decoded_chunks = {
-                let _g = super::profile::span(keyhog_profile::Stage::Decode);
-                crate::decode::decode_chunk_with_policy(
-                    chunk,
-                    self.detector_plans.decode_transforms(),
-                    self.detector_plans.decoder_plan(),
-                    self.config.max_decode_depth,
-                    self.config.validate_decode,
-                    deadline,
-                    self.alphabet_screen.as_ref(),
-                )
-            };
-            if crate::deadline::expired(deadline) {
-                return Ok(());
-            }
-            if !decoded_chunks.is_empty() {
-                keyhog_profile::add_counter(keyhog_profile::CounterId::DecodeParentChunks, 1);
-                keyhog_profile::add_counter(
-                    keyhog_profile::CounterId::DecodeDerivedChunks,
-                    decoded_chunks.len() as u64,
-                );
-            }
-            // Avoid allocating dedup state when decoding produced no sub-chunks.
-            if !decoded_chunks.is_empty() {
-                // Decoding is monotonic: a transform may add evidence, but it
-                // must never erase a finding already established on source
-                // bytes. Keep the raw set so conflict resolution over the
-                // combined evidence can be unioned back into it below.
-                let raw_findings = matches.clone();
-                let mut seen: HashSet<(Arc<str>, SensitiveString)> = matches
-                    .iter()
-                    .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
-                    .collect();
-                // Buffer, then sort by source offset so synthesized aliases cannot
-                // win `(detector, credential)` dedup over a real source coordinate.
-                let mut decoded_candidates: Vec<RawMatch> = Vec::new();
-                for decoded_chunk in decoded_chunks {
-                    if crate::deadline::expired(deadline) {
-                        break;
-                    }
-                    if decoded_chunk.data.len() > self.config.max_decode_bytes {
-                        crate::telemetry::record_decode_truncation();
-                        // LAW10: decode truncation is counted in scanner coverage
-                        // telemetry before this debug detail is emitted.
-                        tracing::debug!(
-                            path = ?chunk.metadata.path,
-                            decoded_len = decoded_chunk.data.len(),
-                            ceiling = self.config.max_decode_bytes,
-                            "decoded chunk exceeds max_decode_bytes; skipping"
-                        );
-                        continue;
-                    }
+        {
+            let decode_parent = |chunk: &Chunk,
+                                 matches: &mut Vec<RawMatch>|
+             -> crate::error::Result<()> {
+                // Generation time is owned by the profile runtime's Decode stage
+                // span; rescan time by its Decoded attribution on every leaf span
+                // inside the rescans below. The counts/bytes are typed counters in
+                // the same runtime (no-ops when no runtime is active).
+                let decoded_chunks = {
+                    let _g = super::profile::span(keyhog_profile::Stage::Decode);
+                    crate::decode::decode_chunk_with_policy(
+                        chunk,
+                        self.detector_plans.decode_transforms(),
+                        self.detector_plans.decoder_plan(),
+                        self.config.max_decode_depth,
+                        self.config.validate_decode,
+                        deadline,
+                        self.route_classification.alphabet_screen.as_ref(),
+                    )
+                };
+                if crate::deadline::expired(deadline) {
+                    return Ok(());
+                }
+                if !decoded_chunks.is_empty() {
+                    keyhog_profile::add_counter(keyhog_profile::CounterId::DecodeParentChunks, 1);
                     keyhog_profile::add_counter(
-                        keyhog_profile::CounterId::DecodeDerivedBytes,
-                        decoded_chunk.data.len() as u64,
+                        keyhog_profile::CounterId::DecodeDerivedChunks,
+                        decoded_chunks.len() as u64,
                     );
-                    // Track recursive decode work separately and preserve the
-                    // calibrated route's explicit small-buffer backend.
-                    let restore_rescan = super::profile::set_in_decode(true);
-                    let decoded_backend = route.decode_backend;
-                    let decoded_result = if decoded_chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
-                        self.scan_windowed(&decoded_chunk, decoded_backend, deadline, route)
-                    } else {
-                        self.scan_inner(&decoded_chunk, decoded_backend, deadline, route)
-                    };
-                    super::profile::set_in_decode(restore_rescan);
-                    let decoded_matches = decoded_result?;
-                    if crate::deadline::expired(deadline) {
-                        break;
-                    }
-                    for m in decoded_matches {
-                        // Generic decoded matches retain structural assignment evidence.
-                        if crate::adjudicate::record_decoded_unanchored_entropy_suppression(
-                            &m,
-                            chunk.metadata.path.as_deref(),
-                            self.detector_plans.is_entropy(m.detector_id.as_ref()),
-                        ) {
-                            continue;
-                        }
-                        if crate::adjudicate::record_decoded_parent_example_suppression(
-                            &m,
-                            chunk.metadata.path.as_deref(),
-                            chunk.data.as_ref(),
-                        ) {
-                            continue;
-                        }
-                        if crate::adjudicate::record_decoded_reverse_placeholder_suppression(
-                            &m,
-                            decoded_chunk
-                                .metadata
-                                .path
-                                .as_deref()
-                                .or(chunk.metadata.path.as_deref()),
-                            &decoded_chunk.metadata.source_type,
-                        ) {
-                            continue;
-                        }
-                        decoded_candidates.push(m);
-                    }
                 }
-                // Lowest real source offset wins aliases; `seen` starts with raw findings.
-                decoded_candidates.sort_by_key(|m| m.location.offset);
-                for m in decoded_candidates {
-                    let key = (Arc::clone(&m.detector_id), m.credential.clone());
-                    if seen.insert(key) {
-                        matches.push(m);
+                // Avoid allocating dedup state when decoding produced no sub-chunks.
+                if !decoded_chunks.is_empty() {
+                    // Decoding is monotonic: a transform may add evidence, but it
+                    // must never erase a finding already established on source
+                    // bytes. Keep the raw set so conflict resolution over the
+                    // combined evidence can be unioned back into it below.
+                    let raw_findings = matches.clone();
+                    let mut seen: HashSet<(Arc<str>, SensitiveString)> = matches
+                        .iter()
+                        .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
+                        .collect();
+                    // Buffer, then sort by source offset so synthesized aliases cannot
+                    // win `(detector, credential)` dedup over a real source coordinate.
+                    let mut decoded_candidates: Vec<RawMatch> = Vec::new();
+                    for decoded_chunk in decoded_chunks {
+                        if crate::deadline::expired(deadline) {
+                            break;
+                        }
+                        if decoded_chunk.data.len() > self.config.max_decode_bytes {
+                            crate::telemetry::record_decode_truncation();
+                            // LAW10: decode truncation is counted in scanner coverage
+                            // telemetry before this debug detail is emitted.
+                            tracing::debug!(
+                                path = ?chunk.metadata.path,
+                                decoded_len = decoded_chunk.data.len(),
+                                ceiling = self.config.max_decode_bytes,
+                                "decoded chunk exceeds max_decode_bytes; skipping"
+                            );
+                            continue;
+                        }
+                        keyhog_profile::add_counter(
+                            keyhog_profile::CounterId::DecodeDerivedBytes,
+                            decoded_chunk.data.len() as u64,
+                        );
+                        // Track recursive decode work separately and preserve the
+                        // calibrated route's explicit small-buffer backend.
+                        let restore_rescan = super::profile::set_in_decode(true);
+                        let decoded_backend = route.decode_backend;
+                        let decoded_result = if decoded_chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
+                            self.scan_windowed(&decoded_chunk, decoded_backend, deadline, route)
+                        } else {
+                            self.scan_inner(&decoded_chunk, decoded_backend, deadline, route)
+                        };
+                        super::profile::set_in_decode(restore_rescan);
+                        let decoded_matches = decoded_result?;
+                        if crate::deadline::expired(deadline) {
+                            break;
+                        }
+                        for m in decoded_matches {
+                            // Generic decoded matches retain structural assignment evidence.
+                            if crate::adjudicate::record_decoded_unanchored_entropy_suppression(
+                                &m,
+                                chunk.metadata.path.as_deref(),
+                                self.detector_plans.is_entropy(m.detector_id.as_ref()),
+                            ) {
+                                continue;
+                            }
+                            if crate::adjudicate::record_decoded_parent_example_suppression(
+                                &m,
+                                chunk.metadata.path.as_deref(),
+                                chunk.data.as_ref(),
+                            ) {
+                                continue;
+                            }
+                            if crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+                                &m,
+                                decoded_chunk
+                                    .metadata
+                                    .path
+                                    .as_deref()
+                                    .or(chunk.metadata.path.as_deref()),
+                                &decoded_chunk.metadata.source_type,
+                            ) {
+                                continue;
+                            }
+                            decoded_candidates.push(m);
+                        }
                     }
-                }
-                let resolved = crate::resolution::try_resolve_matches_with_compiled_plan(
-                    std::mem::take(matches),
-                    &self.detector_plans,
-                )
-                .map_err(|error| {
-                    crate::ScanError::Config(format!(
+                    // Lowest real source offset wins aliases; `seen` starts with raw findings.
+                    decoded_candidates.sort_by_key(|m| m.location.offset);
+                    for m in decoded_candidates {
+                        let key = (Arc::clone(&m.detector_id), m.credential.clone());
+                        if seen.insert(key) {
+                            matches.push(m);
+                        }
+                    }
+                    let resolved = crate::resolution::try_resolve_matches_with_compiled_plan(
+                        std::mem::take(matches),
+                        &self.detector_plans,
+                    )
+                    .map_err(|error| {
+                        crate::ScanError::Config(format!(
                         "compiled detector resolution failed after decoded finding merge: {error}"
                     ))
-                })?;
-                let mut merged = raw_findings;
-                let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> = merged
-                    .iter()
-                    .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
-                    .collect();
-                for m in resolved {
-                    let key = (Arc::clone(&m.detector_id), m.credential.clone());
-                    if merged_seen.insert(key) {
-                        merged.push(m);
+                    })?;
+                    let mut merged = raw_findings;
+                    let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> = merged
+                        .iter()
+                        .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
+                        .collect();
+                    for m in resolved {
+                        let key = (Arc::clone(&m.detector_id), m.credential.clone());
+                        if merged_seen.insert(key) {
+                            merged.push(m);
+                        }
                     }
+                    *matches = merged;
                 }
-                *matches = merged;
+                Ok(())
+            };
+            if chunk.data.len() <= self.config.max_decode_bytes {
+                decode_parent(chunk, matches)?;
+            } else if self.chunk_uses_bounded_decode_windows(chunk) {
+                self.decode_source_windows(chunk, |window| decode_parent(window, matches))?;
             }
         }
         tracing::debug!(
@@ -197,6 +207,71 @@ impl CompiledScanner {
             matches = matches.len(),
             "post_process_matches_inner done",
         );
+        Ok(())
+    }
+
+    #[cfg(feature = "decode")]
+    fn decode_source_windows(
+        &self,
+        chunk: &Chunk,
+        mut visit: impl FnMut(&Chunk) -> crate::error::Result<()>,
+    ) -> crate::error::Result<()> {
+        let text = chunk.data.as_str();
+        let limit = self.config.max_decode_bytes;
+        let overlap = crate::types::WINDOW_OVERLAP_BYTES.min(limit / 2);
+        let mut start = 0usize;
+        let mut base_line = chunk.metadata.base_line;
+
+        while start < text.len() {
+            let mut end = start.saturating_add(limit).min(text.len());
+            while end > start && !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            debug_assert!(
+                end > start,
+                "a four-byte decode window fits one UTF-8 scalar"
+            );
+
+            let mut metadata = chunk.metadata.clone();
+            metadata.base_offset =
+                chunk
+                    .metadata
+                    .base_offset
+                    .checked_add(start)
+                    .ok_or_else(|| {
+                        crate::ScanError::Config(
+                            "bounded decode window base offset exceeds usize".to_string(),
+                        )
+                    })?;
+            metadata.base_line = base_line;
+            let window = Chunk {
+                data: text[start..end].to_owned().into(),
+                metadata,
+            };
+            visit(&window)?;
+            if end == text.len() {
+                break;
+            }
+
+            let mut next = end.saturating_sub(overlap);
+            while next < end && !text.is_char_boundary(next) {
+                next += 1;
+            }
+            debug_assert!(next > start, "bounded decode windows must make progress");
+            base_line = base_line
+                .checked_add(
+                    text[start..next]
+                        .bytes()
+                        .filter(|byte| *byte == b'\n')
+                        .count(),
+                )
+                .ok_or_else(|| {
+                    crate::ScanError::Config(
+                        "bounded decode window base line exceeds usize".to_string(),
+                    )
+                })?;
+            start = next;
+        }
         Ok(())
     }
 

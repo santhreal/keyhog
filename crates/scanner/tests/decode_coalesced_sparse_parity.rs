@@ -12,16 +12,29 @@ use support::paths::detector_dir;
 
 const AWS_ACCESS_KEY: &str = "AKIAQYLPMN5HFIQR7XYA";
 
-fn scanner() -> &'static CompiledScanner {
-    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
-    SCANNER.get_or_init(|| {
-        let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors loadable");
-        let mut config = ScannerConfig::default();
-        config.penalize_test_paths = false;
-        CompiledScanner::compile(detectors)
-            .expect("scanner compile")
-            .with_config(config)
-    })
+fn scanner(backend: ScanBackend) -> &'static CompiledScanner {
+    static CPU: OnceLock<CompiledScanner> = OnceLock::new();
+    static SIMD: OnceLock<CompiledScanner> = OnceLock::new();
+    #[cfg(feature = "gpu")]
+    static GPU: OnceLock<CompiledScanner> = OnceLock::new();
+    let slot = match backend {
+        ScanBackend::CpuFallback => &CPU,
+        ScanBackend::SimdCpu => &SIMD,
+        #[cfg(feature = "gpu")]
+        ScanBackend::GpuWgpu => &GPU,
+        #[allow(unreachable_patterns)]
+        other => panic!("unsupported parity backend {other:?}"),
+    };
+    slot.get_or_init(|| compile_scanner(backend))
+}
+
+fn compile_scanner(backend: ScanBackend) -> CompiledScanner {
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors loadable");
+    let mut config = ScannerConfig::default();
+    config.penalize_test_paths = false;
+    CompiledScanner::compile_for_backend(detectors, backend)
+        .expect("scanner compile")
+        .with_config(config)
 }
 
 fn chunk(value: &str) -> Chunk {
@@ -50,13 +63,26 @@ fn aws_findings(results: &[Vec<keyhog_core::RawMatch>]) -> BTreeSet<(String, Str
 }
 
 fn assert_scalar_coalesced_parity(label: &str, fixture: Chunk) {
-    let scanner = scanner();
-    scanner.clear_fragment_cache();
-    let scalar = scanner
+    assert_scalar_coalesced_parity_with(
+        label,
+        fixture,
+        scanner(ScanBackend::CpuFallback),
+        scanner(ScanBackend::SimdCpu),
+        true,
+    );
+}
+
+fn assert_scalar_coalesced_parity_with(
+    label: &str,
+    fixture: Chunk,
+    cpu: &CompiledScanner,
+    simd: &CompiledScanner,
+    check_gpu: bool,
+) {
+    let scalar = cpu
         .scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
-    scanner.clear_fragment_cache();
-    let coalesced = scanner
+    let coalesced = simd
         .scan_coalesced_with_backend(std::slice::from_ref(&fixture), ScanBackend::SimdCpu)
         .expect("coalesced SIMD decode scan should succeed");
 
@@ -72,9 +98,8 @@ fn assert_scalar_coalesced_parity(label: &str, fixture: Chunk) {
     );
 
     #[cfg(feature = "gpu")]
-    if keyhog_scanner::gpu::gpu_available() {
-        scanner.clear_fragment_cache();
-        let gpu = scanner
+    if check_gpu && keyhog_scanner::gpu::gpu_available() {
+        let gpu = scanner(ScanBackend::GpuWgpu)
             .scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::GpuWgpu)
             .expect("selected backend scan succeeds");
         assert_eq!(
@@ -167,5 +192,13 @@ impl Decoder for UnknownAdmissionDecoder {
 fn custom_decoder_without_admission_predicate_fails_open() {
     static REGISTER: Once = Once::new();
     REGISTER.call_once(|| register_decoder(Box::new(UnknownAdmissionDecoder)));
-    assert_scalar_coalesced_parity("custom unknown admission", chunk("c.u.s.t.o.m"));
+    let cpu = compile_scanner(ScanBackend::CpuFallback);
+    let simd = compile_scanner(ScanBackend::SimdCpu);
+    assert_scalar_coalesced_parity_with(
+        "custom unknown admission",
+        chunk("c.u.s.t.o.m"),
+        &cpu,
+        &simd,
+        false,
+    );
 }
