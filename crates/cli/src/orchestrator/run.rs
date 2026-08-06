@@ -18,6 +18,34 @@ use sha2::{Digest, Sha256};
 use std::io::{IsTerminal, Read};
 use std::time::Instant;
 
+#[cfg(feature = "mimalloc")]
+pub(super) fn release_allocator_arenas_after_construction() {
+    extern "C" {
+        fn mi_collect(force: bool);
+    }
+
+    // Regex and matcher compilation runs on Rayon workers. Collect each
+    // thread-local mimalloc heap, then the caller heap, so compiler pages do
+    // not remain resident throughout a tiny scan.
+    rayon::broadcast(|_| {
+        // SAFETY: the mimalloc feature links the process allocator that exports
+        // `mi_collect`; the function has no pointer arguments or preconditions.
+        unsafe { mi_collect(true) };
+    });
+    // SAFETY: same linked allocator contract as the worker calls above.
+    unsafe { mi_collect(true) };
+}
+
+#[cfg(all(not(feature = "mimalloc"), target_os = "linux", target_env = "gnu"))]
+pub(super) fn release_allocator_arenas_after_construction() {
+    // SAFETY: glibc's process-wide trim takes no pointers and tolerates
+    // concurrent allocator users.
+    let _ = unsafe { libc::malloc_trim(0) };
+}
+
+#[cfg(not(any(feature = "mimalloc", all(target_os = "linux", target_env = "gnu"))))]
+pub(super) fn release_allocator_arenas_after_construction() {}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct ScanOutcome {
     pub(super) autoroute_calibration: bool,

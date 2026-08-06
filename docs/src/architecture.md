@@ -320,6 +320,11 @@ route-neutral literal strings, and decoded detector schemas as soon as their
 final runtime owner has been built. These inputs are gone before the compiled
 scanner crosses into health and scan-state measurement.
 
+The CLI then returns freed compiler arenas to the allocator before the runtime
+is exposed. Mimalloc builds collect every Rayon worker heap plus the caller
+heap; Linux glibc builds trim the process heap. Collection runs once at scanner
+construction, never in the per-chunk scan path.
+
 Every mapped byte has one owner: pack metadata, detector IR, route classifier,
 regex programs, suppression policy, or the selected backend. Header, table, and
 alignment padding belong to pack metadata. The ownership ledger must sum to the

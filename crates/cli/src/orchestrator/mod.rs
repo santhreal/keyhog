@@ -4,9 +4,9 @@ mod allowlist;
 pub(crate) use allowlist::load_rule_suppressor;
 mod dispatch;
 pub(crate) use dispatch::{
-    automatic_backend_recovery_allowed, canonical_source_classes, record_completed_backend_recovery,
-    record_completed_remote_autoroute_state_recovery, scan_selected_batch,
-    AutorouteMeasurementReceipt, AutorouteStateRecovery, BackendRecoveryPlan,
+    automatic_backend_recovery_allowed, canonical_source_classes,
+    record_completed_backend_recovery, record_completed_remote_autoroute_state_recovery,
+    scan_selected_batch, AutorouteMeasurementReceipt, AutorouteStateRecovery, BackendRecoveryPlan,
     COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB,
 };
 mod postprocess;
@@ -332,8 +332,7 @@ pub(crate) use dispatch::{
 };
 pub(crate) use dispatch::{
     bind_autoroute_cache_to_execution_packs, inspect_autoroute_cache,
-    load_execution_pack_generation_binding, AutorouteReadiness,
-    StagedAutorouteCache,
+    load_execution_pack_generation_binding, AutorouteReadiness, StagedAutorouteCache,
 };
 pub(crate) use streaming::{scan_streaming_source, StreamingSourceEvent};
 
@@ -981,6 +980,9 @@ fn setup_default_scan_runtime_with_rayon_policy(
         });
     }
 
+    drop(detectors);
+    run::release_allocator_arenas_after_construction();
+
     if warm {
         scan_runtime.warm();
     }
@@ -1243,8 +1245,9 @@ impl ScanOrchestrator {
                             Some(installed.pack),
                         )
                     }
-                    Err(error) if cfg!(debug_assertions)
-                        && std::env::var_os("KEYHOG_REQUIRE_EXECUTION_PACKS").is_none() =>
+                    Err(error)
+                        if cfg!(debug_assertions)
+                            && std::env::var_os("KEYHOG_REQUIRE_EXECUTION_PACKS").is_none() =>
                     {
                         tracing::warn!(
                             error = %error,
@@ -1419,7 +1422,10 @@ impl ScanOrchestrator {
             Arc::new(
                 compiled
                     .with_context(|| {
-                        format!("materializing scanner from {} detector specs", detectors.len())
+                        format!(
+                            "materializing scanner from {} detector specs",
+                            detectors.len()
+                        )
                     })?
                     .with_config(effective_config.engine_scanner_config())
                     .with_tuning_config(effective_config.scanner_tuning.clone()),
@@ -1428,12 +1434,11 @@ impl ScanOrchestrator {
 
         let signatures = collect_detector_signatures(&detectors);
         #[cfg(feature = "verify")]
-        let verifier_detectors = effective_config
-            .report
-            .verify
-            .then_some(detectors);
+        let verifier_detectors = effective_config.report.verify.then_some(detectors);
         #[cfg(not(feature = "verify"))]
         drop(detectors);
+
+        run::release_allocator_arenas_after_construction();
 
         let test_fixture_suppressions = if args.no_suppress_test_fixtures {
             crate::test_fixture_suppressions::TestFixtureSuppressions::empty()
