@@ -285,14 +285,11 @@ pub(crate) type ScannerPreprocessedText<'a> = PreprocessedText<'a>;
 /// `as_str()` returns the source with no compilation, so the Hyperscan /
 /// GPU literal-set builders that only read pattern text stay zero-cost.
 ///
-/// The compiled `Arc<Regex>` is shared across clones of the same pattern
-/// (the `cell` is `Arc`-shared) and, for the detector flavor, across all
-/// detectors with an identical pattern string via the process-wide regex
-/// cache (`compiler_compile::shared_regex`) - so the ~6-15% duplicate
-/// regexes in the corpus (`AIza...`, `xoxb-...`, JWT shapes) still compile
-/// at most once each.
-#[derive(Debug, Clone)]
-pub(crate) struct LazyRegex {
+/// Clones share one allocation containing the compiled matcher and memoized
+/// source facts. Keeping each `OnceLock` in a separate `Arc` multiplied
+/// allocation metadata and widened every retained `CompiledPattern`.
+#[derive(Debug)]
+struct LazyRegexState {
     src: Arc<str>,
     /// Detector patterns are case-insensitive + CRLF-aware + size-bounded
     /// (the `shared_regex_compile` build); homoglyph-expanded plain variants
@@ -300,29 +297,16 @@ pub(crate) struct LazyRegex {
     /// equivalent combined matcher.
     case_insensitive: bool,
     crlf: bool,
-    cell: Arc<std::sync::OnceLock<Arc<Regex>>>,
-    /// Memoized `extract_literal_prefix(src).is_some()`: a per-PATTERN
-    /// constant (it depends only on the regex SOURCE, never on the input
-    /// being scanned). The scoring hot path (`match_confidence`) needs it
-    /// as a `ConfidenceSignals.has_literal_prefix` input on EVERY surviving
-    /// candidate; computing it inline re-ran the full char-by-char prefix
-    /// parser, which allocates a `String` (and, on a `(` alternation, an
-    /// extra `chars.clone().collect::<String>()` of the whole tail), once
-    /// per match. On a dense corpus where a handful of hot patterns each
-    /// fire thousands of times, that is thousands of redundant parses +
-    /// allocations of a value that never changes. Cached in this
-    /// `Arc<OnceLock<bool>>` so it is computed AT MOST ONCE per unique
-    /// regex source (shared across `Clone`s, populated on first scoring
-    /// touch), exactly like the compiled-`Regex` cache above.
-    has_literal_prefix: Arc<std::sync::OnceLock<bool>>,
-    /// Memoized `regex_has_required_literal_run(src, MIN_DISTINCTIVE_INFIX_CHARS)`
-    /// whether every match necessarily contains a distinctive required literal
-    /// run (the terraform `…\.atlasv1\.…` infix). Such a pattern opens with a
-    /// character class (no extractable prefix) and captures the whole match (no
-    /// keyword group), so it earns neither existing anchor signal despite being
-    /// unmistakably service-specific. Pure function of the regex source; cached
-    /// like `has_literal_prefix`.
-    has_distinctive_inner_literal: Arc<std::sync::OnceLock<bool>>,
+    cell: std::sync::OnceLock<Arc<Regex>>,
+    /// Memoized `extract_literal_prefix(src).is_some()`.
+    has_literal_prefix: std::sync::OnceLock<bool>,
+    /// Memoized required distinctive-inner-literal classification.
+    has_distinctive_inner_literal: std::sync::OnceLock<bool>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct LazyRegex {
+    state: Arc<LazyRegexState>,
 }
 
 impl LazyRegex {
@@ -330,64 +314,54 @@ impl LazyRegex {
     /// source has already been validated by `compile_pattern`; the compiled
     /// form is built on first use and shared from there on.
     pub(crate) fn detector(src: impl Into<Arc<str>>) -> Self {
-        Self {
-            src: src.into(),
-            case_insensitive: true,
-            crlf: true,
-            cell: Arc::new(std::sync::OnceLock::new()),
-            has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
-            has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
-        }
+        Self::new(src, true, true, std::sync::OnceLock::new())
     }
 
     /// Test-only: a detector pattern with its compiled regex already seeded,
     /// so a test can assert `get()` hands back that exact instance.
     #[cfg(test)]
     pub(crate) fn detector_compiled(src: impl Into<Arc<str>>, compiled: Arc<Regex>) -> Self {
-        Self {
-            src: src.into(),
-            case_insensitive: true,
-            crlf: true,
-            cell: Arc::new(std::sync::OnceLock::from(compiled)),
-            has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
-            has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
-        }
+        Self::new(src, true, true, std::sync::OnceLock::from(compiled))
     }
 
     /// A generated plain pattern (a homoglyph-expanded variant) built with
     /// default regex flags. Validated by the compiler, compiled on first use.
     pub(crate) fn plain(src: impl Into<Arc<str>>) -> Self {
-        Self {
-            src: src.into(),
-            case_insensitive: false,
-            crlf: false,
-            cell: Arc::new(std::sync::OnceLock::new()),
-            has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
-            has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
-        }
+        Self::new(src, false, false, std::sync::OnceLock::new())
     }
 
     /// A case-sensitive companion pattern with the scanner's bounded CRLF
     /// configuration. Its source was validated during pack compilation and is
     /// materialized only when a primary match actually consults the relation.
     pub(crate) fn companion(src: impl Into<Arc<str>>) -> Self {
+        Self::new(src, false, true, std::sync::OnceLock::new())
+    }
+
+    fn new(
+        src: impl Into<Arc<str>>,
+        case_insensitive: bool,
+        crlf: bool,
+        cell: std::sync::OnceLock<Arc<Regex>>,
+    ) -> Self {
         Self {
-            src: src.into(),
-            case_insensitive: false,
-            crlf: true,
-            cell: Arc::new(std::sync::OnceLock::new()),
-            has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
-            has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
+            state: Arc::new(LazyRegexState {
+                src: src.into(),
+                case_insensitive,
+                crlf,
+                cell,
+                has_literal_prefix: std::sync::OnceLock::new(),
+                has_distinctive_inner_literal: std::sync::OnceLock::new(),
+            }),
         }
     }
 
     /// The regex source, without triggering compilation.
     pub(crate) fn as_str(&self) -> &str {
-        &self.src
+        &self.state.src
     }
 
     pub(crate) fn cloned_source(&self) -> Arc<str> {
-        Arc::clone(&self.src)
+        Arc::clone(&self.state.src)
     }
 
     /// Whether this pattern is anchored by a distinctive literal prefix,
@@ -408,8 +382,8 @@ impl LazyRegex {
     /// Pure function of the regex SOURCE, cached on first touch.
     #[must_use]
     pub(crate) fn has_literal_prefix(&self) -> bool {
-        *self.has_literal_prefix.get_or_init(|| {
-            !crate::compiler::compiler_prefix::extract_literal_prefixes(&self.src).is_empty()
+        *self.state.has_literal_prefix.get_or_init(|| {
+            !crate::compiler::compiler_prefix::extract_literal_prefixes(&self.state.src).is_empty()
         })
     }
 
@@ -422,9 +396,9 @@ impl LazyRegex {
     /// touch.
     #[must_use]
     pub(crate) fn has_distinctive_inner_literal(&self) -> bool {
-        *self.has_distinctive_inner_literal.get_or_init(|| {
+        *self.state.has_distinctive_inner_literal.get_or_init(|| {
             crate::compiler::compiler_prefix::regex_has_required_literal_run(
-                &self.src,
+                &self.state.src,
                 crate::compiler::compiler_prefix::MIN_DISTINCTIVE_INFIX_CHARS,
             )
         })
@@ -436,7 +410,7 @@ impl LazyRegex {
     /// equivalent combined matcher (e.g. the always-active phase-2 RegexSet
     /// prefilter) must replicate these flags exactly to stay match-equivalent.
     pub(crate) fn is_case_insensitive(&self) -> bool {
-        self.case_insensitive
+        self.state.case_insensitive
     }
 
     /// Return the compiled regex seeded during scanner construction. Test-only
@@ -445,24 +419,25 @@ impl LazyRegex {
     /// surfaced LOUDLY and fails closed to a never-matching sentinel for this one
     /// pattern instead of panicking and aborting the whole scan.
     pub(crate) fn get(&self) -> &Regex {
-        self.cell
+        self.state
+            .cell
             .get_or_init(|| {
                 // Cold-cache miss: this `LazyRegex` is compiling for the first
                 // time. Record it so the zero-recompile gate can prove that the
                 // scan hot path triggers none of these after warm-up.
                 LAZY_REGEX_COMPILE_EVENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                let built = if self.case_insensitive {
-                    crate::compiler::compiler_compile::shared_regex(&self.src)
-                } else if self.crlf {
-                    crate::compiler::compiler_compile::companion_regex(&self.src)
+                let built = if self.state.case_insensitive {
+                    crate::compiler::compiler_compile::shared_regex(&self.state.src)
+                } else if self.state.crlf {
+                    crate::compiler::compiler_compile::companion_regex(&self.state.src)
                 } else {
-                    Regex::new(&self.src).map(Arc::new)
+                    Regex::new(&self.state.src).map(Arc::new)
                 };
                 match built {
                     Ok(rx) => rx,
                     Err(error) => {
                         crate::prefilter_degrade::warn_prefilter_disabled(
-                            &format!("detector regex first-use compile ({})", self.src),
+                            &format!("detector regex first-use compile ({})", self.state.src),
                             &error,
                         );
                         never_match_sentinel()
