@@ -160,9 +160,13 @@ fn compile_automaton<'a>(
     if needles.is_empty() {
         return Ok(None);
     }
-    AhoCorasick::new(needles).map(Some).map_err(|error| {
-        format!("could not compile detector-owned {label} prefix program: {error}")
-    })
+    AhoCorasick::builder()
+        .kind(Some(aho_corasick::AhoCorasickKind::ContiguousNFA))
+        .build(needles)
+        .map(Some)
+        .map_err(|error| {
+            format!("could not compile detector-owned {label} prefix program: {error}")
+        })
 }
 
 static BUNDLED_COMPAT_POLICY: LazyLock<Arc<CompiledDecodeTransformPolicy>> = LazyLock::new(|| {
