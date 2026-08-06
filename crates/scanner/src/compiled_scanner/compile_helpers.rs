@@ -65,8 +65,6 @@ pub(super) fn build_hot_pattern_slots(
     Ok(slots)
 }
 
-#[cfg(feature = "simdsieve")]
-
 /// One-shot guard so the CUDA acquisition warning fires once per process.
 #[cfg(all(target_os = "linux", feature = "gpu"))]
 static CUDA_FALLBACK_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
