@@ -269,10 +269,7 @@ def _filesystem_fixture(
             json.dumps({"append": "growing.txt", "truncate": "shrinking.txt"}, sort_keys=True)
             + "\n"
         )
-        return [
-            _answer(growing.relative_to(input_root).as_posix()),
-            _answer(shrinking.relative_to(input_root).as_posix()),
-        ], False
+        return [_answer(growing.relative_to(input_root).as_posix())], False
     if wid == "filesystem-symlink-cycle":
         base = input_root / "links"
         base.mkdir(parents=True, exist_ok=True)

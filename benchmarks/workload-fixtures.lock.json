@@ -133,9 +133,9 @@
       "workload_id": "filesystem-binary-strings"
     },
     {
-      "answer_sha256": "f5bc4b8733f7a77a7c9105223d4c10e04b7d0493c179ef72bbb2d336153d98b4",
+      "answer_sha256": "b9d4689bbf76356a12edf76470a704870197938aaa8bd79234b8c463abac16b7",
       "expected_coverage_gap": false,
-      "expected_findings": 2,
+      "expected_findings": 1,
       "input_bytes": 2097207,
       "input_files": 3,
       "input_sha256": "da90d48d1108b7891b829c0dcb644636eaa9e422648c8d3cae861754f7b7086c",

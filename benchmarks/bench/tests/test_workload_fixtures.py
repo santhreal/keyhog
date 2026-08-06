@@ -215,7 +215,18 @@ def test_fixture_oracles_require_expected_coverage_gaps(
             }
             else 1.0
         )
-        assert materialize_fixture(workload, tmp_path, scale=scale).expected_coverage_gap is True
+        receipt = materialize_fixture(workload, tmp_path, scale=scale)
+        assert receipt.expected_coverage_gap is True
+    changing = next(
+        item for item in catalog.workloads if item.workload_id == "filesystem-changing-size"
+    )
+    changing_receipt = materialize_fixture(changing, tmp_path)
+    changing_answers = json.loads(
+        (changing_receipt.root / "answers.json").read_text(encoding="utf-8")
+    )
+    assert changing_receipt.expected_coverage_gap is False
+    assert changing_receipt.expected_findings == 1
+    assert [answer["path"] for answer in changing_answers] == ["changing/growing.txt"]
     binary = next(
         item for item in catalog.workloads if item.workload_id == "filesystem-binary-rejection"
     )
