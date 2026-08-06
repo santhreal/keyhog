@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 const MAGIC: &[u8; 8] = b"KHSIMD\0\x03";
 pub const HYPERSCAN_SIMD_PROGRAM_VERSION: u16 = 3;
 pub type SerializedHyperscanShard = std::sync::Arc<[u8]>;
+const SHARD_STREAM_CHUNK_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HyperscanPatternProgram {
@@ -610,24 +611,59 @@ fn read_shared_shard(
 ) -> Result<SerializedHyperscanShard, ExecutionPackError> {
     let expected_digest: [u8; 32] = cursor.take(32)?.try_into().expect("fixed digest");
     let bytes = cursor.bytes()?;
-    if *blake3::hash(bytes).as_bytes() != expected_digest {
-        return Err(ExecutionPackError::InvalidPack(format!(
-            "{label} shard {index} is corrupt; its content digest does not match"
-        )));
-    }
+    let mut hasher = blake3::Hasher::new();
     let shared = if let Some(shared) = interner.get(&expected_digest) {
-        if shared.as_ref() != bytes {
+        let mut exact_match = shared.len() == bytes.len();
+        for start in (0..bytes.len()).step_by(SHARD_STREAM_CHUNK_BYTES) {
+            let end = start
+                .saturating_add(SHARD_STREAM_CHUNK_BYTES)
+                .min(bytes.len());
+            let chunk = &bytes[start..end];
+            hasher.update(chunk);
+            if exact_match && &shared[start..end] != chunk {
+                exact_match = false;
+            }
+            release(chunk)?;
+        }
+        if *hasher.finalize().as_bytes() != expected_digest {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{label} shard {index} is corrupt; its content digest does not match"
+            )));
+        }
+        if !exact_match {
             return Err(ExecutionPackError::InvalidPack(format!(
                 "{label} shard {index} collides with different authenticated bytes"
             )));
         }
         std::sync::Arc::clone(shared)
     } else {
-        let shared = SerializedHyperscanShard::from(bytes);
+        let mut owned = std::sync::Arc::<[u8]>::new_uninit_slice(bytes.len());
+        let target = std::sync::Arc::get_mut(&mut owned)
+            .expect("new native shard allocation is uniquely owned");
+        for start in (0..bytes.len()).step_by(SHARD_STREAM_CHUNK_BYTES) {
+            let end = start
+                .saturating_add(SHARD_STREAM_CHUNK_BYTES)
+                .min(bytes.len());
+            let chunk = &bytes[start..end];
+            hasher.update(chunk);
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    chunk.as_ptr(),
+                    target.as_mut_ptr().add(start).cast::<u8>(),
+                    chunk.len(),
+                );
+            }
+            release(chunk)?;
+        }
+        if *hasher.finalize().as_bytes() != expected_digest {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{label} shard {index} is corrupt; its content digest does not match"
+            )));
+        }
+        let shared = unsafe { owned.assume_init() };
         interner.insert(expected_digest, std::sync::Arc::clone(&shared));
         shared
     };
-    release(bytes)?;
     Ok(shared)
 }
 

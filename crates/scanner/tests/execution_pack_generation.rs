@@ -403,9 +403,11 @@ fn native_compiler_embeds_deserializable_hyperscan_shards() {
         Ok(())
     })
     .expect("decode and release native shard fields");
+    assert!(released_lengths.iter().all(|length| *length > 0));
     assert_eq!(
-        released_lengths, expected_release_lengths,
-        "every serialized shard occurrence must release its mapped bytes immediately after decode"
+        released_lengths.iter().sum::<usize>(),
+        expected_release_lengths.iter().sum::<usize>(),
+        "every serialized shard byte must release its mapped page window immediately after decode"
     );
 
     let artifacts = native.artifacts();
