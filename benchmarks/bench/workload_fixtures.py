@@ -201,7 +201,7 @@ def _filesystem_fixture(
         size = _scaled(50 * 1024 * 1024, scale, len(CANARY_LINE))
         payload = CANARY_LINE.rstrip(b"\n")
         _write_sized(input_root / "single-line.json", size, payload)
-        return [_answer("single-line.json")], False
+        return [_answer("single-line.json")], True
     if wid == "filesystem-over-size-limit":
         size = _scaled(101 * 1024 * 1024, scale, len(CANARY_LINE))
         _write_sized(input_root / "over-limit.log", size)
@@ -210,7 +210,7 @@ def _filesystem_fixture(
         path = input_root / "rejected.elf"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"\x7fELF\x00\x00" + CANARY_LINE + b"\x00" * 1024)
-        return [], True
+        return [_answer("rejected.elf")], False
     if wid == "filesystem-no-extension":
         path = input_root / "credentials"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -250,7 +250,7 @@ def _filesystem_fixture(
         absent = input_root / "sparse" / "absent.sparse"
         with absent.open("wb") as handle:
             handle.truncate(_scaled(64 * 1024 * 1024, scale))
-        return answers, False
+        return answers, True
     if wid == "filesystem-changing-size":
         growing = input_root / "changing" / "growing.txt"
         shrinking = input_root / "changing" / "shrinking.txt"

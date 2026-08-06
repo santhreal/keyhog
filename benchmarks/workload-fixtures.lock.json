@@ -113,9 +113,9 @@
       "workload_id": "filesystem-binary-decompiler"
     },
     {
-      "answer_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
-      "expected_coverage_gap": true,
-      "expected_findings": 0,
+      "answer_sha256": "3e9bdae44b9f89fe3ef45d8c03b655e2e6b7a62c977e96fabbd9043a24b971ac",
+      "expected_coverage_gap": false,
+      "expected_findings": 1,
       "input_bytes": 1084,
       "input_files": 1,
       "input_sha256": "e8bd0164eb4db58fb6d996dc6f406c3a41e24132ce4b20a38686b4415f3576ec",
@@ -234,7 +234,7 @@
     },
     {
       "answer_sha256": "7bea8767ec901d5be3b7bcda1a269d7faea1082eb0efd8ec8a3d6b723974684a",
-      "expected_coverage_gap": false,
+      "expected_coverage_gap": true,
       "expected_findings": 1,
       "input_bytes": 52428800,
       "input_files": 1,
@@ -274,7 +274,7 @@
     },
     {
       "answer_sha256": "1ea0d1b96c40418cd1e792cf244ee4cb851341ed7396b7cb426599ca8c96e65c",
-      "expected_coverage_gap": false,
+      "expected_coverage_gap": true,
       "expected_findings": 2,
       "input_bytes": 201326592,
       "input_files": 3,
