@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use keyhog_scanner::execution_pack::{
-    CanonicalDetectorExecutionIr, DecodedDetectorExecutionIr, ExecutionPack, ExecutionPackBackend,
-    ExecutionPackPolicy, ExecutionPackSectionKind, ExecutionPackSignature, ExecutionPackSigningKey,
+    ExecutionPack, ExecutionPackBackend, ExecutionPackPolicy, ExecutionPackSignature,
+    ExecutionPackSigningKey,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -136,11 +136,6 @@ fn digest_parts(parts: &[&[u8]]) -> [u8; 32] {
     *hasher.finalize().as_bytes()
 }
 
-pub(crate) struct InstalledDetectorExecutionPack {
-    pub(crate) pack: ExecutionPack,
-    pub(crate) ir: DecodedDetectorExecutionIr,
-}
-
 pub(crate) fn load_installed_execution_pack(
     policy: ExecutionPackPolicy,
     backend: ExecutionPackBackend,
@@ -185,29 +180,13 @@ pub(crate) fn load_installed_preferred_matcher_pack(
 pub(crate) fn load_installed_detector_execution_pack_for_backend(
     policy: ExecutionPackPolicy,
     backend: ExecutionPackBackend,
-) -> Result<InstalledDetectorExecutionPack> {
-    let pack = load_installed_execution_pack(policy, backend)?;
-    let ir_bytes = pack
-        .section(ExecutionPackSectionKind::DetectorIr)
-        .context("installed execution pack has no detector IR section")?;
-    let ir = CanonicalDetectorExecutionIr::decode_runtime(ir_bytes).map_err(anyhow::Error::msg)?;
-    if ir.digest() != pack.identity().detector_digest {
-        bail!("installed detector IR identity does not match its authenticated pack");
-    }
-    Ok(InstalledDetectorExecutionPack { pack, ir })
+) -> Result<ExecutionPack> {
+    load_installed_execution_pack(policy, backend)
 }
 pub(crate) fn load_installed_preferred_detector_execution_pack(
     policy: ExecutionPackPolicy,
-) -> Result<InstalledDetectorExecutionPack> {
-    let pack = load_installed_preferred_matcher_pack(policy)?;
-    let ir_bytes = pack
-        .section(ExecutionPackSectionKind::DetectorIr)
-        .context("installed execution pack has no detector IR section")?;
-    let ir = CanonicalDetectorExecutionIr::decode_runtime(ir_bytes).map_err(anyhow::Error::msg)?;
-    if ir.digest() != pack.identity().detector_digest {
-        bail!("installed detector IR identity does not match its authenticated pack");
-    }
-    Ok(InstalledDetectorExecutionPack { pack, ir })
+) -> Result<ExecutionPack> {
+    load_installed_preferred_matcher_pack(policy)
 }
 
 pub(crate) fn load_authenticated_binding(

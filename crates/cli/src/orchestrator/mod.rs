@@ -21,7 +21,7 @@ use crate::orchestrator_config::{
     configure_threads, gpu_runtime_policy_from_args, load_effective_detector_corpus,
     parse_backend_override, resolve_scan_config, resolved_scan_config_for_scanner,
     validate_detector_mode_selection, validate_explicit_detector_path, DetectorCorpusProvenance,
-    ResolvedEngineRuntimeSettings, ResolvedScanConfig,
+    LoadedDetectorCorpus, ResolvedEngineRuntimeSettings, ResolvedScanConfig,
 };
 use crate::style;
 use anyhow::{Context, Result};
@@ -1189,7 +1189,7 @@ impl ScanOrchestrator {
             let detectors_path = auto_discover_detectors(&args.detectors)?;
             (requested_detector_mode, detectors_path)
         };
-        let (loaded_corpus, detector_execution_pack) = {
+        let (mut loaded_corpus, detector_execution_pack) = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
             if !detectors_path.exists() && requested_detector_mode.is_none() {
                 let policy = execution_pack_policy_for_args(&args);
@@ -1225,26 +1225,7 @@ impl ScanOrchestrator {
                         load_installed_preferred_detector_execution_pack(policy),
                 };
                 match installed {
-                    Ok(installed) => {
-                        let embedded_count = installed.ir.detectors().len();
-                        let detectors = installed.ir.into_detectors();
-                        (
-                            crate::orchestrator_config::LoadedDetectorCorpus {
-                                detectors,
-                                schema_version: keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
-                                provenance: DetectorCorpusProvenance {
-                                    mode: "embedded",
-                                    source: format!(
-                                        "authenticated execution pack {}",
-                                        installed.pack.path().display()
-                                    ),
-                                    embedded_count,
-                                    custom_count: 0,
-                                },
-                            },
-                            Some(installed.pack),
-                        )
-                    }
+                    Ok(pack) => (None, Some(pack)),
                     Err(error)
                         if cfg!(debug_assertions)
                             && std::env::var_os("KEYHOG_REQUIRE_EXECUTION_PACKS").is_none() =>
@@ -1254,12 +1235,14 @@ impl ScanOrchestrator {
                             "debug build has no matching installed execution pack; parsing embedded detectors for development only"
                         );
                         (
-                            load_effective_detector_corpus(
-                                &detectors_path,
-                                requested_detector_mode,
-                                !args.lockdown,
-                            )
-                            .context("loading effective detector corpus")?,
+                            Some(
+                                load_effective_detector_corpus(
+                                    &detectors_path,
+                                    requested_detector_mode,
+                                    !args.lockdown,
+                                )
+                                .context("loading effective detector corpus")?,
+                            ),
                             None,
                         )
                     }
@@ -1271,19 +1254,74 @@ impl ScanOrchestrator {
                 }
             } else {
                 (
-                    load_effective_detector_corpus(
-                        &detectors_path,
-                        requested_detector_mode,
-                        !args.lockdown,
-                    )
-                    .context("loading effective detector corpus")?,
+                    Some(
+                        load_effective_detector_corpus(
+                            &detectors_path,
+                            requested_detector_mode,
+                            !args.lockdown,
+                        )
+                        .context("loading effective detector corpus")?,
+                    ),
                     None,
                 )
             }
         };
-        let detector_corpus_schema_version = loaded_corpus.schema_version;
-        let detector_corpus_provenance = loaded_corpus.provenance;
-        let mut detectors = loaded_corpus.detectors;
+        #[cfg(feature = "verify")]
+        let verifier_enabled = effective_config.report.verify;
+        #[cfg(not(feature = "verify"))]
+        let verifier_enabled = false;
+        let schemas_required = !disabled_detectors.is_empty() || verifier_enabled;
+        if loaded_corpus.is_none() && schemas_required {
+            let pack = detector_execution_pack
+                .as_ref()
+                .expect("an installed corpus without schemas retains its execution pack");
+            let ir_bytes = pack
+                .section(keyhog_scanner::execution_pack::ExecutionPackSectionKind::DetectorIr)
+                .context("installed execution pack has no detector IR section")?;
+            let ir = keyhog_scanner::execution_pack::CanonicalDetectorExecutionIr::decode_runtime(
+                ir_bytes,
+            )
+            .map_err(anyhow::Error::msg)?;
+            if ir.digest() != pack.identity().detector_digest {
+                anyhow::bail!(
+                    "installed detector IR identity does not match its authenticated pack"
+                );
+            }
+            let embedded_count = ir.detectors().len();
+            loaded_corpus = Some(LoadedDetectorCorpus {
+                detectors: ir.into_detectors(),
+                schema_version: keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
+                provenance: DetectorCorpusProvenance {
+                    mode: "embedded",
+                    source: format!("authenticated execution pack {}", pack.path().display()),
+                    embedded_count,
+                    custom_count: 0,
+                },
+            });
+        }
+        let direct_pack_hydration = loaded_corpus.is_none();
+        let (detector_corpus_schema_version, mut detector_corpus_provenance, mut detectors) =
+            match loaded_corpus {
+                Some(loaded) => (loaded.schema_version, loaded.provenance, loaded.detectors),
+                None => {
+                    let pack = detector_execution_pack
+                        .as_ref()
+                        .expect("direct hydration retains its execution pack");
+                    (
+                        keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
+                        DetectorCorpusProvenance {
+                            mode: "embedded",
+                            source: format!(
+                                "authenticated execution pack {}",
+                                pack.path().display()
+                            ),
+                            embedded_count: 0,
+                            custom_count: 0,
+                        },
+                        Vec::new(),
+                    )
+                }
+            };
         let detector_validation_span =
             keyhog_profile::span(keyhog_profile::Stage::DetectorValidate);
 
@@ -1338,9 +1376,9 @@ impl ScanOrchestrator {
         // replace every previously calibrated profile in the multi-config
         // cache. Disabled detectors remain part of corpus identity because they
         // change the compiled pattern set and backend workload materially.
-        let detector_rules_digest =
+        let mut detector_rules_digest =
             keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
-        let detector_corpus_digest = keyhog_core::hex_encode(
+        let mut detector_corpus_digest = keyhog_core::hex_encode(
             &keyhog_core::compute_detector_corpus_digest_for_schema(
                 &detectors,
                 detector_corpus_schema_version,
@@ -1380,20 +1418,13 @@ impl ScanOrchestrator {
         // Incremental result reuse needs the fully effective spec hash: unlike
         // autoroute performance identity, a confidence-floor change can alter
         // emitted findings and must invalidate stored scan results.
-        let detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
+        let mut detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
         drop(detector_validation_span);
 
-        let detector_count = detectors.len();
-        let signatures = collect_detector_signatures(&detectors);
-        #[cfg(feature = "verify")]
-        let verifier_enabled = effective_config.report.verify;
-        #[cfg(not(feature = "verify"))]
-        let verifier_enabled = false;
-        let direct_pack_hydration =
-            disabled_detectors.is_empty() && detector_execution_pack.is_some();
-        let retain_detector_schemas = !direct_pack_hydration || verifier_enabled;
+        let mut detector_count = detectors.len();
+        let mut signatures = collect_detector_signatures(&detectors);
         let detectors: Option<Arc<[DetectorSpec]>> =
-            retain_detector_schemas.then(|| detectors.into());
+            (!direct_pack_hydration).then(|| detectors.into());
 
         let gpu_init_policy = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackSelect);
@@ -1443,6 +1474,44 @@ impl ScanOrchestrator {
                     .with_tuning_config(effective_config.scanner_tuning.clone()),
             )
         };
+
+        if direct_pack_hydration {
+            detector_count = scanner.detector_count();
+            signatures = scanner.detector_signature_sources();
+            for (id, floor) in scanner.declared_detector_min_confidence() {
+                detector_min_confidence
+                    .entry(id.to_owned())
+                    .or_insert(floor);
+            }
+            if args.precision {
+                let floor = effective_config.scanner.min_confidence;
+                for value in detector_min_confidence.values_mut() {
+                    *value = value.max(floor);
+                }
+            }
+
+            let runtime = scanner.runtime_status();
+            detector_rules_digest = keyhog_core::hex_encode(&runtime.compiled_plan_digest);
+            let pack = detector_execution_pack
+                .as_ref()
+                .expect("direct hydration retains its execution pack");
+            detector_corpus_digest = keyhog_core::hex_encode(&pack.identity().detector_digest);
+            detector_corpus_provenance.embedded_count = detector_count;
+
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(b"keyhog-effective-installed-detector-spec-v1\0");
+            hasher.update(&runtime.compiled_plan_digest);
+            hasher.update(&pack.identity().detector_digest);
+            hasher.update(&effective_config.scanner.min_confidence.to_le_bytes());
+            let mut floors: Vec<_> = detector_min_confidence.iter().collect();
+            floors.sort_unstable_by(|left, right| left.0.cmp(right.0));
+            for (id, floor) in floors {
+                hasher.update(&(id.len() as u64).to_le_bytes());
+                hasher.update(id.as_bytes());
+                hasher.update(&floor.to_le_bytes());
+            }
+            detector_spec_hash = *hasher.finalize().as_bytes();
+        }
 
         #[cfg(feature = "verify")]
         let verifier_detectors = if verifier_enabled { detectors } else { None };

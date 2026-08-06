@@ -241,7 +241,7 @@ impl CompiledScanner {
     }
 
     /// Number of loaded detectors.
-    pub(crate) fn detector_count(&self) -> usize {
+    pub fn detector_count(&self) -> usize {
         self.detector_plans.len()
     }
 

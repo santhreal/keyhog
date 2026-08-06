@@ -616,6 +616,29 @@ pub struct CompiledScanner {
     pub(crate) route_classification: Arc<phase1_admission::RouteClassificationPlan>,
 }
 
+impl CompiledScanner {
+    /// Detector and companion regex source strings used for self-scan
+    /// suppression, without reconstructing detector schemas.
+    pub fn detector_signature_sources(&self) -> std::collections::HashSet<Arc<str>> {
+        self.ac_map
+            .iter()
+            .chain(self.phase2_patterns.iter().map(|(pattern, _)| pattern))
+            .filter(|pattern| !pattern.homoglyph_variant)
+            .map(|pattern| Arc::from(pattern.regex.as_str()))
+            .chain(
+                self.detector_plans
+                    .companion_signature_sources()
+                    .map(Arc::from),
+            )
+            .collect()
+    }
+
+    /// Detector-declared confidence floors from the compiled execution plan.
+    pub fn declared_detector_min_confidence(&self) -> impl Iterator<Item = (&str, f64)> + '_ {
+        self.detector_plans.declared_min_confidence()
+    }
+}
+
 const _: () = {
     const fn assert_send_sync<T: Send + Sync>() {}
     let _ = assert_send_sync::<CompiledScanner>; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback

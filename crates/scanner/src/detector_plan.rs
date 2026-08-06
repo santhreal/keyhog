@@ -616,6 +616,21 @@ impl CompiledDetectorPlans {
         })
     }
 
+    pub(crate) fn declared_min_confidence(&self) -> impl Iterator<Item = (&str, f64)> + '_ {
+        self.by_detector_index.iter().filter_map(|plan| {
+            plan.execution
+                .min_confidence
+                .map(|floor| (plan.metadata.0.as_ref(), floor))
+        })
+    }
+
+    pub(crate) fn companion_signature_sources(&self) -> impl Iterator<Item = &str> + '_ {
+        self.by_detector_index
+            .iter()
+            .flat_map(|plan| plan.companions.iter())
+            .map(|companion| companion.regex.as_str())
+    }
+
     #[inline]
     pub(crate) fn generic_assignment(
         &self,

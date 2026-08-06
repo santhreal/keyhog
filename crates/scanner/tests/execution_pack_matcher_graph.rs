@@ -266,6 +266,32 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
         1,
         "direct hydration may own only the current framed wire row"
     );
+    assert_eq!(direct.detector_count(), detectors.len());
+    let expected_signatures: std::collections::HashSet<std::sync::Arc<str>> = detectors
+        .iter()
+        .flat_map(|detector| {
+            detector
+                .patterns
+                .iter()
+                .map(|pattern| std::sync::Arc::from(pattern.regex.as_str()))
+                .chain(
+                    detector
+                        .companions
+                        .iter()
+                        .map(|companion| std::sync::Arc::from(companion.regex.as_str())),
+                )
+        })
+        .collect();
+    assert_eq!(direct.detector_signature_sources(), expected_signatures);
+    let declared_floors: std::collections::BTreeMap<_, _> =
+        direct.declared_detector_min_confidence().collect();
+    assert_eq!(
+        declared_floors,
+        detectors
+            .iter()
+            .map(|detector| (detector.id.as_str(), detector.min_confidence.unwrap()))
+            .collect()
+    );
     let before =
         keyhog_scanner::execution_pack::matcher_sections::compile_state_builder_invocations();
     let (packed, decoded_detectors) =
