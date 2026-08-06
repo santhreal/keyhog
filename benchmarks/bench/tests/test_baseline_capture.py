@@ -866,12 +866,19 @@ def test_execution_pack_capture_binds_manifest_and_scan_metadata(
         assert kwargs["detectors"] is None
         assert baseline_capture_module.os.environ["KEYHOG_REQUIRE_EXECUTION_PACKS"] == "1"
         assert baseline_capture_module.os.environ["XDG_CACHE_HOME"] == str(tmp_path / "cache")
+        is_custom = workload.workload_id == "filesystem-mixed-encodings"
         envelope = {
             "metadata": {
-                "detector_digest": "925-runtime-detector-digest",
-                "detector_count": 902,
+                "detector_digest": (
+                    "custom-runtime-detector-digest"
+                    if is_custom
+                    else "925-runtime-detector-digest"
+                ),
+                "detector_count": 1 if is_custom else 902,
                 "resolved_scan": {
-                    "effective": {"detector_corpus_digest": "f" * 64}
+                    "effective": {
+                        "detector_corpus_digest": ("e" if is_custom else "f") * 64
+                    }
                 },
             }
         }
@@ -889,19 +896,31 @@ def test_execution_pack_capture_binds_manifest_and_scan_metadata(
         catalog_path=CATALOG_PATH, fixture_lock_path=LOCK_PATH, fixture_root=tmp_path,
         target_matrix_path=TARGET_PATH, target_id="linux-x86_64-rtx5090",
         binary=binary, backend="cpu", execution_pack_manifest=manifest_path,
-        only={"filesystem-single-tiny-file"}, host_probe=_test_host_evidence,
+        only={"filesystem-mixed-encodings", "filesystem-single-tiny-file"},
     )
     provenance = payload["runtime_provenance"]
-    assert payload["schema_version"] == 3
+    assert payload["schema_version"] == 4
     assert provenance["manifest_sha256"] == sha256_file(manifest_path)
     assert provenance["candidate_binary_sha256"] == sha256_file(binary)
-    assert provenance["scan_detector_digest"] == "925-runtime-detector-digest"
-    assert provenance["detector_count"] == 902
-    assert provenance["detector_corpus_digest"] == "f" * 64
+    assert provenance["workload_detector_provenance"] == {
+        "filesystem-mixed-encodings": {
+            "scan_detector_digest": "custom-runtime-detector-digest",
+            "detector_count": 1,
+            "detector_corpus_digest": "e" * 64,
+        },
+        "filesystem-single-tiny-file": {
+            "scan_detector_digest": "925-runtime-detector-digest",
+            "detector_count": 902,
+            "detector_corpus_digest": "f" * 64,
+        },
+    }
     validate_baseline_payload(
         payload, catalog_path=CATALOG_PATH, fixture_lock_path=LOCK_PATH,
         target_matrix_path=TARGET_PATH,
-        expected_workload_ids={"filesystem-single-tiny-file"},
+        expected_workload_ids={
+            "filesystem-mixed-encodings",
+            "filesystem-single-tiny-file",
+        },
         binary_path=binary, execution_pack_manifest_path=manifest_path,
     )
 

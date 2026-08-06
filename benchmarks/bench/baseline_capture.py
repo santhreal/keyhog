@@ -35,7 +35,8 @@ from .workload_fixtures import validate_fixture_lock
 BASELINE_SCHEMA_VERSION = 2
 SUCCESS_EXIT_CODES = frozenset({0, 1, 10, 13})
 MIN_TRIALS = 5
-PACK_BASELINE_SCHEMA_VERSION = 3
+LEGACY_PACK_BASELINE_SCHEMA_VERSION = 3
+PACK_BASELINE_SCHEMA_VERSION = 4
 _PACK_MANIFEST_FIELDS = {
     "version", "detector_digest", "target_digest", "binary_digest",
     "feature_digest", "fixture_digest", "packs",
@@ -1888,6 +1889,7 @@ def capture_baseline_catalog(
     if unknown:
         raise BaselineCaptureError(f"unknown selected baseline workloads: {unknown}")
     summaries: list[tuple[Workload, BaselineSummary]] = []
+    workload_detector_provenance: dict[str, dict[str, object]] = {}
     with _execution_pack_capture(manifest_path) as pack_observations:
         for workload in sorted(catalog.workloads, key=lambda item: item.workload_id):
             if workload.family not in selected_families:
@@ -1912,6 +1914,7 @@ def capture_baseline_catalog(
                 "verification": capture_verification_baseline,
                 "system": capture_system_baseline,
             }[workload.family]
+            observation_start = len(pack_observations) if pack_observations is not None else 0
             summaries.append((workload,
                 capture(
                     workload, binary=binary_path, detectors=detectors,
@@ -1920,6 +1923,19 @@ def capture_baseline_catalog(
                     repetitions=repetitions,
                 )
             ))
+            if pack_observations is not None:
+                observed = set(pack_observations[observation_start:])
+                if len(observed) != 1:
+                    raise BaselineCaptureError(
+                        "execution-pack detector provenance drifted within "
+                        f"{workload.workload_id}: {sorted(observed)}"
+                    )
+                detector_digest, detector_count, corpus_digest = next(iter(observed))
+                workload_detector_provenance[workload.workload_id] = {
+                    "scan_detector_digest": detector_digest,
+                    "detector_count": detector_count,
+                    "detector_corpus_digest": corpus_digest,
+                }
     if runtime_provenance is not None:
         _current_manifest_path, current_runtime = _load_execution_pack_manifest(
             manifest_path, binary_path
@@ -1928,19 +1944,9 @@ def capture_baseline_catalog(
             raise BaselineCaptureError(
                 "execution-pack manifest or candidate binary drifted during capture"
             )
-        if not pack_observations:
-            raise BaselineCaptureError("execution-pack capture emitted no detector provenance")
-        observed = set(pack_observations)
-        if len(observed) != 1:
-            raise BaselineCaptureError(
-                f"execution-pack detector provenance drifted across trials: {sorted(observed)}"
-            )
-        detector_digest, detector_count, corpus_digest = next(iter(observed))
-        runtime_provenance.update({
-            "scan_detector_digest": detector_digest,
-            "detector_count": detector_count,
-            "detector_corpus_digest": corpus_digest,
-        })
+        runtime_provenance["workload_detector_provenance"] = (
+            workload_detector_provenance
+        )
     rows=[]
     for workload,summary in summaries:
         row=summary.to_json(); row.update(workload_measurement_axes(workload)); rows.append(row)
@@ -1977,21 +1983,32 @@ def validate_baseline_payload(
 ) -> None:
     """Reject stale, partial, duplicated, or arithmetically inconsistent baselines."""
     schema_version = payload.get("schema_version")
-    if schema_version not in {BASELINE_SCHEMA_VERSION, PACK_BASELINE_SCHEMA_VERSION}:
+    if schema_version not in {
+        BASELINE_SCHEMA_VERSION,
+        LEGACY_PACK_BASELINE_SCHEMA_VERSION,
+        PACK_BASELINE_SCHEMA_VERSION,
+    }:
         raise BaselineCaptureError("baseline schema version is not supported")
     required = {
         "schema_version", "catalog_sha256", "fixture_lock_sha256",
         "target_matrix_sha256", "target_id", "host_evidence", "binary_sha256", "backend",
         "repetitions", "workloads",
     }
-    if schema_version == PACK_BASELINE_SCHEMA_VERSION:
+    if schema_version in {
+        LEGACY_PACK_BASELINE_SCHEMA_VERSION,
+        PACK_BASELINE_SCHEMA_VERSION,
+    }:
         required.add("runtime_provenance")
     if set(payload) != required:
         raise BaselineCaptureError(
             f"baseline fields differ: missing={sorted(required - set(payload))}, "
             f"extra={sorted(set(payload) - required)}"
         )
-    if schema_version == PACK_BASELINE_SCHEMA_VERSION:
+    runtime_workloads: set[str] | None = None
+    if schema_version in {
+        LEGACY_PACK_BASELINE_SCHEMA_VERSION,
+        PACK_BASELINE_SCHEMA_VERSION,
+    }:
         if binary_path is None or execution_pack_manifest_path is None:
             raise BaselineCaptureError(
                 "execution-pack baseline validation requires its binary and manifest"
@@ -2001,9 +2018,17 @@ def validate_baseline_payload(
             execution_pack_manifest_path, binary
         )
         runtime = payload["runtime_provenance"]
-        runtime_fields = set(expected_runtime) | {
+        provenance_field = (
+            "workload_detector_provenance"
+            if schema_version == PACK_BASELINE_SCHEMA_VERSION
+            else None
+        )
+        legacy_fields = {
             "scan_detector_digest", "detector_count", "detector_corpus_digest",
         }
+        runtime_fields = set(expected_runtime) | (
+            {provenance_field} if provenance_field is not None else legacy_fields
+        )
         if not isinstance(runtime, dict) or set(runtime) != runtime_fields:
             raise BaselineCaptureError("execution-pack runtime provenance fields differ")
         for field, expected in expected_runtime.items():
@@ -2011,16 +2036,32 @@ def validate_baseline_payload(
                 raise BaselineCaptureError(
                     f"execution-pack runtime provenance differs in {field}"
                 )
-        if (
-            not isinstance(runtime.get("scan_detector_digest"), str)
-            or not runtime["scan_detector_digest"]
-            or isinstance(runtime.get("detector_count"), bool)
-            or not isinstance(runtime.get("detector_count"), int)
-            or runtime["detector_count"] <= 0
-            or not isinstance(runtime.get("detector_corpus_digest"), str)
-            or not runtime["detector_corpus_digest"]
-        ):
-            raise BaselineCaptureError("execution-pack detector corpus provenance is malformed")
+        if provenance_field is None:
+            provenance_rows = {"*": {field: runtime.get(field) for field in legacy_fields}}
+        else:
+            provenance_rows = runtime.get(provenance_field)
+            if not isinstance(provenance_rows, dict):
+                raise BaselineCaptureError(
+                    "execution-pack workload detector provenance is malformed"
+                )
+            runtime_workloads = set(provenance_rows)
+        for workload_id, provenance in provenance_rows.items():
+            if (
+                not isinstance(workload_id, str)
+                or not workload_id
+                or not isinstance(provenance, dict)
+                or set(provenance) != legacy_fields
+                or not isinstance(provenance.get("scan_detector_digest"), str)
+                or not provenance["scan_detector_digest"]
+                or isinstance(provenance.get("detector_count"), bool)
+                or not isinstance(provenance.get("detector_count"), int)
+                or provenance["detector_count"] <= 0
+                or not isinstance(provenance.get("detector_corpus_digest"), str)
+                or not provenance["detector_corpus_digest"]
+            ):
+                raise BaselineCaptureError(
+                    "execution-pack detector corpus provenance is malformed"
+                )
     catalog = load_workload_catalog(catalog_path)
     lock = validate_fixture_lock(catalog_path, fixture_lock_path)
     matrix = load_target_matrix(target_matrix_path)
@@ -2097,6 +2138,12 @@ def validate_baseline_payload(
                 raise BaselineCaptureError(
                     f"baseline {workload_id} {field} does not match its trials"
                 )
+    if runtime_workloads is not None and runtime_workloads != seen:
+        raise BaselineCaptureError(
+            "execution-pack workload detector provenance coverage differs: "
+            f"missing={sorted(seen - runtime_workloads)}, "
+            f"extra={sorted(runtime_workloads - seen)}"
+        )
     if expected_workload_ids is not None and seen != expected_workload_ids:
         raise BaselineCaptureError(
             "baseline workload coverage differs: "
