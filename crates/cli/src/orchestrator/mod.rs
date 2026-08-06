@@ -1385,12 +1385,6 @@ impl ScanOrchestrator {
 
         let detector_count = detectors.len();
         let detectors: Arc<[DetectorSpec]> = detectors.into();
-        let signatures = collect_detector_signatures(&detectors);
-        #[cfg(feature = "verify")]
-        let verifier_detectors = effective_config
-            .report
-            .verify
-            .then(|| Arc::clone(&detectors));
 
         let gpu_init_policy = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackSelect);
@@ -1407,20 +1401,20 @@ impl ScanOrchestrator {
                 match detector_execution_pack.as_ref() {
                     Some(pack) => CompiledScanner::
                         compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning(
-                            detectors,
+                            Arc::clone(&detectors),
                             pack,
                             gpu_init_policy,
                             &effective_config.scanner_tuning,
                         ),
                     None => CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
-                        detectors,
+                        Arc::clone(&detectors),
                         gpu_init_policy,
                         &effective_config.scanner_tuning,
                     ),
                 }
             } else {
                 CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
-                    detectors,
+                    Arc::clone(&detectors),
                     gpu_init_policy,
                     &effective_config.scanner_tuning,
                 )
@@ -1428,12 +1422,21 @@ impl ScanOrchestrator {
             Arc::new(
                 compiled
                     .with_context(|| {
-                        format!("materializing scanner from {detector_count} detector specs")
+                        format!(
+                            "materializing scanner from {} detector specs",
+                            detectors.len()
+                        )
                     })?
                     .with_config(effective_config.engine_scanner_config())
                     .with_tuning_config(effective_config.scanner_tuning.clone()),
             )
         };
+
+        let signatures = collect_detector_signatures(&detectors);
+        #[cfg(feature = "verify")]
+        let verifier_detectors = effective_config.report.verify.then_some(detectors);
+        #[cfg(not(feature = "verify"))]
+        drop(detectors);
 
         run::release_allocator_arenas_after_construction();
 
