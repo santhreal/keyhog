@@ -431,6 +431,14 @@ impl CompiledScanner {
 }
 
 pub struct CompiledScanner {
+    /// Versioned projection of the canonical validated scan-execution hash.
+    /// Autoroute and runtime receipts consume this stored identity so every
+    /// execution-affecting detector policy change invalidates stale evidence.
+    pub(crate) detector_digest: u64,
+    /// Complete BLAKE3 identity for the compiled detector and decoder execution plan.
+    pub(crate) compiled_plan_digest: [u8; 32],
+    pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,
+    pub(crate) ac: Option<AhoCorasick>,
     /// Exact selected route or the temporary all-peer calibration census.
     pub(crate) backend_state: ScannerBackendState,
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,

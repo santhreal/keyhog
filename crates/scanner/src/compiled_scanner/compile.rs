@@ -82,8 +82,8 @@ fn selected_gpu_peer(backend: crate::hw_probe::ScanBackend) -> SelectedGpuPeer {
         }
         crate::hw_probe::ScanBackend::GpuWgpu => match crate::gpu::gpu_adapter_probe() {
             Some(probe) => peer.mark_available(
-                probe.device_identity,
-                Some(probe.runtime_identity),
+                probe.device_identity.clone(),
+                Some(probe.runtime_identity.clone()),
                 probe.is_software,
             ),
             None => peer.mark_unavailable("WGPU adapter census found no adapters".to_string()),
