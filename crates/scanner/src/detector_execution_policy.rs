@@ -6,36 +6,65 @@
 
 use keyhog_core::{DetectorSpec, Severity};
 
+// Small detector vocabularies are cheaper as flat bytes than as one retained automaton each.
+const LINEAR_KEYWORD_LIMIT: usize = 8;
+
+#[derive(Debug)]
+struct FlatKeywords {
+    bytes: Box<[u8]>,
+    ends: Box<[u32]>,
+}
+
+impl FlatKeywords {
+    fn compile(detector_id: &str, keywords: &[String]) -> Result<Self, String> {
+        let byte_count = keywords.iter().try_fold(0usize, |total, keyword| {
+            total.checked_add(keyword.len()).ok_or_else(|| {
+                format!("detector {detector_id:?} keyword bytes exceed addressable memory")
+            })
+        })?;
+        if byte_count > u32::MAX as usize {
+            return Err(format!(
+                "detector {detector_id:?} keyword bytes exceed the compact u32 index"
+            ));
+        }
+
+        let mut bytes = Vec::with_capacity(byte_count);
+        let mut ends = Vec::with_capacity(keywords.len());
+        for keyword in keywords {
+            bytes.extend_from_slice(keyword.as_bytes());
+            ends.push(bytes.len() as u32);
+        }
+        Ok(Self {
+            bytes: bytes.into_boxed_slice(),
+            ends: ends.into_boxed_slice(),
+        })
+    }
+
+    #[inline]
+    fn is_match(&self, haystack: &[u8]) -> bool {
+        let mut start = 0usize;
+        for &end in &self.ends {
+            let end = end as usize;
+            if memchr::memmem::find(haystack, &self.bytes[start..end]).is_some() {
+                return true;
+            }
+            start = end;
+        }
+        false
+    }
+}
+
 #[derive(Debug)]
 enum CompiledDetectorKeywordMatcher {
     None,
     One(Box<[u8]>),
-    Multiple(aho_corasick::AhoCorasick),
+    Few(FlatKeywords),
+    Many(aho_corasick::AhoCorasick),
 }
 
 impl CompiledDetectorKeywordMatcher {
     fn compile(detector: &DetectorSpec) -> Result<Self, String> {
-        if let Some(empty_index) = detector.keywords.iter().position(String::is_empty) {
-            return Err(format!(
-                "detector {:?} keyword {empty_index} is empty; remove it or declare a non-empty detector-owned context literal",
-                detector.id
-            ));
-        }
-        match detector.keywords.as_slice() {
-            [] => Ok(Self::None),
-            [keyword] => Ok(Self::One(keyword.as_bytes().into())),
-            keywords => aho_corasick::AhoCorasickBuilder::new()
-                // A compact NFA avoids hundreds of per-detector dense tables while replacing K full-buffer scans.
-                .kind(Some(aho_corasick::AhoCorasickKind::ContiguousNFA))
-                .build(keywords)
-                .map(Self::Multiple)
-                .map_err(|error| {
-                    format!(
-                        "detector {:?} keyword matcher could not compile: {error}",
-                        detector.id
-                    )
-                }),
-        }
+        Self::compile_parts(detector.id.as_str(), &detector.keywords)
     }
 
     fn compile_parts(detector_id: &str, keywords: &[String]) -> Result<Self, String> {
@@ -47,10 +76,13 @@ impl CompiledDetectorKeywordMatcher {
         match keywords {
             [] => Ok(Self::None),
             [keyword] => Ok(Self::One(keyword.as_bytes().into())),
+            keywords if keywords.len() <= LINEAR_KEYWORD_LIMIT => {
+                FlatKeywords::compile(detector_id, keywords).map(Self::Few)
+            }
             keywords => aho_corasick::AhoCorasickBuilder::new()
                 .kind(Some(aho_corasick::AhoCorasickKind::ContiguousNFA))
                 .build(keywords)
-                .map(Self::Multiple)
+                .map(Self::Many)
                 .map_err(|error| {
                     format!("detector {detector_id:?} keyword matcher could not compile: {error}")
                 }),
@@ -62,7 +94,8 @@ impl CompiledDetectorKeywordMatcher {
         match self {
             Self::None => false,
             Self::One(keyword) => memchr::memmem::find(haystack, keyword).is_some(),
-            Self::Multiple(matcher) => matcher.is_match(haystack),
+            Self::Few(keywords) => keywords.is_match(haystack),
+            Self::Many(matcher) => matcher.is_match(haystack),
         }
     }
 }
