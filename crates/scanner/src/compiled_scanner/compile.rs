@@ -650,7 +650,7 @@ impl CompiledScanner {
                         }
                         crate::suppression::WeakAnchorBase::Never => false,
                     };
-                    (has_weak_pattern && detector_plans.get(index).entropy_floor.is_none())
+                    (has_weak_pattern && detector_plans.entropy_floor(index).is_none())
                         .then_some(detector.id.as_str())
                 })
                 .collect::<Vec<_>>();

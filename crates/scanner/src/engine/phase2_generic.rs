@@ -238,7 +238,7 @@ impl CompiledScanner {
                     );
                     continue;
                 }
-                let Some(owning_policy) = detector_plan.entropy.as_ref() else {
+                let Some(owning_policy) = self.detector_plans.entropy(owning_detector_index) else {
                     tracing::error!(
                     detector_id = metadata.0.as_ref(),
                     "generic assignment owner has no compiled entropy policy; dropping candidate"
@@ -370,13 +370,17 @@ impl CompiledScanner {
                     continue;
                 }
 
-                if let Some(stage_id) = detector_plan.suppression.as_ref().and_then(|policy| {
-                    policy.full_stage(
-                        chunk.metadata.path.as_deref(),
-                        Some(&chunk.metadata.source_type),
-                        value,
-                    )
-                }) {
+                if let Some(stage_id) = self
+                    .detector_plans
+                    .suppression(owning_detector_index)
+                    .and_then(|policy| {
+                        policy.full_stage(
+                            chunk.metadata.path.as_deref(),
+                            Some(&chunk.metadata.source_type),
+                            value,
+                        )
+                    })
+                {
                     crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
                         value,

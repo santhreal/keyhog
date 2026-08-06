@@ -40,7 +40,7 @@ impl<'a> ActiveDetectorPolicy<'a> {
         keyword: &str,
     ) -> Option<&'a crate::entropy::policy::CompiledEntropyPolicy> {
         active_policy_detector_index(self.index, keyword)
-            .and_then(|index| self.detector_plans.get(index).entropy.as_ref())
+            .and_then(|index| self.detector_plans.entropy(index))
     }
 
     fn compiled_for_role(
@@ -56,7 +56,7 @@ impl<'a> ActiveDetectorPolicy<'a> {
                 self.index.unclaimed_keyword_owner_index()
             }
         }?;
-        self.detector_plans.get(index).entropy.as_ref()
+        self.detector_plans.entropy(index)
     }
 
     fn key_material_for_keyword(

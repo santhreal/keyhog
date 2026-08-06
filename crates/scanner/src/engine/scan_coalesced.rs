@@ -474,14 +474,14 @@ impl CompiledScanner {
             .isolated_bare_owner_index();
         #[cfg(feature = "entropy")]
         let isolated_bare_policy = isolated_bare_owner_index
-            .and_then(|index| self.detector_plans.get(index).entropy.as_ref())
+            .and_then(|index| self.detector_plans.entropy(index))
             .copied();
         #[cfg(feature = "entropy")]
         let keyword_free_min_len = self
             .detector_plans
             .generic_ownership()
             .keyword_free_owner_index()
-            .and_then(|index| self.detector_plans.get(index).entropy.as_ref())
+            .and_then(|index| self.detector_plans.entropy(index))
             .and_then(|policy| {
                 let sensitive_path = _chunk
                     .metadata

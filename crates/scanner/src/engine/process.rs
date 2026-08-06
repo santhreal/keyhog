@@ -86,6 +86,10 @@ impl CompiledScanner {
             .unwrap_or_else(|| line_index.line_number_for_offset(credential_start));
         let execution_policy = &detector_plan.execution;
         let match_confidence = self.detector_plans.match_confidence(entry.detector_index);
+        let credential_shape = self.detector_plans.credential_shape(entry.detector_index);
+        let suppression = self.detector_plans.suppression(entry.detector_index);
+        let entropy_floor = self.detector_plans.entropy_floor(entry.detector_index);
+        let entropy_policy = self.detector_plans.entropy(entry.detector_index);
         let is_generic = execution_policy.is_generic;
         let whole_value = is_generic.then(|| {
             let source_start =
@@ -131,7 +135,7 @@ impl CompiledScanner {
         let process_signals = crate::adjudicate::ProcessCandidateSignals::from_match(
             apply_generic_candidate_gates,
             execution_policy.length,
-            detector_plan.credential_shape.as_ref(),
+            credential_shape,
             match_confidence.post_match().degenerate_run_min_length,
             credential,
             whole_value_len,
@@ -218,7 +222,7 @@ impl CompiledScanner {
         let allow_validated_binary_credential = !is_generic
             && !weak_anchor
             && !structural_password_slot
-            && (detector_plan.credential_shape.is_some()
+            && (credential_shape.is_some()
                 || crate::suppression::binary_match_is_lexically_isolated(
                     data,
                     credential_start,
@@ -229,7 +233,7 @@ impl CompiledScanner {
             chunk.metadata.path.as_deref(),
             inferred_context,
             Some(chunk.metadata.source_type.as_ref()),
-            detector_plan.suppression.as_ref(),
+            suppression,
             !is_generic,
             weak_anchor,
             structural_password_slot,
@@ -280,7 +284,7 @@ impl CompiledScanner {
         let is_weakly_anchored = weak_anchor;
         let effective_entropy_floor = (is_generic || is_weakly_anchored)
             .then(|| {
-                detector_plan.entropy_floor.as_ref().map(|policy| {
+                entropy_floor.map(|policy| {
                     policy.effective_floor(credential.len(), self.config.entropy_threshold)
                 })
             })
@@ -310,7 +314,7 @@ impl CompiledScanner {
         // after the cheaper shape and entropy checks.
         #[cfg(feature = "entropy")]
         let bpe_bound = if is_generic {
-            detector_plan.entropy.as_ref().and_then(|policy| {
+            entropy_policy.and_then(|policy| {
                 policy.bpe_bound(self.config.entropy_bpe_max_bytes_per_token_override)
             })
         } else {

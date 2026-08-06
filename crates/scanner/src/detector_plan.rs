@@ -386,15 +386,30 @@ pub(crate) struct CompiledDetectorPlan {
     pub(crate) execution: crate::detector_execution_policy::CompiledDetectorExecutionPolicy,
     match_confidence_index: u16,
     pub(crate) key_material: crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
-    pub(crate) entropy_floor: Option<crate::entropy::policy::CompiledEntropyFloorPolicy>,
-    pub(crate) entropy: Option<crate::entropy::policy::CompiledEntropyPolicy>,
-    pub(crate) credential_shape: Option<crate::credential_shapes::CredentialShapeRule>,
-    pub(crate) suppression: Option<crate::suppression::DetectorSuppressionPolicy>,
+    sparse_policy_index: Option<std::num::NonZeroU16>,
     pub(crate) validators: crate::checksum::CompiledDetectorValidators,
     pub(crate) weak_anchor_base: crate::suppression::WeakAnchorBase,
     pub(crate) companions: Box<[crate::types::CompiledCompanion]>,
     #[cfg(feature = "ml")]
     pub(crate) ml: crate::detector_ml_policy::CompiledDetectorMlPolicy,
+}
+
+#[derive(Debug)]
+struct CompiledSparseDetectorPolicies {
+    entropy_floor: Option<crate::entropy::policy::CompiledEntropyFloorPolicy>,
+    entropy: Option<crate::entropy::policy::CompiledEntropyPolicy>,
+    credential_shape: Option<crate::credential_shapes::CredentialShapeRule>,
+    suppression: Option<crate::suppression::DetectorSuppressionPolicy>,
+}
+
+impl CompiledSparseDetectorPolicies {
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.entropy_floor.is_none()
+            && self.entropy.is_none()
+            && self.credential_shape.is_none()
+            && self.suppression.is_none()
+    }
 }
 
 impl CompiledDetectorPlan {
@@ -431,10 +446,37 @@ fn intern_confidence_policy(
     Ok(index)
 }
 
+fn store_sparse_policies(
+    policies: &mut Vec<CompiledSparseDetectorPolicies>,
+    policy: CompiledSparseDetectorPolicies,
+) -> Result<Option<std::num::NonZeroU16>, String> {
+    if policy.is_empty() {
+        return Ok(None);
+    }
+    let one_based = policies
+        .len()
+        .checked_add(1)
+        .and_then(|index| u16::try_from(index).ok())
+        .and_then(std::num::NonZeroU16::new)
+        .ok_or_else(|| "compiled sparse detector policy count exceeds u16".to_string())?;
+    policies.push(policy);
+    Ok(Some(one_based))
+}
+
+#[inline]
+fn sparse_policy_for<'a>(
+    policies: &'a [CompiledSparseDetectorPolicies],
+    plan: &CompiledDetectorPlan,
+) -> Option<&'a CompiledSparseDetectorPolicies> {
+    let index = usize::from(plan.sparse_policy_index?.get()) - 1;
+    policies.get(index)
+}
+
 #[derive(Debug)]
 pub(crate) struct CompiledDetectorPlans {
     by_detector_index: Box<[CompiledDetectorPlan]>,
     confidence_policies: Box<[crate::confidence::policy::CompiledMatchConfidencePolicy]>,
+    sparse_policies: Box<[CompiledSparseDetectorPolicies]>,
     resolution: DetectorResolutionIndex,
     detector_relations: CompiledDetectorRelationIndex,
     validator_index: crate::checksum::CompiledValidatorIndex,
@@ -451,6 +493,7 @@ pub(crate) struct StreamingCompiledDetectorPlansBuilder {
     by_detector_index: Vec<CompiledDetectorPlan>,
     summaries: Vec<StreamingDetectorPlanSummary>,
     confidence_policies: Vec<crate::confidence::policy::CompiledMatchConfidencePolicy>,
+    sparse_policies: Vec<CompiledSparseDetectorPolicies>,
 }
 
 impl StreamingCompiledDetectorPlansBuilder {
@@ -459,6 +502,7 @@ impl StreamingCompiledDetectorPlansBuilder {
             by_detector_index: Vec::with_capacity(detector_count),
             summaries: Vec::with_capacity(detector_count),
             confidence_policies: Vec::with_capacity(3),
+            sparse_policies: Vec::new(),
         }
     }
 
@@ -475,8 +519,13 @@ impl StreamingCompiledDetectorPlansBuilder {
                 record.id
             ));
         }
-        let plan =
-            hydrate_detector_plan(&record, companions, interner, &mut self.confidence_policies)?;
+        let plan = hydrate_detector_plan(
+            &record,
+            companions,
+            interner,
+            &mut self.confidence_policies,
+            &mut self.sparse_policies,
+        )?;
         let has_weak_pattern = match plan.weak_anchor_base {
             crate::suppression::WeakAnchorBase::Always => true,
             crate::suppression::WeakAnchorBase::PerPattern => {
@@ -484,7 +533,11 @@ impl StreamingCompiledDetectorPlansBuilder {
             }
             crate::suppression::WeakAnchorBase::Never => false,
         };
-        if has_weak_pattern && plan.entropy_floor.is_none() {
+        if has_weak_pattern
+            && sparse_policy_for(&self.sparse_policies, &plan)
+                .and_then(|policy| policy.entropy_floor.as_ref())
+                .is_none()
+        {
             return Err(format!(
                 "weak-anchor detector omits detector-local entropy_high/entropy_floor policy: {}",
                 record.id
@@ -504,6 +557,7 @@ impl StreamingCompiledDetectorPlansBuilder {
         let by_detector_index = self.by_detector_index.into_boxed_slice();
         let summaries = self.summaries;
         let confidence_policies = self.confidence_policies.into_boxed_slice();
+        let sparse_policies = self.sparse_policies.into_boxed_slice();
         let generic_assignment = by_detector_index
             .iter()
             .any(|plan| plan.execution.is_generic)
@@ -542,6 +596,7 @@ impl StreamingCompiledDetectorPlansBuilder {
         Ok(CompiledDetectorPlans {
             by_detector_index,
             confidence_policies,
+            sparse_policies,
             resolution,
             detector_relations,
             validator_index,
@@ -583,6 +638,7 @@ impl CompiledDetectorPlans {
             ));
         }
         let mut confidence_policies = Vec::with_capacity(3);
+        let mut sparse_policies = Vec::new();
         let mut by_detector_index = Vec::with_capacity(detectors.len());
         for (detector, companions) in detectors.iter().zip(companions) {
             by_detector_index.push(compile_detector_plan(
@@ -590,6 +646,7 @@ impl CompiledDetectorPlans {
                 companions,
                 interner,
                 &mut confidence_policies,
+                &mut sparse_policies,
             )?);
         }
         let by_detector_index = by_detector_index.into_boxed_slice();
@@ -630,6 +687,7 @@ impl CompiledDetectorPlans {
         Ok(Self {
             by_detector_index,
             confidence_policies: confidence_policies.into_boxed_slice(),
+            sparse_policies: sparse_policies.into_boxed_slice(),
             resolution,
             detector_relations,
             validator_index,
@@ -718,6 +776,48 @@ impl CompiledDetectorPlans {
     ) -> &crate::confidence::policy::CompiledMatchConfidencePolicy {
         let policy_index = self.by_detector_index[detector_index].match_confidence_index;
         &self.confidence_policies[usize::from(policy_index)]
+    }
+
+    #[inline]
+    fn sparse_policy(&self, detector_index: usize) -> Option<&CompiledSparseDetectorPolicies> {
+        sparse_policy_for(
+            &self.sparse_policies,
+            &self.by_detector_index[detector_index],
+        )
+    }
+
+    #[inline]
+    pub(crate) fn entropy_floor(
+        &self,
+        detector_index: usize,
+    ) -> Option<&crate::entropy::policy::CompiledEntropyFloorPolicy> {
+        self.sparse_policy(detector_index)?.entropy_floor.as_ref()
+    }
+
+    #[inline]
+    pub(crate) fn entropy(
+        &self,
+        detector_index: usize,
+    ) -> Option<&crate::entropy::policy::CompiledEntropyPolicy> {
+        self.sparse_policy(detector_index)?.entropy.as_ref()
+    }
+
+    #[inline]
+    pub(crate) fn credential_shape(
+        &self,
+        detector_index: usize,
+    ) -> Option<&crate::credential_shapes::CredentialShapeRule> {
+        self.sparse_policy(detector_index)?
+            .credential_shape
+            .as_ref()
+    }
+
+    #[inline]
+    pub(crate) fn suppression(
+        &self,
+        detector_index: usize,
+    ) -> Option<&crate::suppression::DetectorSuppressionPolicy> {
+        self.sparse_policy(detector_index)?.suppression.as_ref()
     }
 
     pub(crate) fn find_by_id(&self, detector_id: &str) -> Option<&CompiledDetectorPlan> {
@@ -885,11 +985,21 @@ fn compile_detector_plan(
     companions: Vec<crate::types::CompiledCompanion>,
     interner: &crate::static_intern::StaticInterner,
     confidence_policies: &mut Vec<crate::confidence::policy::CompiledMatchConfidencePolicy>,
+    sparse_policies: &mut Vec<CompiledSparseDetectorPolicies>,
 ) -> Result<CompiledDetectorPlan, String> {
     let execution =
         crate::detector_execution_policy::CompiledDetectorExecutionPolicy::compile(detector)?;
     let entropy =
         crate::entropy::policy::compile_entropy_policy_with_length(detector, execution.length)?;
+    let sparse_policy_index = store_sparse_policies(
+        sparse_policies,
+        CompiledSparseDetectorPolicies {
+            entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::compile(detector)?,
+            entropy,
+            credential_shape: crate::credential_shapes::compile_detector_shape_rule(detector)?,
+            suppression: crate::suppression::DetectorSuppressionPolicy::compile(detector)?,
+        },
+    )?;
     Ok(CompiledDetectorPlan {
         metadata: compile_metadata(
             interner,
@@ -922,10 +1032,7 @@ fn compile_detector_plan(
             crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile(
                 detector,
             )?,
-        entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::compile(detector)?,
-        entropy,
-        credential_shape: crate::credential_shapes::compile_detector_shape_rule(detector)?,
-        suppression: crate::suppression::DetectorSuppressionPolicy::compile(detector)?,
+        sparse_policy_index,
         validators: crate::checksum::CompiledDetectorValidators::compile(detector)?,
         weak_anchor_base: crate::suppression::detector_weak_anchor_base(detector),
         companions: companions.into_boxed_slice(),
@@ -939,6 +1046,7 @@ fn hydrate_detector_plan(
     companions: Vec<crate::types::CompiledCompanion>,
     interner: &crate::static_intern::StaticInterner,
     confidence_policies: &mut Vec<crate::confidence::policy::CompiledMatchConfidencePolicy>,
+    sparse_policies: &mut Vec<CompiledSparseDetectorPolicies>,
 ) -> Result<CompiledDetectorPlan, String> {
     let execution = crate::detector_execution_policy::CompiledDetectorExecutionPolicy::hydrate(
         &detector.id,
@@ -953,6 +1061,15 @@ fn hydrate_detector_plan(
     )?;
     let entropy =
         crate::entropy::policy::hydrate_entropy_policy_with_length(detector, execution.length)?;
+    let sparse_policy_index = store_sparse_policies(
+        sparse_policies,
+        CompiledSparseDetectorPolicies {
+            entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::hydrate(detector)?,
+            entropy,
+            credential_shape: crate::credential_shapes::hydrate_detector_shape_rule(detector)?,
+            suppression: crate::suppression::DetectorSuppressionPolicy::hydrate(detector)?,
+        },
+    )?;
     let weak_anchor_base = if detector.weak_anchor {
         crate::suppression::WeakAnchorBase::Always
     } else if detector.patterns.iter().any(|pattern| pattern.weak_anchor) {
@@ -999,10 +1116,7 @@ fn hydrate_detector_plan(
                 &detector.decoded_hex_key_material_lengths,
                 &detector.canonical_hex_key_material,
             )?,
-        entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::hydrate(detector)?,
-        entropy,
-        credential_shape: crate::credential_shapes::hydrate_detector_shape_rule(detector)?,
-        suppression: crate::suppression::DetectorSuppressionPolicy::hydrate(detector)?,
+        sparse_policy_index,
         validators: crate::checksum::CompiledDetectorValidators::hydrate(detector)?,
         weak_anchor_base,
         companions: companions.into_boxed_slice(),

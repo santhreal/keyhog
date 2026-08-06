@@ -90,9 +90,7 @@ fn entropy_generation_rejects_above_max_before_scoring() {
         .expect("generic API-key detector");
     let plans = super::compiled_detector_plans(detectors);
     let policy = *plans
-        .get(detector_index)
-        .entropy
-        .as_ref()
+        .entropy(detector_index)
         .expect("compiled entropy policy");
     let context = crate::entropy::keywords::KeywordContext {
         keyword: "api_key".to_string(),

@@ -130,9 +130,7 @@ impl CompiledScanner {
         };
         let Some(entropy_floor) = self
             .detector_plans
-            .get(floor_detector_index)
-            .entropy_floor
-            .as_ref()
+            .entropy_floor(floor_detector_index)
             .map(|policy| policy.effective_floor(value.len(), self.config.entropy_threshold))
         else {
             tracing::error!(

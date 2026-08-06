@@ -108,17 +108,20 @@ fn unified_plan_preserves_every_detector_local_compilation_owner() {
                 metadata.service.as_str(),
             ))
         );
-        assert_eq!(plan.entropy.is_some(), detector.owns_entropy_policy());
         assert_eq!(
-            plan.entropy_floor.is_some(),
+            plans.entropy(index).is_some(),
+            detector.owns_entropy_policy()
+        );
+        assert_eq!(
+            plans.entropy_floor(index).is_some(),
             !detector.entropy_floor.is_empty()
         );
         assert_eq!(
-            plan.credential_shape.is_some(),
+            plans.credential_shape(index).is_some(),
             detector.credential_shape.is_some()
         );
         assert_eq!(
-            plan.suppression.is_some(),
+            plans.suppression(index).is_some(),
             !detector.allowlist_paths.is_empty()
                 || !detector.allowlist_values.is_empty()
                 || !detector.stopwords.is_empty()

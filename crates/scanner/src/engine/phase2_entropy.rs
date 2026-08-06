@@ -19,7 +19,7 @@ impl CompiledScanner {
         self.detector_plans
             .generic_ownership()
             .keyword_free_owner_index()
-            .and_then(|index| self.detector_plans.get(index).entropy.as_ref())
+            .and_then(|index| self.detector_plans.entropy(index))
             .map(|policy| {
                 if sensitive_path {
                     policy.sensitive_path_entropy_very_high
@@ -80,7 +80,7 @@ impl CompiledScanner {
             .detector_plans
             .generic_ownership()
             .isolated_bare_owner_index()
-            .and_then(|index| self.detector_plans.get(index).entropy.as_ref());
+            .and_then(|index| self.detector_plans.entropy(index));
         let isolated_bare_candidate = !path_entropy_appropriate
             && generic_keyword_secret_policy.is_some_and(|policy| {
                 crate::entropy::scanner::has_isolated_bare_secret_candidate_indexed(
@@ -225,7 +225,7 @@ impl CompiledScanner {
             let detector_plan = self.detector_plans.get(policy_detector_index);
             let match_confidence = self.detector_plans.match_confidence(policy_detector_index);
             let execution_policy = &detector_plan.execution;
-            let Some(compiled_policy) = detector_plan.entropy.as_ref() else {
+            let Some(compiled_policy) = self.detector_plans.entropy(policy_detector_index) else {
                 tracing::error!(
                     target: "keyhog::detection",
                     keyword = %entropy_match.keyword,
