@@ -406,12 +406,13 @@ pub(crate) struct Phase2AlwaysActivePrefilter {
     pub(crate) portable_anchor_residual: OnceLock<PortablePrefilter>,
     /// Portable batches for the anchor plus plain-localizer residual scope.
     pub(crate) portable_localized_residual: OnceLock<PortablePrefilter>,
-    /// SWE-101 combined no-candidate gate, the ONE fast combined prefilter that
-    /// gates the expensive per-pattern marking. See [`CombinedNoCandidateGate`].
-    /// Lazily initialized so scanner construction stores only validated routing
-    /// indices; a scan that disables the gate or never reaches phase-2 does not
-    /// compile its Aho-Corasick state.
+    /// SWE-101 combined no-candidate gates for the full, anchor-residual, and
+    /// localized-residual scopes. Each is lazy because many scans need only one
+    /// scope; compiling the full-corpus automaton for a small residual scope
+    /// added tens of milliseconds to every cold scan.
     pub(crate) combined_gate: OnceLock<Option<CombinedNoCandidateGate>>,
+    pub(crate) combined_gate_anchor_residual: OnceLock<Option<CombinedNoCandidateGate>>,
+    pub(crate) combined_gate_localized_residual: OnceLock<Option<CombinedNoCandidateGate>>,
     /// Lazy Hyperscan engine for the full legacy/admission scope.
     #[cfg(feature = "simd")]
     pub(crate) hs: OnceLock<Option<Phase2HsEngine>>,

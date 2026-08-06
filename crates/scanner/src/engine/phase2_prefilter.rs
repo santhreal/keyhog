@@ -101,6 +101,8 @@ impl Phase2AlwaysActivePrefilter {
             portable_anchor_residual: std::sync::OnceLock::new(),
             portable_localized_residual: std::sync::OnceLock::new(),
             combined_gate: std::sync::OnceLock::new(),
+            combined_gate_anchor_residual: std::sync::OnceLock::new(),
+            combined_gate_localized_residual: std::sync::OnceLock::new(),
             #[cfg(feature = "simd")]
             hs: std::sync::OnceLock::new(),
             #[cfg(feature = "simd")]
@@ -185,11 +187,14 @@ impl Phase2AlwaysActivePrefilter {
     fn combined_gate<'a>(
         &'a self,
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        scope: PrefilterScope,
     ) -> Option<&'a CombinedNoCandidateGate> {
-        self.combined_gate
-            .get_or_init(|| {
-                Self::build_combined_gate(phase2_patterns, &self.valid_always_active_indices)
-            })
+        let slot = match scope {
+            PrefilterScope::Full => &self.combined_gate,
+            PrefilterScope::AnchorResidual => &self.combined_gate_anchor_residual,
+            PrefilterScope::LocalizedResidual => &self.combined_gate_localized_residual,
+        };
+        slot.get_or_init(|| Self::build_combined_gate(phase2_patterns, self.indices_for(scope)))
             .as_ref()
     }
 
@@ -768,8 +773,18 @@ impl Phase2AlwaysActivePrefilter {
             allow_hyperscan,
             DispatchConfig::from_tuning(tuning),
         );
+        let scope_indices = self.indices_for(plan.scope());
+        if scope_indices.is_empty()
+            || (plan.skip_homoglyph()
+                && scope_indices
+                    .iter()
+                    .all(|&index| phase2_patterns[index].0.homoglyph_variant))
+        {
+            record_mark_gate_skip();
+            return;
+        }
         let combined_gate = if tuning.no_candidate_gate {
-            self.combined_gate(phase2_patterns)
+            self.combined_gate(phase2_patterns, plan.scope())
         } else {
             None
         };
@@ -777,12 +792,7 @@ impl Phase2AlwaysActivePrefilter {
             combined_gate_decision(plan.chunk(), tuning.no_candidate_gate, combined_gate),
             combined_gate,
         ) {
-            gate.mark_non_anchorable(
-                match_text,
-                scratch,
-                self.indices_for(plan.scope()),
-                plan.skip_homoglyph(),
-            );
+            gate.mark_non_anchorable(match_text, scratch, scope_indices, plan.skip_homoglyph());
             record_mark_gate_skip();
             return;
         }
@@ -890,7 +900,7 @@ impl Phase2AlwaysActivePrefilter {
             DispatchConfig::from_tuning(tuning),
         );
         let combined_gate = if tuning.no_candidate_gate {
-            self.combined_gate(phase2_patterns)
+            self.combined_gate(phase2_patterns, plan.scope())
         } else {
             None
         };
