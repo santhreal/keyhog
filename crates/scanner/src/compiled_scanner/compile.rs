@@ -4,6 +4,11 @@ use super::compile_helpers::build_hot_pattern_slots;
 use super::compile_helpers::surface_cuda_acquisition_failure;
 use super::*;
 use crate::compiler::compiler_build::CompileState;
+#[cfg(feature = "simd")]
+type PackedSimdProgram = crate::execution_pack::HyperscanSimdExecutionProgram;
+#[cfg(not(feature = "simd"))]
+type PackedSimdProgram = ();
+
 
 impl CompiledScanner {
     /// Compile the deterministic scalar library route. Hardware autoroute is an
@@ -53,7 +58,7 @@ impl CompiledScanner {
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
     ) -> Result<Self> {
-        Self::compile_shared_with_state_source(detectors, gpu_policy, tuning_config, None)
+        Self::compile_shared_with_state_source(detectors, gpu_policy, tuning_config, None, None)
     }
 
     /// Construct a scanner from the canonical matcher graph compiled into an execution pack.
@@ -83,6 +88,7 @@ impl CompiledScanner {
             GpuInitPolicy::SelectedBackend(backend),
             tuning_config,
             Some(state),
+            None,
         )
     }
 
@@ -173,31 +179,38 @@ impl CompiledScanner {
                 "execution pack BackendProgram identity does not match its header".to_owned(),
             ));
         }
-        match identity.backend {
+        let packed_simd_program: Option<PackedSimdProgram> = match identity.backend {
             crate::execution_pack::ExecutionPackBackend::Cpu => {
                 crate::execution_pack::ScalarCpuExecutionProgram::decode(
                     backend_program,
                     identity.detector_digest,
                 )
                 .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+                None
             }
             crate::execution_pack::ExecutionPackBackend::Simd => {
                 #[cfg(feature = "simd")]
-                crate::execution_pack::HyperscanSimdExecutionProgram::decode(
-                    backend_program,
-                    identity.detector_digest,
-                )
-                .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+                {
+                    Some(
+                        crate::execution_pack::HyperscanSimdExecutionProgram::decode(
+                            backend_program,
+                            identity.detector_digest,
+                        )
+                        .map_err(|error| crate::error::ScanError::Config(error.to_string()))?,
+                    )
+                }
                 #[cfg(not(feature = "simd"))]
-                return Err(crate::error::ScanError::Config(
-                    "execution pack selects SIMD but this scanner was built without SIMD support"
-                        .to_owned(),
-                ));
+                {
+                    return Err(crate::error::ScanError::Config(
+                        "execution pack selects SIMD but this scanner was built without SIMD support"
+                            .to_owned(),
+                    ));
+                }
             }
             crate::execution_pack::ExecutionPackBackend::GpuCuda
             | crate::execution_pack::ExecutionPackBackend::GpuWgpu
-            | crate::execution_pack::ExecutionPackBackend::GpuMetal => {}
-        }
+            | crate::execution_pack::ExecutionPackBackend::GpuMetal => None,
+        };
         let state = crate::execution_pack::matcher_sections::decode_compile_state_sections(
             identity.backend,
             section(Section::LiteralIndex)?,
@@ -212,6 +225,7 @@ impl CompiledScanner {
             gpu_policy,
             tuning_config,
             Some(state),
+            packed_simd_program,
         )
     }
 
@@ -220,6 +234,7 @@ impl CompiledScanner {
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
         packed_state: Option<CompileState>,
+        packed_simd_program: Option<PackedSimdProgram>,
     ) -> Result<Self> {
         if packed_state.is_none() {
             super::validation::validate_detector_corpus(&detectors)
@@ -232,7 +247,7 @@ impl CompiledScanner {
         )?);
         // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
         #[cfg(not(feature = "simd"))]
-        let _tuning_config = tuning_config;
+        let (_tuning_config, _packed_simd_program) = (tuning_config, packed_simd_program);
         let mut state = match packed_state {
             Some(state) => state,
             None => build_compile_state(&detectors)?,
@@ -452,12 +467,28 @@ impl CompiledScanner {
         let prefix_propagation = CsrU32::from(build_prefix_propagation(&state.ac_literals));
         let same_prefix_patterns = CsrU32::from(build_same_prefix_patterns(&state.ac_literals));
 
-        // Build only the backend-neutral Hyperscan plan. A selected SIMD route
-        // materializes its database lazily; rejected rows then retain their
-        // exact detector-owned literals in the recovery prefilter.
+        // Development/custom corpora retain lazy compilation. An authenticated
+        // SIMD pack instead owns exact native shards and canonical mappings.
         #[cfg(feature = "simd")]
-        let simd_compile_plan = if selected_backend.is_none_or(|backend| backend == crate::hw_probe::ScanBackend::SimdCpu) {
-            build_simd_compile_plan(&state.ac_map, &state.ac_literals, tuning_config)
+        let simd_compile_plan = if selected_backend
+            .is_none_or(|backend| backend == crate::hw_probe::ScanBackend::SimdCpu)
+        {
+            match packed_simd_program {
+                Some(program) => Some(
+                    crate::engine::build_packed_simd_compile_plan(
+                        program,
+                        &state.ac_map,
+                        &state.ac_literals,
+                        &detectors,
+                    )
+                    .map_err(crate::error::ScanError::Config)?,
+                ),
+                None => build_simd_compile_plan(
+                    &state.ac_map,
+                    &state.ac_literals,
+                    tuning_config,
+                ),
+            }
         } else {
             None
         };

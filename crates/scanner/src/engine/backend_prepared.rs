@@ -124,11 +124,23 @@ struct SimdPatternPlan {
 }
 
 #[cfg(feature = "simd")]
+enum SimdPhase1PlanSource {
+    Compile {
+        patterns: Box<[SimdPatternPlan]>,
+        shard_target: Option<usize>,
+    },
+    Serialized {
+        shards: Box<[Vec<u8>]>,
+        pattern_map: Vec<(usize, usize, usize, bool)>,
+        unsupported_pattern_ids: Box<[usize]>,
+    },
+}
+
+#[cfg(feature = "simd")]
 pub(crate) struct SimdPhase1CompilePlan {
-    patterns: Box<[SimdPatternPlan]>,
+    source: SimdPhase1PlanSource,
     index_map: Vec<Vec<usize>>,
     ac_literals: Box<[String]>,
-    shard_target: Option<usize>,
 }
 
 #[cfg(feature = "simd")]
@@ -207,69 +219,182 @@ pub(crate) fn build_simd_compile_plan(
     }
 
     (!hs_patterns.is_empty()).then(|| SimdPhase1CompilePlan {
-        patterns: hs_patterns.into_boxed_slice(),
+        source: SimdPhase1PlanSource::Compile {
+            patterns: hs_patterns.into_boxed_slice(),
+            shard_target: tuning.hs_shard_target,
+        },
         index_map,
         ac_literals: ac_literals.to_vec().into_boxed_slice(),
-        shard_target: tuning.hs_shard_target,
+    })
+}
+
+#[cfg(feature = "simd")]
+pub(crate) fn build_packed_simd_compile_plan(
+    program: crate::execution_pack::HyperscanSimdExecutionProgram,
+    ac_map: &[CompiledPattern],
+    ac_literals: &[String],
+    detectors: &[keyhog_core::DetectorSpec],
+) -> std::result::Result<SimdPhase1CompilePlan, String> {
+    let scalar_patterns = detectors
+        .iter()
+        .enumerate()
+        .flat_map(|(detector_index, detector)| {
+            detector
+                .patterns
+                .iter()
+                .map(move |pattern| (detector_index, pattern))
+        })
+        .collect::<Vec<_>>();
+    let mut covered_ac = vec![false; ac_map.len()];
+    let mut index_map = Vec::with_capacity(program.patterns.len());
+
+    for (hs_id, pattern) in program.patterns.iter().enumerate() {
+        if pattern.pattern_index as usize != hs_id {
+            return Err(format!(
+                "packed SIMD pattern row {hs_id} claims canonical pattern id {}",
+                pattern.pattern_index
+            ));
+        }
+        let expected_scalar = scalar_patterns
+            .iter()
+            .enumerate()
+            .filter_map(|(index, (_, scalar))| {
+                (scalar.regex == pattern.regex).then_some(index as u32)
+            })
+            .collect::<Vec<_>>();
+        if pattern.scalar_pattern_indices != expected_scalar {
+            return Err(format!(
+                "packed SIMD pattern {hs_id} scalar identity mapping does not match the canonical detector program"
+            ));
+        }
+
+        let mut mapped = Vec::with_capacity(pattern.ac_map_indices.len());
+        for &raw_index in &pattern.ac_map_indices {
+            let index = raw_index as usize;
+            let entry = ac_map.get(index).ok_or_else(|| {
+                format!(
+                    "packed SIMD pattern {hs_id} references AC index {index}, but the canonical plan has only {} row(s)",
+                    ac_map.len()
+                )
+            })?;
+            if covered_ac[index] {
+                return Err(format!(
+                    "packed SIMD AC index {index} is mapped more than once"
+                ));
+            }
+            if entry.regex.as_str() != pattern.regex
+                || entry.group.is_some() != pattern.reports_start
+            {
+                return Err(format!(
+                    "packed SIMD pattern {hs_id} identity does not match canonical AC index {index}"
+                ));
+            }
+            covered_ac[index] = true;
+            mapped.push(index);
+        }
+        let first = mapped.first().copied().ok_or_else(|| {
+            format!("packed SIMD pattern {hs_id} has no canonical AC mapping")
+        })?;
+        if ac_map[first].detector_index != pattern.detector_index as usize {
+            return Err(format!(
+                "packed SIMD pattern {hs_id} detector identity does not match its first canonical AC row"
+            ));
+        }
+        index_map.push(mapped);
+    }
+    if let Some(index) = covered_ac.iter().position(|covered| !covered) {
+        return Err(format!(
+            "packed SIMD program does not own canonical AC index {index}"
+        ));
+    }
+
+    let unsupported = program
+        .unsupported_pattern_ids
+        .iter()
+        .map(|&id| id as usize)
+        .collect::<Vec<_>>();
+    let unsupported_set = unsupported.iter().copied().collect::<std::collections::HashSet<_>>();
+    let pattern_map = program
+        .patterns
+        .iter()
+        .enumerate()
+        .filter(|(id, _)| !unsupported_set.contains(id))
+        .map(|(id, pattern)| {
+            (
+                id,
+                pattern.detector_index as usize,
+                pattern.pattern_index as usize,
+                pattern.reports_start,
+            )
+        })
+        .collect();
+
+    Ok(SimdPhase1CompilePlan {
+        source: SimdPhase1PlanSource::Serialized {
+            shards: program.serialized_shards.into_boxed_slice(),
+            pattern_map,
+            unsupported_pattern_ids: unsupported.into_boxed_slice(),
+        },
+        index_map,
+        ac_literals: ac_literals.to_vec().into_boxed_slice(),
     })
 }
 
 #[cfg(feature = "simd")]
 impl SimdPhase1CompilePlan {
     pub(crate) fn materialize(self) -> std::result::Result<SimdPhase1Prefilter, String> {
-        let pattern_refs: Vec<(usize, usize, &str, bool)> = self
-            .patterns
-            .iter()
-            .map(|pattern| {
-                (
-                    pattern.detector_index,
-                    pattern.hyperscan_id,
-                    pattern.regex.as_str(),
-                    pattern.reports_start,
-                )
-            })
-            .collect();
-
-        tracing::info!(
-            unique = self.patterns.len(),
-            raw = self.ac_literals.len(),
-            "materializing deduplicated AC regexes in Hyperscan"
-        );
-
-        let opts = crate::simd::backend::HsCompileOpts {
-            singlematch: true,
-            shard_target: self.shard_target,
-            utf8: true,
-            ucp: true,
-            ..Default::default()
+        let (scanner, unsupported) = match self.source {
+            SimdPhase1PlanSource::Compile {
+                patterns,
+                shard_target,
+            } => {
+                let pattern_refs: Vec<(usize, usize, &str, bool)> = patterns
+                    .iter()
+                    .map(|pattern| {
+                        (
+                            pattern.detector_index,
+                            pattern.hyperscan_id,
+                            pattern.regex.as_str(),
+                            pattern.reports_start,
+                        )
+                    })
+                    .collect();
+                let opts = crate::simd::backend::HsCompileOpts {
+                    singlematch: true,
+                    shard_target,
+                    utf8: true,
+                    ucp: true,
+                    ..Default::default()
+                };
+                crate::simd::backend::HsScanner::compile_with_opts(&pattern_refs, opts)
+                    .map_err(|error| format!("Hyperscan phase-one compilation failed: {error}"))?
+            }
+            SimdPhase1PlanSource::Serialized {
+                shards,
+                pattern_map,
+                unsupported_pattern_ids,
+            } => (
+                crate::simd::backend::HsScanner::from_serialized_database_shards(
+                    &shards,
+                    pattern_map,
+                )?,
+                unsupported_pattern_ids.into_vec(),
+            ),
         };
-        let (scanner, unsupported) =
-            crate::simd::backend::HsScanner::compile_with_opts(&pattern_refs, opts)
-                .map_err(|error| format!("Hyperscan phase-one compilation failed: {error}"))?;
 
-        // Map unsupported deduplicated ids to canonical patterns and retain
-        // their detector-owned literals instead of dropping them from SIMD.
         let mut unsupported_ac = Vec::new();
         for &hs_id in &unsupported {
             let Some(indices) = self.index_map.get(hs_id) else {
                 return Err(format!(
                     "Hyperscan returned unsupported pattern id {hs_id}, but the canonical SIMD plan has only {} unique row(s)",
-                    self.patterns.len()
+                    self.index_map.len()
                 ));
             };
             unsupported_ac.extend(indices.iter().copied());
         }
 
-        let prefilter =
-            SimdPhase1Prefilter::new(scanner, self.index_map, &self.ac_literals, &unsupported_ac)
-                .map_err(|error| error.to_string())?;
-        tracing::info!(
-            compiled = prefilter.scanner().pattern_count(),
-            unsupported = unsupported.len(),
-            unsupported_ac = unsupported_ac.len(),
-            "Hyperscan phase-one backend ready"
-        );
-        Ok(prefilter)
+        SimdPhase1Prefilter::new(scanner, self.index_map, &self.ac_literals, &unsupported_ac)
+            .map_err(|error| error.to_string())
     }
 }
 

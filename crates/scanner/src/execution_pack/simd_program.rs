@@ -1,0 +1,461 @@
+//! Install-time Hyperscan execution-program compiler.
+
+use super::{CanonicalDetectorExecutionIr, ExecutionPackError, ScalarCpuExecutionProgram};
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+const MAGIC: &[u8; 8] = b"KHSIMD\0\x02";
+pub const HYPERSCAN_SIMD_PROGRAM_VERSION: u16 = 2;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HyperscanPatternProgram {
+    pub detector_index: u32,
+    pub pattern_index: u32,
+    pub reports_start: bool,
+    pub regex: String,
+    /// Canonical scalar detector-pattern rows with this exact regex. This is
+    /// identity metadata only; runtime routing uses `ac_map_indices`.
+    pub scalar_pattern_indices: Vec<u32>,
+    /// Canonical phase-one AC rows activated by this Hyperscan pattern.
+    pub ac_map_indices: Vec<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HyperscanSimdExecutionProgram {
+    pub version: u16,
+    pub detector_ir_digest: [u8; 32],
+    pub patterns: Vec<HyperscanPatternProgram>,
+    pub unsupported_pattern_ids: Vec<u32>,
+    pub serialized_shards: Vec<Vec<u8>>,
+}
+
+impl HyperscanSimdExecutionProgram {
+    #[cfg(feature = "simd")]
+    pub fn compile(ir: &CanonicalDetectorExecutionIr) -> Result<Self, ExecutionPackError> {
+        let state = crate::compiler::build_compile_state(ir.detectors()).map_err(|error| {
+            ExecutionPackError::InvalidCompilerInput(format!(
+                "cannot compile canonical SIMD phase-one state: {error}"
+            ))
+        })?;
+        let scalar = ScalarCpuExecutionProgram::compile(ir)?;
+        let mut scalar_by_regex: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
+        for (index, pattern) in scalar.patterns.iter().enumerate() {
+            scalar_by_regex
+                .entry(pattern.regex.as_str())
+                .or_default()
+                .push(u32::try_from(index).map_err(|_| {
+                    ExecutionPackError::InvalidCompilerInput(
+                        "SIMD scalar pattern index exceeds the execution-pack u32 limit".into(),
+                    )
+                })?);
+        }
+
+        let mut regex_to_hs_id: HashMap<String, usize> = HashMap::new();
+        let mut patterns = Vec::new();
+        for (ac_index, entry) in state.ac_map.iter().enumerate() {
+            let regex = entry.regex.as_str();
+            let hs_id = match regex_to_hs_id.get(regex).copied() {
+                Some(id) => id,
+                None => {
+                    let id = patterns.len();
+                    let pattern_index = u32::try_from(id).map_err(|_| {
+                        ExecutionPackError::InvalidCompilerInput(
+                            "SIMD pattern count exceeds the execution-pack u32 limit".into(),
+                        )
+                    })?;
+                    let detector_index = u32::try_from(entry.detector_index).map_err(|_| {
+                        ExecutionPackError::InvalidCompilerInput(
+                            "SIMD detector index exceeds the execution-pack u32 limit".into(),
+                        )
+                    })?;
+                    patterns.push(HyperscanPatternProgram {
+                        detector_index,
+                        pattern_index,
+                        reports_start: entry.group.is_some(),
+                        regex: regex.to_owned(),
+                        scalar_pattern_indices: scalar_by_regex
+                            .get(regex)
+                            .cloned()
+                            .unwrap_or_default(),
+                        ac_map_indices: Vec::new(),
+                    });
+                    regex_to_hs_id.insert(regex.to_owned(), id);
+                    id
+                }
+            };
+            if patterns[hs_id].reports_start != entry.group.is_some() {
+                return Err(ExecutionPackError::InvalidCompilerInput(format!(
+                    "canonical SIMD regex {:?} has inconsistent capture reporting across AC rows",
+                    regex
+                )));
+            }
+            patterns[hs_id]
+                .ac_map_indices
+                .push(u32::try_from(ac_index).map_err(|_| {
+                    ExecutionPackError::InvalidCompilerInput(
+                        "SIMD AC pattern index exceeds the execution-pack u32 limit".into(),
+                    )
+                })?);
+        }
+
+        let refs: Vec<_> = patterns
+            .iter()
+            .map(|pattern| {
+                (
+                    pattern.detector_index as usize,
+                    pattern.pattern_index as usize,
+                    pattern.regex.as_str(),
+                    pattern.reports_start,
+                )
+            })
+            .collect();
+        let options = crate::simd::backend::HsCompileOpts {
+            singlematch: true,
+            utf8: true,
+            ucp: true,
+            ..Default::default()
+        };
+        let (scanner, unsupported) =
+            crate::simd::backend::HsScanner::compile_with_opts(&refs, options)
+                .map_err(ExecutionPackError::InvalidPack)?;
+        let unsupported_set: HashSet<usize> = unsupported.iter().copied().collect();
+        let expected_map = patterns
+            .iter()
+            .enumerate()
+            .filter(|(id, _)| !unsupported_set.contains(id))
+            .map(|(id, pattern)| {
+                (
+                    id,
+                    pattern.detector_index as usize,
+                    pattern.pattern_index as usize,
+                    pattern.reports_start,
+                )
+            })
+            .collect::<Vec<_>>();
+        if scanner.execution_pattern_map() != expected_map {
+            return Err(ExecutionPackError::InvalidPack(
+                "Hyperscan compiler changed the canonical SIMD pattern mapping".into(),
+            ));
+        }
+        let serialized_shards = scanner
+            .serialize_database_shards()
+            .map_err(ExecutionPackError::InvalidPack)?;
+        let unsupported_pattern_ids = unsupported
+            .into_iter()
+            .map(|id| {
+                u32::try_from(id).map_err(|_| {
+                    ExecutionPackError::InvalidPack(
+                        "Hyperscan unsupported pattern id exceeds the execution-pack u32 limit"
+                            .into(),
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let program = Self {
+            version: HYPERSCAN_SIMD_PROGRAM_VERSION,
+            detector_ir_digest: ir.digest(),
+            patterns,
+            unsupported_pattern_ids,
+            serialized_shards,
+        };
+        program.validate_structure()?;
+        Ok(program)
+    }
+
+    pub fn canonical_bytes(&self) -> Result<Vec<u8>, ExecutionPackError> {
+        self.validate_structure()?;
+        let pattern_count = u32::try_from(self.patterns.len()).map_err(|_| {
+            ExecutionPackError::InvalidPack("SIMD pattern count exceeds u32".into())
+        })?;
+        let unsupported_count = u32::try_from(self.unsupported_pattern_ids.len()).map_err(|_| {
+            ExecutionPackError::InvalidPack("SIMD unsupported count exceeds u32".into())
+        })?;
+        let shard_count = u32::try_from(self.serialized_shards.len()).map_err(|_| {
+            ExecutionPackError::InvalidPack("Hyperscan shard count exceeds u32".into())
+        })?;
+        let mut out = Vec::new();
+        out.extend_from_slice(MAGIC);
+        out.extend_from_slice(&self.version.to_le_bytes());
+        out.extend_from_slice(&[0; 6]);
+        out.extend_from_slice(&self.detector_ir_digest);
+        out.extend_from_slice(&pattern_count.to_le_bytes());
+        out.extend_from_slice(&unsupported_count.to_le_bytes());
+        out.extend_from_slice(&shard_count.to_le_bytes());
+        for pattern in &self.patterns {
+            out.extend_from_slice(&pattern.detector_index.to_le_bytes());
+            out.extend_from_slice(&pattern.pattern_index.to_le_bytes());
+            out.push(u8::from(pattern.reports_start));
+            out.extend_from_slice(&[0; 3]);
+            write_bytes(&mut out, pattern.regex.as_bytes())?;
+            write_indices(&mut out, &pattern.scalar_pattern_indices, "SIMD scalar fanout")?;
+            write_indices(&mut out, &pattern.ac_map_indices, "SIMD AC fanout")?;
+        }
+        for id in &self.unsupported_pattern_ids {
+            out.extend_from_slice(&id.to_le_bytes());
+        }
+        for shard in &self.serialized_shards {
+            out.extend_from_slice(blake3::hash(shard).as_bytes());
+            write_bytes(&mut out, shard)?;
+        }
+        Ok(out)
+    }
+
+    #[cfg(feature = "simd")]
+    pub fn decode(bytes: &[u8], expected_ir_digest: [u8; 32]) -> Result<Self, ExecutionPackError> {
+        let mut cursor = Cursor::new(bytes);
+        if cursor.take(8)? != MAGIC {
+            return Err(ExecutionPackError::InvalidPack(
+                "Hyperscan SIMD program magic is invalid".into(),
+            ));
+        }
+        let version = cursor.u16()?;
+        if version != HYPERSCAN_SIMD_PROGRAM_VERSION {
+            return Err(ExecutionPackError::Incompatible(format!(
+                "Hyperscan SIMD program version {version} is unsupported; this binary requires {HYPERSCAN_SIMD_PROGRAM_VERSION}"
+            )));
+        }
+        if cursor.take(6)?.iter().any(|byte| *byte != 0) {
+            return Err(ExecutionPackError::InvalidPack(
+                "Hyperscan SIMD program reserved bytes are nonzero".into(),
+            ));
+        }
+        let detector_ir_digest: [u8; 32] = cursor.take(32)?.try_into().expect("fixed digest");
+        if detector_ir_digest != expected_ir_digest {
+            return Err(ExecutionPackError::InvalidPack(
+                "Hyperscan SIMD program detector IR identity does not match its pack".into(),
+            ));
+        }
+        let pattern_count = cursor.count("SIMD pattern")?;
+        let unsupported_count = cursor.count("SIMD unsupported")?;
+        let shard_count = cursor.count("Hyperscan shard")?;
+        let mut patterns = Vec::with_capacity(pattern_count);
+        for _ in 0..pattern_count {
+            let detector_index = cursor.u32()?;
+            let pattern_index = cursor.u32()?;
+            let reports_start = match cursor.take(1)?[0] {
+                0 => false,
+                1 => true,
+                _ => {
+                    return Err(ExecutionPackError::InvalidPack(
+                        "SIMD reports-start flag is invalid".into(),
+                    ))
+                }
+            };
+            if cursor.take(3)?.iter().any(|byte| *byte != 0) {
+                return Err(ExecutionPackError::InvalidPack(
+                    "SIMD pattern reserved bytes are nonzero".into(),
+                ));
+            }
+            let regex = String::from_utf8(cursor.bytes()?.to_vec()).map_err(|error| {
+                ExecutionPackError::InvalidPack(format!("SIMD regex is not UTF-8: {error}"))
+            })?;
+            let scalar_pattern_indices = cursor.indices("SIMD scalar fanout")?;
+            let ac_map_indices = cursor.indices("SIMD AC fanout")?;
+            patterns.push(HyperscanPatternProgram {
+                detector_index,
+                pattern_index,
+                reports_start,
+                regex,
+                scalar_pattern_indices,
+                ac_map_indices,
+            });
+        }
+        let mut unsupported_pattern_ids = Vec::with_capacity(unsupported_count);
+        for _ in 0..unsupported_count {
+            unsupported_pattern_ids.push(cursor.u32()?);
+        }
+        let mut serialized_shards = Vec::with_capacity(shard_count);
+        for index in 0..shard_count {
+            let expected_digest: [u8; 32] = cursor.take(32)?.try_into().expect("fixed digest");
+            let shard = cursor.bytes()?.to_vec();
+            if *blake3::hash(&shard).as_bytes() != expected_digest {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "Hyperscan SIMD shard {index} is corrupt; its content digest does not match"
+                )));
+            }
+            serialized_shards.push(shard);
+        }
+        if !cursor.is_empty() {
+            return Err(ExecutionPackError::InvalidPack(
+                "Hyperscan SIMD program has trailing bytes".into(),
+            ));
+        }
+        let program = Self {
+            version,
+            detector_ir_digest,
+            patterns,
+            unsupported_pattern_ids,
+            serialized_shards,
+        };
+        program.validate_structure()?;
+        if program.canonical_bytes()?.as_slice() != bytes {
+            return Err(ExecutionPackError::InvalidPack(
+                "Hyperscan SIMD execution program is not canonically encoded".into(),
+            ));
+        }
+        Ok(program)
+    }
+
+    fn validate_structure(&self) -> Result<(), ExecutionPackError> {
+        if self.version != HYPERSCAN_SIMD_PROGRAM_VERSION {
+            return Err(ExecutionPackError::Incompatible(format!(
+                "Hyperscan SIMD program version {} is unsupported; this binary requires {}",
+                self.version, HYPERSCAN_SIMD_PROGRAM_VERSION
+            )));
+        }
+        let mut seen_ac = HashSet::new();
+        for (index, pattern) in self.patterns.iter().enumerate() {
+            if pattern.pattern_index as usize != index {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "SIMD pattern row {index} claims canonical pattern id {}",
+                    pattern.pattern_index
+                )));
+            }
+            if pattern.regex.is_empty() {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "SIMD pattern row {index} has an empty regex"
+                )));
+            }
+            validate_strict_indices(
+                &pattern.scalar_pattern_indices,
+                &format!("SIMD pattern {index} scalar mapping"),
+            )?;
+            validate_strict_indices(
+                &pattern.ac_map_indices,
+                &format!("SIMD pattern {index} AC mapping"),
+            )?;
+            if pattern.ac_map_indices.is_empty() {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "SIMD pattern row {index} has no canonical AC mapping"
+                )));
+            }
+            for &ac_index in &pattern.ac_map_indices {
+                if !seen_ac.insert(ac_index) {
+                    return Err(ExecutionPackError::InvalidPack(format!(
+                        "SIMD AC mapping index {ac_index} is owned by more than one pattern"
+                    )));
+                }
+            }
+        }
+        validate_strict_indices(&self.unsupported_pattern_ids, "SIMD unsupported pattern IDs")?;
+        for &id in &self.unsupported_pattern_ids {
+            if id as usize >= self.patterns.len() {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "SIMD unsupported pattern id {id} exceeds pattern count {}",
+                    self.patterns.len()
+                )));
+            }
+        }
+        let supported_count = self
+            .patterns
+            .len()
+            .saturating_sub(self.unsupported_pattern_ids.len());
+        if self.serialized_shards.is_empty() != (supported_count == 0) {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "SIMD program has {} supported pattern(s) but {} native shard(s)",
+                supported_count,
+                self.serialized_shards.len()
+            )));
+        }
+        if self.serialized_shards.iter().any(Vec::is_empty) {
+            return Err(ExecutionPackError::InvalidPack(
+                "SIMD program contains an empty native shard".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[doc(hidden)]
+    #[cfg(feature = "simd")]
+    pub fn compile_with_opts_invocations() -> usize {
+        crate::simd::backend::HsScanner::compile_with_opts_invocations()
+    }
+}
+
+fn validate_strict_indices(indices: &[u32], label: &str) -> Result<(), ExecutionPackError> {
+    if indices.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err(ExecutionPackError::InvalidPack(format!(
+            "{label} are not strictly increasing"
+        )));
+    }
+    Ok(())
+}
+
+fn write_indices(
+    out: &mut Vec<u8>,
+    indices: &[u32],
+    label: &str,
+) -> Result<(), ExecutionPackError> {
+    let count = u32::try_from(indices.len())
+        .map_err(|_| ExecutionPackError::InvalidPack(format!("{label} exceeds u32")))?;
+    out.extend_from_slice(&count.to_le_bytes());
+    for index in indices {
+        out.extend_from_slice(&index.to_le_bytes());
+    }
+    Ok(())
+}
+
+fn write_bytes(out: &mut Vec<u8>, bytes: &[u8]) -> Result<(), ExecutionPackError> {
+    let len = u64::try_from(bytes.len())
+        .map_err(|_| ExecutionPackError::InvalidPack("SIMD byte field exceeds u64".into()))?;
+    out.extend_from_slice(&len.to_le_bytes());
+    out.extend_from_slice(bytes);
+    Ok(())
+}
+
+struct Cursor<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> Cursor<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+
+    fn take(&mut self, len: usize) -> Result<&'a [u8], ExecutionPackError> {
+        let end = self.offset.checked_add(len).ok_or_else(|| {
+            ExecutionPackError::InvalidPack("Hyperscan SIMD program length overflow".into())
+        })?;
+        let value = self.bytes.get(self.offset..end).ok_or_else(|| {
+            ExecutionPackError::InvalidPack("Hyperscan SIMD program is truncated".into())
+        })?;
+        self.offset = end;
+        Ok(value)
+    }
+
+    fn u16(&mut self) -> Result<u16, ExecutionPackError> {
+        Ok(u16::from_le_bytes(self.take(2)?.try_into().expect("fixed u16")))
+    }
+
+    fn u32(&mut self) -> Result<u32, ExecutionPackError> {
+        Ok(u32::from_le_bytes(self.take(4)?.try_into().expect("fixed u32")))
+    }
+
+    fn count(&mut self, label: &str) -> Result<usize, ExecutionPackError> {
+        let count = self.u32()? as usize;
+        if count > self.bytes.len().saturating_sub(self.offset) / 4 {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{label} count exceeds the remaining program bytes"
+            )));
+        }
+        Ok(count)
+    }
+
+    fn indices(&mut self, label: &str) -> Result<Vec<u32>, ExecutionPackError> {
+        let count = self.count(label)?;
+        (0..count).map(|_| self.u32()).collect()
+    }
+
+    fn bytes(&mut self) -> Result<&'a [u8], ExecutionPackError> {
+        let len = usize::try_from(u64::from_le_bytes(
+            self.take(8)?.try_into().expect("fixed u64"),
+        ))
+        .map_err(|_| ExecutionPackError::InvalidPack("SIMD byte length exceeds usize".into()))?;
+        self.take(len)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.offset == self.bytes.len()
+    }
+}

@@ -1,6 +1,6 @@
 use hyperscan::{Block as BlockMode, BlockDatabase, Builder, Pattern, PatternFlags, Patterns};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
 mod scan;
@@ -236,6 +236,7 @@ fn read_hs_cache_file(path: &std::path::Path) -> std::io::Result<Option<Vec<u8>>
 /// scanners in one process must not hand each other a scratch allocated
 /// against a different database.
 static SCANNER_ID_SEQ: AtomicU64 = AtomicU64::new(0);
+static COMPILE_WITH_OPTS_INVOCATIONS: AtomicUsize = AtomicUsize::new(0);
 
 /// One compiled shard: its Hyperscan database. Scratch space is allocated
 /// lazily, bound to this database, and retained per-thread / per-scanner in
@@ -868,6 +869,7 @@ impl HsScanner {
         patterns: &[(usize, usize, &str, bool)],
         opts: HsCompileOpts<'_>,
     ) -> Result<(Self, Vec<usize>), String> {
+        COMPILE_WITH_OPTS_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
         Self::validate_compile_opts(patterns.len(), opts)?;
         let PreparedPatterns {
             hs_pats,
@@ -914,6 +916,86 @@ impl HsScanner {
             },
             unsupported,
         ))
+    }
+
+    /// Recreates an immutable scanner from authenticated execution-pack shards.
+    ///
+    /// This path is deliberately strict: serialized native databases never fall
+    /// back to pattern compilation, and their global IDs must use the canonical
+    /// execution-program ordering.
+    pub(crate) fn from_serialized_database_shards(
+        serialized_shards: &[Vec<u8>],
+        pattern_map: Vec<(usize, usize, usize, bool)>,
+    ) -> Result<Self, String> {
+        use hyperscan::Serialized;
+
+        if serialized_shards.is_empty() != pattern_map.is_empty() {
+            return Err(format!(
+                "packed Hyperscan shard/mapping mismatch: {} shard(s) for {} mapped pattern(s)",
+                serialized_shards.len(),
+                pattern_map.len()
+            ));
+        }
+        let mut previous_canonical_id = None;
+        for (database_id, &(input_index, _, canonical_id, _)) in pattern_map.iter().enumerate() {
+            if input_index != canonical_id {
+                return Err(format!(
+                    "packed Hyperscan mapping row {database_id} has input id {input_index} but canonical id {canonical_id}"
+                ));
+            }
+            if previous_canonical_id.is_some_and(|previous| canonical_id <= previous) {
+                return Err(format!(
+                    "packed Hyperscan mapping row {database_id} has non-increasing canonical id {canonical_id}"
+                ));
+            }
+            previous_canonical_id = Some(canonical_id);
+        }
+
+        let shards = serialized_shards
+            .iter()
+            .enumerate()
+            .map(|(index, bytes)| {
+                bytes
+                    .as_slice()
+                    .deserialize::<BlockMode>()
+                    .map(|db| Shard { db })
+                    .map_err(|error| {
+                        format!(
+                            "packed Hyperscan shard {index} is incompatible or corrupt; reinstall and recalibrate: {error}"
+                        )
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            shards,
+            pattern_map,
+            scanner_id: SCANNER_ID_SEQ.fetch_add(1, Ordering::Relaxed),
+            scratch_owner: Arc::new(()),
+        })
+    }
+
+    pub(crate) fn compile_with_opts_invocations() -> usize {
+        COMPILE_WITH_OPTS_INVOCATIONS.load(Ordering::Relaxed)
+    }
+
+    /// Serializes every compiled database shard for immutable execution-pack publication.
+    pub(crate) fn serialize_database_shards(&self) -> Result<Vec<Vec<u8>>, String> {
+        self.shards
+            .iter()
+            .enumerate()
+            .map(|(index, shard)| {
+                shard
+                    .db
+                    .serialize()
+                    .map(|serialized| serialized.as_ref().to_vec())
+                    .map_err(|error| format!("Hyperscan shard {index} serialization failed: {error}"))
+            })
+            .collect()
+    }
+
+    /// Returns the stable Hyperscan id mapping embedded beside serialized shards.
+    pub(crate) fn execution_pattern_map(&self) -> &[(usize, usize, usize, bool)] {
+        &self.pattern_map
     }
 
     /// Build one shard's `BlockDatabase`, returning the database and the

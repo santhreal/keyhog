@@ -96,7 +96,7 @@ pub(crate) use phase2_anchor::Phase2AnchorIndex;
 pub(crate) use phase2_anchor::{
     required_prefix_literals_with_cap, CONFIRMED_MAX_LITERALS_PER_PATTERN,
 };
-mod phase1_admission;
+pub(crate) mod phase1_admission;
 mod phase2_anchor_scan;
 mod phase2_compiled;
 mod phase2_compiled_anchored;
@@ -155,7 +155,8 @@ pub(crate) use backend_prepared::code_lines_from_offsets;
 pub(crate) use backend_prepared::PreparedChunk;
 #[cfg(feature = "simd")]
 pub(crate) use backend_prepared::{
-    build_simd_compile_plan, SimdPhase1CompilePlan, SimdPhase1Prefilter,
+    build_packed_simd_compile_plan, build_simd_compile_plan, SimdPhase1CompilePlan,
+    SimdPhase1Prefilter,
 };
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries;
@@ -212,6 +213,9 @@ pub use phase1_admission::{
 };
 
 pub struct CompiledScanner {
+    /// Exact top-level backend this scanner materialized. `None` exists only
+    /// for the install-time calibration compiler that must measure every peer.
+    pub(crate) selected_backend: Option<crate::hw_probe::ScanBackend>,
     /// Versioned projection of the canonical validated scan-execution hash.
     /// Autoroute and runtime receipts consume this stored identity so every
     /// execution-affecting detector policy change invalidates stale evidence.
@@ -281,7 +285,6 @@ pub struct CompiledScanner {
     /// slot, partitioned by detector for bounded generic-bridge lookup.
     pub(crate) structural_phase2_patterns: Vec<Vec<usize>>,
     pub(crate) same_prefix_patterns: CsrU32,
-    pub(crate) phase2_keyword_ac: Option<AhoCorasick>,
     pub(crate) phase2_keyword_to_patterns: CsrU32,
     pub(crate) phase2_keyword_count: usize,
     /// GPU region-presence literal rows appended after detector literals and
@@ -348,8 +351,7 @@ pub struct CompiledScanner {
     /// scanner-global class table or detector-ID branch. A missing entry is a
     /// compile-time corpus error and is never replaced with a guessed label.
     pub config: ScannerConfig,
-    pub(crate) alphabet_screen: Option<crate::alphabet_filter::AlphabetScreen>,
-    pub(crate) bigram_bloom: crate::bigram_bloom::BigramBloom,
+    pub(crate) route_classification: Arc<phase1_admission::RouteClassificationPlan>,
 }
 
 const _: () = {
