@@ -334,11 +334,9 @@ impl Phase2AlwaysActivePrefilter {
             return None;
         }
         let mut lits: Vec<Vec<u8>> = Vec::new();
-        // The non-anchorable always-active patterns (no required prefix literal),
-        // carried as `(index, own-compiled-regex)` so the skip path checks each
-        // with its EXACT runtime matcher, byte-for-byte match-equivalent to the
-        // full body, no over- or under-marking.
-        let mut non_anchorable: Vec<(usize, LazyRegex)> = Vec::new();
+        // The non-anchorable always-active patterns, carried with exact runtime
+        // matchers and homoglyph ownership for the proven ASCII skip.
+        let mut non_anchorable: Vec<(usize, LazyRegex, bool)> = Vec::new();
         for &index in always_active_indices {
             let (pattern, _) = phase2_patterns.get(index)?;
             let case_insensitive = pattern.regex.is_case_insensitive();
@@ -348,9 +346,11 @@ impl Phase2AlwaysActivePrefilter {
                         lits.push(lit.to_ascii_lowercase());
                     }
                 }
-                // Clone the `LazyRegex` (Arc-shared compile cache, so this shares
-                // the already-compiled regex (no recompile, no extra memory)).
-                None => non_anchorable.push((index, pattern.regex.clone())),
+                // Clone the `LazyRegex` (Arc-shared compile cache) and retain
+                // homoglyph ownership so ASCII plans can omit the variant.
+                None => {
+                    non_anchorable.push((index, pattern.regex.clone(), pattern.homoglyph_variant))
+                }
             }
         }
         if lits.is_empty() {
@@ -777,7 +777,12 @@ impl Phase2AlwaysActivePrefilter {
             combined_gate_decision(plan.chunk(), tuning.no_candidate_gate, combined_gate),
             combined_gate,
         ) {
-            gate.mark_non_anchorable(match_text, scratch, self.indices_for(plan.scope()));
+            gate.mark_non_anchorable(
+                match_text,
+                scratch,
+                self.indices_for(plan.scope()),
+                plan.skip_homoglyph(),
+            );
             record_mark_gate_skip();
             return;
         }
@@ -893,7 +898,7 @@ impl Phase2AlwaysActivePrefilter {
             combined_gate_decision(plan.chunk(), tuning.no_candidate_gate, combined_gate),
             combined_gate,
         ) {
-            return gate.any_non_anchorable_match(match_text);
+            return gate.any_non_anchorable_match(match_text, plan.skip_homoglyph());
         }
 
         #[cfg(feature = "simd")]

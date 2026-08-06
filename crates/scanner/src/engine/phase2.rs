@@ -310,14 +310,12 @@ pub(crate) struct CombinedNoCandidateGate {
     /// patterns' required-prefix literals (ASCII-lowercased + deduped). A no-hit on
     /// a pure-ASCII chunk proves none of those patterns can match.
     pub(crate) anchor_ac: AhoCorasick,
-    /// The non-anchorable always-active patterns (those with NO required prefix
-    /// literal), as `(phase2_index, regex)`. Empty when every always-active
-    /// pattern is anchorable (the ideal, the gate then does a pure AC `is_match`
-    /// and nothing else on the skip path). Each regex is the pattern's OWN compiled
-    /// `LazyRegex` (cloned `Arc`, shared compile cache), so checking it on the skip
-    /// path is byte-for-byte match-equivalent to the full body, no over-marking,
-    /// no under-marking, recall-identical by construction.
-    pub(crate) non_anchorable: Vec<(usize, LazyRegex)>,
+    /// The non-anchorable always-active patterns (those with no required
+    /// boundary literal), as `(phase2_index, regex, homoglyph_variant)`.
+    /// Homoglyph variants are omitted when the dispatch plan activates the
+    /// proven ASCII skip; otherwise each pattern is checked with its own
+    /// compiled regex.
+    pub(crate) non_anchorable: Vec<(usize, LazyRegex, bool)>,
     /// Fast first-bigram prescreen for the no-candidate path.
     ///
     /// A 65536-bit direct lookup table (8 KB, fits in L1d) indexed by
@@ -364,9 +362,13 @@ impl CombinedNoCandidateGate {
         match_text: &str,
         scratch: &mut ActivePatternsScratch,
         allowed_indices: &[usize],
+        skip_homoglyph: bool,
     ) {
-        for (idx, re) in &self.non_anchorable {
-            if allowed_indices.binary_search(idx).is_ok() && re.get().is_match(match_text) {
+        for (idx, re, homoglyph_variant) in &self.non_anchorable {
+            if !(skip_homoglyph && *homoglyph_variant)
+                && allowed_indices.binary_search(idx).is_ok()
+                && re.get().is_match(match_text)
+            {
                 scratch.mark(*idx);
             }
         }
@@ -374,13 +376,14 @@ impl CombinedNoCandidateGate {
 
     /// True iff some non-anchorable pattern can fire on `match_text`: the boolean
     /// companion to [`mark_non_anchorable`](Self::mark_non_anchorable) for the
-    /// admission gate. Checks each pattern's own regex, early-exiting at the first
-    /// match, so the admission decision is exact (never over- or under-admits).
+    /// admission gate.
     #[inline]
-    pub(crate) fn any_non_anchorable_match(&self, match_text: &str) -> bool {
+    pub(crate) fn any_non_anchorable_match(&self, match_text: &str, skip_homoglyph: bool) -> bool {
         self.non_anchorable
             .iter()
-            .any(|(_, re)| re.get().is_match(match_text))
+            .any(|(_, re, homoglyph_variant)| {
+                !(skip_homoglyph && *homoglyph_variant) && re.get().is_match(match_text)
+            })
     }
 }
 
