@@ -165,9 +165,16 @@ mod interrupt {
     pub(super) fn install() {}
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> ExitCode {
+fn main() -> ExitCode {
     configure_allocator_memory_policy();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("building KeyHog async runtime")
+        .block_on(async_main())
+}
+
+async fn async_main() -> ExitCode {
     // Startup surface: signal-handler installation is process setup, profiled
     // as preprocessing; the runtime session itself is owned by the caller.
     let _startup_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
