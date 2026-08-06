@@ -203,10 +203,15 @@ fn faulted_execution_pack_pages_are_shared_across_processes() {
         .chunks(4096)
         .fold(0_u64, |sum, page| sum.wrapping_add(u64::from(page[0])));
     std::hint::black_box(checksum);
-    let shared_clean = mapped_metric_kib(&pack_path, "Shared_Clean:");
+    let rss = mapped_metric_kib(&pack_path, "Rss:");
+    let pss = mapped_metric_kib(&pack_path, "Pss:");
     assert!(
-        shared_clean > (LARGE_PROGRAM_BYTES as u64 / 1024) / 2,
-        "only {shared_clean} KiB of the {LARGE_PROGRAM_BYTES}-byte pack is shared clean while two processes hold every page"
+        rss > (LARGE_PROGRAM_BYTES as u64 / 1024) / 2,
+        "parent faulted only {rss} KiB of the {LARGE_PROGRAM_BYTES}-byte pack"
+    );
+    assert!(
+        pss < rss * 3 / 4,
+        "pack PSS {pss} KiB is not shared across processes relative to {rss} KiB RSS"
     );
     assert_eq!(
         unsafe { libc::write(child_release[1], [1_u8].as_ptr().cast(), 1) },
