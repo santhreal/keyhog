@@ -1,5 +1,6 @@
 use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
 use base64::Engine as _;
+use std::sync::{Arc, OnceLock};
 
 use super::{crc32, ChecksumConfidenceDecision, ChecksumResult};
 
@@ -8,6 +9,53 @@ thread_local! {
     /// for every candidate. Bytes are overwritten before the buffer is cleared.
     static BASE64_SCRATCH: std::cell::RefCell<Vec<u8>> =
         const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[derive(Debug)]
+struct LazyPatternShape {
+    detector_id: Arc<str>,
+    patterns: Box<[Arc<str>]>,
+    full: OnceLock<regex::RegexSet>,
+    prefix: OnceLock<regex::RegexSet>,
+}
+
+impl LazyPatternShape {
+    fn new(detector_id: &str, patterns: &[keyhog_core::PatternSpec]) -> Self {
+        Self {
+            detector_id: Arc::from(detector_id),
+            patterns: patterns
+                .iter()
+                .filter(|pattern| pattern.group.is_none() || pattern.group == Some(0))
+                .map(|pattern| Arc::from(pattern.regex.as_str()))
+                .collect(),
+            full: OnceLock::new(),
+            prefix: OnceLock::new(),
+        }
+    }
+
+    fn full(&self) -> &regex::RegexSet {
+        self.full.get_or_init(|| self.compile(true))
+    }
+
+    fn prefix(&self) -> &regex::RegexSet {
+        self.prefix.get_or_init(|| self.compile(false))
+    }
+
+    fn compile(&self, full: bool) -> regex::RegexSet {
+        regex::RegexSet::new(self.patterns.iter().map(|pattern| {
+            if full {
+                format!("^(?:{pattern})$")
+            } else {
+                format!("^(?:{pattern})")
+            }
+        }))
+        .unwrap_or_else(|error| {
+            panic!(
+                "BUILD-INVARIANT VIOLATION: detector {:?} pattern-shape validator failed to compile: {error}",
+                self.detector_id
+            )
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -29,8 +77,7 @@ enum CompiledValidatorKind {
         min_decoded_len: usize,
     },
     PatternShape {
-        full: regex::RegexSet,
-        prefix: regex::RegexSet,
+        validator: LazyPatternShape,
         allow_overlong: bool,
     },
 }
@@ -87,28 +134,8 @@ impl CompiledValidator {
                 min_decoded_len: *min_decoded_len,
             },
             keyhog_core::DetectorValidatorSpec::PatternShape { allow_overlong, .. } => {
-                let patterns: Vec<_> = patterns
-                    .iter()
-                    .filter(|pattern| pattern.group.is_none() || pattern.group == Some(0))
-                    .map(|pattern| pattern.regex.as_str())
-                    .collect();
-                let full =
-                    regex::RegexSet::new(patterns.iter().map(|pattern| format!("^(?:{pattern})$")))
-                        .map_err(|error| {
-                            format!(
-                                "detector {detector_id:?} pattern-shape validator failed to compile: {error}"
-                            )
-                        })?;
-                let prefix =
-                    regex::RegexSet::new(patterns.iter().map(|pattern| format!("^(?:{pattern})")))
-                        .map_err(|error| {
-                            format!(
-                        "detector {detector_id:?} pattern-shape prefix validator failed to compile: {error}"
-                    )
-                        })?;
                 CompiledValidatorKind::PatternShape {
-                    full,
-                    prefix,
+                    validator: LazyPatternShape::new(detector_id, patterns),
                     allow_overlong: *allow_overlong,
                 }
             }
@@ -164,14 +191,13 @@ impl CompiledValidator {
                 *min_decoded_len,
             ),
             CompiledValidatorKind::PatternShape {
-                full,
-                prefix,
+                validator,
                 allow_overlong,
             } => {
-                if pattern_proven || full.is_match(credential) {
+                if pattern_proven || validator.full().is_match(credential) {
                     ChecksumResult::StructurallyValid
                 } else if *allow_overlong
-                    && prefix.is_match(credential)
+                    && validator.prefix().is_match(credential)
                     && credential.bytes().all(is_provider_token_byte)
                 {
                     // A complete detector-shaped prefix followed by more token
