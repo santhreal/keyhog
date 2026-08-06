@@ -225,6 +225,62 @@ This separation is deliberate: persisted bytes cannot define routing policy,
 inspection cannot bypass cache validation, and performance evidence cannot
 silently weaken detection parity.
 
+### Execution-pack dependency direction
+
+The execution-pack cutover has one dependency direction. Treat code that points
+against this direction as migration code, not as a second supported design.
+
+```text
+install or update
+  detector TOML -> validation -> canonical detector IR
+  canonical detector IR -> route classifier + policy/backend programs
+  programs -> route-scoped matcher sections -> exact finding parity
+  parity-proven packs -> installation-key signatures -> atomic pack generation
+  binary + authenticated packs + pack-bound calibration -> one published generation
+
+normal scan
+  source adapter -> chunks -> mapped route classifier
+  classifier + exact host/workload identity -> persisted route decision
+  route decision -> one selected mapped pack -> detector runtime -> RawMatch
+  RawMatch -> CLI post-filter -> verifier -> reporter
+```
+
+The arrows are ownership boundaries:
+
+| Owner | May depend on | Must not depend on |
+|---|---|---|
+| Install compiler | Detector schema, validators, pack codec, every eligible backend compiler | Source adapters, reporters, ordinary scan state |
+| Route classifier | Mapped literal index, decoder identity, chunk metadata | Backend materialization, detector TOML parsing, reporting |
+| Selected detector runtime | Canonical detector IR, selected policy/backend sections, VYRE orchestration for GPU | Source adapters, autoroute persistence, CLI, reporters, an unselected backend |
+| Source adapters | Core chunk and source contracts | Scanner internals, execution packs, reporters |
+| CLI orchestrator | Sources, route decisions, selected runtime, verifier, reporters | Detector-local execution ownership |
+| Reporters | Redacted findings and coverage state | Detector compilation, source acquisition, backend selection |
+
+The installer writes a protected 32-byte signing key, builds every policy pack in a sibling staging directory, fsyncs every pack, signature, manifest, and directory, then publishes the generation by one rename. The next compiler run removes dead-process staging directories, removes replaced backups when a current generation exists, and recovers the sole backup when publication was interrupted before a current generation appeared. A failed or interrupted health check, pack build, or calibration restores the prior binary, pack directory, and autoroute cache as one installation transaction. `keyhog update` applies the same rule: it verifies the candidate, compiles the candidate embedded detector corpus into host packs, calibrates those authenticated packs, and publishes all three artifacts under rollback guards.
+
+`keyhog doctor` reports the installed pack path, authenticates the manifest and every detached signature, and fails health when route evidence is missing its pack binding or names a different generation.
+
+Calibration authenticates the installed manifest and every detached pack signature before measuring routes. The versioned autoroute cache stores the manifest digest and every policy/backend pack identity. A missing policy pack, a replaced manifest, changed pack bytes, a different installation key, or binary, target, feature, and detector drift invalidates the calibration transaction.
+
+A normal installed scan maps the policy pack, authenticates it, and decodes canonical detector execution IR instead of parsing the embedded TOML corpus. It retains the read-only mapping for the scan lifetime. Detector specs move once from decoded IR into shared ownership used by the orchestrator and scanner compiler; startup no longer clones the complete corpus for scanner construction. Normal one-shot scans also skip eager regex cache warming; explicit resident and calibration paths retain their deliberate warm transition. A normal scan never parses detector TOML, compiles regex or backend programs,
+benchmarks a route, or maps a losing backend. A missing, stale, incompatible, or
+incomplete generation is an invalid autoroute state. It is not permission to
+construct the old universal scanner or replay through another backend.
+
+CPU sections contain canonical scalar programs. SIMD sections contain signed
+native Hyperscan shards for phase one and every phase-two scope. GPU sections
+contain VYRE orchestration receipts with the complete fused matcher bytes and
+the exact target, runtime, driver, device, and limits identity. A selected scan
+deserializes these artifacts directly from the authenticated pack. It does not
+compile patterns, rebuild GPU literal rows, or construct an unselected backend.
+VYRE remains the sole owner of device programs, dispatch, and GPU-resident
+memory.
+
+Every mapped byte has one owner: pack metadata, detector IR, route classifier,
+regex programs, suppression policy, or the selected backend. Header, table, and
+alignment padding belong to pack metadata. The ownership ledger must sum to the
+complete mapping length.
+
 ### Failure and recovery contract
 
 KeyHog separates trust failures from recoverable execution failures:
