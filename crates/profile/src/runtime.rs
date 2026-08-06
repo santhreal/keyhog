@@ -3,8 +3,8 @@ use crate::schema_v2::{
     AnnotationV2, BatchRouteV2, BlockedWaitRecordV2, CacheEffectivenessV2, DistributionBucketV2,
     Evidence, EvidenceGap, IndexedCounterRecordV2, LatencyBucketV2, LatencyDistributionV2,
     MetricDistributionV2, PointEventV2, QueueDepthV2, QueueLinkV2, RetryRecordV2, SpanRecordV2,
-    StageConcurrencyV2, TypedMetricRecordV2, WorkerImbalanceV2, WorkerLoadV2,
-    WorkerOccupancyRowV2, WorkerOccupancyV2, WorkOrigin,
+    StageConcurrencyV2, TypedMetricRecordV2, WorkOrigin, WorkerImbalanceV2, WorkerLoadV2,
+    WorkerOccupancyRowV2, WorkerOccupancyV2,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -212,8 +212,11 @@ impl RawSpanHardware {
             }
         };
         let (cycles_begin, cycles_end) = pair(self.has_cycles, self.cycles_begin, self.cycles_end);
-        let (instructions_begin, instructions_end) =
-            pair(self.has_instructions, self.instructions_begin, self.instructions_end);
+        let (instructions_begin, instructions_end) = pair(
+            self.has_instructions,
+            self.instructions_begin,
+            self.instructions_end,
+        );
         Evidence::recorded(crate::hardware::SpanHardwareV2 {
             version: crate::hardware::SPAN_HARDWARE_V2_VERSION,
             cycles_begin,
@@ -259,8 +262,7 @@ struct WorkerShard {
     top_level_calls: AtomicU64,
     cache_hits: [AtomicU64; crate::CacheId::COUNT],
     cache_misses: [AtomicU64; crate::CacheId::COUNT],
-    indexed_counters:
-        [[AtomicU64; crate::INDEXED_COUNTER_SLOTS]; crate::IndexedCounterId::COUNT],
+    indexed_counters: [[AtomicU64; crate::INDEXED_COUNTER_SLOTS]; crate::IndexedCounterId::COUNT],
     indexed_counter_dropped: AtomicU64,
     retries: [AtomicU64; crate::RetryCause::COUNT],
 }
@@ -394,6 +396,7 @@ struct RuntimeInner {
     session_batch_routes: Mutex<Vec<BatchRouteV2>>,
     started: Instant,
     session_span_sequence: AtomicU64,
+    session_span_reservations: AtomicUsize,
     session_spans: Mutex<Vec<RawSpanRecord>>,
     session_dropped_spans: AtomicU64,
     session_event_sequence: AtomicU64,
@@ -423,8 +426,8 @@ const fn zero_queue_depths() -> [AtomicU64; crate::QueueId::COUNT] {
     [const { AtomicU64::new(0) }; crate::QueueId::COUNT]
 }
 
-const fn zero_distribution_buckets(
-) -> [[AtomicU64; LATENCY_BUCKET_COUNT]; crate::MetricId::COUNT] {
+const fn zero_distribution_buckets() -> [[AtomicU64; LATENCY_BUCKET_COUNT]; crate::MetricId::COUNT]
+{
     [const { [const { AtomicU64::new(0) }; LATENCY_BUCKET_COUNT] }; crate::MetricId::COUNT]
 }
 
@@ -454,11 +457,12 @@ impl RuntimeInner {
             session_batch_routes: Mutex::new(Vec::new()),
             started,
             session_span_sequence: AtomicU64::new(0),
-            session_spans: Mutex::new(Vec::with_capacity(MAX_RECORDED_SPANS)),
+            session_span_reservations: AtomicUsize::new(0),
+            session_spans: Mutex::new(Vec::new()),
             session_dropped_spans: AtomicU64::new(0),
             session_event_sequence: AtomicU64::new(0),
-            session_point_events: Mutex::new(Vec::with_capacity(MAX_POINT_EVENTS)),
-            session_annotations: Mutex::new(Vec::with_capacity(MAX_ANNOTATIONS)),
+            session_point_events: Mutex::new(Vec::new()),
+            session_annotations: Mutex::new(Vec::new()),
             session_dropped_point_events: AtomicU64::new(0),
             session_dropped_annotations: AtomicU64::new(0),
             session_sample_observations: zero_event_values(),
@@ -538,7 +542,9 @@ impl Runtime {
                 return Some(assignment.shard.clone());
             }
             let shard = Arc::new(WorkerShard::new(
-                self.inner.next_shard_sequence.fetch_add(1, Ordering::Relaxed),
+                self.inner
+                    .next_shard_sequence
+                    .fetch_add(1, Ordering::Relaxed),
             ));
             match self.inner.session_shards.lock() {
                 Ok(mut shards) => shards.push(shard.clone()),
@@ -682,8 +688,8 @@ impl Runtime {
             let mut call_count = 0_u64;
             let buckets: Vec<DistributionBucketV2> = (0..LATENCY_BUCKET_COUNT)
                 .filter_map(|bucket| {
-                    let count = self.inner.distribution_buckets[index][bucket]
-                        .swap(0, Ordering::Relaxed);
+                    let count =
+                        self.inner.distribution_buckets[index][bucket].swap(0, Ordering::Relaxed);
                     call_count = call_count.saturating_add(count);
                     if count == 0 {
                         return None;
@@ -722,8 +728,8 @@ impl Runtime {
         let mut records = Vec::new();
         for counter in crate::CounterId::ALL {
             let metric_id = counter.metric_id();
-            let value = self.inner.legacy_typed_counters[metric_id as usize]
-                .swap(0, Ordering::Relaxed);
+            let value =
+                self.inner.legacy_typed_counters[metric_id as usize].swap(0, Ordering::Relaxed);
             if value != 0 {
                 records.push(TypedMetricRecordV2 {
                     version: 1,
@@ -948,16 +954,20 @@ impl Runtime {
         stack_slot: Option<usize>,
         worker_id: u64,
     ) -> Option<SpanTrace> {
-        let mut records = match self.inner.session_spans.lock() {
-            Ok(records) => records,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        if records.len() == MAX_RECORDED_SPANS {
+        let reservation = self
+            .inner
+            .session_span_reservations
+            .fetch_add(1, Ordering::Relaxed);
+        if reservation >= MAX_RECORDED_SPANS {
             self.inner
                 .session_dropped_spans
                 .fetch_add(1, Ordering::Relaxed);
             return None;
         }
+        let mut records = match self.inner.session_spans.lock() {
+            Ok(records) => records,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         let span_id = self
             .inner
             .session_span_sequence
@@ -1007,7 +1017,8 @@ impl Runtime {
                 .fetch_add(1, Ordering::Relaxed);
             return None;
         };
-        let trace = self.reserve_span(stage, started, parent_span_id, Some(stack_slot), worker_id)?;
+        let trace =
+            self.reserve_span(stage, started, parent_span_id, Some(stack_slot), worker_id)?;
         let runtime_key = Arc::as_ptr(&self.inner) as usize;
         ACTIVE_SPANS.with(|stack| {
             stack.borrow_mut()[stack_slot] = Some(ActiveSpan {
@@ -1177,8 +1188,7 @@ impl Runtime {
             shard.latency_buckets[index][bucket].fetch_add(1, Ordering::Relaxed);
             shard.latency_min_ns[index].fetch_min(elapsed_ns, Ordering::Relaxed);
             shard.latency_max_ns[index].fetch_max(elapsed_ns, Ordering::Relaxed);
-            shard.stage_first_start_ns[index]
-                .fetch_min(outcome.start_offset_ns, Ordering::Relaxed);
+            shard.stage_first_start_ns[index].fetch_min(outcome.start_offset_ns, Ordering::Relaxed);
             shard.stage_last_end_ns[index].fetch_max(
                 outcome.start_offset_ns.saturating_add(elapsed_ns),
                 Ordering::Relaxed,
@@ -1253,7 +1263,9 @@ impl Runtime {
                 cell.fetch_add(delta, Ordering::Relaxed);
             }
             None => {
-                shard.indexed_counter_dropped.fetch_add(1, Ordering::Relaxed);
+                shard
+                    .indexed_counter_dropped
+                    .fetch_add(1, Ordering::Relaxed);
             }
         }
     }
@@ -1471,10 +1483,7 @@ impl Runtime {
                 .fetch_add(1, Ordering::Relaxed);
             return;
         }
-        if pending
-            .insert((queue as u8, sequence), enqueue)
-            .is_some()
-        {
+        if pending.insert((queue as u8, sequence), enqueue).is_some() {
             // A duplicate (queue, sequence) enqueue displaces the earlier record.
             self.inner
                 .queue_dropped_enqueues
@@ -1594,7 +1603,8 @@ impl Runtime {
             .filter_map(|queue| {
                 let index = queue.index();
                 let current = self.inner.queue_depth_current[index].load(Ordering::Relaxed);
-                let high_water = self.inner.queue_depth_high_water[index].swap(current, Ordering::Relaxed);
+                let high_water =
+                    self.inner.queue_depth_high_water[index].swap(current, Ordering::Relaxed);
                 let enqueues = self.inner.queue_depth_enqueues[index].swap(0, Ordering::Relaxed);
                 let dequeues = self.inner.queue_depth_dequeues[index].swap(0, Ordering::Relaxed);
                 (current != 0 || high_water != 0 || enqueues != 0 || dequeues != 0).then(|| {
@@ -1639,9 +1649,9 @@ impl Runtime {
         let total_calls = workers
             .iter()
             .fold(0_u64, |total, worker| total.saturating_add(worker.calls));
-        let total_elapsed_ns = workers
-            .iter()
-            .fold(0_u64, |total, worker| total.saturating_add(worker.elapsed_ns));
+        let total_elapsed_ns = workers.iter().fold(0_u64, |total, worker| {
+            total.saturating_add(worker.elapsed_ns)
+        });
         let ppm = |part: u64, whole: u64| -> u64 {
             if whole == 0 {
                 0
@@ -1736,15 +1746,16 @@ impl Runtime {
                     calls = calls.saturating_add(shard_calls);
                     elapsed_ns = elapsed_ns.saturating_add(shard_elapsed);
                     max_worker_elapsed_ns = max_worker_elapsed_ns.max(shard_elapsed);
-                    first_start_ns =
-                        first_start_ns.min(shard.stage_first_start_ns[index].load(Ordering::Relaxed));
+                    first_start_ns = first_start_ns
+                        .min(shard.stage_first_start_ns[index].load(Ordering::Relaxed));
                     last_end_ns =
                         last_end_ns.max(shard.stage_last_end_ns[index].load(Ordering::Relaxed));
                     declared_serial_ns = declared_serial_ns
                         .saturating_add(shard.serial_ns[index].swap(0, Ordering::Relaxed));
                     declared_serial_calls = declared_serial_calls
                         .saturating_add(shard.serial_calls[index].swap(0, Ordering::Relaxed));
-                    bytes = bytes.saturating_add(shard.stage_bytes[index].swap(0, Ordering::Relaxed));
+                    bytes =
+                        bytes.saturating_add(shard.stage_bytes[index].swap(0, Ordering::Relaxed));
                 }
                 if calls == 0 {
                     return None;
@@ -2259,7 +2270,9 @@ where
     let trace = runtime
         .as_ref()
         .zip(started)
-        .and_then(|(runtime, started)| runtime.begin_async_span(stage, started, parent_span_id, worker_id));
+        .and_then(|(runtime, started)| {
+            runtime.begin_async_span(stage, started, parent_span_id, worker_id)
+        });
     let span_id = trace.map(|trace| trace.span_id);
     let origin = current_work_origin();
     let task_id = current_task_id();
@@ -2387,8 +2400,7 @@ fn span_impl(
         _ => None,
     };
     // Blocked wait is never attributed execution.
-    let attributed =
-        !blocked && runtime.is_some() && current_work_origin().is_attributed_work();
+    let attributed = !blocked && runtime.is_some() && current_work_origin().is_attributed_work();
     if trace.is_some() {
         crate::allocation::stage_context_push(stage);
     }
