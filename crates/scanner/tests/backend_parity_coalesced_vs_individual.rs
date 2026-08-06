@@ -42,7 +42,6 @@ fn batch_dispatch_equals_sum_of_per_chunk_results_all_backends() {
             return;
         }
     };
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
 
     // Three chunks with multiple credentials across them.
     let chunks = vec![
@@ -66,6 +65,8 @@ fn batch_dispatch_equals_sum_of_per_chunk_results_all_backends() {
     ];
 
     for backend in backends {
+        let scanner = CompiledScanner::compile_for_backend(detectors.clone(), backend)
+            .expect("compile exact backend scanner");
         scanner.clear_fragment_cache();
         let batch_results = scanner
             .scan_chunks_with_backend(&chunks, backend)
@@ -122,7 +123,6 @@ fn per_chunk_order_preserved_coalesced_dispatch() {
             return;
         }
     };
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
 
     let chunks = vec![
         make_chunk("// no secrets", "empty.txt", 0),
@@ -143,6 +143,8 @@ fn per_chunk_order_preserved_coalesced_dispatch() {
     ];
 
     for backend in backends {
+        let scanner = CompiledScanner::compile_for_backend(detectors.clone(), backend)
+            .expect("compile exact backend scanner");
         scanner.clear_fragment_cache();
         let results = scanner
             .scan_chunks_with_backend(&chunks, backend)

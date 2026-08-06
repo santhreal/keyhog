@@ -40,7 +40,9 @@ fn make_chunk(text: &str, path: &str) -> Chunk {
 #[test]
 fn entropy_fallback_parity_high_entropy_no_literal_prefix() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let simd_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
+            .expect("compile exact SIMD scanner");
 
     // High-entropy string that does NOT match any literal-prefix detector.
     // This forces reliance on the entropy-fallback path. Using a 32-char
@@ -67,8 +69,8 @@ fn entropy_fallback_parity_high_entropy_no_literal_prefix() {
         )
         .collect::<Vec<_>>();
 
-    scanner.clear_fragment_cache();
-    let simd_results = scanner
+    simd_scanner.clear_fragment_cache();
+    let simd_results = simd_scanner
         .scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu)
         .expect("selected backend scan succeeds");
     let simd_findings = collect_entropy_findings(&simd_results);
@@ -80,6 +82,8 @@ fn entropy_fallback_parity_high_entropy_no_literal_prefix() {
     );
 
     for backend in backends {
+        let scanner = CompiledScanner::compile_for_backend(detectors.clone(), backend)
+            .expect("compile exact comparison scanner");
         scanner.clear_fragment_cache();
         let degrade_before = scanner.runtime_status().gpu_degrade_count;
         let results = scanner
@@ -107,7 +111,9 @@ fn entropy_fallback_with_keyword_prefilter_active() {
     // every pattern on every chunk. Ensure the pre-filter produces
     // consistent active-pattern sets across backends.
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let simd_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
+            .expect("compile exact SIMD scanner");
 
     // A chunk that contains a keyword that should activate the
     // entropy-fallback pre-filter (e.g., "secret", "password", "token").
@@ -118,8 +124,8 @@ fn entropy_fallback_with_keyword_prefilter_active() {
         "config.ts",
     );
 
-    scanner.clear_fragment_cache();
-    let simd_results = scanner
+    simd_scanner.clear_fragment_cache();
+    let simd_results = simd_scanner
         .scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu)
         .expect("selected backend scan succeeds");
     let simd_findings = collect_entropy_findings(&simd_results);
@@ -128,8 +134,11 @@ fn entropy_fallback_with_keyword_prefilter_active() {
         "keyword-prefilter fixture must produce at least one reference finding"
     );
 
-    scanner.clear_fragment_cache();
-    let fallback_results = scanner
+    let fallback_scanner =
+        CompiledScanner::compile_for_backend(detectors, ScanBackend::CpuFallback)
+            .expect("compile exact CPU scanner");
+    fallback_scanner.clear_fragment_cache();
+    let fallback_results = fallback_scanner
         .scan_chunks_with_backend(&[fixture.clone()], ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
     let fallback_findings = collect_entropy_findings(&fallback_results);
