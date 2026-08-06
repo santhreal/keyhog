@@ -38,7 +38,7 @@ fn default_decode_ceiling_recovers_an_encoded_midwindow_secret() {
     let chunk = Chunk {
         data: body.into(),
         metadata: ChunkMetadata {
-            source_type: "filesystem".into(),
+            source_type: "filesystem/windowed".into(),
             path: Some("encoded/middle.txt".into()),
             ..Default::default()
         },

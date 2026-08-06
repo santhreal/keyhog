@@ -29,7 +29,7 @@ impl CompiledScanner {
     pub(crate) fn chunk_uses_bounded_decode_windows(&self, chunk: &keyhog_core::Chunk) -> bool {
         chunk.data.len() > self.config.max_decode_bytes
             && self.config.max_decode_bytes >= 4
-            && chunk.metadata.source_type.as_ref() == "filesystem"
+            && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
     }
 
     #[cfg(not(feature = "decode"))]
