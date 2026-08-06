@@ -191,9 +191,10 @@ pub(crate) fn find_companion(
     )?;
     let haystack = preprocessed.text.get(window_start..window_end)?;
     let group = companion.capture_group.unwrap_or(FIRST_CAPTURE_GROUP_INDEX); // LAW10: absent capture group selects the full regex match; no evidence is dropped.
+    let regex = companion.regex.get();
 
     if companion.capture_group.is_none() {
-        for matched in companion.regex.find_iter(haystack) {
+        for matched in regex.find_iter(haystack) {
             if matched.len() > MAX_COMPANION_MATCH_BYTES {
                 continue;
             }
@@ -214,13 +215,10 @@ pub(crate) fn find_companion(
         return None;
     }
 
-    let mut locations = companion.regex.capture_locations();
+    let mut locations = regex.capture_locations();
     let mut cursor = 0usize;
     while cursor <= haystack.len() {
-        let Some(whole) = companion
-            .regex
-            .captures_read_at(&mut locations, haystack, cursor)
-        else {
+        let Some(whole) = regex.captures_read_at(&mut locations, haystack, cursor) else {
             break;
         };
         cursor = crate::engine::ceil_char_boundary(

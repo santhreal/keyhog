@@ -19,7 +19,6 @@ use keyhog_core::{MatchLocation, RawMatch, Severity};
 use keyhog_scanner::testing::compute_line_offsets;
 use keyhog_scanner::testing::{line_number_for_offset, record_window_match};
 use keyhog_scanner::testing::{CompiledCompanion, ScannerPreprocessedText};
-use regex::Regex;
 
 /// AUD-speed-1: `find_companion` does an O(L) LINEAR scan of `preprocessed.mappings`
 /// per call, where the sibling lookup is already O(log L).
@@ -84,7 +83,7 @@ fn find_companion_window_lookup_is_not_linear_in_file_lines() {
     // we exercise the full window-resolution path on every call.
     let companion = CompiledCompanion {
         name: Arc::from("audit-companion"),
-        regex: Regex::new("ZZZ_NO_MATCH_ZZZ").expect("valid regex"),
+        regex: crate::types::LazyRegex::companion("ZZZ_NO_MATCH_ZZZ"),
         capture_group: None,
         within_lines: 1,
         within_bytes: None,

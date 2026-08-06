@@ -3208,7 +3208,7 @@ fn inner_preprocessed<'a>(
 fn inner_companion(companion: &CompiledCompanion) -> crate::types::CompiledCompanion {
     crate::types::CompiledCompanion {
         name: std::sync::Arc::clone(&companion.name),
-        regex: companion.regex.clone(),
+        regex: crate::types::LazyRegex::companion(companion.regex.as_str()),
         capture_group: companion.capture_group,
         within_lines: companion.within_lines,
         within_bytes: companion.within_bytes,

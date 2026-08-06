@@ -10,7 +10,7 @@ fn companion_beyond_within_lines_returns_none() {
     let pre = ScannerPreprocessedText::passthrough(&text);
     let companion = CompiledCompanion {
         name: "far".into(),
-        regex: regex::Regex::new("TARGET=(\\S+)").unwrap(),
+        regex: crate::types::LazyRegex::companion("TARGET=(\\S+)"),
         capture_group: Some(1),
         within_lines: 2,
         within_bytes: None,

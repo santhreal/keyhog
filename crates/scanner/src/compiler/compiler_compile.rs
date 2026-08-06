@@ -495,20 +495,26 @@ pub(crate) fn shared_regex_cache_workload_probe(pattern: &str) -> (usize, usize)
     (live_compiles, completed_workload_compiles)
 }
 
-pub(crate) fn compile_companion(
-    spec: &CompanionSpec,
-    detector_id: &str,
-) -> Result<CompiledCompanion> {
-    let regex = regex::RegexBuilder::new(&spec.regex)
+pub(crate) fn companion_regex(
+    pattern: &str,
+) -> std::result::Result<std::sync::Arc<Regex>, regex::Error> {
+    regex::RegexBuilder::new(pattern)
         .size_limit(REGEX_SIZE_LIMIT_BYTES)
         .dfa_size_limit(regex_dfa_limit())
         .crlf(true)
         .build()
-        .map_err(|e| ScanError::RegexCompile {
-            detector_id: detector_id.to_string(),
-            index: FIRST_CAPTURE_GROUP_INDEX,
-            source: e,
-        })?;
+        .map(std::sync::Arc::new)
+}
+
+pub(crate) fn compile_companion(
+    spec: &CompanionSpec,
+    detector_id: &str,
+) -> Result<CompiledCompanion> {
+    let regex = companion_regex(&spec.regex).map_err(|e| ScanError::RegexCompile {
+        detector_id: detector_id.to_string(),
+        index: FIRST_CAPTURE_GROUP_INDEX,
+        source: e,
+    })?;
     let capture_group = match spec.capture_group {
         Some(group) if group < regex.captures_len() => Some(group),
         Some(group) => {
@@ -523,7 +529,7 @@ pub(crate) fn compile_companion(
     };
     Ok(CompiledCompanion {
         name: std::sync::Arc::from(spec.name.as_str()),
-        regex,
+        regex: LazyRegex::companion(spec.regex.as_str()),
         capture_group,
         within_lines: spec.within_lines,
         within_bytes: spec.within_bytes,

@@ -7,7 +7,7 @@ fn companion_within_window_returns_value() {
     let preprocessed = ScannerPreprocessedText::passthrough(text);
     let companion = CompiledCompanion {
         name: "secret".into(),
-        regex: regex::Regex::new("aws_secret_access_key\\s*=\\s*(\\S+)").unwrap(),
+        regex: crate::types::LazyRegex::companion("aws_secret_access_key\\s*=\\s*(\\S+)"),
         capture_group: Some(1),
         within_lines: 3,
         within_bytes: None,

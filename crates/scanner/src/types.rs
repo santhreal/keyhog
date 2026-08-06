@@ -299,6 +299,7 @@ pub(crate) struct LazyRegex {
     /// use default regex flags. Tracked for callers that need to build an
     /// equivalent combined matcher.
     case_insensitive: bool,
+    crlf: bool,
     cell: Arc<std::sync::OnceLock<Arc<Regex>>>,
     /// Memoized `extract_literal_prefix(src).is_some()`: a per-PATTERN
     /// constant (it depends only on the regex SOURCE, never on the input
@@ -332,6 +333,7 @@ impl LazyRegex {
         Self {
             src: src.into(),
             case_insensitive: true,
+            crlf: true,
             cell: Arc::new(std::sync::OnceLock::new()),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
             has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
@@ -345,6 +347,7 @@ impl LazyRegex {
         Self {
             src: src.into(),
             case_insensitive: true,
+            crlf: true,
             cell: Arc::new(std::sync::OnceLock::from(compiled)),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
             has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
@@ -357,6 +360,21 @@ impl LazyRegex {
         Self {
             src: src.into(),
             case_insensitive: false,
+            crlf: false,
+            cell: Arc::new(std::sync::OnceLock::new()),
+            has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
+            has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
+        }
+    }
+
+    /// A case-sensitive companion pattern with the scanner's bounded CRLF
+    /// configuration. Its source was validated during pack compilation and is
+    /// materialized only when a primary match actually consults the relation.
+    pub(crate) fn companion(src: impl Into<Arc<str>>) -> Self {
+        Self {
+            src: src.into(),
+            case_insensitive: false,
+            crlf: true,
             cell: Arc::new(std::sync::OnceLock::new()),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
             has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
@@ -431,6 +449,8 @@ impl LazyRegex {
                 LAZY_REGEX_COMPILE_EVENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let built = if self.case_insensitive {
                     crate::compiler::compiler_compile::shared_regex(&self.src)
+                } else if self.crlf {
+                    crate::compiler::compiler_compile::companion_regex(&self.src)
                 } else {
                     Regex::new(&self.src).map(Arc::new)
                 };
@@ -513,7 +533,7 @@ impl CompiledPattern {
 pub(crate) struct CompiledCompanion {
     /// Immutable detector metadata shared by every emitted companion match.
     pub(crate) name: Arc<str>,
-    pub(crate) regex: Regex,
+    pub(crate) regex: LazyRegex,
     pub(crate) capture_group: Option<usize>,
     pub(crate) within_lines: usize,
     pub(crate) within_bytes: Option<usize>,
