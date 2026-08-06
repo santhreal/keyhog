@@ -499,7 +499,11 @@ pub(crate) fn compile_phase2_database_program(
                         .map_err(|_| "phase-two unsupported pattern id exceeds u32".to_owned())
                 })
                 .collect::<std::result::Result<Vec<_>, _>>()?,
-            serialized_shards: scanner.serialize_database_shards()?,
+            serialized_shards: scanner
+                .serialize_database_shards()?
+                .into_iter()
+                .map(crate::execution_pack::simd_program::SerializedHyperscanShard::from)
+                .collect(),
         },
     ))
 }

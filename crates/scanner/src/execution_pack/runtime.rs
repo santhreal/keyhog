@@ -80,7 +80,7 @@ impl ExecutionPack {
     ) -> Result<Self, ExecutionPackError> {
         let pack = Self::open(path, expected)?;
         authenticate_pack_signature(&pack, signature_path.as_ref(), signing_key)?;
-        pack.release_authenticated_pages()?;
+        pack.release_resident_pages()?;
         Ok(pack)
     }
 
@@ -107,7 +107,7 @@ impl ExecutionPack {
         let expected = decode_identity_header(mapping.as_ref(), path)?;
         let pack = Self::from_mapping(mapping, path.to_path_buf(), expected)?;
         authenticate_pack_signature(&pack, signature_path.as_ref(), signing_key)?;
-        pack.release_authenticated_pages()?;
+        pack.release_resident_pages()?;
         Ok(pack)
     }
 
@@ -115,7 +115,7 @@ impl ExecutionPack {
     /// decode individual sections. The immutable file remains in the page cache,
     /// so later section faults do not repeat storage I/O, but the whole pack no
     /// longer overlaps decoded runtime state in RSS.
-    fn release_authenticated_pages(&self) -> Result<(), ExecutionPackError> {
+    pub fn release_resident_pages(&self) -> Result<(), ExecutionPackError> {
         #[cfg(unix)]
         {
             let result = unsafe {

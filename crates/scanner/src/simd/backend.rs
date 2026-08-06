@@ -1023,7 +1023,7 @@ impl HsScanner {
     /// Validate authenticated native shard headers against this Hyperscan
     /// runtime without constructing their much larger database allocations.
     pub(crate) fn validate_serialized_database_shards(
-        serialized_shards: &[Vec<u8>],
+        serialized_shards: &[crate::execution_pack::simd_program::SerializedHyperscanShard],
     ) -> Result<(), String> {
         use hyperscan::Serialized;
 
@@ -1043,7 +1043,7 @@ impl HsScanner {
     /// back to pattern compilation, and their global IDs must use the canonical
     /// execution-program ordering.
     pub(crate) fn from_serialized_database_shards(
-        serialized_shards: &[Vec<u8>],
+        serialized_shards: &[crate::execution_pack::simd_program::SerializedHyperscanShard],
         pattern_map: Vec<(usize, usize, usize, bool)>,
     ) -> Result<Self, String> {
         use hyperscan::Serialized;
@@ -1075,7 +1075,7 @@ impl HsScanner {
             .enumerate()
             .map(|(index, bytes)| {
                 bytes
-                    .as_slice()
+                    .as_ref()
                     .deserialize::<BlockMode>()
                     .map(|db| Shard { db })
                     .map_err(|error| {

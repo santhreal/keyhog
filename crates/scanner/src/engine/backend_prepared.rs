@@ -130,7 +130,7 @@ enum SimdPhase1PlanSource {
         shard_target: Option<usize>,
     },
     Serialized {
-        shards: Box<[Vec<u8>]>,
+        shards: Box<[crate::execution_pack::simd_program::SerializedHyperscanShard]>,
         pattern_map: Vec<(usize, usize, usize, bool)>,
         unsupported_pattern_ids: Box<[usize]>,
     },

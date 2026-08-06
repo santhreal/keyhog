@@ -194,7 +194,7 @@ fn packed_phase_two_rejects_corrupt_native_shard_without_compilation() {
             .serialized_shards
             .first_mut()
             .expect("full phase-two shard");
-        shard[0] ^= 0xff;
+        std::sync::Arc::make_mut(shard)[0] ^= 0xff;
     });
     let before = HyperscanSimdExecutionProgram::compile_with_opts_invocations();
     let error = match CompiledScanner::compile_from_execution_pack(&pack) {

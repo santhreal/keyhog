@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 const MAGIC: &[u8; 8] = b"KHSIMD\0\x03";
 pub const HYPERSCAN_SIMD_PROGRAM_VERSION: u16 = 3;
+pub type SerializedHyperscanShard = std::sync::Arc<[u8]>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HyperscanPatternProgram {
@@ -41,7 +42,8 @@ pub struct HyperscanPhase2DatabaseProgram {
     pub pattern_indices: Vec<u32>,
     /// Input IDs rejected by Hyperscan and retained on the host regex path.
     pub unsupported_pattern_ids: Vec<u32>,
-    pub serialized_shards: Vec<Vec<u8>>,
+    /// Native bytes are shared by digest when policy scopes compile identically.
+    pub serialized_shards: Vec<SerializedHyperscanShard>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -59,7 +61,7 @@ pub struct HyperscanSimdExecutionProgram {
     pub detector_ir_digest: [u8; 32],
     pub patterns: Vec<HyperscanPatternProgram>,
     pub unsupported_pattern_ids: Vec<u32>,
-    pub serialized_shards: Vec<Vec<u8>>,
+    pub serialized_shards: Vec<SerializedHyperscanShard>,
     pub phase2_scopes: Vec<HyperscanPhase2ScopeProgram>,
 }
 
@@ -173,7 +175,10 @@ impl HyperscanSimdExecutionProgram {
         }
         let serialized_shards = scanner
             .serialize_database_shards()
-            .map_err(ExecutionPackError::InvalidPack)?;
+            .map_err(ExecutionPackError::InvalidPack)?
+            .into_iter()
+            .map(SerializedHyperscanShard::from)
+            .collect();
         let unsupported_pattern_ids = unsupported
             .into_iter()
             .map(|id| {
@@ -340,16 +345,15 @@ impl HyperscanSimdExecutionProgram {
         for _ in 0..unsupported_count {
             unsupported_pattern_ids.push(cursor.u32()?);
         }
+        let mut shard_interner = HashMap::<[u8; 32], SerializedHyperscanShard>::new();
         let mut serialized_shards = Vec::with_capacity(shard_count);
         for index in 0..shard_count {
-            let expected_digest: [u8; 32] = cursor.take(32)?.try_into().expect("fixed digest");
-            let shard = cursor.bytes()?.to_vec();
-            if *blake3::hash(&shard).as_bytes() != expected_digest {
-                return Err(ExecutionPackError::InvalidPack(format!(
-                    "Hyperscan SIMD shard {index} is corrupt; its content digest does not match"
-                )));
-            }
-            serialized_shards.push(shard);
+            serialized_shards.push(read_shared_shard(
+                &mut cursor,
+                index,
+                "Hyperscan SIMD",
+                &mut shard_interner,
+            )?);
         }
         let mut phase2_scopes = Vec::with_capacity(phase2_scope_count);
         for _ in 0..phase2_scope_count {
@@ -369,8 +373,8 @@ impl HyperscanSimdExecutionProgram {
                 ));
             }
             let pattern_indices = cursor.indices("Hyperscan phase-two scope mapping")?;
-            let full = read_phase2_database(&mut cursor)?;
-            let ascii_lean = read_phase2_database(&mut cursor)?;
+            let full = read_phase2_database(&mut cursor, &mut shard_interner)?;
+            let ascii_lean = read_phase2_database(&mut cursor, &mut shard_interner)?;
             phase2_scopes.push(HyperscanPhase2ScopeProgram {
                 scope,
                 pattern_indices,
@@ -461,7 +465,7 @@ impl HyperscanSimdExecutionProgram {
                 self.serialized_shards.len()
             )));
         }
-        if self.serialized_shards.iter().any(Vec::is_empty) {
+        if self.serialized_shards.iter().any(|shard| shard.is_empty()) {
             return Err(ExecutionPackError::InvalidPack(
                 "SIMD program contains an empty native shard".into(),
             ));
@@ -551,7 +555,7 @@ fn validate_phase2_database(
             database.serialized_shards.len()
         )));
     }
-    if database.serialized_shards.iter().any(Vec::is_empty) {
+    if database.serialized_shards.iter().any(|shard| shard.is_empty()) {
         return Err(ExecutionPackError::InvalidPack(format!(
             "SIMD phase-two {label} database contains an empty shard"
         )));
@@ -589,8 +593,35 @@ fn write_phase2_database(
     Ok(())
 }
 
+fn read_shared_shard(
+    cursor: &mut Cursor<'_>,
+    index: usize,
+    label: &str,
+    interner: &mut HashMap<[u8; 32], SerializedHyperscanShard>,
+) -> Result<SerializedHyperscanShard, ExecutionPackError> {
+    let expected_digest: [u8; 32] = cursor.take(32)?.try_into().expect("fixed digest");
+    let bytes = cursor.bytes()?;
+    if *blake3::hash(bytes).as_bytes() != expected_digest {
+        return Err(ExecutionPackError::InvalidPack(format!(
+            "{label} shard {index} is corrupt; its content digest does not match"
+        )));
+    }
+    if let Some(shared) = interner.get(&expected_digest) {
+        if shared.as_ref() != bytes {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{label} shard {index} collides with different authenticated bytes"
+            )));
+        }
+        return Ok(std::sync::Arc::clone(shared));
+    }
+    let shared = SerializedHyperscanShard::from(bytes);
+    interner.insert(expected_digest, std::sync::Arc::clone(&shared));
+    Ok(shared)
+}
+
 fn read_phase2_database(
     cursor: &mut Cursor<'_>,
+    interner: &mut HashMap<[u8; 32], SerializedHyperscanShard>,
 ) -> Result<Option<HyperscanPhase2DatabaseProgram>, ExecutionPackError> {
     match cursor.take(1)?[0] {
         0 => Ok(None),
@@ -601,15 +632,12 @@ fn read_phase2_database(
             let shard_count = cursor.count("Hyperscan phase-two shard")?;
             let mut serialized_shards = Vec::with_capacity(shard_count);
             for index in 0..shard_count {
-                let expected_digest: [u8; 32] =
-                    cursor.take(32)?.try_into().expect("fixed digest");
-                let shard = cursor.bytes()?.to_vec();
-                if *blake3::hash(&shard).as_bytes() != expected_digest {
-                    return Err(ExecutionPackError::InvalidPack(format!(
-                        "Hyperscan phase-two shard {index} is corrupt; its content digest does not match"
-                    )));
-                }
-                serialized_shards.push(shard);
+                serialized_shards.push(read_shared_shard(
+                    cursor,
+                    index,
+                    "Hyperscan phase-two",
+                    interner,
+                )?);
             }
             Ok(Some(HyperscanPhase2DatabaseProgram {
                 pattern_indices,

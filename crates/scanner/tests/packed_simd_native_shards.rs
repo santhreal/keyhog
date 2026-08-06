@@ -114,7 +114,7 @@ fn packed_simd_rejects_authenticated_but_invalid_native_shard_bytes() {
             .serialized_shards
             .first_mut()
             .expect("fixture has a supported native shard");
-        shard[0] ^= 0xff;
+        std::sync::Arc::make_mut(shard)[0] ^= 0xff;
     });
     let scanner = CompiledScanner::compile_from_execution_pack(&pack)
         .expect("shard deserialization is deferred until first SIMD use");
@@ -189,7 +189,6 @@ fn packed_simd_native_shards_preserve_exact_findings_and_unsupported_recovery() 
     let (_directory, pack) = mapped_pack(&detectors, |_| {});
     let packed = CompiledScanner::compile_from_execution_pack(&pack)
         .expect("construct scanner from native SIMD pack");
-
     for (text, expected_findings) in [
         (
             "PACKED_ALPHA_ABCDEFGH",

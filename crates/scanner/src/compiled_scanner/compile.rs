@@ -330,6 +330,12 @@ impl CompiledScanner {
             &detectors,
         )
         .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+        // Section decoders above now own every byte they retain. Drop the
+        // immutable mapping's faulted pages before allocating runtime indexes,
+        // otherwise large native programs overlap their decoded ownership at
+        // the process high-water mark.
+        pack.release_resident_pages()
+            .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
         Self::compile_shared_with_state_source(
             detectors,
             gpu_policy,
