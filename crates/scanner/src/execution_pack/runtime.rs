@@ -7,7 +7,10 @@ use memmap2::{Mmap, MmapOptions};
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::Read;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
+
+const AUTHENTICATION_HASH_CHUNK_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ResidentByteOwner {
@@ -138,57 +141,12 @@ impl ExecutionPack {
     /// borrowed from this pack; rejecting foreign slices prevents `madvise`
     /// from touching allocator-owned memory.
     pub fn release_mapped_bytes(&self, bytes: &[u8]) -> Result<(), ExecutionPackError> {
-        if bytes.is_empty() {
-            return Ok(());
-        }
-        let mapping_start = self.mapping.as_ptr() as usize;
-        let mapping_end = mapping_start
-            .checked_add(self.mapping.len())
-            .ok_or_else(|| ExecutionPackError::InvalidPack("mapped pack range overflows".into()))?;
-        let bytes_start = bytes.as_ptr() as usize;
-        let bytes_end = bytes_start.checked_add(bytes.len()).ok_or_else(|| {
-            ExecutionPackError::InvalidPack("decoded pack slice range overflows".into())
-        })?;
-        if bytes_start < mapping_start || bytes_end > mapping_end {
-            return Err(ExecutionPackError::InvalidPack(
-                "decoded pack slice is outside its immutable mapping".into(),
-            ));
-        }
-        #[cfg(unix)]
-        {
-            let probed = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-            let page = usize::try_from(probed).map_err(|_| ExecutionPackError::Io {
-                operation: "query page size for decoded-page discard",
-                path: self.path.clone(),
-                source: std::io::Error::last_os_error(),
-            })?;
-            if page == 0 {
-                return Err(ExecutionPackError::InvalidPack(
-                    "host page size is zero".into(),
-                ));
-            }
-            let relative_start = bytes_start - mapping_start;
-            let relative_end = bytes_end - mapping_start;
-            let aligned_start = relative_start.div_ceil(page).saturating_mul(page);
-            let aligned_end = relative_end - (relative_end % page);
-            if aligned_start < aligned_end {
-                let result = unsafe {
-                    libc::madvise(
-                        self.mapping.as_ptr().add(aligned_start) as *mut libc::c_void,
-                        aligned_end - aligned_start,
-                        libc::MADV_DONTNEED,
-                    )
-                };
-                if result != 0 {
-                    return Err(ExecutionPackError::Io {
-                        operation: "discard decoded shard pages",
-                        path: self.path.clone(),
-                        source: std::io::Error::last_os_error(),
-                    });
-                }
-            }
-        }
-        Ok(())
+        release_mapping_slice(
+            &self.mapping,
+            &self.path,
+            bytes,
+            "discard decoded shard pages",
+        )
     }
 
     pub const fn identity(&self) -> ExecutionPackIdentity {
@@ -336,7 +294,17 @@ impl ExecutionPack {
         }
         validate_identity(&path, identity, expected)?;
         let content_digest = array32(bytes, 248);
-        let actual_digest = *blake3::hash(&bytes[EXECUTION_PACK_HEADER_LEN..]).as_bytes();
+        let mut content_hasher = blake3::Hasher::new();
+        update_mapping_and_release(
+            &mapping,
+            &path,
+            EXECUTION_PACK_HEADER_LEN..bytes.len(),
+            "discard content-authentication pages",
+            |chunk| {
+                content_hasher.update(chunk);
+            },
+        )?;
+        let actual_digest = *content_hasher.finalize().as_bytes();
         if actual_digest != content_digest {
             return Err(ExecutionPackError::InvalidPack(format!(
                 "{} content digest mismatch; reinstall or recalibrate this generation",
@@ -494,7 +462,112 @@ fn authenticate_pack_signature(
             source,
         })?;
     let signature = ExecutionPackSignature::decode(&bytes)?;
-    signing_key.verify(pack.mapping.as_ref(), &signature)
+    let mut pack_hasher = blake3::Hasher::new();
+    update_mapping_and_release(
+        &pack.mapping,
+        &pack.path,
+        0..pack.mapping.len(),
+        "discard signed-digest pages",
+        |chunk| {
+            pack_hasher.update(chunk);
+        },
+    )?;
+    let pack_digest = *pack_hasher.finalize().as_bytes();
+    signing_key.verify_streaming(&signature, pack_digest, |hasher| {
+        update_mapping_and_release(
+            &pack.mapping,
+            &pack.path,
+            0..pack.mapping.len(),
+            "discard signature-verification pages",
+            |chunk| {
+                hasher.update(chunk);
+            },
+        )
+    })
+}
+
+fn update_mapping_and_release(
+    mapping: &Mmap,
+    path: &Path,
+    range: Range<usize>,
+    release_operation: &'static str,
+    mut update: impl FnMut(&[u8]),
+) -> Result<(), ExecutionPackError> {
+    if range.start > range.end || range.end > mapping.len() {
+        return Err(ExecutionPackError::InvalidPack(
+            "execution-pack authentication range is outside its immutable mapping".into(),
+        ));
+    }
+    let mut start = range.start;
+    while start < range.end {
+        let end = start
+            .saturating_add(AUTHENTICATION_HASH_CHUNK_BYTES)
+            .min(range.end);
+        let chunk = &mapping[start..end];
+        update(chunk);
+        release_mapping_slice(mapping, path, chunk, release_operation)?;
+        start = end;
+    }
+    Ok(())
+}
+
+fn release_mapping_slice(
+    mapping: &Mmap,
+    path: &Path,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<(), ExecutionPackError> {
+    if bytes.is_empty() {
+        return Ok(());
+    }
+    let mapping_start = mapping.as_ptr() as usize;
+    let mapping_end = mapping_start
+        .checked_add(mapping.len())
+        .ok_or_else(|| ExecutionPackError::InvalidPack("mapped pack range overflows".into()))?;
+    let bytes_start = bytes.as_ptr() as usize;
+    let bytes_end = bytes_start.checked_add(bytes.len()).ok_or_else(|| {
+        ExecutionPackError::InvalidPack("decoded pack slice range overflows".into())
+    })?;
+    if bytes_start < mapping_start || bytes_end > mapping_end {
+        return Err(ExecutionPackError::InvalidPack(
+            "decoded pack slice is outside its immutable mapping".into(),
+        ));
+    }
+    #[cfg(unix)]
+    {
+        let probed = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        let page = usize::try_from(probed).map_err(|_| ExecutionPackError::Io {
+            operation: "query page size for mapped-page discard",
+            path: path.to_path_buf(),
+            source: std::io::Error::last_os_error(),
+        })?;
+        if page == 0 {
+            return Err(ExecutionPackError::InvalidPack(
+                "host page size is zero".into(),
+            ));
+        }
+        let relative_start = bytes_start - mapping_start;
+        let relative_end = bytes_end - mapping_start;
+        let aligned_start = relative_start.div_ceil(page).saturating_mul(page);
+        let aligned_end = relative_end - (relative_end % page);
+        if aligned_start < aligned_end {
+            let result = unsafe {
+                libc::madvise(
+                    mapping.as_ptr().add(aligned_start) as *mut libc::c_void,
+                    aligned_end - aligned_start,
+                    libc::MADV_DONTNEED,
+                )
+            };
+            if result != 0 {
+                return Err(ExecutionPackError::Io {
+                    operation,
+                    path: path.to_path_buf(),
+                    source: std::io::Error::last_os_error(),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_identity(
