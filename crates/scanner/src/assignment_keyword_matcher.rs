@@ -5,8 +5,12 @@ use std::sync::Arc;
 /// Corpus and config-owned keyword matcher shared by entropy and multiline
 /// admission. Matching is ASCII case-insensitive substring search.
 pub(crate) struct AssignmentKeywordMatcher {
-    ac: Option<aho_corasick::AhoCorasick>,
-    linear_fallback: Box<[String]>,
+    strategy: AssignmentKeywordStrategy,
+}
+
+enum AssignmentKeywordStrategy {
+    Compiled(aho_corasick::AhoCorasick),
+    Linear(Box<[String]>),
 }
 
 impl AssignmentKeywordMatcher {
@@ -21,8 +25,7 @@ impl AssignmentKeywordMatcher {
             .collect::<Vec<_>>();
         if patterns.is_empty() {
             return Self {
-                ac: None,
-                linear_fallback: patterns.into_boxed_slice(),
+                strategy: AssignmentKeywordStrategy::Linear(patterns.into_boxed_slice()),
             };
         }
         match aho_corasick::AhoCorasick::builder()
@@ -30,8 +33,9 @@ impl AssignmentKeywordMatcher {
             .build(patterns.iter().map(String::as_bytes))
         {
             Ok(ac) => Self {
-                ac: Some(ac),
-                linear_fallback: patterns.into_boxed_slice(),
+                // The automaton owns the exact patterns. Retaining `patterns`
+                // as an unreachable fallback duplicated every keyword.
+                strategy: AssignmentKeywordStrategy::Compiled(ac),
             },
             Err(error) => {
                 tracing::warn!(
@@ -40,22 +44,19 @@ impl AssignmentKeywordMatcher {
                     "assignment keyword index could not be compiled; using the exact linear matcher"
                 );
                 Self {
-                    ac: None,
-                    linear_fallback: patterns.into_boxed_slice(),
+                    strategy: AssignmentKeywordStrategy::Linear(patterns.into_boxed_slice()),
                 }
             }
         }
     }
 
     pub(crate) fn matches(&self, line: &[u8]) -> bool {
-        self.ac.as_ref().map_or_else(
-            || {
-                self.linear_fallback
-                    .iter()
-                    .any(|keyword| crate::ascii_ci::ci_find_nonempty(line, keyword.as_bytes()))
-            },
-            |ac| ac.find(line).is_some(),
-        )
+        match &self.strategy {
+            AssignmentKeywordStrategy::Compiled(ac) => ac.find(line).is_some(),
+            AssignmentKeywordStrategy::Linear(patterns) => patterns
+                .iter()
+                .any(|keyword| crate::ascii_ci::ci_find_nonempty(line, keyword.as_bytes())),
+        }
     }
 }
 
