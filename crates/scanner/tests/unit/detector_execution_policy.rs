@@ -89,7 +89,7 @@ fn entropy_generation_rejects_above_max_before_scoring() {
         .position(|detector| detector.id == "generic-api-key")
         .expect("generic API-key detector");
     let plans = super::compiled_detector_plans(detectors);
-    let policy = *plans
+    let policy = **plans
         .get(detector_index)
         .entropy
         .as_ref()

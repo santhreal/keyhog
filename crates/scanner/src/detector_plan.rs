@@ -384,12 +384,12 @@ pub(crate) struct CompiledDetectorPlan {
     pub(crate) metadata: CompiledDetectorMetadata,
     pub(crate) entropy_metadata: Option<CompiledDetectorMetadata>,
     pub(crate) execution: crate::detector_execution_policy::CompiledDetectorExecutionPolicy,
-    pub(crate) match_confidence: crate::confidence::policy::CompiledMatchConfidencePolicy,
+    pub(crate) match_confidence: Arc<crate::confidence::policy::CompiledMatchConfidencePolicy>,
     pub(crate) key_material: crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
-    pub(crate) entropy_floor: Option<crate::entropy::policy::CompiledEntropyFloorPolicy>,
-    pub(crate) entropy: Option<crate::entropy::policy::CompiledEntropyPolicy>,
-    pub(crate) credential_shape: Option<crate::credential_shapes::CredentialShapeRule>,
-    pub(crate) suppression: Option<crate::suppression::DetectorSuppressionPolicy>,
+    pub(crate) entropy_floor: Option<Box<crate::entropy::policy::CompiledEntropyFloorPolicy>>,
+    pub(crate) entropy: Option<Box<crate::entropy::policy::CompiledEntropyPolicy>>,
+    pub(crate) credential_shape: Option<Box<crate::credential_shapes::CredentialShapeRule>>,
+    pub(crate) suppression: Option<Box<crate::suppression::DetectorSuppressionPolicy>>,
     pub(crate) validators: crate::checksum::CompiledDetectorValidators,
     pub(crate) weak_anchor_base: crate::suppression::WeakAnchorBase,
     pub(crate) companions: Box<[crate::types::CompiledCompanion]>,
@@ -417,6 +417,20 @@ impl CompiledDetectorPlan {
     }
 }
 
+fn intern_confidence_policy(
+    policies: &mut Vec<Arc<crate::confidence::policy::CompiledMatchConfidencePolicy>>,
+    policy: &mut Arc<crate::confidence::policy::CompiledMatchConfidencePolicy>,
+) {
+    if let Some(shared) = policies
+        .iter()
+        .find(|shared| shared.as_ref() == policy.as_ref())
+    {
+        *policy = Arc::clone(shared);
+    } else {
+        policies.push(Arc::clone(policy));
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct CompiledDetectorPlans {
     by_detector_index: Box<[CompiledDetectorPlan]>,
@@ -435,6 +449,7 @@ pub(crate) struct CompiledDetectorPlans {
 pub(crate) struct StreamingCompiledDetectorPlansBuilder {
     by_detector_index: Vec<CompiledDetectorPlan>,
     summaries: Vec<StreamingDetectorPlanSummary>,
+    confidence_policies: Vec<Arc<crate::confidence::policy::CompiledMatchConfidencePolicy>>,
 }
 
 impl StreamingCompiledDetectorPlansBuilder {
@@ -442,6 +457,7 @@ impl StreamingCompiledDetectorPlansBuilder {
         Self {
             by_detector_index: Vec::with_capacity(detector_count),
             summaries: Vec::with_capacity(detector_count),
+            confidence_policies: Vec::with_capacity(3),
         }
     }
 
@@ -458,7 +474,7 @@ impl StreamingCompiledDetectorPlansBuilder {
                 record.id
             ));
         }
-        let plan = hydrate_detector_plan(&record, companions, interner)?;
+        let mut plan = hydrate_detector_plan(&record, companions, interner)?;
         let has_weak_pattern = match plan.weak_anchor_base {
             crate::suppression::WeakAnchorBase::Always => true,
             crate::suppression::WeakAnchorBase::PerPattern => {
@@ -472,6 +488,7 @@ impl StreamingCompiledDetectorPlansBuilder {
                 record.id
             ));
         }
+        intern_confidence_policy(&mut self.confidence_policies, &mut plan.match_confidence);
         let summary = StreamingDetectorPlanSummary::from_record(record, &plan.metadata);
         self.by_detector_index.push(plan);
         self.summaries.push(summary);
@@ -562,11 +579,14 @@ impl CompiledDetectorPlans {
                 detectors.len()
             ));
         }
-        let by_detector_index = detectors
-            .iter()
-            .zip(companions)
-            .map(|(detector, companions)| compile_detector_plan(detector, companions, interner))
-            .collect::<Result<Box<[_]>, String>>()?;
+        let mut confidence_policies = Vec::with_capacity(3);
+        let mut by_detector_index = Vec::with_capacity(detectors.len());
+        for (detector, companions) in detectors.iter().zip(companions) {
+            let mut plan = compile_detector_plan(detector, companions, interner)?;
+            intern_confidence_policy(&mut confidence_policies, &mut plan.match_confidence);
+            by_detector_index.push(plan);
+        }
+        let by_detector_index = by_detector_index.into_boxed_slice();
         let generic_assignment = by_detector_index
             .iter()
             .any(|plan| plan.execution.is_generic)
@@ -877,17 +897,20 @@ fn compile_detector_plan(
             })
             .transpose()?,
         execution,
-        match_confidence: crate::confidence::policy::CompiledMatchConfidencePolicy::compile(
-            detector,
-        )?,
+        match_confidence: Arc::new(
+            crate::confidence::policy::CompiledMatchConfidencePolicy::compile(detector)?,
+        ),
         key_material:
             crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile(
                 detector,
             )?,
-        entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::compile(detector)?,
-        entropy,
-        credential_shape: crate::credential_shapes::compile_detector_shape_rule(detector)?,
-        suppression: crate::suppression::DetectorSuppressionPolicy::compile(detector)?,
+        entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::compile(detector)?
+            .map(Box::new),
+        entropy: entropy.map(Box::new),
+        credential_shape: crate::credential_shapes::compile_detector_shape_rule(detector)?
+            .map(Box::new),
+        suppression: crate::suppression::DetectorSuppressionPolicy::compile(detector)?
+            .map(Box::new),
         validators: crate::checksum::CompiledDetectorValidators::compile(detector)?,
         weak_anchor_base: crate::suppression::detector_weak_anchor_base(detector),
         companions: companions.into_boxed_slice(),
@@ -945,11 +968,13 @@ fn hydrate_detector_plan(
             })
             .transpose()?,
         execution,
-        match_confidence: crate::confidence::policy::CompiledMatchConfidencePolicy::hydrate(
-            &detector.id,
-            detector.owns_entropy_policy(),
-            detector.match_confidence,
-        )?,
+        match_confidence: Arc::new(
+            crate::confidence::policy::CompiledMatchConfidencePolicy::hydrate(
+                &detector.id,
+                detector.owns_entropy_policy(),
+                detector.match_confidence,
+            )?,
+        ),
         key_material:
             crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::hydrate(
                 &detector.id,
@@ -957,10 +982,13 @@ fn hydrate_detector_plan(
                 &detector.decoded_hex_key_material_lengths,
                 &detector.canonical_hex_key_material,
             )?,
-        entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::hydrate(detector)?,
-        entropy,
-        credential_shape: crate::credential_shapes::hydrate_detector_shape_rule(detector)?,
-        suppression: crate::suppression::DetectorSuppressionPolicy::hydrate(detector)?,
+        entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::hydrate(detector)?
+            .map(Box::new),
+        entropy: entropy.map(Box::new),
+        credential_shape: crate::credential_shapes::hydrate_detector_shape_rule(detector)?
+            .map(Box::new),
+        suppression: crate::suppression::DetectorSuppressionPolicy::hydrate(detector)?
+            .map(Box::new),
         validators: crate::checksum::CompiledDetectorValidators::hydrate(detector)?,
         weak_anchor_base,
         companions: companions.into_boxed_slice(),

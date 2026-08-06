@@ -7,7 +7,7 @@ const MAX_BYTE_SHANNON_ENTROPY: f64 = u8::BITS as f64;
 /// The reciprocal normalization denominator is compiled once so candidate
 /// scoring performs a multiply instead of rediscovering or dividing by the
 /// detector's maximum signal weight.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct CompiledMatchConfidencePolicy {
     spec: keyhog_core::DetectorMatchConfidenceSpec,
     inverse_max_signal_weight: f64,

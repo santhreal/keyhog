@@ -130,7 +130,7 @@ impl CompiledScanner {
         let process_signals = crate::adjudicate::ProcessCandidateSignals::from_match(
             apply_generic_candidate_gates,
             execution_policy.length,
-            detector_plan.credential_shape.as_ref(),
+            detector_plan.credential_shape.as_deref(),
             detector_plan
                 .match_confidence
                 .post_match()
@@ -231,7 +231,7 @@ impl CompiledScanner {
             chunk.metadata.path.as_deref(),
             inferred_context,
             Some(chunk.metadata.source_type.as_ref()),
-            detector_plan.suppression.as_ref(),
+            detector_plan.suppression.as_deref(),
             !is_generic,
             weak_anchor,
             structural_password_slot,

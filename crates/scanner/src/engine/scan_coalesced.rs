@@ -474,7 +474,7 @@ impl CompiledScanner {
             .isolated_bare_owner_index();
         #[cfg(feature = "entropy")]
         let isolated_bare_policy = isolated_bare_owner_index
-            .and_then(|index| self.detector_plans.get(index).entropy.as_ref())
+            .and_then(|index| self.detector_plans.get(index).entropy.as_deref())
             .copied();
         #[cfg(feature = "entropy")]
         let keyword_free_min_len = self
