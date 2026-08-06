@@ -248,6 +248,7 @@ impl CompiledScanner {
             self.scan_entropy_fallback(
                 &prepared.preprocessed,
                 line_offsets,
+                &code_lines,
                 prepared.chunk,
                 &mut scan_state,
             );

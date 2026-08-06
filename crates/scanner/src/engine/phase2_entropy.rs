@@ -33,6 +33,7 @@ impl CompiledScanner {
         &self,
         preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
+        entropy_lines: &[&str],
         chunk: &Chunk,
         scan_state: &mut ScanState,
     ) {
@@ -42,7 +43,6 @@ impl CompiledScanner {
         if chunk.metadata.source_type.contains("/caesar") {
             return;
         }
-        let entropy_lines: Vec<&str> = preprocessed.text.lines().collect();
         let source_path =
             crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref());
         let source_entropy_requires_same_line_credential =
