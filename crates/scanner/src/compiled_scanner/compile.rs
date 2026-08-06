@@ -255,7 +255,11 @@ impl CompiledScanner {
                 ))
             })
         };
-        if *blake3::hash(section(Section::DetectorIr)?).as_bytes() != identity.detector_digest {
+        if pack
+            .digest_mapped_bytes_and_release(section(Section::DetectorIr)?)
+            .map_err(|error| crate::error::ScanError::Config(error.to_string()))?
+            != identity.detector_digest
+        {
             return Err(crate::error::ScanError::Config(
                 "execution pack DetectorIr identity does not match its header".to_owned(),
             ));
@@ -280,7 +284,11 @@ impl CompiledScanner {
         } else {
             backend_program
         };
-        if *blake3::hash(backend_identity_bytes).as_bytes() != identity.backend_digest {
+        if pack
+            .digest_mapped_bytes_and_release(backend_identity_bytes)
+            .map_err(|error| crate::error::ScanError::Config(error.to_string()))?
+            != identity.backend_digest
+        {
             return Err(crate::error::ScanError::Config(
                 "execution pack BackendProgram identity does not match its header".to_owned(),
             ));

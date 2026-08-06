@@ -216,6 +216,26 @@ impl ExecutionPack {
             "discard decoded shard pages",
         )
     }
+
+    /// Hash one mapped field in bounded windows and discard each window after
+    /// consumption so identity validation cannot establish the RSS high-water.
+    pub fn digest_mapped_bytes_and_release(
+        &self,
+        bytes: &[u8],
+    ) -> Result<[u8; 32], ExecutionPackError> {
+        let range = mapping_slice_range(&self.mapping, bytes)?;
+        let mut hasher = blake3::Hasher::new();
+        update_mapping_and_release(
+            &self.mapping,
+            &self.path,
+            range,
+            "discard section-identity pages",
+            |chunk| {
+                hasher.update(chunk);
+            },
+        )?;
+        Ok(*hasher.finalize().as_bytes())
+    }
     /// Retain an immutable zero-copy view of a validated field in this pack.
     /// The view keeps the mapping alive after the pack metadata is dropped.
     pub fn mapped_bytes(
