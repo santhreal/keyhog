@@ -167,6 +167,13 @@ deduplicated match to a report-safe finding. It initializes the complete
 finding shape, including measured entropy and redacted companions, so verifier,
 skipped, and diff paths cannot silently drift when the report contract grows.
 
+The CLI keeps one owner for each finding graph as it advances through this
+pipeline. Scan-level suppression compacts the raw-match vector in place.
+Deduplication moves each accepted match into its group, verification partitions
+the deduplicated vector in place, and baseline suppression compacts the final
+finding vector in place. A stage may allocate indexes or output slots, but it
+does not clone the complete old graph while building a replacement graph.
+
 The accelerated batch path is **two-phase and coalesced**. A file with no
 phase-one hit stops only when the shared no-hit admission proof also rules out
 phase-two patterns, generic assignments, and enabled entropy analysis. This

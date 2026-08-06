@@ -236,24 +236,53 @@ impl Baseline {
         })
     }
 
+    /// Compute the in-order keep mask without cloning finding graphs. Baseline
+    /// update uses this before merging, then applies it after the complete
+    /// finding set has been persisted.
+    pub(crate) fn new_finding_mask(&self, findings: &[VerifiedFinding]) -> Vec<bool> {
+        let index = self.index_set();
+        findings
+            .iter()
+            .map(|finding| {
+                let key = (
+                    finding.detector_id.to_string(),
+                    baseline_hash_key(&finding.credential_hash),
+                );
+                !index.contains(&key)
+            })
+            .collect()
+    }
+
+    /// Filter findings in their existing allocation so suppression does not
+    /// retain old and replacement `VerifiedFinding` graphs at the same time.
+    pub(crate) fn retain_new(&self, findings: &mut Vec<VerifiedFinding>) {
+        let keep = self.new_finding_mask(findings);
+        Self::retain_mask(findings, &keep);
+    }
+    /// Apply a previously computed mask without reallocating the finding
+    /// vector. The mask and findings originate from the same ordered slice.
+    pub(crate) fn retain_mask(findings: &mut Vec<VerifiedFinding>, mask: &[bool]) {
+        debug_assert_eq!(findings.len(), mask.len());
+        let mut remaining = mask;
+        findings.retain(|_| {
+            let Some((&keep, tail)) = remaining.split_first() else {
+                return false;
+            };
+            remaining = tail;
+            keep
+        });
+        debug_assert!(remaining.is_empty());
+    }
+
     /// Filter a slice of findings, returning only those **not** present in
     /// the baseline. Uses an O(1) HashSet lookup so total cost is O(N) in
     /// the number of findings instead of O(N·M).
     pub(crate) fn filter_new(&self, findings: &[VerifiedFinding]) -> Vec<VerifiedFinding> {
         // Baseline filtering is Suppression-stage work.
         let _span = keyhog_profile::span(keyhog_profile::Stage::Suppression);
-        let index = self.index_set();
-        findings
-            .iter()
-            .filter(|f| {
-                let key = (
-                    f.detector_id.to_string(),
-                    baseline_hash_key(&f.credential_hash),
-                );
-                !index.contains(&key)
-            })
-            .cloned()
-            .collect()
+        let mut filtered = findings.to_vec();
+        self.retain_new(&mut filtered);
+        filtered
     }
 }
 

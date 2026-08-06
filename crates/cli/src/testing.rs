@@ -218,6 +218,7 @@ pub trait CliTestApi {
         baseline: &Baseline,
         findings: &[VerifiedFinding],
     ) -> Vec<VerifiedFinding>;
+    fn baseline_retain_new(&self, baseline: &Baseline, findings: &mut Vec<VerifiedFinding>);
     fn baseline_looks_like_findings_report(&self, content: &str) -> bool;
     fn write_scan_receipt_for_test(
         &self,
@@ -750,6 +751,9 @@ impl CliTestApi for TestApi {
         findings: &[VerifiedFinding],
     ) -> Vec<VerifiedFinding> {
         baseline.to_internal().filter_new(findings)
+    }
+    fn baseline_retain_new(&self, baseline: &Baseline, findings: &mut Vec<VerifiedFinding>) {
+        baseline.to_internal().retain_new(findings);
     }
     fn baseline_looks_like_findings_report(&self, content: &str) -> bool {
         crate::baseline::testing::looks_like_findings_report(content)

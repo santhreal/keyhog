@@ -102,6 +102,46 @@ fn baseline_does_not_suppress_new_findings() {
     assert_eq!(filtered[0].credential_hash, test_hash("newhash").into());
 }
 
+/// Baseline suppression must compact the existing finding vector so a large
+/// report never retains old and replacement finding graphs at once.
+#[test]
+fn baseline_suppression_reuses_the_finding_allocation() {
+    let baseline =
+        API.baseline_from_findings(&[make_finding("github-pat", "known", Some("known.txt"))]);
+    let mut findings = Vec::with_capacity(16);
+    findings.push(make_finding("github-pat", "known", Some("known.txt")));
+    findings.push(make_finding("aws-key", "new", Some("new.txt")));
+    let allocation = findings.as_ptr();
+    let capacity = findings.capacity();
+
+    API.baseline_retain_new(&baseline, &mut findings);
+
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].detector_id.as_ref(), "aws-key");
+    assert_eq!(findings[0].credential_hash, test_hash("new").into());
+    assert_eq!(findings[0].location.file_path.as_deref(), Some("new.txt"));
+    assert_eq!(findings.as_ptr(), allocation);
+    assert_eq!(findings.capacity(), capacity);
+}
+
+/// Suppressing every finding must clear entries without replacing or shrinking
+/// the reusable vector allocation.
+#[test]
+fn baseline_full_suppression_keeps_the_reusable_allocation() {
+    let baseline =
+        API.baseline_from_findings(&[make_finding("github-pat", "known", Some("known.txt"))]);
+    let mut findings = Vec::with_capacity(16);
+    findings.push(make_finding("github-pat", "known", Some("known.txt")));
+    let allocation = findings.as_ptr();
+    let capacity = findings.capacity();
+
+    API.baseline_retain_new(&baseline, &mut findings);
+
+    assert!(findings.is_empty());
+    assert_eq!(findings.as_ptr(), allocation);
+    assert_eq!(findings.capacity(), capacity);
+}
+
 #[test]
 fn baseline_update_adds_new_findings() {
     let mut baseline =

@@ -255,9 +255,8 @@ pub(crate) fn filter_and_resolve_matches(
     allowlist: &keyhog_core::Allowlist,
 ) -> Result<Vec<RawMatch>> {
     let mut self_scan_path_scope = SelfScanPathScope::new();
-    let mut filtered = matches
-        .into_iter()
-        .filter(|m| {
+    let mut filtered = matches;
+    filtered.retain(|m| {
             let cred = m.credential.as_ref();
 
             if filter.signatures.contains(cred) {
@@ -331,8 +330,7 @@ pub(crate) fn filter_and_resolve_matches(
                 }
             }
             true
-        })
-        .collect::<Vec<_>>();
+        });
 
     filtered = filter
         .scanner
@@ -417,9 +415,10 @@ impl ScanOrchestrator {
         use std::time::Duration;
 
         const MIN_VERIFY_CONFIDENCE: f64 = 0.3;
-        let (verify_candidates, skip_candidates): (Vec<_>, Vec<_>) = groups
-            .into_iter()
-            .partition(|m| m.confidence.unwrap_or(0.0) >= MIN_VERIFY_CONFIDENCE); // LAW10: absent confidence => 0.0 for sort/partition ordering only; recall-safe
+        let mut verify_candidates = groups;
+        let skip_candidates: Vec<_> = verify_candidates
+            .extract_if(.., |m| m.confidence.unwrap_or(0.0) < MIN_VERIFY_CONFIDENCE)
+            .collect(); // LAW10: absent confidence => 0.0 for verification eligibility only; recall-safe
 
         let skipped_count = skip_candidates.len();
         if skipped_count > 0 {

@@ -275,12 +275,11 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
         }
     }
 
-    // Sort by key for cross-run determinism (the IndexMap iteration order is
-    // insertion order, which depends on input ordering). SARIF fingerprints,
-    // baselines, and CI diffs all need stable output across reruns.
-    let mut deduped: Vec<(DedupKey, DedupedMatch)> = groups.into_iter().collect();
-    deduped.sort_by(|a, b| a.0.cmp(&b.0));
-    deduped.into_iter().map(|(_, v)| v).collect()
+    // Sort the map in place, then move only its values into the output. This
+    // preserves the canonical key order without materializing an intermediate
+    // Vec of duplicate key/value graph owners.
+    groups.sort_keys();
+    groups.into_values().collect()
 }
 
 /// A decoded-source match and its raw twin count as the same finding when their
