@@ -1028,11 +1028,15 @@ impl HsScanner {
         use hyperscan::Serialized;
 
         for (index, bytes) in serialized_shards.iter().enumerate() {
-            bytes.size().map_err(|error| {
+            let validation = bytes.size().map_err(|error| {
                 format!(
                     "packed Hyperscan shard {index} is incompatible or corrupt; reinstall and recalibrate: {error}"
                 )
-            })?;
+            });
+            bytes
+                .release_resident_pages()
+                .map_err(|error| format!("releasing packed Hyperscan shard {index}: {error}"))?;
+            validation?;
         }
         Ok(())
     }
@@ -1074,15 +1078,18 @@ impl HsScanner {
             .iter()
             .enumerate()
             .map(|(index, bytes)| {
-                bytes
+                let database = bytes
                     .as_ref()
                     .deserialize::<BlockMode>()
-                    .map(|db| Shard { db })
                     .map_err(|error| {
                         format!(
                             "packed Hyperscan shard {index} is incompatible or corrupt; reinstall and recalibrate: {error}"
                         )
-                    })
+                    });
+                bytes
+                    .release_resident_pages()
+                    .map_err(|error| format!("releasing packed Hyperscan shard {index}: {error}"))?;
+                database.map(|db| Shard { db })
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {

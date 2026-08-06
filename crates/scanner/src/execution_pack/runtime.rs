@@ -46,11 +46,21 @@ impl ExecutionPackByteLedger {
 pub struct ExecutionPackMappedBytes {
     mapping: std::sync::Arc<Mmap>,
     range: Range<usize>,
+    path: PathBuf,
 }
 
 impl ExecutionPackMappedBytes {
     pub fn as_bytes(&self) -> &[u8] {
         &self.mapping[self.range.clone()]
+    }
+
+    pub fn release_resident_pages(&self) -> Result<(), ExecutionPackError> {
+        release_mapping_slice(
+            &self.mapping,
+            &self.path,
+            self.as_bytes(),
+            "discard validated native shard pages",
+        )
     }
 }
 
@@ -201,6 +211,7 @@ impl ExecutionPack {
         Ok(ExecutionPackMappedBytes {
             mapping: std::sync::Arc::clone(&self.mapping),
             range,
+            path: self.path.clone(),
         })
     }
 

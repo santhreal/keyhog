@@ -28,6 +28,13 @@ impl SerializedHyperscanShard {
         };
         std::sync::Arc::make_mut(bytes)
     }
+
+    pub fn release_resident_pages(&self) -> Result<(), ExecutionPackError> {
+        match &self.0 {
+            SerializedHyperscanShardStorage::Owned(_) => Ok(()),
+            SerializedHyperscanShardStorage::Mapped(bytes) => bytes.release_resident_pages(),
+        }
+    }
 }
 
 impl From<Vec<u8>> for SerializedHyperscanShard {
