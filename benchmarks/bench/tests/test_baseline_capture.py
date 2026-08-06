@@ -936,6 +936,27 @@ def test_execution_pack_capture_binds_manifest_and_scan_metadata(
         binary_path=binary, execution_pack_manifest_path=manifest_path,
     )
 
+    legacy = json.loads(json.dumps(payload))
+    legacy["schema_version"] = 3
+    legacy["workloads"] = [
+        row
+        for row in legacy["workloads"]
+        if row["workload_id"] == "filesystem-single-tiny-file"
+    ]
+    legacy_provenance = legacy["runtime_provenance"]
+    del legacy_provenance["workload_detector_provenance"]
+    legacy_provenance.update({
+        "scan_detector_digest": "925-runtime-detector-digest",
+        "detector_count": 902,
+        "detector_corpus_digest": "f" * 64,
+    })
+    validate_baseline_payload(
+        legacy, catalog_path=CATALOG_PATH, fixture_lock_path=LOCK_PATH,
+        target_matrix_path=TARGET_PATH,
+        expected_workload_ids={"filesystem-single-tiny-file"},
+        binary_path=binary, execution_pack_manifest_path=manifest_path,
+    )
+
 
 def test_execution_pack_capture_rejects_generation_drift(tmp_path: pathlib.Path) -> None:
     """WHY: a manifest or executable replacement during trials would mix distinct installed generations in one benchmark artifact."""
