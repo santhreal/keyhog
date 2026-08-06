@@ -473,7 +473,8 @@ impl WatchSession<'_> {
                 // links) kill the watcher outright.
                 WatchScanOutcome::PolicySkip => {}
                 WatchScanOutcome::EngineFailure => {
-                    self.consecutive_scan_failures = self.consecutive_scan_failures.saturating_add(1);
+                    self.consecutive_scan_failures =
+                        self.consecutive_scan_failures.saturating_add(1);
                     let failures = self.consecutive_scan_failures;
                     let limit = self.max_consecutive_failures;
                     if failures >= limit {
@@ -840,6 +841,11 @@ fn scan_file(
         return Ok(WatchScanOutcome::Ok);
     }
     for m in matches {
+        let credential_identity = format!(
+            "{} sha256:{}",
+            keyhog_core::redact(&m.credential),
+            keyhog_core::hex_encode(m.credential_hash.as_bytes())
+        );
         crate::style::print_diagnostic_finding(
             "\u{1F50D}",
             &m.detector_id,
@@ -847,7 +853,7 @@ fn scan_file(
             m.location.line,
             m.severity,
             m.confidence,
-            &keyhog_core::redact(&m.credential),
+            &credential_identity,
         )
         .with_context(|| format!("write watch finding for {}", path.display()))?;
     }

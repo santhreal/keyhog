@@ -308,6 +308,13 @@ fn watch_detects_changes_under_every_root() {
 
     // Both findings must reach stdout (the first AND the second root).
     let both_found = wait_until_contains(&stdout_buf, &["a.env", "b.env"], Duration::from_secs(15));
+    let credential_hash =
+        keyhog_core::hex_encode(keyhog_core::sha256_hash("AKIAQYLPMN5HFIQR7XYA").as_bytes());
+    let hash_found = wait_until_contains(
+        &stdout_buf,
+        &[&format!("sha256:{credential_hash}")],
+        Duration::from_secs(1),
+    );
     let _ = child.kill();
     let _ = child.wait();
 
@@ -317,6 +324,11 @@ fn watch_detects_changes_under_every_root() {
          first-only); stdout={} stderr={}",
         stdout_buf.lock().expect("buffer lock"),
         stderr_buf.lock().expect("buffer lock"),
+    );
+    assert!(
+        hash_found,
+        "watch output must expose a stable redaction-safe credential identity; stdout={}",
+        stdout_buf.lock().expect("buffer lock"),
     );
 }
 

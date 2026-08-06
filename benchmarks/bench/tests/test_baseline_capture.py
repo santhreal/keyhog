@@ -17,6 +17,7 @@ from bench.baseline_capture import (
     BaselineCaptureError,
     BaselineTrial,
     _combine_concurrent_trials,
+    _watch_finding_hashes,
     capture_baseline_catalog,
     capture_filesystem_baseline,
     concurrency_command,
@@ -175,6 +176,17 @@ def test_binary_filesystem_driver_targets_the_regular_file(tmp_path: pathlib.Pat
     )
     assert "--binary" in command
     assert command[-1] == str(tmp_path / "fixture" / "input" / "program.bin")
+
+
+
+def test_watch_finding_hash_parser_binds_only_the_changed_path() -> None:
+    """WHY: watch performance is valid parity evidence only when its redaction-safe output identifies the credential found for the measured event."""
+    digest = "a" * 64
+    lines = [
+        f"FINDING github other.env:1 CRITICAL gh...hp sha256:{'b' * 64}\n",
+        f"FINDING github event.env:1 CRITICAL gh...hp sha256:{digest}\n",
+    ]
+    assert _watch_finding_hashes(lines, "event.env") == (digest,)
 
 
 def test_capture_runs_five_complete_process_trials_and_binds_binary(

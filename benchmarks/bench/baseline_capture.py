@@ -1236,6 +1236,20 @@ def _drain_text_pipe(pipe, sink: list[str]) -> None:
         sink.append(line)
 
 
+def _watch_finding_hashes(lines: Sequence[str], event_name: str) -> tuple[str, ...]:
+    hashes: list[str] = []
+    for line in lines:
+        if event_name not in line:
+            continue
+        for field in line.split():
+            if not field.startswith("sha256:"):
+                continue
+            value = field.removeprefix("sha256:")
+            if len(value) == 64 and all(character in "0123456789abcdef" for character in value):
+                hashes.append(value)
+    return tuple(sorted(hashes))
+
+
 def capture_watch_baseline(
     workload: Workload, *, binary: str | pathlib.Path, detectors: str | pathlib.Path,
     fixture_root: str | pathlib.Path, fixture_receipt: dict[str, object],
@@ -1291,11 +1305,12 @@ def capture_watch_baseline(
                 os.killpg(process.pid, signal.SIGKILL); process.wait(timeout=5)
             for thread in threads: thread.join(timeout=1)
             event.unlink()
+            finding_hashes = _watch_finding_hashes(stdout_lines, event.name)
             trials.append(BaselineTrial(
                 wall_ms=wall_ms, peak_rss_kb=peak_rss, minor_page_faults=None,
-                major_page_faults=None, exit_code=0, finding_count=1,
-                finding_hashes=tuple(), coverage_gap_count=0,
-                result_error="watch text output does not expose credential hashes",
+                major_page_faults=None, exit_code=0, finding_count=len(finding_hashes),
+                finding_hashes=finding_hashes, coverage_gap_count=0,
+                result_error="" if finding_hashes else "watch output lacked credential hashes",
             ))
     return summarize_trials(
         workload.workload_id, backend, str(fixture_receipt["input_sha256"]),
