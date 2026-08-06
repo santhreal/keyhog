@@ -40,7 +40,7 @@ impl ActiveBackendRouter {
     }
 }
 
-const STDIN_FUSED_BATCH_BYTES: usize = 4 * 1024 * 1024;
+const STDIN_FUSED_BATCH_BYTES: usize = 2 * 1024 * 1024;
 
 fn is_stdin_source(source: &dyn Source) -> bool {
     let source = source.as_any();
@@ -183,9 +183,9 @@ impl ScanOrchestrator {
         // resident source bytes. Explicit CLI/TOML config owns the count and
         // queue depth so effective config and autoroute identity cannot drift.
         let fused_batch = self.effective_config.fused_batch;
-        // Stdin windows are already bounded to 1 MiB. Group four of them so
-        // `scan_coalesced` amortizes fork/join and gate setup while the
-        // rendezvous channel keeps the live source payload below 5 MiB.
+        // Stdin windows are already bounded to 1 MiB. Pair adjacent windows so
+        // `scan_coalesced` amortizes fork/join and gate setup while the default
+        // rendezvous channel keeps the live source payload below 3 MiB.
         let fused_batch_bytes = if sources
             .iter()
             .all(|source| is_stdin_source(source.as_ref()))
