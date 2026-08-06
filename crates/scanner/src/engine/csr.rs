@@ -62,6 +62,28 @@ impl CsrU32 {
         let end = *self.offsets.get(i + 1)? as usize;
         Some(&self.data[start..end])
     }
+
+    /// Number of logical rows in the table.
+    #[inline]
+    pub(crate) fn len(&self) -> usize {
+        self.offsets.len().saturating_sub(1)
+    }
+
+    /// Whether the table has no logical rows.
+    #[inline]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Iterate logical rows without exposing the offset representation.
+    pub(crate) fn iter(&self) -> impl ExactSizeIterator<Item = &[u32]> {
+        (0..self.len()).map(|index| &self[index])
+    }
+
+    #[cfg(test)]
+    pub(crate) fn storage_lengths(&self) -> (usize, usize) {
+        (self.data.len(), self.offsets.len())
+    }
 }
 
 impl From<Vec<Vec<usize>>> for CsrU32 {
@@ -76,6 +98,19 @@ impl From<Vec<Vec<usize>>> for CsrU32 {
     }
 }
 
+impl From<Vec<Vec<u32>>> for CsrU32 {
+    fn from(rows: Vec<Vec<u32>>) -> Self {
+        let data_cap: usize = rows.iter().map(Vec::len).sum();
+        let offsets_cap = rows.len().saturating_add(1);
+        Self::from_rows_sized(
+            rows.into_iter()
+                .map(|row| row.into_iter().map(|value| value as usize)),
+            data_cap,
+            offsets_cap,
+        )
+    }
+}
+
 impl std::ops::Index<usize> for CsrU32 {
     type Output = [u32];
 
@@ -84,5 +119,38 @@ impl std::ops::Index<usize> for CsrU32 {
         let start = self.offsets[i] as usize;
         let end = self.offsets[i + 1] as usize;
         &self.data[start..end]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CsrU32;
+
+    /// WHY: suffix and structural indexes now enter CSR as `u32` rows, so empty boundaries and exact row order must survive flattening without an intermediate `usize` table.
+    #[test]
+    fn u32_rows_roundtrip_with_exact_two_vector_storage() {
+        let table = CsrU32::from(vec![vec![4u32, 9], Vec::new(), vec![2, 7]]);
+
+        assert_eq!(table.len(), 3);
+        assert!(!table.is_empty());
+        assert_eq!(
+            table.iter().collect::<Vec<_>>(),
+            vec![&[4, 9][..], &[][..], &[2, 7][..]]
+        );
+        assert_eq!(table.get(3), None);
+        assert_eq!(
+            table.storage_lengths(),
+            (4, 4),
+            "four values and row_count + 1 offsets are the complete retained representation"
+        );
+    }
+
+    /// WHY: all-empty detector partitions previously retained one inner `Vec` header per detector; CSR must encode those rows with offsets only and zero data entries.
+    #[test]
+    fn empty_rows_consume_no_data_slots() {
+        let table = CsrU32::from(vec![Vec::<u32>::new(), Vec::new(), Vec::new()]);
+
+        assert_eq!(table.iter().collect::<Vec<_>>(), vec![&[] as &[u32]; 3]);
+        assert_eq!(table.storage_lengths(), (0, 4));
     }
 }

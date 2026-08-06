@@ -946,6 +946,8 @@ impl CompiledScanner {
                 structural_phase2_patterns[pattern.detector_index].push(pattern_index);
             }
         }
+        let structural_confirmed_patterns = CsrU32::from(structural_confirmed_patterns);
+        let structural_phase2_patterns = CsrU32::from(structural_phase2_patterns);
         let gpu_matcher = OnceLock::new();
         #[cfg(feature = "gpu")]
         if let Some(matcher) = packed_gpu_matcher {
@@ -1065,6 +1067,62 @@ mod tests {
         assert!(
             scanner.ac.is_none(),
             "exact SIMD ownership is native shards plus unsupported-pattern recovery"
+        );
+    }
+
+    /// WHY: detector and pattern partitions used to retain one inner vector per row even when almost every row was empty.
+    #[test]
+    fn scanner_relations_retain_only_flat_offset_tables() {
+        let mut spec = detector();
+        spec.keywords = vec!["credential".into()];
+        spec.patterns[0].structural_password_slot = true;
+        spec.patterns.push(PatternSpec {
+            regex: r"[A-Za-z_]+[:=]([A-Z0-9]{16})".into(),
+            group: Some(1),
+            structural_password_slot: true,
+            ..Default::default()
+        });
+        let scanner = CompiledScanner::compile_for_backend(
+            vec![spec],
+            crate::hw_probe::ScanBackend::CpuFallback,
+        )
+        .expect("compile compact relation fixture");
+
+        let expected_confirmed = scanner
+            .ac_map
+            .iter()
+            .enumerate()
+            .filter_map(|(index, pattern)| pattern.structural_password_slot.then_some(index as u32))
+            .collect::<Vec<_>>();
+        let expected_phase2 = scanner
+            .phase2_patterns
+            .iter()
+            .enumerate()
+            .filter_map(|(index, (pattern, _))| {
+                pattern.structural_password_slot.then_some(index as u32)
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            scanner.structural_confirmed_patterns.get(0),
+            Some(expected_confirmed.as_slice())
+        );
+        assert_eq!(
+            scanner.structural_phase2_patterns.get(0),
+            Some(expected_phase2.as_slice())
+        );
+        assert_eq!(
+            scanner.structural_confirmed_patterns.storage_lengths(),
+            (expected_confirmed.len(), 2)
+        );
+        assert_eq!(
+            scanner.structural_phase2_patterns.storage_lengths(),
+            (expected_phase2.len(), 2)
+        );
+        assert_eq!(scanner.ac_suffix_gate.len(), scanner.ac_map.len());
+        assert_eq!(
+            scanner.ac_suffix_gate.storage_lengths().1,
+            scanner.ac_map.len() + 1
         );
     }
 }

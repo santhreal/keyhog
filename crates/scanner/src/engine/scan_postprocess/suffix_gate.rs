@@ -58,7 +58,7 @@ pub(crate) fn suffix_gate_literals(src: &str) -> Vec<String> {
 /// pattern has a gateable suffix.
 pub(crate) fn build_confirmed_suffix_gate(
     ac_map: &[CompiledPattern],
-) -> (Option<aho_corasick::AhoCorasick>, Vec<Vec<u32>>) {
+) -> (Option<aho_corasick::AhoCorasick>, super::CsrU32) {
     use std::collections::HashMap;
     let mut literals: Vec<String> = Vec::new();
     let mut literal_id: HashMap<String, usize> = HashMap::new();
@@ -84,7 +84,7 @@ pub(crate) fn build_confirmed_suffix_gate(
         }
     }
     if literals.is_empty() {
-        return (None, per_pattern);
+        return (None, super::CsrU32::from(per_pattern));
     }
     let ac = match aho_corasick::AhoCorasickBuilder::new()
         .match_kind(aho_corasick::MatchKind::Standard)
@@ -101,5 +101,5 @@ pub(crate) fn build_confirmed_suffix_gate(
             None
         }
     };
-    (ac, per_pattern)
+    (ac, super::CsrU32::from(per_pattern))
 }

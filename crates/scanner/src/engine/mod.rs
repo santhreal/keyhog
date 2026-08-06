@@ -213,8 +213,7 @@ pub(crate) const BIGRAM_BLOOM_MIN_CHUNK_BYTES: usize = 64;
 /// A worker may retain at most one scan chunk of route-local candidate scratch.
 /// A hostile high-anchor chunk can grow beyond this while it is processed, but
 /// the outlier allocation is released before the worker accepts another route.
-pub(crate) const MAX_RETAINED_WORKER_SCRATCH_BYTES: usize =
-    crate::types::MAX_SCAN_CHUNK_BYTES;
+pub(crate) const MAX_RETAINED_WORKER_SCRATCH_BYTES: usize = crate::types::MAX_SCAN_CHUNK_BYTES;
 
 pub(crate) fn release_candidate_scratch(values: &mut Vec<(u32, u32)>) {
     values.clear();
@@ -492,14 +491,14 @@ pub struct CompiledScanner {
     pub(crate) ac_map: Vec<CompiledPattern>,
     /// Confirmed pattern indices whose exact capture proves a structural password
     /// slot, partitioned by detector for bounded generic-bridge lookup.
-    pub(crate) structural_confirmed_patterns: Vec<Vec<usize>>,
+    pub(crate) structural_confirmed_patterns: CsrU32,
     pub(crate) pattern_boundary_context: boundary::BoundaryContextBytes,
     /// Confirmed-pass suffix gate: AC over ac_map patterns' required suffix
     /// literals (every match ends with one). `ac_suffix_gate[i]` are pattern
     /// i's literal ids; a triggered pattern whose suffix literals are all absent
     /// from the chunk cannot match and is skipped (see `extract_confirmed_patterns`).
     pub(crate) suffix_gate_ac: Option<AhoCorasick>,
-    pub(crate) ac_suffix_gate: Vec<Vec<u32>>,
+    pub(crate) ac_suffix_gate: CsrU32,
     /// Per-`ac_map` bit for confirmed regexes whose detector-owned
     /// `simdsieve_prefixes` can already emit the same candidate directly.
     pub(crate) hot_confirmed_by_pattern: Vec<bool>,
@@ -513,7 +512,7 @@ pub struct CompiledScanner {
     pub(crate) phase2_patterns: Vec<(CompiledPattern, Vec<String>)>,
     /// Phase-2 pattern indices whose exact capture proves a structural password
     /// slot, partitioned by detector for bounded generic-bridge lookup.
-    pub(crate) structural_phase2_patterns: Vec<Vec<usize>>,
+    pub(crate) structural_phase2_patterns: CsrU32,
     pub(crate) same_prefix_patterns: CsrU32,
     pub(crate) phase2_keyword_to_patterns: CsrU32,
     pub(crate) phase2_keyword_count: usize,

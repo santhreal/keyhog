@@ -280,10 +280,12 @@ impl CompiledScanner {
                 let structural_password_slot = execution_policy.structural_password_slot
                     || self.structural_confirmed_patterns[owning_detector_index]
                         .iter()
-                        .any(|&index| exact_structural_slot(&self.ac_map[index]))
+                        .any(|&index| exact_structural_slot(&self.ac_map[index as usize]))
                     || self.structural_phase2_patterns[owning_detector_index]
                         .iter()
-                        .any(|&index| exact_structural_slot(&self.phase2_patterns[index].0));
+                        .any(|&index| {
+                            exact_structural_slot(&self.phase2_patterns[index as usize].0)
+                        });
 
                 // Surface every generic shape rejection through dogfood accounting.
                 let shape_rejected = if self

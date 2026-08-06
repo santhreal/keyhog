@@ -296,6 +296,11 @@ only the literals rejected by Hyperscan for exact host recovery. Phase-two
 keyword catalogs and alphabet screens borrow detector-owned strings while they
 build. Only synthesized keyword stems and VYRE matcher rows allocate new bytes.
 
+Detector-indexed matcher relationships use flat `u32` data plus row offsets.
+SIMD pattern mappings, confirmed-suffix rows, and structural detector
+partitions therefore retain two contiguous vectors per table rather than one
+heap allocation and pointer-sized header per detector or pattern.
+
 Every mapped byte has one owner: pack metadata, detector IR, route classifier,
 regex programs, suppression policy, or the selected backend. Header, table, and
 alignment padding belong to pack metadata. The ownership ledger must sum to the

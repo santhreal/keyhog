@@ -83,13 +83,13 @@ pub(crate) struct SimdPhase1Prefilter {
 impl SimdPhase1Prefilter {
     pub(crate) fn new(
         scanner: crate::simd::backend::HsScanner,
-        index_map: Vec<Vec<usize>>,
+        index_map: super::CsrU32,
         ac_literals: &[String],
         unsupported_ac: &[usize],
     ) -> crate::error::Result<Self> {
         Ok(Self {
             scanner,
-            index_map: super::CsrU32::from(index_map),
+            index_map,
             recovery: SimdRecoveryPrefilter::build(ac_literals, unsupported_ac)?,
         })
     }
@@ -139,7 +139,7 @@ enum SimdPhase1PlanSource {
 #[cfg(feature = "simd")]
 pub(crate) struct SimdPhase1CompilePlan {
     source: SimdPhase1PlanSource,
-    index_map: Vec<Vec<usize>>,
+    index_map: super::CsrU32,
     ac_literals: std::sync::Arc<[String]>,
 }
 
@@ -223,7 +223,7 @@ pub(crate) fn build_simd_compile_plan(
             patterns: hs_patterns.into_boxed_slice(),
             shard_target: tuning.hs_shard_target,
         },
-        index_map,
+        index_map: super::CsrU32::from(index_map),
         ac_literals,
     })
 }
@@ -339,7 +339,7 @@ pub(crate) fn build_packed_simd_compile_plan(
             pattern_map,
             unsupported_pattern_ids: unsupported.into_boxed_slice(),
         },
-        index_map,
+        index_map: super::CsrU32::from(index_map),
         ac_literals,
     })
 }
@@ -394,7 +394,7 @@ impl SimdPhase1CompilePlan {
                     self.index_map.len()
                 ));
             };
-            unsupported_ac.extend(indices.iter().copied());
+            unsupported_ac.extend(indices.iter().map(|&index| index as usize));
         }
 
         SimdPhase1Prefilter::new(scanner, self.index_map, &self.ac_literals, &unsupported_ac)
