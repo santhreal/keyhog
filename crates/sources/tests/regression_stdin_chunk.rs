@@ -245,12 +245,12 @@ fn stdin_chunk_metadata_child() {
 #[ignore = "harness child: launched by a parent test that pipes a large under-cap payload"]
 fn stdin_large_chunk_child() {
     // Large stdin is spooled before scanning, then exposed through bounded
-    // 512 KiB windows with 128 KiB of boundary overlap.
+    // 1 MiB windows with 128 KiB of boundary overlap.
     let len: usize = std::env::var("KEYHOG_TEST_STDIN_LEN")
         .expect("KEYHOG_TEST_STDIN_LEN must be set by the parent")
         .parse()
         .expect("KEYHOG_TEST_STDIN_LEN must parse as usize");
-    const WINDOW: usize = 512 * 1024;
+    const WINDOW: usize = 1024 * 1024;
     const OVERLAP: usize = 128 * 1024;
     const STRIDE: usize = WINDOW - OVERLAP;
 
