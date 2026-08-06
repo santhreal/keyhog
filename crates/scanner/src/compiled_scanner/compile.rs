@@ -1,7 +1,7 @@
-#[cfg(feature = "simdsieve")]
-use super::compile_helpers::build_hot_pattern_slots;
 #[cfg(all(target_os = "linux", feature = "gpu"))]
 use super::compile_helpers::surface_cuda_acquisition_failure;
+#[cfg(feature = "simdsieve")]
+use super::compile_helpers::{build_hot_pattern_slots, hydrate_hot_pattern_slots};
 use super::*;
 use crate::compiler::compiler_build::CompileState;
 #[cfg(feature = "simd")]
@@ -144,6 +144,8 @@ impl CompiledScanner {
             None,
             None,
             None,
+            None,
+            None,
         )
     }
 
@@ -176,6 +178,8 @@ impl CompiledScanner {
             Some(state),
             None,
             None,
+            None,
+            None,
         )
     }
 
@@ -191,8 +195,26 @@ impl CompiledScanner {
         pack: &crate::execution_pack::ExecutionPack,
         tuning_config: &ScannerTuningConfig,
     ) -> Result<Self> {
-        Self::compile_from_execution_pack_with_tuning_and_detectors(pack, tuning_config)
-            .map(|(scanner, _detectors)| scanner)
+        use crate::execution_pack::ExecutionPackSectionKind as Section;
+        let bytes = pack.section(Section::DetectorPlan).ok_or_else(|| {
+            crate::error::ScanError::Config(
+                "execution pack is missing required detector-plan section".to_owned(),
+            )
+        })?;
+        let hydrated = crate::execution_pack::CompiledDetectorPlanSection::decode(
+            bytes,
+            pack.identity().detector_digest,
+        )
+        .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+        let (records, decoder_plan, compiled_plan_digest) = hydrated.into_direct_parts();
+        Self::compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning_inner(
+            Vec::<DetectorSpec>::new().into(),
+            pack,
+            GpuInitPolicy::SelectedBackend(execution_backend(pack.identity().backend)),
+            tuning_config,
+            Some(decoder_plan),
+            Some((records, compiled_plan_digest)),
+        )
     }
 
     /// Construct a tuned scanner and return the exact shared detector corpus decoded from it.
@@ -202,25 +224,31 @@ impl CompiledScanner {
     ) -> Result<(Self, Arc<[DetectorSpec]>)> {
         use crate::execution_pack::ExecutionPackSectionKind as Section;
 
-        let detector_ir_bytes = pack.section(Section::DetectorIr).ok_or_else(|| {
+        let section_bytes = pack.section(Section::DetectorPlan).ok_or_else(|| {
             crate::error::ScanError::Config(
-                "execution pack is missing required detector-ir section".to_owned(),
+                "execution pack is missing required detector-plan section".to_owned(),
             )
         })?;
-        let detector_ir =
-            crate::execution_pack::CanonicalDetectorExecutionIr::decode_runtime(detector_ir_bytes)
-                .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
-        if detector_ir.digest() != pack.identity().detector_digest {
+        let hydrated = crate::execution_pack::CompiledDetectorPlanSection::decode(
+            section_bytes,
+            pack.identity().detector_digest,
+        )
+        .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+        if hydrated.detector_ir_digest() != pack.identity().detector_digest {
             return Err(crate::error::ScanError::Config(
-                "execution pack DetectorIr identity does not match its header".to_owned(),
+                "execution pack detector plan identity does not match its header".to_owned(),
             ));
         }
-        let detectors: Arc<[DetectorSpec]> = detector_ir.into_detectors().into();
-        let scanner = Self::compile_shared_from_execution_pack_with_tuning(
-            Arc::clone(&detectors),
-            pack,
-            tuning_config,
-        )?;
+        let (detectors, decoder_plan) = hydrated.into_schema_parts();
+        let scanner =
+            Self::compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning_inner(
+                Arc::clone(&detectors),
+                pack,
+                GpuInitPolicy::SelectedBackend(execution_backend(pack.identity().backend)),
+                tuning_config,
+                Some(decoder_plan),
+                None,
+            )?;
         Ok((scanner, detectors))
     }
 
@@ -244,6 +272,27 @@ impl CompiledScanner {
         pack: &crate::execution_pack::ExecutionPack,
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
+    ) -> Result<Self> {
+        Self::compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning_inner(
+            detectors,
+            pack,
+            gpu_policy,
+            tuning_config,
+            None,
+            None,
+        )
+    }
+
+    fn compile_shared_matchers_from_execution_pack_with_gpu_policy_and_tuning_inner(
+        detectors: Arc<[DetectorSpec]>,
+        pack: &crate::execution_pack::ExecutionPack,
+        gpu_policy: GpuInitPolicy,
+        tuning_config: &ScannerTuningConfig,
+        decoder_plan: Option<Arc<crate::decode::CompiledDecoderPlan>>,
+        packed_detector_records: Option<(
+            Arc<[crate::execution_pack::detector_plan::DetectorPlanRecord]>,
+            [u8; 32],
+        )>,
     ) -> Result<Self> {
         use crate::execution_pack::ExecutionPackSectionKind as Section;
 
@@ -332,14 +381,29 @@ impl CompiledScanner {
             bytes: backend_program,
             pack_identity: identity,
         });
-        let state = crate::execution_pack::matcher_sections::decode_compile_state_sections(
-            identity.backend,
-            section(Section::LiteralIndex)?,
-            section(Section::RegexPrograms)?,
-            section(Section::SuppressionPolicy)?,
-            identity.detector_digest,
-            &detectors,
-        )
+        let state = if let Some((records, _)) = packed_detector_records.as_ref() {
+            let detector_ids = records
+                .iter()
+                .map(|detector| detector.id.as_str())
+                .collect::<Vec<_>>();
+            crate::execution_pack::matcher_sections::decode_compile_state_sections_from_ids(
+                identity.backend,
+                section(Section::LiteralIndex)?,
+                section(Section::RegexPrograms)?,
+                section(Section::SuppressionPolicy)?,
+                identity.detector_digest,
+                &detector_ids,
+            )
+        } else {
+            crate::execution_pack::matcher_sections::decode_compile_state_sections(
+                identity.backend,
+                section(Section::LiteralIndex)?,
+                section(Section::RegexPrograms)?,
+                section(Section::SuppressionPolicy)?,
+                identity.detector_digest,
+                &detectors,
+            )
+        }
         .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
         // Section decoders above now own every byte they retain. Drop the
         // immutable mapping's faulted pages before allocating runtime indexes,
@@ -354,6 +418,8 @@ impl CompiledScanner {
             Some(state),
             packed_simd_program,
             packed_vyre_program,
+            decoder_plan,
+            packed_detector_records,
         )
     }
 
@@ -364,16 +430,36 @@ impl CompiledScanner {
         packed_state: Option<CompileState>,
         mut packed_simd_program: Option<PackedSimdProgram>,
         packed_vyre_program: Option<PackedVyreProgramSource<'_>>,
+        packed_decoder_plan: Option<Arc<crate::decode::CompiledDecoderPlan>>,
+        packed_detector_records: Option<(
+            Arc<[crate::execution_pack::detector_plan::DetectorPlanRecord]>,
+            [u8; 32],
+        )>,
     ) -> Result<Self> {
-        if packed_state.is_none() {
-            super::validation::validate_detector_corpus(&detectors)
+        if packed_detector_records.is_none() {
+            if packed_state.is_none() {
+                super::validation::validate_detector_corpus(&detectors)
+                    .map_err(crate::error::ScanError::Config)?;
+            }
+            crate::entropy::policy::validate_feature_compatibility(&detectors)
                 .map_err(crate::error::ScanError::Config)?;
-        }
-        crate::entropy::policy::validate_feature_compatibility(&detectors)
+        } else {
+            crate::entropy::policy::validate_plan_feature_compatibility(
+                &packed_detector_records
+                    .as_ref()
+                    .expect("checked packed detector records")
+                    .0,
+            )
             .map_err(crate::error::ScanError::Config)?;
-        let decoder_plan = Arc::new(crate::decode::CompiledDecoderPlan::snapshot().map_err(
-            |error| crate::error::ScanError::Config(format!("invalid decoder registry: {error}")),
-        )?);
+        }
+        let decoder_plan = match packed_decoder_plan {
+            Some(plan) => plan,
+            None => Arc::new(
+                crate::decode::CompiledDecoderPlan::snapshot().map_err(|error| {
+                    crate::error::ScanError::Config(format!("invalid decoder registry: {error}"))
+                })?,
+            ),
+        };
         // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
         #[cfg(not(feature = "simd"))]
         let (_tuning_config, _packed_simd_program) = (tuning_config, packed_simd_program);
@@ -384,36 +470,57 @@ impl CompiledScanner {
         // Build the canonical detector execution plan before any backend
         // projection. Backends consume only derived matcher inputs from this
         // owner and never reinterpret detector TOML independently.
-        let static_intern_strings: Vec<&str> = detectors
-            .iter()
-            .flat_map(|detector| {
-                [
-                    detector.id.as_str(),
-                    detector.name.as_str(),
-                    detector.service.as_str(),
-                ]
-                .into_iter()
-                .chain(
-                    detector
-                        .entropy_fallback
-                        .as_ref()
+        let static_intern_strings =
+            if let Some((records, _)) = packed_detector_records.as_ref() {
+                records
+                    .iter()
+                    .flat_map(|detector| {
+                        [
+                            detector.id.as_str(),
+                            detector.name.as_str(),
+                            detector.service.as_str(),
+                        ]
                         .into_iter()
-                        .flat_map(|metadata| {
-                            [
-                                metadata.id.as_str(),
-                                metadata.name.as_str(),
-                                metadata.service.as_str(),
-                            ]
-                        }),
-                )
-                .chain(
-                    detector
-                        .companions
-                        .iter()
-                        .map(|companion| companion.name.as_str()),
-                )
-            })
-            .collect();
+                        .chain(detector.entropy_fallback.as_ref().into_iter().flat_map(
+                            |metadata| {
+                                [
+                                    metadata.id.as_str(),
+                                    metadata.name.as_str(),
+                                    metadata.service.as_str(),
+                                ]
+                            },
+                        ))
+                        .chain(detector.companion_names.iter().map(String::as_str))
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                detectors
+                    .iter()
+                    .flat_map(|detector| {
+                        [
+                            detector.id.as_str(),
+                            detector.name.as_str(),
+                            detector.service.as_str(),
+                        ]
+                        .into_iter()
+                        .chain(detector.entropy_fallback.as_ref().into_iter().flat_map(
+                            |metadata| {
+                                [
+                                    metadata.id.as_str(),
+                                    metadata.name.as_str(),
+                                    metadata.service.as_str(),
+                                ]
+                            },
+                        ))
+                        .chain(
+                            detector
+                                .companions
+                                .iter()
+                                .map(|companion| companion.name.as_str()),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
         let static_intern = Arc::new(crate::static_intern::StaticInterner::from_detector_strings(
             static_intern_strings,
         ));
@@ -430,43 +537,73 @@ impl CompiledScanner {
                         })?;
             }
         }
-        let compiled_plan_digest = super::detector_digest::from_execution_plan(
-            keyhog_core::compute_spec_hash(&detectors),
-            decoder_plan.identity(),
-        );
+        let (compiled_plan_digest, detector_plans, detector_count) =
+            if let Some((records, packed_digest)) = packed_detector_records.as_ref() {
+                let plans = crate::detector_plan::CompiledDetectorPlans::hydrate(
+                    records,
+                    static_intern.as_ref(),
+                    state.companions,
+                    decoder_plan,
+                )
+                .map_err(crate::error::ScanError::Config)?;
+                (*packed_digest, plans, records.len())
+            } else {
+                let digest = super::detector_digest::from_execution_plan(
+                    keyhog_core::compute_spec_hash(&detectors),
+                    decoder_plan.identity(),
+                );
+                let plans = crate::detector_plan::CompiledDetectorPlans::compile_with_decoder_plan(
+                    &detectors,
+                    static_intern.as_ref(),
+                    state.companions,
+                    decoder_plan,
+                )
+                .map_err(crate::error::ScanError::Config)?;
+                (digest, plans, detectors.len())
+            };
         let detector_digest = super::detector_digest::projection(compiled_plan_digest);
-        let detector_plans =
-            crate::detector_plan::CompiledDetectorPlans::compile_with_decoder_plan(
-                &detectors,
-                static_intern.as_ref(),
-                state.companions,
-                decoder_plan,
-            )
-            .map_err(crate::error::ScanError::Config)?;
         validate_compiled_pattern_detector_indices(
             &state.ac_map,
             &state.phase2_patterns,
-            detectors.len(),
+            detector_count,
         )?;
-        let detector_count = detectors.len();
         // Lower the last detector-schema-dependent validations before building
         // route runtime indexes. Installed schemas are compiler inputs; keeping
         // them alive while allocating the retained graph inflates peak RSS.
-        let missing_weak_anchor_floors = detectors
-            .iter()
-            .enumerate()
-            .filter_map(|(index, detector)| {
-                let has_weak_pattern = match detector_plans.get(index).weak_anchor_base {
-                    crate::suppression::WeakAnchorBase::Always => true,
-                    crate::suppression::WeakAnchorBase::PerPattern => {
-                        detector.patterns.iter().any(|pattern| pattern.weak_anchor)
-                    }
-                    crate::suppression::WeakAnchorBase::Never => false,
-                };
-                (has_weak_pattern && detector_plans.get(index).entropy_floor.is_none())
-                    .then_some(detector.id.as_str())
-            })
-            .collect::<Vec<_>>();
+        let missing_weak_anchor_floors =
+            if let Some((records, _)) = packed_detector_records.as_ref() {
+                records
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, detector)| {
+                        let has_weak_pattern = match detector_plans.get(index).weak_anchor_base {
+                            crate::suppression::WeakAnchorBase::Always => true,
+                            crate::suppression::WeakAnchorBase::PerPattern => {
+                                detector.patterns.iter().any(|pattern| pattern.weak_anchor)
+                            }
+                            crate::suppression::WeakAnchorBase::Never => false,
+                        };
+                        (has_weak_pattern && detector_plans.get(index).entropy_floor.is_none())
+                            .then_some(detector.id.as_str())
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                detectors
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, detector)| {
+                        let has_weak_pattern = match detector_plans.get(index).weak_anchor_base {
+                            crate::suppression::WeakAnchorBase::Always => true,
+                            crate::suppression::WeakAnchorBase::PerPattern => {
+                                detector.patterns.iter().any(|pattern| pattern.weak_anchor)
+                            }
+                            crate::suppression::WeakAnchorBase::Never => false,
+                        };
+                        (has_weak_pattern && detector_plans.get(index).entropy_floor.is_none())
+                            .then_some(detector.id.as_str())
+                    })
+                    .collect::<Vec<_>>()
+            };
         if !missing_weak_anchor_floors.is_empty() {
             return Err(crate::error::ScanError::Config(format!(
                 "weak-anchor detectors omit detector-local entropy_high/entropy_floor policy: {}",
@@ -475,7 +612,11 @@ impl CompiledScanner {
         }
         drop(missing_weak_anchor_floors);
         #[cfg(feature = "simdsieve")]
-        let hot_pattern_slots = build_hot_pattern_slots(&detectors, &state.ac_map)?;
+        let hot_pattern_slots = if let Some((records, _)) = packed_detector_records.as_ref() {
+            hydrate_hot_pattern_slots(records, &state.ac_map)?
+        } else {
+            build_hot_pattern_slots(&detectors, &state.ac_map)?
+        };
         #[cfg(feature = "simdsieve")]
         let hot_confirmed_by_pattern = {
             let mut hot = vec![false; state.ac_map.len()];
@@ -487,6 +628,7 @@ impl CompiledScanner {
         #[cfg(not(feature = "simdsieve"))]
         let hot_confirmed_by_pattern = vec![false; state.ac_map.len()];
         drop(detectors);
+        drop(packed_detector_records);
         let ac = if matches!(
             gpu_policy,
             GpuInitPolicy::SelectedBackend(crate::hw_probe::ScanBackend::SimdCpu)

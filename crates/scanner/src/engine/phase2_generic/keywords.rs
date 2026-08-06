@@ -109,6 +109,45 @@ impl GenericAssignmentKeywordPlan {
         Ok(Self { matcher, stems })
     }
 
+    pub(crate) fn hydrate(
+        detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+    ) -> Result<Self, String> {
+        let keywords = crate::assignment_keywords::derive_assignment_keywords_from_plan(detectors)?;
+        let vendor_suffixes =
+            crate::assignment_keywords::derive_generic_suffixes_from_plan(detectors, false)?;
+        let tail_suffixes =
+            crate::assignment_keywords::derive_generic_suffixes_from_plan(detectors, true)?;
+        let max_len = detectors
+            .iter()
+            .filter(|detector| detector.owns_entropy_policy())
+            .map(|detector| {
+                detector.max_len.ok_or_else(|| {
+                    format!(
+                        "generic entropy owner {:?} omits max_len; declare it in the detector TOML",
+                        detector.id
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .max()
+            .ok_or_else(|| {
+                "assignment keywords require at least one generic entropy owner".to_string()
+            })?;
+        let alternation = super::generic_keyword_alternation_from(&keywords, &vendor_suffixes);
+        let matcher = super::compile_generic_re_with_policy(&alternation, max_len, &tail_suffixes)
+            .map_err(|error| {
+                format!("cannot compile hydrated generic assignment bridge: {error}")
+            })?;
+        let stems = GenericKeywordStemSet::compile(
+            keywords
+                .iter()
+                .map(String::as_str)
+                .chain(vendor_suffixes.iter().map(String::as_str)),
+        );
+        Ok(Self { matcher, stems })
+    }
+
     pub(crate) fn matcher(&self) -> &regex::Regex {
         &self.matcher
     }

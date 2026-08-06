@@ -13,6 +13,71 @@ use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+trait GenericDetectorSource {
+    fn id(&self) -> &str;
+    fn kind(&self) -> DetectorKind;
+    fn entropy_roles(&self) -> &[keyhog_core::EntropyDetectionRole];
+    fn generic_vendor_suffixes(&self) -> &[String];
+    fn entropy_policy_priority(&self) -> Option<u16>;
+    fn keywords(&self) -> &[String];
+    fn canonical_hex_key_material(&self) -> &[keyhog_core::CanonicalHexKeyMaterialSpec];
+    fn service(&self) -> &str;
+}
+
+impl GenericDetectorSource for DetectorSpec {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn kind(&self) -> DetectorKind {
+        self.kind
+    }
+    fn entropy_roles(&self) -> &[keyhog_core::EntropyDetectionRole] {
+        &self.entropy_roles
+    }
+    fn generic_vendor_suffixes(&self) -> &[String] {
+        &self.generic_vendor_suffixes
+    }
+    fn entropy_policy_priority(&self) -> Option<u16> {
+        self.entropy_policy_priority
+    }
+    fn keywords(&self) -> &[String] {
+        &self.keywords
+    }
+    fn canonical_hex_key_material(&self) -> &[keyhog_core::CanonicalHexKeyMaterialSpec] {
+        &self.canonical_hex_key_material
+    }
+    fn service(&self) -> &str {
+        &self.service
+    }
+}
+
+impl GenericDetectorSource for crate::execution_pack::detector_plan::DetectorPlanRecord {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn kind(&self) -> DetectorKind {
+        self.kind
+    }
+    fn entropy_roles(&self) -> &[keyhog_core::EntropyDetectionRole] {
+        &self.entropy_roles
+    }
+    fn generic_vendor_suffixes(&self) -> &[String] {
+        &self.generic_vendor_suffixes
+    }
+    fn entropy_policy_priority(&self) -> Option<u16> {
+        self.entropy_policy_priority
+    }
+    fn keywords(&self) -> &[String] {
+        &self.keywords
+    }
+    fn canonical_hex_key_material(&self) -> &[keyhog_core::CanonicalHexKeyMaterialSpec] {
+        &self.canonical_hex_key_material
+    }
+    fn service(&self) -> &str {
+        &self.service
+    }
+}
+
 /// Compiled generic-assignment keyword → owning generic `Phase2Generic`
 /// detector index. Replaces the per-candidate linear
 /// `detectors.iter().find(...)` scan (O(detectors × keywords) for EVERY generic
@@ -94,11 +159,21 @@ fn insert_stable_index(
 
 impl GenericOwningDetectorIndex {
     pub(crate) fn build(detectors: &[DetectorSpec]) -> Result<Self, String> {
+        Self::build_from(detectors)
+    }
+
+    pub(crate) fn hydrate(
+        detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+    ) -> Result<Self, String> {
+        Self::build_from(detectors)
+    }
+
+    fn build_from<T: GenericDetectorSource>(detectors: &[T]) -> Result<Self, String> {
         let mut stable_order: Vec<usize> = (0..detectors.len()).collect();
         stable_order.sort_unstable_by(|left, right| {
             detectors[*left]
-                .id
-                .cmp(&detectors[*right].id)
+                .id()
+                .cmp(detectors[*right].id())
                 .then_with(|| left.cmp(right))
         });
         let mut stable_rank = vec![0usize; detectors.len()];
@@ -115,7 +190,7 @@ impl GenericOwningDetectorIndex {
         let mut unclaimed_keyword_owner_index: Option<usize> = None;
         let mut vendor_suffix_fallback_index: Option<usize> = None;
         for (index, detector) in detectors.iter().enumerate() {
-            for role in &detector.entropy_roles {
+            for role in detector.entropy_roles() {
                 let slot = match role {
                     keyhog_core::EntropyDetectionRole::KeywordFree => &mut keyword_free_owner_index,
                     keyhog_core::EntropyDetectionRole::IsolatedBare => {
@@ -128,16 +203,16 @@ impl GenericOwningDetectorIndex {
                 if let Some(previous) = *slot {
                     return Err(format!(
                         "entropy role {:?} is claimed by both {:?} and {:?}; each role must have exactly one detector TOML owner",
-                        role.as_str(), detectors[previous].id, detector.id
+                        role.as_str(), detectors[previous].id(), detector.id()
                     ));
                 }
                 *slot = Some(index);
             }
-            if !detector.generic_vendor_suffixes.is_empty() {
+            if !detector.generic_vendor_suffixes().is_empty() {
                 if let Some(previous) = vendor_suffix_fallback_index {
                     return Err(format!(
                         "generic vendor suffixes are claimed by both {:?} and {:?}; exactly one detector TOML may own them",
-                        detectors[previous].id, detector.id
+                        detectors[previous].id(), detector.id()
                     ));
                 }
                 vendor_suffix_fallback_index = Some(index);
@@ -145,18 +220,18 @@ impl GenericOwningDetectorIndex {
             // Phase-2 generic detectors own their entropy keywords by default.
             // Regex detectors opt in with an explicit TOML priority. Overlap
             // resolution uses that priority as its primary ordering.
-            if detector.kind == DetectorKind::Phase2Generic
-                || detector.entropy_policy_priority.is_some()
+            if detector.kind() == DetectorKind::Phase2Generic
+                || detector.entropy_policy_priority().is_some()
             {
                 let owner = PolicyOwner {
                     index,
-                    priority: match detector.entropy_policy_priority {
+                    priority: match detector.entropy_policy_priority() {
                         Some(priority) => priority,
                         None => 0,
                     },
                     stable_rank: stable_rank[index],
                 };
-                for keyword in &detector.keywords {
+                for keyword in detector.keywords() {
                     let kw_lower = keyword.to_ascii_lowercase();
                     policy_keywords.insert(kw_lower.clone());
                     if let Some(norm) = normalize_assignment_keyword(&kw_lower) {
@@ -169,10 +244,10 @@ impl GenericOwningDetectorIndex {
             // priority. A detector that declares an exact canonical keyword
             // owns that shape even when a broader keyword detector wins the
             // ordinary low-entropy policy for the same assignment.
-            if detector.kind == DetectorKind::Phase2Generic
-                && !detector.canonical_hex_key_material.is_empty()
+            if detector.kind() == DetectorKind::Phase2Generic
+                && !detector.canonical_hex_key_material().is_empty()
             {
-                for policy in &detector.canonical_hex_key_material {
+                for policy in detector.canonical_hex_key_material() {
                     for keyword in &policy.keywords {
                         let kw_lower = keyword.to_ascii_lowercase();
                         insert_stable_index(&mut canonical_exact, kw_lower, index, &stable_rank);
@@ -301,18 +376,30 @@ impl GenericOwningDetectorIndex {
 const MIN_SERVICE_NAME_LEN: usize = 3;
 
 pub(crate) fn build_generic_named_assignment_keywords(detectors: &[DetectorSpec]) -> Vec<Arc<str>> {
+    build_named_assignment_keywords_from(detectors)
+}
+
+pub(crate) fn hydrate_generic_named_assignment_keywords(
+    detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+) -> Vec<Arc<str>> {
+    build_named_assignment_keywords_from(detectors)
+}
+
+fn build_named_assignment_keywords_from<T: GenericDetectorSource>(
+    detectors: &[T],
+) -> Vec<Arc<str>> {
     let mut owned = BTreeSet::<String>::new();
     for detector in detectors {
-        if detector.kind == DetectorKind::Phase2Generic {
+        if detector.kind() == DetectorKind::Phase2Generic {
             continue;
         }
-        let Some(service) = normalize_assignment_keyword(&detector.service) else {
+        let Some(service) = normalize_assignment_keyword(detector.service()) else {
             continue;
         };
         if service.len() < MIN_SERVICE_NAME_LEN {
             continue;
         }
-        for keyword in &detector.keywords {
+        for keyword in detector.keywords() {
             let Some(normalized) = normalize_assignment_keyword(keyword) else {
                 continue;
             };

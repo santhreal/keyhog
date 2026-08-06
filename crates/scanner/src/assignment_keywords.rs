@@ -183,6 +183,98 @@ fn derive_unique_phase2_suffixes(
     )
 }
 
+pub(crate) fn derive_assignment_keywords_from_plan(
+    detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+) -> Result<Vec<String>, String> {
+    let mut ordered = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut owners = 0usize;
+    for detector in detectors {
+        if !detector.owns_entropy_policy() {
+            continue;
+        }
+        owners += 1;
+        for keyword in &detector.keywords {
+            for spelling in separator_spellings(&keyword.to_ascii_lowercase()) {
+                if seen.insert(spelling.clone()) {
+                    ordered.push(spelling);
+                }
+            }
+        }
+    }
+    if owners == 0 {
+        return Err("no generic entropy-policy owner exists in the detector plan".to_owned());
+    }
+    crate::tier_b_list::parse_token_list(
+        ordered,
+        &crate::tier_b_list::ListPolicy {
+            what: "assignment keyword",
+            require_lowercase: true,
+            separators: b"_-.",
+        },
+    )
+}
+
+pub(crate) fn derive_generic_suffixes_from_plan(
+    detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+    tail: bool,
+) -> Result<Vec<String>, String> {
+    let field = if tail {
+        "generic_assignment_tail_suffixes"
+    } else {
+        "generic_vendor_suffixes"
+    };
+    let what = if tail {
+        "generic assignment tail suffix"
+    } else {
+        "generic vendor suffix"
+    };
+    let mut owner = None;
+    for detector in detectors {
+        let values = if tail {
+            &detector.generic_assignment_tail_suffixes
+        } else {
+            &detector.generic_vendor_suffixes
+        };
+        if values.is_empty() {
+            continue;
+        }
+        if detector.kind != keyhog_core::DetectorKind::Phase2Generic {
+            return Err(format!(
+                "detector {:?} declares {field} but is not phase2-generic",
+                detector.id
+            ));
+        }
+        if let Some(previous) = owner {
+            return Err(format!(
+                "detectors {previous:?} and {:?} both declare {field}",
+                detector.id
+            ));
+        }
+        owner = Some(detector.id.as_str());
+    }
+    let Some(owner) = owner else {
+        return Ok(Vec::new());
+    };
+    let detector = detectors
+        .iter()
+        .find(|detector| detector.id == owner)
+        .expect("validated plan owner");
+    let values = if tail {
+        detector.generic_assignment_tail_suffixes.clone()
+    } else {
+        detector.generic_vendor_suffixes.clone()
+    };
+    crate::tier_b_list::parse_token_list(
+        values,
+        &crate::tier_b_list::ListPolicy {
+            what,
+            require_lowercase: true,
+            separators: b"",
+        },
+    )
+}
+
 /// Expand a keyword into its separator spellings. A keyword carrying any of
 /// `_`/`-`/`.` is emitted three times, once per separator (uniformly substituted),
 /// so the prefilter fires regardless of the source's convention; a keyword with no

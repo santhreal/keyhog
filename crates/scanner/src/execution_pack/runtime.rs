@@ -16,6 +16,7 @@ const AUTHENTICATION_HASH_CHUNK_BYTES: usize = 1024 * 1024;
 pub enum ResidentByteOwner {
     PackMetadata,
     DetectorIr,
+    DetectorPlan,
     RouteClassifier,
     RegexPrograms,
     SuppressionPolicy,
@@ -284,6 +285,7 @@ impl ExecutionPack {
         for section in &self.sections {
             let owner = match section.kind {
                 ExecutionPackSectionKind::DetectorIr => Owner::DetectorIr,
+                ExecutionPackSectionKind::DetectorPlan => Owner::DetectorPlan,
                 ExecutionPackSectionKind::LiteralIndex => Owner::RouteClassifier,
                 ExecutionPackSectionKind::RegexPrograms => Owner::RegexPrograms,
                 ExecutionPackSectionKind::SuppressionPolicy => Owner::SuppressionPolicy,

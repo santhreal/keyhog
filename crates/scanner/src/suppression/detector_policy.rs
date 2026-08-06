@@ -12,12 +12,40 @@ pub(crate) struct DetectorSuppressionPolicy {
 
 impl DetectorSuppressionPolicy {
     pub(crate) fn compile(spec: &keyhog_core::DetectorSpec) -> Result<Option<Self>, String> {
-        if spec.allowlist_paths.is_empty()
-            && spec.allowlist_values.is_empty()
-            && spec.stopwords.is_empty()
-            && spec.source_admission.path_patterns.is_empty()
-            && spec.source_admission.source_types.is_empty()
-            && spec.source_admission.file_extensions.is_empty()
+        Self::hydrate_parts(
+            &spec.id,
+            &spec.allowlist_paths,
+            &spec.allowlist_values,
+            &spec.stopwords,
+            &spec.source_admission,
+        )
+    }
+
+    pub(crate) fn hydrate(
+        spec: &crate::execution_pack::detector_plan::DetectorPlanRecord,
+    ) -> Result<Option<Self>, String> {
+        Self::hydrate_parts(
+            &spec.id,
+            &spec.allowlist_paths,
+            &spec.allowlist_values,
+            &spec.stopwords,
+            &spec.source_admission,
+        )
+    }
+
+    fn hydrate_parts(
+        detector_id: &str,
+        allowlist_paths: &[String],
+        allowlist_values: &[String],
+        stopwords: &[String],
+        source_admission: &keyhog_core::SourceAdmissionSpec,
+    ) -> Result<Option<Self>, String> {
+        if allowlist_paths.is_empty()
+            && allowlist_values.is_empty()
+            && stopwords.is_empty()
+            && source_admission.path_patterns.is_empty()
+            && source_admission.source_types.is_empty()
+            && source_admission.file_extensions.is_empty()
         {
             return Ok(None);
         }
@@ -27,23 +55,22 @@ impl DetectorSuppressionPolicy {
                 .map(|pattern| {
                     regex::Regex::new(pattern).map_err(|error| {
                         format!(
-                            "detector {:?} {field} regex {pattern:?} failed to compile: {error}",
-                            spec.id
+                            "detector {detector_id:?} {field} regex {pattern:?} failed to compile: {error}"
                         )
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()
         };
         Ok(Some(Self {
-            allowlist_paths: compile("allowlist_paths", &spec.allowlist_paths)?,
+            allowlist_paths: compile("allowlist_paths", allowlist_paths)?,
             source_path_patterns: compile(
                 "source_admission.path_patterns",
-                &spec.source_admission.path_patterns,
+                &source_admission.path_patterns,
             )?,
-            source_types: spec.source_admission.source_types.clone(),
-            file_extensions: spec.source_admission.file_extensions.clone(),
-            allowlist_values: compile("allowlist_values", &spec.allowlist_values)?,
-            stopwords: spec.stopwords.clone(),
+            source_types: source_admission.source_types.clone(),
+            file_extensions: source_admission.file_extensions.clone(),
+            allowlist_values: compile("allowlist_values", allowlist_values)?,
+            stopwords: stopwords.to_vec(),
         }))
     }
 

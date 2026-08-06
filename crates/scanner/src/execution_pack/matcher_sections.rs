@@ -302,6 +302,28 @@ pub(crate) fn decode_compile_state_sections(
     expected_detector_ir_digest: [u8; 32],
     detectors: &[keyhog_core::DetectorSpec],
 ) -> Result<CompileState, ExecutionPackError> {
+    let detector_ids = detectors
+        .iter()
+        .map(|detector| detector.id.as_str())
+        .collect::<Vec<_>>();
+    decode_compile_state_sections_from_ids(
+        backend,
+        literal_index,
+        regex_programs,
+        suppression_policy,
+        expected_detector_ir_digest,
+        &detector_ids,
+    )
+}
+
+pub(crate) fn decode_compile_state_sections_from_ids(
+    backend: ExecutionPackBackend,
+    literal_index: &[u8],
+    regex_programs: &[u8],
+    suppression_policy: &[u8],
+    expected_detector_ir_digest: [u8; 32],
+    detector_ids: &[&str],
+) -> Result<CompileState, ExecutionPackError> {
     let (literal, regex, _suppression) = decode_validated_compile_state_sections(
         backend,
         literal_index,
@@ -313,18 +335,18 @@ pub(crate) fn decode_compile_state_sections(
             "compiled route matcher graph belongs to another detector IR".to_owned(),
         ));
     }
-    if literal.detector_count as usize != detectors.len() {
+    if literal.detector_count as usize != detector_ids.len() {
         return Err(ExecutionPackError::Incompatible(format!(
             "compiled route owns {} detectors but runtime loaded {}",
             literal.detector_count,
-            detectors.len()
+            detector_ids.len()
         )));
     }
     let ac_map = regex
         .ac_patterns
         .into_iter()
         .enumerate()
-        .map(|(index, pattern)| unpack_pattern(pattern, detectors.len(), "ac_map", index))
+        .map(|(index, pattern)| unpack_pattern(pattern, detector_ids.len(), "ac_map", index))
         .collect::<Result<Vec<_>, _>>()?;
     let phase2_patterns = regex
         .phase2_patterns
@@ -332,7 +354,7 @@ pub(crate) fn decode_compile_state_sections(
         .enumerate()
         .map(|(index, packed)| {
             Ok((
-                unpack_pattern(packed.pattern, detectors.len(), "phase2_patterns", index)?,
+                unpack_pattern(packed.pattern, detector_ids.len(), "phase2_patterns", index)?,
                 packed.keywords,
             ))
         })
@@ -344,7 +366,7 @@ pub(crate) fn decode_compile_state_sections(
         .map(|(detector_index, packed)| {
             packed
                 .into_iter()
-                .map(|companion| unpack_companion(companion, &detectors[detector_index].id))
+                .map(|companion| unpack_companion(companion, detector_ids[detector_index]))
                 .collect()
         })
         .collect::<Result<Vec<_>, ExecutionPackError>>()?;

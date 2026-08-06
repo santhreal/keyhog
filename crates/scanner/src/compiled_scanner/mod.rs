@@ -6,7 +6,7 @@
 
 mod compile;
 mod compile_helpers;
-mod detector_digest;
+pub(crate) mod detector_digest;
 mod runtime;
 mod types;
 mod validation;

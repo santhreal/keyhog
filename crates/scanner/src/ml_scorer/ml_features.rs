@@ -92,6 +92,39 @@ impl CompiledDetectorMlFeatures {
                 .unwrap_or(VERY_HIGH_ENTROPY_THRESHOLD), // LAW10: canonical default for model-neutral training when a detector owns no entropy admission
         }
     }
+
+    pub(crate) fn hydrate(
+        detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
+    ) -> Self {
+        let entropy_class = match detector
+            .entropy_fallback
+            .as_ref()
+            .map(|fallback| fallback.class)
+        {
+            Some(keyhog_core::EntropyFallbackClass::Generic) => {
+                CompiledEntropyFeatureClass::Generic
+            }
+            Some(keyhog_core::EntropyFallbackClass::Password) => {
+                CompiledEntropyFeatureClass::Password
+            }
+            Some(keyhog_core::EntropyFallbackClass::Token) => CompiledEntropyFeatureClass::Token,
+            Some(keyhog_core::EntropyFallbackClass::ApiKey) => CompiledEntropyFeatureClass::ApiKey,
+            None => CompiledEntropyFeatureClass::None,
+        };
+        Self {
+            generic_detector: detector.owns_entropy_policy(),
+            weak_anchor: detector.weak_anchor,
+            live_verifier: detector.live_verifier,
+            required_companion: detector.required_companion,
+            structural_password_slot: detector.structural_password_slot,
+            phase2_generic: detector.kind == keyhog_core::DetectorKind::Phase2Generic,
+            entropy_class,
+            entropy_high: detector.entropy_high.unwrap_or(HIGH_ENTROPY_THRESHOLD),
+            entropy_very_high: detector
+                .entropy_very_high
+                .unwrap_or(VERY_HIGH_ENTROPY_THRESHOLD),
+        }
+    }
 }
 
 /// Offset into the feature vector where the one-hot file-type encoding starts.

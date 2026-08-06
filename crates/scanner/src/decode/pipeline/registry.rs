@@ -104,6 +104,8 @@ pub enum DecoderRegistrationError {
     InvalidVersion { name: &'static str },
     #[error("decoder name {0:?} is already registered")]
     DuplicateName(&'static str),
+    #[error("decoder identity list is incompatible: {0}")]
+    IncompatibleIdentity(String),
     #[error("could not compile the all-decoder trigger automaton: {0}")]
     TriggerBuild(String),
 }
@@ -152,6 +154,28 @@ impl CompiledDecoderPlan {
             all_decoder_trigger,
             identity: u64::from_le_bytes(bytes),
         })
+    }
+
+    /// Stable ordered identities persisted by execution packs. Decoder trait
+    /// objects stay process-local and are reconstructed from this exact list.
+    pub(crate) fn stable_identities(&self) -> Vec<String> {
+        self.decoders
+            .iter()
+            .map(|decoder| format!("{}@{}", decoder.name(), decoder.version()))
+            .collect()
+    }
+
+    pub(crate) fn from_stable_identities(
+        expected: &[String],
+    ) -> Result<Self, DecoderRegistrationError> {
+        let plan = Self::snapshot()?;
+        let actual = plan.stable_identities();
+        if actual != expected {
+            return Err(DecoderRegistrationError::IncompatibleIdentity(format!(
+                "execution pack requires {expected:?}, but this runtime provides {actual:?}"
+            )));
+        }
+        Ok(plan)
     }
 
     pub(crate) fn identity(&self) -> u64 {
@@ -307,7 +331,9 @@ pub(crate) fn decoder_profile_dump() {
         .collect();
     rows.sort_by(|a, b| b.1.total_cmp(&a.1));
     let total: f64 = rows.iter().map(|row| row.1).sum();
-    let mut prod: Vec<(&str, u64)> = (0..named).map(|i| (decoders[i].name(), emitted[i])).collect();
+    let mut prod: Vec<(&str, u64)> = (0..named)
+        .map(|i| (decoders[i].name(), emitted[i]))
+        .collect();
     prod.sort_by(|a, b| b.1.cmp(&a.1));
     let prod_total: u64 = prod.iter().map(|row| row.1).sum();
     if total == 0.0 && prod_total == 0 && dropped == 0 {

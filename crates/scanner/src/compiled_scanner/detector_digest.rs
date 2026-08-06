@@ -1,4 +1,4 @@
-pub(super) fn from_execution_plan(spec_hash: [u8; 32], decoder_plan_identity: u64) -> [u8; 32] {
+pub(crate) fn from_execution_plan(spec_hash: [u8; 32], decoder_plan_identity: u64) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
     update(&mut hasher, b"domain", b"keyhog-scanner-detector-digest-v3");
     update(&mut hasher, b"spec_hash", &spec_hash);
@@ -10,7 +10,7 @@ pub(super) fn from_execution_plan(spec_hash: [u8; 32], decoder_plan_identity: u6
     *hasher.finalize().as_bytes()
 }
 
-pub(super) fn projection(digest: [u8; 32]) -> u64 {
+pub(crate) fn projection(digest: [u8; 32]) -> u64 {
     let mut bytes = [0u8; 8];
     bytes.copy_from_slice(&digest[..8]);
     u64::from_le_bytes(bytes)

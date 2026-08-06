@@ -47,6 +47,20 @@ impl CompiledDetectorMlPolicy {
             features: CompiledDetectorMlFeatures::compile(detector),
         }
     }
+
+    pub(crate) fn hydrate(
+        detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
+    ) -> Self {
+        let policy = detector.ml;
+        Self {
+            match_mode: ActiveMlMode::compile(policy.match_mode),
+            #[cfg(feature = "entropy")]
+            entropy_mode: ActiveMlMode::compile(policy.entropy_mode),
+            weight: policy.weight,
+            context_radius_lines: policy.context_radius_lines,
+            features: CompiledDetectorMlFeatures::hydrate(detector),
+        }
+    }
 }
 
 impl CompiledDetectorMlPolicy {

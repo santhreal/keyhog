@@ -33,6 +33,28 @@ impl CompiledDecodeTransformPolicy {
         Self::compile_prefixes(reverse, caesar)
     }
 
+    pub(crate) fn hydrate(
+        detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+    ) -> Result<Self, String> {
+        for detector in detectors {
+            let issues = detector.decode_transforms.validate();
+            if !issues.is_empty() {
+                return Err(format!(
+                    "detector {:?} has invalid decode_transforms: {}",
+                    detector.id,
+                    issues.join("; ")
+                ));
+            }
+        }
+        let reverse = detectors
+            .iter()
+            .flat_map(|detector| detector.decode_transforms.reverse_prefixes.iter());
+        let caesar = detectors
+            .iter()
+            .flat_map(|detector| detector.decode_transforms.caesar_prefixes.iter());
+        Self::compile_prefixes(reverse, caesar)
+    }
+
     fn compile_prefixes<'a>(
         reverse: impl IntoIterator<Item = &'a String>,
         caesar: impl IntoIterator<Item = &'a String>,

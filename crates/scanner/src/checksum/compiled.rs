@@ -44,7 +44,8 @@ struct CompiledValidator {
 
 impl CompiledValidator {
     fn compile(
-        detector: &keyhog_core::DetectorSpec,
+        detector_id: &str,
+        patterns: &[keyhog_core::PatternSpec],
         spec: &keyhog_core::DetectorValidatorSpec,
     ) -> Result<Self, String> {
         let prefixes = spec
@@ -86,8 +87,7 @@ impl CompiledValidator {
                 min_decoded_len: *min_decoded_len,
             },
             keyhog_core::DetectorValidatorSpec::PatternShape { allow_overlong, .. } => {
-                let patterns: Vec<_> = detector
-                    .patterns
+                let patterns: Vec<_> = patterns
                     .iter()
                     .filter(|pattern| pattern.group.is_none() || pattern.group == Some(0))
                     .map(|pattern| pattern.regex.as_str())
@@ -96,16 +96,14 @@ impl CompiledValidator {
                     regex::RegexSet::new(patterns.iter().map(|pattern| format!("^(?:{pattern})$")))
                         .map_err(|error| {
                             format!(
-                                "detector {:?} pattern-shape validator failed to compile: {error}",
-                                detector.id
+                                "detector {detector_id:?} pattern-shape validator failed to compile: {error}"
                             )
                         })?;
                 let prefix =
                     regex::RegexSet::new(patterns.iter().map(|pattern| format!("^(?:{pattern})")))
                         .map_err(|error| {
                             format!(
-                        "detector {:?} pattern-shape prefix validator failed to compile: {error}",
-                        detector.id
+                        "detector {detector_id:?} pattern-shape prefix validator failed to compile: {error}"
                     )
                         })?;
                 CompiledValidatorKind::PatternShape {
@@ -337,11 +335,24 @@ impl CompiledValidatorCatalog {
 
 impl CompiledDetectorValidators {
     pub(crate) fn compile(detector: &keyhog_core::DetectorSpec) -> Result<Self, String> {
+        Self::hydrate_parts(&detector.id, &detector.patterns, &detector.validators)
+    }
+
+    pub(crate) fn hydrate(
+        detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
+    ) -> Result<Self, String> {
+        Self::hydrate_parts(&detector.id, &detector.patterns, &detector.validators)
+    }
+
+    fn hydrate_parts(
+        detector_id: &str,
+        patterns: &[keyhog_core::PatternSpec],
+        validators: &[keyhog_core::DetectorValidatorSpec],
+    ) -> Result<Self, String> {
         Ok(Self {
-            validators: detector
-                .validators
+            validators: validators
                 .iter()
-                .map(|validator| CompiledValidator::compile(detector, validator))
+                .map(|validator| CompiledValidator::compile(detector_id, patterns, validator))
                 .collect::<Result<Box<[_]>, _>>()?,
         })
     }

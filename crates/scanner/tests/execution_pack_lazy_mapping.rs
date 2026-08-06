@@ -49,8 +49,7 @@ fn mapped_rss_kib(path: &Path) -> u64 {
     mapped_metric_kib(path, "Rss:")
 }
 
-fn large_authenticated_pack(
-) -> (
+fn large_authenticated_pack() -> (
     tempfile::TempDir,
     std::path::PathBuf,
     std::path::PathBuf,
@@ -83,6 +82,11 @@ fn large_authenticated_pack(
             alignment: 4096,
             bytes: &backend_program,
         },
+        CompileSection {
+            kind: ExecutionPackSectionKind::DetectorPlan,
+            alignment: 8,
+            bytes: b"detector-plan",
+        },
     ];
     let compiled = compile_execution_pack(ExecutionPackCompileInput {
         identity: identity(),
@@ -108,13 +112,9 @@ fn large_authenticated_pack(
 fn authenticated_pack_discards_validation_pages_before_lazy_section_access() {
     let (_directory, pack_path, signature_path, signing_key) = large_authenticated_pack();
 
-    let pack = ExecutionPack::open_authenticated(
-        &pack_path,
-        &signature_path,
-        identity(),
-        &signing_key,
-    )
-    .expect("open authenticated pack");
+    let pack =
+        ExecutionPack::open_authenticated(&pack_path, &signature_path, identity(), &signing_key)
+            .expect("open authenticated pack");
     let rss_after_auth = mapped_rss_kib(&pack_path);
     assert!(
         rss_after_auth < 2 * 1024,
@@ -149,13 +149,9 @@ fn authenticated_pack_discards_validation_pages_before_lazy_section_access() {
 #[test]
 fn faulted_execution_pack_pages_are_shared_across_processes() {
     let (_directory, pack_path, signature_path, signing_key) = large_authenticated_pack();
-    let pack = ExecutionPack::open_authenticated(
-        &pack_path,
-        &signature_path,
-        identity(),
-        &signing_key,
-    )
-    .expect("open authenticated pack");
+    let pack =
+        ExecutionPack::open_authenticated(&pack_path, &signature_path, identity(), &signing_key)
+            .expect("open authenticated pack");
     let program = pack
         .section(ExecutionPackSectionKind::BackendProgram)
         .expect("backend program section");
@@ -167,7 +163,11 @@ fn faulted_execution_pack_pages_are_shared_across_processes() {
     assert_eq!(unsafe { libc::pipe(child_release.as_mut_ptr()) }, 0);
 
     let child = unsafe { libc::fork() };
-    assert!(child >= 0, "fork failed: {}", std::io::Error::last_os_error());
+    assert!(
+        child >= 0,
+        "fork failed: {}",
+        std::io::Error::last_os_error()
+    );
     if child == 0 {
         unsafe {
             libc::close(child_ready[0]);

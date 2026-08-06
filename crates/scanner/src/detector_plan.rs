@@ -7,6 +7,57 @@ use keyhog_core::DetectorSpec;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
+trait DetectorPlanSource {
+    fn id(&self) -> &str;
+    fn kind(&self) -> keyhog_core::DetectorKind;
+    fn private_key_block(&self) -> bool;
+    fn resolution_priority(&self) -> i16;
+    fn entropy_fallback(&self) -> Option<&keyhog_core::EntropyFallbackMetadata>;
+    fn detector_relations(&self) -> &[keyhog_core::DetectorRelationSpec];
+}
+
+impl DetectorPlanSource for DetectorSpec {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn kind(&self) -> keyhog_core::DetectorKind {
+        self.kind
+    }
+    fn private_key_block(&self) -> bool {
+        self.private_key_block
+    }
+    fn resolution_priority(&self) -> i16 {
+        self.resolution_priority
+    }
+    fn entropy_fallback(&self) -> Option<&keyhog_core::EntropyFallbackMetadata> {
+        self.entropy_fallback.as_ref()
+    }
+    fn detector_relations(&self) -> &[keyhog_core::DetectorRelationSpec] {
+        &self.detector_relations
+    }
+}
+
+impl DetectorPlanSource for crate::execution_pack::detector_plan::DetectorPlanRecord {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn kind(&self) -> keyhog_core::DetectorKind {
+        self.kind
+    }
+    fn private_key_block(&self) -> bool {
+        self.private_key_block
+    }
+    fn resolution_priority(&self) -> i16 {
+        self.resolution_priority
+    }
+    fn entropy_fallback(&self) -> Option<&keyhog_core::EntropyFallbackMetadata> {
+        self.entropy_fallback.as_ref()
+    }
+    fn detector_relations(&self) -> &[keyhog_core::DetectorRelationSpec] {
+        &self.detector_relations
+    }
+}
+
 pub(crate) type CompiledDetectorMetadata = (Arc<str>, Arc<str>, Arc<str>);
 
 fn intern_detector_identity(
@@ -48,35 +99,49 @@ impl DetectorResolutionIndex {
         detectors: &[DetectorSpec],
         interner: &crate::static_intern::StaticInterner,
     ) -> Result<Self, String> {
+        Self::compile_from(detectors, interner)
+    }
+
+    fn hydrate(
+        detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+        interner: &crate::static_intern::StaticInterner,
+    ) -> Result<Self, String> {
+        Self::compile_from(detectors, interner)
+    }
+
+    fn compile_from<T: DetectorPlanSource>(
+        detectors: &[T],
+        interner: &crate::static_intern::StaticInterner,
+    ) -> Result<Self, String> {
         let expected_rows = detectors.len()
             + detectors
                 .iter()
-                .filter(|detector| detector.entropy_fallback.is_some())
+                .filter(|detector| detector.entropy_fallback().is_some())
                 .count();
         let mut by_id = HashMap::with_capacity(expected_rows);
         for detector in detectors {
-            let class = if detector.private_key_block {
+            let class = if detector.private_key_block() {
                 DetectorResolutionClass::PrivateKeyBlock
-            } else if detector.kind == keyhog_core::DetectorKind::Phase2Generic {
+            } else if detector.kind() == keyhog_core::DetectorKind::Phase2Generic {
                 DetectorResolutionClass::Generic
             } else {
                 DetectorResolutionClass::Named
             };
             insert_resolution_policy(
                 &mut by_id,
-                intern_detector_identity(interner, &detector.id, "resolution owner")?,
+                intern_detector_identity(interner, detector.id(), "resolution owner")?,
                 DetectorResolutionPolicy {
                     class,
-                    priority: detector.resolution_priority,
+                    priority: detector.resolution_priority(),
                 },
             )?;
-            if let Some(metadata) = &detector.entropy_fallback {
+            if let Some(metadata) = detector.entropy_fallback() {
                 insert_resolution_policy(
                     &mut by_id,
                     intern_detector_identity(interner, &metadata.id, "entropy resolution owner")?,
                     DetectorResolutionPolicy {
                         class: DetectorResolutionClass::Entropy,
-                        priority: detector.resolution_priority,
+                        priority: detector.resolution_priority(),
                     },
                 )?;
             }
@@ -115,13 +180,27 @@ impl CompiledDetectorRelationIndex {
         detectors: &[DetectorSpec],
         interner: &crate::static_intern::StaticInterner,
     ) -> Result<Self, String> {
+        Self::compile_from(detectors, interner)
+    }
+
+    fn hydrate(
+        detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+        interner: &crate::static_intern::StaticInterner,
+    ) -> Result<Self, String> {
+        Self::compile_from(detectors, interner)
+    }
+
+    fn compile_from<T: DetectorPlanSource>(
+        detectors: &[T],
+        interner: &crate::static_intern::StaticInterner,
+    ) -> Result<Self, String> {
         let detector_ids = detectors
             .iter()
-            .map(|detector| detector.id.as_str())
+            .map(|detector| detector.id())
             .collect::<HashSet<_>>();
         let relation_owner_count = detectors
             .iter()
-            .filter(|detector| !detector.detector_relations.is_empty())
+            .filter(|detector| !detector.detector_relations().is_empty())
             .count();
         let mut by_owner = HashMap::with_capacity(relation_owner_count);
         let mut graph = HashMap::<&str, Vec<&str>>::with_capacity(detectors.len());
@@ -133,30 +212,31 @@ impl CompiledDetectorRelationIndex {
             .collect::<HashMap<_, _>>();
 
         for detector in detectors {
-            let mut targets = HashSet::with_capacity(detector.detector_relations.len());
-            let mut compiled = Vec::with_capacity(detector.detector_relations.len());
-            for relation in &detector.detector_relations {
+            let relations = detector.detector_relations();
+            let mut targets = HashSet::with_capacity(relations.len());
+            let mut compiled = Vec::with_capacity(relations.len());
+            for relation in relations {
                 let target = relation.detector_id.as_str();
                 if !detector_ids.contains(target) {
                     return Err(format!(
                         "detector {:?} relation targets unknown detector {target:?}",
-                        detector.id
+                        detector.id()
                     ));
                 }
-                if target == detector.id {
+                if target == detector.id() {
                     return Err(format!(
                         "detector {:?} relation cannot target itself",
-                        detector.id
+                        detector.id()
                     ));
                 }
                 if !targets.insert(target) {
                     return Err(format!(
                         "detector {:?} declares multiple relations to {target:?}; \
                          declare one operation per detector pair",
-                        detector.id
+                        detector.id()
                     ));
                 }
-                if let Some(reverse_kind) = declared.get(&(target, detector.id.as_str())).copied() {
+                if let Some(reverse_kind) = declared.get(&(target, detector.id())).copied() {
                     let contradictory = matches!(
                         (relation.kind, reverse_kind),
                         (
@@ -173,13 +253,13 @@ impl CompiledDetectorRelationIndex {
                     if contradictory {
                         return Err(format!(
                             "detectors {:?} and {target:?} declare contradictory {} and {} relations",
-                            detector.id,
+                            detector.id(),
                             relation.kind.as_str(),
                             reverse_kind.as_str(),
                         ));
                     }
                 }
-                declared.insert((detector.id.as_str(), target), relation.kind);
+                declared.insert((detector.id(), target), relation.kind);
                 compiled.push(CompiledDetectorRelation {
                     detector_id: intern_detector_identity(interner, target, "relation target")?,
                     kind: relation.kind,
@@ -192,7 +272,7 @@ impl CompiledDetectorRelationIndex {
                     keyhog_core::DetectorRelationKind::Requires
                         | keyhog_core::DetectorRelationKind::Subsumes
                 ) {
-                    graph.entry(detector.id.as_str()).or_default().push(target);
+                    graph.entry(detector.id()).or_default().push(target);
                     *indegree
                         .get_mut(target)
                         .expect("validated target has an indegree row") += 1;
@@ -200,7 +280,7 @@ impl CompiledDetectorRelationIndex {
             }
             if !compiled.is_empty() {
                 by_owner.insert(
-                    intern_detector_identity(interner, &detector.id, "relation owner")?,
+                    intern_detector_identity(interner, detector.id(), "relation owner")?,
                     compiled.into_boxed_slice(),
                 );
             }
@@ -345,6 +425,73 @@ impl CompiledDetectorPlans {
         );
         let decode_transforms =
             Arc::new(crate::decode::policy::CompiledDecodeTransformPolicy::compile(detectors)?);
+        let mut public_identifier_assignment_markers: Vec<Box<[u8]>> = Vec::new();
+        for marker in detectors
+            .iter()
+            .flat_map(|detector| &detector.public_identifier_assignment_markers)
+        {
+            let bytes = marker.as_bytes();
+            if !public_identifier_assignment_markers
+                .iter()
+                .any(|compiled| compiled.eq_ignore_ascii_case(bytes))
+            {
+                public_identifier_assignment_markers.push(bytes.into());
+            }
+        }
+        Ok(Self {
+            by_detector_index,
+            resolution,
+            detector_relations,
+            validator_index,
+            decode_transforms,
+            decoder_plan,
+            generic_assignment,
+            generic_named_assignment_keywords,
+            generic_ownership,
+            public_identifier_assignment_markers: public_identifier_assignment_markers
+                .into_boxed_slice(),
+        })
+    }
+
+    pub(crate) fn hydrate(
+        detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+        interner: &crate::static_intern::StaticInterner,
+        companions: Vec<Vec<crate::types::CompiledCompanion>>,
+        decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
+    ) -> Result<Self, String> {
+        if companions.len() != detectors.len() {
+            return Err(format!(
+                "compiled companion rows ({}) do not match detector-plan count ({})",
+                companions.len(),
+                detectors.len()
+            ));
+        }
+        let by_detector_index = detectors
+            .iter()
+            .zip(companions)
+            .map(|(detector, companions)| hydrate_detector_plan(detector, companions, interner))
+            .collect::<Result<Box<[_]>, String>>()?;
+        let generic_assignment = by_detector_index
+            .iter()
+            .any(|plan| plan.execution.is_generic)
+            .then(|| {
+                crate::engine::phase2_generic::keywords::GenericAssignmentKeywordPlan::hydrate(
+                    detectors,
+                )
+            })
+            .transpose()?;
+        let generic_named_assignment_keywords =
+            crate::generic_keyword_owner::hydrate_generic_named_assignment_keywords(detectors)
+                .into_boxed_slice();
+        let generic_ownership =
+            crate::generic_keyword_owner::GenericOwningDetectorIndex::hydrate(detectors)?;
+        let resolution = DetectorResolutionIndex::hydrate(detectors, interner)?;
+        let detector_relations = CompiledDetectorRelationIndex::hydrate(detectors, interner)?;
+        let validator_index = crate::checksum::CompiledValidatorIndex::compile(
+            by_detector_index.iter().map(|plan| &plan.validators),
+        );
+        let decode_transforms =
+            Arc::new(crate::decode::policy::CompiledDecodeTransformPolicy::hydrate(detectors)?);
         let mut public_identifier_assignment_markers: Vec<Box<[u8]>> = Vec::new();
         for marker in detectors
             .iter()
@@ -635,6 +782,79 @@ fn compile_detector_plan(
         companions: companions.into_boxed_slice(),
         #[cfg(feature = "ml")]
         ml: crate::detector_ml_policy::CompiledDetectorMlPolicy::compile(detector),
+    })
+}
+
+fn hydrate_detector_plan(
+    detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
+    companions: Vec<crate::types::CompiledCompanion>,
+    interner: &crate::static_intern::StaticInterner,
+) -> Result<CompiledDetectorPlan, String> {
+    let execution = crate::detector_execution_policy::CompiledDetectorExecutionPolicy::hydrate(
+        &detector.id,
+        detector.owns_entropy_policy(),
+        detector.min_len,
+        detector.max_len,
+        detector.min_confidence,
+        detector.severity,
+        detector.structural_password_slot,
+        &detector.keywords,
+        &detector.public_identifier_assignment_markers,
+    )?;
+    let entropy =
+        crate::entropy::policy::hydrate_entropy_policy_with_length(detector, execution.length)?;
+    let weak_anchor_base = if detector.weak_anchor {
+        crate::suppression::WeakAnchorBase::Always
+    } else if detector.patterns.iter().any(|pattern| pattern.weak_anchor) {
+        crate::suppression::WeakAnchorBase::PerPattern
+    } else {
+        crate::suppression::WeakAnchorBase::Never
+    };
+    Ok(CompiledDetectorPlan {
+        metadata: compile_metadata(
+            interner,
+            &detector.id,
+            "primary",
+            &detector.id,
+            &detector.name,
+            &detector.service,
+        )?,
+        entropy_metadata: detector
+            .entropy_fallback
+            .as_ref()
+            .map(|metadata| {
+                compile_metadata(
+                    interner,
+                    &detector.id,
+                    "entropy fallback",
+                    &metadata.id,
+                    &metadata.name,
+                    &metadata.service,
+                )
+            })
+            .transpose()?,
+        execution,
+        match_confidence: crate::confidence::policy::CompiledMatchConfidencePolicy::hydrate(
+            &detector.id,
+            detector.owns_entropy_policy(),
+            detector.match_confidence,
+        )?,
+        key_material:
+            crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::hydrate(
+                &detector.id,
+                detector.kind,
+                &detector.decoded_hex_key_material_lengths,
+                &detector.canonical_hex_key_material,
+            )?,
+        entropy_floor: crate::entropy::policy::CompiledEntropyFloorPolicy::hydrate(detector)?,
+        entropy,
+        credential_shape: crate::credential_shapes::hydrate_detector_shape_rule(detector)?,
+        suppression: crate::suppression::DetectorSuppressionPolicy::hydrate(detector)?,
+        validators: crate::checksum::CompiledDetectorValidators::hydrate(detector)?,
+        weak_anchor_base,
+        companions: companions.into_boxed_slice(),
+        #[cfg(feature = "ml")]
+        ml: crate::detector_ml_policy::CompiledDetectorMlPolicy::hydrate(detector),
     })
 }
 

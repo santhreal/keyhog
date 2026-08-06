@@ -19,7 +19,7 @@ fn identity() -> ExecutionPackIdentity {
     )
 }
 
-fn sections() -> [CompileSection<'static>; 5] {
+fn sections() -> [CompileSection<'static>; 6] {
     [
         CompileSection {
             kind: ExecutionPackSectionKind::DetectorIr,
@@ -45,6 +45,11 @@ fn sections() -> [CompileSection<'static>; 5] {
             kind: ExecutionPackSectionKind::BackendProgram,
             alignment: 16,
             bytes: b"cpu-program",
+        },
+        CompileSection {
+            kind: ExecutionPackSectionKind::DetectorPlan,
+            alignment: 8,
+            bytes: b"detector-plan-v1",
         },
     ]
 }
@@ -448,8 +453,9 @@ fn runtime_rejects_tampered_header_identity() {
 #[test]
 fn every_policy_composes_a_complete_distinct_plan() {
     let directory = tempfile::tempdir().expect("temporary directory");
+    let ir = CanonicalDetectorExecutionIr::compile(&[detector("policy-plan")]).expect("compile IR");
     let plan = PolicyPlanSections {
-        detector_ir: b"detector-ir",
+        detector_ir: ir.as_bytes(),
         literal_index: b"literal-index",
         regex_programs: b"regex-programs",
         suppression_policy: b"suppression-policy",
@@ -464,6 +470,7 @@ fn every_policy_composes_a_complete_distinct_plan() {
     let mut digests = std::collections::BTreeSet::new();
     for policy in policies {
         let mut pack_identity = identity();
+        pack_identity.detector_digest = ir.digest();
         pack_identity.policy = policy;
         let compiled = compose_policy_execution_pack(pack_identity, plan).expect("compose policy");
         assert!(digests.insert(pack_identity.digest()));
@@ -491,6 +498,8 @@ fn every_policy_composes_a_complete_distinct_plan() {
 #[test]
 fn backend_composition_is_native_for_cpu_simd_and_vyre_only_for_gpu() {
     let directory = tempfile::tempdir().expect("temporary directory");
+    let ir =
+        CanonicalDetectorExecutionIr::compile(&[detector("backend-plan")]).expect("compile IR");
     let backends = [
         ExecutionPackBackend::Cpu,
         ExecutionPackBackend::Simd,
@@ -501,6 +510,7 @@ fn backend_composition_is_native_for_cpu_simd_and_vyre_only_for_gpu() {
     for backend in backends {
         let mut pack_identity = identity();
         pack_identity.backend = backend;
+        pack_identity.detector_digest = ir.digest();
         pack_identity.backend_digest = [backend as u8; 32];
         let backend_plan = match backend {
             ExecutionPackBackend::Cpu => BackendPlan::Cpu(b"native-cpu-program"),
@@ -513,7 +523,7 @@ fn backend_composition_is_native_for_cpu_simd_and_vyre_only_for_gpu() {
         let compiled = compose_policy_execution_pack(
             pack_identity,
             PolicyPlanSections {
-                detector_ir: b"detector-ir",
+                detector_ir: ir.as_bytes(),
                 literal_index: b"literal-index",
                 regex_programs: b"regex-programs",
                 suppression_policy: b"suppression-policy",
@@ -607,6 +617,10 @@ fn mapped_pack_assigns_every_byte_to_one_owner() {
     assert_eq!(
         rows[&ResidentByteOwner::DetectorIr],
         b"canonical-detector-ir-v1".len() as u64
+    );
+    assert_eq!(
+        rows[&ResidentByteOwner::DetectorPlan],
+        b"detector-plan-v1".len() as u64
     );
     assert_eq!(
         rows[&ResidentByteOwner::RouteClassifier],

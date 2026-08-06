@@ -38,6 +38,25 @@ impl CompiledDetectorKeywordMatcher {
         }
     }
 
+    fn compile_parts(detector_id: &str, keywords: &[String]) -> Result<Self, String> {
+        if let Some(empty_index) = keywords.iter().position(String::is_empty) {
+            return Err(format!(
+                "detector {detector_id:?} keyword {empty_index} is empty; remove it or declare a non-empty detector-owned context literal"
+            ));
+        }
+        match keywords {
+            [] => Ok(Self::None),
+            [keyword] => Ok(Self::One(keyword.as_bytes().into())),
+            keywords => aho_corasick::AhoCorasickBuilder::new()
+                .kind(Some(aho_corasick::AhoCorasickKind::ContiguousNFA))
+                .build(keywords)
+                .map(Self::Multiple)
+                .map_err(|error| {
+                    format!("detector {detector_id:?} keyword matcher could not compile: {error}")
+                }),
+        }
+    }
+
     #[inline]
     fn is_match(&self, haystack: &[u8]) -> bool {
         match self {
@@ -260,6 +279,31 @@ impl CompiledDetectorExecutionPolicy {
             keywords: CompiledDetectorKeywordMatcher::compile(detector)?,
             public_identifier_assignment_markers: detector
                 .public_identifier_assignment_markers
+                .iter()
+                .map(|marker| marker.as_bytes().into())
+                .collect(),
+        })
+    }
+
+    pub(crate) fn hydrate(
+        detector_id: &str,
+        is_generic: bool,
+        min_len: Option<usize>,
+        max_len: Option<usize>,
+        min_confidence: Option<f64>,
+        severity: Severity,
+        structural_password_slot: bool,
+        keywords: &[String],
+        public_identifier_assignment_markers: &[String],
+    ) -> Result<Self, String> {
+        Ok(Self {
+            is_generic,
+            length: CompiledDetectorLengthPolicy { min_len, max_len },
+            min_confidence,
+            severity,
+            structural_password_slot,
+            keywords: CompiledDetectorKeywordMatcher::compile_parts(detector_id, keywords)?,
+            public_identifier_assignment_markers: public_identifier_assignment_markers
                 .iter()
                 .map(|marker| marker.as_bytes().into())
                 .collect(),

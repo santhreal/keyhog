@@ -1,5 +1,70 @@
 use keyhog_core::{DetectorSpec, EntropyShapeSpec};
 
+#[derive(Clone, Copy)]
+struct EntropyPolicySource<'a> {
+    id: &'a str,
+    entropy_policy_priority: Option<u16>,
+    entropy_floor: &'a [keyhog_core::EntropyFloorBucket],
+    bpe_enabled: Option<bool>,
+    bpe_max_bytes_per_token: Option<f64>,
+    entropy_low: Option<f64>,
+    entropy_high: Option<f64>,
+    entropy_very_high: Option<f64>,
+    entropy_fallback_confidence: Option<keyhog_core::EntropyFallbackConfidenceSpec>,
+    generic_assignment_confidence: Option<keyhog_core::GenericAssignmentConfidenceSpec>,
+    sensitive_path_entropy_very_high: Option<f64>,
+    entropy_roles: &'a [keyhog_core::EntropyDetectionRole],
+    plausibility: Option<keyhog_core::DetectorPlausibilityPolicySpec>,
+    entropy_shapes: &'a [EntropyShapeSpec],
+    keyword_free_min_len: Option<usize>,
+}
+
+impl<'a> From<&'a DetectorSpec> for EntropyPolicySource<'a> {
+    fn from(detector: &'a DetectorSpec) -> Self {
+        Self {
+            id: &detector.id,
+            entropy_policy_priority: detector.entropy_policy_priority,
+            entropy_floor: &detector.entropy_floor,
+            bpe_enabled: detector.bpe_enabled,
+            bpe_max_bytes_per_token: detector.bpe_max_bytes_per_token,
+            entropy_low: detector.entropy_low,
+            entropy_high: detector.entropy_high,
+            entropy_very_high: detector.entropy_very_high,
+            entropy_fallback_confidence: detector.entropy_fallback_confidence,
+            generic_assignment_confidence: detector.generic_assignment_confidence,
+            sensitive_path_entropy_very_high: detector.sensitive_path_entropy_very_high,
+            entropy_roles: &detector.entropy_roles,
+            plausibility: detector.plausibility,
+            entropy_shapes: &detector.entropy_shapes,
+            keyword_free_min_len: detector.keyword_free_min_len,
+        }
+    }
+}
+
+impl<'a> From<&'a crate::execution_pack::detector_plan::DetectorPlanRecord>
+    for EntropyPolicySource<'a>
+{
+    fn from(detector: &'a crate::execution_pack::detector_plan::DetectorPlanRecord) -> Self {
+        Self {
+            id: &detector.id,
+            entropy_policy_priority: detector.entropy_policy_priority,
+            entropy_floor: &detector.entropy_floor,
+            bpe_enabled: detector.bpe_enabled,
+            bpe_max_bytes_per_token: detector.bpe_max_bytes_per_token,
+            entropy_low: detector.entropy_low,
+            entropy_high: detector.entropy_high,
+            entropy_very_high: detector.entropy_very_high,
+            entropy_fallback_confidence: detector.entropy_fallback_confidence,
+            generic_assignment_confidence: detector.generic_assignment_confidence,
+            sensitive_path_entropy_very_high: detector.sensitive_path_entropy_very_high,
+            entropy_roles: &detector.entropy_roles,
+            plausibility: detector.plausibility,
+            entropy_shapes: &detector.entropy_shapes,
+            keyword_free_min_len: detector.keyword_free_min_len,
+        }
+    }
+}
+
 /// Reject detector policy that this scanner artifact cannot execute.
 ///
 /// Run this before matcher construction. A detector-declared mechanism is part
@@ -41,6 +106,31 @@ pub(crate) const fn validate_feature_compatibility(
     Ok(())
 }
 
+#[cfg(not(feature = "entropy"))]
+pub(crate) fn validate_plan_feature_compatibility(
+    detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+) -> Result<(), String> {
+    let entropy_detectors = detectors
+        .iter()
+        .filter(|detector| detector.owns_entropy_policy())
+        .map(|detector| detector.id.as_str())
+        .collect::<Vec<_>>();
+    if entropy_detectors.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "scanner was built without the `entropy` feature, but hydrated detector entropy policy is enabled for {}; reinstall with a compatible scanner",
+        entropy_detectors.join(", ")
+    ))
+}
+
+#[cfg(feature = "entropy")]
+pub(crate) const fn validate_plan_feature_compatibility(
+    _detectors: &[crate::execution_pack::detector_plan::DetectorPlanRecord],
+) -> Result<(), String> {
+    Ok(())
+}
+
 /// Length-bucketed detector floor compiled into parallel primitive arrays.
 /// Runtime lookup performs one binary search and never walks optional TOML
 /// fields or substitutes a scanner-owned threshold.
@@ -54,23 +144,32 @@ pub(crate) struct CompiledEntropyFloorPolicy {
 
 impl CompiledEntropyFloorPolicy {
     pub(crate) fn compile(detector: &DetectorSpec) -> Result<Option<Self>, String> {
-        if detector.entropy_floor.is_empty() {
+        Self::compile_source(&detector.id, &detector.entropy_floor, detector.entropy_high)
+    }
+
+    pub(crate) fn hydrate(
+        detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
+    ) -> Result<Option<Self>, String> {
+        Self::compile_source(&detector.id, &detector.entropy_floor, detector.entropy_high)
+    }
+
+    fn compile_source(
+        detector_id: &str,
+        entropy_floor: &[keyhog_core::EntropyFloorBucket],
+        entropy_high: Option<f64>,
+    ) -> Result<Option<Self>, String> {
+        if entropy_floor.is_empty() {
             return Ok(None);
         }
-        let entropy_high = detector.entropy_high.ok_or_else(|| {
-            format!(
-                "detector {:?} declares entropy_floor but omits entropy_high",
-                detector.id
-            )
+        let entropy_high = entropy_high.ok_or_else(|| {
+            format!("detector {detector_id:?} declares entropy_floor but omits entropy_high")
         })?;
-        let (catch_all_bucket, bounded) = detector
-            .entropy_floor
+        let (catch_all_bucket, bounded) = entropy_floor
             .split_last()
-            .ok_or_else(|| format!("detector {:?} declares an empty entropy_floor", detector.id))?;
+            .ok_or_else(|| format!("detector {detector_id:?} declares an empty entropy_floor"))?;
         if catch_all_bucket.max_len.is_some() {
             return Err(format!(
-                "detector {:?} entropy_floor must end with a catch-all bucket",
-                detector.id
+                "detector {detector_id:?} entropy_floor must end with a catch-all bucket"
             ));
         }
         let mut max_lengths = Vec::with_capacity(bounded.len());
@@ -78,8 +177,7 @@ impl CompiledEntropyFloorPolicy {
         for bucket in bounded {
             let max_len = bucket.max_len.ok_or_else(|| {
                 format!(
-                    "detector {:?} entropy_floor contains a catch-all bucket before the end",
-                    detector.id
+                    "detector {detector_id:?} entropy_floor contains a catch-all bucket before the end"
                 )
             })?;
             if max_lengths
@@ -87,8 +185,7 @@ impl CompiledEntropyFloorPolicy {
                 .is_some_and(|previous| *previous >= max_len)
             {
                 return Err(format!(
-                    "detector {:?} entropy_floor max_len values must strictly increase",
-                    detector.id
+                    "detector {detector_id:?} entropy_floor max_len values must strictly increase"
                 ));
             }
             max_lengths.push(max_len);
@@ -213,7 +310,7 @@ impl CompiledEntropyPolicy {
     }
 
     fn required<T: Copy>(
-        detector: &DetectorSpec,
+        detector: EntropyPolicySource<'_>,
         field: &str,
         value: Option<T>,
     ) -> Result<T, String> {
@@ -226,17 +323,31 @@ impl CompiledEntropyPolicy {
     }
 
     pub(crate) fn compile(detector: &DetectorSpec) -> Result<Self, String> {
-        Self::compile_with_length(
-            detector,
+        Self::compile_source(
+            detector.into(),
             crate::detector_execution_policy::CompiledDetectorLengthPolicy::compile(detector),
         )
+    }
+
+    pub(crate) fn hydrate(
+        detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
+        length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
+    ) -> Result<Self, String> {
+        Self::compile_source(detector.into(), length)
     }
 
     pub(crate) fn compile_with_length(
         detector: &DetectorSpec,
         length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
     ) -> Result<Self, String> {
-        let length = length.require_bounded(&detector.id)?;
+        Self::compile_source(detector.into(), length)
+    }
+
+    fn compile_source(
+        detector: EntropyPolicySource<'_>,
+        length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
+    ) -> Result<Self, String> {
+        let length = length.require_bounded(detector.id)?;
         let plausibility = detector.plausibility.ok_or_else(|| {
             format!(
                 "detector {:?} owns entropy detection but omits [detector.plausibility]",
@@ -357,7 +468,7 @@ impl CompiledEntropyPolicy {
                 detector.id
             ));
         }
-        let [entropy_shape] = detector.entropy_shapes.as_slice() else {
+        let [entropy_shape] = detector.entropy_shapes else {
             return Err(format!(
                 "detector {:?} owns entropy detection and must declare exactly one [[detector.entropy_shapes]] entry, found {}",
                 detector.id,
@@ -447,4 +558,26 @@ pub(crate) fn compile_entropy_policy_with_length(
         ));
     }
     CompiledEntropyPolicy::compile_with_length(detector, length).map(Some)
+}
+
+pub(crate) fn hydrate_entropy_policy_with_length(
+    detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
+    length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
+) -> Result<Option<CompiledEntropyPolicy>, String> {
+    if !detector.owns_entropy_policy() {
+        return Ok(None);
+    }
+    let metadata = detector.entropy_fallback.as_ref().ok_or_else(|| {
+        format!(
+            "detector {:?} owns entropy detection but omits [detector.entropy_fallback]",
+            detector.id
+        )
+    })?;
+    if !metadata.has_valid_identity() {
+        return Err(format!(
+            "detector {:?} declares invalid entropy_fallback metadata; id must use a lowercase entropy- namespace and name/service must be non-empty",
+            detector.id
+        ));
+    }
+    CompiledEntropyPolicy::hydrate(detector, length).map(Some)
 }

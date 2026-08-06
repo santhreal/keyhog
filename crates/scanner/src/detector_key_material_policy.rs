@@ -52,32 +52,43 @@ pub(crate) struct CompiledDetectorKeyMaterialPolicy {
 
 impl CompiledDetectorKeyMaterialPolicy {
     pub(crate) fn compile(detector: &DetectorSpec) -> Result<Self, String> {
-        let generic_policy = detector.kind == keyhog_core::DetectorKind::Phase2Generic;
-        for (index, rule) in detector.canonical_hex_key_material.iter().enumerate() {
+        Self::hydrate(
+            &detector.id,
+            detector.kind,
+            &detector.decoded_hex_key_material_lengths,
+            &detector.canonical_hex_key_material,
+        )
+    }
+
+    pub(crate) fn hydrate(
+        detector_id: &str,
+        kind: keyhog_core::DetectorKind,
+        decoded_hex_key_material_lengths: &[usize],
+        canonical_hex_key_material: &[CanonicalHexKeyMaterialSpec],
+    ) -> Result<Self, String> {
+        let generic_policy = kind == keyhog_core::DetectorKind::Phase2Generic;
+        for (index, rule) in canonical_hex_key_material.iter().enumerate() {
             let has_assignment_scope = !rule.keywords.is_empty()
                 || !rule.suffixes.is_empty()
                 || !rule.excluded_keywords.is_empty();
             if generic_policy && rule.keywords.is_empty() && rule.suffixes.is_empty() {
                 return Err(format!(
-                    "detector {} canonical_hex_key_material[{index}] is length-only, but phase2-generic rules require keywords or suffixes",
-                    detector.id
+                    "detector {detector_id} canonical_hex_key_material[{index}] is length-only, but phase2-generic rules require keywords or suffixes"
                 ));
             }
             if !generic_policy && has_assignment_scope {
                 return Err(format!(
-                    "detector {} canonical_hex_key_material[{index}] declares assignment scope, but regex detectors require length-only rules",
-                    detector.id
+                    "detector {detector_id} canonical_hex_key_material[{index}] declares assignment scope, but regex detectors require length-only rules"
                 ));
             }
         }
         Ok(Self {
-            decoded_hex_lengths: sorted_lengths(&detector.decoded_hex_key_material_lengths),
+            decoded_hex_lengths: sorted_lengths(decoded_hex_key_material_lengths),
             regex_hex_lengths: if generic_policy {
                 Box::default()
             } else {
                 sorted_unique_lengths(
-                    detector
-                        .canonical_hex_key_material
+                    canonical_hex_key_material
                         .iter()
                         .filter(|rule| {
                             rule.keywords.is_empty()
@@ -87,8 +98,7 @@ impl CompiledDetectorKeyMaterialPolicy {
                         .flat_map(|rule| rule.lengths.iter().copied()),
                 )
             },
-            canonical_hex_rules: detector
-                .canonical_hex_key_material
+            canonical_hex_rules: canonical_hex_key_material
                 .iter()
                 .map(CompiledCanonicalHexRule::compile)
                 .collect(),

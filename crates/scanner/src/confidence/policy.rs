@@ -15,29 +15,35 @@ pub(crate) struct CompiledMatchConfidencePolicy {
 
 impl CompiledMatchConfidencePolicy {
     pub(crate) fn compile(detector: &keyhog_core::DetectorSpec) -> Result<Self, String> {
-        let spec = detector.match_confidence.ok_or_else(|| {
+        Self::hydrate(
+            &detector.id,
+            detector.owns_entropy_policy(),
+            detector.match_confidence,
+        )
+    }
+
+    pub(crate) fn hydrate(
+        detector_id: &str,
+        owns_entropy_policy: bool,
+        spec: Option<keyhog_core::DetectorMatchConfidenceSpec>,
+    ) -> Result<Self, String> {
+        let spec = spec.ok_or_else(|| {
             format!(
-                "detector {:?} omits match_confidence; declare the complete scoring policy in its TOML",
-                detector.id
+                "detector {detector_id:?} omits match_confidence; declare the complete scoring policy in its TOML"
             )
         })?;
         spec.validate().map_err(|error| {
-            format!(
-                "detector {:?} match_confidence is invalid: {error}",
-                detector.id
-            )
+            format!("detector {detector_id:?} match_confidence is invalid: {error}")
         })?;
-        if detector.owns_entropy_policy() {
+        if owns_entropy_policy {
             if spec.named_anchor_floor.is_some() || spec.low_promise_confidence.is_none() {
                 return Err(format!(
-                    "detector {:?} owns generic entropy policy, so match_confidence must omit named_anchor_floor and declare low_promise_confidence",
-                    detector.id
+                    "detector {detector_id:?} owns generic entropy policy, so match_confidence must omit named_anchor_floor and declare low_promise_confidence"
                 ));
             }
         } else if spec.named_anchor_floor.is_none() || spec.low_promise_confidence.is_some() {
             return Err(format!(
-                "detector {:?} is named, so match_confidence must declare named_anchor_floor and omit low_promise_confidence",
-                detector.id
+                "detector {detector_id:?} is named, so match_confidence must declare named_anchor_floor and omit low_promise_confidence"
             ));
         }
         let max_signal_weight = spec.literal_prefix_weight

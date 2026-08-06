@@ -76,15 +76,27 @@ pub(crate) struct HotPatternSlot {
 pub(crate) fn build_hot_pattern_validator(
     detector: &keyhog_core::DetectorSpec,
 ) -> crate::error::Result<regex::Regex> {
-    let alts: Vec<String> = detector
-        .patterns
+    build_hot_pattern_validator_parts(&detector.id, &detector.patterns)
+}
+
+pub(crate) fn hydrate_hot_pattern_validator(
+    detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
+) -> crate::error::Result<regex::Regex> {
+    build_hot_pattern_validator_parts(&detector.id, &detector.patterns)
+}
+
+fn build_hot_pattern_validator_parts(
+    detector_id: &str,
+    patterns: &[keyhog_core::PatternSpec],
+) -> crate::error::Result<regex::Regex> {
+    let alts: Vec<String> = patterns
         .iter()
         .map(|p| format!("(?:{})", p.regex))
         .collect();
     if alts.is_empty() {
         return Err(crate::error::ScanError::Config(format!(
             "detector {} declares simdsieve prefixes but has no regex patterns",
-            detector.id
+            detector_id
         )));
     }
     // Anchor at the candidate start. The candidate always begins with
@@ -112,7 +124,7 @@ pub(crate) fn build_hot_pattern_validator(
         .crlf(true)
         .build()
         .map_err(|source| crate::error::ScanError::RegexCompile {
-            detector_id: detector.id.clone(),
+            detector_id: detector_id.to_owned(),
             index: 0,
             source,
         })?;

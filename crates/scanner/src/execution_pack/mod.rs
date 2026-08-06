@@ -7,6 +7,7 @@
 
 pub mod compiler;
 pub mod cpu_program;
+pub mod detector_plan;
 mod format;
 pub mod generation;
 pub mod ir;
@@ -27,6 +28,7 @@ pub use compiler::{
 pub use cpu_program::{
     ScalarCpuExecutionProgram, ScalarCpuPatternProgram, SCALAR_CPU_PROGRAM_VERSION,
 };
+pub use detector_plan::{CompiledDetectorPlanSection, DETECTOR_PLAN_SECTION_VERSION};
 pub use format::{
     ExecutionPackBackend, ExecutionPackIdentity, ExecutionPackPolicy, ExecutionPackSectionKind,
     EXECUTION_PACK_COMPILER_ABI, EXECUTION_PACK_FORMAT_VERSION, EXECUTION_PACK_HEADER_LEN,

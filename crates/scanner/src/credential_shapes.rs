@@ -122,6 +122,16 @@ pub(crate) fn compile_detector_shape_rule(
     Ok(Some(CredentialShapeRule::from_spec(shape)))
 }
 
+pub(crate) fn hydrate_detector_shape_rule(
+    detector: &crate::execution_pack::detector_plan::DetectorPlanRecord,
+) -> Result<Option<CredentialShapeRule>, String> {
+    let Some(shape) = detector.credential_shape.as_ref() else {
+        return Ok(None);
+    };
+    shape.validate(&detector.id)?;
+    Ok(Some(CredentialShapeRule::from_spec(shape)))
+}
+
 #[cfg(test)]
 #[path = "../tests/unit/credential_shapes.rs"]
 mod tests;
