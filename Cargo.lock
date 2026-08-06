@@ -2774,7 +2774,6 @@ dependencies = [
  "minisign-verify",
  "notify",
  "proptest",
- "rand 0.8.6",
  "rayon",
  "regex",
  "reqwest",

@@ -370,8 +370,8 @@ pub(super) fn walker_config(
         .respect_gitignore(true)
         .skip_hidden(false)
         .skip_binary(false)
-        .exclude_extensions(HashSet::new())
-        .exclude_dirs(HashSet::new())
+        .exclude_extensions(exclude_extensions)
+        .exclude_dirs(exclude_dirs)
         .ignore_files(vec![".keyhogignore".to_string()])
         .ignore_patterns(ignore_overrides)
 }
