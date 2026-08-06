@@ -834,7 +834,7 @@ def test_installed_pack_commands_omit_custom_detector_override(tmp_path: pathlib
 def test_execution_pack_capture_binds_manifest_and_scan_metadata(
     monkeypatch, tmp_path: pathlib.Path,
 ) -> None:
-    """WHY: an installed-pack result is comparable only when every trial reports one stable detector corpus and the artifact binds the authenticated manifest generation and candidate executable."""
+    """WHY: mixed-corpus captures bind each envelope-emitting workload to its exact detector runtime while commands without envelope metadata remain bound to the authenticated manifest generation."""
     binary = tmp_path / "keyhog"
     binary.write_bytes(b"candidate")
     manifest_path = (
@@ -882,8 +882,9 @@ def test_execution_pack_capture_binds_manifest_and_scan_metadata(
                 },
             }
         }
-        for _ in range(5):
-            baseline_capture_module._observe_execution_pack_metadata(envelope)
+        if workload.workload_id != "filesystem-no-extension":
+            for _ in range(5):
+                baseline_capture_module._observe_execution_pack_metadata(envelope)
         receipt = kwargs["fixture_receipt"]
         trials = [_trial(wall, 1000 + wall, tuple()) for wall in (10, 20, 30, 40, 50)]
         return summarize_trials(
@@ -896,7 +897,11 @@ def test_execution_pack_capture_binds_manifest_and_scan_metadata(
         catalog_path=CATALOG_PATH, fixture_lock_path=LOCK_PATH, fixture_root=tmp_path,
         target_matrix_path=TARGET_PATH, target_id="linux-x86_64-rtx5090",
         binary=binary, backend="cpu", execution_pack_manifest=manifest_path,
-        only={"filesystem-mixed-encodings", "filesystem-single-tiny-file"},
+        only={
+            "filesystem-mixed-encodings",
+            "filesystem-no-extension",
+            "filesystem-single-tiny-file",
+        },
     )
     provenance = payload["runtime_provenance"]
     assert payload["schema_version"] == 4
@@ -904,11 +909,17 @@ def test_execution_pack_capture_binds_manifest_and_scan_metadata(
     assert provenance["candidate_binary_sha256"] == sha256_file(binary)
     assert provenance["workload_detector_provenance"] == {
         "filesystem-mixed-encodings": {
+            "mode": "scan-envelope",
             "scan_detector_digest": "custom-runtime-detector-digest",
             "detector_count": 1,
             "detector_corpus_digest": "e" * 64,
         },
+        "filesystem-no-extension": {
+            "mode": "manifest",
+            "execution_pack_detector_digest": "9" * 64,
+        },
         "filesystem-single-tiny-file": {
+            "mode": "scan-envelope",
             "scan_detector_digest": "925-runtime-detector-digest",
             "detector_count": 902,
             "detector_corpus_digest": "f" * 64,
@@ -919,6 +930,7 @@ def test_execution_pack_capture_binds_manifest_and_scan_metadata(
         target_matrix_path=TARGET_PATH,
         expected_workload_ids={
             "filesystem-mixed-encodings",
+            "filesystem-no-extension",
             "filesystem-single-tiny-file",
         },
         binary_path=binary, execution_pack_manifest_path=manifest_path,

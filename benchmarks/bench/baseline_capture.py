@@ -1925,17 +1925,26 @@ def capture_baseline_catalog(
             ))
             if pack_observations is not None:
                 observed = set(pack_observations[observation_start:])
-                if len(observed) != 1:
+                if len(observed) > 1:
                     raise BaselineCaptureError(
                         "execution-pack detector provenance drifted within "
                         f"{workload.workload_id}: {sorted(observed)}"
                     )
-                detector_digest, detector_count, corpus_digest = next(iter(observed))
-                workload_detector_provenance[workload.workload_id] = {
-                    "scan_detector_digest": detector_digest,
-                    "detector_count": detector_count,
-                    "detector_corpus_digest": corpus_digest,
-                }
+                if observed:
+                    detector_digest, detector_count, corpus_digest = next(iter(observed))
+                    workload_detector_provenance[workload.workload_id] = {
+                        "mode": "scan-envelope",
+                        "scan_detector_digest": detector_digest,
+                        "detector_count": detector_count,
+                        "detector_corpus_digest": corpus_digest,
+                    }
+                else:
+                    workload_detector_provenance[workload.workload_id] = {
+                        "mode": "manifest",
+                        "execution_pack_detector_digest": runtime_provenance[
+                            "detector_digest"
+                        ],
+                    }
     if runtime_provenance is not None:
         _current_manifest_path, current_runtime = _load_execution_pack_manifest(
             manifest_path, binary_path
@@ -2046,19 +2055,43 @@ def validate_baseline_payload(
                 )
             runtime_workloads = set(provenance_rows)
         for workload_id, provenance in provenance_rows.items():
-            if (
-                not isinstance(workload_id, str)
-                or not workload_id
-                or not isinstance(provenance, dict)
-                or set(provenance) != legacy_fields
-                or not isinstance(provenance.get("scan_detector_digest"), str)
-                or not provenance["scan_detector_digest"]
-                or isinstance(provenance.get("detector_count"), bool)
-                or not isinstance(provenance.get("detector_count"), int)
-                or provenance["detector_count"] <= 0
-                or not isinstance(provenance.get("detector_corpus_digest"), str)
-                or not provenance["detector_corpus_digest"]
-            ):
+            malformed = not isinstance(workload_id, str) or not workload_id
+            if provenance_field is None:
+                malformed = malformed or (
+                    not isinstance(provenance, dict)
+                    or set(provenance) != legacy_fields
+                    or not isinstance(provenance.get("scan_detector_digest"), str)
+                    or not provenance["scan_detector_digest"]
+                    or isinstance(provenance.get("detector_count"), bool)
+                    or not isinstance(provenance.get("detector_count"), int)
+                    or provenance["detector_count"] <= 0
+                    or not isinstance(provenance.get("detector_corpus_digest"), str)
+                    or not provenance["detector_corpus_digest"]
+                )
+            elif not isinstance(provenance, dict):
+                malformed = True
+            elif provenance.get("mode") == "scan-envelope":
+                malformed = malformed or (
+                    set(provenance) != legacy_fields | {"mode"}
+                    or not isinstance(provenance.get("scan_detector_digest"), str)
+                    or not provenance["scan_detector_digest"]
+                    or isinstance(provenance.get("detector_count"), bool)
+                    or not isinstance(provenance.get("detector_count"), int)
+                    or provenance["detector_count"] <= 0
+                    or not isinstance(provenance.get("detector_corpus_digest"), str)
+                    or not provenance["detector_corpus_digest"]
+                )
+            elif provenance.get("mode") == "manifest":
+                malformed = malformed or (
+                    set(provenance) != {
+                        "mode", "execution_pack_detector_digest",
+                    }
+                    or provenance.get("execution_pack_detector_digest")
+                    != expected_runtime["detector_digest"]
+                )
+            else:
+                malformed = True
+            if malformed:
                 raise BaselineCaptureError(
                     "execution-pack detector corpus provenance is malformed"
                 )
