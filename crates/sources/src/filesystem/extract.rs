@@ -485,6 +485,7 @@ struct FileLiveMetadata {
     mtime_ns: Option<u64>,
     size_bytes: u64,
     is_symlink: bool,
+    is_sparse: bool,
 }
 
 /// Per-entry chunk extraction. Reads the file, archive, or compressed
@@ -650,7 +651,12 @@ pub(super) fn process_entry(
     } else if ext.eq_ignore_ascii_case("7z") {
         run_derived_extractor(
             |counted| {
-                seven_zip::extract_seven_zip_chunks(&path, max_size, respect_default_excludes, counted)
+                seven_zip::extract_seven_zip_chunks(
+                    &path,
+                    max_size,
+                    respect_default_excludes,
+                    counted,
+                )
             },
             emit,
         );
@@ -664,7 +670,13 @@ pub(super) fn process_entry(
     } else if archive::is_openpack_archive_ext(ext) {
         run_derived_extractor(
             |counted| {
-                archive::extract_openpack_archive(&path, ext, max_size, respect_default_excludes, counted)
+                archive::extract_openpack_archive(
+                    &path,
+                    ext,
+                    max_size,
+                    respect_default_excludes,
+                    counted,
+                )
             },
             emit,
         );
@@ -845,12 +857,14 @@ pub(super) fn process_entry(
         return;
     }
 
-    // Large UTF-16 and binary files must not take the raw-byte windowed path.
-    // UTF-16 would remain NUL-interleaved and lose secrets. Binary data would
-    // be decoded lossily and generate findings from compiled bytes. Route both
-    // through the bounded whole-file mmap decoder, which transcodes UTF-16 and
-    // extracts printable binary strings with explicit source provenance.
-    if file_size > window_size as u64 && !large_file_requires_whole_file_decode(&path) {
+    // Large UTF-16 and dense binary files need whole-file decoding. Sparse
+    // files are different: materializing their holes makes RSS scale with
+    // apparent size, while the extent streamer preserves logical offsets and
+    // includes overlap around every allocated range.
+    let is_sparse = live_metadata.is_some_and(|metadata| metadata.is_sparse);
+    if file_size > window_size as u64
+        && (is_sparse || !large_file_requires_whole_file_decode(&path))
+    {
         let display = display_path(&path);
         let mut consumer_stopped = false;
         let windowed_mmap_outcome = read::for_each_file_windowed_mmap(
@@ -1126,9 +1140,17 @@ fn file_live_metadata(path: &Path) -> Option<FileLiveMetadata> {
             // (unreachable before year 2554) cannot affect scan recall.
             u64::try_from(nanos).map_or(u64::MAX, |nanos| nanos)
         });
+    #[cfg(unix)]
+    let is_sparse = {
+        use std::os::unix::fs::MetadataExt;
+        meta.blocks().saturating_mul(512) < meta.len()
+    };
+    #[cfg(not(unix))]
+    let is_sparse = false;
     Some(FileLiveMetadata {
         mtime_ns,
         size_bytes: meta.len(),
         is_symlink: file_type.is_symlink(),
+        is_sparse,
     })
 }
