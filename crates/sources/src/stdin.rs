@@ -21,7 +21,7 @@ pub struct ConfiguredStdinSource {
     limits: crate::SourceLimits,
 }
 
-const STDIN_WINDOW_SIZE: usize = 1024 * 1024;
+const STDIN_WINDOW_SIZE: usize = 512 * 1024;
 const STDIN_WINDOW_OVERLAP: usize = 128 * 1024;
 
 struct SpooledStdinChunks {

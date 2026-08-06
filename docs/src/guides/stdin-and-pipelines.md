@@ -199,7 +199,7 @@ keyhog scan --stdin --limit-stdin-bytes 20M < big.json
 
 An 11 MB input is first spooled to an anonymous temporary file so the limit is
 validated before any partial result can escape. KeyHog then scans overlapping
-1 MiB windows with 128 KiB of boundary coverage. Memory stays bounded, findings
+512 KiB windows with 128 KiB of boundary coverage. Memory stays bounded, findings
 retain absolute offsets and line numbers, and independent windows can use the
 configured scan workers. The anonymous file is removed automatically when the
 source closes.
