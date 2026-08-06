@@ -32,13 +32,13 @@ pub(crate) const FUSED_BATCH_DEFAULT: usize = 32;
 /// [`FUSED_BATCH_DEFAULT`].
 ///
 /// The fused consumer executes one batch at a time while the source-reader
-/// boundary remains a rendezvous. A 16 MiB ceiling exposes one 1 MiB window to
-/// each default host worker; tiny-file batches remain bounded by 32 chunks.
+/// boundary remains a rendezvous. A 1 MiB ceiling keeps one large-file window
+/// active; tiny-file batches remain bounded by 32 chunks.
 ///
 /// Compile-time rather than configurable on purpose: it is hashed into the
 /// autoroute identity, so a change here invalidates persisted calibration
 /// instead of replaying decisions measured under different batching.
-pub(crate) const FUSED_BATCH_BYTES: usize = 16 * 1024 * 1024;
+pub(crate) const FUSED_BATCH_BYTES: usize = 1024 * 1024;
 
 /// Default rendezvous depth for fused filesystem batches. The producer may
 /// finish one batch while the consumer scans the active batch, but no third

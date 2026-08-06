@@ -85,7 +85,7 @@ A dash means that layer intentionally has no surface.
 | Threads | #cores | `[scan].threads` | `--threads` | Parallel scan workers. |
 | Reader threads | scan-pool-derived | `[scan].reader_threads` | `--reader-threads` | Dedicated filesystem read workers. |
 | Fused batch | `32` | `[scan].fused_batch` | `--fused-batch` | Chunk batch size for the fused filesystem pipeline. |
-| Fused depth | worker-count-derived | `[scan].fused_depth` | `--fused-depth` | Bounded channel depth for fused filesystem batches. |
+| Fused depth | `0` (rendezvous) | `[scan].fused_depth` | `--fused-depth` | Queued fused filesystem batches. The default keeps no completed batch resident while another is scanned. |
 | Per-chunk timeout | off | `[scan].per_chunk_timeout_ms` | `--per-chunk-timeout-ms` | Optional hard deadline per chunk scan in milliseconds. |
 | Dedup scope | `credential` | `[scan].dedup` | `--dedup` | `credential` / `file` / `none`. |
 | Credential verification | off | `verify` | `--verify` / `--no-verify` | The explicit CLI enable or disable wins over discovered configuration. The Action always passes one of these flags; its default `verify: 'false'` therefore prevents committed configuration from silently enabling credential egress. |
@@ -342,7 +342,7 @@ exclude = ["**/test/fixtures/**", "vendor/"]
 threads = 8
 reader_threads = 2
 fused_batch = 32
-fused_depth = 4
+fused_depth = 0
 per_chunk_timeout_ms = 30000
 ```
 
