@@ -208,7 +208,7 @@ impl CompiledScanner {
             )
         })?;
         let detector_ir =
-            crate::execution_pack::CanonicalDetectorExecutionIr::decode(detector_ir_bytes)
+            crate::execution_pack::CanonicalDetectorExecutionIr::decode_runtime(detector_ir_bytes)
                 .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
         if detector_ir.digest() != pack.identity().detector_digest {
             return Err(crate::error::ScanError::Config(

@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use keyhog_scanner::execution_pack::{
-    CanonicalDetectorExecutionIr, ExecutionPack, ExecutionPackBackend, ExecutionPackPolicy,
-    ExecutionPackSectionKind, ExecutionPackSignature, ExecutionPackSigningKey,
+    CanonicalDetectorExecutionIr, DecodedDetectorExecutionIr, ExecutionPack, ExecutionPackBackend,
+    ExecutionPackPolicy, ExecutionPackSectionKind, ExecutionPackSignature, ExecutionPackSigningKey,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -138,7 +138,7 @@ fn digest_parts(parts: &[&[u8]]) -> [u8; 32] {
 
 pub(crate) struct InstalledDetectorExecutionPack {
     pub(crate) pack: ExecutionPack,
-    pub(crate) ir: CanonicalDetectorExecutionIr,
+    pub(crate) ir: DecodedDetectorExecutionIr,
 }
 
 pub(crate) fn load_installed_execution_pack(
@@ -190,7 +190,7 @@ pub(crate) fn load_installed_detector_execution_pack_for_backend(
     let ir_bytes = pack
         .section(ExecutionPackSectionKind::DetectorIr)
         .context("installed execution pack has no detector IR section")?;
-    let ir = CanonicalDetectorExecutionIr::decode(ir_bytes).map_err(anyhow::Error::msg)?;
+    let ir = CanonicalDetectorExecutionIr::decode_runtime(ir_bytes).map_err(anyhow::Error::msg)?;
     if ir.digest() != pack.identity().detector_digest {
         bail!("installed detector IR identity does not match its authenticated pack");
     }
@@ -203,7 +203,7 @@ pub(crate) fn load_installed_preferred_detector_execution_pack(
     let ir_bytes = pack
         .section(ExecutionPackSectionKind::DetectorIr)
         .context("installed execution pack has no detector IR section")?;
-    let ir = CanonicalDetectorExecutionIr::decode(ir_bytes).map_err(anyhow::Error::msg)?;
+    let ir = CanonicalDetectorExecutionIr::decode_runtime(ir_bytes).map_err(anyhow::Error::msg)?;
     if ir.digest() != pack.identity().detector_digest {
         bail!("installed detector IR identity does not match its authenticated pack");
     }
