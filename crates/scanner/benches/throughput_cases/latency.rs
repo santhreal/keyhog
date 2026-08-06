@@ -111,14 +111,6 @@ fn benchmark_latency_entropy_calculation(c: &mut Criterion) {
     })
     .collect::<Vec<_>>();
 
-    group.bench_function("bpe_tokenizer_build", |b| {
-        b.iter(|| {
-            let tokenizer = keyhog_scanner::testing::build_entropy_bpe_tokenizer()
-                .expect("embedded cl100k ranks must construct");
-            black_box(tokenizer)
-        });
-    });
-
     for (name, candidate) in &test_candidates {
         group.bench_with_input(
             BenchmarkId::new("shannon_entropy", name),

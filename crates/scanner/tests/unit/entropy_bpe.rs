@@ -96,17 +96,17 @@ fn fp_and_secret_classes_do_not_overlap_the_bound() {
         .map(|s| bytes_per_token(s))
         .fold(0.0_f64, f64::max);
     assert!(
-            max_secret <= ENTROPY_BPE_MAX_BYTES_PER_TOKEN,
-            "most word-like secret cpt {max_secret:.3} must not exceed bound {ENTROPY_BPE_MAX_BYTES_PER_TOKEN}"
-        );
+        max_secret <= ENTROPY_BPE_MAX_BYTES_PER_TOKEN,
+        "most word-like secret cpt {max_secret:.3} must not exceed bound {ENTROPY_BPE_MAX_BYTES_PER_TOKEN}"
+    );
     assert!(
         min_fp > ENTROPY_BPE_MAX_BYTES_PER_TOKEN,
         "least word-like FP cpt {min_fp:.3} must exceed bound {ENTROPY_BPE_MAX_BYTES_PER_TOKEN}"
     );
     assert!(
-            min_fp > max_secret + 1.0,
-            "FP class (min {min_fp:.3}) must sit >1.0 bytes/token above secret class (max {max_secret:.3})"
-        );
+        min_fp > max_secret + 1.0,
+        "FP class (min {min_fp:.3}) must sit >1.0 bytes/token above secret class (max {max_secret:.3})"
+    );
 }
 
 /// `is_word_like_low_bpe` must be exactly `cpt > bound` (STRICTLY greater):
@@ -127,6 +127,31 @@ fn suppression_predicate_is_strictly_greater_than_the_owner_const() {
 fn empty_is_not_word_like() {
     assert_eq!(bytes_per_token(""), 0.0);
     assert!(!is_word_like_low_bpe("", ENTROPY_BPE_MAX_BYTES_PER_TOKEN));
+}
+
+/// WHY: the build-packed rank table and local merge implementation must remain
+/// token-count identical to cl100k_base across direct tokens, merges, Unicode,
+/// regex split boundaries, and the heap-based long-piece path.
+#[test]
+fn compact_tokenizer_matches_cl100k_reference_counts() {
+    let cases = [
+        ("hello world", 2),
+        ("PInvoke.User32.WindowMessage.WM_SYSCOLORCHANGE", 12),
+        ("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", 36),
+        ("こんにちは世界", 4),
+        (
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            20,
+        ),
+        ("a b\r\nCafé 1234567890 !!!", 12),
+    ];
+    for (value, expected) in cases {
+        assert_eq!(
+            token_count(value),
+            expected,
+            "token count drift for {value:?}"
+        );
+    }
 }
 
 #[test]
@@ -153,8 +178,8 @@ fn equal_hash_distinct_candidates_never_reuse_a_bpe_verdict() {
 
     let word_tokens = token_count_with_key(word_like, forced_collision);
     let secret_tokens = token_count_with_key(secret, forced_collision);
-    assert_eq!(word_tokens, CL100K.encode_ordinary(word_like).len());
-    assert_eq!(secret_tokens, CL100K.encode_ordinary(secret).len());
+    assert_eq!(word_tokens, 12);
+    assert_eq!(secret_tokens, 33);
     assert_ne!(word_like.as_bytes(), secret.as_bytes());
     assert_eq!(
         tokenizer_calls_for_test(),
@@ -182,16 +207,16 @@ fn oversized_candidates_are_exact_but_never_retained() {
 #[test]
 fn unicode_efficiency_uses_utf8_bytes_not_scalar_count() {
     let localized_prose = "設定ファイルの秘密値をここに入力してください";
-    let tokens = CL100K.encode_ordinary(localized_prose).len();
+    let tokens = 21;
     let measured = bytes_per_token(localized_prose);
     let byte_ratio = localized_prose.len() as f64 / tokens as f64;
     let scalar_ratio = localized_prose.chars().count() as f64 / tokens as f64;
 
     assert_eq!(measured.to_bits(), byte_ratio.to_bits());
     assert!(
-            measured > scalar_ratio,
-            "UTF-8 byte efficiency must not collapse to Unicode scalar efficiency: bytes={measured}, scalars={scalar_ratio}"
-        );
+        measured > scalar_ratio,
+        "UTF-8 byte efficiency must not collapse to Unicode scalar efficiency: bytes={measured}, scalars={scalar_ratio}"
+    );
 }
 
 #[test]

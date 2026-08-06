@@ -2927,8 +2927,8 @@ pub fn looks_like_bare_hex_digest_for_test(value: &str) -> bool {
     crate::suppression::shape::looks_like_bare_hex_digest(value)
 }
 
-fn generic_api_key_entropy_policy_for_test(
-) -> &'static crate::entropy::policy::CompiledEntropyPolicy {
+fn generic_api_key_entropy_policy_for_test()
+-> &'static crate::entropy::policy::CompiledEntropyPolicy {
     static POLICY: std::sync::LazyLock<crate::entropy::policy::CompiledEntropyPolicy> =
         std::sync::LazyLock::new(|| {
             let detector = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_API_KEY)
@@ -3680,13 +3680,6 @@ pub fn entropy_bpe_bytes_per_token(value: &str) -> f64 {
     crate::entropy::bpe::bytes_per_token(value)
 }
 
-/// Construct the same cl100k tokenizer used by the production BPE gate. This
-/// isolates initialization cost from warm per-candidate scoring.
-#[cfg(feature = "entropy")]
-pub fn build_entropy_bpe_tokenizer() -> Result<tiktoken_rs::CoreBPE, String> {
-    tiktoken_rs::cl100k_base().map_err(|error| error.to_string())
-}
-
 /// Process-global file and byte counts recorded by scanner entry points.
 pub fn telemetry_scan_counts() -> (usize, usize) {
     crate::telemetry::global_scan_counts()
@@ -4263,7 +4256,7 @@ pub mod entropy_keywords {
 
 pub mod checksum {
     pub use crate::checksum::{
-        checksum_adjusted_confidence, validate_checksum, ChecksumResult, CHECKSUM_VALID_FLOOR,
+        CHECKSUM_VALID_FLOOR, ChecksumResult, checksum_adjusted_confidence, validate_checksum,
     };
 
     fn crc32_base62_suffix(data: &[u8], width: usize) -> String {
@@ -5386,7 +5379,7 @@ pub mod segment_attribution {
     //! ONE-PLACE / Law-11) so external tests reach the primitive at
     //! `keyhog_scanner::testing::segment_attribution::*`.
     pub use crate::segment_attribution::{
-        map_offsets_to_segments, AttributedMatch, GlobalMatch, Segment, SegmentAttributionError,
+        AttributedMatch, GlobalMatch, Segment, SegmentAttributionError, map_offsets_to_segments,
     };
 }
 

@@ -2857,6 +2857,7 @@ dependencies = [
  "criterion",
  "dashmap",
  "dirs",
+ "fancy-regex",
  "flate2",
  "hex",
  "hex-simd",
@@ -2885,7 +2886,6 @@ dependencies = [
  "simdsieve",
  "tempfile",
  "thiserror 2.0.18",
- "tiktoken-rs",
  "tokio",
  "toml 1.1.2+spec-1.1.0",
  "tracing",
@@ -4852,21 +4852,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "tiktoken-rs"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "027853bbf8c7763b77c5c595f1c271c7d536ced7d6f83452911b944621e57fc2"
-dependencies = [
- "anyhow",
- "base64",
- "bstr",
- "fancy-regex",
- "lazy_static",
- "regex",
- "rustc-hash 2.1.2",
 ]
 
 [[package]]

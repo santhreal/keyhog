@@ -1,3 +1,4 @@
+use base64::Engine as _;
 use std::env;
 use std::fs;
 use std::io;
@@ -30,6 +31,9 @@ fn main() -> io::Result<()> {
         )
     })?;
     generate_service_vocabulary(manifest_dir, Path::new(&out_dir))?;
+    if env::var_os("CARGO_FEATURE_ENTROPY").is_some() {
+        generate_cl100k_rank_table(manifest_dir, Path::new(&out_dir))?;
+    }
 
     let dest_path = Path::new(&out_dir).join("model_version.rs");
 
@@ -107,6 +111,133 @@ fn main() -> io::Result<()> {
     )?;
     Ok(())
 }
+fn generate_cl100k_rank_table(manifest_dir: &Path, out_dir: &Path) -> io::Result<()> {
+    let source = manifest_dir.join("data/cl100k_base.tiktoken");
+    println!("cargo:rerun-if-changed={}", source.display());
+    let encoded = fs::read_to_string(&source).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!(
+                "{} is required for entropy BPE scoring: {error}",
+                source.display()
+            ),
+        )
+    })?;
+
+    let mut tokens = Vec::<(Vec<u8>, u32)>::new();
+    let mut seen_tokens = std::collections::HashSet::<Vec<u8>>::new();
+    let mut seen_ranks = std::collections::HashSet::<u32>::new();
+    for (line_index, line) in encoded.lines().enumerate() {
+        let line_number = line_index + 1;
+        let mut fields = line.split_ascii_whitespace();
+        let token = fields.next().ok_or_else(|| {
+            invalid_data(format!(
+                "{}:{line_number}: missing base64 token",
+                source.display()
+            ))
+        })?;
+        let rank = fields
+            .next()
+            .ok_or_else(|| {
+                invalid_data(format!(
+                    "{}:{line_number}: missing token rank",
+                    source.display()
+                ))
+            })?
+            .parse::<u32>()
+            .map_err(|error| {
+                invalid_data(format!(
+                    "{}:{line_number}: invalid token rank: {error}",
+                    source.display()
+                ))
+            })?;
+        if fields.next().is_some() {
+            return Err(invalid_data(format!(
+                "{}:{line_number}: unexpected field after token rank",
+                source.display()
+            )));
+        }
+        let token = base64::engine::general_purpose::STANDARD
+            .decode(token)
+            .map_err(|error| {
+                invalid_data(format!(
+                    "{}:{line_number}: invalid base64 token: {error}",
+                    source.display()
+                ))
+            })?;
+        if token.is_empty() {
+            return Err(invalid_data(format!(
+                "{}:{line_number}: empty BPE token is invalid",
+                source.display()
+            )));
+        }
+        if !seen_tokens.insert(token.clone()) {
+            return Err(invalid_data(format!(
+                "{}:{line_number}: duplicate BPE token",
+                source.display()
+            )));
+        }
+        if !seen_ranks.insert(rank) {
+            return Err(invalid_data(format!(
+                "{}:{line_number}: duplicate BPE rank {rank}",
+                source.display()
+            )));
+        }
+        tokens.push((token, rank));
+    }
+    if tokens.len() != 100_256 || seen_ranks.iter().copied().max() != Some(100_255) {
+        return Err(invalid_data(format!(
+            "{} must contain exactly the contiguous cl100k ranks 0..=100255; found {} rows",
+            source.display(),
+            tokens.len()
+        )));
+    }
+    if !(0..=100_255).all(|rank| seen_ranks.contains(&rank)) {
+        return Err(invalid_data(format!(
+            "{} has a gap in the cl100k rank range",
+            source.display()
+        )));
+    }
+
+    tokens.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    let mut token_bytes = Vec::new();
+    let mut offsets = Vec::with_capacity(tokens.len() + 1);
+    let mut ranks = Vec::with_capacity(tokens.len());
+    offsets.extend_from_slice(&0_u32.to_le_bytes());
+    for (token, rank) in &tokens {
+        token_bytes.extend_from_slice(token);
+        let end = u32::try_from(token_bytes.len()).map_err(|_| {
+            invalid_data("cl100k token bytes exceed the u32 packed-table limit".to_owned())
+        })?;
+        offsets.extend_from_slice(&end.to_le_bytes());
+        ranks.extend_from_slice(&rank.to_le_bytes());
+    }
+
+    let mut prefixes = Vec::with_capacity(257 * std::mem::size_of::<u32>());
+    let mut index = 0usize;
+    for first in 0_u16..=255 {
+        prefixes.extend_from_slice(
+            &u32::try_from(index)
+                .map_err(|_| invalid_data("cl100k token count exceeds u32".to_owned()))?
+                .to_le_bytes(),
+        );
+        while index < tokens.len() && u16::from(tokens[index].0[0]) == first {
+            index += 1;
+        }
+    }
+    prefixes.extend_from_slice(
+        &u32::try_from(tokens.len())
+            .map_err(|_| invalid_data("cl100k token count exceeds u32".to_owned()))?
+            .to_le_bytes(),
+    );
+
+    fs::write(out_dir.join("cl100k_token_bytes.bin"), token_bytes)?;
+    fs::write(out_dir.join("cl100k_offsets.bin"), offsets)?;
+    fs::write(out_dir.join("cl100k_ranks.bin"), ranks)?;
+    fs::write(out_dir.join("cl100k_prefixes.bin"), prefixes)?;
+    Ok(())
+}
+
 fn generate_service_vocabulary(manifest_dir: &Path, out_dir: &Path) -> io::Result<()> {
     let workspace_root = manifest_dir
         .parent()

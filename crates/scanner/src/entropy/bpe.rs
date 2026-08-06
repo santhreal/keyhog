@@ -23,35 +23,195 @@
 //! Gated on `feature = "entropy"` (the tokenizer dep rides that feature).
 
 use std::cell::RefCell;
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 use std::num::NonZeroUsize;
 use std::sync::LazyLock;
 
 use lru::LruCache;
-use tiktoken_rs::{cl100k_base, CoreBPE};
 use zeroize::Zeroizing;
 
-/// The compiled default bytes-per-token suppression bound. A candidate whose
-/// `cl100k_base` bytes-per-token is STRICTLY GREATER than the ACTIVE bound is
-/// treated as word-like (non-secret) and suppressed. 2.2 is the empirical
-/// CredData F1 peak (see the module doc A/B); values 2.0–2.5 are all strong
-/// (F1 ≈ 0.421–0.424).
-///
-/// The VALUE has exactly one owner, [`keyhog_core::DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN`]
-/// it lives in the lower `keyhog-core` crate so `ScanConfig` can default to it
-/// without a scanner↔core cycle. This is the historical name re-bound to that one
-/// owner for the gate's compiled default and the tests below; a per-scan override
-/// (`ScanConfig::entropy_bpe_max_bytes_per_token`, Tier-A TOML + CLI) is threaded
-/// into [`is_word_like_low_bpe`] at the two call sites, so operators trade
-/// precision for recall per corpus without a code change.
 #[cfg(test)]
 pub(crate) const ENTROPY_BPE_MAX_BYTES_PER_TOKEN: f64 =
     keyhog_core::DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN;
 
-/// Lazily-built cl100k_base tokenizer. The ranks are embedded in the crate, so
-/// this is a pure decode with no I/O; built once on first entropy candidate that
-/// survives the cheaper shape gates.
-static CL100K: LazyLock<CoreBPE> =
-    LazyLock::new(|| cl100k_base().expect("tiktoken cl100k_base ranks are embedded in the crate"));
+const CL100K_PATTERN: &str = "'(?i:[sdmt]|ll|ve|re)|[^\\r\\n\\p{L}\\p{N}]?+\\p{L}++|\\p{N}{1,3}+| ?[^\\s\\p{L}\\p{N}]++[\\r\\n]*+|\\s++$|\\s*[\\r\\n]|\\s+(?!\\S)|\\s";
+static CL100K_REGEX: LazyLock<fancy_regex::Regex> = LazyLock::new(|| {
+    fancy_regex::Regex::new(CL100K_PATTERN)
+        .expect("cl100k split regex is a validated compile-time constant")
+});
+static CL100K_TOKEN_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/cl100k_token_bytes.bin"));
+static CL100K_OFFSETS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/cl100k_offsets.bin"));
+static CL100K_RANKS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/cl100k_ranks.bin"));
+static CL100K_PREFIXES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/cl100k_prefixes.bin"));
+
+#[inline]
+fn packed_u32(bytes: &[u8], index: usize) -> u32 {
+    let start = index * std::mem::size_of::<u32>();
+    u32::from_le_bytes(
+        bytes[start..start + std::mem::size_of::<u32>()]
+            .try_into()
+            .expect("build-generated cl100k table has complete u32 rows"),
+    )
+}
+
+fn token_rank(token: &[u8]) -> Option<u32> {
+    let first = *token.first()? as usize;
+    let mut low = packed_u32(CL100K_PREFIXES, first) as usize;
+    let mut high = packed_u32(CL100K_PREFIXES, first + 1) as usize;
+    while low < high {
+        let middle = low + (high - low) / 2;
+        let start = packed_u32(CL100K_OFFSETS, middle) as usize;
+        let end = packed_u32(CL100K_OFFSETS, middle + 1) as usize;
+        match CL100K_TOKEN_BYTES[start..end].cmp(token) {
+            Ordering::Less => low = middle + 1,
+            Ordering::Greater => high = middle,
+            Ordering::Equal => return Some(packed_u32(CL100K_RANKS, middle)),
+        }
+    }
+    None
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+struct Merge {
+    start: usize,
+    rank: u32,
+}
+
+impl Ord for Merge {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other
+            .rank
+            .cmp(&self.rank)
+            .then_with(|| other.start.cmp(&self.start))
+    }
+}
+
+impl PartialOrd for Merge {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+struct MergeState {
+    prev: usize,
+    end: usize,
+    next_end: usize,
+    next_rank: u32,
+}
+
+fn byte_pair_count_large(piece: &[u8]) -> usize {
+    let mut state = Vec::with_capacity(piece.len());
+    state.push(MergeState {
+        prev: usize::MAX,
+        end: 1,
+        next_end: 2,
+        next_rank: u32::MAX,
+    });
+    let mut heap = BinaryHeap::with_capacity(piece.len());
+    for index in 0..piece.len() - 1 {
+        if let Some(rank) = token_rank(&piece[index..index + 2]) {
+            heap.push(Merge { start: index, rank });
+            state[index].next_rank = rank;
+        }
+        state.push(MergeState {
+            prev: index,
+            end: index + 2,
+            next_end: index + 3,
+            next_rank: u32::MAX,
+        });
+    }
+
+    let potential_merge = |state: &mut Vec<MergeState>,
+                           heap: &mut BinaryHeap<Merge>,
+                           start: usize,
+                           next_end: usize| {
+        state[start].next_end = next_end;
+        state[start].next_rank = u32::MAX;
+        if next_end <= piece.len() {
+            if let Some(rank) = token_rank(&piece[start..next_end]) {
+                heap.push(Merge { start, rank });
+                state[start].next_rank = rank;
+            }
+        }
+    };
+    while let Some(left) = heap.pop() {
+        if left.rank != state[left.start].next_rank {
+            continue;
+        }
+        let left_start = left.start;
+        let right_start = state[left_start].end;
+        let right_end = state[left_start].next_end;
+        let right_next_end = state[right_start].next_end;
+        state[left_start].end = right_end;
+        potential_merge(&mut state, &mut heap, left_start, right_next_end);
+        if right_end < state.len() {
+            state[right_end].prev = left_start;
+        }
+        if left_start > 0 {
+            let previous_start = state[left_start].prev;
+            potential_merge(&mut state, &mut heap, previous_start, right_end);
+        }
+        state[right_start].next_rank = u32::MAX;
+    }
+
+    let mut count = 0usize;
+    let mut index = 0usize;
+    while index < state.len() {
+        count += 1;
+        index = state[index].end;
+    }
+    count
+}
+
+fn byte_pair_count_small(piece: &[u8]) -> usize {
+    let mut parts = Vec::with_capacity(piece.len() + 1);
+    let mut minimum = (u32::MAX, usize::MAX);
+    for index in 0..piece.len() - 1 {
+        let rank = token_rank(&piece[index..index + 2]).unwrap_or(u32::MAX);
+        if rank < minimum.0 {
+            minimum = (rank, index);
+        }
+        parts.push((index, rank));
+    }
+    parts.push((piece.len() - 1, u32::MAX));
+    parts.push((piece.len(), u32::MAX));
+
+    while minimum.0 != u32::MAX {
+        let index = minimum.1;
+        if index > 0 {
+            parts[index - 1].1 = if index + 2 < parts.len() {
+                token_rank(&piece[parts[index - 1].0..parts[index + 2].0]).unwrap_or(u32::MAX)
+            } else {
+                u32::MAX
+            };
+        }
+        parts[index].1 = if index + 3 < parts.len() {
+            token_rank(&piece[parts[index].0..parts[index + 3].0]).unwrap_or(u32::MAX)
+        } else {
+            u32::MAX
+        };
+        parts.remove(index + 1);
+        minimum = parts[..parts.len() - 1]
+            .iter()
+            .enumerate()
+            .map(|(index, &(_, rank))| (rank, index))
+            .min()
+            .unwrap_or((u32::MAX, usize::MAX));
+    }
+    parts.len() - 1
+}
+
+fn byte_pair_count(piece: &[u8]) -> usize {
+    if piece.len() == 1 || token_rank(piece).is_some() {
+        1
+    } else if piece.len() < 100 {
+        byte_pair_count_small(piece)
+    } else {
+        byte_pair_count_large(piece)
+    }
+}
 
 /// Bound retained candidate material to at most 64 KiB per scanner worker.
 /// Longer values still tokenize exactly but do not remain resident.
@@ -80,7 +240,16 @@ thread_local! {
 fn token_count_uncached(s: &str) -> usize {
     #[cfg(test)]
     TOKENIZER_CALLS.with(|calls| calls.set(calls.get().saturating_add(1)));
-    CL100K.encode_ordinary(s).len()
+    CL100K_REGEX
+        .find_iter(s)
+        .map(|result| {
+            let piece = result
+                .expect("cl100k split regex cannot fail after successful construction")
+                .as_str()
+                .as_bytes();
+            byte_pair_count(piece)
+        })
+        .sum()
 }
 
 fn token_count_with_key(s: &str, key: u64) -> usize {
