@@ -104,13 +104,9 @@ impl CompiledScanner {
         // no pattern is gateable.
         let needs_suffix_gate = self.tuning.confirmed_suffix_gate_enabled()
             && confirmed_patterns.iter().any(|&pat_idx| {
-                let anchored = self
-                    .confirmed_anchor_index
-                    .as_ref()
-                    .is_some_and(|anchor_index| anchor_index.is_eligible(pat_idx));
                 self.ac_suffix_gate
                     .get(pat_idx)
-                    .is_some_and(|gate| !gate.is_empty() && !anchored)
+                    .is_some_and(|gate| !gate.is_empty())
             });
         let suffix_gate_active = match &self.suffix_gate_ac {
             Some(ac) if needs_suffix_gate => {

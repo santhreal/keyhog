@@ -185,3 +185,38 @@ fn confirmed_gate_parity_default() {
     eprintln!("confirmed_gate_parity: {checked} inputs, gate-on ≡ gate-off");
     assert!(checked >= n);
 }
+
+#[test]
+fn suffix_gate_filters_anchored_cold_regexes() {
+    let _telemetry_guard = super::super::telemetry_serial::lock();
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+    let scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::CpuFallback)
+        .expect("compile exact CPU scanner");
+    let chunk = chunk_of(
+        b"GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789AB\n",
+        "anchored-cold-regexes",
+    );
+
+    keyhog_scanner::testing::set_confirmed_suffix_gate(&scanner, Some(true));
+    let before_on = keyhog_scanner::testing::lazy_regex_compile_events();
+    let on = canonical(&[scanner
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("gate-on scan succeeds")]);
+    let compiled_with_gate =
+        keyhog_scanner::testing::lazy_regex_compile_events().saturating_sub(before_on);
+
+    keyhog_scanner::testing::set_confirmed_suffix_gate(&scanner, Some(false));
+    let before_off = keyhog_scanner::testing::lazy_regex_compile_events();
+    let off = canonical(&[scanner
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("gate-off scan succeeds")]);
+    let compiled_without_gate =
+        keyhog_scanner::testing::lazy_regex_compile_events().saturating_sub(before_off);
+
+    assert_eq!(on, off, "suffix gating must preserve findings");
+    assert!(
+        compiled_without_gate > compiled_with_gate,
+        "gate-on compiled {compiled_with_gate} cold regexes; disabling it compiled only \
+         {compiled_without_gate} additional regexes"
+    );
+}
