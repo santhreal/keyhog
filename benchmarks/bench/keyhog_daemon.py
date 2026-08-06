@@ -23,12 +23,15 @@ _COVERAGE_GAP_MARKER = "daemon input coverage was incomplete"
 
 
 def run_measured(
-    command: list[str], *, timeout: int, pass_fds: tuple[int, ...]
+    command: list[str], *, timeout: int, pass_fds: tuple[int, ...],
+    stdin_path: pathlib.Path | None = None,
 ) -> tuple[str, str, RunStats]:
     """Measure a client without importing the scanner registry at module load."""
     from .scanners.base import run_measured as measure
 
-    return measure(command, timeout=timeout, pass_fds=pass_fds)
+    return measure(
+        command, timeout=timeout, pass_fds=pass_fds, stdin_path=stdin_path
+    )
 
 
 def validate_daemon_benchmark(root: pathlib.Path, backend: str, cache: str, mode: str) -> None:
@@ -61,20 +64,23 @@ def validate_daemon_benchmark(root: pathlib.Path, backend: str, cache: str, mode
 def daemon_server_command(
     executable: pathlib.Path,
     socket_path: pathlib.Path,
-    detector_corpus: pathlib.Path,
+    detector_corpus: pathlib.Path | None,
     backend: str,
+    mass: bool = False,
 ) -> list[str]:
-    return [
+    command = [
         str(executable),
         "daemon",
         "start",
         "--socket",
         str(socket_path),
-        "--detectors",
-        str(detector_corpus),
+        *(["--detectors", str(detector_corpus)] if detector_corpus is not None else []),
         "--backend",
         backend,
     ]
+    if mass:
+        command.append("--mass")
+    return command
 
 
 def daemon_client_command(
@@ -98,6 +104,38 @@ def daemon_client_command(
     ]
 
 
+
+def daemon_mass_client_command(
+    executable: pathlib.Path, socket_path: pathlib.Path, root: pathlib.Path,
+    output: pathlib.Path,
+) -> list[str]:
+    return [
+        str(executable), "scan", "--format", "json-envelope", "--no-config",
+        "--daemon=mass", "--daemon-socket", str(socket_path), "--output",
+        str(output), str(root),
+    ]
+
+
+def daemon_mass_remote_client_command(
+    executable: pathlib.Path, socket_path: pathlib.Path, endpoint: str, output: pathlib.Path,
+) -> list[str]:
+    return [
+        str(executable), "scan", "--format", "json-envelope", "--no-config",
+        "--daemon=mass", "--daemon-socket", str(socket_path), "--output", str(output),
+        "--allow-private-cloud-endpoint", "--source", f"slack:xoxb-benchmark\n{endpoint}",
+    ]
+
+
+def daemon_stdin_client_command(
+    executable: pathlib.Path, socket_path: pathlib.Path, output: pathlib.Path
+) -> list[str]:
+    return [
+        str(executable), "scan", "--format", "json-envelope", "--no-config",
+        "--daemon=on", "--daemon-socket", str(socket_path), "--stdin",
+        "--output", str(output),
+    ]
+
+
 @dataclass(frozen=True)
 class DaemonEvidence:
     pid: int
@@ -111,15 +149,17 @@ class OwnedKeyhogDaemon:
         self,
         executable: pathlib.Path,
         pass_fds: tuple[int, ...],
-        detector_corpus: pathlib.Path,
+        detector_corpus: pathlib.Path | None,
         backend: str,
         timeout: int,
+        mass: bool = False,
     ) -> None:
         self.executable = executable
         self.pass_fds = pass_fds
         self.detector_corpus = detector_corpus
         self.backend = backend
         self.timeout = timeout
+        self.mass = mass
         self._tempdir: tempfile.TemporaryDirectory | None = None
         self._stderr_handle = None
         self._process: subprocess.Popen[str] | None = None
@@ -147,6 +187,7 @@ class OwnedKeyhogDaemon:
                     self.socket_path,
                     self.detector_corpus,
                     self.backend,
+                    self.mass,
                 ),
                 **kwargs,
             )
@@ -238,6 +279,56 @@ class OwnedKeyhogDaemon:
         if stats.exit_code not in (0, 1, 10):
             raise RuntimeError(
                 f"daemon benchmark client exited {stats.exit_code}: {stderr.strip()}"
+            )
+        self._assert_owned_peer()
+        stats.peak_rss_kb = self._peak_rss_kb()
+        return stats
+
+    def run_mass_client(
+        self, root: pathlib.Path, output: pathlib.Path, timeout: int
+    ) -> RunStats:
+        self._assert_owned_peer()
+        _stdout, stderr, stats = run_measured(
+            daemon_mass_client_command(self.executable, self.socket_path, root, output),
+            timeout=timeout, pass_fds=self.pass_fds,
+        )
+        if stats.timed_out:
+            raise TimeoutError(f"mass daemon benchmark timed out after {timeout}s")
+        if stats.exit_code not in (0, 1, 10, 13):
+            raise RuntimeError(
+                f"mass daemon benchmark exited {stats.exit_code}: {stderr.strip()}"
+            )
+        self._assert_owned_peer()
+        stats.peak_rss_kb = self._peak_rss_kb()
+        return stats
+
+    def run_mass_remote_client(self, endpoint: str, output: pathlib.Path, timeout: int) -> RunStats:
+        self._assert_owned_peer()
+        _stdout, stderr, stats = run_measured(
+            daemon_mass_remote_client_command(self.executable, self.socket_path, endpoint, output),
+            timeout=timeout, pass_fds=self.pass_fds,
+        )
+        if stats.timed_out:
+            raise TimeoutError(f"mass remote daemon benchmark timed out after {timeout}s")
+        if stats.exit_code not in (0, 1, 10, 13):
+            raise RuntimeError(f"mass remote daemon benchmark exited {stats.exit_code}: {stderr.strip()}")
+        self._assert_owned_peer(); stats.peak_rss_kb = self._peak_rss_kb(); return stats
+
+    def run_stdin_client(
+        self, input_path: pathlib.Path, output: pathlib.Path, timeout: int
+    ) -> RunStats:
+        self._assert_owned_peer()
+        _stdout, stderr, stats = run_measured(
+            daemon_stdin_client_command(self.executable, self.socket_path, output),
+            timeout=timeout, pass_fds=self.pass_fds, stdin_path=input_path,
+        )
+        if stats.timed_out:
+            raise TimeoutError(
+                f"daemon stdin benchmark client timed out after {timeout}s"
+            )
+        if stats.exit_code not in (0, 1, 10, 13):
+            raise RuntimeError(
+                f"daemon stdin benchmark client exited {stats.exit_code}: {stderr.strip()}"
             )
         self._assert_owned_peer()
         stats.peak_rss_kb = self._peak_rss_kb()
