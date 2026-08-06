@@ -308,6 +308,13 @@ Detector-relation maps omit detectors with no relations, metadata and generic
 ownership maps release duplicate-heavy builder capacity, and matcher vectors
 discard geometric growth slack before entering the compiled scanner.
 
+Cache retention follows the live workload. The process-wide detector-regex
+index stores bounded weak references, so compiled regex programs disappear
+when the last scanner using them drops. Fragment-reassembly shards start with
+one scope row, grow geometrically only as distinct `(prefix, path)` scopes
+arrive, keep the existing hard ceiling, and shrink to the minimum when the
+workload cache is cleared.
+
 Every mapped byte has one owner: pack metadata, detector IR, route classifier,
 regex programs, suppression policy, or the selected backend. Header, table, and
 alignment padding belong to pack metadata. The ownership ledger must sum to the

@@ -82,6 +82,25 @@ fn second_get_is_idempotent() {
     assert!(!lr.get().is_match("token-12"));
 }
 
+/// WHY: a process-wide strong cache keeps completed custom-detector workloads'
+/// compiled DFA programs resident until process exit; only live scanners may
+/// own those programs.
+#[test]
+fn shared_cache_releases_completed_workload_programs() {
+    let (live_compiles, completed_workload_compiles) =
+        keyhog_scanner::testing::shared_regex_cache_workload_probe_for_test(
+            "workload_cache_probe_[A-Z0-9]{24}",
+        );
+    assert_eq!(
+        live_compiles, 1,
+        "concurrently live owners must reuse one compiled regex"
+    );
+    assert_eq!(
+        completed_workload_compiles, 2,
+        "dropping every live owner must expire the weak cache value"
+    );
+}
+
 #[test]
 fn clone_shares_compiled_state() {
     // CompiledPattern is cloned into ac_map per literal prefix; clones must

@@ -399,21 +399,20 @@ pub(crate) fn match_proves_keyword_nearby(regex: &str, detector_keywords: &[Stri
 /// fragment cache share the same contention profile under rayon.
 const REGEX_CACHE_SHARDS: usize = 64;
 
-/// Total compiled-regex entries retained across all shards before LRU eviction
-/// kicks in. The embedded corpus is ~900 detectors with ~6-15% duplicate
-/// regexes, so the unique compiled set is well under 1k; 8192 leaves ample
-/// headroom for the corpus plus any user `--detectors` overlay while still
-/// bounding a long-lived daemon/watch process that recompiles distinct
-/// detector sets per job. Without this cap the former `dashmap::DashMap` grew
-/// without eviction, retaining every unique pattern source string plus its
-/// compiled `Arc<Regex>` (each holding a ~1 MiB lazy-DFA cache) for the life
-/// of the process - a slow unbounded-allocation on daemon/watch paths that
-/// load many different detector sets.
+/// Total source keys retained across all shards before LRU eviction. Values are
+/// weak references: compiled regex programs stay resident only while a live
+/// scanner workload owns them. The bounded keys allow concurrent live scanners
+/// to deduplicate compilation without turning completed daemon/watch jobs into
+/// a process-lifetime compiled-regex heap.
 const REGEX_CACHE_CAPACITY: usize = 8192;
 
-type RegexCacheShard = parking_lot::Mutex<lru::LruCache<String, std::sync::Arc<Regex>>>;
+type RegexCacheShard = parking_lot::Mutex<lru::LruCache<String, std::sync::Weak<Regex>>>;
 
 static REGEX_CACHE: std::sync::OnceLock<Box<[RegexCacheShard]>> = std::sync::OnceLock::new();
+
+#[cfg(test)]
+static REGEX_CACHE_COMPILES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 fn regex_cache() -> &'static [RegexCacheShard] {
     REGEX_CACHE.get_or_init(|| {
@@ -447,39 +446,53 @@ pub(crate) fn shared_regex_compile(
     Ok(std::sync::Arc::new(regex))
 }
 
-/// Compile a regex once per unique source string and share the compiled
-/// `Arc<Regex>` across every detector that uses it. The embedded corpus
-/// has ~6-15% duplicate regexes (Google, JWT, Slack shapes); this collapses
-/// each duplicate set into a single compiled instance, cutting startup
-/// compile time and resident memory proportionally - see the internal design notes.
-///
-/// The cache is process-wide and bounded: a sharded `parking_lot::Mutex<
-/// lru::LruCache<...>>` (mirroring `fragment_cache`) caps total
-/// retained entries at `REGEX_CACHE_CAPACITY` and evicts least-recently-used
-/// patterns. This keeps the dedup win for the fixed corpus while bounding the
-/// daemon/watch paths, which recompile a fresh scanner per job and would
-/// otherwise accumulate every distinct `--detectors` pattern (plus its
-/// ~1 MiB lazy-DFA cache) forever in the old unbounded `DashMap`.
+/// Compile a regex once per unique source string shared by concurrently live
+/// scanners. The cache holds weak references, so a completed workload releases
+/// its compiled programs when its `LazyRegex` owners drop. Source keys remain
+/// bounded by `REGEX_CACHE_CAPACITY` for daemon/watch processes that load many
+/// custom detector sets.
 pub(crate) fn shared_regex(
     pattern: &str,
 ) -> std::result::Result<std::sync::Arc<Regex>, regex::Error> {
     let shard = regex_cache_shard(pattern);
     // Cache-hit fast path: `&str` lookup, no owned-key allocation. `get`
     // bumps LRU recency, so hot corpus patterns are never evicted under load.
-    if let Some(hit) = shard.lock().get(pattern) {
-        return Ok(std::sync::Arc::clone(hit));
+    if let Some(hit) = shard.lock().get(pattern).and_then(std::sync::Weak::upgrade) {
+        return Ok(hit);
     }
     // Compile outside the lock so a slow NFA/DFA build never blocks other
     // patterns hashing to the same shard.
+    #[cfg(test)]
+    REGEX_CACHE_COMPILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let arc = shared_regex_compile(pattern)?;
     let mut lock = shard.lock();
     // Another thread may have inserted the same pattern while we compiled;
     // prefer the already-cached instance to keep the dedup invariant.
-    if let Some(hit) = lock.get(pattern) {
-        return Ok(std::sync::Arc::clone(hit));
+    if let Some(hit) = lock.get(pattern).and_then(std::sync::Weak::upgrade) {
+        return Ok(hit);
     }
-    lock.put(pattern.to_string(), std::sync::Arc::clone(&arc));
+    lock.put(pattern.to_string(), std::sync::Arc::downgrade(&arc));
     Ok(arc)
+}
+
+#[cfg(test)]
+pub(crate) fn shared_regex_cache_workload_probe(pattern: &str) -> (usize, usize) {
+    for shard in regex_cache() {
+        shard.lock().clear();
+    }
+    REGEX_CACHE_COMPILES.store(0, std::sync::atomic::Ordering::Relaxed);
+
+    let first = shared_regex(pattern).expect("probe regex compiles");
+    let second = shared_regex(pattern).expect("live probe regex reuses cache");
+    assert!(std::sync::Arc::ptr_eq(&first, &second));
+    let live_compiles = REGEX_CACHE_COMPILES.load(std::sync::atomic::Ordering::Relaxed);
+    drop((first, second));
+
+    let completed_workload = shared_regex(pattern).expect("expired probe regex recompiles");
+    let completed_workload_compiles =
+        REGEX_CACHE_COMPILES.load(std::sync::atomic::Ordering::Relaxed);
+    drop(completed_workload);
+    (live_compiles, completed_workload_compiles)
 }
 
 pub(crate) fn compile_companion(

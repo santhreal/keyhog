@@ -2387,6 +2387,11 @@ pub mod fragment_cache {
         pub fn clear(&self) {
             self.0.clear();
         }
+
+        #[cfg(test)]
+        pub fn storage_for_test(&self) -> (usize, usize, usize) {
+            self.0.storage_for_test()
+        }
     }
 
     fn inner_fragment(fragment: SecretFragment) -> crate::fragment_cache::SecretFragment {
@@ -2705,6 +2710,13 @@ pub fn resolve_value_shaped_group_for_test(
 /// largest patterns.
 pub fn detector_regex_captures_len_for_test(pattern: &str) -> Result<usize, regex::Error> {
     crate::compiler::compiler_compile::shared_regex_compile(pattern).map(|re| re.captures_len())
+}
+
+/// Probe that the shared detector-regex cache deduplicates concurrently live
+/// owners but does not retain compiled programs after their workload drops.
+#[cfg(test)]
+pub fn shared_regex_cache_workload_probe_for_test(pattern: &str) -> (usize, usize) {
+    crate::compiler::compiler_compile::shared_regex_cache_workload_probe(pattern)
 }
 /// Build a `CsrU32` from test-authored per-row index lists and read every row
 /// back through `get`, pinning empty-row and ordering behavior at the public

@@ -153,3 +153,42 @@ fn shard_index_of_matches_joined_key_hash() {
         );
     }
 }
+/// WHY: one tiny workload must not preallocate every shard for the maximum
+/// daemon/watch history, and clearing a completed workload must release growth.
+#[test]
+fn capacity_tracks_live_workload_and_resets_after_clear() {
+    let cache = FragmentCache::new(512);
+    assert_eq!(cache.storage_for_test(), (0, 64, 512));
+
+    let prefix = "workload";
+    let target_shard = shard_index_drift_probe(prefix, "/repo/seed.env").0;
+    let mut paths = Vec::new();
+    for index in 0..10_000 {
+        let path = format!("/repo/candidate-{index}.env");
+        if shard_index_drift_probe(prefix, &path).0 == target_shard {
+            paths.push(path);
+            if paths.len() == 4 {
+                break;
+            }
+        }
+    }
+    assert_eq!(paths.len(), 4, "test must find four colliding shard keys");
+
+    for (line, path) in paths.iter().enumerate() {
+        let candidates =
+            cache.record_and_reassemble(frag(prefix, "WORKLOAD_PART", "abcd", line, path));
+        assert!(candidates.is_empty());
+    }
+    assert_eq!(
+        cache.storage_for_test(),
+        (4, 67, 512),
+        "only the touched shard should grow from one to four rows"
+    );
+
+    cache.clear();
+    assert_eq!(
+        cache.storage_for_test(),
+        (0, 64, 512),
+        "completed workload state and shard capacity must be released"
+    );
+}

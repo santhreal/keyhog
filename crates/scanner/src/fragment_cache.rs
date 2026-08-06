@@ -12,6 +12,7 @@ use zeroize::Zeroizing;
 
 const SHARD_COUNT: usize = 64;
 const MAX_FRAGMENTS_PER_SCOPE: usize = 8;
+const MIN_SHARD_CAPACITY: usize = 1;
 
 /// A potential fragment of a secret (variable assignment part).
 ///
@@ -110,14 +111,29 @@ pub(crate) struct FragmentCache {
     /// Maps normalized prefix (e.g. "aws_key") to a list of found fragments.
     /// Sharded to avoid a single global mutex becoming a bottleneck under rayon.
     shards: [Mutex<LruCache<String, Vec<SecretFragment>>>; SHARD_COUNT],
+    /// Per-shard ceiling preserving the caller's total cache bound. Each shard
+    /// starts at one row and grows only when its live workload needs more.
+    max_per_shard: usize,
 }
 
 impl FragmentCache {
     pub(crate) fn new(capacity: usize) -> Self {
-        let per_shard = (capacity / SHARD_COUNT).max(1);
-        let nz = NonZeroUsize::new(per_shard).unwrap_or(NonZeroUsize::MIN); // LAW10: zero => NonZeroUsize::MIN floor; shard/size knob, perf-only
+        let max_per_shard = (capacity / SHARD_COUNT).max(MIN_SHARD_CAPACITY);
+        let initial = NonZeroUsize::new(MIN_SHARD_CAPACITY).unwrap_or(NonZeroUsize::MIN);
         Self {
-            shards: std::array::from_fn(|_| Mutex::new(LruCache::new(nz))),
+            shards: std::array::from_fn(|_| Mutex::new(LruCache::new(initial))),
+            max_per_shard,
+        }
+    }
+
+    fn grow_for_workload(shard: &mut LruCache<String, Vec<SecretFragment>>, max_per_shard: usize) {
+        let current = shard.cap().get();
+        if shard.len() < current || current >= max_per_shard {
+            return;
+        }
+        let next = current.saturating_mul(2).min(max_per_shard);
+        if let Some(next) = NonZeroUsize::new(next) {
+            shard.resize(next);
         }
     }
 
@@ -152,6 +168,9 @@ impl FragmentCache {
         let mut lock = self.shards[shard_idx].lock();
 
         let cluster = with_scoped_key(&fragment.prefix, scope, |key| {
+            if !lock.contains(key) {
+                Self::grow_for_workload(&mut lock, self.max_per_shard);
+            }
             lock.get_or_insert_mut_ref(key, Vec::new)
         });
 
@@ -252,9 +271,21 @@ impl FragmentCache {
     }
 
     pub(crate) fn clear(&self) {
+        let minimum = NonZeroUsize::new(MIN_SHARD_CAPACITY).unwrap_or(NonZeroUsize::MIN);
         for shard in &self.shards {
-            shard.lock().clear();
+            let mut shard = shard.lock();
+            shard.clear();
+            shard.resize(minimum);
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn storage_for_test(&self) -> (usize, usize, usize) {
+        let (len, capacity) = self.shards.iter().fold((0, 0), |(len, capacity), shard| {
+            let shard = shard.lock();
+            (len + shard.len(), capacity + shard.cap().get())
+        });
+        (len, capacity, self.max_per_shard * SHARD_COUNT)
     }
 }
 
