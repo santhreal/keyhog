@@ -2706,14 +2706,18 @@ pub fn resolve_value_shaped_group_for_test(
 pub fn detector_regex_captures_len_for_test(pattern: &str) -> Result<usize, regex::Error> {
     crate::compiler::compiler_compile::shared_regex_compile(pattern).map(|re| re.captures_len())
 }
-/// Build a `CsrU32` from per-row index lists and read every row back out via
-/// the public `get`, so a test can pin that the (now exactly-capacity-reserved)
-/// build reconstructs the input rows byte-for-byte, including empty rows, the
-/// case CSR specifically collapses to zero data bytes.
+/// Build a `CsrU32` from test-authored per-row index lists and read every row
+/// back through `get`, pinning empty-row and ordering behavior at the public
+/// testing facade without retaining a nested-vector production constructor.
 pub fn csr_from_rows_roundtrip_for_test(rows: Vec<Vec<usize>>) -> Vec<Vec<u32>> {
-    let csr = crate::engine::CsrU32::from(rows.clone());
-    (0..rows.len())
-        .map(|i| csr.get(i).expect("row in range").to_vec())
+    let row_count = rows.len();
+    let pairs = rows
+        .iter()
+        .enumerate()
+        .flat_map(|(row, values)| values.iter().copied().map(move |value| (row, value)));
+    let csr = crate::engine::CsrU32::from_pairs(row_count, pairs);
+    (0..row_count)
+        .map(|row| csr.get(row).expect("row in range").to_vec())
         .collect()
 }
 pub use crate::pipeline::compute_line_offsets;
@@ -5007,8 +5011,8 @@ pub fn production_bigram_prefilter_density() -> (u32, bool) {
     let scanner = crate::CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
         .expect("production detector set must compile");
     (
-        scanner.bigram_bloom.popcount(),
-        scanner.bigram_bloom.is_saturated(),
+        scanner.route_classification.bigram_bloom.popcount(),
+        scanner.route_classification.bigram_bloom.is_saturated(),
     )
 }
 

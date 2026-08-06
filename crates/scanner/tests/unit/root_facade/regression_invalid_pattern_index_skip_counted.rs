@@ -38,7 +38,7 @@ fn invalid_pattern_index_same_prefix_skip_is_counted() {
         "test setup needs an AC-backed compiled pattern to corrupt"
     );
 
-    scanner.same_prefix_patterns = CsrU32::from(vec![vec![scanner.ac_map.len() + 128]]);
+    scanner.same_prefix_patterns = CsrU32::from_pairs(1, [(0, scanner.ac_map.len() + 128)]);
     let _expanded = scanner.expand_triggered_patterns(&[1]);
     assert!(
         invalid_pattern_index_skip_count() > 0,
@@ -46,7 +46,7 @@ fn invalid_pattern_index_same_prefix_skip_is_counted() {
     );
 
     reset();
-    scanner.same_prefix_patterns = CsrU32::from(Vec::<Vec<usize>>::new());
+    scanner.same_prefix_patterns = CsrU32::from_pairs(0, std::iter::empty());
     let _expanded = scanner.expand_triggered_patterns(&[1]);
     assert!(
         invalid_pattern_index_skip_count() > 0,

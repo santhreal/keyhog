@@ -21,9 +21,9 @@
 /// row concatenated, and `offsets` (length `n + 1`) records where each row
 /// starts, so `row(i) == &data[offsets[i]..offsets[i + 1]]`. Empty rows cost
 /// zero data bytes instead of a header, element width halves to `u32`, and
-/// lookups are contiguous. Build it once from the existing
-/// `Vec<Vec<usize>>`-producing builders via `From`; reads go through
-/// [`CsrU32::get`], mirroring the slice/`Vec` API the old field type exposed.
+/// lookups are contiguous. Builders emit flat `(row, value)` pairs so the
+/// production construction path never allocates temporary per-row vectors.
+/// Reads go through [`CsrU32::get`], mirroring the slice API the old table exposed.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CsrU32 {
     /// All rows concatenated, in row order.
@@ -34,26 +34,6 @@ pub(crate) struct CsrU32 {
 }
 
 impl CsrU32 {
-    /// Single CSR build loop. The `From<Vec<Vec<usize>>>` impl funnels through
-    /// here with its exact capacity knowledge so there is exactly one place that
-    /// concatenates rows into `data` and records `offsets`.
-    fn from_rows_sized<R, I>(rows: R, data_cap: usize, offsets_cap: usize) -> Self
-    where
-        R: IntoIterator<Item = I>,
-        I: IntoIterator<Item = usize>,
-    {
-        let mut data = Vec::with_capacity(data_cap);
-        let mut offsets = Vec::with_capacity(offsets_cap);
-        offsets.push(0u32);
-        for row in rows {
-            for v in row {
-                data.push(v as u32);
-            }
-            offsets.push(data.len() as u32);
-        }
-        Self { data, offsets }
-    }
-
     /// Build from flat `(row, value)` pairs without allocating one vector per
     /// logical row. Pair order within each row is preserved.
     pub(crate) fn from_pairs(
@@ -124,31 +104,6 @@ impl CsrU32 {
     }
 }
 
-impl From<Vec<Vec<usize>>> for CsrU32 {
-    fn from(rows: Vec<Vec<usize>>) -> Self {
-        // Both capacities are exactly knowable here, so the build does exactly
-        // two allocations (one `data`, one `offsets`) with zero reallocation
-        // making the "exactly two allocations" claim in the type doc literally
-        // true on the construction path the four real builders take.
-        let data_cap: usize = rows.iter().map(Vec::len).sum();
-        let offsets_cap = rows.len().saturating_add(1);
-        Self::from_rows_sized(rows, data_cap, offsets_cap)
-    }
-}
-
-impl From<Vec<Vec<u32>>> for CsrU32 {
-    fn from(rows: Vec<Vec<u32>>) -> Self {
-        let data_cap: usize = rows.iter().map(Vec::len).sum();
-        let offsets_cap = rows.len().saturating_add(1);
-        Self::from_rows_sized(
-            rows.into_iter()
-                .map(|row| row.into_iter().map(|value| value as usize)),
-            data_cap,
-            offsets_cap,
-        )
-    }
-}
-
 impl std::ops::Index<usize> for CsrU32 {
     type Output = [u32];
 
@@ -186,9 +141,22 @@ mod tests {
     /// WHY: all-empty detector partitions previously retained one inner `Vec` header per detector; CSR must encode those rows with offsets only and zero data entries.
     #[test]
     fn empty_rows_consume_no_data_slots() {
-        let table = CsrU32::from(vec![Vec::<u32>::new(), Vec::new(), Vec::new()]);
+        let table = CsrU32::from_pairs(3, std::iter::empty());
 
         assert_eq!(table.iter().collect::<Vec<_>>(), vec![&[] as &[u32]; 3]);
         assert_eq!(table.storage_lengths(), (0, 4));
+    }
+    /// WHY: a malformed builder row would otherwise disappear from the retained table and silently under-route a detector.
+    #[test]
+    #[should_panic(expected = "CSR pair row 3 exceeds 3")]
+    fn out_of_range_row_fails_closed() {
+        let _ = CsrU32::from_pairs(3, [(3, 0)]);
+    }
+
+    /// WHY: narrowing a detector index must never wrap and route a match to a different detector.
+    #[test]
+    #[should_panic(expected = "CSR value exceeds the u32 representation")]
+    fn out_of_range_value_fails_closed() {
+        let _ = CsrU32::from_pairs(1, [(0, u32::MAX as usize + 1)]);
     }
 }

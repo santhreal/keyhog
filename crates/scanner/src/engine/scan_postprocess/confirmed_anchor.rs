@@ -47,7 +47,7 @@ pub(crate) struct ConfirmedAnchorIndex {
     anchor_ac: AhoCorasick,
     anchor_first_bigram: FirstBigramSet,
     anchor_literals: Vec<String>,
-    literal_patterns: Vec<Vec<u32>>,
+    literal_patterns: super::super::CsrU32,
     eligible: Vec<bool>,
     anchored: Vec<Option<AnchoredRegex>>,
     eligible_count: usize,
@@ -58,7 +58,7 @@ impl ConfirmedAnchorIndex {
         let mut literal_ids: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
         let mut literals: Vec<String> = Vec::new();
-        let mut literal_patterns: Vec<Vec<u32>> = Vec::new();
+        let mut literal_pattern_pairs = Vec::new();
         let mut eligible = vec![false; ac_map.len()];
         let mut anchored: Vec<Option<AnchoredRegex>> = (0..ac_map.len()).map(|_| None).collect();
 
@@ -73,14 +73,16 @@ impl ConfirmedAnchorIndex {
             for lit in &pattern_literals {
                 let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
                     literals.push(lit.clone());
-                    literal_patterns.push(Vec::new());
                     literals.len() - 1
                 });
-                literal_patterns[id].push(idx as u32);
+                literal_pattern_pairs.push((id, idx));
             }
             eligible[idx] = true;
             anchored[idx] = Some(AnchoredRegex::new(pattern.regex.as_str(), ci));
         }
+
+        let literal_patterns =
+            super::super::CsrU32::from_pairs(literals.len(), literal_pattern_pairs);
 
         let eligible_count = eligible.iter().filter(|&&value| value).count();
         if eligible_count == 0 {

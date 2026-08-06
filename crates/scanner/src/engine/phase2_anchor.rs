@@ -60,7 +60,7 @@ pub(crate) struct Phase2AnchorIndex {
     /// First-bigram prescreen for `anchor_ac`.
     anchor_first_bigram: Option<FirstBigramSet>,
     /// `anchor_ac` pattern id -> phase-2 indices that declared this literal.
-    literal_patterns: Vec<Vec<u32>>,
+    literal_patterns: super::CsrU32,
     /// Per phase-2 index: eligible for the anchored fast path.
     eligible: Vec<bool>,
     /// Per phase-2 index: eligible AND always-active (no >=4-char keyword).
@@ -80,7 +80,7 @@ pub(crate) struct Phase2AnchorIndex {
     /// First-bigram prescreen for `always_anchor_ac`.
     always_anchor_first_bigram: Option<FirstBigramSet>,
     /// `always_anchor_ac` pattern id -> always-active phase-2 indices.
-    always_literal_patterns: Vec<Vec<u32>>,
+    always_literal_patterns: super::CsrU32,
     /// Per phase-2 index: the anchored regex (Some iff eligible OR plain
     /// -anchorable (the localized homoglyph path also runs `\A(?:regex)`)).
     anchored: Vec<Option<AnchoredRegex>>,
@@ -99,7 +99,7 @@ pub(crate) struct Phase2AnchorIndex {
     /// First-bigram prescreen for `plain_anchor_ac`.
     plain_anchor_first_bigram: Option<FirstBigramSet>,
     /// `plain_anchor_ac` literal id -> plain phase-2 indices.
-    plain_literal_patterns: Vec<Vec<u32>>,
+    plain_literal_patterns: super::CsrU32,
     /// Plain patterns with NO usable folded literal: run whole-chunk on ASCII
     /// chunks (they are few (homoglyph variants almost always have a prefix)).
     plain_always_mark: Vec<u32>,
@@ -148,12 +148,12 @@ impl Phase2AnchorIndex {
         let mut literal_ids: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
         let mut literals: Vec<String> = Vec::new();
-        let mut literal_patterns: Vec<Vec<u32>> = Vec::new();
+        let mut literal_pattern_pairs = Vec::new();
         // Plain (homoglyph) localized path: separate case-sensitive AC.
         let mut plain_literal_ids: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
         let mut plain_literals: Vec<String> = Vec::new();
-        let mut plain_literal_patterns: Vec<Vec<u32>> = Vec::new();
+        let mut plain_literal_pattern_pairs = Vec::new();
         let mut plain_always_mark: Vec<u32> = Vec::new();
 
         for (idx, (pattern, _keywords)) in phase2_patterns.iter().enumerate() {
@@ -163,10 +163,9 @@ impl Phase2AnchorIndex {
                 for lit in &pattern_literals {
                     let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
                         literals.push(lit.clone());
-                        literal_patterns.push(Vec::new());
                         literals.len() - 1
                     });
-                    literal_patterns[id].push(idx as u32);
+                    literal_pattern_pairs.push((id, idx));
                 }
                 eligible[idx] = true;
                 anchored[idx] = Some(AnchoredRegex::new(pattern.regex.as_str(), ci));
@@ -185,10 +184,9 @@ impl Phase2AnchorIndex {
                         for lit in &lits {
                             let id = *plain_literal_ids.entry(lit.clone()).or_insert_with(|| {
                                 plain_literals.push(lit.clone());
-                                plain_literal_patterns.push(Vec::new());
                                 plain_literals.len() - 1
                             });
-                            plain_literal_patterns[id].push(idx as u32);
+                            plain_literal_pattern_pairs.push((id, idx));
                         }
                         // Verify with the FOLDED (ASCII) regex `\A(?:fold)`, not
                         // the unicode one: on the ASCII chunks where this path
@@ -202,6 +200,10 @@ impl Phase2AnchorIndex {
                 }
             }
         }
+
+        let literal_patterns = super::CsrU32::from_pairs(literals.len(), literal_pattern_pairs);
+        let plain_literal_patterns =
+            super::CsrU32::from_pairs(plain_literals.len(), plain_literal_pattern_pairs);
 
         let eligible_count = eligible.iter().filter(|&&e| e).count();
         if eligible_count == 0 && plain_literals.is_empty() && plain_always_mark.is_empty() {
@@ -218,20 +220,24 @@ impl Phase2AnchorIndex {
             }
         }
         let mut always_literals: Vec<String> = Vec::new();
-        let mut always_literal_patterns: Vec<Vec<u32>> = Vec::new();
-        for (lit_id, pats) in literal_patterns.iter().enumerate() {
-            let filtered = pats
-                .iter()
-                .copied()
-                .filter(|&pat| matches!(always_active_eligible.get(pat as usize), Some(true)))
-                .collect::<Vec<_>>();
-            if !filtered.is_empty() {
-                if let Some(lit) = literals.get(lit_id) {
-                    always_literals.push(lit.clone());
-                    always_literal_patterns.push(filtered);
+        let mut always_literal_pattern_pairs = Vec::new();
+        for (literal_id, patterns) in literal_patterns.iter().enumerate() {
+            let always_literal_id = always_literals.len();
+            let mut retained_literal = false;
+            for &pattern in patterns {
+                if matches!(always_active_eligible.get(pattern as usize), Some(true)) {
+                    if !retained_literal {
+                        if let Some(literal) = literals.get(literal_id) {
+                            always_literals.push(literal.clone());
+                        }
+                        retained_literal = true;
+                    }
+                    always_literal_pattern_pairs.push((always_literal_id, pattern as usize));
                 }
             }
         }
+        let always_literal_patterns =
+            super::CsrU32::from_pairs(always_literals.len(), always_literal_pattern_pairs);
         // MatchKind::Standard is required for find_overlapping_iter; ASCII-case
         // -insensitive so a single lowercase literal anchors all case variants.
         let anchor_first_bigram = (!literals.is_empty())
