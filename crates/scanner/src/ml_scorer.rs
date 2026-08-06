@@ -28,6 +28,8 @@ use std::cell::RefCell;
 
 pub(crate) mod ml_features;
 pub(crate) mod service_vocab;
+#[cfg(test)]
+pub(crate) mod service_vocab_build;
 #[cfg(all(test, feature = "ml"))]
 pub(crate) use ml_features::compute_features_public;
 pub use ml_features::compute_features_with_config;

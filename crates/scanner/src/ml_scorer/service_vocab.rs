@@ -51,79 +51,34 @@
 //! `detectors/*.toml` with byte-identical rules; `ml/parity_check.py` fails
 //! loudly on any disagreement. Change the rules here and there together.
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
-/// Keywords shorter than this never enter the service vocabulary: at 1-3 bytes
-/// they are credential value-prefixes or separators, and as case-insensitive
-/// `contains` needles they false-fire inside random base64/hex bytes that share
-/// the ±5-line ML context window with the candidate.
-pub(crate) const MIN_SERVICE_KEYWORD_LEN: usize = 4;
+#[cfg(test)]
+use super::service_vocab_build::{
+    build_service_vocabulary as derive_vocabulary, ServiceVocabularyDetector,
+};
+#[cfg(test)]
+pub(crate) use super::service_vocab_build::{GENERIC_STEM_SPREAD_LIMIT, MIN_SERVICE_KEYWORD_LEN};
 
-/// A keyword used by detectors of this many DISTINCT id stems (or more) is a
-/// cross-vendor role word, not a service name. 2 keeps two-spelling vendors
-/// (`aws-*` + `amazon-*` both carrying `amazonaws`); 3 is where genuine
-/// role-words start (`x-api-key` spans 9 stems, `authorization` 10).
-pub(crate) const GENERIC_STEM_SPREAD_LIMIT: usize = 3;
-
-fn is_generic_family(detector: &keyhog_core::DetectorSpec) -> bool {
-    detector.owns_entropy_policy()
-}
-
-/// The id's first `-`-separated token: `gitlab-pipeline-trigger-token` →
-/// `gitlab`. Groups sibling detectors of one service so per-service keyword
-/// reuse is not mistaken for cross-vendor genericity.
-fn detector_id_stem(detector_id: &str) -> &str {
-    detector_id
-        .split('-')
-        .next()
-        .map_or(detector_id, |stem| stem)
-}
+/// The vocabulary policy lives in `service_vocab_build` so the build script and
+/// unit-test oracle execute one implementation.
 
 /// Pure vocabulary builder over an explicit spec slice (unit-testable without
 /// the embedded corpus). See the module doc for the three filter rules.
+#[cfg(test)]
 pub(crate) fn build_service_vocabulary(specs: &[keyhog_core::DetectorSpec]) -> Vec<String> {
-    let mut generic_words: BTreeSet<String> = BTreeSet::new();
-    let mut stems_by_keyword: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
-
-    for spec in specs {
-        if is_generic_family(spec) {
-            for keyword in &spec.keywords {
-                generic_words.insert(keyword.to_ascii_lowercase());
-            }
-            continue;
-        }
-        let stem = detector_id_stem(&spec.id);
-        for keyword in &spec.keywords {
-            stems_by_keyword
-                .entry(keyword.to_ascii_lowercase())
-                .or_default()
-                .insert(stem);
-        }
-    }
-
-    stems_by_keyword
-        .into_iter()
-        .filter(|(keyword, stems)| {
-            keyword.len() >= MIN_SERVICE_KEYWORD_LEN
-                && stems.len() < GENERIC_STEM_SPREAD_LIMIT
-                // A candidate that is a SUBSTRING of a generic role word
-                // (`api_` ⊂ `api_key`) fires everywhere that word does, as a
-                // `contains` needle it is strictly MORE generic than the word
-                // itself, so both exact members and substrings are excluded.
-                // (Containing a generic word is fine: `virustotal_api_key`
-                // only fires when the service name is present too.)
-                && !generic_words.iter().any(|g| g.contains(keyword.as_str()))
-        })
-        .map(|(keyword, _)| keyword)
-        .collect()
+    derive_vocabulary(specs.iter().map(|detector| ServiceVocabularyDetector {
+        id: &detector.id,
+        generic_family: detector.owns_entropy_policy(),
+        keywords: &detector.keywords,
+    }))
 }
 
-/// The service vocabulary derived from the embedded corpus, built exactly once.
-pub(crate) fn service_vocabulary() -> &'static [String] {
-    static VOCAB: LazyLock<Vec<String>> =
-        LazyLock::new(|| build_service_vocabulary(keyhog_core::embedded_detector_specs()));
-    &VOCAB
+/// The build script derives this exact corpus vocabulary from detector TOML.
+/// Ordinary scans map static string data and never reconstruct detector specs.
+pub(crate) fn service_vocabulary() -> &'static [&'static str] {
+    static VOCABULARY: &[&str] = include!(concat!(env!("OUT_DIR"), "/ml_service_vocabulary.rs"));
+    VOCABULARY
 }
 
 /// One case-insensitive multi-pattern automaton over the whole vocabulary.

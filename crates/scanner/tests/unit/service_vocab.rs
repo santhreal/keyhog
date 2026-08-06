@@ -198,7 +198,7 @@ fn oracle_contains_any(context: &str) -> bool {
     let haystack = context.to_ascii_lowercase();
     service_vocabulary()
         .iter()
-        .any(|needle| haystack.contains(needle.as_str()))
+        .any(|needle| haystack.contains(*needle))
 }
 
 #[test]
@@ -291,7 +291,7 @@ fn live_vocabulary_excludes_generic_credential_role_words() {
         "secret_key",
     ] {
         assert!(
-            !vocab.iter().any(|v| v == role_word),
+            !vocab.iter().any(|v| *v == role_word),
             "generic role word {role_word:?} must never be treated as a service name"
         );
     }

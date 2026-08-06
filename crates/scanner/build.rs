@@ -3,6 +3,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[path = "src/ml_scorer/service_vocab_build.rs"]
+mod service_vocab_build;
 
 fn main() -> io::Result<()> {
     println!("cargo:rerun-if-changed=src/weights.bin");
@@ -27,6 +29,8 @@ fn main() -> io::Result<()> {
             "OUT_DIR is not set. Fix: run the build through Cargo so build-script outputs are available",
         )
     })?;
+    generate_service_vocabulary(manifest_dir, Path::new(&out_dir))?;
+
     let dest_path = Path::new(&out_dir).join("model_version.rs");
 
     let bytes = fs::read("src/weights.bin").map_err(|error| {
@@ -103,6 +107,103 @@ fn main() -> io::Result<()> {
     )?;
     Ok(())
 }
+fn generate_service_vocabulary(manifest_dir: &Path, out_dir: &Path) -> io::Result<()> {
+    let workspace_root = manifest_dir
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| {
+            invalid_data("scanner manifest is not under the workspace crates directory".to_owned())
+        })?;
+    let detector_dir = workspace_root.join("detectors");
+    println!("cargo:rerun-if-changed={}", detector_dir.display());
+
+    struct DetectorRow {
+        id: String,
+        generic_family: bool,
+        keywords: Vec<String>,
+    }
+
+    let mut paths = fs::read_dir(&detector_dir)
+        .map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "reading detector corpus {}: {error}",
+                    detector_dir.display()
+                ),
+            )
+        })?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "toml")
+        })
+        .collect::<Vec<_>>();
+    paths.sort();
+
+    let mut rows = Vec::with_capacity(paths.len());
+    for path in paths {
+        let source = fs::read_to_string(&path).map_err(|error| {
+            io::Error::new(error.kind(), format!("reading {}: {error}", path.display()))
+        })?;
+        let document = toml::from_str::<toml::Value>(&source).map_err(|error| {
+            invalid_data(format!("parsing detector {}: {error}", path.display()))
+        })?;
+        let Some(detector) = document.get("detector").and_then(toml::Value::as_table) else {
+            continue;
+        };
+        let id = detector
+            .get("id")
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| invalid_data(format!("{} detector omits id", path.display())))?
+            .to_owned();
+        let keywords = detector
+            .get("keywords")
+            .and_then(toml::Value::as_array)
+            .ok_or_else(|| invalid_data(format!("{} detector omits keywords", path.display())))?
+            .iter()
+            .map(|keyword| {
+                keyword.as_str().map(str::to_owned).ok_or_else(|| {
+                    invalid_data(format!(
+                        "{} detector has a non-string keyword",
+                        path.display()
+                    ))
+                })
+            })
+            .collect::<io::Result<Vec<_>>>()?;
+        let generic_family = detector
+            .get("kind")
+            .and_then(toml::Value::as_str)
+            .is_some_and(|kind| kind == "phase2-generic")
+            || detector.contains_key("entropy_policy_priority");
+        rows.push(DetectorRow {
+            id,
+            generic_family,
+            keywords,
+        });
+    }
+
+    let vocabulary = service_vocab_build::build_service_vocabulary(rows.iter().map(|row| {
+        service_vocab_build::ServiceVocabularyDetector {
+            id: &row.id,
+            generic_family: row.generic_family,
+            keywords: &row.keywords,
+        }
+    }));
+    if vocabulary.is_empty() {
+        return Err(invalid_data(
+            "detector corpus produced an empty ML service vocabulary".to_owned(),
+        ));
+    }
+    let mut generated = String::from("&[\n");
+    for keyword in vocabulary {
+        generated.push_str("    ");
+        generated.push_str(&rust_string(&keyword));
+        generated.push_str(",\n");
+    }
+    generated.push_str("]\n");
+    fs::write(out_dir.join("ml_service_vocabulary.rs"), generated)
+}
 
 /// Verify `data/english_bigram_logprob.bin` against its provenance card.
 ///
@@ -117,14 +218,15 @@ fn verify_bigram_model_card() -> io::Result<()> {
             format!("data/english_bigram_logprob.bin is required by the randomness discriminator: {error}"),
         )
     })?;
-    let card_src = fs::read_to_string("data/english_bigram_logprob.card.toml").map_err(|error| {
-        io::Error::new(
-            error.kind(),
-            format!(
+    let card_src =
+        fs::read_to_string("data/english_bigram_logprob.card.toml").map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!(
                 "data/english_bigram_logprob.card.toml is required beside the bigram table: {error}"
             ),
-        )
-    })?;
+            )
+        })?;
     let card: toml::Value = toml::from_str(&card_src).map_err(|error| {
         invalid_data(format!(
             "data/english_bigram_logprob.card.toml is not valid TOML: {error}"
