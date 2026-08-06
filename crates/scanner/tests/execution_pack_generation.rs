@@ -447,12 +447,22 @@ fn hyperscan_program_rejects_corrupt_serialized_database() {
     });
     let ir = CanonicalDetectorExecutionIr::compile(&[spec]).expect("compile IR");
     let program = HyperscanSimdExecutionProgram::compile(&ir).expect("compile SIMD program");
+    let shard = program
+        .serialized_shards
+        .first()
+        .expect("fixture compiles one native shard");
     let mut bytes = program.canonical_bytes().expect("encode SIMD program");
-    let last = bytes.len() - 1;
-    bytes[last] ^= 0xff;
+    let shard_offset = bytes
+        .windows(shard.len())
+        .position(|window| window == shard.as_ref())
+        .expect("encoded program contains native shard bytes");
+    bytes[shard_offset] ^= 0xff;
     let error = HyperscanSimdExecutionProgram::decode(&bytes, ir.digest())
         .expect_err("corrupt native database must fail");
-    assert!(error.to_string().contains("corrupt"));
+    assert!(
+        error.to_string().contains("corrupt"),
+        "unexpected corruption diagnostic: {error}"
+    );
 }
 
 #[cfg(feature = "gpu")]
