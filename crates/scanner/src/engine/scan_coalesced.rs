@@ -382,37 +382,82 @@ impl CompiledScanner {
         let ac_len = self.ac_map.len();
         let words_needed = super::trigger_bitmap::words_for(ac_len);
         let profile_runtime = keyhog_profile::current_runtime();
-        let triggers: Result<Vec<Option<Vec<u64>>>, String> = chunks
-            .par_iter()
-            .enumerate()
-            .map(|(chunk_index, chunk)| {
-                let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
-                let data = chunk.data.as_bytes();
-                let admission =
-                    match admission_plan.and_then(|plan| plan.admission_for(chunk_index)) {
-                        Some(admission) => admission,
-                        None => self.phase1_admission(data),
-                    };
-                if admission != super::Phase1Admission::Admitted {
-                    return Ok(None);
-                }
-                with_trigger_buffer(words_needed, |scratch| {
-                    let scanner = prefilter.scanner();
-                    scanner.scan_each_result(data, |hs_id| {
-                        mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
-                    })?;
-                    prefilter.for_each_recovery_match(data, |pattern_index| {
-                        self.mark_triggered_pattern(scratch, pattern_index);
-                    });
-                    if scratch.iter().any(|&w| w != 0) {
-                        Ok(Some(scratch.to_vec()))
-                    } else {
-                        Ok(None)
+        let lane_width = super::batch_topology::coalesced_lane_width(chunks);
+        let triggers = if lane_width == 1 {
+            chunks
+                .par_iter()
+                .enumerate()
+                .map(|(chunk_index, chunk)| {
+                    let _profile_context =
+                        profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+                    let data = chunk.data.as_bytes();
+                    let admission =
+                        match admission_plan.and_then(|plan| plan.admission_for(chunk_index)) {
+                            Some(admission) => admission,
+                            None => self.phase1_admission(data),
+                        };
+                    if admission != super::Phase1Admission::Admitted {
+                        return Ok(None);
                     }
+                    with_trigger_buffer(words_needed, |scratch| {
+                        let scanner = prefilter.scanner();
+                        scanner.scan_each_result(data, |hs_id| {
+                            mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
+                        })?;
+                        prefilter.for_each_recovery_match(data, |pattern_index| {
+                            self.mark_triggered_pattern(scratch, pattern_index);
+                        });
+                        if scratch.iter().any(|&word| word != 0) {
+                            Ok(Some(scratch.to_vec()))
+                        } else {
+                            Ok(None)
+                        }
+                    })
                 })
-            })
-            .collect();
-        let triggers = triggers?;
+                .collect::<Result<Vec<_>, String>>()?
+        } else {
+            chunks
+                .par_chunks(lane_width)
+                .enumerate()
+                .map(|(lane_index, lane)| {
+                    let _profile_context =
+                        profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+                    let base = lane_index * lane_width;
+                    let admitted = |offset: usize, data: &[u8]| {
+                        admission_plan
+                            .and_then(|plan| plan.admission_for(base + offset))
+                            .unwrap_or_else(|| self.phase1_admission(data))
+                            == super::Phase1Admission::Admitted
+                    };
+                    let mut lane_triggers = vec![None; lane.len()];
+                    prefilter.scanner().scan_many_each_result(
+                        lane.iter().enumerate().filter_map(|(offset, chunk)| {
+                            let data = chunk.data.as_bytes();
+                            admitted(offset, data).then_some((offset, data))
+                        }),
+                        |offset, hs_id| {
+                            let scratch = lane_triggers[offset]
+                                .get_or_insert_with(|| vec![0u64; words_needed]);
+                            mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
+                        },
+                    )?;
+                    for (offset, chunk) in lane.iter().enumerate() {
+                        let data = chunk.data.as_bytes();
+                        if admitted(offset, data) {
+                            prefilter.for_each_recovery_match(data, |pattern_index| {
+                                let scratch = lane_triggers[offset]
+                                    .get_or_insert_with(|| vec![0u64; words_needed]);
+                                self.mark_triggered_pattern(scratch, pattern_index);
+                            });
+                        }
+                    }
+                    Ok(lane_triggers)
+                })
+                .collect::<Result<Vec<Vec<Option<Vec<u64>>>>, String>>()?
+                .into_iter()
+                .flatten()
+                .collect()
+        };
 
         if tracing::enabled!(tracing::Level::INFO) {
             let hit_count = triggers.iter().filter(|t| t.is_some()).count();

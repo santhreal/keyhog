@@ -258,6 +258,35 @@ impl HsScanner {
         Ok(())
     }
 
+    /// Scan several independently-addressed texts while holding one scratch
+    /// batch for the entire lane. Callers must discard callback state if this
+    /// returns `Err`.
+    pub(crate) fn scan_many_each_result<'a>(
+        &self,
+        texts: impl IntoIterator<Item = (usize, &'a [u8])>,
+        mut on_match: impl FnMut(usize, usize),
+    ) -> Result<(), String> {
+        let scratches = ScratchBatch::acquire(self)?;
+        for (text_index, text) in texts {
+            for (shard_idx, shard) in self.shards.iter().enumerate() {
+                if let Err(error) = shard.db.scan(
+                    text,
+                    scratches.scratch(shard_idx),
+                    |id, _from, _to, _flags| {
+                        on_match(text_index, id as usize);
+                        Matching::Continue
+                    },
+                ) {
+                    return Err(format!(
+                        "hyperscan batch scan failed for text {text_index} while executing shard {shard_idx} of {}; callback output from this lane is incomplete and must be discarded: {error}",
+                        self.shards.len()
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// True iff ANY compiled pattern matches `text`. The BOOLEAN companion
     /// to [`scan_each_result`](Self::scan_each_result): the match callback returns
     /// `Matching::Terminate` on the first hit, so HS aborts the scan

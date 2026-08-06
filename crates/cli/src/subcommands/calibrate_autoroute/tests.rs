@@ -189,7 +189,7 @@ fn plain_route_probe_has_sparse_real_phase2_work_without_changing_size() {
 }
 
 /// The bounded E2E fixture must retain every bucket used by its post-calibration
-/// scans while leaving the production 96-workload plan independently intact.
+/// scans while leaving the complete production workload plan independently intact.
 #[test]
 fn bounded_e2e_workload_fixture_keeps_verified_buckets() {
     let plan = bounded_e2e_workload_plan(core_workload_plan()).expect("bounded workload fixture");
@@ -199,11 +199,17 @@ fn bounded_e2e_workload_fixture_keeps_verified_buckets() {
     );
 }
 
+/// Every canonical source class must be timed in streamed and known-size form so normal scans never hit an uncalibrated source identity.
 #[test]
 fn workload_plan_matches_the_installer_ladder() {
     let plan = core_workload_plan();
-    // 1 stdin + 31 single-file + every fused count for full-size and extracted payloads.
-    assert_eq!(plan.len(), 96);
+    // 1 stdin + 31 single-file + both edges of every fused count bucket for
+    // full-size and extracted payloads + two metadata shapes per source class.
+    assert_eq!(
+        plan.len(),
+        32 + 2 * crate::orchestrator_config::fused_batch_calibration_counts().len()
+            + 2 * crate::orchestrator::canonical_source_classes().len()
+    );
     let labels: Vec<&str> = plan.iter().map(Workload::label).collect();
     assert!(labels.contains(&"stdin 64 KiB workload"));
     assert!(labels.contains(&"1 B workload"));
@@ -214,11 +220,27 @@ fn workload_plan_matches_the_installer_ladder() {
     assert!(labels.contains(&"decode-heavy 256 KiB workload"));
     assert!(labels.contains(&"32 MiB workload"));
     assert!(labels.contains(&"1 x 4 KiB files workload"));
-    assert!(labels.contains(&"17 x 4 KiB files workload"));
+    assert!(labels.contains(&"31 x 4 KiB files workload"));
     assert!(labels.contains(&"32 x 4 KiB files workload"));
+    assert!(labels.contains(&"1024 x 4 KiB files workload"));
     assert!(labels.contains(&"1 x 4 KiB tar members workload"));
-    assert!(labels.contains(&"17 x 4 KiB tar members workload"));
+    assert!(labels.contains(&"31 x 4 KiB tar members workload"));
     assert!(labels.contains(&"32 x 4 KiB tar members workload"));
+    assert!(labels.contains(&"1024 x 4 KiB tar members workload"));
+    for source_class in crate::orchestrator::canonical_source_classes() {
+        let shapes = plan
+            .iter()
+            .filter_map(|workload| match workload {
+                Workload::SourceClass {
+                    source_class: actual,
+                    has_full_size,
+                    ..
+                } if *actual == source_class => Some(*has_full_size),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(shapes, [false, true], "source class {source_class}");
+    }
 
     let plain_file_bytes: Vec<usize> = plan
         .iter()
@@ -277,8 +299,8 @@ fn workload_plan_matches_the_installer_ladder() {
         .collect();
     assert_eq!(
         tree_counts,
-        (1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT).collect::<Vec<_>>(),
-        "tree probes must represent every exact count in the default fused batch"
+        crate::orchestrator_config::fused_batch_calibration_counts(),
+        "tree probes must cover both edges of every fused-batch count bucket"
     );
 
     let tar_member_counts: Vec<usize> = plan
@@ -290,8 +312,8 @@ fn workload_plan_matches_the_installer_ladder() {
         .collect();
     assert_eq!(
         tar_member_counts,
-        (1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT).collect::<Vec<_>>(),
-        "archive probes must represent every exact extracted payload count"
+        crate::orchestrator_config::fused_batch_calibration_counts(),
+        "archive probes must cover both edges of every fused-batch count bucket"
     );
 }
 
@@ -348,4 +370,34 @@ fn tar_probe_materializes_exact_payload_derived_member_batch() {
             && chunk.metadata.size_bytes.is_none()
             && chunk.metadata.source_type.starts_with("filesystem/archive")
     }));
+}
+
+/// A source-class calibration probe must carry the exact class and size-presence axis into production workload classification.
+#[test]
+fn source_class_probe_materializes_exact_routing_metadata() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    for has_full_size in [false, true] {
+        let workload = Workload::SourceClass {
+            label: "test source class".to_owned(),
+            source_class: "web:js",
+            bytes: 64 * 1024,
+            has_full_size,
+        };
+        let MaterializedProbe::SourceClass(source) =
+            materialize_probe(workspace.path(), 1, &workload).expect("materialize source class")
+        else {
+            panic!("source-class representative must remain an in-memory source");
+        };
+        let chunks = source
+            .chunks()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("read calibration source");
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].data.len(), 64 * 1024);
+        assert_eq!(chunks[0].metadata.source_type.as_ref(), "web:js");
+        assert_eq!(
+            chunks[0].metadata.size_bytes,
+            has_full_size.then_some(64 * 1024)
+        );
+    }
 }

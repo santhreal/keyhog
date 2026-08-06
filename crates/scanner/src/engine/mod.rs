@@ -55,6 +55,7 @@ mod backend;
 mod backend_dispatch;
 mod backend_prepared;
 mod backend_triggered;
+mod batch_topology;
 mod boundary;
 pub(crate) use boundary::derive_pattern_boundary_context;
 #[cfg(feature = "gpu")]

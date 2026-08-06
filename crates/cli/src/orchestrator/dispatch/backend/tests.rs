@@ -419,14 +419,8 @@ fn cpu_only_calibration_cannot_replay_under_a_gpu_admitting_scan() {
     // And the scan that measured it still finds its own evidence, which is the
     // half the old config-digest field broke.
     assert_eq!(
-        load_autoroute_cache(
-            &path,
-            digest,
-            test_rules_digest(),
-            config_digest,
-            &cpu_only,
-        )
-        .expect("CPU-only evidence replays under the identity that measured it"),
+        load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &cpu_only,)
+            .expect("CPU-only evidence replays under the identity that measured it"),
         decisions,
     );
 }
@@ -1609,31 +1603,29 @@ fn eight_mib_crossover_has_an_exact_power_of_two_band() {
 
 #[test]
 fn calibration_tree_representatives_cover_default_fused_residual_chunk_keys() {
-    let representative_counts =
-        (1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT).collect::<Vec<_>>();
-    let representative_keys = representative_counts
-        .iter()
-        .map(|&count| {
-            let batch = (0..count)
-                .map(|_| test_chunk("a".repeat(4 * 1024)))
-                .collect::<Vec<_>>();
-            workload_key(&batch, 902).expect("representative 4 KiB batch classifies")
+    let representative_buckets = crate::orchestrator_config::fused_batch_calibration_counts()
+        .into_iter()
+        .map(|count| {
+            (
+                autoroute_stable_bucket(count as u64),
+                autoroute_stable_bucket((count * 4 * 1024) as u64),
+            )
         })
         .collect::<HashSet<_>>();
 
     assert_eq!(
         crate::orchestrator_config::FUSED_BATCH_DEFAULT,
-        32,
-        "install-time autoroute calibration representatives must be revisited if the default fused batch changes"
+        1024,
+        "tiny-file dispatch and install-time representatives must change together"
     );
     for count in 1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT {
-        let batch = (0..count)
-            .map(|_| test_chunk("a".repeat(4 * 1024)))
-            .collect::<Vec<_>>();
-        let key = workload_key(&batch, 902).expect("4 KiB residual batch classifies");
+        let buckets = (
+            autoroute_stable_bucket(count as u64),
+            autoroute_stable_bucket((count * 4 * 1024) as u64),
+        );
         assert!(
-            representative_keys.contains(&key),
-            "install calibration representatives must cover {count} x 4 KiB residual fused batch key {key:?}"
+            representative_buckets.contains(&buckets),
+            "install calibration representatives must cover {count} x 4 KiB residual fused batch buckets {buckets:?}"
         );
     }
 }
@@ -3278,7 +3270,13 @@ fn a_measurably_worse_median_cannot_win_a_dead_heat_on_a_wide_error_bar() {
     // Scalar is far slower on average but jitters enough that its interval
     // still overlaps the accelerator's. Lower complexity must not rescue it.
     let cpu_timing = BackendTimingEvidence::from_trial_ns(vec![
-        1_000_000, 60_000_000, 60_000_000, 60_000_000, 60_000_000, 60_000_000, 200_000_000,
+        1_000_000,
+        60_000_000,
+        60_000_000,
+        60_000_000,
+        60_000_000,
+        60_000_000,
+        200_000_000,
     ])
     .expect("valid CPU timing");
     let simd_timing = BackendTimingEvidence::from_trial_ns(vec![
@@ -7242,23 +7240,25 @@ fn scalar_plan_decision(
         },
         BackendTimingEvidence::constant_ms(50_000, AUTOROUTE_CALIBRATION_TRIALS),
     )];
-    route_timings.extend([(false, false), (true, true)].into_iter().map(
-        |(plain, keyword)| {
-            let offset = if (plain, keyword) == faster_plan {
-                0
-            } else {
-                1_000_000
-            };
-            RouteTimingEvidence::new(
-                MeasuredRoute {
-                    backend: ScanBackend::CpuFallback,
-                    phase2_plain_localizer: plain,
-                    phase2_keyword_localizer: keyword,
-                },
-                overlapping_paired_trials(offset),
-            )
-        },
-    ));
+    route_timings.extend(
+        [(false, false), (true, true)]
+            .into_iter()
+            .map(|(plain, keyword)| {
+                let offset = if (plain, keyword) == faster_plan {
+                    0
+                } else {
+                    1_000_000
+                };
+                RouteTimingEvidence::new(
+                    MeasuredRoute {
+                        backend: ScanBackend::CpuFallback,
+                        phase2_plain_localizer: plain,
+                        phase2_keyword_localizer: keyword,
+                    },
+                    overlapping_paired_trials(offset),
+                )
+            }),
+    );
     let mut decision = AutorouteDecision::from_peer_timing_evidence(
         ScanBackend::CpuFallback,
         sample_bytes,
@@ -7401,47 +7401,52 @@ fn a_separated_plan_lead_still_beats_the_compiled_default() {
 /// recovery on every future scan.
 #[test]
 fn a_split_plan_across_points_reconciles_to_the_compiled_default() {
-    let separated = |sample_bytes: u64, faster_plan: (bool, bool)| {
-        let mut route_timings = vec![RouteTimingEvidence::new(
-            MeasuredRoute {
-                backend: ScanBackend::SimdCpu,
-                phase2_plain_localizer: false,
-                phase2_keyword_localizer: false,
-            },
-            BackendTimingEvidence::constant_ms(50_000, AUTOROUTE_CALIBRATION_TRIALS),
-        )];
-        route_timings.extend([(false, false), (true, true)].into_iter().map(
-            |(plain, keyword)| {
-                let ms = if (plain, keyword) == faster_plan { 10 } else { 90 };
-                RouteTimingEvidence::new(
-                    MeasuredRoute {
-                        backend: ScanBackend::CpuFallback,
-                        phase2_plain_localizer: plain,
-                        phase2_keyword_localizer: keyword,
-                    },
-                    BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS),
-                )
-            },
-        ));
-        let mut decision = AutorouteDecision::from_peer_timing_evidence(
-            ScanBackend::CpuFallback,
-            sample_bytes,
-            1,
-            test_measurement_shape_evidence(sample_bytes, 1),
-            0x5A17_D0C5_5A17_D0C5,
-            1,
-            route_timings,
-            true,
-            true,
-        );
-        let resolved = decision
-            .resolved_routing_route()
-            .expect("a separated lead resolves");
-        decision.backend = resolved.backend.label().to_string();
-        decision.phase2_plain_localizer = resolved.phase2_plain_localizer;
-        decision.phase2_keyword_localizer = resolved.phase2_keyword_localizer;
-        decision
-    };
+    let separated =
+        |sample_bytes: u64, faster_plan: (bool, bool)| {
+            let mut route_timings = vec![RouteTimingEvidence::new(
+                MeasuredRoute {
+                    backend: ScanBackend::SimdCpu,
+                    phase2_plain_localizer: false,
+                    phase2_keyword_localizer: false,
+                },
+                BackendTimingEvidence::constant_ms(50_000, AUTOROUTE_CALIBRATION_TRIALS),
+            )];
+            route_timings.extend([(false, false), (true, true)].into_iter().map(
+                |(plain, keyword)| {
+                    let ms = if (plain, keyword) == faster_plan {
+                        10
+                    } else {
+                        90
+                    };
+                    RouteTimingEvidence::new(
+                        MeasuredRoute {
+                            backend: ScanBackend::CpuFallback,
+                            phase2_plain_localizer: plain,
+                            phase2_keyword_localizer: keyword,
+                        },
+                        BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS),
+                    )
+                },
+            ));
+            let mut decision = AutorouteDecision::from_peer_timing_evidence(
+                ScanBackend::CpuFallback,
+                sample_bytes,
+                1,
+                test_measurement_shape_evidence(sample_bytes, 1),
+                0x5A17_D0C5_5A17_D0C5,
+                1,
+                route_timings,
+                true,
+                true,
+            );
+            let resolved = decision
+                .resolved_routing_route()
+                .expect("a separated lead resolves");
+            decision.backend = resolved.backend.label().to_string();
+            decision.phase2_plain_localizer = resolved.phase2_plain_localizer;
+            decision.phase2_keyword_localizer = resolved.phase2_keyword_localizer;
+            decision
+        };
 
     let mut envelope = separated(8 * 1024 * 1024, (true, true));
     envelope
@@ -7496,9 +7501,11 @@ fn a_backend_crossover_across_points_still_refuses_to_resolve() {
         )
     };
     let mut envelope = winner(8 * 1024 * 1024, 10, 900);
-    envelope
-        .calibration_points
-        .push(winner(12 * 1024 * 1024, 900, 10).calibration_points.remove(0));
+    envelope.calibration_points.push(
+        winner(12 * 1024 * 1024, 900, 10)
+            .calibration_points
+            .remove(0),
+    );
     assert_eq!(
         envelope.resolved_routing_route(),
         None,

@@ -108,7 +108,7 @@ fn config_effective_prints_and_exits_without_source() {
         "batch_pipeline = false",
         "threads = auto",
         "reader_threads = auto",
-        "fused_batch = 32",
+        "fused_batch = 1024",
         "fused_depth = auto",
         "gpu = auto",
         "autoroute_gpu = false",

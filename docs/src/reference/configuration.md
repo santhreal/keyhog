@@ -84,7 +84,7 @@ A dash means that layer intentionally has no surface.
 | Scan comments | off | - | `--scan-comments` | Treat secrets in code comments at full confidence (default downgrades them). |
 | Threads | #cores | `[scan].threads` | `--threads` | Parallel scan workers. |
 | Reader threads | scan-pool-derived | `[scan].reader_threads` | `--reader-threads` | Dedicated filesystem read workers. |
-| Fused batch | `32` | `[scan].fused_batch` | `--fused-batch` | Chunk batch size for the fused filesystem pipeline. |
+| Fused batch | `1024` | `[scan].fused_batch` | `--fused-batch` | Maximum chunks per fused filesystem batch; the 1 MiB byte ceiling usually cuts large-input batches first. |
 | Fused depth | `0` (rendezvous) | `[scan].fused_depth` | `--fused-depth` | Queued fused filesystem batches. The default keeps no completed batch resident while another is scanned. |
 | Per-chunk timeout | off | `[scan].per_chunk_timeout_ms` | `--per-chunk-timeout-ms` | Optional hard deadline per chunk scan in milliseconds. |
 | Dedup scope | `credential` | `[scan].dedup` | `--dedup` | `credential` / `file` / `none`. |
@@ -341,7 +341,7 @@ decode_depth = 10           # 1-10, same ceiling as --decode-depth
 exclude = ["**/test/fixtures/**", "vendor/"]
 threads = 8
 reader_threads = 2
-fused_batch = 32
+fused_batch = 1024
 fused_depth = 0
 per_chunk_timeout_ms = 30000
 ```

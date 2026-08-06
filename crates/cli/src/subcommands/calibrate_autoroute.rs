@@ -23,7 +23,7 @@ use crate::orchestrator::ScanOrchestrator;
 use crate::style::Palette;
 use anyhow::{Context, Result};
 use clap::Parser;
-use keyhog_core::Source;
+use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::io::Write;
@@ -92,13 +92,22 @@ enum Workload {
         members: usize,
         kib: usize,
     },
+    /// An exact source identity measured with both streamed and known-size metadata shapes.
+    SourceClass {
+        label: String,
+        source_class: &'static str,
+        bytes: usize,
+        has_full_size: bool,
+    },
 }
 
 impl Workload {
     fn label(&self) -> &str {
         match self {
             Workload::Stdin { label, .. } | Workload::File { label, .. } => label,
-            Workload::Tree { label, .. } | Workload::Tar { label, .. } => label.as_str(),
+            Workload::Tree { label, .. }
+            | Workload::Tar { label, .. }
+            | Workload::SourceClass { label, .. } => label.as_str(),
         }
     }
 }
@@ -269,20 +278,39 @@ fn core_workload_plan() -> Vec<Workload> {
             decode_heavy: true,
         },
     ];
+    let fused_batch_counts = crate::orchestrator_config::fused_batch_calibration_counts();
     workloads.extend(
-        (1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT).map(|files| Workload::Tree {
-            label: format!("{files} x 4 KiB files workload"),
-            files,
-            kib: 4,
-        }),
+        fused_batch_counts
+            .iter()
+            .copied()
+            .map(|files| Workload::Tree {
+                label: format!("{files} x 4 KiB files workload"),
+                files,
+                kib: 4,
+            }),
     );
-    workloads.extend(
-        (1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT).map(|members| Workload::Tar {
-            label: format!("{members} x 4 KiB tar members workload"),
-            members,
-            kib: 4,
-        }),
-    );
+    workloads.extend(fused_batch_counts.into_iter().map(|members| Workload::Tar {
+        label: format!("{members} x 4 KiB tar members workload"),
+        members,
+        kib: 4,
+    }));
+    for source_class in crate::orchestrator::canonical_source_classes() {
+        for has_full_size in [false, true] {
+            workloads.push(Workload::SourceClass {
+                label: format!(
+                    "source class {source_class} ({}) workload",
+                    if has_full_size {
+                        "known-size"
+                    } else {
+                        "streamed"
+                    }
+                ),
+                source_class,
+                bytes: 64 * 1024,
+                has_full_size,
+            });
+        }
+    }
     workloads
 }
 
@@ -412,6 +440,9 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
         if let Some(cache) = args.autoroute_cache.as_deref() {
             command.arg("--autoroute-cache").arg(cache);
         }
+        if let Some(packs) = args.execution_packs.as_deref() {
+            command.arg("--execution-packs").arg(packs);
+        }
         let status = command.status().with_context(|| {
             format!(
                 "starting isolated {} autoroute calibration",
@@ -476,6 +507,21 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
              persist routing decisions; every probe would fail closed. Drop the flag to use the \
              default cache, or pass a writable file path."
         );
+    }
+    let execution_pack_binding = args
+        .execution_packs
+        .as_deref()
+        .map(crate::execution_pack_install::load_authenticated_binding)
+        .transpose()
+        .context("loading authenticated execution-pack generation for calibration")?;
+    if !keyhog_scanner::hw_probe::multiple_backends_compiled() {
+        if !args.quiet {
+            println!(
+                "{} direct scalar route requires no autoroute timing calibration",
+                crate::style::pass("PASS", &crate::style::for_stdout())
+            );
+        }
+        return Ok(ExitCode::SUCCESS);
     }
     if args.policy == AutorouteCalibrationPolicy::All {
         return run_all_policies_in_isolated_processes(&args);
@@ -633,6 +679,13 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     }
 
     drop(sweep_span);
+    if let Some(binding) = execution_pack_binding {
+        crate::orchestrator::bind_autoroute_cache_to_execution_packs(
+            transaction.staged_path(),
+            binding,
+        )
+        .context("binding calibration evidence to exact execution packs")?;
+    }
     // Persisted cache readback after the sweep, profiled as an incremental
     // lookup.
     let inspection = {
@@ -938,6 +991,30 @@ impl ProbeSweep<'_> {
 enum MaterializedProbe {
     Stdin(Vec<u8>),
     Filesystem(PathBuf),
+    SourceClass(CalibrationSource),
+}
+
+struct CalibrationSource {
+    name: &'static str,
+    chunk: Chunk,
+}
+
+impl Source for CalibrationSource {
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
+        Box::new(std::iter::once(Ok(self.chunk.clone())))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn chunk_identities_are_contiguous(&self) -> bool {
+        true
+    }
 }
 
 impl MaterializedProbe {
@@ -947,6 +1024,7 @@ impl MaterializedProbe {
                 keyhog_sources::BufferedStdinSource::new(bytes)
                     .with_limits(orchestrator.effective_config.source_limits),
             )]),
+            Self::SourceClass(source) => Ok(vec![Box::new(source)]),
             Self::Filesystem(path) => {
                 let mut source_args = orchestrator.args().clone();
                 source_args.input.clear();
@@ -1001,6 +1079,28 @@ fn materialize_probe(
                     .with_context(|| format!("writing tree probe {}", path.display()))?;
             }
             Ok(MaterializedProbe::Filesystem(tree))
+        }
+        Workload::SourceClass {
+            source_class,
+            bytes,
+            has_full_size,
+            ..
+        } => {
+            let data = plain_calibration_bytes(*bytes);
+            Ok(MaterializedProbe::SourceClass(CalibrationSource {
+                name: source_class,
+                chunk: Chunk {
+                    data: String::from_utf8(data)
+                        .context("calibration source bytes are UTF-8")?
+                        .into(),
+                    metadata: ChunkMetadata {
+                        source_type: (*source_class).into(),
+                        path: Some(format!("calibration://{source_class}").into()),
+                        size_bytes: has_full_size.then_some(*bytes as u64),
+                        ..Default::default()
+                    },
+                },
+            }))
         }
         Workload::Tar { members, kib, .. } => {
             let path = workspace.join(format!("archive-{idx}.tar"));

@@ -66,25 +66,44 @@ impl CompiledScanner {
         let telemetry = crate::telemetry::capture_scan_telemetry();
         let recovery_receipts = crate::gpu::capture_recovery_receipts();
         let profile_runtime = keyhog_profile::current_runtime();
-        let mut results: Vec<Vec<RawMatch>> = chunks
-            .par_iter()
-            .enumerate()
-            .map(|(index, chunk)| {
-                let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
-                crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
-                    crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
-                        let admission = admission_plan.and_then(|plan| plan.admission_for(index));
-                        self.scan_with_deadline_and_backend_admission_and_route(
-                            chunk,
-                            self.config.per_chunk_deadline(),
-                            backend,
-                            admission,
-                            route,
-                        )
-                    })
+        let scan_one = |index: usize, chunk: &Chunk| {
+            let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+            crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
+                crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
+                    let admission = admission_plan.and_then(|plan| plan.admission_for(index));
+                    self.scan_with_deadline_and_backend_admission_and_route(
+                        chunk,
+                        self.config.per_chunk_deadline(),
+                        backend,
+                        admission,
+                        route,
+                    )
                 })
             })
-            .collect::<crate::error::Result<Vec<_>>>()?;
+        };
+        let lane_width = super::batch_topology::coalesced_lane_width(chunks);
+        let mut results: Vec<Vec<RawMatch>> = if lane_width == 1 {
+            chunks
+                .par_iter()
+                .enumerate()
+                .map(|(index, chunk)| scan_one(index, chunk))
+                .collect::<crate::error::Result<Vec<_>>>()?
+        } else {
+            chunks
+                .par_chunks(lane_width)
+                .enumerate()
+                .map(|(lane_index, lane)| {
+                    let base = lane_index * lane_width;
+                    lane.iter()
+                        .enumerate()
+                        .map(|(offset, chunk)| scan_one(base + offset, chunk))
+                        .collect::<crate::error::Result<Vec<_>>>()
+                })
+                .collect::<crate::error::Result<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect()
+        };
         super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route)?;
         Ok(results)
     }

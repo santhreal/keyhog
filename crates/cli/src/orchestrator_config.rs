@@ -27,10 +27,11 @@ pub(crate) use policy::{ResolvedAllowlistConfig, ResolvedReportPolicy, ResolvedV
 pub(crate) use runtime::MAX_COMMITS_DEFAULT;
 pub(crate) use runtime::{
     backend_override_cli_value, backend_override_label, configure_hyperscan_cache_dir,
-    configure_threads, fused_depth_default, gpu_runtime_policy_for_backend_override,
-    gpu_runtime_policy_from_args, keyhog_worker_threads, parse_backend_override, ScanRuntimeInput,
-    FUSED_BATCH_BYTES, FUSED_BATCH_DEFAULT, MAX_THREADS_CAP, ML_THRESHOLD_DEFAULT,
-    VERIFY_MAX_CONCURRENT_DEFAULT, VERIFY_TIMEOUT_DEFAULT_SECS,
+    configure_threads, fused_batch_calibration_counts, fused_depth_default,
+    gpu_runtime_policy_for_backend_override, gpu_runtime_policy_from_args, keyhog_worker_threads,
+    parse_backend_override, ScanRuntimeInput, FUSED_BATCH_BYTES, FUSED_BATCH_DEFAULT,
+    MAX_THREADS_CAP, ML_THRESHOLD_DEFAULT, VERIFY_MAX_CONCURRENT_DEFAULT,
+    VERIFY_TIMEOUT_DEFAULT_SECS,
 };
 pub(crate) use scanner::build_scanner_config;
 use scanner::{build_scanner_config_from_input, ScannerConfigInput};

@@ -25,20 +25,46 @@ pub(crate) const MAX_COMMITS_DEFAULT: usize = 1000;
 static CONFIGURED_RAYON_THREADS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
 static RAYON_CONFIGURATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Default chunk batch size for the fused filesystem read+scan pipeline.
-pub(crate) const FUSED_BATCH_DEFAULT: usize = 32;
+/// Maximum chunk count for one fused filesystem read+scan batch.
+///
+/// The byte ceiling remains authoritative. A 1 MiB window still dispatches
+/// alone, while 4 KiB files coalesce into 256-chunk work units instead of
+/// paying scheduler and phase-gate setup every 32 files.
+pub(crate) const FUSED_BATCH_DEFAULT: usize = 1024;
 
 /// Byte ceiling on one fused filesystem batch, applied alongside
 /// [`FUSED_BATCH_DEFAULT`].
 ///
 /// The fused consumer executes one batch at a time while the source-reader
-/// boundary remains a rendezvous. A 1 MiB ceiling keeps one large-file window
-/// active; tiny-file batches remain bounded by 32 chunks.
+/// boundary remains a rendezvous. This bounds payload residency to 1 MiB while
+/// allowing tiny files to amortize one scanner dispatch.
 ///
 /// Compile-time rather than configurable on purpose: it is hashed into the
 /// autoroute identity, so a change here invalidates persisted calibration
 /// instead of replaying decisions measured under different batching.
 pub(crate) const FUSED_BATCH_BYTES: usize = 1024 * 1024;
+
+/// Count representatives covering both edges of every logarithmic autoroute
+/// bucket up to the fused-batch ceiling.
+pub(crate) fn fused_batch_calibration_counts() -> Vec<usize> {
+    let mut counts = vec![1];
+    let mut lower = 2usize;
+    while lower <= FUSED_BATCH_DEFAULT {
+        counts.push(lower);
+        let upper = lower
+            .saturating_mul(2)
+            .saturating_sub(1)
+            .min(FUSED_BATCH_DEFAULT);
+        if upper != lower {
+            counts.push(upper);
+        }
+        let Some(next) = lower.checked_mul(2) else {
+            break;
+        };
+        lower = next;
+    }
+    counts
+}
 
 /// Default rendezvous depth for fused filesystem batches. The producer may
 /// finish one batch while the consumer scans the active batch, but no third

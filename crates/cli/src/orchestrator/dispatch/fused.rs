@@ -206,15 +206,13 @@ impl ScanOrchestrator {
             let _profile_context = drain_profile_runtime
                 .as_ref()
                 .map(keyhog_profile::Runtime::enter);
-            let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(fused_batch);
-            // Running text size of `batch`. The cut below is byte-aware as well
-            // as count-aware because `fused_batch` alone describes wildly
-            // different amounts of memory per regime: 32 chunks is ~128 KiB of
-            // small source files but ~32 MiB of 1 MiB large-file windows. Every
-            // bound between here and the workers is counted in CHUNKS (channel
-            // depth `fused_depth`, plus one batch resident per worker), so on a
-            // large file those counts described over a gigabyte of headroom and
-            // handed out only ~11 work units for a 300 MiB file on 32 cores.
+            let initial_batch_capacity = fused_batch.min(64);
+            let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(initial_batch_capacity);
+            // Running text size of `batch`. The byte ceiling is authoritative:
+            // tiny files coalesce until one substantial work unit is ready,
+            // while a 1 MiB source window dispatches alone. Reserving only the
+            // first 64 rows avoids paying the 1024-row tiny-file capacity for
+            // large-file and stdin batches.
             let mut batch_bytes = 0usize;
             let mut route_state = super::BatchRouteState::default();
             'sources: for source in &sources {
@@ -256,13 +254,12 @@ impl ScanOrchestrator {
                         if send_result.is_err() {
                             break 'sources;
                         }
-                        batch = Vec::with_capacity(fused_batch);
+                        batch = Vec::with_capacity(initial_batch_capacity);
                     }
                     route_state.push(&c);
                     batch_bytes = batch_bytes.saturating_add(c.data.len());
                     batch.push(c);
-                    if batch.len() >= fused_batch || batch_bytes >= fused_batch_bytes
-                    {
+                    if batch.len() >= fused_batch || batch_bytes >= fused_batch_bytes {
                         let send_result = {
                             let _profile_span =
                                 keyhog_profile::span(keyhog_profile::Stage::SourceQueueWait);
@@ -273,7 +270,7 @@ impl ScanOrchestrator {
                         if send_result.is_err() {
                             break 'sources;
                         }
-                        batch = Vec::with_capacity(fused_batch);
+                        batch = Vec::with_capacity(initial_batch_capacity);
                     }
                 }
                 super::finalize_source_outcome(src_chunks, src_errored);
