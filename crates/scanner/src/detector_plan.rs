@@ -384,7 +384,7 @@ pub(crate) struct CompiledDetectorPlan {
     pub(crate) metadata: CompiledDetectorMetadata,
     pub(crate) entropy_metadata: Option<CompiledDetectorMetadata>,
     pub(crate) execution: crate::detector_execution_policy::CompiledDetectorExecutionPolicy,
-    match_confidence_index: u8,
+    match_confidence_index: u16,
     pub(crate) key_material: crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
     pub(crate) entropy_floor: Option<crate::entropy::policy::CompiledEntropyFloorPolicy>,
     pub(crate) entropy: Option<crate::entropy::policy::CompiledEntropyPolicy>,
@@ -420,13 +420,13 @@ impl CompiledDetectorPlan {
 fn intern_confidence_policy(
     policies: &mut Vec<crate::confidence::policy::CompiledMatchConfidencePolicy>,
     policy: crate::confidence::policy::CompiledMatchConfidencePolicy,
-) -> Result<u8, String> {
+) -> Result<u16, String> {
     if let Some(index) = policies.iter().position(|shared| shared == &policy) {
-        return u8::try_from(index)
-            .map_err(|_| "compiled confidence policy index exceeds u8".to_string());
+        return u16::try_from(index)
+            .map_err(|_| "compiled confidence policy index exceeds u16".to_string());
     }
-    let index = u8::try_from(policies.len())
-        .map_err(|_| "compiled confidence policy count exceeds u8".to_string())?;
+    let index = u16::try_from(policies.len())
+        .map_err(|_| "compiled confidence policy count exceeds u16".to_string())?;
     policies.push(policy);
     Ok(index)
 }
