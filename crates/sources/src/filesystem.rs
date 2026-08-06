@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+#[cfg(target_os = "linux")]
+mod descriptor_walk;
 mod discovery;
 mod extract;
 #[cfg(fuzzing)]
@@ -340,6 +342,16 @@ fn collect_walk_archive_symlink_errors(
         let entries = match std::fs::read_dir(&dir) {
             Ok(entries) => entries,
             Err(error) => {
+                #[cfg(target_os = "linux")]
+                if discovery_byte_limit.is_none()
+                    && error.raw_os_error() == Some(libc::ENAMETOOLONG)
+                {
+                    errors.extend(collect_descriptor_archive_symlink_errors(
+                        root,
+                        respect_default_excludes,
+                    ));
+                    return errors;
+                }
                 tracing::warn!(
                     dir = %dir.display(),
                     %error,
@@ -396,6 +408,17 @@ fn collect_walk_archive_symlink_errors(
                         path
                     }
                 };
+                #[cfg(target_os = "linux")]
+                {
+                    use std::os::unix::ffi::OsStrExt;
+                    if path.as_os_str().as_bytes().len() >= libc::PATH_MAX as usize {
+                        errors.extend(collect_descriptor_archive_symlink_errors(
+                            root,
+                            respect_default_excludes,
+                        ));
+                        return errors;
+                    }
+                }
                 if !inspect_walk_archive_path(
                     path,
                     root,
@@ -411,6 +434,41 @@ fn collect_walk_archive_symlink_errors(
         }
     }
 
+    errors
+}
+
+#[cfg(target_os = "linux")]
+fn collect_descriptor_archive_symlink_errors(
+    root: &Path,
+    respect_default_excludes: bool,
+) -> Vec<SourceError> {
+    use descriptor_walk::{walk_descriptor_relative, DescriptorEntryKind};
+    use std::os::unix::ffi::OsStrExt;
+
+    let mut errors = Vec::new();
+    let result = walk_descriptor_relative(root, |entry| {
+        if respect_default_excludes
+            && filter::is_default_excluded_bytes(entry.path.as_os_str().as_bytes())
+        {
+            return Ok(false);
+        }
+        if let DescriptorEntryKind::Symlink { target } = &entry.kind {
+            let resolved_target = if target.is_absolute() {
+                target.clone()
+            } else {
+                entry.path.parent().unwrap_or(root).join(target)
+            };
+            if is_expandable_path(&entry.path) || is_expandable_path(&resolved_target) {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                errors.push(archive_symlink_error(&entry.path));
+            }
+        }
+        Ok(true)
+    });
+    if let Err(error) = result {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        errors.push(error);
+    }
     errors
 }
 
@@ -1126,7 +1184,13 @@ impl Source for FilesystemSource {
                 Box::new(walk_entries.into_iter())
             } else {
                 let (walk_entries, walk_errors, input_units, input_bytes) =
-                    discovery::collect_unbounded_sorted(walker, &self.root, walk_thread_count());
+                    discovery::collect_unbounded_sorted(
+                        walker,
+                        &self.root,
+                        walk_thread_count(),
+                        self.respect_gitignore,
+                        !self.ignore_paths.is_empty(),
+                    );
                 source_errors.extend(walk_errors);
                 crate::profile::add_input_units(input_units as u64);
                 crate::profile::add_input_bytes(input_bytes);

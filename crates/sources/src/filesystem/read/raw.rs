@@ -123,6 +123,15 @@ pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
             ));
         }
     }
+    #[cfg(target_os = "linux")]
+    let file = match options.open(path) {
+        Ok(file) => file,
+        Err(error) if error.raw_os_error() == Some(libc::ENAMETOOLONG) => {
+            open_file_descriptor_relative(path)?
+        }
+        Err(error) => return Err(error),
+    };
+    #[cfg(not(target_os = "linux"))]
     let file = options.open(path)?;
     // Fail closed on any non-regular file. fstat the OPENED fd (the same object
     // the O_NONBLOCK open returned) so a FIFO/socket/device cannot reach the read
@@ -153,6 +162,72 @@ pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
         }
     }
     Ok(file)
+}
+
+#[cfg(target_os = "linux")]
+fn open_file_descriptor_relative(path: &Path) -> std::io::Result<File> {
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let components = path
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(component) => Some(Ok(component)),
+            std::path::Component::RootDir | std::path::Component::CurDir => None,
+            std::path::Component::ParentDir | std::path::Component::Prefix(_) => {
+                Some(Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "descriptor-relative safe open refuses parent or platform-prefix components",
+                )))
+            }
+        })
+        .collect::<std::io::Result<Vec<_>>>()?;
+    let (file_name, directories) = components.split_last().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "descriptor-relative safe open requires a file path",
+        )
+    })?;
+
+    let mut root_options = std::fs::OpenOptions::new();
+    root_options
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC);
+    let mut directory = root_options.open(if path.is_absolute() { "/" } else { "." })?;
+    for component in directories {
+        directory = openat_component(
+            &directory,
+            component.as_bytes(),
+            libc::O_RDONLY
+                | libc::O_DIRECTORY
+                | libc::O_NOFOLLOW
+                | libc::O_NONBLOCK
+                | libc::O_CLOEXEC,
+        )?;
+    }
+    openat_component(
+        &directory,
+        file_name.as_bytes(),
+        libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn openat_component(parent: &File, name: &[u8], flags: libc::c_int) -> std::io::Result<File> {
+    use std::ffi::CString;
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    let name = CString::new(name).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "filesystem path component contains a NUL byte",
+        )
+    })?;
+    let fd = unsafe { libc::openat(parent.as_raw_fd(), name.as_ptr(), flags) };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(unsafe { File::from_raw_fd(fd) })
 }
 
 pub(in crate::filesystem) fn read_file_prefix_safe(
@@ -367,8 +442,8 @@ pub(in crate::filesystem) fn read_file_whole_capped(path: &Path) -> Option<Buffe
     // to EOF with the hard cap as the ceiling. A file that SHRANK under us simply
     // ends the read early; a file that GREW contributes its extra bytes up to the
     // cap. Neither outcome can fault, which is the whole point of not mapping it.
-    let capacity = usize::try_from(live_size.min(MMAP_TOCTOU_SANITY_CAP_BYTES))
-        .unwrap_or(usize::MAX); // LAW10: unreachable on real platforms; a Vec length cannot exceed usize::MAX.
+    let capacity =
+        usize::try_from(live_size.min(MMAP_TOCTOU_SANITY_CAP_BYTES)).unwrap_or(usize::MAX); // LAW10: unreachable on real platforms; a Vec length cannot exceed usize::MAX.
     let mut bytes = Vec::with_capacity(capacity);
     // Read one byte past the cap so crossing it is detectable rather than
     // silently indistinguishable from a file that is exactly cap bytes long.

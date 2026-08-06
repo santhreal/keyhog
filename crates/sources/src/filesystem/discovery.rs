@@ -1,3 +1,5 @@
+#[cfg(target_os = "linux")]
+use super::descriptor_walk::{walk_descriptor_relative, DescriptorEntryKind};
 use codewalk::{CodeWalker, FileEntry};
 use keyhog_core::SourceError;
 use std::path::{Path, PathBuf};
@@ -133,11 +135,15 @@ pub(super) fn collect_unbounded_sorted(
     walker: CodeWalker,
     root: &Path,
     walk_threads: usize,
+    respect_gitignore: bool,
+    has_ignore_patterns: bool,
 ) -> (SortedEntries, Vec<SourceError>, usize, u64) {
     let _walk = crate::profile::walk_span();
     let mut errors = Vec::new();
     let mut count = 0usize;
     let mut bytes = 0u64;
+    #[cfg(target_os = "linux")]
+    let mut path_limit_failed = false;
 
     #[cfg(unix)]
     let mut builder = match CompactEntriesBuilder::new(root.to_path_buf()) {
@@ -178,6 +184,11 @@ pub(super) fn collect_unbounded_sorted(
                     bytes = bytes.saturating_add(size);
                 }
                 Err(error) => {
+                    #[cfg(target_os = "linux")]
+                    if is_name_too_long(&error) {
+                        path_limit_failed = true;
+                        continue;
+                    }
                     let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                     tracing::warn!(
                         %error,
@@ -191,6 +202,23 @@ pub(super) fn collect_unbounded_sorted(
         }
     }
 
+    #[cfg(target_os = "linux")]
+    if path_limit_failed {
+        match rebuild_descriptor_entries(root, respect_gitignore, has_ignore_patterns) {
+            Ok((replacement, replacement_count, replacement_bytes)) => {
+                builder = Some(replacement);
+                count = replacement_count;
+                bytes = replacement_bytes;
+            }
+            Err(error) => {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                errors.push(SourceError::Other(
+                    "filesystem path exceeded the platform pathname limit and descriptor-relative discovery could not replace the incomplete walk; affected entries were not scanned".to_string(),
+                ));
+                errors.push(error);
+            }
+        }
+    }
     #[cfg(unix)]
     let sorted = match builder.and_then(|builder| match builder.finish() {
         Ok(entries) => Some(entries),
@@ -214,6 +242,51 @@ pub(super) fn collect_unbounded_sorted(
     };
 
     (sorted, errors, count, bytes)
+}
+
+#[cfg(target_os = "linux")]
+fn is_name_too_long(error: &impl std::fmt::Display) -> bool {
+    let rendered = error.to_string();
+    rendered.contains("File name too long") || rendered.contains("os error 36")
+}
+
+#[cfg(target_os = "linux")]
+fn rebuild_descriptor_entries(
+    root: &Path,
+    respect_gitignore: bool,
+    has_ignore_patterns: bool,
+) -> Result<(CompactEntriesBuilder, usize, u64), SourceError> {
+    if has_ignore_patterns {
+        return Err(SourceError::Other(
+            "descriptor-relative discovery cannot prove custom ignore-pattern semantics for a path beyond the platform pathname limit; shorten the tree or scan an admitted subtree directly".to_string(),
+        ));
+    }
+    let mut builder = CompactEntriesBuilder::new(root.to_path_buf())?;
+    let mut count = 0usize;
+    let mut bytes = 0u64;
+    walk_descriptor_relative(root, |entry| {
+        let name = entry.path.file_name().and_then(OsStr::to_str);
+        let blocks_ignore_proof = name == Some(".keyhogignore")
+            || (respect_gitignore
+                && matches!(name, Some(".git") | Some(".gitignore") | Some(".ignore")));
+        if blocks_ignore_proof {
+            return Err(SourceError::Other(format!(
+                "descriptor-relative discovery encountered ignore metadata at '{}'; refusing to bypass ignore semantics for a path beyond the platform pathname limit",
+                entry.path.display()
+            )));
+        }
+        if let DescriptorEntryKind::File { size } = &entry.kind {
+            builder.push(FileEntry {
+                path: entry.path.clone(),
+                size: *size,
+                is_binary: false,
+            })?;
+            count = count.saturating_add(1);
+            bytes = bytes.saturating_add(*size);
+        }
+        Ok(true)
+    })?;
+    Ok((builder, count, bytes))
 }
 
 #[cfg(unix)]

@@ -31,3 +31,79 @@ fn deeply_nested_dirs_scan_continues() {
         "deep leaf file must scan with path metadata; chunks={chunks:?}"
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn path_beyond_path_max_scans_descriptor_relative() {
+    use std::ffi::CString;
+    use std::io::Write;
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut directory = std::fs::File::open(dir.path()).expect("open fixture root");
+    let child = CString::new("d").expect("static child component");
+    let mut logical_directory = dir.path().to_path_buf();
+    for _ in 0..2100 {
+        let status = unsafe { libc::mkdirat(directory.as_raw_fd(), child.as_ptr(), 0o700) };
+        assert_eq!(
+            status,
+            0,
+            "create descriptor-relative fixture directory: {}",
+            std::io::Error::last_os_error()
+        );
+        let fd = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                child.as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        assert!(
+            fd >= 0,
+            "open descriptor-relative fixture directory: {}",
+            std::io::Error::last_os_error()
+        );
+        directory = unsafe { std::fs::File::from_raw_fd(fd) };
+        logical_directory.push("d");
+    }
+
+    let leaf = CString::new("deep.txt").expect("static leaf component");
+    let fd = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            leaf.as_ptr(),
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_CLOEXEC,
+            0o600,
+        )
+    };
+    assert!(
+        fd >= 0,
+        "create descriptor-relative fixture file: {}",
+        std::io::Error::last_os_error()
+    );
+    let mut file = unsafe { std::fs::File::from_raw_fd(fd) };
+    file.write_all(b"DEEP=descriptor-relative\n")
+        .expect("write descriptor-relative fixture");
+    drop(file);
+
+    let logical_leaf = logical_directory.join("deep.txt");
+    assert!(
+        logical_leaf.as_os_str().len() > libc::PATH_MAX as usize,
+        "fixture must exceed the pathname syscall limit"
+    );
+    let logical_leaf_display = logical_leaf.to_string_lossy().into_owned();
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    assert!(
+        errors.is_empty(),
+        "descriptor-relative traversal should cover the overlong path: {errors:?}"
+    );
+    assert!(
+        chunks.iter().any(|chunk| {
+            chunk.data.contains("DEEP=descriptor-relative")
+                && chunk.metadata.path.as_deref() == Some(logical_leaf_display.as_str())
+        }),
+        "overlong leaf must scan with exact path metadata; chunks={chunks:?}"
+    );
+}
