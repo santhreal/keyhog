@@ -38,7 +38,7 @@ use keyhog_core::{
     Chunk, ChunkMetadata, RawMatch,
 };
 use keyhog_scanner::{
-    set_profile_detail, CompiledScanner, Detail, ScanBackend, ScanExecutionRoute,
+    set_profile_detail, CompiledScanner, Detail, GpuInitPolicy, ScanBackend, ScanExecutionRoute,
     ScannerTuningConfig,
 };
 use std::env;
@@ -622,7 +622,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..ScannerTuningConfig::default()
     };
     let effective_tuning = tuning.effective();
-    let scanner = CompiledScanner::compile(detectors)?.with_tuning_config(tuning);
+    let scanner = CompiledScanner::compile_with_gpu_policy_and_tuning(
+        detectors,
+        GpuInitPolicy::ForceEnabled,
+        &tuning,
+    )?;
 
     let payload = gen_payload(size);
     let chunks = make_chunks(payload, MIB, WINDOW_OVERLAP);
