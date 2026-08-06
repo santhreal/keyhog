@@ -63,7 +63,6 @@ fn boundary_straddle_parity_aws_key_split_across_chunks() {
             return;
         }
     };
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
 
     // AWS access key: AKIA + 16 uppercase alphanumerics.
     let secret = concat!("AK", "IAQYLPMN5HFIQR7ZZZ");
@@ -96,23 +95,25 @@ fn boundary_straddle_parity_aws_key_split_across_chunks() {
         ScanBackend::GpuWgpu,
     ];
 
-    scanner.clear_fragment_cache();
-    let simd_results = scanner
-        .scan_chunks_with_backend(&[chunk_a.clone(), chunk_b.clone()], ScanBackend::SimdCpu)
-        .expect("selected backend scan succeeds");
-    let simd_keys = collect_boundary_findings(&simd_results);
-
+    let mut simd_keys = None;
     let mut failures = Vec::new();
-    for backend in &backends[1..] {
+    for backend in backends {
+        let scanner = CompiledScanner::compile_for_backend(detectors.clone(), backend)
+            .expect("compile exact backend scanner");
         scanner.clear_fragment_cache();
         let results = scanner
-            .scan_chunks_with_backend(&[chunk_a.clone(), chunk_b.clone()], *backend)
+            .scan_chunks_with_backend(&[chunk_a.clone(), chunk_b.clone()], backend)
             .expect("selected backend scan succeeds");
         let keys = collect_boundary_findings(&results);
 
-        if keys != simd_keys {
+        if backend == ScanBackend::SimdCpu {
+            simd_keys = Some(keys);
+            continue;
+        }
+        let simd_keys = simd_keys.as_ref().expect("SIMD reference scanned first");
+        if keys != *simd_keys {
             let only_simd: Vec<_> = simd_keys.difference(&keys).take(3).collect();
-            let only_backend: Vec<_> = keys.difference(&simd_keys).take(3).collect();
+            let only_backend: Vec<_> = keys.difference(simd_keys).take(3).collect();
             failures.push(format!(
                 "[boundary/{backend:?}] parity broken: simd={} got={} \
                  only-in-simd={only_simd:?} only-in-backend={only_backend:?}",
@@ -143,7 +144,9 @@ fn boundary_straddle_parity_github_pat_split_across_chunks() {
             return;
         }
     };
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let simd_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
+            .expect("compile exact SIMD scanner");
 
     // GitHub Personal Access Token: ghp_ + 36 base62 chars. The github detector
     // verifies the trailing CRC32 checksum, so a fabricated token with a random
@@ -167,8 +170,8 @@ fn boundary_straddle_parity_github_pat_split_across_chunks() {
     let chunk_a = make_chunk(&data_a, "github_boundary.py", 0);
     let chunk_b = make_chunk(&data_b, "github_boundary.py", len_a);
 
-    scanner.clear_fragment_cache();
-    let simd_results = scanner
+    simd_scanner.clear_fragment_cache();
+    let simd_results = simd_scanner
         .scan_chunks_with_backend(&[chunk_a.clone(), chunk_b.clone()], ScanBackend::SimdCpu)
         .expect("selected backend scan succeeds");
     let simd_findings: Vec<_> = simd_results
@@ -182,8 +185,11 @@ fn boundary_straddle_parity_github_pat_split_across_chunks() {
         "boundary straddle test setup failed: SIMD must find the split secret"
     );
 
-    scanner.clear_fragment_cache();
-    let fallback_results = scanner
+    let fallback_scanner =
+        CompiledScanner::compile_for_backend(detectors, ScanBackend::CpuFallback)
+            .expect("compile exact CPU fallback scanner");
+    fallback_scanner.clear_fragment_cache();
+    let fallback_results = fallback_scanner
         .scan_chunks_with_backend(&[chunk_a, chunk_b], ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
     let fallback_findings: Vec<_> = fallback_results
