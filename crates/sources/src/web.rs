@@ -316,7 +316,10 @@ impl WebSource {
         // missing surface. Without it,
         // `WebSource::new(vec!["http://169.254.169.254/latest/meta-data/iam/..."])`
         // would fetch the cloud metadata endpoint and extract IAM creds.
-        if is_disallowed_web_host(url) && !allow_calibration_url {
+        if is_disallowed_web_host(url)
+            && !self.http.allow_private_endpoint
+            && !allow_calibration_url
+        {
             let safe_url = redact_url(url);
             return vec![Err(web_unreadable_error(format!(
                 "refusing to fetch {safe_url}: host resolves to a private / \
@@ -330,6 +333,7 @@ impl WebSource {
             url,
             self.limits.web_response_bytes,
             proxy_in_use,
+            self.http.allow_private_endpoint,
             allow_calibration_url,
             shared_clients,
         );
@@ -384,6 +388,7 @@ fn fetch_url(
     url: &str,
     max_response_bytes: usize,
     proxy_in_use: bool,
+    allow_private_endpoint: bool,
     allow_autoroute_loopback_calibration_url: bool,
     shared_clients: &PinnedWebClientCache,
 ) -> Vec<Result<Chunk, SourceError>> {
@@ -397,7 +402,10 @@ fn fetch_url(
     // would fetch the cloud metadata endpoint and extract IAM credentials.
     // The redirect-target and DNS-rebinding bypasses of this gate are closed
     // in `build_web_client`. Kimi sources-audit web-source SSRF finding.
-    if is_disallowed_web_host(url) && !allow_autoroute_loopback_calibration_url {
+    if is_disallowed_web_host(url)
+        && !allow_private_endpoint
+        && !allow_autoroute_loopback_calibration_url
+    {
         let safe_url = redact_url(url);
         return vec![Err(web_unreadable_error(format!(
             "refusing to fetch {safe_url}: host resolves to a private / \
@@ -412,6 +420,7 @@ fn fetch_url(
         http,
         url,
         proxy_in_use,
+        allow_private_endpoint,
         allow_autoroute_loopback_calibration_url,
         shared_clients,
     ) {
@@ -532,12 +541,14 @@ fn send_with_pinned_redirects(
     http: &crate::http::HttpClientConfig,
     url: &str,
     proxy_in_use: bool,
+    allow_private_endpoint: bool,
     allow_autoroute_loopback_calibration_url: bool,
     shared_clients: &PinnedWebClientCache,
 ) -> Result<reqwest::blocking::Response, SourceError> {
     let mut current_url = url.to_string();
-    let mut allow_current_calibration_url = allow_autoroute_loopback_calibration_url
-        && is_autoroute_loopback_calibration_url(&current_url);
+    let mut allow_current_private_url = allow_private_endpoint
+        || (allow_autoroute_loopback_calibration_url
+            && is_autoroute_loopback_calibration_url(&current_url));
     // Reuse one client (and its TLS config + connection pool) across hops and
     // endpoints whose pinned host:port and calibration flag are unchanged, a
     // same-host redirect (only the path changes) and same-host endpoint lists
@@ -553,8 +564,8 @@ fn send_with_pinned_redirects(
         let pin_key = redirect_pin_key(&current_url);
         let client = match pin_key {
             Some(key) => {
-                match shared_clients.acquire(&key, allow_current_calibration_url, || {
-                    build_web_client(http, &current_url, proxy_in_use, allow_current_calibration_url)
+                match shared_clients.acquire(&key, allow_current_private_url, || {
+                    build_web_client(http, &current_url, proxy_in_use, allow_current_private_url)
                 }) {
                     Ok(client) => client,
                     Err(error) => return Err(error),
@@ -566,7 +577,7 @@ fn send_with_pinned_redirects(
                 http,
                 &current_url,
                 proxy_in_use,
-                allow_current_calibration_url,
+                allow_current_private_url,
             )?,
         };
         let resp = client.get(&current_url).send().map_err(|e| {
@@ -616,9 +627,10 @@ fn send_with_pinned_redirects(
             }
         }
         let target = target.to_string();
-        let allow_target_calibration_url = allow_autoroute_loopback_calibration_url
-            && is_autoroute_loopback_calibration_url(&target);
-        if is_disallowed_web_host(&target) && !allow_target_calibration_url {
+        let allow_target_private_url = allow_private_endpoint
+            || (allow_autoroute_loopback_calibration_url
+                && is_autoroute_loopback_calibration_url(&target));
+        if is_disallowed_web_host(&target) && !allow_target_private_url {
             let redacted = redact_url(&target);
             return Err(web_unreadable_error(format!(
                 "refusing to follow redirect to {redacted}: target resolves to a \
@@ -626,7 +638,7 @@ fn send_with_pinned_redirects(
             )));
         }
         current_url = target;
-        allow_current_calibration_url = allow_target_calibration_url;
+        allow_current_private_url = allow_target_private_url;
     }
     unreachable!("redirect loop exits by return or redirect cap");
 }

@@ -215,7 +215,7 @@ pub struct ScanArgs {
     #[arg(long, value_name = "OWNER/REPO")]
     pub github_collaboration: Option<String>,
     /// Include every supported collaboration surface for --github-collaboration.
-    /// This is the concise equivalent of passing all five --github-* surface flags.
+    /// This is the concise equivalent of passing all six --github-* surface flags.
     #[cfg(feature = "github")]
     #[arg(long, requires = "github_collaboration")]
     pub github_all: bool,
@@ -256,6 +256,16 @@ pub struct ScanArgs {
     #[cfg(feature = "github")]
     #[arg(long, value_name = "PAT")]
     pub github_token: Option<String>,
+
+    /// GitHub-compatible API endpoint for --github-collaboration
+    #[cfg(feature = "github")]
+    #[arg(long, value_name = "URL")]
+    pub github_api_endpoint: Option<String>,
+
+    /// Explicit clone URL for the wiki selected by --github-wiki
+    #[cfg(feature = "github")]
+    #[arg(long, value_name = "URL", requires = "github_wiki")]
+    pub github_wiki_url: Option<String>,
 
     /// Scan all projects in a GitLab group, including subgroups
     #[cfg(feature = "gitlab")]
@@ -374,6 +384,7 @@ pub struct ScanArgs {
     /// Pass `off` to make that explicit for air-gapped scans.
     #[cfg(any(
         feature = "web",
+        feature = "slack",
         feature = "github",
         feature = "gitlab",
         feature = "bitbucket",
@@ -393,6 +404,7 @@ pub struct ScanArgs {
     /// off, so an ambient toggle can't silently expose secrets to a MITM.
     #[cfg(any(
         feature = "web",
+        feature = "slack",
         feature = "github",
         feature = "gitlab",
         feature = "bitbucket",
@@ -404,16 +416,17 @@ pub struct ScanArgs {
     #[arg(long)]
     pub insecure: bool,
 
-    /// Allow cloud sources (`--s3-endpoint`, GCS / Azure container URLs) to reach
-    /// an endpoint whose host, literal or DNS-resolved, is private, loopback,
-    /// link-local, or cloud-metadata. OFF by default: the cloud SSRF screen
-    /// refuses every such endpoint. Enable ONLY for a trusted private-network
-    /// deployment (self-hosted MinIO / Ceph on an internal gateway). This flag
-    /// (or its `[http].allow_private_endpoint` TOML equivalent) is the ONLY way
-    /// to relax the screen, no environment variable can, so an ambient toggle
-    /// can never silently turn keyhog into an SSRF proxy for internal services.
+    /// Allow web, hosted-git, and cloud sources to reach an endpoint whose host,
+    /// literal or DNS-resolved, is private, loopback, link-local, or
+    /// cloud-metadata. OFF by default: the shared SSRF screen refuses every such
+    /// endpoint. Enable ONLY for a trusted private-network deployment, such as an
+    /// on-premises web application or self-hosted object store. This flag (or its
+    /// `[http].allow_private_endpoint` TOML equivalent) is the ONLY way to relax
+    /// the screen. No environment variable can silently turn KeyHog into an SSRF
+    /// proxy for internal services.
     #[cfg(any(
         feature = "web",
+        feature = "slack",
         feature = "github",
         feature = "gitlab",
         feature = "bitbucket",
