@@ -1,0 +1,489 @@
+use super::format::{
+    ExecutionPackIdentity, ExecutionPackSectionKind, SectionEntry, EXECUTION_PACK_FORMAT_VERSION,
+    EXECUTION_PACK_HEADER_LEN, EXECUTION_PACK_MAGIC, EXECUTION_PACK_SECTION_ENTRY_LEN,
+};
+use super::{ExecutionPackError, ExecutionPackSignature, ExecutionPackSigningKey};
+use memmap2::{Mmap, MmapOptions};
+use std::collections::BTreeSet;
+use std::fs::File;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ResidentByteOwner {
+    PackMetadata,
+    DetectorIr,
+    RouteClassifier,
+    RegexPrograms,
+    SuppressionPolicy,
+    SelectedBackend,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ResidentByteOwnership {
+    pub owner: ResidentByteOwner,
+    pub mapped_bytes: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutionPackByteLedger {
+    pub mapped_bytes: u64,
+    pub ownership: Vec<ResidentByteOwnership>,
+}
+
+impl ExecutionPackByteLedger {
+    pub fn owned_bytes(&self) -> u64 {
+        self.ownership
+            .iter()
+            .fold(0_u64, |total, row| total.saturating_add(row.mapped_bytes))
+    }
+}
+
+pub struct ExecutionPack {
+    mapping: Mmap,
+    path: PathBuf,
+    identity: ExecutionPackIdentity,
+    content_digest: [u8; 32],
+    sections: Vec<SectionEntry>,
+}
+
+impl ExecutionPack {
+    pub fn open(
+        path: impl AsRef<Path>,
+        expected: ExecutionPackIdentity,
+    ) -> Result<Self, ExecutionPackError> {
+        let path = path.as_ref();
+        let file = File::open(path).map_err(|source| ExecutionPackError::Io {
+            operation: "open",
+            path: path.to_path_buf(),
+            source,
+        })?;
+        // The mapping is read-only and the file handle is never exposed for mutation.
+        // Install/update publication must rename an immutable generation into place;
+        // replacing the path cannot change pages held by this mapping.
+        let mapping = unsafe { MmapOptions::new().map(&file) }.map_err(|source| {
+            ExecutionPackError::Io {
+                operation: "map",
+                path: path.to_path_buf(),
+                source,
+            }
+        })?;
+        Self::from_mapping(mapping, path.to_path_buf(), expected)
+    }
+
+    /// Maps and authenticates one immutable pack generation before exposing any section.
+    pub fn open_authenticated(
+        path: impl AsRef<Path>,
+        signature_path: impl AsRef<Path>,
+        expected: ExecutionPackIdentity,
+        signing_key: &ExecutionPackSigningKey,
+    ) -> Result<Self, ExecutionPackError> {
+        let pack = Self::open(path, expected)?;
+        authenticate_pack_signature(&pack, signature_path.as_ref(), signing_key)?;
+        pack.release_authenticated_pages()?;
+        Ok(pack)
+    }
+
+    /// Maps a signed pack and discovers its full identity from the authenticated header.
+    /// Callers must still compare the returned identity with their selected manifest row.
+    pub fn open_authenticated_discover(
+        path: impl AsRef<Path>,
+        signature_path: impl AsRef<Path>,
+        signing_key: &ExecutionPackSigningKey,
+    ) -> Result<Self, ExecutionPackError> {
+        let path = path.as_ref();
+        let file = File::open(path).map_err(|source| ExecutionPackError::Io {
+            operation: "open",
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let mapping = unsafe { MmapOptions::new().map(&file) }.map_err(|source| {
+            ExecutionPackError::Io {
+                operation: "map",
+                path: path.to_path_buf(),
+                source,
+            }
+        })?;
+        let expected = decode_identity_header(mapping.as_ref(), path)?;
+        let pack = Self::from_mapping(mapping, path.to_path_buf(), expected)?;
+        authenticate_pack_signature(&pack, signature_path.as_ref(), signing_key)?;
+        pack.release_authenticated_pages()?;
+        Ok(pack)
+    }
+
+    /// Drop validation/authentication pages from this process before callers
+    /// decode individual sections. The immutable file remains in the page cache,
+    /// so later section faults do not repeat storage I/O, but the whole pack no
+    /// longer overlaps decoded runtime state in RSS.
+    fn release_authenticated_pages(&self) -> Result<(), ExecutionPackError> {
+        #[cfg(unix)]
+        {
+            let result = unsafe {
+                libc::madvise(
+                    self.mapping.as_ptr() as *mut libc::c_void,
+                    self.mapping.len(),
+                    libc::MADV_DONTNEED,
+                )
+            };
+            if result != 0 {
+                return Err(ExecutionPackError::Io {
+                    operation: "discard authenticated pages",
+                    path: self.path.clone(),
+                    source: std::io::Error::last_os_error(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    pub const fn identity(&self) -> ExecutionPackIdentity {
+        self.identity
+    }
+
+    pub const fn content_digest(&self) -> [u8; 32] {
+        self.content_digest
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+
+    /// Attribute every mapped byte to one architectural owner. File-backed
+    /// pages may not all be physically resident at once; this ledger defines
+    /// ownership for any page the kernel does make resident.
+    pub fn byte_ledger(&self) -> ExecutionPackByteLedger {
+        use ResidentByteOwner as Owner;
+        let mut totals = std::collections::BTreeMap::<Owner, u64>::new();
+        let mut section_bytes = 0_u64;
+        for section in &self.sections {
+            let owner = match section.kind {
+                ExecutionPackSectionKind::DetectorIr => Owner::DetectorIr,
+                ExecutionPackSectionKind::LiteralIndex => Owner::RouteClassifier,
+                ExecutionPackSectionKind::RegexPrograms => Owner::RegexPrograms,
+                ExecutionPackSectionKind::SuppressionPolicy => Owner::SuppressionPolicy,
+                ExecutionPackSectionKind::BackendProgram => Owner::SelectedBackend,
+            };
+            section_bytes = section_bytes.saturating_add(section.len);
+            let total = totals.entry(owner).or_default();
+            *total = total.saturating_add(section.len);
+        }
+        let mapped_bytes = self.mapping.len() as u64;
+        totals.insert(
+            Owner::PackMetadata,
+            mapped_bytes.saturating_sub(section_bytes),
+        );
+        ExecutionPackByteLedger {
+            mapped_bytes,
+            ownership: totals
+                .into_iter()
+                .map(|(owner, mapped_bytes)| ResidentByteOwnership { owner, mapped_bytes })
+                .collect(),
+        }
+    }
+
+    pub fn section(&self, kind: ExecutionPackSectionKind) -> Option<&[u8]> {
+        let entry = self.sections.iter().find(|entry| entry.kind == kind)?;
+        let start = entry.offset as usize;
+        let end = start + entry.len as usize;
+        Some(&self.mapping[start..end])
+    }
+
+    fn from_mapping(
+        mapping: Mmap,
+        path: PathBuf,
+        expected: ExecutionPackIdentity,
+    ) -> Result<Self, ExecutionPackError> {
+        let bytes = mapping.as_ref();
+        if bytes.len() < EXECUTION_PACK_HEADER_LEN {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} is {} bytes; execution-pack header needs {} bytes",
+                path.display(),
+                bytes.len(),
+                EXECUTION_PACK_HEADER_LEN
+            )));
+        }
+        if bytes[0..8] != EXECUTION_PACK_MAGIC {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} has an invalid execution-pack magic",
+                path.display()
+            )));
+        }
+        let version = read_u16(bytes, 8);
+        if version != EXECUTION_PACK_FORMAT_VERSION {
+            return Err(ExecutionPackError::Incompatible(format!(
+                "{} uses execution-pack format {version}; this binary requires {}",
+                path.display(),
+                EXECUTION_PACK_FORMAT_VERSION
+            )));
+        }
+        let header_len = read_u16(bytes, 10) as usize;
+        if header_len != EXECUTION_PACK_HEADER_LEN {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} declares header length {header_len}; expected {}",
+                path.display(),
+                EXECUTION_PACK_HEADER_LEN
+            )));
+        }
+        if bytes[314..EXECUTION_PACK_HEADER_LEN].iter().any(|byte| *byte != 0) {
+            return Err(ExecutionPackError::Incompatible(format!(
+                "{} uses nonzero reserved execution-pack header bytes",
+                path.display()
+            )));
+        }
+        let section_count = read_u32(bytes, 12) as usize;
+        if section_count == 0 || section_count > 64 {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} declares invalid section count {section_count}",
+                path.display()
+            )));
+        }
+        let declared_len = usize::try_from(read_u64(bytes, 16)).map_err(|_| {
+            ExecutionPackError::InvalidPack(format!(
+                "{} length does not fit this target",
+                path.display()
+            ))
+        })?;
+        if declared_len != bytes.len() {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} declares {declared_len} bytes but maps {} bytes",
+                path.display(),
+                bytes.len()
+            )));
+        }
+        let table_end = EXECUTION_PACK_HEADER_LEN
+            .checked_add(section_count * EXECUTION_PACK_SECTION_ENTRY_LEN)
+            .ok_or_else(|| {
+                ExecutionPackError::InvalidPack(format!(
+                    "{} section table overflows",
+                    path.display()
+                ))
+            })?;
+        if table_end > bytes.len() {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} section table extends beyond the mapped file",
+                path.display()
+            )));
+        }
+
+        let identity = decode_identity_header(bytes, &path)?;
+        let stored_identity_digest = array32(bytes, 280);
+        if stored_identity_digest != identity.digest() {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} execution-pack identity digest mismatch; reinstall this generation",
+                path.display()
+            )));
+        }
+        validate_identity(&path, identity, expected)?;
+        let content_digest = array32(bytes, 248);
+        let actual_digest = *blake3::hash(&bytes[EXECUTION_PACK_HEADER_LEN..]).as_bytes();
+        if actual_digest != content_digest {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} content digest mismatch; reinstall or recalibrate this generation",
+                path.display()
+            )));
+        }
+
+        let mut seen = BTreeSet::new();
+        let mut sections = Vec::with_capacity(section_count);
+        let mut previous_end = table_end;
+        for index in 0..section_count {
+            let base = EXECUTION_PACK_HEADER_LEN + index * EXECUTION_PACK_SECTION_ENTRY_LEN;
+            let raw_kind = read_u16(bytes, base);
+            let kind = ExecutionPackSectionKind::from_u16(raw_kind).ok_or_else(|| {
+                ExecutionPackError::Incompatible(format!(
+                    "{} uses unknown execution-pack section kind {raw_kind}",
+                    path.display()
+                ))
+            })?;
+            if !seen.insert(kind) {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "{} repeats execution-pack section {kind}",
+                    path.display()
+                )));
+            }
+            let schema_version = read_u16(bytes, base + 2);
+            if schema_version != kind.schema_version() {
+                return Err(ExecutionPackError::Incompatible(format!(
+                    "{} section {kind} uses schema {schema_version}; this binary requires {}",
+                    path.display(),
+                    kind.schema_version()
+                )));
+            }
+            let offset = usize::try_from(read_u64(bytes, base + 4)).map_err(|_| {
+                ExecutionPackError::InvalidPack(format!(
+                    "{} section {kind} offset does not fit this target",
+                    path.display()
+                ))
+            })?;
+            let len = usize::try_from(read_u64(bytes, base + 12)).map_err(|_| {
+                ExecutionPackError::InvalidPack(format!(
+                    "{} section {kind} length does not fit this target",
+                    path.display()
+                ))
+            })?;
+            let alignment = read_u32(bytes, base + 20) as usize;
+            let end = offset.checked_add(len).ok_or_else(|| {
+                ExecutionPackError::InvalidPack(format!(
+                    "{} section {kind} range overflows",
+                    path.display()
+                ))
+            })?;
+            if len == 0 || alignment == 0 || !alignment.is_power_of_two() || alignment > 4096 {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "{} section {kind} has invalid length or alignment",
+                    path.display()
+                )));
+            }
+            if offset < previous_end || offset % alignment != 0 || end > bytes.len() {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "{} section {kind} is overlapping, misaligned, or out of bounds",
+                    path.display()
+                )));
+            }
+            previous_end = end;
+            sections.push(SectionEntry {
+                kind,
+                schema_version,
+                offset: offset as u64,
+                len: len as u64,
+                alignment: alignment as u32,
+            });
+        }
+        for required in ExecutionPackSectionKind::ALL {
+            if !seen.contains(&required) {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "{} has no required {required} section",
+                    path.display()
+                )));
+            }
+        }
+        Ok(Self {
+            mapping,
+            path,
+            identity,
+            content_digest,
+            sections,
+        })
+    }
+}
+
+fn decode_identity_header(
+    bytes: &[u8],
+    path: &Path,
+) -> Result<ExecutionPackIdentity, ExecutionPackError> {
+    if bytes.len() < EXECUTION_PACK_HEADER_LEN {
+        return Err(ExecutionPackError::InvalidPack(format!(
+            "{} is too short to carry an execution-pack identity",
+            path.display()
+        )));
+    }
+    let policy = super::format::ExecutionPackPolicy::from_u8(bytes[312]).ok_or_else(|| {
+        ExecutionPackError::Incompatible(format!(
+            "{} uses unknown execution-pack policy {}",
+            path.display(),
+            bytes[312]
+        ))
+    })?;
+    let backend = super::format::ExecutionPackBackend::from_u8(bytes[313]).ok_or_else(|| {
+        ExecutionPackError::Incompatible(format!(
+            "{} uses unknown execution-pack backend {}",
+            path.display(),
+            bytes[313]
+        ))
+    })?;
+    Ok(ExecutionPackIdentity {
+        detector_digest: array32(bytes, 24),
+        config_digest: array32(bytes, 56),
+        target_digest: array32(bytes, 88),
+        compiler_abi: array32(bytes, 120),
+        binary_digest: array32(bytes, 152),
+        feature_digest: array32(bytes, 184),
+        backend_digest: array32(bytes, 216),
+        policy,
+        backend,
+    })
+}
+
+fn authenticate_pack_signature(
+    pack: &ExecutionPack,
+    signature_path: &Path,
+    signing_key: &ExecutionPackSigningKey,
+) -> Result<(), ExecutionPackError> {
+    let mut file = File::open(signature_path).map_err(|source| ExecutionPackError::Io {
+        operation: "open signature for",
+        path: signature_path.to_path_buf(),
+        source,
+    })?;
+    let metadata = file.metadata().map_err(|source| ExecutionPackError::Io {
+        operation: "inspect signature for",
+        path: signature_path.to_path_buf(),
+        source,
+    })?;
+    if !metadata.is_file() || metadata.len() != 112 {
+        return Err(ExecutionPackError::InvalidPack(format!(
+            "execution-pack signature {} must be an exact 112-byte regular file",
+            signature_path.display()
+        )));
+    }
+    let mut bytes = [0u8; 112];
+    file.read_exact(&mut bytes).map_err(|source| ExecutionPackError::Io {
+        operation: "read signature for",
+        path: signature_path.to_path_buf(),
+        source,
+    })?;
+    let signature = ExecutionPackSignature::decode(&bytes)?;
+    signing_key.verify(pack.mapping.as_ref(), &signature)
+}
+
+fn validate_identity(
+    path: &Path,
+    actual: ExecutionPackIdentity,
+    expected: ExecutionPackIdentity,
+) -> Result<(), ExecutionPackError> {
+    if actual.policy != expected.policy {
+        return Err(ExecutionPackError::Incompatible(format!(
+            "{} policy identity does not match this scan; reinstall and recalibrate",
+            path.display()
+        )));
+    }
+    if actual.backend != expected.backend {
+        return Err(ExecutionPackError::Incompatible(format!(
+            "{} backend identity does not match this scan; reinstall and recalibrate",
+            path.display()
+        )));
+    }
+    for (name, actual, expected) in [
+        ("detector", actual.detector_digest, expected.detector_digest),
+        ("config", actual.config_digest, expected.config_digest),
+        ("target", actual.target_digest, expected.target_digest),
+        ("compiler ABI", actual.compiler_abi, expected.compiler_abi),
+        ("binary", actual.binary_digest, expected.binary_digest),
+        ("feature", actual.feature_digest, expected.feature_digest),
+        ("backend", actual.backend_digest, expected.backend_digest),
+    ] {
+        if actual != expected {
+            return Err(ExecutionPackError::Incompatible(format!(
+                "{} {name} identity does not match this scan; reinstall and recalibrate",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn read_u16(bytes: &[u8], offset: usize) -> u16 {
+    u16::from_le_bytes([bytes[offset], bytes[offset + 1]])
+}
+
+fn read_u32(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes(bytes[offset..offset + 4].try_into().expect("bounded header"))
+}
+
+fn read_u64(bytes: &[u8], offset: usize) -> u64 {
+    u64::from_le_bytes(bytes[offset..offset + 8].try_into().expect("bounded header"))
+}
+
+fn array32(bytes: &[u8], offset: usize) -> [u8; 32] {
+    bytes[offset..offset + 32].try_into().expect("bounded header")
+}
