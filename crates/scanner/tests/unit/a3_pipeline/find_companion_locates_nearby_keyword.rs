@@ -1,5 +1,7 @@
 use keyhog_core::{EvidenceDirection, EvidenceRequirement, EvidenceScope, EvidenceValueRelation};
-use keyhog_scanner::testing::{find_companion, CompiledCompanion, ScannerPreprocessedText};
+use keyhog_scanner::testing::{
+    companion_regex, find_companion, CompiledCompanion, ScannerPreprocessedText,
+};
 
 #[test]
 fn companion_within_window_returns_value() {
@@ -7,7 +9,7 @@ fn companion_within_window_returns_value() {
     let preprocessed = ScannerPreprocessedText::passthrough(text);
     let companion = CompiledCompanion {
         name: "secret".into(),
-        regex: crate::types::LazyRegex::companion("aws_secret_access_key\\s*=\\s*(\\S+)"),
+        regex: companion_regex("aws_secret_access_key\\s*=\\s*(\\S+)"),
         capture_group: Some(1),
         within_lines: 3,
         within_bytes: None,

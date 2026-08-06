@@ -1,5 +1,7 @@
 use keyhog_core::{EvidenceDirection, EvidenceRequirement, EvidenceScope, EvidenceValueRelation};
-use keyhog_scanner::testing::{find_companion, CompiledCompanion, ScannerPreprocessedText};
+use keyhog_scanner::testing::{
+    companion_regex, find_companion, CompiledCompanion, ScannerPreprocessedText,
+};
 
 #[test]
 fn companion_beyond_within_lines_returns_none() {
@@ -10,7 +12,7 @@ fn companion_beyond_within_lines_returns_none() {
     let pre = ScannerPreprocessedText::passthrough(&text);
     let companion = CompiledCompanion {
         name: "far".into(),
-        regex: crate::types::LazyRegex::companion("TARGET=(\\S+)"),
+        regex: companion_regex("TARGET=(\\S+)"),
         capture_group: Some(1),
         within_lines: 2,
         within_bytes: None,

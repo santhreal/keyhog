@@ -4,10 +4,12 @@ use keyhog_core::{
 };
 use keyhog_scanner::context::CodeContext;
 use keyhog_scanner::testing::{
+    companion_regex, find_companion, normalize_chunk_data, CompiledCompanion,
+};
+use keyhog_scanner::testing::{
     compute_line_offsets, is_within_hex_context, known_example_suppressed, local_context_window,
     match_entropy, match_line_number, normalize_scannable_chunk, ScannerPreprocessedText,
 };
-use keyhog_scanner::testing::{find_companion, normalize_chunk_data, CompiledCompanion};
 
 // ── Happy path ──────────────────────────────────────────────────────
 
@@ -84,7 +86,7 @@ fn find_companion_locates_nearby_keyword() {
     let preprocessed = ScannerPreprocessedText::passthrough(text);
     let companion = CompiledCompanion {
         name: "secret".into(),
-        regex: crate::types::LazyRegex::companion("aws_secret_access_key\\s*=\\s*(\\S+)"),
+        regex: companion_regex("aws_secret_access_key\\s*=\\s*(\\S+)"),
         capture_group: Some(1),
         within_lines: 3,
         within_bytes: None,
@@ -133,7 +135,7 @@ fn find_companion_returns_none_when_pattern_missing() {
     let preprocessed = ScannerPreprocessedText::passthrough("TOKEN=abc");
     let companion = CompiledCompanion {
         name: "missing".into(),
-        regex: crate::types::LazyRegex::companion("does_not_exist=(\\S+)"),
+        regex: companion_regex("does_not_exist=(\\S+)"),
         capture_group: Some(1),
         within_lines: 3,
         within_bytes: None,

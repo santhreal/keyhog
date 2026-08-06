@@ -3169,6 +3169,15 @@ pub fn match_entropy(data: &[u8]) -> f64 {
 pub(crate) use crate::pipeline::{find_companion, line_window_offsets, match_line_number};
 #[cfg(all(feature = "multiline", test))]
 pub(crate) use crate::types::{CompiledCompanion, ScannerPreprocessedText};
+#[cfg(all(feature = "multiline", test))]
+pub(crate) fn companion_regex(pattern: &str) -> crate::types::LazyRegex {
+    crate::types::LazyRegex::companion(pattern)
+}
+
+#[cfg(all(feature = "multiline", not(test)))]
+pub fn companion_regex(pattern: &str) -> regex::Regex {
+    regex::Regex::new(pattern).expect("test companion regex must compile")
+}
 
 #[cfg(all(feature = "multiline", not(test)))]
 pub use multiline::PreprocessedText as ScannerPreprocessedText;
