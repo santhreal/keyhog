@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Single-file and stdin daemon scans now report their out-of-process byte coverage without a contradictory zero-byte coverage gap."
+crates = ["cli"]

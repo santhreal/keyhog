@@ -1386,6 +1386,9 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         profile,
     } = scan;
     let findings = finalize_for_report(matches, args)?;
+    crate::TOTAL_CHUNKS.store(source_chunks_scanned, std::sync::atomic::Ordering::Relaxed);
+    crate::SCANNED_CHUNKS.store(source_chunks_scanned, std::sync::atomic::Ordering::Relaxed);
+    crate::SCANNED_BYTES.store(source_bytes_scanned, std::sync::atomic::Ordering::Relaxed);
     let report_finished_at = chrono::Utc::now();
     let mut report_metadata = crate::reporting::report_metadata_from_scan_run_with_corpus(
         args,

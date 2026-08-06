@@ -20,7 +20,7 @@ fn daemon_scan_path_decodes_utf16le_file() {
 
     let output = Command::new(binary())
         .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
-        .args(["scan", "--daemon=on", "--format", "json"])
+        .args(["scan", "--daemon=on", "--format", "json-envelope"])
         .arg(&fixture)
         .output()
         .expect("daemon scan");
@@ -32,15 +32,27 @@ fn daemon_scan_path_decodes_utf16le_file() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let findings: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("daemon stdout is JSON");
-    let arr = findings.as_array().expect("json findings array");
+    let envelope: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("daemon stdout is a JSON envelope");
+    let findings = envelope["findings"].as_array().expect("json findings array");
     assert!(
-        arr.iter().any(|finding| {
+        findings.iter().any(|finding| {
             finding.get("detector_id").and_then(|value| value.as_str())
                 == Some("github-classic-pat")
         }),
-        "daemon ScanPath must return the same decoded detector hit as the filesystem source; got {arr:?}"
+        "daemon ScanPath must return the same decoded detector hit as the filesystem source; got {findings:?}"
+    );
+    assert_eq!(
+        envelope["metadata"]["source_bytes_scanned"].as_u64(),
+        Some(std::fs::metadata(&fixture).expect("fixture metadata").len()),
+        "daemon reports must account for the bytes scanned out of process"
+    );
+    assert!(
+        envelope["coverage_gap_summary"]
+            .as_array()
+            .expect("coverage gap summary")
+            .is_empty(),
+        "a successful daemon scan must not claim that zero bytes reached the scanner"
     );
 }
 
