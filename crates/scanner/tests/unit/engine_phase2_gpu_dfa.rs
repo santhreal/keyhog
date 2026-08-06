@@ -473,8 +473,7 @@ fn forced_multi_shard_resident_sequence_beats_per_shard_upload_baseline() {
     .expect("scanner with GPU census");
     let route = ScanBackend::GpuCuda;
     let backend = scanner
-        .gpu_backends
-        .get(route)
+        .gpu_backend(route)
         .cloned()
         .expect("known RTX host must acquire CUDA for release evidence");
 

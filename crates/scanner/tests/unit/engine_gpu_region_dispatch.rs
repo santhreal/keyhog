@@ -148,7 +148,7 @@ fn gpu_recovery_fixture() -> (
         crate::hw_probe::ScanBackend::GpuWgpu,
     ]
     .into_iter()
-    .find(|backend| scanner.gpu_backends.get(*backend).is_some())
+    .find(|backend| scanner.gpu_backend(*backend).is_some())
     .expect("known GPU test host must acquire a hardware backend");
     let chunks = vec![
         keyhog_core::Chunk::from(format!("{}tok_AAAAAAAAAAAAAAAA", "a".repeat(24))),
@@ -374,6 +374,7 @@ fn complete_always_active_negative_preserves_triggered_row_keyword_phase2_findin
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile fixture detector");
     let chunk = keyhog_core::Chunk::from("credential = aB3dE5gH7jK9mN2pQ4sT6vW8xY1zC0fR");
     let keyword_idx = scanner
+        .route_classification
         .phase2_keyword_ac
         .as_ref()
         .expect("phase-two keyword index")
