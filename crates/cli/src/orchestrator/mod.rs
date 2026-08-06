@@ -1384,7 +1384,16 @@ impl ScanOrchestrator {
         drop(detector_validation_span);
 
         let detector_count = detectors.len();
-        let detectors: Arc<[DetectorSpec]> = detectors.into();
+        let signatures = collect_detector_signatures(&detectors);
+        #[cfg(feature = "verify")]
+        let verifier_enabled = effective_config.report.verify;
+        #[cfg(not(feature = "verify"))]
+        let verifier_enabled = false;
+        let direct_pack_hydration =
+            disabled_detectors.is_empty() && detector_execution_pack.is_some();
+        let retain_detector_schemas = !direct_pack_hydration || verifier_enabled;
+        let detectors: Option<Arc<[DetectorSpec]>> =
+            retain_detector_schemas.then(|| detectors.into());
 
         let gpu_init_policy = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackSelect);
@@ -1407,14 +1416,20 @@ impl ScanOrchestrator {
                         )
                     }
                     None => CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
-                        Arc::clone(&detectors),
+                        Arc::clone(detectors.as_ref().expect(
+                            "embedded/debug scanner construction retains detector schemas",
+                        )),
                         gpu_init_policy,
                         &effective_config.scanner_tuning,
                     ),
                 }
             } else {
                 CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
-                    Arc::clone(&detectors),
+                    Arc::clone(
+                        detectors
+                            .as_ref()
+                            .expect("disabled-detector construction retains detector schemas"),
+                    ),
                     gpu_init_policy,
                     &effective_config.scanner_tuning,
                 )
@@ -1422,16 +1437,15 @@ impl ScanOrchestrator {
             Arc::new(
                 compiled
                     .with_context(|| {
-                        format!("materializing scanner for {} detectors", detectors.len())
+                        format!("materializing scanner for {detector_count} detectors")
                     })?
                     .with_config(effective_config.engine_scanner_config())
                     .with_tuning_config(effective_config.scanner_tuning.clone()),
             )
         };
 
-        let signatures = collect_detector_signatures(&detectors);
         #[cfg(feature = "verify")]
-        let verifier_detectors = effective_config.report.verify.then_some(detectors);
+        let verifier_detectors = if verifier_enabled { detectors } else { None };
         #[cfg(not(feature = "verify"))]
         drop(detectors);
 
