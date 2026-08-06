@@ -206,7 +206,7 @@ fn faulted_execution_pack_pages_are_shared_across_processes() {
     let shared_clean = mapped_metric_kib(&pack_path, "Shared_Clean:");
     assert!(
         shared_clean > (LARGE_PROGRAM_BYTES as u64 / 1024) / 2,
-        \"only {shared_clean} KiB of the {LARGE_PROGRAM_BYTES}-byte pack is shared clean while two processes hold every page\"
+        "only {shared_clean} KiB of the {LARGE_PROGRAM_BYTES}-byte pack is shared clean while two processes hold every page"
     );
     assert_eq!(
         unsafe { libc::write(child_release[1], [1_u8].as_ptr().cast(), 1) },
