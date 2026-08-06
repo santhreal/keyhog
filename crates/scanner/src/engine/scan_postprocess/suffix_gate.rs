@@ -52,13 +52,61 @@ pub(crate) fn suffix_gate_literals(src: &str) -> Vec<String> {
     out
 }
 
-/// Build the confirmed-pass suffix gate: one ASCII-case-insensitive AC over
-/// every ac_map pattern's required suffix literals, plus per-pattern literal
-/// ids. Returns `(ac, per_pattern_literal_ids)`; the AC is `None` when no
-/// pattern has a gateable suffix.
+pub(crate) struct LazyConfirmedSuffixGate {
+    literals: std::sync::Mutex<Option<Box<[String]>>>,
+    automaton: std::sync::OnceLock<Option<aho_corasick::AhoCorasick>>,
+}
+
+impl LazyConfirmedSuffixGate {
+    fn new(literals: Vec<String>) -> Self {
+        Self {
+            literals: std::sync::Mutex::new(Some(literals.into_boxed_slice())),
+            automaton: std::sync::OnceLock::new(),
+        }
+    }
+
+    fn build(&self) -> Option<aho_corasick::AhoCorasick> {
+        let literals = self
+            .literals
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+            .unwrap_or_default();
+        match aho_corasick::AhoCorasickBuilder::new()
+            .match_kind(aho_corasick::MatchKind::Standard)
+            .ascii_case_insensitive(true)
+            .build(&literals)
+        {
+            Ok(ac) => Some(ac),
+            Err(error) => {
+                tracing::warn!(
+                    literals = literals.len(),
+                    %error,
+                    "confirmed-pass suffix-gate Aho-Corasick build failed; suffix-gate optimization disabled (recall preserved)"
+                );
+                None
+            }
+        }
+    }
+
+    pub(crate) fn get(&self) -> Option<&aho_corasick::AhoCorasick> {
+        self.automaton.get_or_init(|| self.build()).as_ref()
+    }
+
+    /// Materialize before per-chunk scratch. Returns whether this call built
+    /// the automaton so the caller can purge compiler arenas.
+    pub(crate) fn materialize(&self) -> bool {
+        let already_materialized = self.automaton.get().is_some();
+        let _ = self.get();
+        !already_materialized
+    }
+}
+
+/// Build the confirmed-pass suffix gate's compact source rows plus per-pattern
+/// literal ids. The automaton materializes before the first non-empty batch.
 pub(crate) fn build_confirmed_suffix_gate(
     ac_map: &[CompiledPattern],
-) -> (Option<aho_corasick::AhoCorasick>, super::CsrU32) {
+) -> (Option<LazyConfirmedSuffixGate>, super::CsrU32) {
     use std::collections::HashMap;
     let mut literals: Vec<String> = Vec::new();
     let mut literal_id: HashMap<String, usize> = HashMap::new();
@@ -89,23 +137,8 @@ pub(crate) fn build_confirmed_suffix_gate(
             super::CsrU32::from_pairs(ac_map.len(), pattern_literal_pairs),
         );
     }
-    let ac = match aho_corasick::AhoCorasickBuilder::new()
-        .match_kind(aho_corasick::MatchKind::Standard)
-        .ascii_case_insensitive(true)
-        .build(&literals)
-    {
-        Ok(ac) => Some(ac),
-        Err(error) => {
-            tracing::warn!(
-                literals = literals.len(),
-                %error,
-                "confirmed-pass suffix-gate Aho-Corasick build failed; suffix-gate optimization disabled (recall preserved)"
-            );
-            None
-        }
-    };
     (
-        ac,
+        Some(LazyConfirmedSuffixGate::new(literals)),
         super::CsrU32::from_pairs(ac_map.len(), pattern_literal_pairs),
     )
 }

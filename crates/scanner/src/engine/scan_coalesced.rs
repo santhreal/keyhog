@@ -86,8 +86,8 @@ impl CompiledScanner {
         self.post_process_matches(chunk, &mut matches, None, route)?;
         Ok(Some(matches))
     }
-    /// Materialize lazy anchors before a non-empty batch allocates per-chunk
-    /// scratch. Returns whether new automata were built.
+    /// Materialize lazy literal automata before a non-empty batch allocates
+    /// per-chunk scratch. Returns whether new automata were built.
     #[doc(hidden)]
     pub fn prepare_anchor_batch(&self, route: crate::ScanExecutionRoute) -> bool {
         let phase2 = self
@@ -97,7 +97,11 @@ impl CompiledScanner {
         let confirmed = self.confirmed_anchor_index.as_ref().is_some_and(
             super::scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex::materialize,
         );
-        phase2 || confirmed
+        let suffix = self.tuning.confirmed_suffix_gate_enabled()
+            && self.suffix_gate_ac.as_ref().is_some_and(
+                super::scan_postprocess_suffix_gate::LazyConfirmedSuffixGate::materialize,
+            );
+        phase2 || confirmed || suffix
     }
 
     /// High-throughput coalesced scan using exactly the selected backend.

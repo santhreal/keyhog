@@ -106,22 +106,30 @@ impl CompiledScanner {
                     .get(pat_idx)
                     .is_some_and(|gate| !gate.is_empty())
             });
-        let suffix_gate_active = match &self.suffix_gate_ac {
-            Some(ac) if needs_suffix_gate => {
-                let t0 = prof.then(std::time::Instant::now);
-                scratch_owned.clear_suffix(ac.patterns_len());
-                for mat in ac.find_overlapping_iter(&*preprocessed.text) {
-                    scratch_owned.mark_suffix(mat.pattern().as_usize());
+        let suffix_gate_active = if needs_suffix_gate {
+            match self
+                .suffix_gate_ac
+                .as_ref()
+                .and_then(super::scan_postprocess_suffix_gate::LazyConfirmedSuffixGate::get)
+            {
+                Some(ac) => {
+                    let t0 = prof.then(std::time::Instant::now);
+                    scratch_owned.clear_suffix(ac.patterns_len());
+                    for mat in ac.find_overlapping_iter(&*preprocessed.text) {
+                        scratch_owned.mark_suffix(mat.pattern().as_usize());
+                    }
+                    if let Some(t0) = t0 {
+                        scan_postprocess_profile::confirmed_prof_record(
+                            scan_postprocess_profile::ConfirmedStage::SuffixGate,
+                            t0.elapsed(),
+                        );
+                    }
+                    true
                 }
-                if let Some(t0) = t0 {
-                    scan_postprocess_profile::confirmed_prof_record(
-                        scan_postprocess_profile::ConfirmedStage::SuffixGate,
-                        t0.elapsed(),
-                    );
-                }
-                true
+                None => false,
             }
-            _ => false,
+        } else {
+            false
         };
         // Freeze the scratch for the rest of the pass: every use below is a
         // read, so the closures share one immutable borrow.

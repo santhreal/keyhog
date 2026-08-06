@@ -526,11 +526,10 @@ pub struct CompiledScanner {
     /// slot, partitioned by detector for bounded generic-bridge lookup.
     pub(crate) structural_confirmed_patterns: CsrU32,
     pub(crate) pattern_boundary_context: boundary::BoundaryContextBytes,
-    /// Confirmed-pass suffix gate: AC over ac_map patterns' required suffix
-    /// literals (every match ends with one). `ac_suffix_gate[i]` are pattern
-    /// i's literal ids; a triggered pattern whose suffix literals are all absent
-    /// from the chunk cannot match and is skipped (see `extract_confirmed_patterns`).
-    pub(crate) suffix_gate_ac: Option<AhoCorasick>,
+    /// Confirmed-pass suffix gate: lazily materialized AC over required suffix
+    /// literals. `ac_suffix_gate[i]` are pattern i's literal ids; a triggered
+    /// pattern whose suffix literals are all absent from the chunk cannot match.
+    pub(crate) suffix_gate_ac: Option<scan_postprocess_suffix_gate::LazyConfirmedSuffixGate>,
     pub(crate) ac_suffix_gate: CsrU32,
     /// Per-`ac_map` bit for confirmed regexes whose detector-owned
     /// `simdsieve_prefixes` can already emit the same candidate directly.
