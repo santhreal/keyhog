@@ -1,5 +1,5 @@
 use super::*;
-use std::cell::RefCell;
+use std::sync::Mutex;
 
 pub(crate) mod keywords;
 mod line_mapping;
@@ -17,32 +17,49 @@ pub(crate) use self::pattern::{
     generic_keyword_alternation, generic_keyword_alternation_from, generic_vendor_suffix_arm,
 };
 
-thread_local! {
-    /// Reuses one keyword-line buffer per worker to avoid an allocation per chunk.
-    static KEYWORD_LINES_POOL: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
-}
+const MAX_IDLE_KEYWORD_LINE_BUFFERS: usize = 4;
+static KEYWORD_LINES_POOL: Mutex<Vec<Vec<usize>>> = Mutex::new(Vec::new());
 
-fn release_keyword_lines_scratch(mut lines: Vec<usize>) {
+fn normalize_keyword_lines_scratch(lines: &mut Vec<usize>) {
     lines.clear();
     if lines
         .capacity()
         .saturating_mul(std::mem::size_of::<usize>())
         > super::MAX_RETAINED_WORKER_SCRATCH_BYTES
     {
-        lines = Vec::new();
+        *lines = Vec::new();
     }
-    KEYWORD_LINES_POOL.with(|cell| cell.replace(lines));
+}
+
+fn take_keyword_lines_scratch() -> Vec<usize> {
+    KEYWORD_LINES_POOL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .pop()
+        .unwrap_or_default()
+}
+
+fn release_keyword_lines_scratch(mut lines: Vec<usize>) {
+    normalize_keyword_lines_scratch(&mut lines);
+    if lines.capacity() == 0 {
+        return;
+    }
+    let mut pool = KEYWORD_LINES_POOL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if pool.len() < MAX_IDLE_KEYWORD_LINE_BUFFERS {
+        pool.push(lines);
+    }
 }
 
 #[cfg(test)]
 pub(crate) fn retained_keyword_line_bytes_after_for_test(requested_bytes: usize) -> usize {
     let elements = requested_bytes.div_ceil(std::mem::size_of::<usize>());
-    release_keyword_lines_scratch(Vec::with_capacity(elements));
-    KEYWORD_LINES_POOL.with_borrow(|lines| {
-        lines
-            .capacity()
-            .saturating_mul(std::mem::size_of::<usize>())
-    })
+    let mut lines = Vec::with_capacity(elements);
+    normalize_keyword_lines_scratch(&mut lines);
+    lines
+        .capacity()
+        .saturating_mul(std::mem::size_of::<usize>())
 }
 
 impl CompiledScanner {
@@ -80,8 +97,7 @@ impl CompiledScanner {
         // so the per-line pass still has real work and stays.
         let lines_already_normalized = identity_offsets && self.config.unicode_normalization;
         // Take ownership so the RefCell is not borrowed during the consume loop.
-        let mut lines_with_keyword = KEYWORD_LINES_POOL.with(|cell| cell.take());
-        lines_with_keyword.clear();
+        let mut lines_with_keyword = take_keyword_lines_scratch();
         let prefilter = metrics::prefilter_span();
         if let Some(positions) = generic_keyword_positions {
             collect_generic_keyword_lines_from_positions(

@@ -1,4 +1,7 @@
-use super::{release_candidate_scratch, MAX_RETAINED_WORKER_SCRATCH_BYTES};
+use super::{
+    candidate_scratch_idle_count_for_test, release_candidate_scratch, with_candidate_scratch,
+    MAX_RETAINED_WORKER_SCRATCH_BYTES,
+};
 
 /// WHY: one anchor-dense chunk may need a large transient candidate vector, but a Rayon worker reused by a later CPU or SIMD route must not retain that outlier allocation indefinitely.
 #[test]
@@ -12,6 +15,25 @@ fn host_anchor_candidate_outlier_is_released_between_routes() {
 
     assert!(candidates.is_empty());
     assert_eq!(candidates.capacity(), 0);
+}
+
+/// WHY: a streamed scan may visit every Rayon worker, but idle candidate buffers
+/// must remain process-bounded rather than multiplying by worker count and pass.
+#[test]
+fn shared_anchor_candidate_pool_keeps_four_idle_buffers() {
+    let barrier = std::sync::Barrier::new(16);
+    std::thread::scope(|scope| {
+        for _ in 0..16 {
+            scope.spawn(|| {
+                with_candidate_scratch(|candidates| {
+                    candidates.reserve_exact(16);
+                    barrier.wait();
+                });
+            });
+        }
+    });
+
+    assert_eq!(candidate_scratch_idle_count_for_test(), 4);
 }
 
 /// WHY: single-chunk VYRE dispatch scratch belongs only to the selected GPU route; an outlier must be zeroed, emptied, and released before that worker can serve a host route.

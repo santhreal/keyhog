@@ -15,12 +15,6 @@ use super::super::CompiledScanner;
 use crate::anchored_regex::AnchoredRegex;
 use crate::types::CompiledPattern;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind};
-use std::cell::RefCell;
-
-thread_local! {
-    pub(crate) static CONFIRMED_ANCHOR_CANDIDATES: RefCell<Vec<(u32, u32)>> =
-        const { RefCell::new(Vec::new()) };
-}
 
 impl CompiledScanner {
     #[cfg(test)]

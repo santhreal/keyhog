@@ -4,7 +4,7 @@
 //! direct-prefix duplicate filter. It stays separate from decode
 //! recursion and ML scoring so the postprocess folder has one owner per job.
 
-use super::{absolute_offset, scan_postprocess, scan_postprocess_profile, CompiledScanner};
+use super::{absolute_offset, scan_postprocess_profile, CompiledScanner};
 use crate::types::{ScanState, ScannerPreprocessedText};
 use keyhog_core::Chunk;
 use std::cell::RefCell;
@@ -149,8 +149,7 @@ impl CompiledScanner {
                 .iter()
                 .any(|&pat_idx| anchor_index.is_eligible(pat_idx) && suffix_allows(pat_idx));
             if has_active_anchored {
-                scan_postprocess::confirmed_anchor::CONFIRMED_ANCHOR_CANDIDATES.with(|cell| {
-                    let mut candidates = cell.borrow_mut();
+                super::with_candidate_scratch(|candidates| {
                     let collect_t0 = prof.then(std::time::Instant::now);
                     // `confirmed_patterns` is the set bits of this chunk's
                     // trigger bitmap, so membership is one word load instead of
@@ -162,14 +161,10 @@ impl CompiledScanner {
                         anchor_index.collect_candidates_from_literal_matches(
                             literal_matches,
                             is_active,
-                            &mut candidates,
+                            candidates,
                         );
                     } else {
-                        anchor_index.collect_candidates(
-                            &preprocessed.text,
-                            is_active,
-                            &mut candidates,
-                        );
+                        anchor_index.collect_candidates(&preprocessed.text, is_active, candidates);
                     }
                     if let Some(collect_t0) = collect_t0 {
                         scan_postprocess_profile::confirmed_prof_record(
@@ -270,7 +265,6 @@ impl CompiledScanner {
                         }
                         i = j;
                     }
-                    super::release_candidate_scratch(&mut candidates);
                 });
             }
         }

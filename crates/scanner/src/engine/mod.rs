@@ -226,6 +226,37 @@ pub(crate) fn release_candidate_scratch(values: &mut Vec<(u32, u32)>) {
     }
 }
 
+const MAX_IDLE_CANDIDATE_SCRATCH_BUFFERS: usize = 4;
+static CANDIDATE_SCRATCH_POOL: std::sync::Mutex<Vec<Vec<(u32, u32)>>> =
+    std::sync::Mutex::new(Vec::new());
+
+pub(crate) fn with_candidate_scratch<R>(f: impl FnOnce(&mut Vec<(u32, u32)>) -> R) -> R {
+    let mut values = CANDIDATE_SCRATCH_POOL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .pop()
+        .unwrap_or_default();
+    let result = f(&mut values);
+    release_candidate_scratch(&mut values);
+    if values.capacity() != 0 {
+        let mut pool = CANDIDATE_SCRATCH_POOL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if pool.len() < MAX_IDLE_CANDIDATE_SCRATCH_BUFFERS {
+            pool.push(values);
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+pub(crate) fn candidate_scratch_idle_count_for_test() -> usize {
+    CANDIDATE_SCRATCH_POOL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .len()
+}
+
 #[cfg(test)]
 #[path = "../../tests/unit/scratch_pool_retention.rs"]
 mod scratch_pool_retention;

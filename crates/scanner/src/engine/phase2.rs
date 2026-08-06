@@ -187,12 +187,6 @@ impl ActivePatternsScratch {
     }
 }
 
-thread_local! {
-    /// Per-thread scratch for shared-anchor candidate `(pattern_idx, pos)`
-    /// pairs. Grown once and reused (cleared, not freed) per chunk.
-    pub(crate) static ANCHOR_CANDIDATES: RefCell<Vec<(u32, u32)>> = const { RefCell::new(Vec::new()) };
-}
-
 /// Combined-RegexSet prefilter for the always-active phase-2 patterns.
 ///
 /// Always-active phase-2 patterns (patterns with no >=4-char keyword for the AC

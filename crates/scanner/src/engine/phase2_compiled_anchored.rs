@@ -171,8 +171,7 @@ impl CompiledScanner {
                 let pattern_is_live =
                     |pat: usize| !skip_homoglyph || !this.phase2_patterns[pat].0.homoglyph_variant;
                 let localize_keyword_anchors = route.phase2_keyword_localizer;
-                ANCHOR_CANDIDATES.with(|cell| {
-                    let mut cands = cell.borrow_mut();
+                super::with_candidate_scratch(|cands| {
                     let mut candidates_are_full_text_offsets = false;
                     {
                         let _g = super::profile::span(keyhog_profile::Stage::Phase2SharedAc);
@@ -181,7 +180,7 @@ impl CompiledScanner {
                                 scan_text,
                                 |pat| scratch.is_active(pat),
                                 pattern_is_live,
-                                &mut cands,
+                                cands,
                             );
                         } else if let Some(literal_matches) = phase2_always_active_gpu_evidence
                             .and_then(|evidence| evidence.anchor_literal_matches)
@@ -189,7 +188,7 @@ impl CompiledScanner {
                             anchor_idx.collect_always_active_candidates_from_literal_matches(
                                 literal_matches,
                                 pattern_is_live,
-                                &mut cands,
+                                cands,
                             );
                             if let Some((start, end)) = focus {
                                 cands.retain(|&(_, pos)| {
@@ -206,7 +205,7 @@ impl CompiledScanner {
                             anchor_idx.collect_always_active_candidates(
                                 scan_text,
                                 pattern_is_live,
-                                &mut cands,
+                                cands,
                             );
                         }
                     }
@@ -236,7 +235,6 @@ impl CompiledScanner {
                         deadline,
                         prof,
                     );
-                    super::release_candidate_scratch(&mut cands);
                 });
 
                 // Localized plain-pattern path (ASCII chunks): verify live
@@ -251,15 +249,10 @@ impl CompiledScanner {
                     && !phase2_always_active_gpu_evidence
                         .is_some_and(Phase2AlwaysActiveGpuEvidence::prefixless_absence_proven)
                 {
-                    ANCHOR_CANDIDATES.with(|cell| {
-                        let mut cands = cell.borrow_mut();
+                    super::with_candidate_scratch(|cands| {
                         {
                             let _g = super::profile::span(keyhog_profile::Stage::Phase2SharedAc);
-                            anchor_idx.collect_plain_candidates(
-                                scan_text,
-                                pattern_is_live,
-                                &mut cands,
-                            );
+                            anchor_idx.collect_plain_candidates(scan_text, pattern_is_live, cands);
                         }
                         if shift != 0 {
                             for c in cands.iter_mut() {
@@ -283,7 +276,6 @@ impl CompiledScanner {
                                 prof,
                             );
                         }
-                        super::release_candidate_scratch(&mut cands);
                     });
                     {
                         let _g = super::profile::span(keyhog_profile::Stage::Phase2WholeChunk);
