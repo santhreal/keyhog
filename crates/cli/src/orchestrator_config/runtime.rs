@@ -41,11 +41,11 @@ pub(crate) const FUSED_BATCH_DEFAULT: usize = 32;
 /// instead of replaying decisions measured under different batching.
 pub(crate) const FUSED_BATCH_BYTES: usize = 1024 * 1024;
 
-/// Default bounded-channel depth for fused filesystem batches. One producer
-/// batch overlaps the active scanner batch without multiplying source bytes by
-/// the worker count.
+/// Default rendezvous depth for fused filesystem batches. The producer may
+/// finish one batch while the consumer scans the active batch, but no third
+/// batch remains queued and resident.
 pub(crate) fn fused_depth_default(_worker_threads: usize) -> usize {
-    1
+    0
 }
 
 pub(crate) fn parse_backend_override(

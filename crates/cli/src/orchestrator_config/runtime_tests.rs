@@ -1,6 +1,6 @@
 #[cfg(test)]
 use super::{
-    gpu_runtime_policy_for_backend_override, gpu_runtime_policy_from_args,
+    fused_depth_default, gpu_runtime_policy_for_backend_override, gpu_runtime_policy_from_args,
     require_keyhog_owned_rayon_pool, sanitise_thread_count, thread_pool_needs_initialization,
     KEYHOG_WORKER_STACK_BYTES,
 };
@@ -78,6 +78,13 @@ fn repeated_rayon_configuration_rejects_a_different_width() -> anyhow::Result<()
 fn sanitise_thread_count_rejects_zero() {
     assert_eq!(sanitise_thread_count(0, 16, "test"), 16);
     assert_eq!(sanitise_thread_count(0, 1, "test"), 1);
+}
+
+#[cfg(test)]
+#[test]
+fn fused_default_allows_only_active_and_blocked_send_batches() {
+    assert_eq!(fused_depth_default(1), 0);
+    assert_eq!(fused_depth_default(256), 0);
 }
 
 #[cfg(test)]
