@@ -204,20 +204,7 @@ impl CompiledScanner {
             }
         };
         let (result, gpu_recovery_receipts) = crate::gpu::with_recovery_receipt_scope(|| {
-            let result = if chunks.len() == 1 && !backend.is_gpu() {
-                let admission = validated_plan.and_then(|plan| plan.admission_for(0));
-                Ok(super::CoalescedScanOutcome {
-                    matches: vec![self.scan_with_deadline_and_backend_admission_and_route(
-                        &chunks[0],
-                        self.config.per_chunk_deadline(),
-                        backend,
-                        admission,
-                        route,
-                    )?],
-                    recovery: None,
-                    gpu_recovery_receipts: 0,
-                })
-            } else if backend == crate::hw_probe::ScanBackend::SimdCpu {
+            let result = if backend == crate::hw_probe::ScanBackend::SimdCpu {
                 self.try_initialize_simd_backend().map_err(|error| {
                     crate::error::ScanError::Simd(format!(
                         "selected Hyperscan backend initialization failed: {error}"
