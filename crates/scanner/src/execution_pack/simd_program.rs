@@ -35,6 +35,16 @@ impl SerializedHyperscanShard {
             SerializedHyperscanShardStorage::Mapped(bytes) => bytes.release_resident_pages(),
         }
     }
+
+    fn release_resident_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<(), ExecutionPackError> {
+        match &self.0 {
+            SerializedHyperscanShardStorage::Owned(_) => Ok(()),
+            SerializedHyperscanShardStorage::Mapped(bytes) => bytes.release_resident_range(range),
+        }
+    }
 }
 
 impl From<Vec<u8>> for SerializedHyperscanShard {
@@ -725,6 +735,7 @@ fn read_shared_shard(
                 exact_match = false;
             }
             release(chunk)?;
+            shared.release_resident_range(start..end)?;
         }
         if *hasher.finalize().as_bytes() != expected_digest {
             return Err(ExecutionPackError::InvalidPack(format!(

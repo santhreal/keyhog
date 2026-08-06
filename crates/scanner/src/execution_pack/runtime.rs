@@ -62,6 +62,21 @@ impl ExecutionPackMappedBytes {
             "discard validated native shard pages",
         )
     }
+
+    pub fn release_resident_range(&self, range: Range<usize>) -> Result<(), ExecutionPackError> {
+        if range.start > range.end || range.end > self.range.len() {
+            return Err(ExecutionPackError::InvalidPack(
+                "native shard release range is outside its mapped bytes".into(),
+            ));
+        }
+        let absolute = (self.range.start + range.start)..(self.range.start + range.end);
+        release_mapping_slice(
+            &self.mapping,
+            &self.path,
+            &self.mapping[absolute],
+            "discard compared native shard pages",
+        )
+    }
 }
 
 impl std::fmt::Debug for ExecutionPackMappedBytes {
