@@ -210,10 +210,10 @@ pub(crate) const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
 /// used to hardcode a bare `64`).
 pub(crate) const BIGRAM_BLOOM_MIN_CHUNK_BYTES: usize = 64;
 
-/// A worker may retain at most one scan chunk of route-local candidate scratch.
-/// A hostile high-anchor chunk can grow beyond this while it is processed, but
-/// the outlier allocation is released before the worker accepts another route.
-pub(crate) const MAX_RETAINED_WORKER_SCRATCH_BYTES: usize = crate::types::MAX_SCAN_CHUNK_BYTES;
+/// Retain at most 64 KiB in each worker-local position/index pool. Live scans
+/// may grow beyond this, but idle Rayon workers must not accumulate one
+/// chunk-sized buffer per pool as a long stream visits the full worker set.
+pub(crate) const MAX_RETAINED_WORKER_SCRATCH_BYTES: usize = 64 * 1024;
 
 pub(crate) fn release_candidate_scratch(values: &mut Vec<(u32, u32)>) {
     values.clear();

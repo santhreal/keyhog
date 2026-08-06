@@ -39,6 +39,7 @@ fn decode_facts_cache_starts_without_reserved_slots() {
 /// line; that transient index must not leave multiple MiB resident per worker.
 #[test]
 fn oversized_generic_keyword_line_scratch_is_not_retained() {
+    assert!(MAX_RETAINED_WORKER_SCRATCH_BYTES <= 64 * 1024);
     assert_eq!(
         super::phase2_generic::retained_keyword_line_bytes_after_for_test(
             MAX_RETAINED_WORKER_SCRATCH_BYTES + 1,
