@@ -8,9 +8,38 @@
 // Per-thread heaps remove the glibc arena-lock contention the multi-core scan
 // hot path otherwise pays (sub-linear Rayon thread scaling). The CLI binary
 // owns this choice; the keyhog libraries stay allocator-agnostic.
-#[cfg(feature = "mimalloc")]
+#[cfg(all(feature = "allocation-profile", feature = "mimalloc"))]
+compile_error!("allocation-profile and mimalloc are mutually exclusive global allocators");
+
+#[cfg(all(feature = "allocation-profile", not(feature = "mimalloc")))]
+#[global_allocator]
+static GLOBAL: keyhog_profile::TrackingAllocator = keyhog_profile::TrackingAllocator::new();
+
+#[cfg(all(feature = "mimalloc", not(feature = "allocation-profile")))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+/// Keep mimalloc's per-thread heaps without eagerly committing whole segments.
+#[cfg(all(feature = "mimalloc", not(feature = "allocation-profile")))]
+fn configure_allocator_memory_policy() {
+    // Stable `mi_option_t` values from the pinned mimalloc v2 ABI.
+    const MI_OPTION_EAGER_COMMIT: std::ffi::c_int = 3;
+    const MI_OPTION_ARENA_EAGER_COMMIT: std::ffi::c_int = 4;
+    const MI_OPTION_PURGE_DELAY: std::ffi::c_int = 15;
+    unsafe extern "C" {
+        fn mi_option_set(option: std::ffi::c_int, value: i64);
+    }
+    // SAFETY: `mi_option_set` accepts every declared option before concurrent
+    // allocator use; this runs at the first statement of the process entrypoint.
+    unsafe {
+        mi_option_set(MI_OPTION_EAGER_COMMIT, 0);
+        mi_option_set(MI_OPTION_ARENA_EAGER_COMMIT, 0);
+        mi_option_set(MI_OPTION_PURGE_DELAY, 0);
+    }
+}
+
+#[cfg(not(all(feature = "mimalloc", not(feature = "allocation-profile"))))]
+fn configure_allocator_memory_policy() {}
 
 use std::process::ExitCode;
 
@@ -138,6 +167,7 @@ mod interrupt {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
+    configure_allocator_memory_policy();
     // Startup surface: signal-handler installation is process setup, profiled
     // as preprocessing; the runtime session itself is owned by the caller.
     let _startup_span = keyhog_profile::span(keyhog_profile::Stage::Preprocess);
