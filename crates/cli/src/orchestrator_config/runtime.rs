@@ -32,14 +32,14 @@ pub(crate) const FUSED_BATCH_DEFAULT: usize = 32;
 /// [`FUSED_BATCH_DEFAULT`].
 ///
 /// The fused consumer executes one batch at a time while the source reader
-/// fills one queued batch. A 16 MiB byte ceiling gives all worker threads a
-/// large-file window without retaining one batch per worker; small-file batches
-/// remain bounded by the 32-chunk count.
+/// fills one queued batch. A 1 MiB byte ceiling keeps a large-file window and
+/// its scan scratch single-owned; small-file batches remain bounded by the
+/// 32-chunk count.
 ///
 /// Compile-time rather than configurable on purpose: it is hashed into the
 /// autoroute identity, so a change here invalidates persisted calibration
 /// instead of replaying decisions measured under different batching.
-pub(crate) const FUSED_BATCH_BYTES: usize = 16 * 1024 * 1024;
+pub(crate) const FUSED_BATCH_BYTES: usize = 1024 * 1024;
 
 /// Default bounded-channel depth for fused filesystem batches. One producer
 /// batch overlaps the active scanner batch without multiplying source bytes by

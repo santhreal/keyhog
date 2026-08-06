@@ -37,9 +37,10 @@ const READER_PART_FLUSH_BYTES: usize = 1024 * 1024;
 /// individually tiny chunks would otherwise never trip the byte threshold.
 const READER_PART_FLUSH_CHUNKS: usize = 64;
 /// Maximum queued entry parts and decoded chunks between the reader crew and
-/// scanner. Each large-file item can own 1 MiB, so the old depth of 64 at both
-/// boundaries admitted 128 MiB before fused dispatch and scanner scratch.
-const READER_QUEUE_DEPTH: usize = 8;
+/// scanner. Each large-file item can own 1 MiB, so each boundary admits one
+/// window while reader I/O overlaps scanning without multiplying resident
+/// source bytes.
+const READER_QUEUE_DEPTH: usize = 1;
 
 /// One ordered slice of a single walk entry's chunks:
 /// `(seq, part, is_last, chunks)`.
@@ -100,10 +101,8 @@ pub(super) fn spawn_chunk_producer(
     // scope.
     scan_lease: crate::skip::ScanReadLease,
 ) -> std::sync::mpsc::Receiver<Result<Chunk, SourceError>> {
-    let (tx, rx) =
-        std::sync::mpsc::sync_channel::<Result<Chunk, SourceError>>(READER_QUEUE_DEPTH);
-    let (entry_tx, entry_rx) =
-        std::sync::mpsc::sync_channel::<EntryBatch>(READER_QUEUE_DEPTH);
+    let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Chunk, SourceError>>(READER_QUEUE_DEPTH);
+    let (entry_tx, entry_rx) = std::sync::mpsc::sync_channel::<EntryBatch>(READER_QUEUE_DEPTH);
     let cursor = Arc::new(Mutex::new(ReaderCursor {
         next_seq: 0,
         entries,
