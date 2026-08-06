@@ -233,18 +233,7 @@ pub(crate) fn build_packed_simd_compile_plan(
     program: crate::execution_pack::HyperscanSimdExecutionProgram,
     ac_map: &[CompiledPattern],
     ac_literals: std::sync::Arc<[String]>,
-    detectors: &[keyhog_core::DetectorSpec],
 ) -> std::result::Result<SimdPhase1CompilePlan, String> {
-    let scalar_patterns = detectors
-        .iter()
-        .enumerate()
-        .flat_map(|(detector_index, detector)| {
-            detector
-                .patterns
-                .iter()
-                .map(move |pattern| (detector_index, pattern))
-        })
-        .collect::<Vec<_>>();
     let mut covered_ac = vec![false; ac_map.len()];
     let mut index_pairs = Vec::with_capacity(ac_map.len());
 
@@ -253,18 +242,6 @@ pub(crate) fn build_packed_simd_compile_plan(
             return Err(format!(
                 "packed SIMD pattern row {hs_id} claims canonical pattern id {}",
                 pattern.pattern_index
-            ));
-        }
-        let expected_scalar = scalar_patterns
-            .iter()
-            .enumerate()
-            .filter_map(|(index, (_, scalar))| {
-                (scalar.regex == pattern.regex).then_some(index as u32)
-            })
-            .collect::<Vec<_>>();
-        if pattern.scalar_pattern_indices != expected_scalar {
-            return Err(format!(
-                "packed SIMD pattern {hs_id} scalar identity mapping does not match the canonical detector program"
             ));
         }
 

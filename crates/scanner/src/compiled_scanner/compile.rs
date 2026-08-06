@@ -448,6 +448,45 @@ impl CompiledScanner {
             &state.phase2_patterns,
             detectors.len(),
         )?;
+        let detector_count = detectors.len();
+        // Lower the last detector-schema-dependent validations before building
+        // route runtime indexes. Installed schemas are compiler inputs; keeping
+        // them alive while allocating the retained graph inflates peak RSS.
+        let missing_weak_anchor_floors = detectors
+            .iter()
+            .enumerate()
+            .filter_map(|(index, detector)| {
+                let has_weak_pattern = match detector_plans.get(index).weak_anchor_base {
+                    crate::suppression::WeakAnchorBase::Always => true,
+                    crate::suppression::WeakAnchorBase::PerPattern => {
+                        detector.patterns.iter().any(|pattern| pattern.weak_anchor)
+                    }
+                    crate::suppression::WeakAnchorBase::Never => false,
+                };
+                (has_weak_pattern && detector_plans.get(index).entropy_floor.is_none())
+                    .then_some(detector.id.as_str())
+            })
+            .collect::<Vec<_>>();
+        if !missing_weak_anchor_floors.is_empty() {
+            return Err(crate::error::ScanError::Config(format!(
+                "weak-anchor detectors omit detector-local entropy_high/entropy_floor policy: {}",
+                missing_weak_anchor_floors.join(", ")
+            )));
+        }
+        drop(missing_weak_anchor_floors);
+        #[cfg(feature = "simdsieve")]
+        let hot_pattern_slots = build_hot_pattern_slots(&detectors, &state.ac_map)?;
+        #[cfg(feature = "simdsieve")]
+        let hot_confirmed_by_pattern = {
+            let mut hot = vec![false; state.ac_map.len()];
+            for slot in &hot_pattern_slots {
+                hot[slot.ac_map_index] = true;
+            }
+            hot
+        };
+        #[cfg(not(feature = "simdsieve"))]
+        let hot_confirmed_by_pattern = vec![false; state.ac_map.len()];
+        drop(detectors);
         let ac = if matches!(
             gpu_policy,
             GpuInitPolicy::SelectedBackend(crate::hw_probe::ScanBackend::SimdCpu)
@@ -886,7 +925,6 @@ impl CompiledScanner {
                         program,
                         &state.ac_map,
                         std::sync::Arc::clone(&ac_literals),
-                        &detectors,
                     )
                     .map_err(crate::error::ScanError::Config)?,
                 ),
@@ -907,47 +945,6 @@ impl CompiledScanner {
         // allocation before the retained scanner graph is finalized.
         drop(std::mem::take(&mut state.ac_literals));
 
-        // Pre-resolve the detector-wide weak-anchor base once. The per-pattern
-        // bit is compiled beside its regex, so mixed detectors protect only the
-        // patterns that declare the policy. Built before `detectors` is moved.
-        let missing_weak_anchor_floors = detectors
-            .iter()
-            .enumerate()
-            .filter_map(|(index, detector)| {
-                let has_weak_pattern = match detector_plans.get(index).weak_anchor_base {
-                    crate::suppression::WeakAnchorBase::Always => true,
-                    crate::suppression::WeakAnchorBase::PerPattern => {
-                        detector.patterns.iter().any(|pattern| pattern.weak_anchor)
-                    }
-                    crate::suppression::WeakAnchorBase::Never => false,
-                };
-                (has_weak_pattern && detector_plans.get(index).entropy_floor.is_none())
-                    .then_some(detector.id.as_str())
-            })
-            .collect::<Vec<_>>();
-        if !missing_weak_anchor_floors.is_empty() {
-            return Err(crate::error::ScanError::Config(format!(
-                "weak-anchor detectors omit detector-local entropy_high/entropy_floor policy: {}",
-                missing_weak_anchor_floors.join(", ")
-            )));
-        }
-        drop(missing_weak_anchor_floors);
-        // Resolve the detector-owned hot-prefix table once, then mark its exact
-        // confirmed delegates. Limiting suppression to the delegate is
-        // recall-safe when one detector has overlapping regexes at one offset.
-        #[cfg(feature = "simdsieve")]
-        let hot_pattern_slots = build_hot_pattern_slots(&detectors, &state.ac_map)?;
-        #[cfg(feature = "simdsieve")]
-        let hot_confirmed_by_pattern = {
-            let mut hot = vec![false; state.ac_map.len()];
-            for slot in &hot_pattern_slots {
-                hot[slot.ac_map_index] = true;
-            }
-            hot
-        };
-        #[cfg(not(feature = "simdsieve"))]
-        let hot_confirmed_by_pattern = vec![false; state.ac_map.len()];
-
         let pattern_boundary_context = derive_pattern_boundary_context(
             state
                 .ac_map
@@ -964,7 +961,7 @@ impl CompiledScanner {
         });
 
         let structural_confirmed_patterns = CsrU32::from_pairs(
-            detectors.len(),
+            detector_count,
             state
                 .ac_map
                 .iter()
@@ -977,7 +974,7 @@ impl CompiledScanner {
         );
         let structural_phase2_patterns =
             CsrU32::from_pairs(
-                detectors.len(),
+                detector_count,
                 state.phase2_patterns.iter().enumerate().filter_map(
                     |(pattern_index, (pattern, _))| {
                         pattern
@@ -987,10 +984,6 @@ impl CompiledScanner {
                 ),
             );
 
-        // Every detector-authored policy has now been lowered into compact
-        // runtime owners. The decoded schema is compiler input, not scanner
-        // health state.
-        drop(detectors);
         let gpu_matcher = OnceLock::new();
         #[cfg(feature = "gpu")]
         if let Some(matcher) = packed_gpu_matcher {
