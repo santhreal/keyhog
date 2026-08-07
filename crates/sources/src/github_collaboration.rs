@@ -222,71 +222,77 @@ impl GitHubCollaborationSource {
         chunks: &mut ChunkOutput<'_>,
     ) -> Result<(), GitHubGap> {
         let path = format!("/repos/{}/{}/pulls", self.owner, self.repo);
-        let (pulls, page_gap): (Vec<PullRequest>, _) =
-            api.pages("pull-requests", &path, "state=all");
-        for pull in pulls {
-            let revision = revision_identity(&pull.node_id, &pull.updated_at);
-            push_text_chunk(
-                chunks,
-                seen,
-                budget,
-                "pull-requests",
-                format!("pull:{revision}"),
-                self.provenance(&format!("pulls/{}", pull.number)),
-                &revision,
-                pull.user.as_ref().map(|actor| actor.login.as_str()),
-                &pull.updated_at,
-                join_title_body(&pull.title, pull.body.as_deref()),
-            )?;
-            for (kind, endpoint) in [("comments", "issues"), ("review-comments", "pulls")] {
-                let comments_path = format!(
-                    "/repos/{}/{}/{}/{}/comments",
-                    self.owner, self.repo, endpoint, pull.number
-                );
-                let (comments, comments_gap): (Vec<Comment>, _) =
-                    api.pages("pull-requests", &comments_path, "");
-                append_comments(
-                    chunks,
-                    seen,
-                    budget,
-                    "pull-requests",
-                    &self.provenance(&format!("pulls/{}/{kind}", pull.number)),
-                    comments,
-                )?;
-                if let Some(gap) = comments_gap {
-                    return Err(gap);
+        api.pages_each(
+            "pull-requests",
+            &path,
+            "state=all",
+            |api, pulls: Vec<PullRequest>| {
+                for pull in pulls {
+                    let revision = revision_identity(&pull.node_id, &pull.updated_at);
+                    push_text_chunk(
+                        chunks,
+                        seen,
+                        budget,
+                        "pull-requests",
+                        format!("pull:{revision}"),
+                        self.provenance(&format!("pulls/{}", pull.number)),
+                        &revision,
+                        pull.user.as_ref().map(|actor| actor.login.as_str()),
+                        &pull.updated_at,
+                        join_title_body(&pull.title, pull.body.as_deref()),
+                    )?;
+                    for (kind, endpoint) in [("comments", "issues"), ("review-comments", "pulls")] {
+                        let comments_path = format!(
+                            "/repos/{}/{}/{}/{}/comments",
+                            self.owner, self.repo, endpoint, pull.number
+                        );
+                        let (comments, comments_gap): (Vec<Comment>, _) =
+                            api.pages("pull-requests", &comments_path, "");
+                        append_comments(
+                            chunks,
+                            seen,
+                            budget,
+                            "pull-requests",
+                            &self.provenance(&format!("pulls/{}/{kind}", pull.number)),
+                            comments,
+                        )?;
+                        if let Some(gap) = comments_gap {
+                            return Err(gap);
+                        }
+                    }
+                    let reviews_path = format!(
+                        "/repos/{}/{}/pulls/{}/reviews",
+                        self.owner, self.repo, pull.number
+                    );
+                    let (reviews, reviews_gap): (Vec<PullRequestReview>, _) =
+                        api.pages("pull-requests", &reviews_path, "");
+                    for review in reviews {
+                        let revision_time =
+                            review.submitted_at.as_deref().unwrap_or(&review.commit_id);
+                        let revision = revision_identity(&review.node_id, revision_time);
+                        push_text_chunk(
+                            chunks,
+                            seen,
+                            budget,
+                            "pull-requests",
+                            format!("review:{revision}"),
+                            self.provenance(&format!(
+                                "pulls/{}/reviews/{}",
+                                pull.number, review.id
+                            )),
+                            &revision,
+                            review.user.as_ref().map(|actor| actor.login.as_str()),
+                            review.submitted_at.as_deref().unwrap_or(""),
+                            review.body.unwrap_or_default(),
+                        )?;
+                    }
+                    if let Some(gap) = reviews_gap {
+                        return Err(gap);
+                    }
                 }
-            }
-            let reviews_path = format!(
-                "/repos/{}/{}/pulls/{}/reviews",
-                self.owner, self.repo, pull.number
-            );
-            let (reviews, reviews_gap): (Vec<PullRequestReview>, _) =
-                api.pages("pull-requests", &reviews_path, "");
-            for review in reviews {
-                let revision_time = review.submitted_at.as_deref().unwrap_or(&review.commit_id); // LAW10: absent optional review timestamp uses the immutable commit ID as result metadata; review content is still scanned.
-                let revision = revision_identity(&review.node_id, revision_time);
-                push_text_chunk(
-                    chunks,
-                    seen,
-                    budget,
-                    "pull-requests",
-                    format!("review:{revision}"),
-                    self.provenance(&format!("pulls/{}/reviews/{}", pull.number, review.id)),
-                    &revision,
-                    review.user.as_ref().map(|actor| actor.login.as_str()),
-                    review.submitted_at.as_deref().unwrap_or(""), // LAW10: absent optional timestamp omits date result metadata; review content is still scanned.
-                    review.body.unwrap_or_default(), // LAW10: absent optional review body means there are no review bytes to scan.
-                )?;
-            }
-            if let Some(gap) = reviews_gap {
-                return Err(gap);
-            }
-        }
-        if let Some(gap) = page_gap {
-            return Err(gap);
-        }
-        Ok(())
+                Ok(())
+            },
+        )
     }
 
     fn collect_discussions(
