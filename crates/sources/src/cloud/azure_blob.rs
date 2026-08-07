@@ -8,6 +8,7 @@ use quick_xml::Reader;
 use reqwest::blocking::Client;
 use serde::Deserialize;
 
+#[derive(Clone)]
 pub struct AzureBlobSource {
     container_url: String,
     prefix: Option<String>,
@@ -57,28 +58,36 @@ impl Source for AzureBlobSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        // Hold the scan read lease across the synchronous object listing so a
-        // counter-asserting test's exclusive scope serializes this source's skip
-        // recording (unreadable objects). A no-op in production where the gate is
-        // never armed; see `skip::gate_scan`.
-        crate::gate_scan(|| {
-            let result = crate::cloud::collect_on_blocking_thread("azure blob", || {
-                collect_azure_blob_chunks(
-                    &self.container_url,
-                    self.prefix.as_deref(),
-                    match self.max_objects {
-                        Some(max_objects) => max_objects,
-                        None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
-                    },
-                    self.limits,
-                    &self.http,
-                )
-            });
-            match result {
-                Ok(rows) => Box::new(rows.into_iter()),
-                Err(error) => Box::new(std::iter::once(Err(error))),
-            }
-        })
+        let lease = crate::acquire_scan_read_lease();
+        let source = self.clone();
+        let worker_lease = lease.clone();
+        let profile_runtime = crate::profile::current_runtime();
+        let stream = crate::cloud::CloudChunkStream::spawn(
+            "keyhog-azure-blob",
+            "azure blob",
+            worker_lease,
+            move |sender, worker_lease| {
+                let _attributed = worker_lease.enter();
+                let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
+                let result = stream_azure_blob_chunks(
+                    &source.container_url,
+                    source.prefix.as_deref(),
+                    source
+                        .max_objects
+                        .unwrap_or(source.limits.cloud_max_objects),
+                    source.limits,
+                    &source.http,
+                    |row| sender.send(row).is_ok(),
+                );
+                if let Err(error) = result {
+                    let _ = sender.send(Err(error));
+                }
+            },
+        );
+        match stream {
+            Ok(stream) => crate::attach_scan_lease(lease, Box::new(stream)),
+            Err(error) => crate::attach_scan_lease(lease, Box::new(std::iter::once(Err(error)))),
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -126,43 +135,40 @@ struct AzureBlobProperties {
     content_type: Option<String>,
 }
 
-fn collect_azure_blob_chunks(
+fn stream_azure_blob_chunks(
     container_url: &str,
     prefix: Option<&str>,
     max_objects: usize,
     limits: crate::SourceLimits,
     http: &crate::http::HttpClientConfig,
-) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
+    mut emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<(), SourceError> {
     let (container_url, screened) =
         validate_container_url(container_url, http.allow_private_endpoint)?;
-    // Container acquisition: URL validation and client build.
     let _acquire = crate::profile::acquire_span();
     let client = crate::cloud::blocking_client("Azure Blob", http, screened.as_ref())?;
     drop(_acquire);
-    let mut chunks = Vec::new();
     let mut coverage = crate::cloud::CloudListingCoverage::new("azure_blob", "blobs", max_objects);
-    let fetch_pool = crate::cloud::object_fetch_pool("azure_blob")?;
-
-    // First listing page is fetched inline; every later page prefetches during
-    // the previous page's download batch (`ListingPrefetch`), hiding listing
-    // latency behind the downloads. Page contents, marker threading, and
-    // coverage accounting are identical to the serial loop.
+    let mut control_rows = Vec::new();
     let mut listing = {
         let _page = crate::profile::walk_span();
-        fetch_azure_blob_listing_page(&client, &container_url, prefix, None, limits.web_response_bytes)?
+        fetch_azure_blob_listing_page(
+            &client,
+            &container_url,
+            prefix,
+            None,
+            limits.web_response_bytes,
+        )?
     };
 
     loop {
-        if !coverage.has_capacity_or_record(&mut chunks) {
+        if !coverage.has_capacity_or_record(&mut control_rows) {
+            emit_azure_control_rows(&mut control_rows, &mut emit);
             break;
         }
 
         let next_marker = listing.next_marker().map(str::to_string);
         let (page, reached_limit) = coverage.take_page(listing.blobs.blob);
-        // The marker is decided BEFORE the download batch (from the listing
-        // already in hand) so the next listing page can overlap the
-        // downloads; the max_objects gap still records at the exact serial
-        // position (after this page's chunks are pushed).
         let prefetch = match &next_marker {
             Some(marker) if !reached_limit && coverage.has_listed_capacity() => {
                 let client = client.clone();
@@ -183,24 +189,76 @@ fn collect_azure_blob_chunks(
             _ => crate::cloud::ListingPrefetch::none(),
         };
 
-        // Blob downloads: one read span per page batch.
-        let page_chunks = {
+        let accepted = {
             let _download = crate::profile::read_span();
-            download_azure_blob_listing_page(
-                &fetch_pool,
+            crate::cloud::stream_ordered_fetch(
                 &page,
-                &client,
-                &container_url,
-                limits.azure_blob_bytes,
+                crate::cloud::OBJECT_FETCH_THREADS,
+                |blob| {
+                    let listed_size = blob.properties.content_length;
+                    if listed_size == Some(0) {
+                        return Ok(None);
+                    }
+                    let display_path = azure_blob_display_path(&container_url, &blob.name)?;
+                    if !crate::cloud::is_probably_text_object_key(&blob.name) {
+                        tracing::warn!(
+                            key = %blob.name,
+                            "skipping Azure blob: extension is treated as binary/container content; NOT scanned as text",
+                        );
+                        return Err(crate::cloud::record_unscanned_object_skip(
+                            crate::SourceSkipEvent::Binary,
+                            "Azure blob",
+                            "blob",
+                            &display_path,
+                            "extension is treated as binary/container content",
+                        ));
+                    }
+                    if let Some(content_type) = blob.properties.content_type.as_deref() {
+                        if crate::cloud::is_binary_content_type(content_type) {
+                            tracing::warn!(
+                                key = %blob.name,
+                                content_type,
+                                "skipping Azure blob: listing reports binary content-type; NOT scanned as text",
+                            );
+                            return Err(crate::cloud::record_unscanned_object_skip(
+                                crate::SourceSkipEvent::Binary,
+                                "Azure blob",
+                                "blob",
+                                &display_path,
+                                format!("listing reports binary content-type {content_type:?}"),
+                            ));
+                        }
+                    }
+                    fetch_azure_blob_chunk(
+                        &client,
+                        &container_url,
+                        &blob.name,
+                        listed_size,
+                        limits.azure_blob_bytes,
+                    )
+                },
+                |result| match result {
+                    Ok(Some(chunk)) => {
+                        crate::profile::add_input_units(1);
+                        crate::profile::add_input_bytes(chunk.data.len() as u64);
+                        emit(Ok(chunk))
+                    }
+                    Ok(None) => true,
+                    Err(error) => emit(Err(error)),
+                },
             )
         };
-        crate::cloud::push_page_chunks(&mut chunks, page_chunks);
+        if !accepted {
+            let _ = prefetch.join();
+            return Ok(());
+        }
 
         if reached_limit {
             coverage.record_truncated(
-                &mut chunks,
+                &mut control_rows,
                 "max_objects limit reached within the current Azure Blob listing page",
             );
+            emit_azure_control_rows(&mut control_rows, &mut emit);
             break;
         }
         if next_marker.is_none() {
@@ -208,16 +266,27 @@ fn collect_azure_blob_chunks(
         }
         match prefetch.join() {
             Some(next_listing) => listing = next_listing?,
-            // Capacity exactly exhausted by this page: the serial loop-top
-            // check recorded the max_objects gap here without fetching again.
             None => {
-                coverage.has_capacity_or_record(&mut chunks);
+                coverage.has_capacity_or_record(&mut control_rows);
+                emit_azure_control_rows(&mut control_rows, &mut emit);
                 break;
             }
         }
     }
 
-    Ok(chunks)
+    Ok(())
+}
+
+fn emit_azure_control_rows(
+    rows: &mut Vec<Result<Chunk, SourceError>>,
+    emit: &mut impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    for row in rows.drain(..) {
+        if !emit(row) {
+            return false;
+        }
+    }
+    true
 }
 
 fn fetch_azure_blob_listing_page(
@@ -263,58 +332,6 @@ fn fetch_azure_blob_listing_page(
             "blobs",
             format!("failed to parse listing response: {error}"),
         )
-    })
-}
-
-fn download_azure_blob_listing_page(
-    fetch_pool: &rayon::ThreadPool,
-    page: &[AzureListedBlob],
-    client: &Client,
-    container_url: &reqwest::Url,
-    max_blob_bytes: u64,
-) -> Vec<Result<Option<Chunk>, SourceError>> {
-    use rayon::prelude::*;
-
-    fetch_pool.install(|| {
-        page.par_iter()
-            .map(|blob| -> Result<Option<Chunk>, SourceError> {
-                let listed_size = blob.properties.content_length;
-                if listed_size == Some(0) {
-                    return Ok(None);
-                }
-                let display_path = azure_blob_display_path(container_url, &blob.name)?;
-                if !crate::cloud::is_probably_text_object_key(&blob.name) {
-                    tracing::warn!(
-                        key = %blob.name,
-                        "skipping Azure blob: extension is treated as binary/container content; NOT scanned as text",
-                    );
-                    return Err(crate::cloud::record_unscanned_object_skip(
-                        crate::SourceSkipEvent::Binary,
-                        "Azure blob",
-                        "blob",
-                        &display_path,
-                        "extension is treated as binary/container content",
-                    ));
-                }
-                if let Some(content_type) = blob.properties.content_type.as_deref() {
-                    if crate::cloud::is_binary_content_type(content_type) {
-                        tracing::warn!(
-                            key = %blob.name,
-                            content_type,
-                            "skipping Azure blob: listing reports binary content-type; NOT scanned as text",
-                        );
-                        return Err(crate::cloud::record_unscanned_object_skip(
-                            crate::SourceSkipEvent::Binary,
-                            "Azure blob",
-                            "blob",
-                            &display_path,
-                            format!("listing reports binary content-type {content_type:?}"),
-                        ));
-                    }
-                }
-                fetch_azure_blob_chunk(client, container_url, &blob.name, listed_size, max_blob_bytes)
-            })
-            .collect()
     })
 }
 
@@ -467,7 +484,13 @@ fn azure_blob_display_path(
 fn validate_container_url(
     raw: &str,
     allow_private: bool,
-) -> Result<(reqwest::Url, Option<crate::endpoint_screen::ScreenedEndpoint>), SourceError> {
+) -> Result<
+    (
+        reqwest::Url,
+        Option<crate::endpoint_screen::ScreenedEndpoint>,
+    ),
+    SourceError,
+> {
     let (parsed, screened) =
         crate::cloud::parse_http_endpoint(raw, "Azure Blob container URL", allow_private)?;
     if parsed.path().trim_matches('/').is_empty() {
