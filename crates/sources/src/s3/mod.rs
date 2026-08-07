@@ -115,7 +115,7 @@ impl Source for S3Source {
         let source = self.clone();
         let worker_lease = lease.clone();
         let profile_runtime = crate::profile::current_runtime();
-        let stream = crate::cloud::CloudChunkStream::spawn(
+        let stream = crate::parallel_fetch::RemoteChunkStream::spawn(
             "keyhog-s3",
             "s3",
             worker_lease,
@@ -132,6 +132,7 @@ impl Source for S3Source {
                     source.limits,
                     &source.http,
                     source.allow_credential_forward,
+                    &worker_lease,
                     |row| sender.send(row).is_ok(),
                 );
                 if let Err(error) = result {
@@ -158,6 +159,7 @@ fn stream_s3_chunks(
     limits: crate::SourceLimits,
     http: &crate::http::HttpClientConfig,
     allow_credential_forward: bool,
+    scan_lease: &crate::skip::ScanReadLease,
     mut emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> Result<(), SourceError> {
     let bucket = validate_bucket_name(bucket)?;
@@ -217,9 +219,10 @@ fn stream_s3_chunks(
 
         let accepted = {
             let _download = crate::profile::read_span();
-            crate::cloud::stream_ordered_fetch(
+            crate::parallel_fetch::stream_ordered_fetch(
                 &page,
                 crate::cloud::OBJECT_FETCH_THREADS,
+                scan_lease,
                 |object| {
                     match object.size {
                         Some(0) => return Ok(None),

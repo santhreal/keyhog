@@ -62,7 +62,7 @@ impl Source for AzureBlobSource {
         let source = self.clone();
         let worker_lease = lease.clone();
         let profile_runtime = crate::profile::current_runtime();
-        let stream = crate::cloud::CloudChunkStream::spawn(
+        let stream = crate::parallel_fetch::RemoteChunkStream::spawn(
             "keyhog-azure-blob",
             "azure blob",
             worker_lease,
@@ -77,6 +77,7 @@ impl Source for AzureBlobSource {
                         .unwrap_or(source.limits.cloud_max_objects),
                     source.limits,
                     &source.http,
+                    &worker_lease,
                     |row| sender.send(row).is_ok(),
                 );
                 if let Err(error) = result {
@@ -141,6 +142,7 @@ fn stream_azure_blob_chunks(
     max_objects: usize,
     limits: crate::SourceLimits,
     http: &crate::http::HttpClientConfig,
+    scan_lease: &crate::skip::ScanReadLease,
     mut emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> Result<(), SourceError> {
     let (container_url, screened) =
@@ -191,9 +193,10 @@ fn stream_azure_blob_chunks(
 
         let accepted = {
             let _download = crate::profile::read_span();
-            crate::cloud::stream_ordered_fetch(
+            crate::parallel_fetch::stream_ordered_fetch(
                 &page,
                 crate::cloud::OBJECT_FETCH_THREADS,
+                scan_lease,
                 |blob| {
                     let listed_size = blob.properties.content_length;
                     if listed_size == Some(0) {

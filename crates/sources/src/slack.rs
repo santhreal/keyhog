@@ -8,8 +8,9 @@ use reqwest::blocking::{Client, Response};
 use serde::{de::DeserializeOwned, Deserialize};
 
 /// Scan Slack messages via the `conversations.history` API.
+#[derive(Clone)]
 pub struct SlackSource {
-    token: String,
+    token: std::sync::Arc<str>,
     lookback_messages: usize,
     endpoint: String,
     limits: crate::SourceLimits,
@@ -25,7 +26,7 @@ impl SlackSource {
     /// Create a new Slack source.
     pub fn new(token: impl Into<String>) -> Self {
         Self {
-            token: token.into(),
+            token: std::sync::Arc::from(token.into()),
             lookback_messages: 1000,
             endpoint: "https://slack.com/api".into(),
             limits: crate::SourceLimits::default(),
@@ -65,35 +66,27 @@ impl Source for SlackSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        // `reqwest::blocking` must run off the CLI's `#[tokio::main]` thread
-        // (dropping its internal runtime in an async context aborts the
-        // process). Collection is eager, so run it on a scoped std thread with
-        // no ambient tokio runtime.
-        // Hold the scan read lease across the synchronous fetch so a
-        // counter-asserting test's exclusive scope serializes this source's skip
-        // recording (transport errors). A no-op in production where the gate is
-        // never armed; see `skip::gate_scan`.
-        crate::gate_scan(|| {
-            // Propagate the active profiling runtime onto the fetch thread so
-            // Slack API spans and counters record there.
-            let profile_runtime = crate::profile::current_runtime();
-            let result = std::thread::scope(|s| match s
-                .spawn(move || {
-                    let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
-                    self.collect_chunks()
-                })
-                .join()
-            {
-                Ok(result) => result,
-                Err(_panic) => Err(SourceError::Other(
-                    "slack fetch thread panicked".to_string(),
-                )),
-            });
-            match result {
-                Ok(chunks) => Box::new(chunks.into_iter()),
-                Err(e) => Box::new(std::iter::once(Err(e))),
-            }
-        })
+        let lease = crate::acquire_scan_read_lease();
+        let source = self.clone();
+        let worker_lease = lease.clone();
+        let profile_runtime = crate::profile::current_runtime();
+        let stream = crate::parallel_fetch::RemoteChunkStream::spawn(
+            "keyhog-slack",
+            "slack",
+            worker_lease,
+            move |sender, worker_lease| {
+                let _attributed = worker_lease.enter();
+                let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
+                let result = source.stream_chunks(&worker_lease, |row| sender.send(row).is_ok());
+                if let Err(error) = result {
+                    let _ = sender.send(Err(error));
+                }
+            },
+        );
+        match stream {
+            Ok(stream) => crate::attach_scan_lease(lease, Box::new(stream)),
+            Err(error) => crate::attach_scan_lease(lease, Box::new(std::iter::once(Err(error)))),
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -336,72 +329,69 @@ pub(crate) fn history_next_cursor_for_test(
 }
 
 impl SlackSource {
-    fn collect_chunks(&self) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
+    fn stream_chunks(
+        &self,
+        scan_lease: &crate::skip::ScanReadLease,
+        mut emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
+    ) -> Result<(), SourceError> {
         if self.lookback_messages == 0 {
-            return Ok(Vec::new());
+            return Ok(());
         }
         let http = if self.http.timeout.is_none() {
-            let mut h = self.http.clone();
-            h.timeout = Some(crate::timeouts::HTTP_REQUEST);
-            h
+            let mut http = self.http.clone();
+            http.timeout = Some(crate::timeouts::HTTP_REQUEST);
+            http
         } else {
             self.http.clone()
         };
         let client = crate::http::blocking_client_builder(&http)
             .map_err(SourceError::Other)?
             .build()
-            .map_err(|e| SourceError::Other(format!("failed to build Slack client: {e}")))?;
+            .map_err(|error| {
+                SourceError::Other(format!("failed to build Slack client: {error}"))
+            })?;
 
         let source_truncated_reported = SourceTruncatedReported::new(false);
-        // Workspace acquisition: client build plus channel enumeration.
         let _acquire = crate::profile::acquire_span();
         let channel_list = self.list_channels(&client, &source_truncated_reported);
         drop(_acquire);
 
-        // Concurrent per-channel history fetch. Slack's tier-2 rate limit is
-        // 20+ requests/minute; cap parallelism at 8 to leave headroom for the
-        // burst budget. Was sequential - see the internal design notes.
-        use rayon::prelude::*;
-        let pool = crate::parallel_fetch::bounded_fetch_pool(
-            "slack",
-            crate::parallel_fetch::REMOTE_API_FETCH_THREADS,
-        )?;
-        let per_channel: Vec<Vec<Result<Chunk, SourceError>>> = {
-            // Per-channel history fetches are the message read boundary; the
-            // span covers the parallel batch on the calling thread.
+        let accepted = {
             let _history_read = crate::profile::read_span();
-            pool.install(|| {
-            channel_list
-                .channels
-                .par_iter()
-                .map(|channel| -> Vec<Result<Chunk, SourceError>> {
+            crate::parallel_fetch::stream_ordered_fetch(
+                &channel_list.channels,
+                crate::parallel_fetch::REMOTE_API_FETCH_THREADS,
+                scan_lease,
+                |channel| {
                     let history =
                         self.fetch_history(&client, &channel.id, &source_truncated_reported);
-                    let mut rows: Vec<Result<Chunk, SourceError>> =
-                        slack_channel_chunks(channel, history.messages)
-                            .into_iter()
-                            .map(Ok)
-                            .collect();
+                    let mut rows = slack_channel_chunks(channel, history.messages)
+                        .into_iter()
+                        .map(Ok)
+                        .collect::<Vec<Result<Chunk, SourceError>>>();
                     if let Some(error) = history.error {
                         rows.push(Err(error));
                     }
                     rows
-                })
-                .collect()
-            })
+                },
+                |rows| {
+                    for row in rows {
+                        crate::profile::record_emitted_chunk(&row);
+                        if !emit(row) {
+                            return false;
+                        }
+                    }
+                    true
+                },
+            )
         };
-
-        let mut chunks = Vec::new();
-        for channel_chunks in per_channel {
-            for row in &channel_chunks {
-                crate::profile::record_emitted_chunk(row);
-            }
-            chunks.extend(channel_chunks);
+        if !accepted {
+            return Ok(());
         }
         if let Some(error) = channel_list.error {
-            chunks.push(Err(error));
+            emit(Err(error));
         }
-        Ok(chunks)
+        Ok(())
     }
 
     fn api_url(&self, method: &str) -> String {
@@ -420,7 +410,7 @@ impl SlackSource {
             let _page = crate::profile::walk_span();
             let mut request = client
                 .get(self.api_url(CONVERSATIONS_LIST))
-                .bearer_auth(&self.token)
+                .bearer_auth(self.token.as_ref())
                 .query(&[
                     ("types", "public_channel,private_channel"),
                     ("limit", "1000"),
@@ -492,7 +482,7 @@ impl SlackSource {
             let limit = remaining.min(SLACK_HISTORY_PAGE_LIMIT).to_string();
             let mut request = client
                 .get(self.api_url(CONVERSATIONS_HISTORY))
-                .bearer_auth(&self.token)
+                .bearer_auth(self.token.as_ref())
                 .query(&[("channel", channel_id), ("limit", &limit)]);
             if let Some(cursor) = cursor.as_deref() {
                 request = request.query(&[("cursor", cursor)]);
