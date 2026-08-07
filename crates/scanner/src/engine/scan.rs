@@ -90,7 +90,8 @@ impl CompiledScanner {
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
         self.scan_inner_with_admission_hints(
-            chunk, backend, deadline, false, false, false, false, None, None, None, None, route,
+            chunk, backend, deadline, false, false, None, false, false, None, None, None, None,
+            route,
         )
     }
 
@@ -101,6 +102,7 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         normalization_passthrough: bool,
         multiline_absence: bool,
+        line_context_index: Option<&std::sync::Arc<crate::context::LineContextIndex>>,
         confirmed_patterns_absence: bool,
         entropy_absence: bool,
         cpu_trigger_hints: Option<&[u64]>,
@@ -124,6 +126,7 @@ impl CompiledScanner {
             chunk,
             normalization_passthrough,
             multiline_absence,
+            line_context_index,
         );
         if crate::deadline::expired(deadline) {
             return Ok(Vec::new());

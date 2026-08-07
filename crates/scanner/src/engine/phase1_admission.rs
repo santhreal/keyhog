@@ -3,6 +3,7 @@
 use super::{CompiledScanner, BIGRAM_BLOOM_MIN_CHUNK_BYTES};
 use keyhog_core::{Chunk, SensitiveString};
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 /// Route-neutral admission state used to classify workload before a backend is materialized.
 pub(crate) struct RouteClassificationPlan {
@@ -76,6 +77,7 @@ pub struct Phase1AdmissionPlan {
     confirmed_patterns_absence: Vec<bool>,
     entropy_absence: Vec<bool>,
     multiline_absence: Vec<bool>,
+    line_context_indices: Vec<Option<Arc<crate::context::LineContextIndex>>>,
     entropy_config_digest: [u8; 32],
     #[cfg(debug_assertions)]
     unique_payloads: usize,
@@ -96,6 +98,7 @@ struct ReusablePhase1Evidence {
     confirmed_patterns_absence: bool,
     entropy_absence: bool,
     multiline_absence: bool,
+    line_context_index: Option<Arc<crate::context::LineContextIndex>>,
 }
 
 #[derive(Debug)]
@@ -106,6 +109,17 @@ struct CachedReusablePhase1Evidence {
     entropy_config_digest: [u8; 32],
     payload: SensitiveString,
     evidence: ReusablePhase1Evidence,
+}
+
+impl CachedReusablePhase1Evidence {
+    fn resident_bytes(&self) -> usize {
+        self.payload.len().saturating_add(
+            self.evidence
+                .line_context_index
+                .as_ref()
+                .map_or(0, |index| index.storage_bytes()),
+        )
+    }
 }
 
 #[derive(Debug, Default)]
@@ -154,8 +168,13 @@ impl ReusablePhase1EvidenceCache {
         payload: SensitiveString,
         evidence: ReusablePhase1Evidence,
     ) {
-        let payload_len = payload.len();
-        if payload_len > REUSABLE_EVIDENCE_MAX_BYTES {
+        let resident_bytes = payload.len().saturating_add(
+            evidence
+                .line_context_index
+                .as_ref()
+                .map_or(0, |index| index.storage_bytes()),
+        );
+        if resident_bytes > REUSABLE_EVIDENCE_MAX_BYTES {
             return;
         }
         if let Some(position) = self.entries.iter().position(|entry| {
@@ -173,14 +192,14 @@ impl ReusablePhase1EvidenceCache {
             return;
         }
         while self.entries.len() >= REUSABLE_EVIDENCE_MAX_ENTRIES
-            || self.resident_bytes.saturating_add(payload_len) > REUSABLE_EVIDENCE_MAX_BYTES
+            || self.resident_bytes.saturating_add(resident_bytes) > REUSABLE_EVIDENCE_MAX_BYTES
         {
             let Some(evicted) = self.entries.pop_front() else {
                 break;
             };
-            self.resident_bytes = self.resident_bytes.saturating_sub(evicted.payload.len());
+            self.resident_bytes = self.resident_bytes.saturating_sub(evicted.resident_bytes());
         }
-        self.resident_bytes = self.resident_bytes.saturating_add(payload_len);
+        self.resident_bytes = self.resident_bytes.saturating_add(resident_bytes);
         self.entries.push_back(CachedReusablePhase1Evidence {
             fingerprint,
             bypass_bigram,
@@ -269,6 +288,16 @@ impl Phase1AdmissionPlan {
         self.multiline_absence.get(row).copied()
     }
 
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn line_context_index_for_diagnostics(&self, index: usize) -> Option<bool> {
+        let row = *self.phase2_keyword_hint_rows.get(index)?;
+        self.line_context_indices
+            .get(row)
+            .map(|index| index.is_some())
+    }
+
     #[inline]
     pub(crate) fn admission_for(&self, index: usize) -> Option<Phase1Admission> {
         self.admissions.get(index).copied()
@@ -342,6 +371,15 @@ impl Phase1AdmissionPlan {
         let row = *self.phase2_keyword_hint_rows.get(index)?;
         self.multiline_absence.get(row).copied()
     }
+
+    #[inline]
+    pub(crate) fn line_context_index_for(
+        &self,
+        index: usize,
+    ) -> Option<&Arc<crate::context::LineContextIndex>> {
+        let row = *self.phase2_keyword_hint_rows.get(index)?;
+        self.line_context_indices.get(row)?.as_ref()
+    }
     #[inline]
     pub(crate) fn validate_chunks(
         &self,
@@ -405,6 +443,8 @@ impl Phase1AdmissionPlan {
         let entropy_absence_valid = self.entropy_absence.len() == self.phase2_keyword_hints.len();
         let multiline_absence_valid =
             self.multiline_absence.len() == self.phase2_keyword_hints.len();
+        let line_context_indices_valid =
+            self.line_context_indices.len() == self.phase2_keyword_hints.len();
         if self.admissions.len() != self.chunk_shapes.len()
             || summary_chunks != shape_count
             || summary_bytes != shape_bytes
@@ -417,6 +457,7 @@ impl Phase1AdmissionPlan {
             || !confirmed_patterns_absence_valid
             || !entropy_absence_valid
             || !multiline_absence_valid
+            || !line_context_indices_valid
             || self
                 .chunk_shapes
                 .iter()
@@ -687,13 +728,10 @@ impl CompiledScanner {
     }
 
     #[cfg(feature = "entropy")]
-    fn entropy_absent(&self, data: &str) -> bool {
+    fn entropy_absent(&self, data: &str, line_index: &crate::context::LineContextIndex) -> bool {
         if !self.config.entropy_enabled {
             return true;
         }
-        let Ok(line_index) = crate::context::LineContextIndex::try_new(data) else {
-            return false;
-        };
         let keyword_matcher = self
             .assignment_keyword_matcher
             .lock()
@@ -738,7 +776,7 @@ impl CompiledScanner {
     }
 
     #[cfg(not(feature = "entropy"))]
-    fn entropy_absent(&self, _data: &str) -> bool {
+    fn entropy_absent(&self, _data: &str, _line_index: &crate::context::LineContextIndex) -> bool {
         true
     }
 
@@ -806,6 +844,18 @@ impl CompiledScanner {
         let confirmed_patterns_absence = cpu_trigger_hints
             .as_deref()
             .is_some_and(|triggers| self.confirmed_patterns_absent(&chunk.data, triggers));
+        let normalization_passthrough =
+            classify_reusable_evidence && self.normalization_passthrough(&chunk.data);
+        let built_line_context_index = classify_reusable_evidence
+            .then(|| crate::context::LineContextIndex::try_new(&chunk.data).ok())
+            .flatten()
+            .map(Arc::new);
+        let entropy_absence = built_line_context_index
+            .as_deref()
+            .is_some_and(|index| self.entropy_absent(&chunk.data, index));
+        let line_context_index = normalization_passthrough
+            .then(|| built_line_context_index)
+            .flatten();
         let evidence = ReusablePhase1Evidence {
             admission,
             keyword_trigger_count,
@@ -814,11 +864,11 @@ impl CompiledScanner {
             phase2_always_active_absence: classify_reusable_evidence
                 && self.phase2_always_active_absence(&chunk.data),
             cpu_trigger_hints,
-            normalization_passthrough: classify_reusable_evidence
-                && self.normalization_passthrough(&chunk.data),
+            normalization_passthrough,
             confirmed_patterns_absence,
-            entropy_absence: classify_reusable_evidence && self.entropy_absent(&chunk.data),
+            entropy_absence,
             multiline_absence: classify_reusable_evidence && self.multiline_absent(&chunk.data),
+            line_context_index,
         };
         if let Some(cache) = reusable_cache.as_mut() {
             cache.insert(
@@ -944,6 +994,7 @@ impl CompiledScanner {
         let mut confirmed_patterns_absence = Vec::with_capacity(classified.len());
         let mut entropy_absence = Vec::with_capacity(classified.len());
         let mut multiline_absence = Vec::with_capacity(classified.len());
+        let mut line_context_indices = Vec::with_capacity(classified.len());
         for evidence in classified {
             phase2_keyword_hints.push(evidence.keyword_hints);
             generic_keyword_positions.push(evidence.generic_positions);
@@ -953,6 +1004,7 @@ impl CompiledScanner {
             confirmed_patterns_absence.push(evidence.confirmed_patterns_absence);
             entropy_absence.push(evidence.entropy_absence);
             multiline_absence.push(evidence.multiline_absence);
+            line_context_indices.push(evidence.line_context_index);
         }
         Phase1AdmissionPlan {
             admissions,
@@ -970,6 +1022,7 @@ impl CompiledScanner {
             confirmed_patterns_absence,
             entropy_absence,
             multiline_absence,
+            line_context_indices,
             entropy_config_digest,
             #[cfg(debug_assertions)]
             unique_payloads: representatives.len(),

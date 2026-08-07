@@ -92,6 +92,9 @@ impl CompiledScanner {
                                 plan.multiline_absence_for(index, entropy_config_digest)
                             })
                             .unwrap_or(false);
+                    let line_context_index = normalization_passthrough
+                        .then(|| admission_plan.and_then(|plan| plan.line_context_index_for(index)))
+                        .flatten();
                     let phase2_keyword_hints =
                         admission_plan.and_then(|plan| plan.phase2_keyword_hints_for(index));
                     let generic_keyword_positions =
@@ -116,6 +119,7 @@ impl CompiledScanner {
                         admission,
                         normalization_passthrough,
                         multiline_absence,
+                        line_context_index,
                         confirmed_patterns_absence,
                         entropy_absence,
                         cpu_trigger_hints,
@@ -154,15 +158,16 @@ impl CompiledScanner {
         Ok(results)
     }
 
-    pub(crate) fn prepare_chunk<'a>(&self, chunk: &'a Chunk) -> PreparedChunk<'a> {
-        self.prepare_chunk_with_normalization_passthrough(chunk, false, false)
+    pub(crate) fn prepare_chunk<'a>(&'a self, chunk: &'a Chunk) -> PreparedChunk<'a> {
+        self.prepare_chunk_with_normalization_passthrough(chunk, false, false, None)
     }
 
     pub(crate) fn prepare_chunk_with_normalization_passthrough<'a>(
-        &self,
+        &'a self,
         chunk: &'a Chunk,
         normalization_passthrough: bool,
         multiline_absence: bool,
+        line_context_index: Option<&std::sync::Arc<crate::context::LineContextIndex>>,
     ) -> PreparedChunk<'a> {
         let _g = super::profile::span(keyhog_profile::Stage::Preprocess);
         // Note: non-ASCII normalization used to swap `chunk` to an
@@ -274,10 +279,20 @@ impl CompiledScanner {
             ScannerPreprocessedText::passthrough(data_to_pp)
         };
 
+        let line_index = line_context_index
+            .filter(|_| {
+                preprocessed.text.as_ptr() == chunk.data.as_ptr()
+                    && preprocessed.text.len() == chunk.data.len()
+            })
+            .map_or_else(std::sync::OnceLock::new, |index| {
+                std::sync::OnceLock::from(std::sync::Arc::clone(index))
+            });
         PreparedChunk {
             chunk,
             preprocessed,
-            line_index: std::sync::OnceLock::new(),
+            line_index,
+            #[cfg(debug_assertions)]
+            line_index_scanned_bytes: Some(&self.line_index_scanned_bytes),
         }
     }
 
@@ -293,6 +308,21 @@ impl CompiledScanner {
     #[must_use]
     pub fn normalization_scanned_bytes_for_diagnostics(&self) -> u64 {
         self.normalization_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_line_index_scanned_bytes_for_diagnostics(&self) {
+        self.line_index_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn line_index_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.line_index_scanned_bytes
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 

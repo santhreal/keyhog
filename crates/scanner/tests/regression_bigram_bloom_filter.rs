@@ -394,6 +394,11 @@ fn repeated_payloads_share_generic_keyword_positions() {
         Some(true),
         "repeated clean fixture must establish multiline-admission absence"
     );
+    assert_eq!(
+        ordinary_plan.line_context_index_for_diagnostics(0),
+        Some(true),
+        "repeated passthrough fixture must persist one reusable line index"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
@@ -402,6 +407,7 @@ fn repeated_payloads_share_generic_keyword_positions() {
     scanner.reset_confirmed_pattern_scanned_bytes_for_diagnostics();
     scanner.reset_entropy_scanned_bytes_for_diagnostics();
     scanner.reset_multiline_admission_scanned_bytes_for_diagnostics();
+    scanner.reset_line_index_scanned_bytes_for_diagnostics();
     let planned_ordinary = scanner
         .scan_coalesced_with_backend_and_admission(
             &ordinary_chunks,
@@ -439,6 +445,11 @@ fn repeated_payloads_share_generic_keyword_positions() {
         0,
         "planned scan must consume multiline absence without rescanning bytes"
     );
+    assert_eq!(
+        scanner.line_index_scanned_bytes_for_diagnostics(),
+        0,
+        "planned scan must consume the shared line index without rebuilding it"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
@@ -447,6 +458,7 @@ fn repeated_payloads_share_generic_keyword_positions() {
     scanner.reset_confirmed_pattern_scanned_bytes_for_diagnostics();
     scanner.reset_entropy_scanned_bytes_for_diagnostics();
     scanner.reset_multiline_admission_scanned_bytes_for_diagnostics();
+    scanner.reset_line_index_scanned_bytes_for_diagnostics();
     let direct_ordinary = scanner
         .scan_coalesced_with_backend(&ordinary_chunks, ScanBackend::CpuFallback)
         .expect("direct ordinary scan");
@@ -473,6 +485,10 @@ fn repeated_payloads_share_generic_keyword_positions() {
     assert!(
         scanner.multiline_admission_scanned_bytes_for_diagnostics() > 0,
         "direct scan must establish the multiline-admission byte control"
+    );
+    assert!(
+        scanner.line_index_scanned_bytes_for_diagnostics() > 0,
+        "direct scan must establish the line-index byte control"
     );
     assert_eq!(planned_ordinary, direct_ordinary);
     assert!(planned_ordinary.iter().all(Vec::is_empty));

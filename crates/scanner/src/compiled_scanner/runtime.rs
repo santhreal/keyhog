@@ -1005,6 +1005,7 @@ impl CompiledScanner {
             admission,
             false,
             false,
+            None,
             false,
             false,
             None,
@@ -1023,6 +1024,7 @@ impl CompiledScanner {
         admission: Option<crate::engine::Phase1Admission>,
         normalization_passthrough: bool,
         multiline_absence: bool,
+        line_context_index: Option<&std::sync::Arc<crate::context::LineContextIndex>>,
         confirmed_patterns_absence: bool,
         entropy_absence: bool,
         cpu_trigger_hints: Option<&[u64]>,
@@ -1054,6 +1056,7 @@ impl CompiledScanner {
                     chunk,
                     normalization_passthrough,
                     multiline_absence,
+                    line_context_index,
                 );
                 let mut matches = self.scan_prepared_with_triggered(
                     prepared,
@@ -1108,6 +1111,7 @@ impl CompiledScanner {
                 deadline,
                 normalization_passthrough,
                 multiline_absence,
+                line_context_index,
                 confirmed_patterns_absence,
                 entropy_absence,
                 cpu_trigger_hints,
