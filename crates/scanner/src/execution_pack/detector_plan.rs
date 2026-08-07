@@ -96,19 +96,20 @@ pub(crate) struct DetectorPlanRecord {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct DetectorPlanPreludeRecord {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    pub(crate) service: String,
-    pub(crate) companion_names: Vec<String>,
-    pub(crate) entropy_fallback: Option<DetectorPlanPreludeEntropyFallback>,
+pub(crate) struct DetectorPlanPreludeRecord<'a> {
+    pub(crate) id: &'a str,
+    pub(crate) name: &'a str,
+    pub(crate) service: &'a str,
+    pub(crate) companion_names: Vec<&'a str>,
+    #[serde(borrow)]
+    pub(crate) entropy_fallback: Option<DetectorPlanPreludeEntropyFallback<'a>>,
 }
 
 #[derive(Deserialize)]
-pub(crate) struct DetectorPlanPreludeEntropyFallback {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    pub(crate) service: String,
+pub(crate) struct DetectorPlanPreludeEntropyFallback<'a> {
+    pub(crate) id: &'a str,
+    pub(crate) name: &'a str,
+    pub(crate) service: &'a str,
 }
 
 impl DetectorPlanRecord {
@@ -512,10 +513,13 @@ impl CompiledDetectorPlanSection {
         mut visit: F,
     ) -> Result<HydratedDetectorPlanHeader, ExecutionPackError>
     where
-        F: FnMut(usize, DetectorPlanPreludeRecord) -> Result<Arc<str>, ExecutionPackError>,
+        F: for<'row> FnMut(
+            usize,
+            DetectorPlanPreludeRecord<'row>,
+        ) -> Result<Arc<str>, ExecutionPackError>,
     {
         Self::stream_payloads(bytes, expected_detector_ir_digest, |index, payload| {
-            let record: DetectorPlanPreludeRecord =
+            let record: DetectorPlanPreludeRecord<'_> =
                 serde_json::from_slice(payload).map_err(|error| {
                     ExecutionPackError::InvalidPack(format!(
                         "detector-plan prelude record {index} is invalid or truncated: {error}"

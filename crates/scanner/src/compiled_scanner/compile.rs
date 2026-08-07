@@ -232,17 +232,17 @@ impl CompiledScanner {
             bytes,
             pack.identity().detector_digest,
             |_, record| {
-                let id = static_intern.intern(&record.id);
+                let id = static_intern.intern(record.id);
                 detector_ids.push(Arc::clone(&id));
-                static_intern.intern(&record.name);
-                static_intern.intern(&record.service);
+                static_intern.intern(record.name);
+                static_intern.intern(record.service);
                 if let Some(metadata) = record.entropy_fallback {
-                    static_intern.intern(&metadata.id);
-                    static_intern.intern(&metadata.name);
-                    static_intern.intern(&metadata.service);
+                    static_intern.intern(metadata.id);
+                    static_intern.intern(metadata.name);
+                    static_intern.intern(metadata.service);
                 }
                 for name in record.companion_names {
-                    static_intern.intern(&name);
+                    static_intern.intern(name);
                 }
                 Ok(id)
             },
