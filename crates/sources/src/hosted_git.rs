@@ -158,36 +158,6 @@ impl ExpectedCloneOrigin {
     }
 }
 
-pub(crate) fn scan_hosted_repos(
-    platform: &str,
-    source_type: &str,
-    namespace: Option<&str>,
-    token_username: &str,
-    token_secret: &str,
-    expected_clone_origin: &ExpectedCloneOrigin,
-    repos: &[HostedRepo],
-    limits: crate::SourceLimits,
-    respect_default_excludes: bool,
-) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
-    let mut rows = Vec::new();
-    stream_hosted_repos(
-        platform,
-        source_type,
-        namespace,
-        token_username,
-        token_secret,
-        expected_clone_origin,
-        repos,
-        limits,
-        respect_default_excludes,
-        |row| {
-            rows.push(row);
-            true
-        },
-    )?;
-    Ok(rows)
-}
-
 pub(crate) fn stream_hosted_repos(
     platform: &str,
     source_type: &str,
