@@ -147,6 +147,45 @@ fn direct_literal_enabled_and_bypass_findings_are_identical() {
     assert_eq!(enabled[1].len(), 1);
 }
 
+/// WHY: repeated payloads must share route classification work without letting a
+/// sampled-fingerprint collision reuse another payload's admission decision.
+#[test]
+fn phase1_plan_classifies_each_distinct_payload_once() {
+    const BYTES: usize = 100 * 1024;
+    const CREDENTIAL: &str = "TOKEN_abcdefghijklmnopqrstuvwx";
+    let scanner = CompiledScanner::compile(vec![detector(vec![PatternSpec {
+        regex: r"TOKEN_[A-Za-z0-9]{24}".into(),
+        ..Default::default()
+    }])])
+    .expect("compile direct detector");
+    let repeated = "T_O_K_E_N".repeat(BYTES.div_ceil(9));
+    let mut repeated = repeated[..BYTES].to_owned();
+    let mut colliding = repeated.clone();
+    colliding.replace_range(BYTES / 2..BYTES / 2 + CREDENTIAL.len(), CREDENTIAL);
+    let chunks = vec![
+        chunk("repeated-0.txt", repeated.clone()),
+        chunk("repeated-1.txt", repeated.clone()),
+        chunk("repeated-2.txt", std::mem::take(&mut repeated)),
+        chunk("distinct.txt", colliding),
+    ];
+
+    let plan = scanner.phase1_admission_plan(&chunks);
+    assert_eq!(plan.unique_payloads_for_diagnostics(), 2);
+    assert_eq!(plan.summary().bigram_rejected_chunks, 3);
+    assert_eq!(plan.summary().admitted_chunks, 1);
+    let planned = scanner
+        .scan_coalesced_with_backend_and_admission(&chunks, ScanBackend::CpuFallback, Some(&plan))
+        .expect("planned scan");
+    scanner.clear_fragment_cache();
+    let direct = scanner
+        .scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback)
+        .expect("direct scan");
+    assert_eq!(
+        planned, direct,
+        "deduplicated admission planning must preserve per-chunk findings"
+    );
+}
+
 #[test]
 fn prefixless_dynamic_pattern_stays_in_explicit_always_admit_lane() {
     let scanner = CompiledScanner::compile(vec![detector(vec![

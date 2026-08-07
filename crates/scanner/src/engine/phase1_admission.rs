@@ -3,6 +3,13 @@
 use super::{CompiledScanner, BIGRAM_BLOOM_MIN_CHUNK_BYTES};
 use keyhog_core::Chunk;
 
+/// Route-neutral admission state used to classify workload before a backend is materialized.
+pub(crate) struct RouteClassificationPlan {
+    pub(crate) alphabet_screen: Option<crate::alphabet_filter::AlphabetScreen>,
+    pub(crate) bigram_bloom: crate::bigram_bloom::BigramBloom,
+    pub(crate) phase2_keyword_ac: Option<aho_corasick::AhoCorasick>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Phase1Admission {
     AlphabetRejected,
@@ -57,6 +64,8 @@ pub struct Phase1AdmissionPlan {
     chunk_shapes: Vec<(usize, usize)>,
     summary: Phase1AdmissionSummary,
     phase2_keyword_triggers: Phase2KeywordTriggerSummary,
+    #[cfg(debug_assertions)]
+    unique_payloads: usize,
 }
 
 impl Phase1AdmissionPlan {
@@ -68,6 +77,14 @@ impl Phase1AdmissionPlan {
     #[must_use]
     pub fn phase2_keyword_triggers(&self) -> Phase2KeywordTriggerSummary {
         self.phase2_keyword_triggers
+    }
+
+    /// Number of byte-distinct payloads classified while building this plan.
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn unique_payloads_for_diagnostics(&self) -> usize {
+        self.unique_payloads
     }
 
     #[inline]
@@ -194,17 +211,38 @@ impl Phase1AdmissionSummary {
     }
 }
 
+fn phase1_payload_fingerprint(data: &[u8]) -> [u8; 32] {
+    const SAMPLE_COUNT: usize = 8;
+    const SAMPLE_BYTES: usize = 64;
+
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&(data.len() as u64).to_le_bytes());
+    if data.len() <= SAMPLE_COUNT * SAMPLE_BYTES {
+        hasher.update(data);
+    } else {
+        let max_start = data.len() - SAMPLE_BYTES;
+        for sample in 0..SAMPLE_COUNT {
+            let start = max_start * sample / (SAMPLE_COUNT - 1);
+            hasher.update(&data[start..start + SAMPLE_BYTES]);
+        }
+    }
+    *hasher.finalize().as_bytes()
+}
+
 impl CompiledScanner {
     #[inline]
     pub(crate) fn phase1_admission(&self, data: &[u8]) -> Phase1Admission {
         if self
+            .route_classification
             .alphabet_screen
             .as_ref()
             .is_some_and(|screen| !screen.screen(data))
         {
             return Phase1Admission::AlphabetRejected;
         }
-        if data.len() >= BIGRAM_BLOOM_MIN_CHUNK_BYTES && !self.bigram_bloom.maybe_overlaps(data) {
+        if data.len() >= BIGRAM_BLOOM_MIN_CHUNK_BYTES
+            && !self.route_classification.bigram_bloom.maybe_overlaps(data)
+        {
             return Phase1Admission::BigramRejected;
         }
         Phase1Admission::Admitted
@@ -213,6 +251,7 @@ impl CompiledScanner {
     #[inline]
     fn phase1_admission_bypassing_bigram(&self, data: &[u8]) -> Phase1Admission {
         if self
+            .route_classification
             .alphabet_screen
             .as_ref()
             .is_some_and(|screen| !screen.screen(data))
@@ -224,11 +263,14 @@ impl CompiledScanner {
 
     #[inline]
     fn phase2_keyword_trigger_count(&self, data: &str) -> u64 {
-        self.phase2_keyword_ac.as_ref().map_or(0, |keyword_ac| {
-            keyword_ac
-                .find_iter(data)
-                .fold(0u64, |count, _| count.saturating_add(1))
-        })
+        self.route_classification
+            .phase2_keyword_ac
+            .as_ref()
+            .map_or(0, |keyword_ac| {
+                keyword_ac
+                    .find_iter(data)
+                    .fold(0u64, |count, _| count.saturating_add(1))
+            })
     }
 
     /// Classify direct-literal phase-1 work with the exact compiled prefilters
@@ -301,27 +343,57 @@ impl CompiledScanner {
             } else {
                 self.phase1_admission(chunk.data.as_bytes())
             };
-            (
-                admission,
-                self.phase2_keyword_trigger_count(&chunk.data),
-                chunk.data.as_bytes().as_ptr() as usize,
-                chunk.data.len(),
-            )
+            (admission, self.phase2_keyword_trigger_count(&chunk.data))
         };
-        let classified = if chunks.len() >= 4
-            && chunks.iter().map(|chunk| chunk.data.len()).sum::<usize>() >= 64 * 1024
-        {
+
+        let mut representatives = Vec::<([u8; 32], usize)>::new();
+        let mut representative_for = Vec::with_capacity(chunks.len());
+        for (index, chunk) in chunks.iter().enumerate() {
+            let data = chunk.data.as_bytes();
+            let fingerprint = phase1_payload_fingerprint(data);
+            let mut representative_position = None;
+            for (position, (candidate, representative_index)) in representatives.iter().enumerate()
+            {
+                if *candidate == fingerprint
+                    && chunks[*representative_index].data.as_bytes() == data
+                {
+                    representative_position = Some(position);
+                    break;
+                }
+            }
+            let position = representative_position.unwrap_or_else(|| {
+                representatives.push((fingerprint, index));
+                representatives.len() - 1
+            });
+            representative_for.push(position);
+        }
+
+        let representative_bytes = representatives
+            .iter()
+            .map(|(_, index)| chunks[*index].data.len())
+            .sum::<usize>();
+        let classified = if representatives.len() >= 4 && representative_bytes >= 64 * 1024 {
             use rayon::prelude::*;
 
-            chunks.par_iter().map(classify).collect::<Vec<_>>()
+            representatives
+                .par_iter()
+                .map(|(_, index)| classify(&chunks[*index]))
+                .collect::<Vec<_>>()
         } else {
-            chunks.iter().map(classify).collect::<Vec<_>>()
+            representatives
+                .iter()
+                .map(|(_, index)| classify(&chunks[*index]))
+                .collect::<Vec<_>>()
         };
+
         let mut summary = Phase1AdmissionSummary::default();
         let mut phase2_keyword_triggers = Phase2KeywordTriggerSummary::default();
-        let mut admissions = Vec::with_capacity(classified.len());
-        let mut chunk_shapes = Vec::with_capacity(classified.len());
-        for (admission, keyword_trigger_count, ptr, len) in classified {
+        let mut admissions = Vec::with_capacity(chunks.len());
+        let mut chunk_shapes = Vec::with_capacity(chunks.len());
+        for (chunk, representative_position) in chunks.iter().zip(representative_for) {
+            let (admission, keyword_trigger_count) = classified[representative_position];
+            let data = chunk.data.as_bytes();
+            let len = data.len();
             summary.record(admission, len as u64);
             if keyword_trigger_count != 0 {
                 phase2_keyword_triggers.keyword_trigger_chunks += 1;
@@ -331,13 +403,15 @@ impl CompiledScanner {
                     .saturating_add(keyword_trigger_count);
             }
             admissions.push(admission);
-            chunk_shapes.push((ptr, len));
+            chunk_shapes.push((data.as_ptr() as usize, len));
         }
         Phase1AdmissionPlan {
             admissions,
             chunk_shapes,
             summary,
             phase2_keyword_triggers,
+            #[cfg(debug_assertions)]
+            unique_payloads: representatives.len(),
         }
     }
 }
