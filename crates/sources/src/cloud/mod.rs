@@ -6,8 +6,6 @@ use crate::capped_read::MAX_PREALLOCATED_READ_BYTES;
 #[cfg(feature = "azure")]
 pub(crate) mod azure_blob;
 
-pub(crate) use crate::blocking_thread::collect_on_blocking_thread;
-
 pub(crate) const DEFAULT_GCS_ENDPOINT: &str = "https://storage.googleapis.com";
 pub(crate) const DEFAULT_S3_HOST_SUFFIX: &str = "s3.amazonaws.com";
 pub(crate) const OBJECT_FETCH_THREADS: usize = crate::parallel_fetch::CLOUD_OBJECT_FETCH_THREADS;
@@ -208,12 +206,6 @@ mod ordered_fetch_tests {
             "cancellation fetched beyond the bounded result window"
         );
     }
-}
-
-pub(crate) fn object_fetch_pool(
-    source: &str,
-) -> Result<rayon::ThreadPool, keyhog_core::SourceError> {
-    crate::parallel_fetch::bounded_fetch_pool(source, OBJECT_FETCH_THREADS)
 }
 
 /// Build the shared cloud blocking client.
@@ -493,25 +485,6 @@ impl<T: Send + 'static> ListingPrefetch<T> {
                 ))
             })
         })
-    }
-}
-
-pub(crate) fn push_page_chunks(
-    chunks: &mut Vec<Result<Chunk, SourceError>>,
-    page_chunks: Vec<Result<Option<Chunk>, SourceError>>,
-) {
-    for result in page_chunks {
-        match result {
-            Ok(Some(chunk)) => {
-                // Real downloaded-object counts at the cloud sink shared by
-                // every object-storage adapter.
-                crate::profile::add_input_units(1);
-                crate::profile::add_input_bytes(chunk.data.len() as u64);
-                chunks.push(Ok(chunk));
-            }
-            Ok(None) => {}
-            Err(error) => chunks.push(Err(error)),
-        }
     }
 }
 

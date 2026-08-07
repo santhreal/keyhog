@@ -81,8 +81,8 @@ pub(crate) fn current_runtime() -> Option<Runtime> {
 /// Record one chunk emitted by an adapter as one input unit plus its byte
 /// length. Used by streaming adapters (git, web, slack, binary,
 /// collaboration) whose real acquired counts are only known as chunks are
-/// produced. Cloud object storage records at `cloud::push_page_chunks`
-/// instead, its shared Option-chunk sink.
+/// produced. Cloud object storage records the same counters in its ordered
+/// streaming fetch coordinator.
 // Only feature-gated streaming adapters emit through this helper.
 #[cfg_attr(
     not(any(
@@ -95,9 +95,7 @@ pub(crate) fn current_runtime() -> Option<Runtime> {
     allow(dead_code)
 )]
 #[inline]
-pub(crate) fn record_emitted_chunk(
-    row: &Result<keyhog_core::Chunk, keyhog_core::SourceError>,
-) {
+pub(crate) fn record_emitted_chunk(row: &Result<keyhog_core::Chunk, keyhog_core::SourceError>) {
     if let Ok(chunk) = row {
         add_input_units(1);
         add_input_bytes(chunk.data.len() as u64);
