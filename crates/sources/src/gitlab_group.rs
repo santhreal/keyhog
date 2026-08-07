@@ -1,7 +1,5 @@
 //! GitLab group source: clone and scan every project in a GitLab group.
 
-use std::thread;
-
 use keyhog_core::{Chunk, Source, SourceError};
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT};
@@ -14,6 +12,7 @@ const DEFAULT_ENDPOINT: &str = "https://gitlab.com";
 const MISSING_REQUIRED_FIELDS_ERROR: &str = "group and token parameters are required";
 const PRIVATE_TOKEN: HeaderName = HeaderName::from_static("private-token");
 
+#[derive(Clone)]
 pub(crate) struct GitLabGroupSource {
     group: String,
     token: String,
@@ -65,41 +64,35 @@ impl Source for GitLabGroupSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        // Hold the scan read lease across the synchronous fetch so a
-        // counter-asserting test's exclusive scope serializes this source's skip
-        // recording (unreachable API / bad token). A no-op in production where the
-        // gate is never armed; see `skip::gate_scan`.
-        crate::gate_scan(|| {
-            // Propagate the active profiling runtime onto the fetch thread so
-            // group enumeration and clone spans record there.
-            let profile_runtime = crate::profile::current_runtime();
-            let result = thread::scope(|s| {
-                match s
-                    .spawn(move || {
-                        let _profile_guard =
-                            profile_runtime.as_ref().map(|runtime| runtime.enter());
-                        collect_group_chunks(
-                            &self.group,
-                            &self.token,
-                            &self.endpoint,
-                            &self.http,
-                            self.limits,
-                            self.respect_default_excludes,
-                        )
-                    })
-                    .join()
-                {
-                    Ok(result) => result,
-                    Err(_panic) => Err(SourceError::Other(
-                        "gitlab-group fetch thread panicked".to_string(),
-                    )),
+        let lease = crate::acquire_scan_read_lease();
+        let source = self.clone();
+        let worker_lease = lease.clone();
+        let profile_runtime = crate::profile::current_runtime();
+        let stream = hosted_git::HostedChunkStream::spawn(
+            "keyhog-gitlab-group",
+            "gitlab-group",
+            worker_lease,
+            move |sender, worker_lease| {
+                let _attributed = worker_lease.enter();
+                let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
+                let result = stream_group_chunks(
+                    &source.group,
+                    &source.token,
+                    &source.endpoint,
+                    &source.http,
+                    source.limits,
+                    source.respect_default_excludes,
+                    |row| sender.send(row).is_ok(),
+                );
+                if let Err(error) = result {
+                    let _ = sender.send(Err(error));
                 }
-            });
-            match result {
-                Ok(rows) => Box::new(rows.into_iter()),
-                Err(err) => Box::new(std::iter::once(Err(err))),
-            }
-        })
+            },
+        );
+        match stream {
+            Ok(stream) => crate::attach_scan_lease(lease, Box::new(stream)),
+            Err(error) => crate::attach_scan_lease(lease, Box::new(std::iter::once(Err(error)))),
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -113,19 +106,18 @@ struct GitLabProject {
     http_url_to_repo: String,
 }
 
-fn collect_group_chunks(
+fn stream_group_chunks(
     group: &str,
     token: &str,
     endpoint: &str,
     http: &crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
-) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
+    emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<(), SourceError> {
     validate_group_path(group)?;
     let (api_root, screened) = normalize_gitlab_api_root(endpoint, http.allow_private_endpoint)?;
     let client = build_client(token, http, screened.as_ref())?;
-    // Group project enumeration is the acquisition boundary; cloning and
-    // per-repo scans record inside `hosted_git::scan_hosted_repos`.
     let repos = {
         let _enumerate = crate::profile::acquire_span();
         list_projects(
@@ -137,7 +129,7 @@ fn collect_group_chunks(
         )?
     };
     let expected_clone_origin = hosted_git::ExpectedCloneOrigin::from_api_root(&api_root)?;
-    hosted_git::scan_hosted_repos(
+    hosted_git::stream_hosted_repos(
         "gitlab",
         "gitlab-group",
         None,
@@ -147,6 +139,7 @@ fn collect_group_chunks(
         &repos,
         limits,
         respect_default_excludes,
+        emit,
     )
 }
 
@@ -234,7 +227,13 @@ fn list_projects(
 fn normalize_gitlab_api_root(
     endpoint: &str,
     allow_private_endpoint: bool,
-) -> Result<(reqwest::Url, Option<crate::endpoint_screen::ScreenedEndpoint>), SourceError> {
+) -> Result<
+    (
+        reqwest::Url,
+        Option<crate::endpoint_screen::ScreenedEndpoint>,
+    ),
+    SourceError,
+> {
     let trimmed = endpoint.trim_end_matches('/');
     let root = if trimmed.ends_with("/api/v4") {
         trimmed.to_string()

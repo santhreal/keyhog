@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "GitLab group scans now stream ordered repository results through the shared bounded hosted-Git pipeline instead of retaining every cloned project result until the group finishes."
+crates = ["sources"]
