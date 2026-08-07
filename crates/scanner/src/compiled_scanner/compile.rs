@@ -976,8 +976,8 @@ impl CompiledScanner {
             .as_mut()
             .map(|program| std::mem::take(&mut program.phase2_scopes));
 
-        let (phase2_keyword_ac, phase2_keyword_to_patterns, phase2_keywords) =
-            build_phase2_keyword_ac(&state.phase2_patterns);
+        let (phase2_keyword_index, phase2_keyword_to_patterns, phase2_keywords) =
+            build_phase2_keyword_index(&state.phase2_patterns);
         let phase2_keyword_count = phase2_keywords.len();
         // Precompute always-active phase-2 indices so the per-chunk hot path
         // seeds the sparse active set without scanning the full phase-2 table.
@@ -1299,7 +1299,7 @@ impl CompiledScanner {
                 crate::engine::phase1_admission::RouteClassificationPlan {
                     alphabet_screen,
                     bigram_bloom,
-                    phase2_keyword_ac,
+                    phase2_keyword_index,
                 },
             ),
             #[cfg(debug_assertions)]

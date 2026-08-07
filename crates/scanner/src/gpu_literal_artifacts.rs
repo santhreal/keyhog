@@ -6,8 +6,8 @@
 //! matcher artifacts without reimplementing scanner compile semantics.
 
 use crate::compiler::{
-    build_compile_state, build_gpu_literals, build_phase2_keyword_ac, phase2_always_active_indices,
-    validate_compiled_pattern_detector_indices,
+    build_compile_state, build_gpu_literals, build_phase2_keyword_index,
+    phase2_always_active_indices, validate_compiled_pattern_detector_indices,
 };
 use crate::engine::{phase2_anchor, phase2_generic, scan_postprocess};
 use crate::error::{Result, ScanError};
@@ -158,7 +158,7 @@ fn compile_gpu_literal_artifact_plan(detectors: &[DetectorSpec]) -> Result<GpuLi
         &state.phase2_patterns,
         detectors.len(),
     )?;
-    let (_, _, phase2_keywords) = build_phase2_keyword_ac(&state.phase2_patterns);
+    let (_, _, phase2_keywords) = build_phase2_keyword_index(&state.phase2_patterns);
     let phase2_always_active_indices = phase2_always_active_indices(&state.phase2_patterns);
     let phase2_anchor_index = phase2_anchor::Phase2AnchorIndex::build(
         &state.phase2_patterns,

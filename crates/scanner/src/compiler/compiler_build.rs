@@ -99,7 +99,7 @@ pub(crate) fn phase2_always_active_indices(
     phase2_patterns
         .iter()
         .enumerate()
-        // Mirrors `build_phase2_keyword_ac`'s 4-char floor. The experimental
+        // Mirrors `build_phase2_keyword_index`'s 4-char floor. The experimental
         // 3-char floor regressed F1, so both checks stay at 4.
         .filter_map(|(index, (_, keywords))| {
             (!keywords.iter().any(|keyword| keyword.len() >= 4)).then_some(index)
@@ -250,6 +250,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                         weak_anchor: pattern.weak_anchor,
                         structural_password_slot: pattern.structural_password_slot,
                         match_proves_keyword_nearby: false,
+                        allows_repeated_keyword_separator: false,
                         homoglyph_variant: true,
                     });
                 }

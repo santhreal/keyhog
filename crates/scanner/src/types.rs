@@ -485,6 +485,9 @@ pub(crate) struct CompiledPattern {
     /// detector keywords. In that case `keyword_nearby` is proven by the match
     /// bytes and does not need an additional whole-chunk substring scan.
     pub match_proves_keyword_nearby: bool,
+    /// Install-compiled proof that the detector regex admits repeated
+    /// `_`/`-`/`.` separators inside a compound keyword.
+    pub allows_repeated_keyword_separator: bool,
     /// True iff this is a compiler-generated HOMOGLYPH fallback variant: the
     /// detector's literal prefix expanded to its unicode look-alikes
     /// (`compiler_build.rs`). Such a variant ALWAYS has its base ASCII prefix in

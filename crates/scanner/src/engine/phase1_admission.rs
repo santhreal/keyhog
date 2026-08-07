@@ -9,7 +9,7 @@ use std::sync::Arc;
 pub(crate) struct RouteClassificationPlan {
     pub(crate) alphabet_screen: Option<crate::alphabet_filter::AlphabetScreen>,
     pub(crate) bigram_bloom: crate::bigram_bloom::BigramBloom,
-    pub(crate) phase2_keyword_ac: Option<aho_corasick::AhoCorasick>,
+    pub(crate) phase2_keyword_index: Option<crate::compiler::Phase2KeywordIndex>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -661,14 +661,14 @@ impl CompiledScanner {
     }
 
     fn phase2_keyword_triggers(&self, data: &str) -> (u64, Vec<u32>) {
-        let Some(keyword_ac) = self.route_classification.phase2_keyword_ac.as_ref() else {
+        let Some(keyword_index) = self.route_classification.phase2_keyword_index.as_ref() else {
             return (0, Vec::new());
         };
         let mut count = 0u64;
         let mut hints = Vec::new();
-        for mat in keyword_ac.find_iter(data) {
+        for keyword_idx in keyword_index.find_iter(data) {
             count = count.saturating_add(1);
-            let Ok(keyword_idx) = u32::try_from(mat.pattern().as_usize()) else {
+            let Ok(keyword_idx) = u32::try_from(keyword_idx) else {
                 continue;
             };
             if !hints.contains(&keyword_idx) {
@@ -738,7 +738,7 @@ impl CompiledScanner {
     }
 
     fn phase2_always_active_absence(&self, data: &str) -> bool {
-        if self.route_classification.phase2_keyword_ac.is_none() {
+        if self.route_classification.phase2_keyword_index.is_none() {
             return false;
         }
         match &self.phase2_always_active_prefilter {

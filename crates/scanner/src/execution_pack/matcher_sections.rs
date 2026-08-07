@@ -10,7 +10,7 @@ use keyhog_core::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const ROUTE_MATCHER_SECTION_VERSION: u16 = 4;
+pub const ROUTE_MATCHER_SECTION_VERSION: u16 = 5;
 static RUNTIME_LOCALIZATION_HINT_FALLBACKS: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 std::thread_local! {
@@ -83,6 +83,7 @@ struct PackedPattern {
     weak_anchor: bool,
     structural_password_slot: bool,
     match_proves_keyword_nearby: bool,
+    allows_repeated_keyword_separator: bool,
     homoglyph_variant: bool,
 }
 
@@ -563,6 +564,7 @@ fn pack_pattern(pattern: &CompiledPattern) -> Result<PackedPattern, ExecutionPac
         weak_anchor: pattern.weak_anchor,
         structural_password_slot: pattern.structural_password_slot,
         match_proves_keyword_nearby: pattern.match_proves_keyword_nearby,
+        allows_repeated_keyword_separator: pattern.allows_repeated_keyword_separator,
         homoglyph_variant: pattern.homoglyph_variant,
     })
 }
@@ -598,6 +600,7 @@ fn unpack_pattern(
         weak_anchor: packed.weak_anchor,
         structural_password_slot: packed.structural_password_slot,
         match_proves_keyword_nearby: packed.match_proves_keyword_nearby,
+        allows_repeated_keyword_separator: packed.allows_repeated_keyword_separator,
         homoglyph_variant: packed.homoglyph_variant,
     })
 }

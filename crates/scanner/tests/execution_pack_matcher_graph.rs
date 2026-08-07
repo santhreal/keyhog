@@ -57,10 +57,10 @@ fn detectors() -> Vec<DetectorSpec> {
         detector(
             "c-phase2-route",
             PatternSpec {
-                regex: r"[A-Z0-9]{4}-ANCHORLESS-[A-Z0-9]{4}".to_owned(),
+                regex: r"[A-Z0-9]{4}-ANCHOR[_\-.]+LESS-[A-Z0-9]{4}".to_owned(),
                 ..Default::default()
             },
-            vec!["ANCHORLESS".to_owned()],
+            vec!["ANCHOR_LESS".to_owned()],
         ),
     ]
 }
@@ -112,7 +112,7 @@ fn packed_matcher_graph_rejects_version_backend_detector_count_and_index_corrupt
     let mut bad_version = sections(&detectors);
     replace_once(
         &mut bad_version.literal_index,
-        b"\"version\":4",
+        b"\"version\":5",
         b"\"version\":9",
     );
     assert!(bad_version
@@ -167,8 +167,8 @@ fn packed_matcher_graph_preserves_pattern_route_and_companion_findings() {
     let packed_scanner = CompiledScanner::compile_from_packed_matchers(detectors, &packed)
         .expect("compile packed scanner");
     for text in [
-        "account=tenant_7\ntoken=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHORLESS-CD34",
-        "token=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHORLESS-CD34",
+        "account=tenant_7\ntoken=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHOR__LESS-CD34",
+        "token=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHOR__LESS-CD34",
         "account=tenant_7\ntoken=REQ_AB12CD34\nvalue=AB12-NOTANCHOR-CD34",
     ] {
         let ordinary_findings = ordinary.scan(&chunk(text)).expect("ordinary scan");
@@ -426,7 +426,7 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     drop(pack);
     drop(directory);
     let input = chunk(
-        "account=tenant_7\ntoken=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHORLESS-CD34",
+        "account=tenant_7\ntoken=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHOR__LESS-CD34",
     );
     assert_eq!(
         packed.scan(&input).expect("scan packed route"),

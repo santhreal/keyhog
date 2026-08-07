@@ -26,6 +26,7 @@ fn test_pattern_with_shape(
         weak_anchor: false,
         structural_password_slot: false,
         match_proves_keyword_nearby: false,
+        allows_repeated_keyword_separator: false,
         homoglyph_variant,
     }
 }

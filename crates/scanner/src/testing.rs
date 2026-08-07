@@ -3462,7 +3462,7 @@ impl LazyRegexProbe {
 }
 
 #[cfg(test)]
-pub(crate) fn phase2_keyword_ac_summary(regex: &str, keywords: Vec<String>) -> (bool, usize) {
+pub(crate) fn phase2_keyword_index_summary(regex: &str, keywords: Vec<String>) -> (bool, usize) {
     let pattern = crate::types::CompiledPattern {
         detector_index: 0,
         regex: crate::types::LazyRegex::detector(regex),
@@ -3471,11 +3471,12 @@ pub(crate) fn phase2_keyword_ac_summary(regex: &str, keywords: Vec<String>) -> (
         weak_anchor: false,
         structural_password_slot: false,
         match_proves_keyword_nearby: false,
+        allows_repeated_keyword_separator: false,
         homoglyph_variant: false,
     };
     let phase2_patterns = vec![(pattern, keywords)];
-    let (ac, mapping, _keywords) = crate::compiler::build_phase2_keyword_ac(&phase2_patterns);
-    (ac.is_some(), mapping.len())
+    let (index, mapping, _keywords) = crate::compiler::build_phase2_keyword_index(&phase2_patterns);
+    (index.is_some(), mapping.len())
 }
 
 #[cfg(test)]

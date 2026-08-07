@@ -405,16 +405,17 @@ fn complete_always_active_negative_preserves_triggered_row_keyword_phase2_findin
     };
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile fixture detector");
     let chunk = keyhog_core::Chunk::from("credential = aB3dE5gH7jK9mN2pQ4sT6vW8xY1zC0fR");
-    let keyword_idx = scanner
-        .route_classification
-        .phase2_keyword_ac
-        .as_ref()
-        .expect("phase-two keyword index")
-        .find_iter("credential")
-        .next()
-        .expect("fixture keyword")
-        .pattern()
-        .as_u32();
+    let keyword_idx = u32::try_from(
+        scanner
+            .route_classification
+            .phase2_keyword_index
+            .as_ref()
+            .expect("phase-two keyword index")
+            .find_iter("credential")
+            .next()
+            .expect("fixture keyword"),
+    )
+    .expect("fixture keyword index fits u32");
     let keyword_hints = [vec![keyword_idx]];
     let admitted = [false];
     let complete = [true];

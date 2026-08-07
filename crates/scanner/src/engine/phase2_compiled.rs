@@ -100,7 +100,7 @@ impl CompiledScanner {
     /// matches are those that touch the decoded text.
     ///
     /// This windows the always-active prefilter and per-pattern extraction while
-    /// keeping full-splice signals (`keyword_nearby`, keyword AC, line/context
+    /// keeping full-splice signals (`keyword_nearby`, keyword index, line/context
     /// tables, base offsets) so matches starting inside the focus window stay
     /// byte-identical to the whole-splice scan (`decode_focus_parity`).
     ///
@@ -178,8 +178,8 @@ impl CompiledScanner {
             }
         }
 
-        // Anchor index unavailable: prefilter the focus slice, seed keyword AC
-        // from normalized full text, and cursor-bound extraction to the window.
+        // Anchor index unavailable: prefilter the focus slice, seed the keyword
+        // index from normalized full text, and cursor-bound extraction to the window.
         let match_text = &text[fs..fe];
         let cursor = focus;
         let prof = phase2_pattern_prof_enabled();
@@ -289,10 +289,10 @@ impl CompiledScanner {
         if self.phase2_patterns.is_empty() {
             return false;
         }
-        // No keyword AC compiled => `populate_active_phase2` marks EVERY
+        // No keyword index compiled => `populate_active_phase2` marks EVERY
         // phase-2 pattern (its `else` arm), so the answer is unconditionally
         // yes; skip the scan.
-        let Some(keyword_ac) = &self.route_classification.phase2_keyword_ac else {
+        let Some(keyword_index) = &self.route_classification.phase2_keyword_index else {
             return true;
         };
         // Boolean admission: does any phase-2 keyword OR any always-active
@@ -302,12 +302,11 @@ impl CompiledScanner {
         // instead of building the full marked set. Building that set is the
         // measured #1 scan cost (`phase2:prefilter`), and extraction rebuilds it
         // when the chunk is admitted, so the gate's own marked set was pure
-        // redundant work. The cheap keyword AC is tried first, so a
+        // redundant work. The compact keyword index is tried first, so a
         // keyword-admitted chunk skips the prefilter scan entirely.
         {
             let _g = super::profile::span(keyhog_profile::Stage::Phase2KeywordAc);
-            for mat in keyword_ac.find_iter(data) {
-                let keyword_idx = mat.pattern().as_usize();
+            for keyword_idx in keyword_index.find_iter(data) {
                 if self
                     .phase2_keyword_to_patterns
                     .get(keyword_idx)
@@ -372,7 +371,7 @@ impl CompiledScanner {
         always_active_absence_proven: bool,
         route: crate::ScanExecutionRoute,
     ) {
-        if let Some(keyword_ac) = &self.route_classification.phase2_keyword_ac {
+        if let Some(keyword_index) = &self.route_classification.phase2_keyword_index {
             // Always-active patterns (no >=4-char keyword) would each run their
             // capture regex over the whole chunk. Gate them through a combined
             // RegexSet so only patterns that can actually match are activated;
@@ -451,8 +450,7 @@ impl CompiledScanner {
                         u64::try_from(data.len()).unwrap_or(u64::MAX),
                         std::sync::atomic::Ordering::Relaxed,
                     );
-                    for mat in keyword_ac.find_iter(data) {
-                        let keyword_idx = mat.pattern().as_usize();
+                    for keyword_idx in keyword_index.find_iter(data) {
                         if let Some(pattern_indices) =
                             self.phase2_keyword_to_patterns.get(keyword_idx)
                         {
