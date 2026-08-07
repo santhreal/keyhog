@@ -263,6 +263,8 @@ fn authenticated_matcher_hydration_skips_canonical_reencoding() {
     let (_signed_directory, signed_pack) = mapped_pack(&detectors, None, true);
     let signed_before =
         keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes();
+    let signed_companion_validations =
+        keyhog_scanner::execution_pack::matcher_sections::runtime_companion_validations();
     CompiledScanner::compile_from_execution_pack(&signed_pack)
         .expect("hydrate authenticated matcher graph");
     assert_eq!(
@@ -270,16 +272,32 @@ fn authenticated_matcher_hydration_skips_canonical_reencoding() {
         signed_before,
         "authenticated matcher hydration must trust install-time canonical encoding"
     );
+    assert_eq!(
+        keyhog_scanner::execution_pack::matcher_sections::runtime_companion_validations(),
+        signed_companion_validations,
+        "authenticated matcher hydration must retain install-validated lazy companions"
+    );
 
     let (_unsigned_directory, unsigned_pack) = mapped_pack(&detectors, None, false);
     let unsigned_before =
         keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes();
+    let unsigned_companion_validations =
+        keyhog_scanner::execution_pack::matcher_sections::runtime_companion_validations();
     CompiledScanner::compile_from_execution_pack(&unsigned_pack)
         .expect("hydrate unsigned matcher graph");
     assert_eq!(
         keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes(),
         unsigned_before + 3,
         "unsigned matcher hydration must revalidate all three canonical sections"
+    );
+    assert_eq!(
+        keyhog_scanner::execution_pack::matcher_sections::runtime_companion_validations(),
+        unsigned_companion_validations
+            + detectors
+                .iter()
+                .map(|detector| detector.companions.len())
+                .sum::<usize>(),
+        "unsigned matcher hydration must validate every companion regex"
     );
 }
 

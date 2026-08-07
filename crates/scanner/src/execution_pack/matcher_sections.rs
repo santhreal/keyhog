@@ -16,6 +16,9 @@ static RUNTIME_LOCALIZATION_HINT_FALLBACKS: std::sync::atomic::AtomicUsize =
 std::thread_local! {
     static RUNTIME_CANONICAL_REENCODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
+std::thread_local! {
+    static RUNTIME_COMPANION_VALIDATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 #[doc(hidden)]
 pub fn runtime_localization_hint_fallbacks() -> usize {
@@ -29,6 +32,11 @@ pub(crate) fn record_runtime_localization_hint_fallback() {
 #[doc(hidden)]
 pub fn runtime_canonical_reencodes() -> usize {
     RUNTIME_CANONICAL_REENCODES.get()
+}
+
+#[doc(hidden)]
+pub fn runtime_companion_validations() -> usize {
+    RUNTIME_COMPANION_VALIDATIONS.get()
 }
 #[doc(hidden)]
 pub fn compile_state_builder_invocations() -> usize {
@@ -521,7 +529,9 @@ fn decode_compile_state_sections_from_ids_inner(
         .map(|(detector_index, packed)| {
             packed
                 .into_iter()
-                .map(|companion| unpack_companion(companion, detector_ids[detector_index]))
+                .map(|companion| {
+                    unpack_companion(companion, detector_ids[detector_index], authenticated)
+                })
                 .collect()
         })
         .collect::<Result<Vec<_>, ExecutionPackError>>()?;
@@ -595,7 +605,26 @@ fn unpack_pattern(
 fn unpack_companion(
     packed: PackedCompanion,
     detector_id: &str,
+    authenticated: bool,
 ) -> Result<crate::types::CompiledCompanion, ExecutionPackError> {
+    if authenticated {
+        return Ok(crate::types::CompiledCompanion {
+            name: std::sync::Arc::<str>::from(packed.name),
+            regex: LazyRegex::companion(packed.regex),
+            capture_group: packed.capture_group.map(|group| group as usize),
+            within_lines: packed.within_lines as usize,
+            within_bytes: packed.within_bytes.map(|bytes| bytes as usize),
+            direction: packed.direction,
+            scope: packed.scope,
+            requirement: packed.requirement,
+            value_relation: packed.value_relation,
+        });
+    }
+    RUNTIME_COMPANION_VALIDATIONS.set(
+        RUNTIME_COMPANION_VALIDATIONS
+            .get()
+            .saturating_add(1),
+    );
     let spec = CompanionSpec {
         name: packed.name,
         regex: packed.regex,
