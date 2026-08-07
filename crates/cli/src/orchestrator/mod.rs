@@ -734,9 +734,14 @@ pub(crate) fn compile_default_scan_runtime(
     map_compile_error: impl FnOnce(&keyhog_scanner::ScanError) -> anyhow::Error,
 ) -> Result<DefaultScanRuntime> {
     let backend = backend_override.unwrap_or(keyhog_scanner::ScanBackend::CpuFallback);
+    let detectors: Arc<[DetectorSpec]> = detectors.into();
     let scanner = Arc::new(
-        CompiledScanner::compile_for_backend(detectors.clone(), backend)
-            .map_err(|error| map_compile_error(&error))?,
+        CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
+            Arc::clone(&detectors),
+            GpuInitPolicy::SelectedBackend(backend),
+            &keyhog_scanner::ScannerTuningConfig::default(),
+        )
+        .map_err(|error| map_compile_error(&error))?,
     );
     Ok(DefaultScanRuntime::new(scanner, &detectors))
 }
