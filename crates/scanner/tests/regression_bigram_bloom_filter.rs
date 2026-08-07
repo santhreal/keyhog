@@ -339,11 +339,17 @@ fn repeated_payloads_share_generic_keyword_positions() {
         Some(true),
         "repeated ASCII fixture must establish exact normalization passthrough"
     );
+    assert_eq!(
+        ordinary_plan.confirmed_patterns_absence_for_diagnostics(0),
+        Some(true),
+        "repeated clean fixture must establish exact confirmed-pattern absence"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
     scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
     scanner.reset_normalization_scanned_bytes_for_diagnostics();
+    scanner.reset_confirmed_pattern_scanned_bytes_for_diagnostics();
     let planned_ordinary = scanner
         .scan_coalesced_with_backend_and_admission(
             &ordinary_chunks,
@@ -366,11 +372,17 @@ fn repeated_payloads_share_generic_keyword_positions() {
         0,
         "planned scan must consume normalization passthrough without rescanning bytes"
     );
+    assert_eq!(
+        scanner.confirmed_pattern_scanned_bytes_for_diagnostics(),
+        0,
+        "planned scan must consume confirmed-pattern absence without rescanning bytes"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
     scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
     scanner.reset_normalization_scanned_bytes_for_diagnostics();
+    scanner.reset_confirmed_pattern_scanned_bytes_for_diagnostics();
     let direct_ordinary = scanner
         .scan_coalesced_with_backend(&ordinary_chunks, ScanBackend::CpuFallback)
         .expect("direct ordinary scan");
@@ -386,8 +398,46 @@ fn repeated_payloads_share_generic_keyword_positions() {
         scanner.normalization_scanned_bytes_for_diagnostics() > 0,
         "direct scan must establish the normalization byte control"
     );
+    assert!(
+        scanner.confirmed_pattern_scanned_bytes_for_diagnostics() > 0,
+        "direct scan must establish the confirmed-pattern byte control"
+    );
     assert_eq!(planned_ordinary, direct_ordinary);
     assert!(planned_ordinary.iter().all(Vec::is_empty));
+}
+
+/// WHY: representative absence is valid only when every triggered confirmed
+/// regex is absent. A matching representative must retain full per-chunk
+/// extraction so path-sensitive adjudication still runs independently.
+#[test]
+fn repeated_confirmed_matches_never_claim_absence() {
+    let scanner = CompiledScanner::compile(vec![detector(vec![PatternSpec {
+        regex: r"ANCHOR_[A-Za-z0-9]{24}".into(),
+        ..Default::default()
+    }])])
+    .expect("compile anchored detector");
+    let payload = format!("prefix ANCHOR_{} suffix", "A1b2C3d4E5f6G7h8J9k0LmNo");
+    let chunks = vec![
+        chunk("confirmed-0.txt", payload.clone()),
+        chunk("confirmed-1.txt", payload.clone()),
+        chunk("confirmed-2.txt", payload),
+    ];
+    let plan = scanner.phase1_admission_plan(&chunks);
+    assert_eq!(
+        plan.confirmed_patterns_absence_for_diagnostics(0),
+        Some(false),
+        "a matching confirmed regex must invalidate representative absence"
+    );
+
+    let planned = scanner
+        .scan_coalesced_with_backend_and_admission(&chunks, ScanBackend::CpuFallback, Some(&plan))
+        .expect("planned confirmed scan");
+    scanner.clear_fragment_cache();
+    let direct = scanner
+        .scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback)
+        .expect("direct confirmed scan");
+    assert_eq!(planned, direct);
+    assert!(planned.iter().all(|matches| !matches.is_empty()));
 }
 
 #[test]

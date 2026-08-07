@@ -96,12 +96,16 @@ impl CompiledScanner {
                                 super::phase2::Phase2AlwaysActiveGpuEvidence::exact_absence(),
                             )
                         });
+                    let confirmed_patterns_absence = admission_plan
+                        .and_then(|plan| plan.confirmed_patterns_absence_for(index))
+                        .unwrap_or(false);
                     self.scan_with_deadline_and_backend_admission_route_and_hints(
                         chunk,
                         self.config.per_chunk_deadline(),
                         backend,
                         admission,
                         normalization_passthrough,
+                        confirmed_patterns_absence,
                         cpu_trigger_hints,
                         phase2_keyword_hints,
                         phase2_always_active_evidence,
