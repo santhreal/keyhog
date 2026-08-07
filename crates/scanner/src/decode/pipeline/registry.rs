@@ -192,6 +192,10 @@ impl CompiledDecoderPlan {
             .as_ref()
             .is_none_or(|trigger| trigger.is_match(data.as_bytes()))
     }
+
+    pub(crate) fn uses_only_default_decoders(&self) -> bool {
+        self.all_decoder_trigger.is_some()
+    }
 }
 
 fn validate_descriptor(
@@ -413,7 +417,7 @@ pub(crate) fn decoder_admission(
     plan: &CompiledDecoderPlan,
 ) -> DecodeAdmission {
     super::extractor::clear_shared_candidates();
-    super::extractor::prime_shared_candidates(&chunk.data);
+    super::extractor::prime_shared_candidates(&chunk.data, plan.uses_only_default_decoders());
 
     let mut aggregate = DecodeAdmission::Impossible;
     for decoder in plan.decoders() {
@@ -456,7 +460,12 @@ fn decoder_admission_sketch_with_decoders(
     decoders: &[RegisteredDecoder],
 ) -> DecodeAdmissionSketch {
     super::extractor::clear_shared_candidates();
-    super::extractor::prime_shared_candidates(&chunk.data);
+    super::extractor::prime_shared_candidates(
+        &chunk.data,
+        decoders
+            .iter()
+            .all(|decoder| is_default_decoder_name(decoder.name())),
+    );
 
     let mut aggregate = DecodeAdmissionSketch::NONE;
     for decoder in decoders {
