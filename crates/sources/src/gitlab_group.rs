@@ -82,6 +82,7 @@ impl Source for GitLabGroupSource {
                     &source.http,
                     source.limits,
                     source.respect_default_excludes,
+                    &worker_lease,
                     |row| sender.send(row).is_ok(),
                 );
                 if let Err(error) = result {
@@ -113,6 +114,7 @@ fn stream_group_chunks(
     http: &crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
+    scan_lease: &crate::skip::ScanReadLease,
     emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> Result<(), SourceError> {
     validate_group_path(group)?;
@@ -139,6 +141,7 @@ fn stream_group_chunks(
         &repos,
         limits,
         respect_default_excludes,
+        scan_lease,
         emit,
     )
 }

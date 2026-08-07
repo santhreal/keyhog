@@ -168,14 +168,13 @@ pub(crate) fn stream_hosted_repos(
     repos: &[HostedRepo],
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
+    scan_lease: &crate::skip::ScanReadLease,
     mut emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> Result<(), SourceError> {
     let temp_dir = tempfile::tempdir().map_err(SourceError::Io)?;
     let temp_root = temp_dir.path().to_path_buf();
     let worker_count = crate::parallel_fetch::REMOTE_API_FETCH_THREADS.min(repos.len());
     let cancelled = std::sync::atomic::AtomicBool::new(false);
-    let scan_lease = crate::acquire_scan_read_lease();
-    let _attributed = scan_lease.enter();
     let profile_runtime = crate::profile::current_runtime();
     let (jobs, pending_jobs) = crossbeam_channel::unbounded();
     let mut receivers = Vec::with_capacity(repos.len());
@@ -189,7 +188,7 @@ pub(crate) fn stream_hosted_repos(
     std::thread::scope(|scope| {
         for _ in 0..worker_count {
             let pending_jobs = pending_jobs.clone();
-            let worker_lease = scan_lease.clone();
+            let worker_lease = (*scan_lease).clone();
             let profile_runtime = profile_runtime.clone();
             let cancelled = &cancelled;
             let temp_root = &temp_root;

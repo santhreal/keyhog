@@ -107,6 +107,7 @@ impl Source for GitHubOrgSource {
                     &source.http,
                     source.limits,
                     source.respect_default_excludes,
+                    &worker_lease,
                     |row| sender.send(row).is_ok(),
                 );
                 if let Err(error) = result {
@@ -192,6 +193,7 @@ fn stream_org_chunks(
     http: &crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
+    scan_lease: &crate::skip::ScanReadLease,
     emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> Result<(), SourceError> {
     validate_org_name(org)?;
@@ -216,6 +218,7 @@ fn stream_org_chunks(
         &repos,
         limits,
         respect_default_excludes,
+        scan_lease,
         emit,
     )
 }

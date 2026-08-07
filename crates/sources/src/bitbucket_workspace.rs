@@ -86,6 +86,7 @@ impl Source for BitbucketWorkspaceSource {
                     &source.http,
                     source.limits,
                     source.respect_default_excludes,
+                    &worker_lease,
                     |row| sender.send(row).is_ok(),
                 );
                 if let Err(error) = result {
@@ -135,6 +136,7 @@ fn stream_workspace_chunks(
     http: &crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
+    scan_lease: &crate::skip::ScanReadLease,
     mut emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> Result<(), SourceError> {
     validate_workspace(workspace)?;
@@ -163,6 +165,7 @@ fn stream_workspace_chunks(
         &repos,
         limits,
         respect_default_excludes,
+        scan_lease,
         &mut emit,
     )?;
     for error in listing_errors {
