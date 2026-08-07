@@ -893,35 +893,6 @@ impl<'a> GitHubApi<'a> {
         }
     }
 
-    fn pages<T: DeserializeOwned>(
-        &mut self,
-        surface: &'static str,
-        path: &str,
-        extra_query: &str,
-    ) -> (Vec<T>, Option<GitHubGap>) {
-        let mut items = Vec::new();
-        let mut page = 1;
-        loop {
-            // Collaboration enumeration: one walk span per fetched page.
-            let _page_span = crate::profile::walk_span();
-            let query = if extra_query.is_empty() {
-                format!("per_page={API_PAGE_SIZE}&page={page}")
-            } else {
-                format!("{extra_query}&per_page={API_PAGE_SIZE}&page={page}")
-            };
-            let page_items: Vec<T> = match self.request_json(surface, path, &query) {
-                Ok(page_items) => page_items,
-                Err(gap) => return (items, Some(gap)),
-            };
-            let count = page_items.len();
-            items.extend(page_items);
-            if count < API_PAGE_SIZE {
-                return (items, None);
-            }
-            page += 1;
-        }
-    }
-
     fn pages_each<T: DeserializeOwned>(
         &mut self,
         surface: &'static str,
