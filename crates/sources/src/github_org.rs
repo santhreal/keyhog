@@ -93,7 +93,7 @@ impl Source for GitHubOrgSource {
         let source = self.clone();
         let worker_lease = lease.clone();
         let profile_runtime = crate::profile::current_runtime();
-        let stream = hosted_git::HostedChunkStream::spawn(
+        let stream = crate::parallel_fetch::RemoteChunkStream::spawn(
             "keyhog-github-org",
             "github-org",
             worker_lease,

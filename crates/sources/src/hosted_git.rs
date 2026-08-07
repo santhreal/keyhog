@@ -31,69 +31,6 @@ pub(crate) struct HostedRepo {
     pub(crate) clone_url: String,
 }
 
-pub(crate) struct HostedChunkStream {
-    receiver: Option<std::sync::mpsc::Receiver<Result<Chunk, SourceError>>>,
-    worker: Option<std::thread::JoinHandle<()>>,
-    label: &'static str,
-}
-
-impl HostedChunkStream {
-    pub(crate) fn spawn(
-        thread_name: &'static str,
-        label: &'static str,
-        lease: crate::skip::ScanReadLease,
-        work: impl FnOnce(
-                std::sync::mpsc::SyncSender<Result<Chunk, SourceError>>,
-                crate::skip::ScanReadLease,
-            ) + Send
-            + 'static,
-    ) -> Result<Self, SourceError> {
-        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-        let worker = std::thread::Builder::new()
-            .name(thread_name.to_string())
-            .spawn(move || work(sender, lease))
-            .map_err(|error| {
-                SourceError::Other(format!("{label}: failed to spawn stream worker: {error}"))
-            })?;
-        Ok(Self {
-            receiver: Some(receiver),
-            worker: Some(worker),
-            label,
-        })
-    }
-}
-
-impl Iterator for HostedChunkStream {
-    type Item = Result<Chunk, SourceError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let received = self.receiver.as_ref()?.recv();
-        match received {
-            Ok(row) => Some(row),
-            Err(_) => {
-                self.receiver.take();
-                let worker = self.worker.take()?;
-                match worker.join() {
-                    Ok(()) => None,
-                    Err(_) => Some(Err(SourceError::Other(format!(
-                        "{} stream worker panicked",
-                        self.label
-                    )))),
-                }
-            }
-        }
-    }
-}
-
-impl Drop for HostedChunkStream {
-    fn drop(&mut self) {
-        self.receiver.take();
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct ExpectedCloneOrigin {
     host: String,

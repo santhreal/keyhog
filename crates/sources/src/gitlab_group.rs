@@ -68,7 +68,7 @@ impl Source for GitLabGroupSource {
         let source = self.clone();
         let worker_lease = lease.clone();
         let profile_runtime = crate::profile::current_runtime();
-        let stream = hosted_git::HostedChunkStream::spawn(
+        let stream = crate::parallel_fetch::RemoteChunkStream::spawn(
             "keyhog-gitlab-group",
             "gitlab-group",
             worker_lease,
