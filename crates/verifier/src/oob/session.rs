@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use dashmap::DashMap;
 use parking_lot::Mutex;
 use reqwest::Client;
-use tokio::sync::Notify;
+use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
@@ -142,6 +142,8 @@ pub struct OobSession {
     /// contention is bounded (one entry per in-flight finding,
     /// ~max_concurrent_global).
     waiters: Arc<Mutex<HashMap<String, WaiterEntry>>>,
+    /// Monotonic demand signal for the collector poller.
+    poll_generation: watch::Sender<u64>,
     poller_handle: Mutex<Option<JoinHandle<()>>>,
     shutdown: Arc<AtomicBool>,
     /// Set by the poller once polls fail for `OOB_DEGRADED_ERROR_THRESHOLD`
@@ -190,6 +192,7 @@ impl OobSession {
             config: config.clone(),
             observations: Arc::new(DashMap::new()),
             waiters: Arc::new(Mutex::new(HashMap::new())),
+            poll_generation: watch::channel(0).0,
             poller_handle: Mutex::new(None),
             shutdown: Arc::new(AtomicBool::new(false)),
             degraded: Arc::new(AtomicBool::new(false)),
@@ -243,6 +246,8 @@ impl OobSession {
             Arc::clone(&entry.notify)
         };
         let _waiter_guard = WaiterGuard::new(Arc::clone(&self.waiters), unique_id.to_string());
+        self.poll_generation
+            .send_modify(|generation| *generation = generation.wrapping_add(1));
 
         // Race we're closing:
         //
@@ -414,6 +419,7 @@ impl OobSession {
             config,
             observations: Arc::new(DashMap::new()),
             waiters: Arc::new(Mutex::new(HashMap::new())),
+            poll_generation: watch::channel(0).0,
             poller_handle: Mutex::new(None),
             shutdown: Arc::new(AtomicBool::new(false)),
             degraded: Arc::new(AtomicBool::new(false)),
@@ -446,6 +452,17 @@ impl OobSession {
             .values()
             .map(|entry| entry.active_waiters)
             .sum()
+    }
+
+    pub(crate) fn poll_generation_for_test(&self) -> u64 {
+        *self.poll_generation.borrow()
+    }
+
+    fn has_active_waiters(&self) -> bool {
+        self.waiters
+            .lock()
+            .values()
+            .any(|entry| entry.active_waiters != 0)
     }
 }
 
@@ -543,16 +560,19 @@ fn spawn_poller(session: Arc<OobSession>) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut consecutive_errors = 0u32;
         let mut next_gc = Instant::now() + Duration::from_secs(60);
+        let mut poll_generation = session.poll_generation.subscribe();
         loop {
             if session.shutdown.load(Ordering::Acquire) {
                 break;
             }
-            // GC at the TOP of every iteration so retention stays bounded even
-            // while polls are FAILING. The error arm below `continue`s straight
-            // back here, so a GC placed after the poll (where it used to live)
-            // was skipped for the entire duration of a collector outage
-            // `observations` grew unbounded exactly when the poller could no
-            // longer drain it.
+            if !session.has_active_waiters() {
+                if poll_generation.changed().await.is_err() {
+                    break;
+                }
+                continue;
+            }
+            let _ = poll_generation.borrow_and_update();
+            // GC at the top so collector outages cannot bypass retention.
             if Instant::now() >= next_gc {
                 session.gc();
                 next_gc = Instant::now() + Duration::from_secs(60);
@@ -560,36 +580,18 @@ fn spawn_poller(session: Arc<OobSession>) -> JoinHandle<()> {
             match session.client.poll().await {
                 Ok(interactions) => {
                     consecutive_errors = 0;
-                    // A successful poll proves the channel is live again: clear
-                    // any degraded state so waiters resume trusting timeouts.
                     session.degraded.store(false, Ordering::Release);
                     for interaction in interactions {
                         session.store_and_notify(interaction);
                     }
                 }
-                Err(e) => {
+                Err(error) => {
                     consecutive_errors += 1;
-                    // Once failures are SUSTAINED, mark the session degraded so a
-                    // subsequent wait timeout fails closed (`Disabled`) instead
-                    // of silently reporting `NotObserved` on a channel that can
-                    // no longer deliver callbacks (Law 10). Cleared on the next
-                    // success above.
                     session
                         .degraded
                         .store(poller_is_degraded(consecutive_errors), Ordering::Release);
-                    // Backoff progressively, but cap so we don't go silent for
-                    // ages on a flaky collector.
                     let backoff_secs = (1u64 << consecutive_errors.min(5)).min(30);
-                    // CREDENTIAL LEAK FIX: reqwest::Error's Display includes
-                    // the request URL, which for the interactsh poll is
-                    // `https://oast.fun/poll?id=<corr>&secret=<session-secret>`.
-                    // Logging the raw error therefore writes the interactsh
-                    // session secret to tracing - possession of that secret
-                    // lets anyone poll the collector for this scan's OOB
-                    // interactions. Redact to error kind only; the operator
-                    // doesn't need the URL to diagnose connectivity issues.
-                    // Kimi verifier-audit finding #2 (MED).
-                    let redacted = redact_interactsh_error(&e);
+                    let redacted = redact_interactsh_error(&error);
                     warn!(
                         target: "keyhog::oob",
                         error = %redacted,
@@ -601,7 +603,16 @@ fn spawn_poller(session: Arc<OobSession>) -> JoinHandle<()> {
                     continue;
                 }
             }
-            tokio::time::sleep(session.config.poll_interval).await;
+            if session.has_active_waiters() {
+                tokio::select! {
+                    _ = tokio::time::sleep(session.config.poll_interval) => {}
+                    changed = poll_generation.changed() => {
+                        if changed.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
         }
         debug!(target: "keyhog::oob", "poller exiting");
     })

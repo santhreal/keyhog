@@ -35,6 +35,7 @@ use tracing::{debug, warn};
 /// budget covers all configured collectors collectively - the limit is
 /// about our own machine not blasting traffic, not about per-host fairness.
 const OOB_SERVICE: &str = "oob.interactsh";
+const OOB_LIFECYCLE_BURST: usize = 3;
 const DNS_TOKEN_ALPHABET: &[u8; 36] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 const CORRELATION_ID_LEN: usize = 24;
 const UNIQUE_SUFFIX_LEN: usize = 24;
@@ -348,16 +349,12 @@ impl InteractshClient {
             secret_key: &secret_key,
             correlation_id: &correlation_id,
         };
-        // SECURITY/POLITENESS: kimi verifier audit LOW finding. Every OOB
-        // request - register, poll, deregister - shares the same upstream
-        // interactsh collector. Without rate limiting, a scan that fires
-        // 200 detector-verify subscriptions in parallel would hammer the
-        // collector with 200 register calls in flight at once, get IP-banned,
-        // and silently lose all OOB observability for the rest of the run.
-        // We bucket every OOB call under a single service id so the global
-        // limiter (default 5 rps) governs the aggregate.
+        // One OOB session has a bounded three-request lifecycle: register,
+        // poll, and deregister. A three-token burst avoids serial startup
+        // sleeps while the shared bucket still enforces the configured
+        // sustained collector rate for every later poll.
         crate::rate_limit::get_rate_limiter()
-            .wait(OOB_SERVICE)
+            .wait_with_burst(OOB_SERVICE, OOB_LIFECYCLE_BURST)
             .await;
         let resp = collector_http
             .post(format!("{server}/register"))
@@ -407,10 +404,10 @@ impl InteractshClient {
     /// Poll once. Returns every interaction the collector has buffered for
     /// this correlation id since the last poll.
     pub async fn poll(&self) -> Result<Vec<Interaction>, InteractshError> {
-        // See `register` for the rate-limiter rationale - same bucket so all
-        // OOB traffic to the collector aggregates under one budget.
+        // The bounded lifecycle burst is shared with register and deregister;
+        // subsequent polls remain spaced at the configured sustained rate.
         crate::rate_limit::get_rate_limiter()
-            .wait(OOB_SERVICE)
+            .wait_with_burst(OOB_SERVICE, OOB_LIFECYCLE_BURST)
             .await;
         let resp = self
             .http
@@ -472,9 +469,9 @@ impl InteractshClient {
             #[serde(rename = "secret-key")]
             secret_key: &'a str,
         }
-        // See `register` for the rate-limiter rationale.
+        // See `register` for the bounded lifecycle-burst rationale.
         crate::rate_limit::get_rate_limiter()
-            .wait(OOB_SERVICE)
+            .wait_with_burst(OOB_SERVICE, OOB_LIFECYCLE_BURST)
             .await;
         let resp = self
             .http
