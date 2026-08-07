@@ -169,47 +169,49 @@ impl GitHubCollaborationSource {
         chunks: &mut ChunkOutput<'_>,
     ) -> Result<(), GitHubGap> {
         let path = format!("/repos/{}/{}/issues", self.owner, self.repo);
-        let (issues, page_gap): (Vec<Issue>, _) =
-            api.pages("issues", &path, "state=all&filter=all");
-        for issue in issues
-            .into_iter()
-            .filter(|item| item.pull_request.is_none())
-        {
-            let revision = revision_identity(&issue.node_id, &issue.updated_at);
-            push_text_chunk(
-                chunks,
-                seen,
-                budget,
-                "issues",
-                format!("issue:{revision}"),
-                self.provenance(&format!("issues/{}", issue.number)),
-                &revision,
-                issue.user.as_ref().map(|actor| actor.login.as_str()),
-                &issue.updated_at,
-                join_title_body(&issue.title, issue.body.as_deref()),
-            )?;
-            let comments_path = format!(
-                "/repos/{}/{}/issues/{}/comments",
-                self.owner, self.repo, issue.number
-            );
-            let (comments, comments_gap): (Vec<Comment>, _) =
-                api.pages("issues", &comments_path, "");
-            append_comments(
-                chunks,
-                seen,
-                budget,
-                "issues",
-                &self.provenance(&format!("issues/{}", issue.number)),
-                comments,
-            )?;
-            if let Some(gap) = comments_gap {
-                return Err(gap);
-            }
-        }
-        if let Some(gap) = page_gap {
-            return Err(gap);
-        }
-        Ok(())
+        api.pages_each(
+            "issues",
+            &path,
+            "state=all&filter=all",
+            |api, issues: Vec<Issue>| {
+                for issue in issues
+                    .into_iter()
+                    .filter(|item| item.pull_request.is_none())
+                {
+                    let revision = revision_identity(&issue.node_id, &issue.updated_at);
+                    push_text_chunk(
+                        chunks,
+                        seen,
+                        budget,
+                        "issues",
+                        format!("issue:{revision}"),
+                        self.provenance(&format!("issues/{}", issue.number)),
+                        &revision,
+                        issue.user.as_ref().map(|actor| actor.login.as_str()),
+                        &issue.updated_at,
+                        join_title_body(&issue.title, issue.body.as_deref()),
+                    )?;
+                    let comments_path = format!(
+                        "/repos/{}/{}/issues/{}/comments",
+                        self.owner, self.repo, issue.number
+                    );
+                    let (comments, comments_gap): (Vec<Comment>, _) =
+                        api.pages("issues", &comments_path, "");
+                    append_comments(
+                        chunks,
+                        seen,
+                        budget,
+                        "issues",
+                        &self.provenance(&format!("issues/{}", issue.number)),
+                        comments,
+                    )?;
+                    if let Some(gap) = comments_gap {
+                        return Err(gap);
+                    }
+                }
+                Ok(())
+            },
+        )
     }
 
     fn collect_pull_requests(
@@ -629,7 +631,7 @@ impl GitHubCollaborationSource {
         chunks: &mut ChunkOutput<'_>,
     ) -> Result<(), GitHubGap> {
         let path = format!("/repos/{}/{}/releases", self.owner, self.repo);
-        api.pages_each("releases", &path, "", |releases: Vec<Release>| {
+        api.pages_each("releases", &path, "", |_api, releases: Vec<Release>| {
             for release in releases {
                 let revision_time = release
                     .published_at
@@ -905,7 +907,7 @@ impl<'a> GitHubApi<'a> {
         surface: &'static str,
         path: &str,
         extra_query: &str,
-        mut consume: impl FnMut(Vec<T>) -> Result<(), GitHubGap>,
+        mut consume: impl FnMut(&mut Self, Vec<T>) -> Result<(), GitHubGap>,
     ) -> Result<(), GitHubGap> {
         let mut page = 1;
         loop {
@@ -917,7 +919,7 @@ impl<'a> GitHubApi<'a> {
             };
             let page_items: Vec<T> = self.request_json(surface, path, &query)?;
             let count = page_items.len();
-            consume(page_items)?;
+            consume(self, page_items)?;
             if count < API_PAGE_SIZE {
                 return Ok(());
             }
