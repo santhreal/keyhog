@@ -1,6 +1,6 @@
 use keyhog_core::{DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::compile_gpu_literal_artifacts_default;
-use vyre_libs::scan::{GpuLiteralSet, MatchEngineCache};
+use vyre::scan::{GpuLiteralSet, MatchEngineCache};
 
 #[test]
 fn gpu_literal_artifacts_round_trip_through_vyre_bytes() {

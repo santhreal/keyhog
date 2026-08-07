@@ -50,7 +50,7 @@ struct ResidentCapacity {
 
 impl ResidentCapacity {
     fn for_batch(packed_haystack_bytes: usize, regions: usize) -> Result<Self, String> {
-        let ceiling = vyre_libs::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize;
+        let ceiling = vyre::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize;
         if packed_haystack_bytes > ceiling {
             return Err(format!(
                 "phase-2 GPU resident admission haystack is {packed_haystack_bytes} byte(s), above Vyrë's {ceiling}-byte scan ceiling. Fix: split the batch before dispatch."

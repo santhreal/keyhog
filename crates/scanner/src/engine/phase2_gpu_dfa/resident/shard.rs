@@ -56,11 +56,11 @@ impl ShardResident {
                     .to_string()
             })?;
         let transitions =
-            vyre_libs::scan::dispatch_io::u32_words_as_le_bytes(&pipeline.dfa.transitions);
+            vyre::scan::dispatch_io::u32_words_as_le_bytes(&pipeline.dfa.transitions);
         let output_offsets =
-            vyre_libs::scan::dispatch_io::u32_words_as_le_bytes(&pipeline.dfa.output_offsets);
+            vyre::scan::dispatch_io::u32_words_as_le_bytes(&pipeline.dfa.output_offsets);
         let output_records =
-            vyre_libs::scan::dispatch_io::u32_words_as_le_bytes(&pipeline.dfa.output_records);
+            vyre::scan::dispatch_io::u32_words_as_le_bytes(&pipeline.dfa.output_records);
         let mut resources = Vec::with_capacity(SHARD_BINDINGS);
         let prepare = (|| {
             allocate(
@@ -142,7 +142,7 @@ impl ShardResident {
         bindings: &'a [Resource; 8],
         haystack_len: u32,
     ) -> ResidentDispatchStep<'a> {
-        let config = vyre_libs::scan::dispatch_io::byte_scan_dispatch_config(
+        let config = vyre::scan::dispatch_io::byte_scan_dispatch_config(
             haystack_len,
             self.program.workgroup_size[0],
         );

@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 // --- Helper Functions for In-Place Coalescing (duplicated from GPU scanning modules) ---
 
-fn coalesce_spans_inplace(matches: &mut Vec<vyre_libs::scan::LiteralMatch>) {
+fn coalesce_spans_inplace(matches: &mut Vec<vyre::scan::LiteralMatch>) {
     matches.sort_unstable_by(|a, b| {
         a.pattern_id
             .cmp(&b.pattern_id)
@@ -29,7 +29,7 @@ fn coalesce_spans_inplace(matches: &mut Vec<vyre_libs::scan::LiteralMatch>) {
                 && matches[read].start <= matches[write].end
             {
                 if matches[read].end > matches[write].end {
-                    matches[write] = vyre_libs::scan::LiteralMatch::new(
+                    matches[write] = vyre::scan::LiteralMatch::new(
                         matches[write].pattern_id,
                         matches[write].start,
                         matches[read].end,
@@ -80,9 +80,9 @@ fn arb_raw_match() -> impl Strategy<Value = RawMatch> {
 }
 
 /// Strategy to generate a random LiteralMatch for span coalescing.
-fn arb_literal_match() -> impl Strategy<Value = vyre_libs::scan::LiteralMatch> {
+fn arb_literal_match() -> impl Strategy<Value = vyre::scan::LiteralMatch> {
     (0..10u32, 0..10_000u32, 1..50u32)
-        .prop_map(|(pid, start, len)| vyre_libs::scan::LiteralMatch::new(pid, start, start + len))
+        .prop_map(|(pid, start, len)| vyre::scan::LiteralMatch::new(pid, start, start + len))
 }
 
 proptest! {

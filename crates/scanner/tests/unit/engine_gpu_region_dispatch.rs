@@ -57,7 +57,7 @@ fn region_presence_batch_borrows_uppercase_single_chunk_without_rewriting() {
 fn region_presence_batch_enforces_the_real_vyre_scan_ceiling() {
     assert_eq!(
         REGION_PRESENCE_BATCH_BYTE_LIMIT,
-        vyre_libs::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize
+        vyre::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize
     );
     assert!(validate_region_presence_batch_len(REGION_PRESENCE_BATCH_BYTE_LIMIT).is_ok());
     let error = validate_region_presence_batch_len(REGION_PRESENCE_BATCH_BYTE_LIMIT + 1)
@@ -142,7 +142,11 @@ fn gpu_recovery_fixture() -> (
         }],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).expect("compile recovery fixture");
+    let scanner = CompiledScanner::compile_with_gpu_policy(
+        vec![detector],
+        crate::GpuInitPolicy::ForceEnabled,
+    )
+    .expect("compile GPU recovery fixture");
     let backend = [
         crate::hw_probe::ScanBackend::GpuCuda,
         crate::hw_probe::ScanBackend::GpuWgpu,
@@ -193,6 +197,34 @@ fn automatic_gpu_recovery_rescans_only_unprocessed_dispatch_ranges() {
             crate::RecoveredInputRange::new(2, 0, chunks[2].data.len()),
         ],
         "the completed first GPU shard must not be replayed"
+    );
+}
+
+#[cfg(feature = "gpu")]
+/// Proves production batching submits the next independent resident IO slot
+/// before retiring the previous dispatch while preserving exact result order.
+#[test]
+fn gpu_region_batches_overlap_two_resident_io_slots() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
+    let (scanner, backend, chunks, expected) = gpu_recovery_fixture();
+    crate::gpu::reset_test_max_in_flight_slots();
+
+    let outcome = with_test_region_presence_byte_limit(64, || {
+        scanner
+            .scan_coalesced_gpu_region_presence_recovering(
+                &chunks,
+                backend,
+                scanner.default_execution_route(),
+                false,
+            )
+            .expect("overlapped GPU resident batches must remain exact")
+    });
+
+    assert_eq!(outcome.matches, expected);
+    assert_eq!(
+        crate::gpu::test_max_in_flight_slots(),
+        2,
+        "the next resident IO slot must submit before the previous slot retires"
     );
 }
 

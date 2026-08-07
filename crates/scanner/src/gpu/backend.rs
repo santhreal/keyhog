@@ -15,10 +15,12 @@ pub use acquisition::GpuBackendAvailability;
 pub(crate) use acquisition::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
 
 #[cfg(all(test, feature = "gpu"))]
-pub(crate) use resident_evidence::with_test_resident_dispatch_failure;
+pub(crate) use resident_evidence::{
+    reset_test_max_in_flight_slots, test_max_in_flight_slots, with_test_resident_dispatch_failure,
+};
 #[cfg(feature = "gpu")]
 pub(crate) use resident_evidence::{
-    scan_gpu_literal_evidence_by_region_resident, GpuResidentLiteralSlot,
+    scan_gpu_literal_evidence_by_region_resident, GpuResidentLiteralOverlap, GpuResidentLiteralSlot,
 };
 
 #[cfg(all(test, feature = "gpu"))]

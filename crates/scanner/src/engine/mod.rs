@@ -497,7 +497,7 @@ pub struct CompiledScanner {
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     #[cfg(feature = "gpu")]
     pub(crate) gpu_max_literal_len: usize,
-    pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
+    pub(crate) gpu_matcher: OnceLock<Option<vyre::scan::GpuLiteralSet>>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) gpu_degrade_count: std::sync::atomic::AtomicU64,
     /// One-time backend-neutral GPU literal-program preparation measured by

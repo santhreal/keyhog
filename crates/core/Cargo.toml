@@ -26,12 +26,12 @@ status = "alpha"
 # matching the workspace, not floating `"1"` / `"0.10"`. A floating
 # spec lets a backdoored patch release land via `cargo update`
 # without any review. kimi-19 supply-chain audit, 2026-05-23.
-serde = { version = "=1.0.228", features = ["derive"] }
+serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-regex = "=1.12.3"
+regex = { workspace = true }
 regex-syntax = { workspace = true }
 sha2 = { workspace = true }
 rayon = { workspace = true }
@@ -74,5 +74,5 @@ tokio = { workspace = true, features = ["full"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
 
 [build-dependencies]
-serde = { version = "=1.0.228", features = ["derive"] }
+serde = { workspace = true }
 toml = { workspace = true }

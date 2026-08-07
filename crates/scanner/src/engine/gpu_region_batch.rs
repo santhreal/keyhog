@@ -123,7 +123,7 @@ impl Drop for ZeroRegionPresenceScratch<'_> {
 
 /// VYRE's production byte-scan guard is stricter than the u32 wire ABI.
 pub(super) const REGION_PRESENCE_BATCH_BYTE_LIMIT: usize =
-    vyre_libs::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize;
+    vyre::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize;
 
 /// Bound each positioned-match shard to the portable 8 MiB grid. CUDA can
 /// launch a larger byte grid, but dense real corpora can produce more than the

@@ -27,8 +27,8 @@ pub fn vyre_gpu_self_test() -> Result<VyreGpuSelfTest, String> {
 
 #[cfg(feature = "gpu")]
 fn vyre_gpu_self_test_impl() -> Result<VyreGpuSelfTest, String> {
+    use vyre::scan::GpuLiteralSet;
     use vyre_driver_wgpu::WgpuBackend;
-    use vyre_libs::scan::GpuLiteralSet;
 
     let patterns: Vec<Vec<u8>> = vec![b"needle".to_vec()];
     let pattern_refs: Vec<&[u8]> = patterns.iter().map(Vec::as_slice).collect();

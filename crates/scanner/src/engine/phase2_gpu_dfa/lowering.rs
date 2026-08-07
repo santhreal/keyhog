@@ -85,7 +85,7 @@ fn build_shard(
     // Region admission replays an anchored DFA once from each byte origin. An
     // implicit search prefix would rescan earlier bytes from every origin and
     // is only appropriate for the old match-triple materializer.
-    let pipeline = vyre_libs::matching::build_regex_dfa_pipeline_ext(
+    let pipeline = vyre_libs::scan::regex_dfa::build_regex_dfa_pipeline_ext(
         &source_refs,
         1,
         PHASE2_GPU_DFA_MAX_STATES,

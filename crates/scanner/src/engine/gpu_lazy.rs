@@ -13,7 +13,7 @@
 //!     `scan` was never invoked. The cached wrapper, duplicate backend identity,
 //!     diagnostic builder, and fixed-size aliases were deleted as dead surface;
 //!     only adaptive byte-budget sizing remains in [`super::gpu_input_budget`].
-//! [`GpuLiteralSet`]: vyre_libs::scan::GpuLiteralSet
+//! [`GpuLiteralSet`]: vyre::scan::GpuLiteralSet
 
 use super::gpu_lazy_helpers::{compile_gpu_literal_set, report_gpu_literal_matcher_unavailable};
 use super::*;
@@ -26,7 +26,7 @@ impl CompiledScanner {
     /// when a user cache directory is available. The cache is a pure latency
     /// optimization: a miss, stale/corrupt blob, or unavailable cache directory
     /// compiles the identical matcher without changing the selected backend.
-    pub(crate) fn gpu_matcher(&self) -> Option<&vyre_libs::scan::GpuLiteralSet> {
+    pub(crate) fn gpu_matcher(&self) -> Option<&vyre::scan::GpuLiteralSet> {
         self.gpu_matcher
             .get_or_init(|| {
                 // Decision-driving: autoroute folds this cold cost into the
@@ -35,9 +35,8 @@ impl CompiledScanner {
                 // guarantees that and records the same interval into the
                 // profiler when a runtime is current, so the number that picks
                 // the backend is the number an operator reads.
-                let cold = keyhog_profile::decision_timer(
-                    keyhog_profile::Stage::AutorouteCalibration,
-                );
+                let cold =
+                    keyhog_profile::decision_timer(keyhog_profile::Stage::AutorouteCalibration);
                 let Some(literals) = &self.gpu_literals else {
                     return None;
                 };
@@ -49,8 +48,7 @@ impl CompiledScanner {
                     }
                 };
                 if matcher.is_some() {
-                    let elapsed =
-                        u64::try_from(cold.finish().as_nanos()).unwrap_or(u64::MAX);
+                    let elapsed = u64::try_from(cold.finish().as_nanos()).unwrap_or(u64::MAX);
                     self.autoroute_gpu_shared_cold_ns
                         .store(elapsed.max(1), std::sync::atomic::Ordering::Release);
                 }

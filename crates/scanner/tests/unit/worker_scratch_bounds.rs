@@ -39,7 +39,7 @@ fn shared_anchor_candidate_pool_keeps_four_idle_buffers() {
 /// WHY: single-chunk VYRE dispatch scratch belongs only to the selected GPU route; an outlier must be zeroed, emptied, and released before that worker can serve a host route.
 #[test]
 fn gpu_literal_outlier_is_zeroed_and_released() {
-    let mut scratch = vyre_libs::scan::dispatch_io::ScanDispatchScratch::default();
+    let mut scratch = vyre::scan::dispatch_io::ScanDispatchScratch::default();
     scratch
         .haystack_bytes
         .reserve_exact(crate::types::MAX_SCAN_CHUNK_BYTES + 1);

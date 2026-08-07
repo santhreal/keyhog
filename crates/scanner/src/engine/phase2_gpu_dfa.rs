@@ -267,7 +267,7 @@ impl Phase2GpuDfaCatalog {
         scratch: &mut Phase2GpuDfaScratch,
         chunk_count: usize,
     ) -> std::result::Result<Phase2GpuDfaAdmission, String> {
-        use vyre_libs::scan::dispatch_io;
+        use vyre::scan::dispatch_io;
 
         let haystack_len = u32::try_from(scratch.haystack_len).map_err(|error| {
             format!(

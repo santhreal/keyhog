@@ -36,7 +36,7 @@ Use --require-gpu when GPU acceleration is mandatory."
 pub(super) fn compile_gpu_literal_set(
     literals: &Arc<Vec<Vec<u8>>>,
     cache_prefix: &str,
-) -> crate::error::Result<vyre_libs::scan::GpuLiteralSet> {
+) -> crate::error::Result<vyre::scan::GpuLiteralSet> {
     crate::gpu_literal_artifacts::record_runtime_gpu_literal_compiler_invocation();
     let literal_refs: Vec<&[u8]> = literals.iter().map(|v| v.as_slice()).collect();
     let cache_key =
@@ -49,12 +49,12 @@ pub(super) fn compile_gpu_literal_set(
     let _compile_span = keyhog_profile::span(keyhog_profile::Stage::BackendDispatch);
     let matcher = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         match super::gpu_cache::gpu_matcher_cache_dir() {
-            Ok(cache_dir) => vyre_libs::scan::cached_load_or_compile(&cache_dir, &cache_key, || {
-                vyre_libs::scan::GpuLiteralSet::compile_case_insensitive(&literal_refs)
+            Ok(cache_dir) => vyre::scan::cached_load_or_compile(&cache_dir, &cache_key, || {
+                vyre::scan::GpuLiteralSet::compile_case_insensitive(&literal_refs)
             }),
             Err(error) => {
                 report_gpu_matcher_cache_unavailable(&error);
-                vyre_libs::scan::GpuLiteralSet::compile_case_insensitive(&literal_refs)
+                vyre::scan::GpuLiteralSet::compile_case_insensitive(&literal_refs)
             }
         }
     }))

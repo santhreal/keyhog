@@ -12,11 +12,15 @@ pub(crate) mod evidence;
 pub(crate) use backend::load_dynamic_library;
 #[cfg(all(feature = "gpu", target_os = "linux"))]
 pub(crate) use backend::probe_cuda_peer;
-#[cfg(all(test, feature = "gpu"))]
-pub(crate) use backend::with_test_resident_dispatch_failure;
 pub use backend::GpuBackendAvailability;
+#[cfg(all(test, feature = "gpu"))]
+pub(crate) use backend::{
+    reset_test_max_in_flight_slots, test_max_in_flight_slots, with_test_resident_dispatch_failure,
+};
 #[cfg(feature = "gpu")]
-pub(crate) use backend::{scan_gpu_literal_evidence_by_region_resident, GpuResidentLiteralSlot};
+pub(crate) use backend::{
+    scan_gpu_literal_evidence_by_region_resident, GpuResidentLiteralOverlap, GpuResidentLiteralSlot,
+};
 pub(crate) use backend::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
 type RecoveryReceiptCounter = std::sync::Arc<std::sync::atomic::AtomicU64>;
 

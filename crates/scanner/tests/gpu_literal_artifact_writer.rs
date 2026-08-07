@@ -1,5 +1,5 @@
 use std::process::Command;
-use vyre_libs::scan::{GpuLiteralSet, MatchEngineCache};
+use vyre::scan::{GpuLiteralSet, MatchEngineCache};
 
 /// Locks out release-only artifact failures by proving a complete detector emits a valid
 /// manifest and deserializable VYRE blobs through the shipped artifact-writer binary.

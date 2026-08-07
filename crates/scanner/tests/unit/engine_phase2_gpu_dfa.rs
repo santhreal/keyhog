@@ -432,7 +432,7 @@ fn resident_capacity_rejects_unaligned_and_oversized_batches() {
         .expect_err("unaligned packed input must fail before GPU allocation");
     assert!(unaligned.contains("not aligned"), "{unaligned}");
 
-    let ceiling = vyre_libs::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize;
+    let ceiling = vyre::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize;
     let oversized = resident::resident_capacity_for_test(ceiling + 4, 1)
         .expect_err("batch above the backend ceiling must fail");
     assert!(oversized.contains("above Vyrë's"), "{oversized}");

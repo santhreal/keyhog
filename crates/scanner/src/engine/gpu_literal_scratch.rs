@@ -4,20 +4,20 @@ use std::cell::RefCell;
 use zeroize::Zeroize;
 
 thread_local! {
-    static GPU_LITERAL_SCAN_SCRATCH: RefCell<vyre_libs::scan::dispatch_io::ScanDispatchScratch> =
-        RefCell::new(vyre_libs::scan::dispatch_io::ScanDispatchScratch::default());
+    static GPU_LITERAL_SCAN_SCRATCH: RefCell<vyre::scan::dispatch_io::ScanDispatchScratch> =
+        RefCell::new(vyre::scan::dispatch_io::ScanDispatchScratch::default());
 }
 
 struct ZeroGpuLiteralScratch<'a> {
-    scratch: &'a mut vyre_libs::scan::dispatch_io::ScanDispatchScratch,
+    scratch: &'a mut vyre::scan::dispatch_io::ScanDispatchScratch,
 }
 
 impl<'a> ZeroGpuLiteralScratch<'a> {
-    fn new(scratch: &'a mut vyre_libs::scan::dispatch_io::ScanDispatchScratch) -> Self {
+    fn new(scratch: &'a mut vyre::scan::dispatch_io::ScanDispatchScratch) -> Self {
         Self { scratch }
     }
 
-    fn as_mut(&mut self) -> &mut vyre_libs::scan::dispatch_io::ScanDispatchScratch {
+    fn as_mut(&mut self) -> &mut vyre::scan::dispatch_io::ScanDispatchScratch {
         &mut *self.scratch
     }
 }
@@ -33,7 +33,7 @@ impl Drop for ZeroGpuLiteralScratch<'_> {
 /// Shared by every GPU dispatch scratch guard so the zeroed-field set cannot
 /// drift between owners.
 pub(in crate::engine) fn zero_scan_dispatch_scratch(
-    scratch: &mut vyre_libs::scan::dispatch_io::ScanDispatchScratch,
+    scratch: &mut vyre::scan::dispatch_io::ScanDispatchScratch,
 ) {
     scratch.haystack_bytes.zeroize();
     scratch.hit_bytes.zeroize();
@@ -49,7 +49,7 @@ pub(in crate::engine) fn zero_scan_dispatch_scratch(
 
 fn with_gpu_literal_scratch<R>(
     f: impl FnOnce(
-        &mut vyre_libs::scan::dispatch_io::ScanDispatchScratch,
+        &mut vyre::scan::dispatch_io::ScanDispatchScratch,
     ) -> std::result::Result<R, String>,
 ) -> std::result::Result<R, String> {
     GPU_LITERAL_SCAN_SCRATCH
@@ -66,7 +66,7 @@ fn with_gpu_literal_scratch<R>(
 }
 
 pub(super) fn scan_gpu_literal_presence_with_scratch(
-    matcher: &vyre_libs::scan::GpuLiteralSet,
+    matcher: &vyre::scan::GpuLiteralSet,
     backend: &dyn vyre::VyreBackend,
     haystack: &[u8],
 ) -> std::result::Result<Vec<u32>, String> {

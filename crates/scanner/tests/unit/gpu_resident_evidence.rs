@@ -34,7 +34,7 @@ fn untimed_wgpu_adapter_uses_exact_borrowed_fused_scan() {
         }
     };
     let backend: std::sync::Arc<dyn vyre::VyreBackend> = concrete_backend;
-    let matcher = vyre_libs::scan::GpuLiteralSet::compile(&[b"a".as_slice()]);
+    let matcher = vyre::scan::GpuLiteralSet::compile(&[b"a".as_slice()]);
     let slot = std::sync::Mutex::new(GpuResidentLiteralSlot::Empty);
     let mut consumed = None;
 
@@ -88,7 +88,7 @@ fn untimed_borrowed_dispatch_exposes_injected_faults() {
         }
     };
     let backend: std::sync::Arc<dyn vyre::VyreBackend> = concrete_backend;
-    let matcher = vyre_libs::scan::GpuLiteralSet::compile(&[b"a".as_slice()]);
+    let matcher = vyre::scan::GpuLiteralSet::compile(&[b"a".as_slice()]);
     let slot = std::sync::Mutex::new(GpuResidentLiteralSlot::Empty);
 
     let error = with_test_resident_dispatch_failure(0, || {
@@ -129,7 +129,7 @@ fn fused_match_overflow_replays_once_with_the_exact_device_count() {
         wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS,
     );
     let backend: std::sync::Arc<dyn vyre::VyreBackend> = concrete_backend;
-    let matcher = vyre_libs::scan::GpuLiteralSet::compile(&[b"a".as_slice(), b"aa".as_slice()]);
+    let matcher = vyre::scan::GpuLiteralSet::compile(&[b"a".as_slice(), b"aa".as_slice()]);
     let slot = std::sync::Mutex::new(GpuResidentLiteralSlot::Empty);
     let haystack = vec![b'a'; super::GPU_FUSED_MATCH_CAP as usize];
     let mut consumed = None;
@@ -159,7 +159,7 @@ fn fused_match_overflow_replays_once_with_the_exact_device_count() {
     match &*state_guard {
         GpuResidentLiteralSlot::Ready(state) => {
             assert!(resident_timed_dispatch_supported);
-            assert_eq!(state.pipeline.max_matches() as usize, matches);
+            assert_eq!(state.sessions[0].pipeline.max_matches() as usize, matches);
         }
         GpuResidentLiteralSlot::Borrowed(state) => {
             assert!(!resident_timed_dispatch_supported);

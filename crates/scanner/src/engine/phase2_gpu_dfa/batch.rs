@@ -8,7 +8,7 @@ pub(super) struct Phase2GpuDfaScratch {
     pub(super) haystack: Vec<u8>,
     pub(super) haystack_len: usize,
     pub(super) region_starts: Vec<u32>,
-    pub(super) dispatch: vyre_libs::scan::dispatch_io::ScanDispatchScratch,
+    pub(super) dispatch: vyre::scan::dispatch_io::ScanDispatchScratch,
     pub(super) region_bytes: Vec<u8>,
     pub(super) reset_bytes: Vec<u8>,
     pub(super) outputs: vyre::OutputBuffers,
@@ -101,7 +101,7 @@ where
             "phase-2 GPU regex-DFA coalesced batch is {total} byte(s), above the u32 GPU ABI; split the batch before dispatch"
         ));
     }
-    let padded_len = vyre_libs::scan::dispatch_io::haystack_padded_u32_byte_len(total)
+    let padded_len = vyre::scan::dispatch_io::haystack_padded_u32_byte_len(total)
         .map_err(|error| error.to_string())?;
 
     #[cfg(test)]

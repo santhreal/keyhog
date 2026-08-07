@@ -16,7 +16,7 @@ use crate::scanner_config::ScannerTuningConfig;
 use keyhog_core::DetectorSpec;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use vyre_libs::scan::GpuLiteralSet;
+use vyre::scan::GpuLiteralSet;
 
 static INSTALL_COMPILED_INVOCATIONS: AtomicUsize = AtomicUsize::new(0);
 static RUNTIME_COMPILER_INVOCATIONS: AtomicUsize = AtomicUsize::new(0);
