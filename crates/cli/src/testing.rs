@@ -628,7 +628,7 @@ impl CliTestApi for TestApi {
         crate::sources::build_sources(&resolved_args, &resolved, allowlist_paths, merkle)
     }
     fn set_buffered_stdin(&self, args: &mut ScanArgs, bytes: Vec<u8>) {
-        args.buffered_stdin = Some(bytes);
+        args.buffered_stdin = Some(bytes.into());
     }
     fn merge_scan_ignore_paths(
         &self,

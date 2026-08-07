@@ -1310,12 +1310,11 @@ async fn acquire_via_daemon(args: &mut ScanArgs) -> Result<DaemonScan> {
     })?;
 
     let (matches, source_coverage_gaps, source_bytes_scanned, profile) = if args.stdin {
-        let bytes = read_stdin_bytes(args)?;
+        let bytes: std::sync::Arc<[u8]> = read_stdin_bytes(args)?.into();
         let source_bytes_scanned = bytes.len() as u64;
-        // Keep the owned payload on the effective argument clone until the
-        // route is known to have completed. The automatic fallback consumes
-        // this same buffer through `BufferedStdinSource`.
-        args.buffered_stdin = Some(bytes.clone());
+        // Keep a shared exact payload until the daemon route completes. An
+        // automatic fallback reuses it without copying the bounded stdin body.
+        args.buffered_stdin = Some(std::sync::Arc::clone(&bytes));
         let stdin_cap_bytes = args.limits.to_source_limits().stdin_bytes;
         if bytes.len() > stdin_cap_bytes {
             bail!(

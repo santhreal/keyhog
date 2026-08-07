@@ -35,3 +35,39 @@ fn buffered_stdin_replay_uses_one_source_with_exact_lossy_decoding() {
         "replay must match the normal lossy UTF-8 stdin decoder exactly"
     );
 }
+
+/// WHY: a failed daemon request can replay the full bounded stdin body in
+/// process; retaining one whole decoded copy would make peak memory scale at
+/// twice the input size instead of one shared body plus one scan window.
+#[test]
+fn buffered_stdin_replay_emits_bounded_overlapping_windows() {
+    const WINDOW: usize = 1024 * 1024;
+    const OVERLAP: usize = 128 * 1024;
+    let mut args =
+        ScanArgs::try_parse_from(["scan", "--stdin"]).expect("stdin scan arguments must parse");
+    let mut bytes = vec![b'a'; WINDOW + 16];
+    bytes[100] = b'\n';
+    bytes[200] = b'\n';
+    bytes[WINDOW - 10] = b'\n';
+    API.set_buffered_stdin(&mut args, bytes.clone());
+
+    let sources = API
+        .build_sources(&args, Vec::new(), None)
+        .expect("buffered stdin source must build");
+    let chunks = sources[0]
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("bounded buffered stdin must decode");
+
+    assert_eq!(chunks.len(), 2);
+    assert_eq!(chunks[0].data.len(), WINDOW);
+    assert_eq!(chunks[0].metadata.base_offset, 0);
+    assert_eq!(chunks[0].metadata.base_line, 0);
+    assert_eq!(chunks[1].metadata.base_offset, WINDOW - OVERLAP);
+    assert_eq!(chunks[1].metadata.base_line, 2);
+    assert_eq!(
+        chunks[1].data.as_bytes(),
+        &bytes[WINDOW - OVERLAP..],
+        "the retry window must preserve the exact overlap and trailing bytes"
+    );
+}

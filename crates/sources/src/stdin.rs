@@ -32,6 +32,13 @@ struct SpooledStdinChunks {
     done: bool,
 }
 
+struct BufferedStdinChunks {
+    bytes: std::sync::Arc<[u8]>,
+    next_offset: usize,
+    next_line: usize,
+    done: bool,
+}
+
 /// An already acquired stdin payload with the same decoding, limits, chunk
 /// metadata, and source identity as [`StdinSource`].
 ///
@@ -50,9 +57,9 @@ impl StdinSource {
 }
 
 impl BufferedStdinSource {
-    pub fn new(bytes: impl Into<Vec<u8>>) -> Self {
+    pub fn new(bytes: impl Into<std::sync::Arc<[u8]>>) -> Self {
         Self {
-            bytes: bytes.into().into(),
+            bytes: bytes.into(),
             limits: crate::SourceLimits::default(),
         }
     }
@@ -99,8 +106,7 @@ impl Source for BufferedStdinSource {
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
         crate::gate_scan(|| {
-            let mut reader = std::io::Cursor::new(self.bytes.as_ref());
-            one_stdin_chunk(read_to_string_limited(&mut reader, self.limits.stdin_bytes))
+            buffered_chunks_with_limit(std::sync::Arc::clone(&self.bytes), self.limits.stdin_bytes)
         })
     }
 
@@ -120,6 +126,57 @@ fn chunks_with_limit(max_bytes: usize) -> Box<dyn Iterator<Item = Result<Chunk, 
         }),
         Err(error) => Box::new(std::iter::once(Err(SourceError::Io(error)))),
     })
+}
+
+fn buffered_chunks_with_limit(
+    bytes: std::sync::Arc<[u8]>,
+    max_bytes: usize,
+) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>>> {
+    if bytes.len() > max_bytes {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+        return Box::new(std::iter::once(Err(SourceError::Io(
+            std::io::Error::other(format!("stdin exceeds {max_bytes} byte limit")),
+        ))));
+    }
+    crate::profile::add_input_units(1);
+    crate::profile::add_input_bytes(bytes.len() as u64);
+    Box::new(BufferedStdinChunks {
+        bytes,
+        next_offset: 0,
+        next_line: 0,
+        done: false,
+    })
+}
+
+impl Iterator for BufferedStdinChunks {
+    type Item = Result<Chunk, SourceError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+        let start = self.next_offset;
+        let end = start
+            .saturating_add(STDIN_WINDOW_SIZE)
+            .min(self.bytes.len());
+        let bytes = &self.bytes[start..end];
+        let advanced = (end < self.bytes.len()).then_some(STDIN_WINDOW_SIZE - STDIN_WINDOW_OVERLAP);
+        let advanced_lines = advanced
+            .map(|len| memchr::memchr_iter(b'\n', &bytes[..len]).count())
+            .unwrap_or(0);
+        let text = match std::str::from_utf8(bytes) {
+            Ok(text) => text.to_owned(),
+            Err(_) => String::from_utf8_lossy(bytes).into_owned(),
+        };
+        let base_line = self.next_line;
+        if end >= self.bytes.len() {
+            self.done = true;
+        } else if let Some(advanced) = advanced {
+            self.next_offset += advanced;
+            self.next_line += advanced_lines;
+        }
+        Some(Ok(stdin_chunk(text, start, base_line)))
+    }
 }
 
 impl Iterator for SpooledStdinChunks {
@@ -163,21 +220,25 @@ impl Iterator for SpooledStdinChunks {
             self.next_offset += advanced;
         }
 
-        Some(Ok(Chunk {
-            data: text.into(),
-            metadata: ChunkMetadata {
-                base_offset: start,
-                base_line,
-                source_type: "stdin".into(),
-                path: None,
-                commit: None,
-                author: None,
-                date: None,
-                mtime_ns: None,
-                size_bytes: None,
-                decoded_span: None,
-            },
-        }))
+        Some(Ok(stdin_chunk(text, start, base_line)))
+    }
+}
+
+fn stdin_chunk(text: String, base_offset: usize, base_line: usize) -> Chunk {
+    Chunk {
+        data: text.into(),
+        metadata: ChunkMetadata {
+            base_offset,
+            base_line,
+            source_type: "stdin".into(),
+            path: None,
+            commit: None,
+            author: None,
+            date: None,
+            mtime_ns: None,
+            size_bytes: None,
+            decoded_span: None,
+        },
     }
 }
 
@@ -213,35 +274,6 @@ fn spool_stdin_limited(max_bytes: usize) -> std::io::Result<(std::fs::File, usiz
     Ok((file, total))
 }
 
-fn one_stdin_chunk(
-    result: std::io::Result<String>,
-) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>>> {
-    Box::new(std::iter::once(match result {
-        Ok(data) => {
-            // Real counts at the adapter boundary: stdin yields exactly one
-            // chunk carrying the buffered payload bytes.
-            crate::profile::add_input_units(1);
-            crate::profile::add_input_bytes(data.len() as u64);
-            Ok(Chunk {
-                data: data.into(),
-                metadata: ChunkMetadata {
-                    base_offset: 0,
-                    base_line: 0,
-                    source_type: "stdin".into(),
-                    path: None,
-                    commit: None,
-                    author: None,
-                    date: None,
-                    mtime_ns: None,
-                    size_bytes: None,
-                    decoded_span: None,
-                },
-            })
-        }
-        Err(error) => Err(SourceError::Io(error)),
-    }))
-}
-
 pub(crate) fn read_to_string_limited(
     reader: &mut impl Read,
     max_bytes: usize,
@@ -255,8 +287,7 @@ pub(crate) fn read_to_string_limited(
     })?;
     // Read at most `max_bytes + 1` so oversized stdin is rejected before we
     // hand a giant buffer to the scanner.
-    // Buffered callers return one synchronous chunk, so there is no internal
-    // queue handoff; the CLI source channel records any downstream wait.
+    // The helper owns one bounded decode buffer and has no queue handoff.
     let _buffering = crate::profile::read_span();
     let read = crate::capped_read::read_to_cap(reader, cap, None)?;
     drop(_buffering);
