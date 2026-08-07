@@ -1006,6 +1006,7 @@ impl CompiledScanner {
             None,
             None,
             None,
+            None,
             route,
         )
     }
@@ -1016,6 +1017,7 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         selected_backend: crate::hw_probe::ScanBackend,
         admission: Option<crate::engine::Phase1Admission>,
+        cpu_trigger_hints: Option<&[u64]>,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_evidence: Option<
             crate::engine::phase2::Phase2AlwaysActiveGpuEvidence<'_>,
@@ -1090,6 +1092,7 @@ impl CompiledScanner {
                 chunk,
                 selected_backend,
                 deadline,
+                cpu_trigger_hints,
                 phase2_keyword_hints,
                 phase2_always_active_evidence,
                 generic_keyword_positions,

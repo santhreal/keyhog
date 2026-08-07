@@ -69,6 +69,7 @@ pub struct Phase1AdmissionPlan {
     generic_keyword_positions: Vec<Vec<u32>>,
     generic_keyword_position_rows: Vec<usize>,
     phase2_always_active_absence: Vec<bool>,
+    cpu_trigger_hints: Vec<Option<Vec<u64>>>,
     #[cfg(debug_assertions)]
     unique_payloads: usize,
 }
@@ -113,6 +114,13 @@ impl Phase1AdmissionPlan {
         self.phase2_always_active_absence_for(index)
     }
 
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn cpu_trigger_hints_for_diagnostics(&self, index: usize) -> Option<&[u64]> {
+        self.cpu_trigger_hints_for(index)
+    }
+
     #[inline]
     pub(crate) fn admission_for(&self, index: usize) -> Option<Phase1Admission> {
         self.admissions.get(index).copied()
@@ -134,6 +142,12 @@ impl Phase1AdmissionPlan {
     pub(crate) fn phase2_always_active_absence_for(&self, index: usize) -> Option<bool> {
         let row = *self.phase2_keyword_hint_rows.get(index)?;
         self.phase2_always_active_absence.get(row).copied()
+    }
+
+    #[inline]
+    pub(crate) fn cpu_trigger_hints_for(&self, index: usize) -> Option<&[u64]> {
+        let row = *self.phase2_keyword_hint_rows.get(index)?;
+        self.cpu_trigger_hints.get(row)?.as_deref()
     }
 
     #[inline]
@@ -190,6 +204,8 @@ impl Phase1AdmissionPlan {
                 .all(|&row| row < self.generic_keyword_positions.len());
         let always_active_absence_valid =
             self.phase2_always_active_absence.len() == self.phase2_keyword_hints.len();
+        let cpu_trigger_hints_valid =
+            self.cpu_trigger_hints.len() == self.phase2_keyword_hints.len();
         if self.admissions.len() != self.chunk_shapes.len()
             || summary_chunks != shape_count
             || summary_bytes != shape_bytes
@@ -197,6 +213,7 @@ impl Phase1AdmissionPlan {
             || !keyword_hints_valid
             || !generic_positions_valid
             || !always_active_absence_valid
+            || !cpu_trigger_hints_valid
             || self
                 .chunk_shapes
                 .iter()
@@ -418,7 +435,7 @@ impl CompiledScanner {
         chunks: &[Chunk],
         bypass_bigram: bool,
     ) -> Phase1AdmissionPlan {
-        let classify = |chunk: &Chunk, classify_reusable_absence: bool| {
+        let classify = |chunk: &Chunk, classify_reusable_evidence: bool| {
             let admission = if bypass_bigram {
                 self.phase1_admission_bypassing_bigram(chunk.data.as_bytes())
             } else {
@@ -433,12 +450,15 @@ impl CompiledScanner {
                     &mut generic_positions,
                 );
             }
+            let cpu_trigger_hints = classify_reusable_evidence
+                .then(|| self.collect_triggered_patterns_cpu(&chunk.data));
             (
                 admission,
                 keyword_trigger_count,
                 keyword_hints,
                 generic_positions,
-                classify_reusable_absence && self.phase2_always_active_absence(&chunk.data),
+                classify_reusable_evidence && self.phase2_always_active_absence(&chunk.data),
+                cpu_trigger_hints,
             )
         };
 
@@ -499,7 +519,8 @@ impl CompiledScanner {
         for (chunk, representative_position) in
             chunks.iter().zip(representative_for.iter().copied())
         {
-            let (admission, keyword_trigger_count, _, _, _) = &classified[representative_position];
+            let (admission, keyword_trigger_count, _, _, _, _) =
+                &classified[representative_position];
             let data = chunk.data.as_bytes();
             let len = data.len();
             summary.record(*admission, len as u64);
@@ -516,10 +537,12 @@ impl CompiledScanner {
         let mut phase2_keyword_hints = Vec::with_capacity(classified.len());
         let mut generic_keyword_positions = Vec::with_capacity(classified.len());
         let mut phase2_always_active_absence = Vec::with_capacity(classified.len());
-        for (_, _, hints, positions, absence) in classified {
+        let mut cpu_trigger_hints = Vec::with_capacity(classified.len());
+        for (_, _, hints, positions, absence, triggers) in classified {
             phase2_keyword_hints.push(hints);
             generic_keyword_positions.push(positions);
             phase2_always_active_absence.push(absence);
+            cpu_trigger_hints.push(triggers);
         }
         Phase1AdmissionPlan {
             admissions,
@@ -531,6 +554,7 @@ impl CompiledScanner {
             generic_keyword_positions,
             generic_keyword_position_rows: representative_for,
             phase2_always_active_absence,
+            cpu_trigger_hints,
             #[cfg(debug_assertions)]
             unique_payloads: representatives.len(),
         }

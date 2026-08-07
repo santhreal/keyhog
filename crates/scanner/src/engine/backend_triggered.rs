@@ -380,6 +380,11 @@ impl CompiledScanner {
     }
 
     pub(crate) fn collect_triggered_patterns_cpu_bytes(&self, bytes: &[u8]) -> Vec<u64> {
+        #[cfg(debug_assertions)]
+        self.phase1_trigger_scanned_bytes.fetch_add(
+            u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let mut triggered_patterns = super::trigger_bitmap::new_trigger_bitmap(self.ac_map.len());
         if let Some(ac) = &self.ac {
             // OVERLAPPING iteration, not leftmost `find_iter`: a non-overlapping
@@ -402,6 +407,21 @@ impl CompiledScanner {
             }
         }
         triggered_patterns
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_phase1_trigger_scanned_bytes_for_diagnostics(&self) {
+        self.phase1_trigger_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn phase1_trigger_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.phase1_trigger_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Number of rows in the fused GPU literal matcher. Presence bits exist for

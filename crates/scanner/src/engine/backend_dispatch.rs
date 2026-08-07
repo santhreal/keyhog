@@ -71,6 +71,12 @@ impl CompiledScanner {
             crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
                 crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
                     let admission = admission_plan.and_then(|plan| plan.admission_for(index));
+                    let cpu_trigger_hints = match backend {
+                        ScanBackend::CpuFallback => {
+                            admission_plan.and_then(|plan| plan.cpu_trigger_hints_for(index))
+                        }
+                        _ => None,
+                    };
                     let phase2_keyword_hints =
                         admission_plan.and_then(|plan| plan.phase2_keyword_hints_for(index));
                     let generic_keyword_positions =
@@ -87,6 +93,7 @@ impl CompiledScanner {
                         self.config.per_chunk_deadline(),
                         backend,
                         admission,
+                        cpu_trigger_hints,
                         phase2_keyword_hints,
                         phase2_always_active_evidence,
                         generic_keyword_positions,

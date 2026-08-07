@@ -89,7 +89,9 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
-        self.scan_inner_with_admission_hints(chunk, backend, deadline, None, None, None, route)
+        self.scan_inner_with_admission_hints(
+            chunk, backend, deadline, None, None, None, None, route,
+        )
     }
 
     pub(crate) fn scan_inner_with_admission_hints(
@@ -97,6 +99,7 @@ impl CompiledScanner {
         chunk: &Chunk,
         backend: crate::hw_probe::ScanBackend,
         deadline: Option<std::time::Instant>,
+        cpu_trigger_hints: Option<&[u64]>,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_evidence: Option<super::phase2::Phase2AlwaysActiveGpuEvidence<'_>>,
         generic_keyword_positions: Option<&[u32]>,
@@ -117,7 +120,12 @@ impl CompiledScanner {
         if crate::deadline::expired(deadline) {
             return Ok(Vec::new());
         }
-        let triggered = self.collect_triggered_patterns_for_backend(&chunk.data, backend)?;
+        let triggered = match cpu_trigger_hints {
+            Some(hints) => std::borrow::Cow::Borrowed(hints),
+            None => std::borrow::Cow::Owned(
+                self.collect_triggered_patterns_for_backend(&chunk.data, backend)?,
+            ),
+        };
         if crate::deadline::expired(deadline) {
             return Ok(Vec::new());
         }

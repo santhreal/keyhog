@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "CPU scans now reuse exact phase-one trigger bitmaps for byte-identical repeated payloads instead of rescanning each chunk."
+crates = ["scanner"]

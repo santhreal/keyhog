@@ -322,9 +322,22 @@ fn repeated_payloads_share_generic_keyword_positions() {
         Some(true),
         "repeated clean fixture must establish complete always-active absence"
     );
+    let ordinary_triggers = ordinary_plan
+        .cpu_trigger_hints_for_diagnostics(0)
+        .expect("repeated clean fixture must persist CPU trigger evidence");
+    assert!(
+        ordinary_triggers.iter().any(|&word| word != 0),
+        "fixture must exercise confirmed-pattern trigger collection"
+    );
+    assert_eq!(
+        ordinary_plan.cpu_trigger_hints_for_diagnostics(1),
+        Some(ordinary_triggers),
+        "byte-identical payloads must reference the same CPU trigger row"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
+    scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
     let planned_ordinary = scanner
         .scan_coalesced_with_backend_and_admission(
             &ordinary_chunks,
@@ -337,15 +350,25 @@ fn repeated_payloads_share_generic_keyword_positions() {
         0,
         "complete representative absence must suppress repeated prefilter scans"
     );
+    assert_eq!(
+        scanner.phase1_trigger_scanned_bytes_for_diagnostics(),
+        0,
+        "planned scan must consume CPU trigger hints without rescanning bytes"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
+    scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
     let direct_ordinary = scanner
         .scan_coalesced_with_backend(&ordinary_chunks, ScanBackend::CpuFallback)
         .expect("direct ordinary scan");
     assert!(
         scanner.phase2_prefilter_scanned_bytes_for_diagnostics() > 0,
         "direct scan must establish the always-active prefilter control"
+    );
+    assert!(
+        scanner.phase1_trigger_scanned_bytes_for_diagnostics() > 0,
+        "direct scan must establish the phase-one trigger byte control"
     );
     assert_eq!(planned_ordinary, direct_ordinary);
     assert!(planned_ordinary.iter().all(Vec::is_empty));
