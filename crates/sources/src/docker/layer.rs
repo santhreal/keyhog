@@ -6,18 +6,18 @@ use std::path::{Path, PathBuf};
 
 use crate::FilesystemSource;
 
-pub(super) fn collect_docker_layer_chunks(
+pub(super) fn stream_docker_layer_chunks(
     workspace: &DockerScanWorkspace,
     image: &str,
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
     budget: &DockerUnpackBudget,
-) -> Vec<Result<Chunk, SourceError>> {
+    emit: &mut impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
     let layer_archives = match find_layer_archives(workspace.root_path(), limits) {
         Ok(layer_archives) => layer_archives,
-        Err(error) => return vec![Err(error)],
+        Err(error) => return emit(Err(error)),
     };
-    let mut rows = Vec::new();
     for layer_tar in layer_archives {
         match scan_docker_layer(
             workspace,
@@ -26,12 +26,18 @@ pub(super) fn collect_docker_layer_chunks(
             limits,
             respect_default_excludes,
             budget,
+            emit,
         ) {
-            Ok(layer_rows) => rows.extend(layer_rows),
-            Err(error) => rows.push(Err(error)),
+            Ok(true) => {}
+            Ok(false) => return false,
+            Err(error) => {
+                if !emit(Err(error)) {
+                    return false;
+                }
+            }
         }
     }
-    rows
+    true
 }
 
 pub(super) fn find_layer_archives(
@@ -86,34 +92,42 @@ pub(super) fn rewrite_layer_chunks<I>(
 where
     I: IntoIterator<Item = Result<Chunk, SourceError>>,
 {
-    // Canonicalize the layer root ONCE, not per chunk: it is invariant across
-    // every chunk in the layer, and `std::fs::canonicalize` is a syscall that
-    // walks the whole path resolving symlinks, a big layer paid it thousands
-    // of times for the same directory. Callers pass a real unpacked layer dir,
-    // so a canonicalize failure here is a genuine setup error surfaced once.
+    let mut rewritten = Vec::new();
+    stream_rewritten_layer_chunks(input_chunks, image, layer_root, layer_name, &mut |row| {
+        rewritten.push(row);
+        true
+    })?;
+    Ok(rewritten)
+}
+
+fn stream_rewritten_layer_chunks<I>(
+    input_chunks: I,
+    image: &str,
+    layer_root: &Path,
+    layer_name: &str,
+    emit: &mut impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<bool, SourceError>
+where
+    I: IntoIterator<Item = Result<Chunk, SourceError>>,
+{
     let normalized_root = std::fs::canonicalize(layer_root).map_err(|error| {
         SourceError::Other(format!(
             "docker layer root '{}' cannot be canonicalized: {error}",
             layer_root.display()
         ))
     })?;
-    // KH-1446: a single filesystem chunk Err must not abort the rest of the
-    // layer. Keep prior Ok rewrites, emit the error row, continue.
-    let mut rewritten = Vec::new();
     for chunk in input_chunks {
-        match chunk {
-            Ok(chunk) => match rewrite_chunk(chunk, image, &normalized_root, layer_name) {
-                Ok(rewritten_chunk) => rewritten.push(Ok(rewritten_chunk)),
-                Err(error) => rewritten.push(Err(error)),
-            },
-            Err(error) => {
-                rewritten.push(Err(SourceError::Other(format!(
-                    "docker layer {layer_name} scan failed: {error}"
-                ))));
-            }
+        let row = match chunk {
+            Ok(chunk) => rewrite_chunk(chunk, image, &normalized_root, layer_name),
+            Err(error) => Err(SourceError::Other(format!(
+                "docker layer {layer_name} scan failed: {error}"
+            ))),
+        };
+        if !emit(row) {
+            return Ok(false);
         }
     }
-    Ok(rewritten)
+    Ok(true)
 }
 
 pub(super) fn sanitize_layer_name(layer_name: &str) -> String {
@@ -127,33 +141,33 @@ fn scan_docker_layer(
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
     budget: &DockerUnpackBudget,
-) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
+    emit: &mut impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<bool, SourceError> {
     let layer_name = docker_layer_name(layer_tar, workspace.root_path());
     let layer_dir = workspace.layer_dir(&layer_name);
     create_private_directory_all(&layer_dir)?;
-    // A cap that trips mid-unpack must NOT discard what already landed on disk.
-    // Entries written before the refusal are real scannable content, so the
-    // failure becomes a gap ROW carried alongside those findings instead of a
-    // `?` that throws the whole layer away unscanned.
     let error_rows = match unpack_layer_archive(layer_tar, &layer_dir, limits, budget) {
         Ok(report) => report.into_rows(),
         Err(error) => vec![Err(error)],
     };
-    let mut rows = Vec::new();
 
-    match rewrite_layer_chunks(
+    if !stream_rewritten_layer_chunks(
         FilesystemSource::new(layer_dir.clone())
             .with_default_excludes(respect_default_excludes)
             .chunks(),
         image,
         &layer_dir,
         &layer_name,
-    ) {
-        Ok(chunk_rows) => rows.extend(chunk_rows),
-        Err(error) => rows.push(Err(error)),
+        emit,
+    )? {
+        return Ok(false);
     }
-    rows.extend(error_rows);
-    Ok(rows)
+    for row in error_rows {
+        if !emit(row) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn docker_layer_name(layer_tar: &Path, root_path: &Path) -> String {

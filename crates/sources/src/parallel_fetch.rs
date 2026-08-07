@@ -65,6 +65,7 @@ impl Drop for RemoteChunkStream {
     }
 }
 
+#[cfg(any(feature = "azure", feature = "s3", feature = "gcs", feature = "slack"))]
 pub(crate) fn stream_ordered_fetch<T, R>(
     items: &[T],
     worker_limit: usize,
@@ -140,7 +141,10 @@ where
     })
 }
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(feature = "azure", feature = "s3", feature = "gcs", feature = "slack")
+))]
 mod ordered_fetch_tests {
     #[test]
     fn slow_first_item_bounds_completed_results_to_worker_limit() {

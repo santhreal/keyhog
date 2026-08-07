@@ -50,6 +50,7 @@ pub(super) fn exhaustive_archive_walker(root_path: &Path) -> CodeWalker {
 /// let source = DockerImageSource::new("alpine:latest");
 /// assert_eq!(source.name(), "docker");
 /// ```
+#[derive(Clone)]
 pub struct DockerImageSource {
     image: String,
     limits: crate::SourceLimits,
@@ -93,102 +94,105 @@ impl Source for DockerImageSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        // Hold the scan read lease across collection so a counter-asserting test's
-        // exclusive scope serializes this source's skip recording (unreadable
-        // layers / manifests). `collect_docker_chunks` is synchronous, so the
-        // lease covers its whole recording window. A no-op in production where the
-        // gate is never armed; see `skip::gate_scan`.
-        crate::gate_scan(|| {
-            match collect_docker_chunks(&self.image, self.limits, self.respect_default_excludes) {
-                Ok(rows) => Box::new(rows.into_iter()),
-                Err(error) => Box::new(std::iter::once(Err(error))),
-            }
-        })
+        let lease = crate::acquire_scan_read_lease();
+        let source = self.clone();
+        let worker_lease = lease.clone();
+        let profile_runtime = crate::profile::current_runtime();
+        let stream = crate::parallel_fetch::RemoteChunkStream::spawn(
+            "keyhog-docker",
+            "docker",
+            worker_lease,
+            move |sender, worker_lease| {
+                let _attributed = worker_lease.enter();
+                let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
+                let result = stream_docker_chunks(
+                    &source.image,
+                    source.limits,
+                    source.respect_default_excludes,
+                    |row| sender.send(row).is_ok(),
+                );
+                if let Err(error) = result {
+                    let _ = sender.send(Err(error));
+                }
+            },
+        );
+        match stream {
+            Ok(stream) => crate::attach_scan_lease(lease, Box::new(stream)),
+            Err(error) => crate::attach_scan_lease(lease, Box::new(std::iter::once(Err(error)))),
+        }
     }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 }
 
-fn collect_docker_chunks(
+fn stream_docker_chunks(
     image: &str,
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
-) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
+    mut emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<(), SourceError> {
     let image = validate_image_name(image)?;
     let workspace = DockerScanWorkspace::new()?;
     let docker_bin = resolve_docker_binary()?;
 
-    // Container export is the acquisition boundary for this adapter.
     let archive_path = {
         let _export = crate::profile::acquire_span();
         acquire_docker_image_archive(&docker_bin, &image, &workspace)?
     };
-    let mut rows = Vec::new();
-    // Archive unpack + metadata enumeration walk the exported image layout.
     let _enumerate = crate::profile::walk_span();
-    // ONE budget for the whole image: the outer tar and every layer tar draw
-    // from this cell, so `docker_tar_total_bytes` bounds the image rather than
-    // resetting per tar.
     let unpack_budget = archive::DockerUnpackBudget::new(limits.docker_tar_total_bytes);
-    // Never discard what already unpacked. A refused entry (entry-count cap,
-    // per-entry cap, image budget) aborts the REST of the outer tar, but the
-    // layers already written are real scannable content, so the refusal becomes
-    // a gap row carried alongside them rather than a `?` that drops the whole
-    // image. These caps are deliberate one-shot refusals of hostile input and
-    // are never retried; retrying a bomb is how a DoS defense becomes a DoS.
-    let mut error_rows = match archive::unpack_tar(
-        &archive_path,
-        workspace.root_path(),
-        limits,
-        &unpack_budget,
-    ) {
-        Ok(report) => report.into_rows(),
-        Err(error) => vec![Err(error)],
-    };
+    let mut error_rows =
+        match archive::unpack_tar(&archive_path, workspace.root_path(), limits, &unpack_budget) {
+            Ok(report) => report.into_rows(),
+            Err(error) => vec![Err(error)],
+        };
 
     match find_archive_metadata_chunks(workspace.root_path(), &image, limits) {
         Ok(chunks) => {
-            // Input accounting: layer payloads are counted by the inner
-            // per-layer FilesystemSource walks, so only the metadata chunks
-            // this adapter synthesizes itself are recorded (no double count).
-            crate::profile::add_input_units(chunks.len() as u64);
-            crate::profile::add_input_bytes(
-                chunks.iter().map(|chunk| chunk.data.len() as u64).sum(),
-            );
-            rows.extend(chunks.into_iter().map(Ok))
+            for chunk in chunks {
+                crate::profile::add_input_units(1);
+                crate::profile::add_input_bytes(chunk.data.len() as u64);
+                if !emit(Ok(chunk)) {
+                    return Ok(());
+                }
+            }
         }
         Err(error) => error_rows.push(Err(error)),
     }
     match find_manifest_config_chunks(workspace.root_path(), &image, limits) {
         Ok(chunks) => {
-            crate::profile::add_input_units(chunks.len() as u64);
-            crate::profile::add_input_bytes(
-                chunks.iter().map(|chunk| chunk.data.len() as u64).sum(),
-            );
-            rows.extend(chunks.into_iter().map(Ok))
+            for chunk in chunks {
+                crate::profile::add_input_units(1);
+                crate::profile::add_input_bytes(chunk.data.len() as u64);
+                if !emit(Ok(chunk)) {
+                    return Ok(());
+                }
+            }
         }
         Err(error) => error_rows.push(Err(error)),
     }
-    // Layer traversal (per-layer unpack, dedup, and scan) is the walk
-    // boundary; per-layer reads record through the inner FilesystemSource.
     drop(_enumerate);
+
     let _layer_walk = crate::profile::walk_span();
-    for row in layer::collect_docker_layer_chunks(
+    if !layer::stream_docker_layer_chunks(
         &workspace,
         &image,
         limits,
         respect_default_excludes,
         &unpack_budget,
+        &mut emit,
     ) {
-        match row {
-            Ok(chunk) => rows.push(Ok(chunk)),
-            Err(error) => error_rows.push(Err(error)),
+        return Ok(());
+    }
+    for row in error_rows {
+        if !emit(row) {
+            break;
         }
     }
-    rows.extend(error_rows);
 
-    Ok(rows)
+    Ok(())
 }
 
 struct DockerScanWorkspace {
@@ -459,11 +463,9 @@ pub(crate) fn unpack_layer_archive_for_test(
         archive_path,
         destination,
         crate::SourceLimits::default(),
-        &archive::DockerUnpackBudget::new(
-            crate::SourceLimits::default().docker_tar_total_bytes,
-        ),
+        &archive::DockerUnpackBudget::new(crate::SourceLimits::default().docker_tar_total_bytes),
     )
-        .map(archive::DockerExtractReport::into_errors)
+    .map(archive::DockerExtractReport::into_errors)
 }
 
 pub(crate) fn unpack_layer_archive_with_total_cap_for_test(
@@ -481,7 +483,7 @@ pub(crate) fn unpack_layer_archive_with_total_cap_for_test(
         limits,
         &archive::DockerUnpackBudget::new(limits.docker_tar_total_bytes),
     )
-        .map(archive::DockerExtractReport::into_errors)
+    .map(archive::DockerExtractReport::into_errors)
 }
 
 pub(crate) fn unpack_layer_archive_with_entry_cap_for_test(
@@ -499,7 +501,7 @@ pub(crate) fn unpack_layer_archive_with_entry_cap_for_test(
         limits,
         &archive::DockerUnpackBudget::new(limits.docker_tar_total_bytes),
     )
-        .map(archive::DockerExtractReport::into_errors)
+    .map(archive::DockerExtractReport::into_errors)
 }
 
 pub(crate) fn unpack_layer_archive_with_caps_for_test(
@@ -519,7 +521,7 @@ pub(crate) fn unpack_layer_archive_with_caps_for_test(
         limits,
         &archive::DockerUnpackBudget::new(limits.docker_tar_total_bytes),
     )
-        .map(archive::DockerExtractReport::into_errors)
+    .map(archive::DockerExtractReport::into_errors)
 }
 
 pub(crate) fn unpack_image_archive_with_entry_cap_for_test(
@@ -537,7 +539,7 @@ pub(crate) fn unpack_image_archive_with_entry_cap_for_test(
         limits,
         &archive::DockerUnpackBudget::new(limits.docker_tar_total_bytes),
     )
-        .map(archive::DockerExtractReport::into_errors)
+    .map(archive::DockerExtractReport::into_errors)
 }
 
 /// Unpack several layer tars through ONE image-scoped budget, the way a real

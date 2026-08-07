@@ -25,12 +25,12 @@ mod endpoint_screen;
 mod factory;
 mod limits;
 mod magic;
-mod profile;
 #[cfg(any(
     feature = "azure",
     feature = "s3",
     feature = "gcs",
     feature = "slack",
+    feature = "docker",
     feature = "github",
     feature = "gitlab",
     feature = "bitbucket"
@@ -44,6 +44,7 @@ mod parallel_fetch;
     feature = "bitbucket"
 ))]
 mod process_excerpt;
+mod profile;
 mod safe_read;
 mod skip;
 pub(crate) mod timeouts;
