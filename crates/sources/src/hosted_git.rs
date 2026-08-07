@@ -31,6 +31,69 @@ pub(crate) struct HostedRepo {
     pub(crate) clone_url: String,
 }
 
+pub(crate) struct HostedChunkStream {
+    receiver: Option<std::sync::mpsc::Receiver<Result<Chunk, SourceError>>>,
+    worker: Option<std::thread::JoinHandle<()>>,
+    label: &'static str,
+}
+
+impl HostedChunkStream {
+    pub(crate) fn spawn(
+        thread_name: &'static str,
+        label: &'static str,
+        lease: crate::skip::ScanReadLease,
+        work: impl FnOnce(
+                std::sync::mpsc::SyncSender<Result<Chunk, SourceError>>,
+                crate::skip::ScanReadLease,
+            ) + Send
+            + 'static,
+    ) -> Result<Self, SourceError> {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let worker = std::thread::Builder::new()
+            .name(thread_name.to_string())
+            .spawn(move || work(sender, lease))
+            .map_err(|error| {
+                SourceError::Other(format!("{label}: failed to spawn stream worker: {error}"))
+            })?;
+        Ok(Self {
+            receiver: Some(receiver),
+            worker: Some(worker),
+            label,
+        })
+    }
+}
+
+impl Iterator for HostedChunkStream {
+    type Item = Result<Chunk, SourceError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let received = self.receiver.as_ref()?.recv();
+        match received {
+            Ok(row) => Some(row),
+            Err(_) => {
+                self.receiver.take();
+                let worker = self.worker.take()?;
+                match worker.join() {
+                    Ok(()) => None,
+                    Err(_) => Some(Err(SourceError::Other(format!(
+                        "{} stream worker panicked",
+                        self.label
+                    )))),
+                }
+            }
+        }
+    }
+}
+
+impl Drop for HostedChunkStream {
+    fn drop(&mut self) {
+        self.receiver.take();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ExpectedCloneOrigin {
     host: String,
@@ -43,6 +106,24 @@ impl ExpectedCloneOrigin {
             host: host.to_ascii_lowercase(),
             port: 443,
         }
+    }
+
+    pub(crate) fn from_endpoint(platform: &str, endpoint: &str) -> Result<Self, SourceError> {
+        let url = reqwest::Url::parse(endpoint).map_err(|error| {
+            SourceError::Other(format!(
+                "{platform}: invalid API endpoint for clone origin: {error}"
+            ))
+        })?;
+        let host = url.host_str().ok_or_else(|| {
+            SourceError::Other(format!("{platform}: API endpoint has no clone origin host"))
+        })?;
+        let port = url.port_or_known_default().ok_or_else(|| {
+            SourceError::Other(format!("{platform}: API endpoint has no clone origin port"))
+        })?;
+        Ok(Self {
+            host: host.to_ascii_lowercase(),
+            port,
+        })
     }
 
     #[cfg(feature = "gitlab")]
@@ -88,81 +169,112 @@ pub(crate) fn scan_hosted_repos(
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
-    use rayon::prelude::*;
-
-    let temp_dir = tempfile::tempdir().map_err(SourceError::Io)?;
-    let temp_root = temp_dir.path().to_path_buf();
-
-    let pool = crate::parallel_fetch::bounded_fetch_pool(
+    let mut rows = Vec::new();
+    stream_hosted_repos(
         platform,
-        crate::parallel_fetch::REMOTE_API_FETCH_THREADS,
+        source_type,
+        namespace,
+        token_username,
+        token_secret,
+        expected_clone_origin,
+        repos,
+        limits,
+        respect_default_excludes,
+        |row| {
+            rows.push(row);
+            true
+        },
     )?;
-
-    let per_repo: Vec<Result<Vec<Chunk>, SourceError>> = {
-        // Propagate the active profiling runtime into the clone/scan workers
-        // so per-repo clone and walk spans record there.
-        let profile_runtime = crate::profile::current_runtime();
-        pool.install(|| {
-        repos
-            .par_iter()
-            .map(|repo| {
-                let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
-                scan_single_hosted_repo(
-                    platform,
-                    source_type,
-                    namespace,
-                    token_username,
-                    token_secret,
-                    expected_clone_origin,
-                    repo,
-                    &temp_root,
-                    limits,
-                    respect_default_excludes,
-                )
-            })
-            .collect()
-        })
-    };
-
-    Ok(merge_hosted_repo_results(platform, repos, per_repo))
+    Ok(rows)
 }
 
-fn scan_single_hosted_repo(
+pub(crate) fn stream_hosted_repos(
     platform: &str,
     source_type: &str,
     namespace: Option<&str>,
     token_username: &str,
     token_secret: &str,
     expected_clone_origin: &ExpectedCloneOrigin,
-    repo: &HostedRepo,
-    temp_root: &Path,
+    repos: &[HostedRepo],
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
-) -> Result<Vec<Chunk>, SourceError> {
-    validate_repo_name(platform, &repo.clone_dir_name)?;
-    validate_display_path(platform, &repo.display_path)?;
-    validate_clone_url_for_origin(platform, &repo.clone_url, expected_clone_origin)?;
-    let clone_path = temp_root.join(&repo.clone_dir_name);
-    clone_repo(
-        platform,
-        &repo.display_path,
-        &repo.clone_url,
-        token_username,
-        token_secret,
-        &clone_path,
-        limits,
-    )?;
-    scan_repo(
-        platform,
-        source_type,
-        namespace,
-        &repo.display_path,
-        &clone_path,
-        limits,
-        respect_default_excludes,
-    )
+    mut emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<(), SourceError> {
+    let temp_dir = tempfile::tempdir().map_err(SourceError::Io)?;
+    let temp_root = temp_dir.path().to_path_buf();
+    let worker_count = crate::parallel_fetch::REMOTE_API_FETCH_THREADS.min(repos.len());
+    let cancelled = std::sync::atomic::AtomicBool::new(false);
+    let scan_lease = crate::acquire_scan_read_lease();
+    let _attributed = scan_lease.enter();
+    let profile_runtime = crate::profile::current_runtime();
+    let (jobs, pending_jobs) = crossbeam_channel::unbounded();
+    let mut receivers = Vec::with_capacity(repos.len());
+    for repo in repos {
+        let (output, receiver) = std::sync::mpsc::sync_channel(1);
+        let _ = jobs.send((repo, output));
+        receivers.push(receiver);
+    }
+    drop(jobs);
+
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            let pending_jobs = pending_jobs.clone();
+            let worker_lease = scan_lease.clone();
+            let profile_runtime = profile_runtime.clone();
+            let cancelled = &cancelled;
+            let temp_root = &temp_root;
+            scope.spawn(move || {
+                let _attributed = worker_lease.enter();
+                let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
+                while !cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                    let Ok((repo, output)) = pending_jobs.recv() else {
+                        break;
+                    };
+                    let mut send = |chunk| {
+                        !cancelled.load(std::sync::atomic::Ordering::Relaxed)
+                            && output.send(Ok(chunk)).is_ok()
+                    };
+                    match scan_single_hosted_repo_into(
+                        platform,
+                        source_type,
+                        namespace,
+                        token_username,
+                        token_secret,
+                        expected_clone_origin,
+                        repo,
+                        temp_root,
+                        limits,
+                        respect_default_excludes,
+                        &mut send,
+                    ) {
+                        Ok(true) => {}
+                        Ok(false) => break,
+                        Err(error) => {
+                            let _ = output.send(Err(repo_unreadable_error(
+                                platform,
+                                &repo.display_path,
+                                error,
+                            )));
+                        }
+                    }
+                }
+            });
+        }
+
+        let mut accepting = true;
+        for receiver in receivers {
+            while let Ok(row) = receiver.recv() {
+                if accepting && !emit(row) {
+                    accepting = false;
+                    cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+        }
+    });
+    Ok(())
 }
 
+#[cfg(test)]
 fn merge_hosted_repo_results(
     platform: &str,
     repos: &[HostedRepo],
@@ -180,6 +292,44 @@ fn merge_hosted_repo_results(
         }
     }
     rows
+}
+
+fn scan_single_hosted_repo_into(
+    platform: &str,
+    source_type: &str,
+    namespace: Option<&str>,
+    token_username: &str,
+    token_secret: &str,
+    expected_clone_origin: &ExpectedCloneOrigin,
+    repo: &HostedRepo,
+    temp_root: &Path,
+    limits: crate::SourceLimits,
+    respect_default_excludes: bool,
+    emit: &mut impl FnMut(Chunk) -> bool,
+) -> Result<bool, SourceError> {
+    validate_repo_name(platform, &repo.clone_dir_name)?;
+    validate_display_path(platform, &repo.display_path)?;
+    validate_clone_url_for_origin(platform, &repo.clone_url, expected_clone_origin)?;
+    let clone_path = temp_root.join(&repo.clone_dir_name);
+    clone_repo(
+        platform,
+        &repo.display_path,
+        &repo.clone_url,
+        token_username,
+        token_secret,
+        &clone_path,
+        limits,
+    )?;
+    scan_repo_into(
+        platform,
+        source_type,
+        namespace,
+        &repo.display_path,
+        &clone_path,
+        limits,
+        respect_default_excludes,
+        emit,
+    )
 }
 
 fn repo_unreadable_error(
@@ -313,9 +463,14 @@ fn validate_clone_url_shape(platform: &str, url: &str) -> Result<reqwest::Url, S
             "{platform}: refusing invalid clone URL {redacted:?}: {error}"
         ))
     })?;
-    if parsed.scheme() != "https" {
+    let loopback_http = parsed.scheme() == "http"
+        && parsed.host_str().is_some_and(|host| {
+            host.parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+        });
+    if parsed.scheme() != "https" && !loopback_http {
         return Err(SourceError::Other(format!(
-            "{platform}: refusing non-https clone URL (potential ext::/ssh:// RCE vector): {redacted:?}"
+            "{platform}: refusing clone URL that is neither https nor literal loopback http (potential ext::/ssh:// RCE vector): {redacted:?}"
         )));
     }
     if parsed.host_str().is_none() {
@@ -412,7 +567,13 @@ pub(crate) fn validated_api_endpoint(
     platform: &str,
     endpoint: &str,
     allow_private_endpoint: bool,
-) -> Result<(reqwest::Url, Option<crate::endpoint_screen::ScreenedEndpoint>), SourceError> {
+) -> Result<
+    (
+        reqwest::Url,
+        Option<crate::endpoint_screen::ScreenedEndpoint>,
+    ),
+    SourceError,
+> {
     let safe_endpoint = api_endpoint_for_error(endpoint);
     let url = reqwest::Url::parse(endpoint).map_err(|error| {
         SourceError::Other(format!(
@@ -491,26 +652,54 @@ where
     I: IntoIterator<Item = Result<Chunk, SourceError>>,
 {
     let mut rewritten = Vec::new();
+    rewrite_repo_chunks_into(
+        input_chunks,
+        platform,
+        source_type,
+        namespace,
+        repo_display_path,
+        clone_path,
+        &mut |chunk| {
+            rewritten.push(chunk);
+            true
+        },
+    )?;
+    Ok(rewritten)
+}
 
-    for chunk in input_chunks.into_iter() {
-        match chunk {
-            Ok(chunk) => rewritten.push(rewrite_chunk_path(
+fn rewrite_repo_chunks_into<I>(
+    input_chunks: I,
+    platform: &str,
+    source_type: &str,
+    namespace: Option<&str>,
+    repo_display_path: &str,
+    clone_path: &Path,
+    emit: &mut impl FnMut(Chunk) -> bool,
+) -> Result<bool, SourceError>
+where
+    I: IntoIterator<Item = Result<Chunk, SourceError>>,
+{
+    for chunk in input_chunks {
+        let chunk = match chunk {
+            Ok(chunk) => rewrite_chunk_path(
                 chunk,
                 platform,
                 source_type,
                 namespace,
                 repo_display_path,
                 clone_path,
-            )?),
+            )?,
             Err(error) => {
                 return Err(SourceError::Other(format!(
                     "{platform}: failed to scan cloned repo {repo_display_path}: {error}"
                 )));
             }
+        };
+        if !emit(chunk) {
+            return Ok(false);
         }
     }
-
-    Ok(rewritten)
+    Ok(true)
 }
 
 pub(crate) fn rewrite_chunk_path(
@@ -656,11 +845,8 @@ fn clone_repo_with_history_mode(
         .take()
         .map(|pipe| thread::spawn(move || crate::process_excerpt::drain_stderr_excerpt(pipe)));
 
-    let materialization_guard = CloneMaterializationGuard::new(
-        clone_path,
-        limits.git_total_bytes,
-        limits.git_chunk_count,
-    );
+    let materialization_guard =
+        CloneMaterializationGuard::new(clone_path, limits.git_total_bytes, limits.git_chunk_count);
     let output = wait_for_command_with_timeout(
         child,
         stdout_drain,
@@ -720,7 +906,7 @@ fn git_full_clone_args() -> [&'static str; 8] {
     ]
 }
 
-fn scan_repo(
+fn scan_repo_into(
     platform: &str,
     source_type: &str,
     namespace: Option<&str>,
@@ -728,17 +914,19 @@ fn scan_repo(
     clone_path: &Path,
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
-) -> Result<Vec<Chunk>, SourceError> {
+    emit: &mut impl FnMut(Chunk) -> bool,
+) -> Result<bool, SourceError> {
     let source = FilesystemSource::new(clone_path.to_path_buf())
         .with_max_file_size(limits.git_blob_bytes)
         .with_default_excludes(respect_default_excludes);
-    scan_repo_chunks(
+    rewrite_repo_chunks_into(
         source.chunks(),
         platform,
         source_type,
         namespace,
         repo_display_path,
         clone_path,
+        emit,
     )
 }
 

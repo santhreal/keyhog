@@ -1,8 +1,6 @@
 //! GitHub organization source: clones and scans all repositories in a GitHub
 //! organization via the GitHub API.
 
-use std::thread;
-
 use keyhog_core::{Chunk, Source, SourceError};
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
@@ -21,9 +19,11 @@ use crate::hosted_git::{self, HostedRepo};
 /// let source = GitHubOrgSource::new("acme".into(), "ghp_example".into());
 /// assert_eq!(source.name(), "github-org");
 /// ```
+#[derive(Clone)]
 pub struct GitHubOrgSource {
     org: String,
     token: String,
+    endpoint: String,
     /// Shared HTTP policy (proxy, insecure_tls, ua_suffix, timeout). Defaults
     /// to `HttpClientConfig::default()`. Set via `with_http_config` so the
     /// CLI's `--proxy` / `--insecure` reach the GitHub API client; without
@@ -50,6 +50,7 @@ impl GitHubOrgSource {
         Self {
             org,
             token,
+            endpoint: "https://api.github.com".into(),
             http: crate::http::HttpClientConfig {
                 ua_suffix: Some("github-org".into()),
                 ..Default::default()
@@ -57,6 +58,11 @@ impl GitHubOrgSource {
             limits: crate::SourceLimits::default(),
             respect_default_excludes: true,
         }
+    }
+
+    pub(crate) fn with_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.endpoint = endpoint.into().trim_end_matches('/').to_string();
+        self
     }
 
     /// Override the shared HTTP policy. Threads CLI `--proxy` / `--insecure`
@@ -83,50 +89,37 @@ impl Source for GitHubOrgSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        // `reqwest::blocking` must not be driven from inside the CLI's
-        // `#[tokio::main]` runtime: the blocking client spins its own internal
-        // runtime, and dropping that within an async context aborts the whole
-        // process ("Cannot drop a runtime in a context where blocking is not
-        // allowed" -> SIGABRT). Collection is already eager, so run it on a
-        // scoped std thread, which carries no ambient tokio runtime; the
-        // blocking client builds, fetches, and drops there safely, and a fetch
-        // failure (bad org/token, unreachable API) surfaces as an `Err` chunk
-        // the orchestrator turns into a non-zero exit instead of a crash.
-        // Hold the scan read lease across the synchronous fetch so a
-        // counter-asserting test's exclusive scope serializes this source's skip
-        // recording (unreachable API / bad token). A no-op in production where the
-        // gate is never armed; see `skip::gate_scan`.
-        crate::gate_scan(|| {
-            // Propagate the active profiling runtime onto the fetch thread so
-            // org enumeration and clone spans record there.
-            let profile_runtime = crate::profile::current_runtime();
-            let result = thread::scope(|s| {
-                match s
-                    .spawn(move || {
-                        let _profile_guard =
-                            profile_runtime.as_ref().map(|runtime| runtime.enter());
-                        collect_org_chunks(
-                            &self.org,
-                            &self.token,
-                            &self.http,
-                            self.limits,
-                            self.respect_default_excludes,
-                        )
-                    })
-                    .join()
-                {
-                    Ok(result) => result,
-                    Err(_panic) => Err(SourceError::Other(
-                        "github-org fetch thread panicked".to_string(),
-                    )),
+        let lease = crate::acquire_scan_read_lease();
+        let source = self.clone();
+        let worker_lease = lease.clone();
+        let profile_runtime = crate::profile::current_runtime();
+        let stream = hosted_git::HostedChunkStream::spawn(
+            "keyhog-github-org",
+            "github-org",
+            worker_lease,
+            move |sender, worker_lease| {
+                let _attributed = worker_lease.enter();
+                let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
+                let result = stream_org_chunks(
+                    &source.org,
+                    &source.token,
+                    &source.endpoint,
+                    &source.http,
+                    source.limits,
+                    source.respect_default_excludes,
+                    |row| sender.send(row).is_ok(),
+                );
+                if let Err(error) = result {
+                    let _ = sender.send(Err(error));
                 }
-            });
-            match result {
-                Ok(rows) => Box::new(rows.into_iter()),
-                Err(err) => Box::new(std::iter::once(Err(err))),
-            }
-        })
+            },
+        );
+        match stream {
+            Ok(stream) => crate::attach_scan_lease(lease, Box::new(stream)),
+            Err(error) => crate::attach_scan_lease(lease, Box::new(std::iter::once(Err(error)))),
+        }
     }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -192,36 +185,38 @@ pub(crate) fn validate_clone_url(url: &str) -> Result<(), SourceError> {
     )
 }
 
-fn collect_org_chunks(
+fn stream_org_chunks(
     org: &str,
     token: &str,
+    endpoint: &str,
     http: &crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
-) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
+    emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<(), SourceError> {
     validate_org_name(org)?;
     let client = build_client(token, http)?;
-    // Org repo enumeration is the acquisition boundary; cloning and per-repo
-    // scans record inside `hosted_git::scan_hosted_repos`.
     let repos = {
         let _enumerate = crate::profile::acquire_span();
         list_repos(
             &client,
             org,
+            endpoint,
             limits.hosted_git_pages,
             limits.web_response_bytes,
         )?
     };
-    hosted_git::scan_hosted_repos(
+    hosted_git::stream_hosted_repos(
         "github",
         "github-org",
         Some(org),
         "x-access-token",
         token,
-        &hosted_git::ExpectedCloneOrigin::host("github.com"),
+        &hosted_git::ExpectedCloneOrigin::from_endpoint("github", endpoint)?,
         &repos,
         limits,
         respect_default_excludes,
+        emit,
     )
 }
 
@@ -262,6 +257,7 @@ fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Cli
 fn list_repos(
     client: &Client,
     org: &str,
+    endpoint: &str,
     max_pages: usize,
     max_response_bytes: usize,
 ) -> Result<Vec<HostedRepo>, SourceError> {
@@ -271,7 +267,7 @@ fn list_repos(
     while page <= max_pages {
         // One walk span per listing page.
         let _page_span = crate::profile::walk_span();
-        let response = send_github_request_with_backoff(client, org, page)?;
+        let response = send_github_request_with_backoff(client, org, endpoint, page)?;
 
         if !response.status().is_success() {
             return Err(hosted_git::api_unreadable_error(format!(
@@ -323,12 +319,13 @@ pub(crate) fn rate_limit_backoff_secs(retry_after: Option<u64>, attempt: usize) 
 fn send_github_request_with_backoff(
     client: &Client,
     org: &str,
+    endpoint: &str,
     page: usize,
 ) -> Result<reqwest::blocking::Response, SourceError> {
     for attempt in 0..MAX_BACKOFF_ATTEMPTS {
         let response = client
             .get(format!(
-                "https://api.github.com/orgs/{org}/repos?per_page={REPOS_PER_PAGE}&page={page}"
+                "{endpoint}/orgs/{org}/repos?per_page={REPOS_PER_PAGE}&page={page}"
             ))
             .send()
             .map_err(|e| {
