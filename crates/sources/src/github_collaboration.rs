@@ -40,12 +40,14 @@ impl GitHubCollaborationSelection {
 }
 
 /// Scans explicitly selected GitHub collaboration surfaces for one repository.
+#[derive(Clone)]
 pub struct GitHubCollaborationSource {
     owner: String,
     repo: String,
-    token: String,
+    token: Arc<str>,
     selection: GitHubCollaborationSelection,
     endpoint: String,
+    wiki_clone_url: Option<String>,
     http: crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
 }
@@ -65,9 +67,10 @@ impl GitHubCollaborationSource {
         Ok(Self {
             owner,
             repo,
-            token: token.into(),
+            token: Arc::from(token.into()),
             selection,
             endpoint: "https://api.github.com".into(),
+            wiki_clone_url: None,
             http: crate::http::HttpClientConfig {
                 ua_suffix: Some(SOURCE_NAME.into()),
                 ..Default::default()
@@ -86,57 +89,76 @@ impl GitHubCollaborationSource {
         self
     }
 
-    pub(crate) fn with_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+    /// Use an explicit GitHub-compatible API endpoint.
+    pub fn with_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.endpoint = endpoint.into().trim_end_matches('/').to_string();
         self
     }
 
-    fn collect_chunks(&self) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
-        // Collaboration acquisition: client build and the selected surface
-        // collections (issues, pull requests, discussions, wiki, gists, releases).
+    /// Use an explicit clone URL for the selected wiki repository.
+    pub fn with_wiki_clone_url(mut self, url: impl Into<String>) -> Self {
+        self.wiki_clone_url = Some(url.into());
+        self
+    }
+
+    fn stream_chunks(
+        &self,
+        mut emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
+    ) -> Result<(), SourceError> {
         let _acquire = crate::profile::acquire_span();
-        let client = build_client(&self.token, &self.http)?;
+        let client = build_client(self.token.as_ref(), &self.http)?;
         let mut api = GitHubApi::new(
             client,
             &self.endpoint,
             self.limits.hosted_git_pages,
             self.limits.web_response_bytes,
         );
-        let mut output = Vec::new();
         let mut budget = ContentBudget::new(self.limits);
         let mut seen = HashSet::new();
 
-        if self.selection.issues {
-            collect_surface("issues", &mut output, |chunks| {
+        if self.selection.issues
+            && !stream_surface("issues", &mut emit, |chunks| {
                 self.collect_issues(&mut api, &mut budget, &mut seen, chunks)
-            });
+            })
+        {
+            return Ok(());
         }
-        if self.selection.pull_requests {
-            collect_surface("pull-requests", &mut output, |chunks| {
+        if self.selection.pull_requests
+            && !stream_surface("pull-requests", &mut emit, |chunks| {
                 self.collect_pull_requests(&mut api, &mut budget, &mut seen, chunks)
-            });
+            })
+        {
+            return Ok(());
         }
-        if self.selection.discussions {
-            collect_surface("discussions", &mut output, |chunks| {
+        if self.selection.discussions
+            && !stream_surface("discussions", &mut emit, |chunks| {
                 self.collect_discussions(&mut api, &mut budget, &mut seen, chunks)
-            });
+            })
+        {
+            return Ok(());
         }
-        if self.selection.wiki {
-            collect_surface("wiki", &mut output, |chunks| {
+        if self.selection.wiki
+            && !stream_surface("wiki", &mut emit, |chunks| {
                 self.collect_wiki(&mut api, &mut budget, &mut seen, chunks)
-            });
+            })
+        {
+            return Ok(());
         }
-        if self.selection.gists {
-            collect_surface("gists", &mut output, |chunks| {
+        if self.selection.gists
+            && !stream_surface("gists", &mut emit, |chunks| {
                 self.collect_gists(&mut api, &mut budget, &mut seen, chunks)
-            });
+            })
+        {
+            return Ok(());
         }
-        if self.selection.releases {
-            collect_surface("releases", &mut output, |chunks| {
+        if self.selection.releases
+            && !stream_surface("releases", &mut emit, |chunks| {
                 self.collect_releases(&mut api, &mut budget, &mut seen, chunks)
-            });
+            })
+        {
+            return Ok(());
         }
-        Ok(output)
+        Ok(())
     }
 
     fn collect_issues(
@@ -423,11 +445,17 @@ impl GitHubCollaborationSource {
             )
         })?;
         let clone_path = temp.path().join("wiki");
-        let clone_url = format!("https://github.com/{}/{}.wiki.git", self.owner, self.repo);
+        let default_clone_url;
+        let clone_url = if let Some(url) = self.wiki_clone_url.as_deref() {
+            url
+        } else {
+            default_clone_url = format!("https://github.com/{}/{}.wiki.git", self.owner, self.repo);
+            &default_clone_url
+        };
         crate::hosted_git::clone_authenticated_history(
             "github",
             &format!("{}/{}.wiki", self.owner, self.repo),
-            &clone_url,
+            clone_url,
             "x-access-token",
             &self.token,
             &clone_path,
@@ -676,14 +704,27 @@ impl Source for GitHubCollaborationSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        crate::gate_scan(|| {
-            match crate::blocking_thread::collect_on_blocking_thread(SOURCE_NAME, || {
-                self.collect_chunks()
-            }) {
-                Ok(rows) => Box::new(rows.into_iter()),
-                Err(error) => Box::new(std::iter::once(Err(error))),
-            }
-        })
+        let lease = crate::acquire_scan_read_lease();
+        let source = self.clone();
+        let worker_lease = lease.clone();
+        let profile_runtime = crate::profile::current_runtime();
+        let stream = crate::parallel_fetch::RemoteChunkStream::spawn(
+            "keyhog-github-collaboration",
+            SOURCE_NAME,
+            worker_lease,
+            move |sender, worker_lease| {
+                let _attributed = worker_lease.enter();
+                let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
+                let result = source.stream_chunks(|row| sender.send(row).is_ok());
+                if let Err(error) = result {
+                    let _ = sender.send(Err(error));
+                }
+            },
+        );
+        match stream {
+            Ok(stream) => crate::attach_scan_lease(lease, Box::new(stream)),
+            Err(error) => crate::attach_scan_lease(lease, Box::new(std::iter::once(Err(error)))),
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -691,23 +732,29 @@ impl Source for GitHubCollaborationSource {
     }
 }
 
-fn collect_surface<F>(
+fn stream_surface<F>(
     surface: &'static str,
-    output: &mut Vec<Result<Chunk, SourceError>>,
+    emit: &mut impl FnMut(Result<Chunk, SourceError>) -> bool,
     collect: F,
-) where
+) -> bool
+where
     F: FnOnce(&mut Vec<Chunk>) -> Result<(), GitHubGap>,
 {
     let mut chunks = Vec::new();
     let result = collect(&mut chunks);
-    output.extend(chunks.into_iter().map(Ok));
+    for chunk in chunks {
+        if !emit(Ok(chunk)) {
+            return false;
+        }
+    }
     if let Err(gap) = result {
         if gap.kind == SourceCoverageGapKind::Truncated {
             let _recorded = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
         }
         debug_assert_eq!(surface, gap.surface);
-        output.push(Err(gap.into_source_error()));
+        return emit(Err(gap.into_source_error()));
     }
+    true
 }
 
 #[derive(Debug)]
