@@ -196,9 +196,17 @@ impl CompiledScanner {
                 Ok(())
             };
             if chunk.data.len() <= self.config.max_decode_bytes {
-                decode_parent(chunk, matches)?;
+                if self.chunk_needs_decode_postprocess(chunk) {
+                    decode_parent(chunk, matches)?;
+                }
             } else if self.chunk_uses_bounded_decode_windows(chunk) {
-                self.decode_source_windows(chunk, |window| decode_parent(window, matches))?;
+                self.decode_source_windows(chunk, |window| {
+                    if self.chunk_needs_decode_postprocess(window) {
+                        decode_parent(window, matches)
+                    } else {
+                        Ok(())
+                    }
+                })?;
             }
         }
         tracing::debug!(
