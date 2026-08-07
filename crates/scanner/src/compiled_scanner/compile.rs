@@ -14,8 +14,8 @@ struct PackedVyreProgramSource<'a> {
 }
 
 struct PackedDetectorPlanPrelude<'a> {
-    detector_ids: Vec<String>,
-    static_intern_strings: Vec<String>,
+    detector_ids: Vec<Arc<str>>,
+    static_intern: Arc<crate::static_intern::StaticInterner>,
     decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
     detector_ir_digest: [u8; 32],
     compiled_plan_digest: [u8; 32],
@@ -226,27 +226,31 @@ impl CompiledScanner {
             )
         })?;
         let mut detector_ids = Vec::new();
-        let mut static_intern_strings = Vec::new();
-        let header = crate::execution_pack::CompiledDetectorPlanSection::stream_records(
+        let mut static_intern =
+            crate::static_intern::StaticInternerBuilder::with_capacity(bytes.len() / 1024);
+        let header = crate::execution_pack::CompiledDetectorPlanSection::stream_prelude_records(
             bytes,
             pack.identity().detector_digest,
             |_, record| {
-                detector_ids.push(record.id.clone());
-                static_intern_strings.push(record.name);
-                static_intern_strings.push(record.service);
+                let id = static_intern.intern(&record.id);
+                detector_ids.push(Arc::clone(&id));
+                static_intern.intern(&record.name);
+                static_intern.intern(&record.service);
                 if let Some(metadata) = record.entropy_fallback {
-                    static_intern_strings.push(metadata.id);
-                    static_intern_strings.push(metadata.name);
-                    static_intern_strings.push(metadata.service);
+                    static_intern.intern(&metadata.id);
+                    static_intern.intern(&metadata.name);
+                    static_intern.intern(&metadata.service);
                 }
-                static_intern_strings.extend(record.companion_names);
-                Ok(())
+                for name in record.companion_names {
+                    static_intern.intern(&name);
+                }
+                Ok(id)
             },
         )
         .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
         let prelude = PackedDetectorPlanPrelude {
             detector_ids,
-            static_intern_strings,
+            static_intern: Arc::new(static_intern.finish()),
             decoder_plan: header.decoder_plan,
             detector_ir_digest: header.detector_ir_digest,
             compiled_plan_digest: header.compiled_plan_digest,
@@ -428,7 +432,7 @@ impl CompiledScanner {
             let detector_ids = prelude
                 .detector_ids
                 .iter()
-                .map(String::as_str)
+                .map(Arc::as_ref)
                 .collect::<Vec<_>>();
             crate::execution_pack::matcher_sections::decode_compile_state_sections_from_ids(
                 identity.backend,
@@ -510,12 +514,7 @@ impl CompiledScanner {
         // owner and never reinterpret detector TOML independently.
         let static_intern =
             if let Some(prelude) = packed_detector_plan.as_ref() {
-                Arc::new(crate::static_intern::StaticInterner::from_detector_strings(
-                    prelude
-                        .detector_ids
-                        .iter()
-                        .chain(prelude.static_intern_strings.iter()),
-                ))
+                Arc::clone(&prelude.static_intern)
             } else {
                 Arc::new(crate::static_intern::StaticInterner::from_detector_strings(
                     detectors.iter().flat_map(|detector| {
@@ -543,10 +542,6 @@ impl CompiledScanner {
                     }),
                 ))
             };
-        if let Some(prelude) = packed_detector_plan.as_mut() {
-            prelude.detector_ids = Vec::new();
-            prelude.static_intern_strings = Vec::new();
-        }
         for companions in &mut state.companions {
             for companion in companions {
                 companion.name =
@@ -941,6 +936,18 @@ impl CompiledScanner {
         // Precompute always-active phase-2 indices so the per-chunk hot path
         // seeds the sparse active set without scanning the full phase-2 table.
         let phase2_always_active_indices = phase2_always_active_indices(&state.phase2_patterns);
+        let localization_hints = state.localization_hints.take();
+        let (confirmed_prefixes, confirmed_suffixes, phase2_localization) = match localization_hints
+        {
+            Some(hints) => (
+                Some(hints.confirmed_prefixes),
+                Some(hints.confirmed_suffixes),
+                Some(hints.phase2),
+            ),
+            None => (None, None, None),
+        };
+        let phase2_patterns = &state.phase2_patterns;
+        let ac_map = &state.ac_map;
 
         // Three independent Aho-Corasick indices over the canonical compile
         // state. They share no mutable state and each is a pure function
@@ -956,13 +963,20 @@ impl CompiledScanner {
         //     detector whose rare trailing literal (`.*<sitename>`) is absent
         //     skips its O(chunk) whole-chunk regex run.
         //   - confirmed_anchor_index: AC over the confirmed ac_map anchors.
+        let phase2_always_active_indices_ref = &phase2_always_active_indices;
         let (phase2_anchor_index, ((suffix_gate_ac, ac_suffix_gate), confirmed_anchor_index)) =
             rayon::join(
-                || Phase2AnchorIndex::build(&state.phase2_patterns, &phase2_always_active_indices),
-                || {
+                move || {
+                    Phase2AnchorIndex::build_with_hints(
+                        phase2_patterns,
+                        phase2_always_active_indices_ref,
+                        phase2_localization,
+                    )
+                },
+                move || {
                     rayon::join(
-                        || build_confirmed_suffix_gate(&state.ac_map),
-                        || ConfirmedAnchorIndex::build(&state.ac_map),
+                        move || build_confirmed_suffix_gate_with_hints(ac_map, confirmed_suffixes),
+                        move || ConfirmedAnchorIndex::build_with_hints(ac_map, confirmed_prefixes),
                     )
                 },
             );

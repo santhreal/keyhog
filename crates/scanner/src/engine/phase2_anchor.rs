@@ -156,6 +156,25 @@ pub(crate) struct Phase2AnchorIndex {
     plain_always_mark: Vec<u32>,
 }
 
+pub(crate) fn compile_localization_hint(
+    pattern: &CompiledPattern,
+) -> crate::compiler::compiler_build::Phase2LocalizationHint {
+    use crate::compiler::compiler_build::Phase2LocalizationHint;
+
+    let source = pattern.regex.as_str();
+    if let Some(literals) = required_prefix_literals(source) {
+        return Phase2LocalizationHint::Prefix { literals };
+    }
+    if pattern.regex.is_case_insensitive() {
+        return Phase2LocalizationHint::None;
+    }
+    let folded_regex = ascii_fold_regex_src(source);
+    Phase2LocalizationHint::Plain {
+        literals: leading_literals_of_folded(&folded_regex),
+        folded_regex,
+    }
+}
+
 impl Phase2AnchorIndex {
     pub(crate) fn eligible_count(&self) -> usize {
         self.eligible_count
@@ -205,6 +224,32 @@ impl Phase2AnchorIndex {
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         always_active_indices: &[usize],
     ) -> Option<Self> {
+        Self::build_with_hints(phase2_patterns, always_active_indices, None)
+    }
+
+    pub(crate) fn build_with_hints(
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        always_active_indices: &[usize],
+        localization_hints: Option<Vec<crate::compiler::compiler_build::Phase2LocalizationHint>>,
+    ) -> Option<Self> {
+        if localization_hints.is_none() {
+            crate::execution_pack::matcher_sections::record_runtime_localization_hint_fallback();
+        }
+        let mut localization_hints = localization_hints.map(Vec::into_iter);
+        Self::build_from_hints(
+            phase2_patterns,
+            always_active_indices,
+            &mut localization_hints,
+        )
+    }
+
+    fn build_from_hints(
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        always_active_indices: &[usize],
+        localization_hints: &mut Option<
+            std::vec::IntoIter<crate::compiler::compiler_build::Phase2LocalizationHint>,
+        >,
+    ) -> Option<Self> {
         let mut eligible = vec![false; phase2_patterns.len()];
         let mut anchored: Vec<Option<AnchoredRegex>> =
             (0..phase2_patterns.len()).map(|_| None).collect();
@@ -221,45 +266,44 @@ impl Phase2AnchorIndex {
         let mut plain_always_mark: Vec<u32> = Vec::new();
 
         for (idx, (pattern, _keywords)) in phase2_patterns.iter().enumerate() {
-            let ci = pattern.regex.is_case_insensitive();
-            if let Some(pattern_literals) = required_prefix_literals(pattern.regex.as_str()) {
-                // Register every literal and map it back to this pattern.
-                for lit in &pattern_literals {
-                    let id = intern_anchor_literal(&mut literal_ids, &mut literals, lit);
-                    literal_pattern_pairs.push((id, idx));
-                }
-                eligible[idx] = true;
-                anchored[idx] = Some(AnchoredRegex::new(pattern.regex.as_str(), ci));
-                continue;
-            }
-            // Not eligible via the unicode prefix (homoglyph cross-products go
-            // infinite). For PLAIN (homoglyph) patterns, drive the ASCII chunk
-            // path from the FOLDED leading literals instead.
-            if !ci {
-                // Fold out non-ASCII ONCE: the same fold drives the leading
-                // -literal AC and the anchored verify regex. Shared
-                // `ascii_fold_regex_src` so this matches the prefilter's fold.
-                let folded_src = ascii_fold_regex_src(pattern.regex.as_str());
-                match leading_literals_of_folded(&folded_src) {
-                    Some(lits) => {
-                        for lit in &lits {
-                            let id = intern_anchor_literal(
-                                &mut plain_literal_ids,
-                                &mut plain_literals,
-                                lit,
-                            );
-                            plain_literal_pattern_pairs.push((id, idx));
-                        }
-                        // Verify with the FOLDED (ASCII) regex `\A(?:fold)`, not
-                        // the unicode one: on the ASCII chunks where this path
-                        // runs it is match-equivalent but its DFA is far simpler
-                        // (ASCII classes), so each candidate verify, dominated
-                        // by quick-fails at common-keyword positions, is much
-                        // cheaper. Case-sensitive (the fold carries the case).
-                        anchored[idx] = Some(AnchoredRegex::new(&folded_src, false));
+            use crate::compiler::compiler_build::Phase2LocalizationHint;
+
+            let hint = localization_hints
+                .as_mut()
+                .and_then(Iterator::next)
+                .unwrap_or_else(|| compile_localization_hint(pattern));
+            match hint {
+                Phase2LocalizationHint::Prefix {
+                    literals: pattern_literals,
+                } => {
+                    for literal in &pattern_literals {
+                        let id = intern_anchor_literal(&mut literal_ids, &mut literals, literal);
+                        literal_pattern_pairs.push((id, idx));
                     }
-                    None => plain_always_mark.push(idx as u32),
+                    eligible[idx] = true;
+                    anchored[idx] = Some(AnchoredRegex::new(
+                        pattern.regex.as_str(),
+                        pattern.regex.is_case_insensitive(),
+                    ));
                 }
+                Phase2LocalizationHint::Plain {
+                    folded_regex,
+                    literals: Some(pattern_literals),
+                } => {
+                    for literal in &pattern_literals {
+                        let id = intern_anchor_literal(
+                            &mut plain_literal_ids,
+                            &mut plain_literals,
+                            literal,
+                        );
+                        plain_literal_pattern_pairs.push((id, idx));
+                    }
+                    anchored[idx] = Some(AnchoredRegex::new(&folded_regex, false));
+                }
+                Phase2LocalizationHint::Plain { literals: None, .. } => {
+                    plain_always_mark.push(idx as u32);
+                }
+                Phase2LocalizationHint::None => {}
             }
         }
         // Drop compiler lookup tables before CSR and automaton construction;

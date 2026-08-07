@@ -112,7 +112,7 @@ fn packed_matcher_graph_rejects_version_backend_detector_count_and_index_corrupt
     let mut bad_version = sections(&detectors);
     replace_once(
         &mut bad_version.literal_index,
-        b"\"version\":3",
+        b"\"version\":4",
         b"\"version\":9",
     );
     assert!(bad_version
@@ -249,8 +249,15 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     let (directory, pack) = mapped_pack(&detectors, None);
     let schema_reconstructions_before =
         keyhog_scanner::execution_pack::detector_plan::detector_spec_schema_reconstructions();
+    let localization_fallbacks_before =
+        keyhog_scanner::execution_pack::matcher_sections::runtime_localization_hint_fallbacks();
     let direct = CompiledScanner::compile_from_execution_pack(&pack)
         .expect("stream detector plan directly from mapped execution pack");
+    assert_eq!(
+        keyhog_scanner::execution_pack::matcher_sections::runtime_localization_hint_fallbacks(),
+        localization_fallbacks_before,
+        "normal installed-pack hydration must consume persisted localization hints"
+    );
     assert_eq!(
         keyhog_scanner::execution_pack::detector_plan::detector_spec_schema_reconstructions(),
         schema_reconstructions_before,

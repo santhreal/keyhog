@@ -1,6 +1,6 @@
 use super::{CanonicalDetectorExecutionIr, ExecutionPackBackend, ExecutionPackError};
 use crate::compiler::compiler_build::{
-    build_compile_state, build_compile_state_invocations, CompileState,
+    build_compile_state, build_compile_state_invocations, CompileState, CompiledLocalizationHints,
 };
 use crate::compiler::compiler_compile::compile_companion;
 use crate::types::{CompiledPattern, LazyRegex};
@@ -10,7 +10,18 @@ use keyhog_core::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const ROUTE_MATCHER_SECTION_VERSION: u16 = 3;
+pub const ROUTE_MATCHER_SECTION_VERSION: u16 = 4;
+static RUNTIME_LOCALIZATION_HINT_FALLBACKS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+#[doc(hidden)]
+pub fn runtime_localization_hint_fallbacks() -> usize {
+    RUNTIME_LOCALIZATION_HINT_FALLBACKS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub(crate) fn record_runtime_localization_hint_fallback() {
+    RUNTIME_LOCALIZATION_HINT_FALLBACKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
 #[doc(hidden)]
 pub fn compile_state_builder_invocations() -> usize {
     build_compile_state_invocations()
@@ -43,6 +54,7 @@ struct RegexEnvelope {
     phase2_patterns: Vec<PackedPhase2Pattern>,
     companions: Vec<Vec<PackedCompanion>>,
     quality_warnings: Vec<String>,
+    localization_hints: CompiledLocalizationHints,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -118,6 +130,30 @@ impl CompiledRouteMatcherSections {
                 "cannot compile canonical route matcher graph: {error}"
             ))
         })?;
+        let localization_hints = CompiledLocalizationHints {
+            confirmed_prefixes: state
+                .ac_map
+                .iter()
+                .map(|pattern| {
+                    crate::engine::required_prefix_literals_with_cap(
+                        pattern.regex.as_str(),
+                        crate::engine::CONFIRMED_MAX_LITERALS_PER_PATTERN,
+                    )
+                })
+                .collect(),
+            confirmed_suffixes: state
+                .ac_map
+                .iter()
+                .map(|pattern| crate::engine::suffix_gate_literals(pattern.regex.as_str()))
+                .collect(),
+            phase2: state
+                .phase2_patterns
+                .iter()
+                .map(|(pattern, _)| {
+                    crate::engine::phase2_anchor::compile_localization_hint(pattern)
+                })
+                .collect(),
+        };
         let detector_count = u32::try_from(ir.detectors().len()).map_err(|_| {
             ExecutionPackError::InvalidCompilerInput(
                 "route matcher detector count exceeds u32".to_owned(),
@@ -197,6 +233,7 @@ impl CompiledRouteMatcherSections {
             phase2_patterns,
             companions,
             quality_warnings: state.quality_warnings,
+            localization_hints,
         })?;
         let suppression_policy = canonical_json(&SuppressionEnvelope {
             version: ROUTE_MATCHER_SECTION_VERSION,
@@ -301,6 +338,14 @@ fn decode_validated_compile_state_sections(
             "compiled route companion detector cardinality is invalid".to_owned(),
         ));
     }
+    if regex.localization_hints.confirmed_prefixes.len() != regex.ac_patterns.len()
+        || regex.localization_hints.confirmed_suffixes.len() != regex.ac_patterns.len()
+        || regex.localization_hints.phase2.len() != regex.phase2_patterns.len()
+    {
+        return Err(ExecutionPackError::InvalidPack(
+            "compiled route localization-hint cardinality is invalid".to_owned(),
+        ));
+    }
     let mut seen = BTreeSet::new();
     for (name, bytes) in [
         ("literal index", literal_index),
@@ -398,6 +443,7 @@ pub(crate) fn decode_compile_state_sections_from_ids(
         phase2_patterns,
         companions,
         quality_warnings: regex.quality_warnings,
+        localization_hints: Some(regex.localization_hints),
     })
 }
 

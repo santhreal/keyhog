@@ -21,7 +21,7 @@ pub(crate) use super::scan_postprocess_profile::{
 pub(crate) use super::scan_postprocess_profile::{
     format_ml_batch_profile, ml_batch_profile_from_parts,
 };
-pub(crate) use super::scan_postprocess_suffix_gate::build_confirmed_suffix_gate;
+pub(crate) use super::scan_postprocess_suffix_gate::build_confirmed_suffix_gate_with_hints;
 
 impl CompiledScanner {
     pub(crate) fn post_process_matches(

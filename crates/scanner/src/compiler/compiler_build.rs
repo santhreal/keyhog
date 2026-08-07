@@ -18,12 +18,32 @@ pub(crate) fn build_compile_state_invocations() -> usize {
     BUILD_COMPILE_STATE_INVOCATIONS.get()
 }
 
+#[derive(serde::Deserialize, serde::Serialize)]
+pub(crate) enum Phase2LocalizationHint {
+    Prefix {
+        literals: Vec<String>,
+    },
+    Plain {
+        folded_regex: String,
+        literals: Option<Vec<String>>,
+    },
+    None,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+pub(crate) struct CompiledLocalizationHints {
+    pub(crate) confirmed_prefixes: Vec<Option<Vec<String>>>,
+    pub(crate) confirmed_suffixes: Vec<Vec<String>>,
+    pub(crate) phase2: Vec<Phase2LocalizationHint>,
+}
+
 pub(crate) struct CompileState {
     pub(crate) ac_literals: Vec<String>,
     pub(crate) ac_map: Vec<CompiledPattern>,
     pub(crate) phase2_patterns: Vec<(CompiledPattern, Vec<String>)>,
     pub(crate) companions: Vec<Vec<CompiledCompanion>>,
     pub(crate) quality_warnings: Vec<String>,
+    pub(crate) localization_hints: Option<CompiledLocalizationHints>,
 }
 
 #[cfg(test)]
@@ -311,6 +331,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
         phase2_patterns,
         companions,
         quality_warnings,
+        localization_hints: None,
     })
 }
 

@@ -66,6 +66,38 @@ pub(crate) struct StaticInterner {
     index: std::collections::HashMap<Arc<str>, (), ahash::RandomState>,
 }
 
+pub(crate) struct StaticInternerBuilder {
+    index: std::collections::HashMap<Arc<str>, (), ahash::RandomState>,
+}
+
+impl StaticInternerBuilder {
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
+        Self {
+            index: std::collections::HashMap::with_capacity_and_hasher(
+                capacity.saturating_add(SEED_SOURCE_TYPES.len()),
+                ahash::RandomState::new(),
+            ),
+        }
+    }
+
+    pub(crate) fn intern(&mut self, value: &str) -> Arc<str> {
+        if let Some((value, ())) = self.index.get_key_value(value) {
+            return Arc::clone(value);
+        }
+        let value = Arc::<str>::from(value);
+        self.index.insert(Arc::clone(&value), ());
+        value
+    }
+
+    pub(crate) fn finish(mut self) -> StaticInterner {
+        for value in &*SEED_SOURCE_TYPES {
+            self.intern(value);
+        }
+        self.index.shrink_to_fit();
+        StaticInterner { index: self.index }
+    }
+}
+
 impl StaticInterner {
     /// Build an interner from the universe of stable strings: detector
     /// metadata fields (including companion names) + the seed source-type list.
@@ -75,24 +107,12 @@ impl StaticInterner {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let mut values = detector_strings.into_iter();
-        let mut index = std::collections::HashMap::with_capacity_and_hasher(
-            values.size_hint().0.saturating_add(SEED_SOURCE_TYPES.len()),
-            ahash::RandomState::new(),
-        );
-        for value in values.by_ref() {
-            let value = value.as_ref();
-            if !index.contains_key(value) {
-                index.insert(Arc::from(value), ());
-            }
+        let values = detector_strings.into_iter();
+        let mut builder = StaticInternerBuilder::with_capacity(values.size_hint().0);
+        for value in values {
+            builder.intern(value.as_ref());
         }
-        for value in &*SEED_SOURCE_TYPES {
-            if !index.contains_key(value.as_str()) {
-                index.insert(Arc::from(value.as_str()), ());
-            }
-        }
-        index.shrink_to_fit();
-        Self { index }
+        builder.finish()
     }
 
     /// Single-hash lookup. Returns a clone of the pre-allocated `Arc<str>`

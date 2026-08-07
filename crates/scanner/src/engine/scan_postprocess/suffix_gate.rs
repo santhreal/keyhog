@@ -102,33 +102,37 @@ impl LazyConfirmedSuffixGate {
     }
 }
 
-/// Build the confirmed-pass suffix gate's compact source rows plus per-pattern
-/// literal ids. The automaton materializes before the first non-empty batch.
-pub(crate) fn build_confirmed_suffix_gate(
+pub(crate) fn build_confirmed_suffix_gate_with_hints(
     ac_map: &[CompiledPattern],
+    localization_hints: Option<Vec<Vec<String>>>,
 ) -> (Option<LazyConfirmedSuffixGate>, super::CsrU32) {
     use std::collections::HashMap;
     let mut literals: Vec<String> = Vec::new();
     let mut literal_id: HashMap<String, usize> = HashMap::new();
     let mut pattern_literal_pairs = Vec::new();
-    // The embedded corpus has ~6-15% duplicate regex sources; cache the suffix
-    // extraction per source so we parse each unique pattern at most once.
-    let mut src_cache: HashMap<&str, Vec<String>> = HashMap::new();
-    for (i, p) in ac_map.iter().enumerate() {
-        let src = p.regex.as_str();
-        let lits = src_cache
-            .entry(src)
-            .or_insert_with(|| suffix_gate_literals(src));
-        // Iterate the cached literals by reference; the HashMap/Vec below still
-        // clone each `String` they OWN, but cloning the whole `Vec<String>` per
-        // pattern just to loop over it was pure waste (~one deep Vec clone per
-        // ac_map entry at build).
-        for lit in lits.iter() {
-            let id = *literal_id.entry(lit.clone()).or_insert_with(|| {
-                literals.push(lit.clone());
+    let mut register = |pattern_index: usize, pattern_literals: &[String]| {
+        for literal in pattern_literals {
+            let id = *literal_id.entry(literal.clone()).or_insert_with(|| {
+                literals.push(literal.clone());
                 literals.len() - 1
             });
-            pattern_literal_pairs.push((i, id));
+            pattern_literal_pairs.push((pattern_index, id));
+        }
+    };
+    if let Some(hints) = localization_hints {
+        for (pattern_index, pattern_literals) in hints.iter().enumerate() {
+            register(pattern_index, pattern_literals);
+        }
+    } else {
+        crate::execution_pack::matcher_sections::record_runtime_localization_hint_fallback();
+        // Development corpora compute the same facts once per unique source.
+        let mut source_cache: HashMap<&str, Vec<String>> = HashMap::new();
+        for (pattern_index, pattern) in ac_map.iter().enumerate() {
+            let source = pattern.regex.as_str();
+            let pattern_literals = source_cache
+                .entry(source)
+                .or_insert_with(|| suffix_gate_literals(source));
+            register(pattern_index, pattern_literals);
         }
     }
     if literals.is_empty() {

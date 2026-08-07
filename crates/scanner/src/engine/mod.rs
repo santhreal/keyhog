@@ -131,7 +131,7 @@ mod scan_coalesced;
 pub(crate) mod scan_filters;
 pub(crate) mod scan_postprocess;
 pub(crate) use scan_postprocess::{
-    build_confirmed_suffix_gate, confirmed_anchor::ConfirmedAnchorIndex,
+    build_confirmed_suffix_gate_with_hints, confirmed_anchor::ConfirmedAnchorIndex,
 };
 #[path = "scan_postprocess/confirmed_extract.rs"]
 mod scan_postprocess_confirmed_extract;

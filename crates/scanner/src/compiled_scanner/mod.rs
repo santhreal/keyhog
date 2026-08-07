@@ -23,7 +23,7 @@ use crate::engine::build_simd_compile_plan;
 #[cfg(all(test, feature = "simd"))]
 use crate::engine::Phase2HsEngine;
 use crate::engine::{
-    build_confirmed_suffix_gate, derive_pattern_boundary_context, phase2, profile,
+    build_confirmed_suffix_gate_with_hints, derive_pattern_boundary_context, phase2, profile,
     ConfirmedAnchorIndex, CsrU32, Phase1Admission, Phase2AnchorIndex,
 };
 #[cfg(feature = "gpu")]
