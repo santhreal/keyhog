@@ -66,6 +66,7 @@ impl CompiledScanner {
         let telemetry = crate::telemetry::capture_scan_telemetry();
         let recovery_receipts = crate::gpu::capture_recovery_receipts();
         let profile_runtime = keyhog_profile::current_runtime();
+        let entropy_config_digest = self.entropy_evidence_config_digest();
         let scan_one = |index: usize, chunk: &Chunk| {
             let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
             crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
@@ -99,6 +100,9 @@ impl CompiledScanner {
                     let confirmed_patterns_absence = admission_plan
                         .and_then(|plan| plan.confirmed_patterns_absence_for(index))
                         .unwrap_or(false);
+                    let entropy_absence = admission_plan
+                        .and_then(|plan| plan.entropy_absence_for(index, entropy_config_digest))
+                        .unwrap_or(false);
                     self.scan_with_deadline_and_backend_admission_route_and_hints(
                         chunk,
                         self.config.per_chunk_deadline(),
@@ -106,6 +110,7 @@ impl CompiledScanner {
                         admission,
                         normalization_passthrough,
                         confirmed_patterns_absence,
+                        entropy_absence,
                         cpu_trigger_hints,
                         phase2_keyword_hints,
                         phase2_always_active_evidence,

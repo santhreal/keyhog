@@ -259,7 +259,7 @@ fn repeated_payloads_share_generic_keyword_positions() {
     detector_dir.pop();
     detector_dir.pop();
     detector_dir.push("detectors");
-    let scanner = CompiledScanner::compile(
+    let mut scanner = CompiledScanner::compile(
         keyhog_core::load_detectors(&detector_dir).expect("production detectors"),
     )
     .expect("compile production scanner");
@@ -271,6 +271,11 @@ fn repeated_payloads_share_generic_keyword_positions() {
     ];
 
     let plan = scanner.phase1_admission_plan(&chunks);
+    assert_eq!(
+        plan.entropy_absence_for_diagnostics(0),
+        Some(false),
+        "repeated credential fixture must not claim entropy absence"
+    );
     let first = plan
         .generic_keyword_positions_for_diagnostics(0)
         .expect("first generic position row");
@@ -344,12 +349,18 @@ fn repeated_payloads_share_generic_keyword_positions() {
         Some(true),
         "repeated clean fixture must establish exact confirmed-pattern absence"
     );
+    assert_eq!(
+        ordinary_plan.entropy_absence_for_diagnostics(0),
+        Some(true),
+        "repeated clean fixture must establish path-independent entropy absence"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
     scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
     scanner.reset_normalization_scanned_bytes_for_diagnostics();
     scanner.reset_confirmed_pattern_scanned_bytes_for_diagnostics();
+    scanner.reset_entropy_scanned_bytes_for_diagnostics();
     let planned_ordinary = scanner
         .scan_coalesced_with_backend_and_admission(
             &ordinary_chunks,
@@ -377,12 +388,18 @@ fn repeated_payloads_share_generic_keyword_positions() {
         0,
         "planned scan must consume confirmed-pattern absence without rescanning bytes"
     );
+    assert_eq!(
+        scanner.entropy_scanned_bytes_for_diagnostics(),
+        0,
+        "planned scan must consume entropy absence without rescanning bytes"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
     scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
     scanner.reset_normalization_scanned_bytes_for_diagnostics();
     scanner.reset_confirmed_pattern_scanned_bytes_for_diagnostics();
+    scanner.reset_entropy_scanned_bytes_for_diagnostics();
     let direct_ordinary = scanner
         .scan_coalesced_with_backend(&ordinary_chunks, ScanBackend::CpuFallback)
         .expect("direct ordinary scan");
@@ -402,8 +419,27 @@ fn repeated_payloads_share_generic_keyword_positions() {
         scanner.confirmed_pattern_scanned_bytes_for_diagnostics() > 0,
         "direct scan must establish the confirmed-pattern byte control"
     );
+    assert!(
+        scanner.entropy_scanned_bytes_for_diagnostics() > 0,
+        "direct scan must establish the entropy byte control"
+    );
     assert_eq!(planned_ordinary, direct_ordinary);
     assert!(planned_ordinary.iter().all(Vec::is_empty));
+
+    scanner.config.entropy_threshold = (scanner.config.entropy_threshold - 0.01).max(0.0);
+    scanner.clear_fragment_cache();
+    scanner.reset_entropy_scanned_bytes_for_diagnostics();
+    scanner
+        .scan_coalesced_with_backend_and_admission(
+            &ordinary_chunks,
+            ScanBackend::CpuFallback,
+            Some(&ordinary_plan),
+        )
+        .expect("config-changed planned scan");
+    assert!(
+        scanner.entropy_scanned_bytes_for_diagnostics() > 0,
+        "a changed entropy policy must invalidate persisted absence evidence"
+    );
 }
 
 /// WHY: representative absence is valid only when every triggered confirmed

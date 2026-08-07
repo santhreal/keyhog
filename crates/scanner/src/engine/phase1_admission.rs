@@ -73,6 +73,8 @@ pub struct Phase1AdmissionPlan {
     normalization_passthrough: Vec<bool>,
     unicode_normalization_enabled: bool,
     confirmed_patterns_absence: Vec<bool>,
+    entropy_absence: Vec<bool>,
+    entropy_config_digest: [u8; 32],
     #[cfg(debug_assertions)]
     unique_payloads: usize,
 }
@@ -138,6 +140,14 @@ impl Phase1AdmissionPlan {
         self.confirmed_patterns_absence_for(index)
     }
 
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn entropy_absence_for_diagnostics(&self, index: usize) -> Option<bool> {
+        let row = *self.phase2_keyword_hint_rows.get(index)?;
+        self.entropy_absence.get(row).copied()
+    }
+
     #[inline]
     pub(crate) fn admission_for(&self, index: usize) -> Option<Phase1Admission> {
         self.admissions.get(index).copied()
@@ -184,6 +194,19 @@ impl Phase1AdmissionPlan {
     pub(crate) fn confirmed_patterns_absence_for(&self, index: usize) -> Option<bool> {
         let row = *self.phase2_keyword_hint_rows.get(index)?;
         self.confirmed_patterns_absence.get(row).copied()
+    }
+
+    #[inline]
+    pub(crate) fn entropy_absence_for(
+        &self,
+        index: usize,
+        entropy_config_digest: [u8; 32],
+    ) -> Option<bool> {
+        if entropy_config_digest != self.entropy_config_digest {
+            return None;
+        }
+        let row = *self.phase2_keyword_hint_rows.get(index)?;
+        self.entropy_absence.get(row).copied()
     }
     #[inline]
     pub(crate) fn validate_chunks(
@@ -245,6 +268,7 @@ impl Phase1AdmissionPlan {
             self.normalization_passthrough.len() == self.phase2_keyword_hints.len();
         let confirmed_patterns_absence_valid =
             self.confirmed_patterns_absence.len() == self.phase2_keyword_hints.len();
+        let entropy_absence_valid = self.entropy_absence.len() == self.phase2_keyword_hints.len();
         if self.admissions.len() != self.chunk_shapes.len()
             || summary_chunks != shape_count
             || summary_bytes != shape_bytes
@@ -255,6 +279,7 @@ impl Phase1AdmissionPlan {
             || !cpu_trigger_hints_valid
             || !normalization_passthrough_valid
             || !confirmed_patterns_absence_valid
+            || !entropy_absence_valid
             || self
                 .chunk_shapes
                 .iter()
@@ -504,11 +529,88 @@ impl CompiledScanner {
         true
     }
 
+    pub(crate) fn entropy_evidence_config_digest(&self) -> [u8; 32] {
+        fn update_strings(hasher: &mut blake3::Hasher, values: &[String]) {
+            hasher.update(&(values.len() as u64).to_le_bytes());
+            for value in values {
+                hasher.update(&(value.len() as u64).to_le_bytes());
+                hasher.update(value.as_bytes());
+            }
+        }
+
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&[u8::from(self.config.entropy_enabled)]);
+        hasher.update(&[u8::from(self.config.entropy_in_source_files)]);
+        hasher.update(&(self.config.min_secret_len as u64).to_le_bytes());
+        hasher.update(&self.config.entropy_threshold.to_bits().to_le_bytes());
+        update_strings(&mut hasher, &self.config.secret_keywords);
+        update_strings(&mut hasher, &self.config.test_keywords);
+        update_strings(&mut hasher, &self.config.placeholder_keywords);
+        *hasher.finalize().as_bytes()
+    }
+
+    #[cfg(feature = "entropy")]
+    fn entropy_absent(&self, data: &str) -> bool {
+        if !self.config.entropy_enabled {
+            return true;
+        }
+        let Ok(line_index) = crate::context::LineContextIndex::try_new(data) else {
+            return false;
+        };
+        let keyword_matcher = self
+            .assignment_keyword_matcher
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .resolve(
+                &self.config.secret_keywords,
+                self.detector_plans.generic_ownership().policy_keywords(),
+            );
+        let keyword_assignment_lines =
+            crate::entropy::keywords::find_keyword_assignment_line_ids_with_matcher(
+                data,
+                &line_index,
+                &keyword_matcher,
+            );
+        let regular_threshold = self.keyword_free_entropy_threshold(false);
+        let sensitive_threshold = self.keyword_free_entropy_threshold(true);
+        let keyword_free_threshold = match (regular_threshold, sensitive_threshold) {
+            (Some(regular), Some(sensitive)) => Some(regular.min(sensitive)),
+            (Some(threshold), None) | (None, Some(threshold)) => Some(threshold),
+            (None, None) => None,
+        };
+        let _g = super::profile::span(keyhog_profile::Stage::Entropy);
+        crate::entropy::scanner::find_classified_entropy_secrets_indexed(
+            data,
+            &line_index,
+            &keyword_assignment_lines,
+            self.config.min_secret_len,
+            1,
+            self.config.entropy_threshold,
+            keyword_free_threshold,
+            &self.config.secret_keywords,
+            &self.config.test_keywords,
+            &self.config.placeholder_keywords,
+            None,
+            Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
+                &self.detector_plans.generic_ownership(),
+                &self.detector_plans,
+            )),
+            crate::entropy::scanner::KeywordFreeLineScope::All,
+        )
+        .is_empty()
+    }
+
+    #[cfg(not(feature = "entropy"))]
+    fn entropy_absent(&self, _data: &str) -> bool {
+        true
+    }
+
     fn phase1_admission_plan_with_bigram_mode(
         &self,
         chunks: &[Chunk],
         bypass_bigram: bool,
     ) -> Phase1AdmissionPlan {
+        let entropy_config_digest = self.entropy_evidence_config_digest();
         let classify = |chunk: &Chunk, classify_reusable_evidence: bool| {
             let admission = if bypass_bigram {
                 self.phase1_admission_bypassing_bigram(chunk.data.as_bytes())
@@ -529,6 +631,7 @@ impl CompiledScanner {
             let confirmed_patterns_absence = cpu_trigger_hints
                 .as_deref()
                 .is_some_and(|triggers| self.confirmed_patterns_absent(&chunk.data, triggers));
+            let entropy_absence = classify_reusable_evidence && self.entropy_absent(&chunk.data);
             (
                 admission,
                 keyword_trigger_count,
@@ -538,6 +641,7 @@ impl CompiledScanner {
                 cpu_trigger_hints,
                 classify_reusable_evidence && self.normalization_passthrough(&chunk.data),
                 confirmed_patterns_absence,
+                entropy_absence,
             )
         };
 
@@ -598,7 +702,7 @@ impl CompiledScanner {
         for (chunk, representative_position) in
             chunks.iter().zip(representative_for.iter().copied())
         {
-            let (admission, keyword_trigger_count, _, _, _, _, _, _) =
+            let (admission, keyword_trigger_count, _, _, _, _, _, _, _) =
                 &classified[representative_position];
             let data = chunk.data.as_bytes();
             let len = data.len();
@@ -619,8 +723,18 @@ impl CompiledScanner {
         let mut cpu_trigger_hints = Vec::with_capacity(classified.len());
         let mut normalization_passthrough = Vec::with_capacity(classified.len());
         let mut confirmed_patterns_absence = Vec::with_capacity(classified.len());
-        for (_, _, hints, positions, absence, triggers, passthrough, confirmed_absence) in
-            classified
+        let mut entropy_absence = Vec::with_capacity(classified.len());
+        for (
+            _,
+            _,
+            hints,
+            positions,
+            absence,
+            triggers,
+            passthrough,
+            confirmed_absence,
+            entropy_absent,
+        ) in classified
         {
             phase2_keyword_hints.push(hints);
             generic_keyword_positions.push(positions);
@@ -628,6 +742,7 @@ impl CompiledScanner {
             cpu_trigger_hints.push(triggers);
             normalization_passthrough.push(passthrough);
             confirmed_patterns_absence.push(confirmed_absence);
+            entropy_absence.push(entropy_absent);
         }
         Phase1AdmissionPlan {
             admissions,
@@ -643,6 +758,8 @@ impl CompiledScanner {
             normalization_passthrough,
             unicode_normalization_enabled: self.config.unicode_normalization,
             confirmed_patterns_absence,
+            entropy_absence,
+            entropy_config_digest,
             #[cfg(debug_assertions)]
             unique_payloads: representatives.len(),
         }

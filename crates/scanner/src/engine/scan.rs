@@ -90,7 +90,7 @@ impl CompiledScanner {
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
         self.scan_inner_with_admission_hints(
-            chunk, backend, deadline, false, false, None, None, None, None, route,
+            chunk, backend, deadline, false, false, false, None, None, None, None, route,
         )
     }
 
@@ -101,6 +101,7 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         normalization_passthrough: bool,
         confirmed_patterns_absence: bool,
+        entropy_absence: bool,
         cpu_trigger_hints: Option<&[u64]>,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_evidence: Option<super::phase2::Phase2AlwaysActiveGpuEvidence<'_>>,
@@ -137,6 +138,7 @@ impl CompiledScanner {
             &triggered,
             deadline,
             confirmed_patterns_absence,
+            entropy_absence,
             phase2_keyword_hints,
             phase2_always_active_evidence,
             None,

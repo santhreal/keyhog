@@ -626,6 +626,8 @@ pub struct CompiledScanner {
     pub(crate) normalization_scanned_bytes: std::sync::atomic::AtomicU64,
     #[cfg(debug_assertions)]
     pub(crate) confirmed_pattern_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) entropy_scanned_bytes: std::sync::atomic::AtomicU64,
 }
 
 impl CompiledScanner {
