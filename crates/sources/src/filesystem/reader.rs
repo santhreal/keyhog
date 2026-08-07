@@ -32,9 +32,9 @@ const MAX_READER_THREADS: usize = 4;
 /// entry, exactly as before) because their total text is far below this.
 const READER_PART_FLUSH_BYTES: usize = 1024 * 1024;
 
-/// Flush threshold, in chunk count, for one streamed slice of a walk entry.
-/// Bounds the other shape: an archive or decode path that yields thousands of
-/// individually tiny chunks would otherwise never trip the byte threshold.
+/// Flush threshold, in chunk count, for one streamed slice. Sixty-four rows
+/// amortize tiny-file handoff without retaining a full scanner batch in every
+/// reader; the byte threshold independently limits large/adversarial chunks.
 const READER_PART_FLUSH_CHUNKS: usize = 64;
 /// Rendezvous boundary between the reader crew and scanner. A blocked sender
 /// may overlap one decoded window with the active scan, but no additional
@@ -50,7 +50,88 @@ const READER_QUEUE_DEPTH: usize = 0;
 /// final part of an entry and is what lets the reorder thread know it may
 /// advance to `seq + 1`; it is sent even when the trailing part is empty.
 type EntryBatch = (usize, usize, bool, Vec<Result<Chunk, SourceError>>);
-type EntryBatchSender = std::sync::mpsc::SyncSender<EntryBatch>;
+type EntryBatchSender = std::sync::mpsc::SyncSender<Vec<EntryBatch>>;
+
+pub(super) struct ChunkReceiver {
+    receiver: std::sync::mpsc::Receiver<Vec<Result<Chunk, SourceError>>>,
+    pending: std::vec::IntoIter<Result<Chunk, SourceError>>,
+}
+
+impl Iterator for ChunkReceiver {
+    type Item = Result<Chunk, SourceError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(row) = self.pending.next() {
+                return Some(row);
+            }
+            self.pending = self.receiver.recv().ok()?.into_iter();
+        }
+    }
+}
+
+fn send_chunk_batch(
+    sender: &std::sync::mpsc::SyncSender<Vec<Result<Chunk, SourceError>>>,
+    chunks: &mut Vec<Result<Chunk, SourceError>>,
+    bytes: &mut usize,
+) -> bool {
+    if chunks.is_empty() {
+        return true;
+    }
+    let batch = std::mem::take(chunks);
+    *bytes = 0;
+    let _queue_wait = crate::profile::queue_wait_span();
+    sender.send(batch).is_ok()
+}
+
+struct EntryBatchBuffer {
+    sender: EntryBatchSender,
+    pending: Vec<EntryBatch>,
+    chunk_count: usize,
+    bytes: usize,
+}
+
+impl EntryBatchBuffer {
+    fn new(sender: EntryBatchSender) -> Self {
+        Self {
+            sender,
+            pending: Vec::with_capacity(READER_PART_FLUSH_CHUNKS),
+            chunk_count: 0,
+            bytes: 0,
+        }
+    }
+
+    fn push(&mut self, batch: EntryBatch) -> bool {
+        self.chunk_count = self.chunk_count.saturating_add(batch.3.len());
+        self.bytes = self.bytes.saturating_add(
+            batch
+                .3
+                .iter()
+                .filter_map(|row| row.as_ref().ok())
+                .map(|chunk| chunk.data.len())
+                .sum::<usize>(),
+        );
+        self.pending.push(batch);
+        if self.bytes >= READER_PART_FLUSH_BYTES
+            || self.chunk_count >= READER_PART_FLUSH_CHUNKS
+            || self.pending.len() >= READER_PART_FLUSH_CHUNKS
+        {
+            return self.flush();
+        }
+        true
+    }
+
+    fn flush(&mut self) -> bool {
+        if self.pending.is_empty() {
+            return true;
+        }
+        let batches = std::mem::take(&mut self.pending);
+        self.chunk_count = 0;
+        self.bytes = 0;
+        let _queue_wait = crate::profile::queue_wait_span();
+        self.sender.send(batches).is_ok()
+    }
+}
 
 struct ReaderCursor {
     next_seq: usize,
@@ -99,9 +180,10 @@ pub(super) fn spawn_chunk_producer(
     // (KH-1587). Inert in production, where nothing ever takes the exclusive
     // scope.
     scan_lease: crate::skip::ScanReadLease,
-) -> std::sync::mpsc::Receiver<Result<Chunk, SourceError>> {
-    let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Chunk, SourceError>>(READER_QUEUE_DEPTH);
-    let (entry_tx, entry_rx) = std::sync::mpsc::sync_channel::<EntryBatch>(READER_QUEUE_DEPTH);
+) -> ChunkReceiver {
+    let (tx, rx) =
+        std::sync::mpsc::sync_channel::<Vec<Result<Chunk, SourceError>>>(READER_QUEUE_DEPTH);
+    let (entry_tx, entry_rx) = std::sync::mpsc::sync_channel::<Vec<EntryBatch>>(READER_QUEUE_DEPTH);
     let cursor = Arc::new(Mutex::new(ReaderCursor {
         next_seq: 0,
         entries,
@@ -123,26 +205,35 @@ pub(super) fn spawn_chunk_producer(
         // reorder buffer grow with the largest file in the walk.
         let mut pending: BTreeMap<(usize, usize), (bool, Vec<Result<Chunk, SourceError>>)> =
             BTreeMap::new();
-        for (seq, part, is_last, chunks) in entry_rx {
-            pending.insert((seq, part), (is_last, chunks));
-            while let Some((is_last, chunks)) = pending.remove(&(next_seq, next_part)) {
-                for chunk in chunks {
-                    let send_result = {
-                        let _queue_wait = crate::profile::queue_wait_span();
-                        tx.send(chunk)
-                    };
-                    if send_result.is_err() {
-                        return;
+        let mut outbound_chunks = Vec::with_capacity(READER_PART_FLUSH_CHUNKS);
+        let mut outbound_bytes = 0usize;
+        for batches in entry_rx {
+            for (seq, part, is_last, chunks) in batches {
+                pending.insert((seq, part), (is_last, chunks));
+                while let Some((is_last, chunks)) = pending.remove(&(next_seq, next_part)) {
+                    for chunk in chunks {
+                        outbound_bytes = outbound_bytes.saturating_add(match &chunk {
+                            Ok(chunk) => chunk.data.len(),
+                            Err(_) => 0,
+                        });
+                        outbound_chunks.push(chunk);
+                        if (outbound_bytes >= READER_PART_FLUSH_BYTES
+                            || outbound_chunks.len() >= READER_PART_FLUSH_CHUNKS)
+                            && !send_chunk_batch(&tx, &mut outbound_chunks, &mut outbound_bytes)
+                        {
+                            return;
+                        }
                     }
-                }
-                if is_last {
-                    next_seq += 1;
-                    next_part = 0;
-                } else {
-                    next_part += 1;
+                    if is_last {
+                        next_seq += 1;
+                        next_part = 0;
+                    } else {
+                        next_part += 1;
+                    }
                 }
             }
         }
+        let _ = send_chunk_batch(&tx, &mut outbound_chunks, &mut outbound_bytes);
     });
 
     let profile_runtime = crate::profile::current_runtime();
@@ -160,14 +251,15 @@ pub(super) fn spawn_chunk_producer(
         // leftover and make it wait out a counter-asserting test.
         let _attributed = scan_lease.enter();
         let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
+        let mut tx = EntryBatchBuffer::new(tx);
         loop {
             let item = {
                 let guard = match cursor.lock() {
                     Ok(g) => Ok(g),
                     Err(poisoned) => {
                         tracing::warn!(
-                                "filesystem reader cursor mutex was poisoned; surfacing partial scan error"
-                            );
+                            "filesystem reader cursor mutex was poisoned; surfacing partial scan error"
+                        );
                         cursor_poison_item(poisoned.into_inner())
                     }
                 };
@@ -179,10 +271,14 @@ pub(super) fn spawn_chunk_producer(
             let (seq, entry) = match item {
                 CursorItem::Entry(seq, entry) => (seq, entry),
                 CursorItem::Error(seq, error) => {
-                    let _ = tx.send((seq, 0, true, vec![Err(error)])); // LAW10: receiver closed means scan consumer already stopped; otherwise ordered SourceError is surfaced
+                    let _ = tx.push((seq, 0, true, vec![Err(error)]));
+                    let _ = tx.flush();
                     return;
                 }
-                CursorItem::End => return,
+                CursorItem::End => {
+                    let _ = tx.flush();
+                    return;
+                }
             };
 
             // Stream this entry's chunks to the reorder thread in bounded
@@ -206,17 +302,14 @@ pub(super) fn spawn_chunk_producer(
                 if part_bytes < READER_PART_FLUSH_BYTES && chunks.len() < READER_PART_FLUSH_CHUNKS {
                     return true;
                 }
-                let send_result = {
-                    let _queue_wait = crate::profile::queue_wait_span();
-                    tx.send((seq, part, false, std::mem::take(&mut chunks)))
-                };
+                let send_result = tx.push((seq, part, false, std::mem::take(&mut chunks)));
                 part += 1;
                 part_bytes = 0;
                 // Returning false stops `process_entry` mid-file once the
                 // consumer is gone. The old always-true closure kept reading
                 // and decoding an entire large file into a `Vec` nobody would
                 // ever receive.
-                if send_result.is_err() {
+                if !send_result {
                     consumer_gone = true;
                     return false;
                 }
@@ -244,11 +337,8 @@ pub(super) fn spawn_chunk_producer(
             }
             // Always send the closing part, even empty: `is_last` is what
             // releases the reorder thread to move on to `seq + 1`.
-            let send_result = {
-                let _queue_wait = crate::profile::queue_wait_span();
-                tx.send((seq, part, true, chunks))
-            };
-            if send_result.is_err() {
+            let send_result = tx.push((seq, part, true, chunks));
+            if !send_result {
                 return;
             }
         }
@@ -306,7 +396,7 @@ pub(super) fn spawn_chunk_producer(
             eprintln!(
                 "keyhog: ERROR failed to spawn any filesystem reader thread; no files were scanned"
             );
-            let _send_result = entry_tx.send((
+            let _send_result = entry_tx.send(vec![(
                 0,
                 0,
                 true,
@@ -314,7 +404,7 @@ pub(super) fn spawn_chunk_producer(
                     "failed to spawn any filesystem reader thread; no files were scanned"
                         .to_string(),
                 ))],
-            ));
+            )]);
         } else {
             eprintln!(
                 "keyhog: WARN filesystem reader pool fell back to a single thread after \
@@ -324,7 +414,10 @@ pub(super) fn spawn_chunk_producer(
     }
 
     drop(entry_tx);
-    rx
+    ChunkReceiver {
+        receiver: rx,
+        pending: Vec::new().into_iter(),
+    }
 }
 
 fn next_cursor_item(mut cursor: std::sync::MutexGuard<'_, ReaderCursor>) -> CursorItem {

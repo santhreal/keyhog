@@ -503,6 +503,7 @@ pub(super) fn process_entry(
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     let path = entry.path;
+    let mut prefetched_extensionless_bytes = None;
 
     // Built-in exclusion list (lock/minified/bundled/vendored). Gated on
     // `respect_default_excludes` so `--no-default-excludes` actually reaches this
@@ -637,7 +638,14 @@ pub(super) fn process_entry(
                     let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
                     return;
                 }
-                None => {}
+                None => {
+                    // The safe prefix read reached EOF for this stable tiny-file
+                    // snapshot. Reuse those owned bytes below instead of opening,
+                    // fstat'ing, and reading the same file a second time.
+                    if n < buf.len() && n as u64 == file_size {
+                        prefetched_extensionless_bytes = Some(head.to_vec());
+                    }
+                }
             }
         }
     }
@@ -1056,7 +1064,12 @@ pub(super) fn process_entry(
         return;
     }
 
-    let content_source = if file_size >= MMAP_THRESHOLD {
+    let content_source = if let Some(bytes) = prefetched_extensionless_bytes {
+        Some(match read::decode_text_file_owned_or_bytes(bytes) {
+            Ok(text) => read::BufferedFileRead::Text(text),
+            Err(bytes) => read::BufferedFileRead::Bytes(bytes),
+        })
+    } else if file_size >= MMAP_THRESHOLD {
         read::read_file_whole_capped(&path)
     } else {
         read::read_file_buffered(&path, file_size)
