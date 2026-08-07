@@ -641,69 +641,6 @@ pub fn ml_score_cache_capacity_for_test() -> usize {
     crate::ml_scorer::SCORE_CACHE_CAPACITY
 }
 
-/// (ml_scorer::model_arch) every MoE architecture dimension, derived parameter
-/// count, and flat-buffer offset the single owner defines. Exposed so
-/// `tests/ml_model_arch_wgsl_parity.rs` can pin the WGSL shader's string literals
-/// (and the CPU weight-buffer strides) to these exact values, the anti-drift
-/// guard that replaces four hand-copied definitions.
-pub struct MlModelArch {
-    pub input_dim: usize,
-    pub expert_count: usize,
-    pub expert_fc1_out: usize,
-    pub expert_fc2_out: usize,
-    pub expert_fc3_out: usize,
-    pub sigmoid_saturation: f32,
-    pub gate_w_count: usize,
-    pub gate_b_count: usize,
-    pub gate_w_off: usize,
-    pub gate_b_off: usize,
-    pub experts_off: usize,
-    pub expert_fc1_w_count: usize,
-    pub expert_fc1_b_count: usize,
-    pub expert_fc2_w_count: usize,
-    pub expert_fc2_b_count: usize,
-    pub expert_fc3_w_count: usize,
-    pub expert_fc3_b_count: usize,
-    pub expert_param_count: usize,
-    pub total_f32_count: usize,
-    pub workgroup_size: usize,
-}
-
-/// gpu-gated accessor to the GENERATED MoE WGSL shader string (`gpu::gpu_shader::moe_shader`)
-/// so `tests/unit/gates/gpu_shader_arch_consts_match_model_arch.rs` can pin the GENERATED
-/// shader's arch literals (complementing the SOURCE-level check in
-/// `tests/ml_model_arch_wgsl_parity.rs`) without reaching into `pub(crate)` gpu internals.
-#[cfg(feature = "gpu")]
-pub fn moe_shader_for_test() -> String {
-    crate::gpu::gpu_shader::moe_shader()
-}
-
-pub fn ml_model_arch_for_test() -> MlModelArch {
-    use crate::ml_scorer::model_arch as a;
-    MlModelArch {
-        input_dim: a::INPUT_DIM,
-        expert_count: a::EXPERT_COUNT,
-        expert_fc1_out: a::EXPERT_FC1_OUT,
-        expert_fc2_out: a::EXPERT_FC2_OUT,
-        expert_fc3_out: a::EXPERT_FC3_OUT,
-        sigmoid_saturation: a::SIGMOID_SATURATION,
-        gate_w_count: a::GATE_W_COUNT,
-        gate_b_count: a::GATE_B_COUNT,
-        gate_w_off: a::GATE_W_OFF,
-        gate_b_off: a::GATE_B_OFF,
-        experts_off: a::EXPERTS_OFF,
-        expert_fc1_w_count: a::EXPERT_FC1_W_COUNT,
-        expert_fc1_b_count: a::EXPERT_FC1_B_COUNT,
-        expert_fc2_w_count: a::EXPERT_FC2_W_COUNT,
-        expert_fc2_b_count: a::EXPERT_FC2_B_COUNT,
-        expert_fc3_w_count: a::EXPERT_FC3_W_COUNT,
-        expert_fc3_b_count: a::EXPERT_FC3_B_COUNT,
-        expert_param_count: a::EXPERT_PARAM_COUNT,
-        total_f32_count: a::TOTAL_F32_COUNT,
-        workgroup_size: a::WORKGROUP_SIZE,
-    }
-}
-
 /// (structured::parsers) the single-owner structured-traversal depth cap that the
 /// JSON and YAML recursion guards both read.
 pub fn structured_max_traversal_depth_for_test() -> usize {
@@ -2927,8 +2864,8 @@ pub fn looks_like_bare_hex_digest_for_test(value: &str) -> bool {
     crate::suppression::shape::looks_like_bare_hex_digest(value)
 }
 
-fn generic_api_key_entropy_policy_for_test()
--> &'static crate::entropy::policy::CompiledEntropyPolicy {
+fn generic_api_key_entropy_policy_for_test(
+) -> &'static crate::entropy::policy::CompiledEntropyPolicy {
     static POLICY: std::sync::LazyLock<crate::entropy::policy::CompiledEntropyPolicy> =
         std::sync::LazyLock::new(|| {
             let detector = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_API_KEY)
@@ -4256,7 +4193,7 @@ pub mod entropy_keywords {
 
 pub mod checksum {
     pub use crate::checksum::{
-        CHECKSUM_VALID_FLOOR, ChecksumResult, checksum_adjusted_confidence, validate_checksum,
+        checksum_adjusted_confidence, validate_checksum, ChecksumResult, CHECKSUM_VALID_FLOOR,
     };
 
     fn crc32_base62_suffix(data: &[u8], width: usize) -> String {
@@ -4642,6 +4579,19 @@ pub(crate) fn register_thread_decoder(
 
 pub fn ml_score(text: &str, context: &str) -> f64 {
     crate::ml_scorer::score(text, context)
+}
+
+#[cfg(feature = "ml")]
+pub fn ml_score_batch_for_test(inputs: &[(&str, &str)], config: &crate::ScannerConfig) -> Vec<f64> {
+    crate::ml_scorer::score_input_batch(inputs, config)
+}
+
+#[cfg(feature = "ml")]
+pub fn ml_score_batch_serial_for_test(
+    inputs: &[(&str, &str)],
+    config: &crate::ScannerConfig,
+) -> Vec<f64> {
+    crate::ml_scorer::score_input_batch_serial(inputs, config)
 }
 
 #[cfg(feature = "ml")]
@@ -5379,7 +5329,7 @@ pub mod segment_attribution {
     //! ONE-PLACE / Law-11) so external tests reach the primitive at
     //! `keyhog_scanner::testing::segment_attribution::*`.
     pub use crate::segment_attribution::{
-        AttributedMatch, GlobalMatch, Segment, SegmentAttributionError, map_offsets_to_segments,
+        map_offsets_to_segments, AttributedMatch, GlobalMatch, Segment, SegmentAttributionError,
     };
 }
 

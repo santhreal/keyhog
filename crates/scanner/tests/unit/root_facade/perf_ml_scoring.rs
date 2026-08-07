@@ -2,8 +2,8 @@
 //!
 //! HOT PATH: per-match ML scoring. A chunk with many candidate matches queues
 //! every survivor into `scan_state.ml_pending` and drains the batch through
-//! `gpu::batch_ml_inference` → `ml_scorer::score_features` → `forward_pass`
-//! (crates/scanner/src/ml_scorer.rs).
+//! `ml_scorer::score_input_batch` and the CPU `forward_pass`
+//! (`crates/scanner/src/ml_scorer.rs`).
 //!
 //! ## History, the original sub-µs target was REFUTED by the recall constraint
 //! This file once demanded `forward/feature < 0.3x` and `forward-pass < 0.35 µs`
@@ -13,10 +13,9 @@
 //! both of which change the result sub-ULP. An AVX2+FMA forward pass was tried
 //! and REVERTED: the sub-ULP drift pushed borderline ML-gated detectors
 //! (twilio-auth-token, africastalking-api-key, …) across their `min_confidence`
-//! floor and regressed 30+ `contracts_runner` positives. The confidence model
-//! and the GPU parity reference (DET-11) are calibrated against the EXACT scalar
-//! reduction, so the forward pass must stay numerically identical to it, which
-//! forbids the very reassociation the 0.35 µs target assumed. The target was
+//! floor and regressed 30+ `contracts_runner` positives. The confidence model is
+//! calibrated against the exact scalar reduction, which forbids the
+//! reassociation the 0.35 µs target assumed. The target was
 //! unreachable WITHOUT regressing recall, so it is not the contract.
 //!
 //! ## What actually shipped (recall-safe), and what this guards

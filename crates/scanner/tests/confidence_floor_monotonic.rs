@@ -9,11 +9,10 @@
 //!     baked defaults (FP 312 vs 41 for the SAME nominal values); the floor was
 //!     swept via that broken flag path. Now there is one applied config
 //!     (`orchestrator/mod.rs`: `.with_config(effective_config.scanner)`).
-//!   * DET-11, the default GPU auto-route scored the MoE on a shader whose
-//!     activation diverged from the CPU rational sigmoid by ~0.05, flipping
-//!     ±15 findings run-to-run near the floor. Now the shader uses the CPU
-//!     sigmoid (`gpu_shader_sigmoid_contract.rs`) and the bench pins the CPU
-//!     path.
+//!   * DET-11, an earlier GPU auto-route used a different activation and
+//!     introduced near-floor score drift. Confidence scoring now uses the same
+//!     deterministic CPU path for every backend; VYRE GPU routes accelerate
+//!     detection only.
 //!
 //! The floor itself was always monotonic *by construction*: the confidence a
 //! match carries is computed with no reference to `min_confidence` (the value

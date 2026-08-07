@@ -78,11 +78,8 @@ pub fn gpu_runtime_policy() -> GpuRuntimePolicy {
 
 /// Probe GPU availability and adapter metadata without panicking.
 ///
-/// Honours the explicit disabled GPU policy by reporting "no GPU available"
-/// without ever calling `backend::get_gpu()`. The MoE compute-shader init
-/// happens lazily inside `get_gpu()`, so this short-circuit is the difference
-/// between "adapter request blocks for minutes on broken driver stacks" and
-/// "scanner starts like every other CPU-only tool".
+/// Honours the explicit disabled GPU policy before adapter enumeration, so a
+/// CPU-only process never touches a broken driver stack.
 #[must_use]
 pub(crate) fn gpu_probe() -> GpuRuntimeProbe {
     if gpu_disabled_by_policy() {

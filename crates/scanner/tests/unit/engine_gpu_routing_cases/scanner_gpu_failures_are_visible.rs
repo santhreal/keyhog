@@ -384,19 +384,6 @@ fn backend_affecting_config_parse_failures_are_loud() {
         "HS prefilter max-length must be explicit scanner tuning config, not ambient env"
     );
 
-    let gpu_execution = scanner_src("gpu/backend/execution.rs");
-    assert!(
-        gpu_execution.contains("readback_timeout: Duration")
-            && gpu_execution.contains("let timeout = readback_timeout")
-            && !gpu_execution.contains("KEYHOG_GPU_MOE_TIMEOUT_MS")
-            && !gpu_execution.contains("u64_at_least_or_default")
-            && scanner_config.contains("pub gpu_moe_timeout_ms: Option<u64>")
-            && scanner_config.contains("const GPU_MOE_TIMEOUT_MS_DEFAULT: u64 = 30_000")
-            && tuning.contains("set_gpu_moe_timeout_ms")
-            && scanner_config.contains("gpu_moe_timeout(&self) -> Duration"),
-        "GPU MoE timeout must be explicit scanner tuning config, not ambient env"
-    );
-
     let simd = scanner_src("simd/backend.rs");
     let backend_prepared = scanner_src("engine/backend_prepared.rs");
     assert!(

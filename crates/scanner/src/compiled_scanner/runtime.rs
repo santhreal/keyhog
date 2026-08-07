@@ -624,11 +624,10 @@ impl CompiledScanner {
         )
     }
 
-    /// Cumulative count of scanner-local GPU region-dispatch failures.
+    /// Cumulative count of scanner-local VYRE region-dispatch failures.
     ///
-    /// Per-request GPU MoE recovery is returned on `CoalescedScanOutcome`;
-    /// it is deliberately excluded here so concurrent scanners cannot affect
-    /// another request's correctness decision.
+    /// Request-scoped recovery evidence is returned on `CoalescedScanOutcome`
+    /// and cannot affect another concurrent request.
     pub fn gpu_degrade_count(&self) -> u64 {
         self.gpu_degrade_count
             .load(std::sync::atomic::Ordering::Relaxed)

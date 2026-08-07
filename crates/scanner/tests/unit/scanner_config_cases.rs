@@ -14,10 +14,6 @@ fn tuning_effective_resolves_compiled_defaults_when_unset() {
     );
     assert!(cfg.fallback_anchor_effective());
     assert!(!cfg.fallback_reverse_effective()); // FALLBACK_REVERSE_DEFAULT = false
-    assert_eq!(
-        cfg.gpu_moe_timeout_ms_effective(),
-        ScannerTuningConfig::GPU_MOE_TIMEOUT_MS_DEFAULT
-    );
 }
 
 #[test]
@@ -26,13 +22,11 @@ fn tuning_effective_honors_explicit_overrides() {
         phase2_hs: Some(false),
         hs_shard_target: Some(999),
         fallback_reverse: Some(true),
-        gpu_moe_timeout_ms: Some(1_500),
         ..ScannerTuningConfig::default()
     };
     assert!(!cfg.fallback_hs_effective());
     assert_eq!(cfg.hs_shard_target_effective(), 999);
     assert!(cfg.fallback_reverse_effective());
-    assert_eq!(cfg.gpu_moe_timeout_ms_effective(), 1_500);
 }
 
 #[test]

@@ -1,23 +1,15 @@
 //! Single owner of the MoE model architecture.
 //!
 //! Every layer dimension, derived parameter count, flat weight-buffer offset,
-//! and the sigmoid clamp lives here ONCE. Four sites previously kept their own
-//! copies of these numbers:
-//!   - `ml_weights.rs`: flat `weights.bin` buffer layout (counts + offsets),
-//!   - `ml_scorer.rs`: const-generic dense-layer widths + sigmoid clamp,
-//!   - `ml_features.rs`: `NUM_FEATURES` (the input width),
-//!   - `gpu/gpu_shader.rs`: the WGSL `const` block + layout offsets (string
-//!     literals).
-//! They now IMPORT these consts. The WGSL literals (which must stay literals for
-//! the shader source) are pinned to these values by
-//! `tests/ml_model_arch_wgsl_parity.rs`, which fails the moment either side is
-//! retuned without the other.
+//! and sigmoid clamp lives here once. The weight parser, CPU scorer, and feature
+//! extractor import these constants so the persisted model layout cannot drift
+//! from inference.
 //!
 //! Architecture: gate `Linear(INPUT_DIM, EXPERT_COUNT)` -> Softmax; `EXPERT_COUNT`
 //! experts of `Linear(INPUT_DIM, FC1)` -> ReLU -> `Linear(FC1, FC2)` -> ReLU ->
 //! `Linear(FC2, 1)`; gate-weighted logit sum -> rational Sigmoid. Changing any
-//! primitive below requires a matching `weights.bin` retrain, the buffer-size
-//! check in `ml_weights::parse_weights` fails closed on any stride mismatch.
+//! primitive below requires a matching `weights.bin` retrain;
+//! `ml_weights::parse_weights` fails closed on any stride mismatch.
 
 /// Feature-vector dimensionality = gate/expert input width. Feature 41 is the
 /// decode-structure verdict (base64/hex -> magic-bytes/protobuf); feature 42 is
@@ -29,9 +21,7 @@
 /// 43 -> 55 adds detector/channel conditioning. Any bump here REQUIRES a matching
 /// `weights.bin` + `model_card.json` retrain (`FEATURES=55
 /// ml/retrain_loop.sh --write --verify`); `ml_weights::parse_weights` fails
-/// closed on the stride mismatch until they land, and the generated WGSL
-/// shader + GPU host buffers derive from this const so the GPU path can never
-/// lag the CPU layout.
+/// closed on the stride mismatch until they land.
 pub(crate) const INPUT_DIM: usize = 55;
 
 /// Mixture-of-experts specialist count (grid-searched over {4, 6, 8, 12}).
@@ -48,18 +38,8 @@ pub(crate) const EXPERT_FC3_OUT: usize = 1;
 
 /// Symmetric saturation bound for the fast rational sigmoid: outside
 /// `[-SIGMOID_SATURATION, SIGMOID_SATURATION]` the output clamps to `0.0` / `1.0`.
-/// The CPU forward pass is the parity reference for every confidence floor AND
-/// the GPU shader, so this owns the clamp for both paths.
+/// The CPU forward pass owns the confidence contract.
 pub(crate) const SIGMOID_SATURATION: f32 = 6.0;
-
-/// GPU compute workgroup size (threads per workgroup) for the MoE inference
-/// shader. SINGLE OWNER shared by BOTH the WGSL `@workgroup_size(WORKGROUP_SIZE)`
-/// attribute (interpolated into the generated shader header) AND the host-side
-/// dispatch `(batch_size).div_ceil(WORKGROUP_SIZE)` in `gpu::backend`. Before this
-/// each side carried a free literal `64`; changing one without the other silently
-/// under- or over-dispatches the batch (partial/duplicate scoring). One owner, so
-/// they cannot drift; `wgsl_literals_match_rust_owner` pins the shader copy to it.
-pub(crate) const WORKGROUP_SIZE: usize = 64;
 
 // --- Derived per-layer element counts (f32 values) ---
 pub(crate) const GATE_W_COUNT: usize = INPUT_DIM * EXPERT_COUNT;

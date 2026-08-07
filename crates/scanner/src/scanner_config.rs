@@ -30,7 +30,6 @@ pub struct ScannerTuningConfig {
     pub no_candidate_gate: Option<bool>,
     pub fallback_localizer: Option<bool>,
     pub gpu_recall_floor: Option<bool>,
-    pub gpu_moe_timeout_ms: Option<u64>,
 }
 
 impl ScannerTuningConfig {
@@ -61,7 +60,6 @@ impl ScannerTuningConfig {
     pub(crate) const NO_CANDIDATE_GATE_DEFAULT: bool = true;
     pub(crate) const FALLBACK_LOCALIZER_DEFAULT: bool = true;
     pub(crate) const GPU_RECALL_FLOOR_DEFAULT: bool = false;
-    pub(crate) const GPU_MOE_TIMEOUT_MS_DEFAULT: u64 = 30_000;
 
     pub fn effective(&self) -> ResolvedScannerTuningConfig {
         ResolvedScannerTuningConfig {
@@ -79,7 +77,6 @@ impl ScannerTuningConfig {
             no_candidate_gate: self.no_candidate_gate_effective(),
             fallback_localizer: self.fallback_localizer_effective(),
             gpu_recall_floor: self.gpu_recall_floor_effective(),
-            gpu_moe_timeout_ms: self.gpu_moe_timeout_ms_effective(),
         }
     }
 
@@ -148,11 +145,6 @@ impl ScannerTuningConfig {
         self.gpu_recall_floor
             .unwrap_or(Self::GPU_RECALL_FLOOR_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
-
-    pub(crate) fn gpu_moe_timeout_ms_effective(&self) -> u64 {
-        self.gpu_moe_timeout_ms
-            .unwrap_or(Self::GPU_MOE_TIMEOUT_MS_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -171,7 +163,6 @@ pub struct ResolvedScannerTuningConfig {
     pub no_candidate_gate: bool,
     pub fallback_localizer: bool,
     pub gpu_recall_floor: bool,
-    pub gpu_moe_timeout_ms: u64,
 }
 
 /// Recall-equivalent execution choices resolved for one scan request.
@@ -217,14 +208,6 @@ pub(crate) struct ResolvedRuntimeTuningConfig {
     pub no_candidate_gate: bool,
     pub fallback_localizer: bool,
     pub gpu_recall_floor: bool,
-    pub gpu_moe_timeout_ms: u64,
-}
-
-impl ResolvedRuntimeTuningConfig {
-    #[cfg(feature = "ml")]
-    pub(crate) fn gpu_moe_timeout(&self) -> Duration {
-        Duration::from_millis(self.gpu_moe_timeout_ms)
-    }
 }
 
 /// Scanner-side configuration: the canonical [`ScanConfig`], the single owned

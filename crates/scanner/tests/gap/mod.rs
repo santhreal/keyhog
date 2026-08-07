@@ -77,7 +77,6 @@ pub mod gpu_per_chunk_dispatch_failure;
 pub mod gpu_phase2_empty_hit_fast_path;
 pub mod gpu_require_policy_fails_not_skips;
 pub mod gpu_routing_profile_tier_table;
-pub mod gpu_shader_sigmoid_contract;
 pub mod gpu_threshold_mib_units;
 pub mod hcl_identifier_single_owner;
 pub mod homoglyph_expand_exact_and_reserved;

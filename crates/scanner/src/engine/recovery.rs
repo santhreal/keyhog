@@ -121,7 +121,7 @@ fn sanitize_recovery_reason(reason: String) -> String {
 pub struct CoalescedScanOutcome {
     pub matches: Vec<Vec<keyhog_core::RawMatch>>,
     pub recovery: Option<BackendRecoveryReceipt>,
-    /// GPU MoE recoveries emitted by this exact dispatch.
+    /// Request-scoped GPU recoveries emitted by this exact dispatch.
     pub gpu_recovery_receipts: u64,
 }
 

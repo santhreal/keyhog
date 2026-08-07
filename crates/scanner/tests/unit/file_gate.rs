@@ -7,10 +7,8 @@ use keyhog_scanner::context::{infer_context, CodeContext};
 use keyhog_scanner::decode::{base64_decode, hex_decode};
 use keyhog_scanner::engine::CompiledScanner;
 use keyhog_scanner::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD};
-use keyhog_scanner::gpu::{batch_ml_inference, gpu_available, gpu_probe};
-use keyhog_scanner::ml_scorer::{
-    model_card_json, model_card_summary, model_version, score, score_with_config,
-};
+use keyhog_scanner::gpu::{gpu_available, gpu_probe};
+use keyhog_scanner::ml_scorer::{model_card_json, model_card_summary, model_version, score};
 use keyhog_scanner::resolution::resolve_matches;
 use keyhog_scanner::telemetry::{
     drain_events, enable_dogfood, record_example_suppression, testing::reset,
@@ -832,109 +830,6 @@ fn error_happy() {
 fn error_error_path() {
     let err = ScanError::Gpu("probe failed".into());
     assert!(err.to_string().contains("probe"));
-}
-
-// ── crates/scanner/src/gpu.rs + gpu_shader.rs ─────────────────────────
-#[test]
-fn gpu_happy() {
-    let scores = batch_ml_inference(
-        &[(
-            concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"),
-            "export TOKEN=",
-        )],
-        &ScannerConfig::default(),
-    );
-    assert_eq!(scores.len(), 1);
-}
-
-#[test]
-fn gpu_small_batch_cpu_fallback_matches_configured_moe() {
-    let mut config = ScannerConfig::default();
-    config.known_prefixes = vec!["ghp_".to_string(), "sk-".to_string()];
-    config.secret_keywords = vec!["TOKEN".to_string(), "API_KEY".to_string()];
-    config.test_keywords = vec!["test".to_string()];
-    config.placeholder_keywords = vec!["YOUR_".to_string()];
-    let candidates = [
-        (
-            concat!("gh", "p_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"),
-            "GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
-        ),
-        (
-            "d41d8cd98f00b204e9800998ecf8427e",
-            "checksum = d41d8cd98f00b204e9800998ecf8427e",
-        ),
-        ("", "TOKEN="),
-    ];
-
-    let scores = batch_ml_inference(&candidates, &config);
-    let expected: Vec<f64> = candidates
-        .iter()
-        .map(|(text, context)| {
-            score_with_config(
-                text,
-                context,
-                &config.known_prefixes,
-                &config.secret_keywords,
-                &config.test_keywords,
-                &config.placeholder_keywords,
-            )
-        })
-        .collect();
-
-    assert_eq!(scores.len(), expected.len());
-    for (index, (score, expected)) in scores.iter().zip(expected.iter()).enumerate() {
-        assert!(
-            (*score - *expected).abs() <= f64::EPSILON,
-            "candidate {index} score drifted: batch={score:.9}, scalar={expected:.9}"
-        );
-    }
-}
-
-#[test]
-fn gpu_threshold_batch_preserves_feature_and_empty_candidate_parity() {
-    let mut config = ScannerConfig::default();
-    config.known_prefixes = vec!["ghp_".to_string()];
-    config.secret_keywords = vec!["TOKEN".to_string()];
-    let owned: Vec<_> = (0..64)
-        .map(|index| {
-            if index == 63 {
-                (String::new(), "EMPTY=".to_string())
-            } else {
-                (
-                    format!("ghp_{index:02}ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"),
-                    format!("TOKEN_{index}="),
-                )
-            }
-        })
-        .collect();
-    let candidates: Vec<_> = owned
-        .iter()
-        .map(|(text, context)| (text.as_str(), context.as_str()))
-        .collect();
-
-    let scores = batch_ml_inference(&candidates, &config);
-    let expected: Vec<_> = candidates
-        .iter()
-        .map(|(text, context)| {
-            score_with_config(
-                text,
-                context,
-                &config.known_prefixes,
-                &config.secret_keywords,
-                &config.test_keywords,
-                &config.placeholder_keywords,
-            )
-        })
-        .collect();
-
-    assert_eq!(scores.len(), candidates.len());
-    assert_eq!(scores[63], 0.0);
-    for (index, (actual, expected)) in scores.iter().zip(expected.iter()).enumerate() {
-        assert!(
-            (*actual - *expected).abs() <= 1e-4,
-            "threshold candidate {index} drifted: batch={actual:.9} scalar={expected:.9}"
-        );
-    }
 }
 
 #[test]

@@ -144,12 +144,12 @@ impl super::CompiledScanner {
 }
 
 /// ML batch-size metrics. Records the actual batch submitted by the
-/// single-chunk or coalesced scorer so GPU engagement and remaining sparse
-/// windowed work stay measurable. The keyhog-profile runtime owns every
-/// figure: the totals are typed counters and the batch-size histogram is the
-/// runtime's bounded log-scale distribution (`MetricId::MlBatchSize`), drained
-/// once per [`super::profile::dump`]. Recording is a no-op when no profile
-/// runtime is active.
+/// single-chunk or coalesced CPU scorer so parallel-threshold engagement and
+/// remaining sparse windowed work stay measurable. The keyhog-profile runtime
+/// owns every figure: totals are typed counters and the batch-size histogram is
+/// the runtime's bounded log-scale distribution (`MetricId::MlBatchSize`),
+/// drained once per [`super::profile::dump`]. Recording is a no-op when no
+/// profile runtime is active.
 #[cfg(feature = "ml")]
 use keyhog_profile::{CounterId, MetricId};
 
@@ -216,7 +216,7 @@ pub(crate) fn ml_batch_profile_from_parts(
 pub(crate) fn format_ml_batch_profile(p: &MlBatchProfile) -> String {
     let mut out = format!(
         "=== ML batch-size histogram: calls={} candidates={} (avg {:.1}/call) | \
-GPU-eligible (>=64): {} calls ({:.1}%), {} candidates ({:.1}% of all ML work) ===",
+CPU-parallel (>=64): {} calls ({:.1}%), {} candidates ({:.1}% of all ML work) ===",
         p.calls,
         p.candidates,
         p.candidates as f64 / p.calls.max(1) as f64,

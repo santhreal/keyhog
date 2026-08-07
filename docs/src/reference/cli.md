@@ -167,9 +167,9 @@ Hyperscan database cache location is explicit scan configuration: use
 Autoroute calibration evidence is also explicit scan configuration: use
 `keyhog scan --autoroute-cache <PATH|off>` or `.keyhog.toml`
 `[system].autoroute_cache`.
-GPU MoE readback timeout is explicit scanner tuning:
-`.keyhog.toml` `[tuning].gpu_moe_timeout_ms`. GPU region-presence parity/debug
-recall-floor runs use `.keyhog.toml` `[tuning].gpu_recall_floor = true`.
+GPU region-presence parity/debug recall-floor runs use `.keyhog.toml`
+`[tuning].gpu_recall_floor = true`. ML confidence scoring remains on CPU for
+every route; GPU compute is owned by VYRE detection programs.
 
 Custom S3 and GCS endpoints never receive ambient cloud credentials unless the
 operator explicitly passes `--allow-s3-credential-forward` or
@@ -627,13 +627,13 @@ keyhog backend
 
 `--probe-bytes <N>` and `--patterns <N>` are what-if inputs to the diagnostic
 heuristic matrix only; neither changes the corpus nor predicts persisted
-autoroute. On an eligible GPU host, `--self-test` reports three named probes: `moe_kernel` for GPU
-confidence scoring, `vyre_literal_set` for VYRE's direct match-triple
-diagnostic, and `gpu_region_presence` for the production scan route. The last
-probe owns scan eligibility. A direct-mode limitation is reported as `known`
-when classified and `warning` otherwise, but only a production-path or required
-GPU capability failure makes the health report fail. When no eligible physical
-GPU exists, the normal self-test emits one `gpu_adapter` probe with status
+autoroute. On an eligible GPU host, `--self-test` reports two VYRE-owned probes:
+`vyre_literal_set` for the direct match-triple diagnostic and
+`gpu_region_presence` for the production scan route. The production probe owns
+scan eligibility. A direct-mode limitation is reported as `known` when
+classified and `warning` otherwise, but only a production-path or required GPU
+capability failure makes the health report fail.
+When no eligible physical GPU exists, the normal self-test emits one `gpu_adapter` probe with status
 `skip` and exits `0`; `--require-gpu` changes that probe to `fail` and exits
 `4`. `--no-gpu` explicitly requests the skip without initializing a GPU.
 The JSON report lists `healthy_gpu_backends` and sets `route_selection` to

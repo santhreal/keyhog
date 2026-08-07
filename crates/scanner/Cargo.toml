@@ -54,12 +54,11 @@ simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (
 # `vyre`/`vyre_libs` stay on either way because their CPU primitives are woven
 # into the scan types.
 #
-# `gpu` IMPLIES `ml`: the WGPU context owns the GPU MoE parity gate. GPU
-# region-presence feeds the backend-neutral phase-2 confirmation tail and does
+# GPU acceleration is detection-only and does not imply ML confidence scoring.
+# Region presence feeds the backend-neutral phase-two confirmation tail and does
 # not require Hyperscan. Keeping `simd` independent lets native Metal ship in
 # macOS release assets without a mutable Homebrew Vectorscan dependency.
 gpu = [
-    "ml",
     "dep:wgpu",
     "dep:pollster",
     "dep:bytemuck",
@@ -170,10 +169,6 @@ proptest = { workspace = true }
 rusty-fork = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tempfile = { workspace = true }
-# Validates the generated MoE WGSL (gpu_shader::moe_shader) parses + type-checks
-# without needing a GPU adapter. Pinned to the version wgpu already pulls in so
-# this adds no new download.
-naga = { workspace = true, features = ["wgsl-in"] }
 # `toml` moved to [dependencies] for the Tier-B disclaimer-phrase
 # loader in src/context/false_positive.rs.
 
@@ -329,9 +324,6 @@ name = "gap_gpu_require_policy_fails_not_skips"
 path = "tests/gap/gpu_require_policy_fails_not_skips.rs"
 required-features = ["gpu"]
 
-[[test]]
-name = "gap_gpu_shader_sigmoid_contract"
-path = "tests/gap/gpu_shader_sigmoid_contract.rs"
 
 [[test]]
 name = "gap_no_inline_tests_in_src"

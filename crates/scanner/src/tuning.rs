@@ -1,9 +1,8 @@
 //! Per-instance scanner performance tuning ([`ScannerTuning`]), extracted from
 //! `phase2.rs`. Each toggle has a compiled shipped DEFAULT plus a PER-SCANNER
-//! override (`BoolOverride` stored in an `AtomicU8`;
-//! `AtomicUsize` with `usize::MAX` = compiled default; timeout `AtomicU64` with
-//! 0 = compiled default). A differential parity test drives one input down both
-//! code paths by flipping the override ON ITS OWN scanner (through
+//! override (`BoolOverride` stored in an `AtomicU8`; `AtomicUsize` with
+//! `usize::MAX` = compiled default). A differential parity test drives one input
+//! down both code paths by flipping the override on its own scanner (through
 //! `keyhog_scanner::testing::set_*` helpers), so two scanners, or two tests
 //! running in parallel (never see each other's overrides).
 //! `.keyhog.toml` `[tuning]` applies explicit production overrides through the
@@ -15,7 +14,7 @@
 //! this carries every recall-identical per-scan route lever in one place.
 //! Re-exported through `engine::phase2` (`pub use crate::tuning::*`).
 use crate::scanner_config::{ResolvedRuntimeTuningConfig, ScannerTuningConfig};
-use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering::Relaxed};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -93,8 +92,6 @@ pub(crate) struct ScannerTuning {
     phase2_plain_localizer: AtomicU8,
     /// Override for the GPU region-presence full CPU recall floor.
     gpu_recall_floor: AtomicU8,
-    /// Override for GPU MoE readback timeout (`0` = compiled default).
-    gpu_moe_timeout_ms: AtomicU64,
 }
 
 impl Default for ScannerTuning {
@@ -120,7 +117,6 @@ impl ScannerTuning {
             no_candidate_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
             phase2_plain_localizer: AtomicU8::new(BoolOverride::Default.as_byte()),
             gpu_recall_floor: AtomicU8::new(BoolOverride::Default.as_byte()),
-            gpu_moe_timeout_ms: AtomicU64::new(0),
         }
     }
 
@@ -139,7 +135,6 @@ impl ScannerTuning {
         self.set_no_candidate_gate(config.no_candidate_gate);
         self.set_phase2_plain_localizer(config.fallback_localizer);
         self.set_gpu_recall_floor(config.gpu_recall_floor);
-        self.set_gpu_moe_timeout_ms(config.gpu_moe_timeout_ms);
     }
 
     /// Resolve every per-scanner tuning override once into a plain copyable
@@ -150,10 +145,6 @@ impl ScannerTuning {
     pub(crate) fn resolve(&self) -> ResolvedRuntimeTuningConfig {
         let hs_prefilter_max_len = match self.hs_max_len.load(Relaxed) {
             usize::MAX => ScannerTuningConfig::HS_PREFILTER_MAX_LEN_DEFAULT,
-            value => value,
-        };
-        let gpu_moe_timeout_ms = match self.gpu_moe_timeout_ms.load(Relaxed) {
-            0 => ScannerTuningConfig::GPU_MOE_TIMEOUT_MS_DEFAULT,
             value => value,
         };
 
@@ -183,7 +174,6 @@ impl ScannerTuning {
                 .resolve(ScannerTuningConfig::FALLBACK_LOCALIZER_DEFAULT),
             gpu_recall_floor: BoolOverride::from_raw(self.gpu_recall_floor.load(Relaxed))
                 .resolve(ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT),
-            gpu_moe_timeout_ms,
         }
     }
 
@@ -380,15 +370,5 @@ impl ScannerTuning {
     pub(crate) fn gpu_recall_floor_enabled(&self) -> bool {
         BoolOverride::from_raw(self.gpu_recall_floor.load(Relaxed))
             .resolve(ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT)
-    }
-
-    // ── GPU MoE readback timeout ──────────────────────────────────────────
-
-    /// Override the GPU MoE readback timeout. This is a bounded-latency tuning
-    /// knob, not a detection toggle: timeout still surfaces loudly and the
-    /// caller uses CPU MoE for the same candidates.
-    pub(crate) fn set_gpu_moe_timeout_ms(&self, timeout_ms: Option<u64>) {
-        let value = timeout_ms.unwrap_or(0); // LAW10: documented default sentinel; unset config means shipped scanner tuning, recall-safe.
-        self.gpu_moe_timeout_ms.store(value, Relaxed);
     }
 }

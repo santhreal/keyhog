@@ -15,8 +15,6 @@ fn dispatch_evidence_records_exact_typed_metrics() {
         record_submit_to_complete(900);
         record_kernel(700);
         record_queue_wait(200);
-        record_compile(321);
-        record_overlap(150);
         record_residual_batch();
     });
     let metrics = runtime.take_session_typed_metrics();
@@ -35,10 +33,6 @@ fn dispatch_evidence_records_exact_typed_metrics() {
     assert_eq!(value(CounterId::GpuSubmitToCompleteNs.metric_id()), 900);
     assert_eq!(value(CounterId::GpuKernelNs.metric_id()), 700);
     assert_eq!(value(CounterId::GpuQueueWaitNs.metric_id()), 200);
-    assert_eq!(value(CounterId::GpuCompileNs.metric_id()), 321);
-    assert_eq!(value(CounterId::GpuCompileCalls.metric_id()), 1);
-    assert_eq!(value(CounterId::GpuPipelineCacheMisses.metric_id()), 1);
-    assert_eq!(value(CounterId::GpuOverlapNs.metric_id()), 150);
     assert_eq!(value(CounterId::GpuResidualBatches.metric_id()), 1);
 }
 
@@ -59,14 +53,6 @@ fn backend_code_maps_known_backends() {
     assert_eq!(backend_code("metal"), BACKEND_METAL);
     assert_eq!(backend_code("wgpu"), BACKEND_WGPU);
     assert_eq!(backend_code("unknown-future"), BACKEND_WGPU);
-}
-
-/// Overlap is the wall-minus-serial fraction and saturates at zero.
-#[test]
-fn overlap_math_saturates() {
-    assert_eq!(overlap_ns(1_000, 700), 300);
-    assert_eq!(overlap_ns(700, 1_000), 0);
-    assert_eq!(overlap_ns(0, 0), 0);
 }
 
 /// Device residency tracks cumulative counters, current gauge, and peak high-water.
@@ -90,7 +76,10 @@ fn residency_tracks_current_and_peak_exactly() {
     assert_eq!(value(CounterId::GpuAllocBytes.metric_id()), 1_500);
     assert_eq!(value(CounterId::GpuFreeBytes.metric_id()), 400);
     assert_eq!(value(CounterId::GpuAllocCalls.metric_id()), 2);
-    assert_eq!(value(GaugeId::GpuResidentBytes.metric_id()), before_resident + 1_100);
+    assert_eq!(
+        value(GaugeId::GpuResidentBytes.metric_id()),
+        before_resident + 1_100
+    );
     assert_eq!(
         value(GaugeId::GpuPeakResidentBytes.metric_id()),
         (before_resident + 1_500).max(before_peak)
@@ -104,7 +93,7 @@ fn residency_tracks_current_and_peak_exactly() {
 fn fault_retry_recovery_record_exactly() {
     let runtime = keyhog_profile::Runtime::new();
     runtime.scope(|| {
-        record_fault(BACKEND_WGPU, fault::DISPATCH_LAYOUT);
+        record_fault(BACKEND_WGPU, fault::DISPATCH);
         record_retry(2);
         record_recovery(BACKEND_WGPU);
     });
@@ -122,7 +111,7 @@ fn fault_retry_recovery_record_exactly() {
     let (events, _, _) = runtime.take_session_typed_events();
     assert!(events
         .iter()
-        .any(|event| event.event_id == EventId::GpuFault && event.value == fault::DISPATCH_LAYOUT));
+        .any(|event| event.event_id == EventId::GpuFault && event.value == fault::DISPATCH));
     assert!(events
         .iter()
         .any(|event| event.event_id == EventId::BackendRecovered && event.value == BACKEND_WGPU));
@@ -158,12 +147,10 @@ fn identity_and_capability_dedup_per_runtime() {
         .filter(|event| event.event_id == EventId::GpuCapabilityUnsupported)
         .collect();
     assert_eq!(caps.len(), 3);
-    assert!(annotations
-        .iter()
-        .any(|annotation| annotation.annotation_id == AnnotationId::GpuAdapterVendor
-            && annotation.value == 0x10de));
-    assert!(annotations
-        .iter()
-        .any(|annotation| annotation.annotation_id == AnnotationId::GpuBackendKind
-            && annotation.value == BACKEND_WGPU));
+    assert!(annotations.iter().any(|annotation| annotation.annotation_id
+        == AnnotationId::GpuAdapterVendor
+        && annotation.value == 0x10de));
+    assert!(annotations.iter().any(|annotation| annotation.annotation_id
+        == AnnotationId::GpuBackendKind
+        && annotation.value == BACKEND_WGPU));
 }

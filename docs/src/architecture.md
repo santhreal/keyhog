@@ -197,11 +197,10 @@ and report contracts. Backend choice must change performance only, never finding
 semantics.
 
 Within the shared SIMD/GPU coalesced tail, detector, generic, and entropy
-candidates retain their per-chunk state while their precomputed ML feature rows
-are submitted as one CPU or GPU MoE batch. Final scores return to the
-originating chunk before its cap, decode postprocess, seam handling, and report
-adjudication run. Portable CPU-fallback, single-file, and oversized windowed
-scans keep the same scoring contract with smaller local batches.
+candidates retain their per-chunk state while precomputed ML feature rows are
+scored in one deterministic CPU batch. Final scores return to the originating
+chunk before its cap, decode postprocess, seam handling, and report adjudication
+run. Every backend uses this confidence path; VYRE owns GPU detection only.
 
 ### Execution surfaces
 

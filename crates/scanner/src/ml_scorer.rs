@@ -84,15 +84,11 @@ impl MlScoreInput for crate::types::MlPendingMatch {
 pub(crate) use model_arch::SIGMOID_SATURATION;
 use model_arch::{EXPERT_COUNT, EXPERT_FC1_OUT, EXPERT_FC2_OUT};
 
-/// Batch-size crossover for ML scoring. Below this, `batch_ml_inference` scores
-/// serially (a fused feature->score loop) because it already runs inside the
-/// parallel coalesced/per-chunk scan, where a `par_iter` over a handful of
-/// candidates only pays rayon split/join overhead. At or above it, feature
-/// extraction parallelizes and the GPU MoE dispatch becomes worthwhile. Single
-/// source of truth: the GPU backend's dispatch gate references this same const
-/// so the serial/parallel boundary and the GPU-engage boundary can never drift.
-#[cfg(any(feature = "gpu", feature = "ml"))]
-pub(crate) const GPU_BATCH_THRESHOLD: usize = 64;
+/// Batch-size crossover for ML scoring. Below this, one fused serial loop
+/// avoids Rayon split/join overhead. At or above it, feature extraction and
+/// scoring use the configured CPU worker pool.
+#[cfg(feature = "ml")]
+const ML_PARALLEL_BATCH_THRESHOLD: usize = 64;
 
 /// Bounded per-thread score-cache capacity: the map is cleared wholesale once it
 /// reaches this many entries (see `util_hash::memoize_by_hash`). 256 covers the
@@ -219,8 +215,7 @@ pub(crate) fn score_features(features: &[f32; NUM_FEATURES]) -> f64 {
 }
 
 /// Score an already-extracted batch on CPU while acquiring the immutable model
-/// once for the whole batch. Large scan batches use this as the exact GPU
-/// fallback/reference path, avoiding one `OnceLock` lookup per candidate.
+/// once for the whole batch.
 #[cfg(feature = "ml")]
 pub(crate) fn score_precomputed_batch_on_cpu<T: MlScoreInput>(
     inputs: &[T],
@@ -261,6 +256,79 @@ pub(crate) fn score_input_batch_serial<T: MlScoreInput>(
             })
         })
         .collect()
+}
+
+/// Score one complete pending-match batch without transferring confidence
+/// policy to an accelerator. GPU routes accelerate VYRE-owned detection work;
+/// final confidence scoring remains the same deterministic CPU implementation
+/// for every backend.
+#[cfg(feature = "ml")]
+pub(crate) fn score_input_batch<T: MlScoreInput>(
+    inputs: &[T],
+    config: &crate::types::ScannerConfig,
+) -> Vec<f64> {
+    if inputs.is_empty() {
+        return Vec::new();
+    }
+
+    let profile = keyhog_profile::enabled();
+    if inputs.len() < ML_PARALLEL_BATCH_THRESHOLD {
+        if !profile {
+            return score_input_batch_serial(inputs, config);
+        }
+
+        let model = ml_weights::model();
+        let mut feature_ns = 0_u64;
+        let mut score_ns = 0_u64;
+        let mut scores = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            let feature_started = std::time::Instant::now();
+            let features = input.ml_features(config);
+            feature_ns = feature_ns.saturating_add(feature_started.elapsed().as_nanos() as u64);
+
+            let score_started = std::time::Instant::now();
+            scores.push(crate::confidence::policy::ml_score_for_candidate_text(
+                input.ml_text(),
+                || forward_pass_impl(model, &features) as f64,
+            ));
+            score_ns = score_ns.saturating_add(score_started.elapsed().as_nanos() as u64);
+        }
+        keyhog_profile::add_counter(keyhog_profile::CounterId::MlFeatureNs, feature_ns);
+        keyhog_profile::add_counter(keyhog_profile::CounterId::MlScoreNs, score_ns);
+        return scores;
+    }
+
+    use rayon::prelude::*;
+    if !profile {
+        let model = ml_weights::model();
+        return inputs
+            .par_iter()
+            .map(|input| {
+                let features = input.ml_features(config);
+                crate::confidence::policy::ml_score_for_candidate_text(input.ml_text(), || {
+                    forward_pass_impl(model, &features) as f64
+                })
+            })
+            .collect();
+    }
+
+    let feature_started = std::time::Instant::now();
+    let features: Vec<[f32; NUM_FEATURES]> = inputs
+        .par_iter()
+        .map(|input| input.ml_features(config))
+        .collect();
+    keyhog_profile::add_counter(
+        keyhog_profile::CounterId::MlFeatureNs,
+        feature_started.elapsed().as_nanos() as u64,
+    );
+
+    let score_started = std::time::Instant::now();
+    let scores = score_precomputed_batch_on_cpu(inputs, &features);
+    keyhog_profile::add_counter(
+        keyhog_profile::CounterId::MlScoreNs,
+        score_started.elapsed().as_nanos() as u64,
+    );
+    scores
 }
 
 /// Return the embedded model version string for diagnostics and CLI output.

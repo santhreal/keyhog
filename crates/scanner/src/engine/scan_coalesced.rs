@@ -150,7 +150,7 @@ impl CompiledScanner {
         .and_then(|outcome| {
             if outcome.gpu_recovery_receipts != 0 {
                 return Err(crate::error::ScanError::Gpu(format!(
-                    "{} GPU MoE recovery receipt(s) were emitted by this dispatch; use the recovery-aware scan boundary",
+                    "{} GPU recovery receipt(s) were emitted by this dispatch; use the recovery-aware scan boundary",
                     outcome.gpu_recovery_receipts
                 )));
             }

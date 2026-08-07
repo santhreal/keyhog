@@ -25,10 +25,6 @@ fn tier_b_gpu_lowering_gap_data_drives_classification() {
         !rules.lowering_gap_markers.is_empty(),
         "lowering_gap_markers must be non-empty"
     );
-    assert!(
-        !rules.moe_parity_degrade_markers.is_empty(),
-        "moe_parity_degrade_markers must be non-empty"
-    );
 
     // Every loaded lowering-gap marker classifies a realistic error string.
     for marker in &rules.lowering_gap_markers {
@@ -37,20 +33,10 @@ fn tier_b_gpu_lowering_gap_data_drives_classification() {
             is_known_vyre_lowering_gap(&error),
             "loaded marker {marker:?} must classify its error as a known lowering gap"
         );
-        // ... and is NOT mistaken for the orthogonal MoE-parity class.
-        assert!(!is_moe_parity_degrade(&error));
-    }
-    for marker in &rules.moe_parity_degrade_markers {
-        let error = format!("GPU MoE compute shader {marker} by 0.0123");
-        assert!(
-            is_moe_parity_degrade(&error),
-            "loaded marker {marker:?} must classify its error as a MoE parity degrade"
-        );
-        assert!(!is_known_vyre_lowering_gap(&error));
     }
 
-    // The three canonical vyre lowering-gap substrings + the MoE marker ship in
-    // the bundled data (pins the shipped set without pinning ORDER or COUNT).
+    // The three canonical VYRE lowering-gap substrings ship in the bundled
+    // data (pins the shipped set without pinning order or count).
     for expected in [
         "_vyre_match_leader",
         "canonical pre-emit lowering",
@@ -61,10 +47,6 @@ fn tier_b_gpu_lowering_gap_data_drives_classification() {
             "bundled data must ship the canonical marker {expected:?}"
         );
     }
-    assert!(rules
-        .moe_parity_degrade_markers
-        .iter()
-        .any(|m| m == "diverges from the CPU MoE reference"));
 }
 
 #[test]
@@ -83,17 +65,6 @@ fn is_known_vyre_lowering_gap_matches_each_marker() {
         "GPU adapter lost during dispatch"
     ));
     assert!(!is_known_vyre_lowering_gap(""));
-}
-
-#[test]
-fn is_moe_parity_degrade_matches_only_the_parity_marker() {
-    assert!(is_moe_parity_degrade(
-        "GPU MoE compute shader diverges from the CPU MoE reference by 0.0123"
-    ));
-    assert!(!is_moe_parity_degrade(
-        "GPU MoE dispatch failed: device lost"
-    ));
-    assert!(!is_moe_parity_degrade(""));
 }
 
 #[test]

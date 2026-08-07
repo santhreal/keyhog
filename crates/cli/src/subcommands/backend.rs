@@ -27,21 +27,15 @@ use self_test::{unavailable_gpu_self_test_report, BackendSelfTestStatus};
 
 const KEYHOG_GPU_MAX_BUFFER_CAP_MB: u64 = 256 * 1024;
 
-/// Tier-B GPU self-test error CLASSIFICATION data, loaded from
-/// `rules/gpu-lowering-gaps.toml`. Single source of truth shared by this
-/// module's `collect_self_test_report` and `subcommands::doctor` (both classify
-/// via [`is_known_vyre_lowering_gap`] / [`is_moe_parity_degrade`]), so the two
-/// health surfaces can never drift into disagreeing about whether the same GPU
-/// error is fatal. Operators extend the classifier by editing the Tier-B file,
-/// never the code.
+/// Tier-B VYRE self-test error classification data loaded from
+/// `rules/gpu-lowering-gaps.toml`. Both backend self-test and doctor use
+/// [`is_known_vyre_lowering_gap`], so the operator-visible health surfaces
+/// classify the same VYRE lowering error identically.
 #[derive(serde::Deserialize)]
 pub(crate) struct GpuLoweringGapRules {
     /// Substrings that mark a known VYRE direct-match lowering limitation. The
     /// production region-presence path has a separate mandatory probe.
     pub(crate) lowering_gap_markers: Vec<String>,
-    /// Substrings that mark a GPU-MoE-vs-CPU-MoE parity divergence (detection
-    /// fails closed to the deterministic CPU MoE), not a hard dispatch failure.
-    pub(crate) moe_parity_degrade_markers: Vec<String>,
 }
 
 fn parse_gpu_lowering_gap_rules(raw: &str) -> Result<GpuLoweringGapRules, String> {
@@ -61,11 +55,9 @@ pub(crate) static GPU_LOWERING_GAP_RULES: LazyLock<GpuLoweringGapRules> = LazyLo
     ))) {
         Ok(rules) => {
             assert!(
-                !rules.lowering_gap_markers.is_empty()
-                    && !rules.moe_parity_degrade_markers.is_empty(),
-                "rules/gpu-lowering-gaps.toml must define non-empty lowering_gap_markers and \
-                 moe_parity_degrade_markers; an empty set would misclassify every GPU self-test \
-                 error as a hard FAIL"
+                !rules.lowering_gap_markers.is_empty(),
+                "rules/gpu-lowering-gaps.toml must define non-empty lowering_gap_markers; \
+                 an empty set would misclassify every VYRE self-test error as a hard FAIL"
             );
             rules
         }
@@ -81,15 +73,6 @@ pub(crate) static GPU_LOWERING_GAP_RULES: LazyLock<GpuLoweringGapRules> = LazyLo
 pub(crate) fn is_known_vyre_lowering_gap(error: &str) -> bool {
     GPU_LOWERING_GAP_RULES
         .lowering_gap_markers
-        .iter()
-        .any(|marker| error.contains(marker))
-}
-
-/// True when a GPU self-test error is a GPU/CPU MoE parity divergence (GPU ML
-/// acceleration degrades to the CPU MoE), not a hard dispatch failure.
-pub(crate) fn is_moe_parity_degrade(error: &str) -> bool {
-    GPU_LOWERING_GAP_RULES
-        .moe_parity_degrade_markers
         .iter()
         .any(|marker| error.contains(marker))
 }
@@ -130,27 +113,11 @@ pub(crate) mod testing {
             route_selection: super::self_test::BackendSelfTestRouteSelection::NotMeasured,
             probes: vec![
                 super::self_test::BackendSelfTestProbe {
-                    name: "moe_kernel",
-                    status: super::self_test::BackendSelfTestStatus::Pass,
-                    message: None,
-                    adapter_name: Some("NVIDIA GeForce RTX 5090".to_string()),
-                    scores: Some(64),
-                    max_buffer_mb: Some(262_144),
-                    direct_matches: None,
-                    coalesced_matches: None,
-                    matches: None,
-                    backend_id: None,
-                    backend_route: None,
-                },
-                super::self_test::BackendSelfTestProbe {
                     name: "vyre_literal_set",
                     status: super::self_test::BackendSelfTestStatus::Known,
                     message: Some(
                         "vyre IR lowering rejects literal_set's subgroup form".to_string(),
                     ),
-                    adapter_name: None,
-                    scores: None,
-                    max_buffer_mb: None,
                     direct_matches: None,
                     coalesced_matches: None,
                     matches: None,
@@ -161,9 +128,6 @@ pub(crate) mod testing {
                     name: "gpu_region_presence",
                     status: super::self_test::BackendSelfTestStatus::Fail,
                     message: Some("GPU region-presence dispatch failed".to_string()),
-                    adapter_name: None,
-                    scores: None,
-                    max_buffer_mb: None,
                     direct_matches: None,
                     coalesced_matches: None,
                     matches: None,
@@ -174,9 +138,6 @@ pub(crate) mod testing {
                     name: "gpu_region_presence",
                     status: super::self_test::BackendSelfTestStatus::Pass,
                     message: None,
-                    adapter_name: None,
-                    scores: None,
-                    max_buffer_mb: None,
                     direct_matches: None,
                     coalesced_matches: None,
                     matches: Some(1),

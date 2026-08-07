@@ -4,7 +4,7 @@
 //! Unlike the heuristic report this DISPATCHES work, so its JSON is measured
 //! evidence about this host rather than a capability guess.
 
-use super::{is_known_vyre_lowering_gap, is_moe_parity_degrade, KEYHOG_GPU_MAX_BUFFER_CAP_MB};
+use super::{is_known_vyre_lowering_gap, KEYHOG_GPU_MAX_BUFFER_CAP_MB};
 use crate::exit_codes::{EXIT_BACKEND_SELF_TEST_FAILED, EXIT_SUCCESS};
 use crate::style::{self, Palette};
 use anyhow::Result;
@@ -29,12 +29,6 @@ pub(crate) struct BackendSelfTestProbe {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) adapter_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) scores: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) max_buffer_mb: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) direct_matches: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) coalesced_matches: Option<usize>,
@@ -52,9 +46,6 @@ impl BackendSelfTestProbe {
             name,
             status: BackendSelfTestStatus::Pass,
             message: None,
-            adapter_name: None,
-            scores: None,
-            max_buffer_mb: None,
             direct_matches: None,
             coalesced_matches: None,
             matches: None,
@@ -142,7 +133,7 @@ fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
     }
 
     let mut all_ok = true;
-    let mut probes = Vec::with_capacity(2 + acquired_backends.len());
+    let mut probes = Vec::with_capacity(1 + acquired_backends.len());
     let has_wgpu = acquired_backends.contains(&keyhog_scanner::ScanBackend::GpuWgpu);
     let healthy_gpu_backends = region_presence
         .as_ref()
@@ -158,43 +149,7 @@ fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
         // LAW10: an errored region-presence report has no healthy peers and is surfaced as a failed self-test probe below.
         .unwrap_or_default();
 
-    // Test 1: keyhog's MoE compute dispatch.
-    if !has_wgpu {
-        probes.push(BackendSelfTestProbe::warning(
-            "moe_kernel",
-            "WGPU peer was not acquired; the WGPU MoE diagnostic is not applicable to this CUDA-only runtime",
-        ));
-    } else {
-        match keyhog_scanner::gpu::gpu_self_test() {
-            Ok(report) => {
-                let mut probe = BackendSelfTestProbe::pass("moe_kernel");
-                probe.adapter_name = Some(report.adapter_name);
-                probe.scores = Some(report.scores);
-                probe.max_buffer_mb = report.vram_mb;
-                probes.push(probe);
-            }
-            Err(error) => {
-                // A GPU-MoE-vs-CPU-MoE parity divergence is a real shader/weights
-                // fault, but it does NOT break detection: `batch_score_features` fails
-                // closed to the CPU MoE (correct + deterministic), so scans on this
-                // host produce the same findings, just without GPU ML acceleration.
-                // Report it as a KNOWN limitation (like the vyre_literal_set lowering
-                // gap below) instead of a hard FAIL, so `--self-test` and the installer
-                // stay green for a host whose scans are correct, while still naming the
-                // fault loudly so it gets fixed. A genuine GPU-unavailable/dispatch
-                // failure stays a FAIL.
-                let parity_degrade = is_moe_parity_degrade(&error);
-                if parity_degrade {
-                    probes.push(BackendSelfTestProbe::known("moe_kernel", &error));
-                } else {
-                    probes.push(BackendSelfTestProbe::fail("moe_kernel", error));
-                    all_ok = false;
-                }
-            }
-        }
-    }
-
-    // Test 2: VYRE's direct match-triple literal-set diagnostic. Production
+    // Test 1: VYRE's direct match-triple literal-set diagnostic. Production
     // scanning uses the scratch region-presence API exercised end to end by
     // the next probe. A direct-mode failure with the classified lowering
     // signature is visible as KNOWN, but never exempts the production probe.
@@ -230,7 +185,7 @@ fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
         }
     }
 
-    // Test 3: the production region-presence route. It builds a minimal
+    // Test 2: the production region-presence route. It builds a minimal
     // detector, dispatches through the same scanner path as a selected GPU
     // scan, and compares the final findings with the portable CPU reference.
     match region_presence {
@@ -276,7 +231,10 @@ fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
     }
 }
 
-pub(super) fn unavailable_gpu_self_test_report(hw: &HardwareCaps, require_gpu: bool) -> BackendSelfTestReport {
+pub(super) fn unavailable_gpu_self_test_report(
+    hw: &HardwareCaps,
+    require_gpu: bool,
+) -> BackendSelfTestReport {
     let reason = if !hw.gpu_available {
         "no GPU adapter detected"
     } else {
@@ -310,9 +268,6 @@ pub(super) fn unavailable_gpu_self_test_report(hw: &HardwareCaps, require_gpu: b
             name: "gpu_adapter",
             status,
             message: Some(message),
-            adapter_name: None,
-            scores: None,
-            max_buffer_mb: None,
             direct_matches: None,
             coalesced_matches: None,
             matches: None,
@@ -380,12 +335,6 @@ fn print_self_test_report(report: &BackendSelfTestReport) {
 fn print_pass_probe(probe: &BackendSelfTestProbe, palette: &Palette) {
     let pass = style::pass("PASS", palette);
     match probe.name {
-        "moe_kernel" => println!(
-            "{pass}  ({}, scores={}, max_buffer={} MB)",
-            probe.adapter_name.as_deref().unwrap_or("unknown adapter"), // LAW10: absent name/label => display default; reporting-only, recall-safe
-            format_probe_metric(probe.scores),
-            format_probe_metric(probe.max_buffer_mb)
-        ),
         "vyre_literal_set" => println!(
             "{pass}  (direct={}, coalesced={})",
             format_probe_metric(probe.direct_matches),

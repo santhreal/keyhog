@@ -520,8 +520,66 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
             None
         }
     };
+    let execution_pack_dir = crate::execution_pack_install::installed_execution_pack_directory()?;
+    println!(
+        "  pack path      {dim}{}{reset}",
+        execution_pack_dir.display()
+    );
+    let installed_pack_binding = match crate::execution_pack_install::load_authenticated_binding(
+        &execution_pack_dir,
+    ) {
+        Ok(binding) => {
+            println!(
+                "  pack state     {green}AUTHENTICATED{reset}  {dim}{} policy/backend pack(s), manifest {}{reset}",
+                binding.packs.len(),
+                keyhog_core::hex_encode(&binding.manifest_digest),
+            );
+            Some(binding)
+        }
+        Err(error) => {
+            healthy = false;
+            println!(
+                "  pack state     {red}INVALID{reset}  {dim}{error:#}; repair: `keyhog repair --force`{reset}"
+            );
+            None
+        }
+    };
+    let route_pack_binding = autoroute_cache
+        .as_deref()
+        .filter(|path| path.is_file())
+        .map(crate::orchestrator::load_execution_pack_generation_binding)
+        .transpose()
+        .map(Option::flatten);
     let autoroute = crate::orchestrator::inspect_autoroute_cache(autoroute_cache.as_deref());
     let readiness = autoroute.readiness();
+    match (&installed_pack_binding, route_pack_binding) {
+        (Some(installed), Ok(Some(routed))) if *installed == routed => println!(
+            "  route binding  {green}EXACT{reset}  {dim}calibration names this authenticated generation{reset}"
+        ),
+        (Some(_), Ok(Some(_))) => {
+            healthy = false;
+            println!(
+                "  route binding  {red}STALE{reset}  {dim}calibration names a different pack generation; repair: `keyhog calibrate-autoroute --execution-packs {}`{reset}",
+                execution_pack_dir.display(),
+            );
+        }
+        (Some(_), Ok(None))
+            if matches!(readiness, crate::orchestrator::AutorouteReadiness::Ready | crate::orchestrator::AutorouteReadiness::Quarantined) =>
+        {
+            healthy = false;
+            println!(
+                "  route binding  {red}MISSING{reset}  {dim}calibration is not bound to installed packs; repair: `keyhog calibrate-autoroute --execution-packs {}`{reset}",
+                execution_pack_dir.display(),
+            );
+        }
+        (_, Err(error)) => {
+            healthy = false;
+            println!("  route binding  {red}INVALID{reset}  {dim}{error:#}{reset}");
+        }
+        _ => println!(
+            "  route binding  {dim}not published{reset}  {dim}calibration is disabled, absent, or not required{reset}"
+        ),
+    }
     match readiness {
         crate::orchestrator::AutorouteReadiness::Direct => {
             if let Some(backend) = autoroute.direct_backend {
@@ -687,38 +745,6 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
                         println!(
                         "  gpu literal    {}  VYRE direct match-triple diagnostic failed; production scan eligibility is determined by the region-presence probe above.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
                         style::warn("WARN", &palette)
-                    );
-                    }
-                }
-            }
-
-            match keyhog_scanner::gpu::gpu_self_test() {
-                Ok(report) => {
-                    let max_buffer = match report.vram_mb {
-                        Some(mb) => mb.to_string(),
-                        None => "unknown".to_string(), // LAW10: absent GPU buffer limit => reporting-only display label; self-test already proved dispatch/parity
-                    };
-                    println!(
-                    "  gpu moe path   {}  {dim}MoE shader matches CPU reference, adapter={}, scores={}, max_buffer={} MB{reset}",
-                    style::pass("PASS", &palette),
-                    report.adapter_name,
-                    report.scores,
-                    max_buffer
-                );
-                }
-                Err(e) => {
-                    let parity_degrade = crate::subcommands::backend::is_moe_parity_degrade(&e);
-                    if parity_degrade {
-                        warned = true;
-                        println!(
-                        "  gpu moe path   {}  GPU MoE shader diverges from the CPU MoE reference; GPU ML acceleration is disabled on this host and scoring uses the deterministic CPU MoE path.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
-                        style::warn("WARN", &palette)
-                    );
-                    } else {
-                        healthy = false;
-                        println!(
-                        "  gpu moe path   {}  GPU MoE self-test failed; GPU routes are unavailable until fixed. GPU ML acceleration is unavailable until fixed.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
-                        style::fail("FAIL", &palette)
                     );
                     }
                 }

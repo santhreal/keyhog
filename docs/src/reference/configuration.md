@@ -497,7 +497,6 @@ confirmed_suffix_gate = true
 no_candidate_gate = true
 fallback_localizer = true
 gpu_recall_floor = false
-gpu_moe_timeout_ms = 30000
 ```
 
 These keys tune scanner-internal detection and recall route gates. They are
@@ -512,13 +511,10 @@ phase-two marking set when the anchor index can localize candidates. Autoroute
 still measures both settings because the faster route depends on the workload.
 Each setting creates a distinct autoroute configuration that must be calibrated
 before automatic use.
-`gpu_recall_floor` forces the GPU region-presence path to compute the full CPU
+`gpu_recall_floor` forces the VYRE region-presence path to compute the full CPU
 trigger net during parity/debug scans and report any GPU under-fire it recovers.
-`gpu_moe_timeout_ms` bounds one GPU MoE confidence readback; on timeout KeyHog
-surfaces the GPU fault and scores the same candidates on CPU MoE. A NaN or
-infinite GPU confidence invalidates the complete batch, triggers exact CPU
-rescoring, and disables GPU MoE scoring for the rest of the process; KeyHog
-never substitutes a neutral probability for a corrupt accelerator result.
+ML confidence scoring is deterministic CPU work for every backend; GPU routes
+accelerate detection only through VYRE-owned programs.
 
 ### `[allowlist]`
 

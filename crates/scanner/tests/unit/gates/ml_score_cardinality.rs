@@ -23,13 +23,6 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         "/src/confidence/policy.rs"
     ))
     .expect("confidence/policy.rs readable");
-    let gpu = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu.rs"))
-        .expect("gpu.rs readable");
-    let backend = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/gpu/backend/execution.rs"
-    ))
-    .expect("gpu/backend/execution.rs readable");
 
     let candidates = [
         ("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij", "TOKEN="),
@@ -151,27 +144,4 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         false,
     );
     assert_eq!(queued.as_slice(), expected.as_slice());
-    assert!(
-        gpu.contains(
-            "let score_features_on_cpu =\n            || crate::ml_scorer::score_precomputed_batch_on_cpu",
-        ) && gpu.contains("scores.len() == candidates.len()")
-            && gpu.contains("crate::confidence::policy::apply_empty_candidate_score_policy(")
-            && !gpu.contains("*score = 0.0;")
-            // The caller's malformed-score arm must surface the mismatch LOUDLY
-            // through the SHARED degrade owner (Law 10 + ONE-PLACE), not a bare
-            // tracing::warn!, the backend already owns the length invariant, so a
-            // caller-side mismatch routes through the same moe_runtime_degrade
-            // (hard-fail under --require-gpu, one-shot eprintln otherwise) before
-            // recomputing the batch on the CPU MoE.
-            && gpu.contains("backend::moe_runtime_degrade(")
-            && gpu.contains("caller-side score count mismatch"),
-        "GPU MoE caller must reject malformed score vectors, surface the mismatch loudly via the shared moe_runtime_degrade owner, and score the same batch on CPU"
-    );
-    assert!(
-        backend.contains("scores.len() != batch_size")
-            && backend
-                .contains("GPU MoE score count mismatch; routing batch to CPU MoE for this scan")
-            && backend.contains("moe_runtime_degrade(\"score count mismatch\")"),
-        "GPU MoE backend must validate readback cardinality before returning scores"
-    );
 }

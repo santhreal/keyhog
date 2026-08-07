@@ -42,6 +42,9 @@ default = ["portable"]
 # chooses this; the libraries stay allocator-agnostic. Disable with
 # `--no-default-features` (the `ci`/`portable` profiles that omit it still build).
 mimalloc = ["dep:mimalloc"]
+# Diagnostic build: attribute allocations to causal profile stages.
+# Mutually exclusive with mimalloc because both own the process allocator.
+allocation-profile = []
 # Lean CI aggregator build: the full default surface minus the GPU dispatch
 # stack (`keyhog-scanner/ci-lean`). Used by ci.yml's integration-tests job on
 # GPU-less runners; runners-nightly keeps `gpu` on real GPU hosts.
@@ -53,6 +56,7 @@ ci-lean = [
     "github",
     "gitlab",
     "bitbucket",
+    "slack",
     "azure",
     "gcs",
     "s3",
@@ -75,6 +79,7 @@ portable = [
     "github",
     "gitlab",
     "bitbucket",
+    "slack",
     "azure",
     "gcs",
     "s3",
@@ -92,7 +97,7 @@ full = [
     "keyhog-scanner/decode",
     "keyhog-scanner/multiline",
     "git", "web", "github", "azure", "gcs", "s3", "docker",
-    "gitlab", "bitbucket",
+    "gitlab", "bitbucket", "slack",
     "verify",
     "binary",
     "mimalloc",
@@ -118,6 +123,7 @@ git = ["keyhog-sources/git"]
 github = ["keyhog-sources/github"]
 gitlab = ["keyhog-sources/gitlab"]
 bitbucket = ["keyhog-sources/bitbucket"]
+slack = ["keyhog-sources/slack"]
 azure = ["keyhog-sources/azure"]
 gcs = ["keyhog-sources/gcs"]
 s3 = ["keyhog-sources/s3"]
@@ -125,7 +131,7 @@ docker = ["keyhog-sources/docker"]
 binary = ["keyhog-sources/binary"]     # Ghidra decompiler (requires Ghidra installed)
 web = ["keyhog-sources/web"]
 verify = ["keyhog-verifier/live"]
-gpu = ["keyhog-scanner/gpu"]           # wgpu compute shader inference (heavy)
+gpu = ["keyhog-scanner/gpu"]           # VYRE CUDA/Metal/WGPU detection routes
 simd = ["keyhog-scanner/simd"]         # Vectorscan/Hyperscan SIMD regex (system lib required)
 # Linux release artifacts statically archive Hyperscan; source installs use the
 # portable profile instead of acquiring a mutable native runtime.
@@ -163,6 +169,7 @@ notify = { workspace = true }
 # calibration. A mid-write crash on `--update-baseline` would
 # otherwise leave a corrupt JSON the next run can't parse.
 tempfile = { workspace = true }
+rand = { workspace = true }
 # `keyhog update` self-updater: GitHub releases API + raw-binary download.
 # reqwest is already in the dep tree via the (default-on) verifier; listing
 # it here lets the updater issue its own GET without routing through the

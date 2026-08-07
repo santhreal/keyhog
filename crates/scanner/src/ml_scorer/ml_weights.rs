@@ -168,12 +168,6 @@ pub(crate) fn model() -> &'static MoeModel {
     })
 }
 
-/// Return the full flattened weight buffer (used by GPU batch inference).
-#[cfg(feature = "gpu")]
-pub(crate) fn all_weights_slice() -> &'static [f32] {
-    all_weights()
-}
-
 /// Return the gate-layer weight matrix.
 pub(crate) fn gate_weight() -> &'static [f32] {
     load_f32_slice(GATE_W_OFF, GATE_W_COUNT)

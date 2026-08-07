@@ -43,16 +43,6 @@ pub(crate) fn backend_code(backend_id: &str) -> u64 {
 /// Fault-kind codes recorded as `GpuFault` event values.
 pub(crate) mod fault {
     pub(crate) const DISPATCH: u64 = 1;
-    pub(crate) const READBACK_TIMEOUT: u64 = 2;
-    pub(crate) const READBACK_DISCONNECTED: u64 = 3;
-    pub(crate) const DEVICE_POLL: u64 = 4;
-    pub(crate) const MAP_ASYNC: u64 = 5;
-    pub(crate) const SCORE_COUNT_MISMATCH: u64 = 6;
-    pub(crate) const NONFINITE_SCORES: u64 = 7;
-    pub(crate) const PARITY_DIVERGENCE: u64 = 8;
-    pub(crate) const INIT: u64 = 9;
-    pub(crate) const BUFFER_POOL_POISON: u64 = 10;
-    pub(crate) const DISPATCH_LAYOUT: u64 = 12;
 }
 
 /// Capability codes recorded as `GpuCapabilityUnsupported` event values.
@@ -61,12 +51,11 @@ pub(crate) mod capability {
     pub(crate) const OCCUPANCY: u64 = 2;
     pub(crate) const UTILIZATION: u64 = 3;
     pub(crate) const STALL_COUNTERS: u64 = 4;
-    pub(crate) const PIPELINE_CACHE: u64 = 5;
 }
 
 /// Upper bound on retained per-context dedup slots. One profile runtime
-/// claims at most 3 identity slots plus 3*5 capability slots, so 1024 slots
-/// cover at least 56 fully-instrumented sessions per process.
+/// claims at most 3 identity slots plus 3*4 capability slots, so 1024 slots
+/// cover at least 68 fully-instrumented sessions per process.
 const MAX_RECORDED_CONTEXTS: usize = 1024;
 
 /// Bounded dedup set for once-per-runtime evidence (identity, capability
@@ -240,30 +229,6 @@ pub(crate) fn record_queue_wait(ns: u64) {
 /// One dispatch batch submitted to the device.
 pub(crate) fn record_dispatch_submitted() {
     keyhog_profile::add_counter(CounterId::GpuDispatchCalls, 1);
-}
-
-/// Shader/kernel compile evidence. The MoE pipeline is created with
-/// `cache: None`, so every compile is a guaranteed persistent-cache miss and
-/// the miss counter is exact; driver-internal cache behavior is not
-/// observable and is capability-reported by the caller.
-pub(crate) fn record_compile(ns: u64) {
-    keyhog_profile::add_counter(CounterId::GpuCompileCalls, 1);
-    keyhog_profile::add_counter(CounterId::GpuCompileNs, ns);
-    keyhog_profile::record_distribution(MetricId::GpuCompileNs, ns);
-    keyhog_profile::add_counter(CounterId::GpuPipelineCacheMisses, 1);
-}
-
-/// CPU-GPU overlap for one dispatch: dispatch wall time minus the serial sum
-/// of the measured child segments (upload + submit-to-complete + readback).
-pub(crate) fn record_overlap(ns: u64) {
-    keyhog_profile::add_counter(CounterId::GpuOverlapNs, ns);
-    keyhog_profile::record_distribution(MetricId::GpuOverlapNs, ns);
-}
-
-/// Overlap fraction of `wall` not covered by the serial child sum; saturates
-/// at zero when measurement overhead makes the children exceed the wall.
-pub(crate) const fn overlap_ns(wall: u64, serial: u64) -> u64 {
-    wall.saturating_sub(serial)
 }
 
 /// One accelerator fault. `kind` is a [`fault`] code.

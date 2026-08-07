@@ -47,12 +47,7 @@ pub(crate) fn finalize_pending_match_for_test(
 
 impl CompiledScanner {
     fn score_pending_batch(&self, pending_matches: &[MlPendingMatch]) -> crate::Result<Vec<f64>> {
-        let tuning = self.tuning.resolve();
-        let scores = crate::gpu::batch_ml_inference_with_timeout(
-            pending_matches,
-            &self.config,
-            tuning.gpu_moe_timeout(),
-        )?;
+        let scores = crate::ml_scorer::score_input_batch(pending_matches, &self.config);
         crate::ml_scorer::complete_batch_scores_with_config(scores, pending_matches, &self.config)
     }
 
@@ -98,11 +93,9 @@ impl CompiledScanner {
         Ok(())
     }
 
-    /// Score all pending candidates from one coalesced scan as a single model
-    /// batch, then return each finalized finding to its originating chunk
-    /// state. This is the production path that lets sparse per-file candidates
-    /// reach GPU-sized batches without changing per-chunk caps or attribution.
-    #[cfg(any(feature = "simd", feature = "gpu", test))]
+    /// Score all pending candidates from one coalesced scan as a single CPU
+    /// model batch, then return each finalized finding to its originating chunk
+    /// state.
     pub(crate) fn apply_ml_batch_scores_across(
         &self,
         scan_states: &mut [ScanState],
@@ -128,8 +121,8 @@ impl CompiledScanner {
 
         let scores = self.score_pending_batch(&pending_matches)?;
         if scores.len() != total_pending {
-            return Err(crate::ScanError::Gpu(format!(
-                "coalesced ML scoring returned the wrong row count: expected {total_pending}, received {}",
+            return Err(crate::ScanError::Config(format!(
+                "internal invariant violation: coalesced ML scoring returned the wrong row count: expected {total_pending}, received {}",
                 scores.len()
             )));
         }
@@ -139,8 +132,8 @@ impl CompiledScanner {
         {
             for _ in 0..count {
                 let Some((pending, ml_conf)) = scored.next() else {
-                    return Err(crate::ScanError::Gpu(format!(
-                        "ML batch lost scores while restoring coalesced owner {owner_index}"
+                    return Err(crate::ScanError::Config(format!(
+                        "internal invariant violation: ML batch lost scores while restoring coalesced owner {owner_index}"
                     )));
                 };
                 let report_conf = self.pending_report_confidence(&pending, ml_conf);
@@ -148,8 +141,8 @@ impl CompiledScanner {
             }
         }
         if scored.next().is_some() {
-            return Err(crate::ScanError::Gpu(
-                "ML batch returned extra scores after restoring coalesced owners".to_string(),
+            return Err(crate::ScanError::Config(
+                "internal invariant violation: ML batch returned extra scores after restoring coalesced owners".to_string(),
             ));
         }
         Ok(())

@@ -50,17 +50,9 @@ pub mod entropy_sensitive_path_owner;
 pub mod error_no_unwrap_expect;
 pub mod fragment_cache_hot_path_shape;
 pub mod fragment_cache_no_unwrap_expect;
-pub mod gpu_moe_policy;
 pub mod gpu_no_unwrap_expect;
+pub mod gpu_policy;
 pub mod gpu_presence_scratch;
-// Validates the GENERATED WGSL MoE shader (`moe_shader_for_test`, itself
-// `#[cfg(feature = "gpu")]`) (so the module only compiles with the gpu feature).
-// Without this gate the ci-lean (no-gpu) lib-test build fails E0425. Mirrors the
-// gpu-gating already applied to `compiler_gpu_literals_empty_disables_gpu` in
-// `tests/unit/mod.rs`.
-#[cfg(feature = "gpu")]
-pub mod gpu_shader_arch_consts_match_model_arch;
-pub mod gpu_shader_no_unwrap_expect;
 pub mod gpu_threshold_measurement_contracts;
 pub mod homoglyph_no_unwrap_expect;
 pub mod hw_probe_no_unwrap_expect;

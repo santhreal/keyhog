@@ -241,7 +241,6 @@ confirmed_suffix_gate = true
 no_candidate_gate = true
 fallback_localizer = false
 gpu_recall_floor = false
-gpu_moe_timeout_ms = 30000
 
 # ============================================================================
 # BAYESIAN CALIBRATION (v0.3.0+)

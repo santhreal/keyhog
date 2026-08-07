@@ -1,12 +1,6 @@
 //! Lazy CUDA, Metal, and WGPU acquisition behind the scanner GPU boundary.
 
-#[cfg(feature = "gpu")]
-use super::artifact::{load_moe_artifacts, MoeArtifacts};
-#[cfg(feature = "gpu")]
-use super::diagnostics::{on_gpu_init_failed, GpuBackendError, GpuInitError};
 use crate::hw_probe::ScanBackend;
-#[cfg(feature = "gpu")]
-use std::sync::LazyLock;
 use std::sync::{Arc, OnceLock};
 
 pub(crate) struct AcquiredGpuPeer {
@@ -436,94 +430,6 @@ pub(crate) fn probe_cuda_peer() -> Result<vyre_driver_cuda::device::CudaDeviceCa
         || vyre_driver_cuda::device::CudaDeviceCaps::probe(0).map_err(|error| error.to_string()),
         "device probe",
     )
-}
-
-#[cfg(feature = "gpu")]
-pub(crate) struct GpuContext {
-    pub(super) device_queue: Arc<(wgpu::Device, wgpu::Queue)>,
-    pub(super) adapter_info: wgpu::AdapterInfo,
-    pub(super) device_limits: wgpu::Limits,
-    pub(super) artifacts: MoeArtifacts,
-}
-
-#[cfg(feature = "gpu")]
-impl GpuContext {
-    pub(crate) fn vram_mb(&self) -> Option<u64> {
-        const SANE_CAP_MB: u64 = 256 * 1024;
-        Some((self.device_limits.max_buffer_size / (1024 * 1024)).min(SANE_CAP_MB))
-    }
-
-    pub(crate) fn gpu_name(&self) -> &str {
-        &self.adapter_info.name
-    }
-
-    pub(super) fn device(&self) -> &wgpu::Device {
-        &self.device_queue.0
-    }
-
-    pub(super) fn queue(&self) -> &wgpu::Queue {
-        &self.device_queue.1
-    }
-
-    pub(super) fn artifacts(&self) -> &MoeArtifacts {
-        &self.artifacts
-    }
-}
-
-#[cfg(feature = "gpu")]
-static GPU: LazyLock<Result<Option<GpuContext>, GpuBackendError>> =
-    LazyLock::new(|| match init_moe_gpu() {
-        Ok(context) => {
-            tracing::info!("GPU MoE inference initialized (shared device)");
-            Ok(Some(context))
-        }
-        Err(error) => {
-            on_gpu_init_failed(
-                &error,
-                crate::gpu::gpu_disabled_by_policy(),
-                crate::gpu::gpu_required_by_policy(),
-            )?;
-            Ok(None)
-        }
-    });
-
-#[cfg(feature = "gpu")]
-fn init_moe_gpu() -> Result<GpuContext, GpuInitError> {
-    let vyre_backend = vyre_driver_wgpu::WgpuBackend::shared().map_err(|error| {
-        GpuInitError::no_adapter(format!("vyre WgpuBackend unavailable: {error}"))
-    })?;
-    let adapter_info = vyre_backend.adapter_info().clone();
-    if crate::gpu::is_software_adapter(&adapter_info) {
-        return Err(GpuInitError::no_adapter(format!(
-            "GPU adapter is a software fallback ({} on {:?}); refusing to use",
-            adapter_info.name, adapter_info.backend
-        )));
-    }
-    let device_limits = vyre_backend.device_limits().clone();
-    let device_queue = vyre_backend.device_queue();
-    tracing::info!(
-        gpu = %adapter_info.name,
-        backend = ?adapter_info.backend,
-        device_type = ?adapter_info.device_type,
-        driver = %adapter_info.driver,
-        "GPU MoE: reusing vyre shared device"
-    );
-    let artifacts = load_moe_artifacts(&device_queue.0, &adapter_info, &device_limits)
-        .map_err(GpuInitError::adapter_unusable)?;
-    Ok(GpuContext {
-        device_queue,
-        adapter_info,
-        device_limits,
-        artifacts,
-    })
-}
-
-#[cfg(feature = "gpu")]
-pub(crate) fn get_gpu() -> Result<Option<&'static GpuContext>, GpuBackendError> {
-    match &*GPU {
-        Ok(context) => Ok(context.as_ref()),
-        Err(error) => Err(error.clone()),
-    }
 }
 
 #[cfg(all(test, feature = "gpu"))]

@@ -418,11 +418,9 @@ pub(crate) struct ReportConfidencePolicy<'a> {
     pub(crate) post_match: keyhog_core::DetectorPostMatchConfidenceSpec,
 }
 
-/// Canonical precision for the public confidence contract. GPU MoE kernels
-/// accumulate `f32` values while the CPU reference promotes the same inputs to
-/// `f64`; their mathematically equivalent scores can differ by a few ULPs.
-/// Three decimal places preserve 1e-3 policy resolution while making serialized
-/// confidence and the final threshold decision backend-invariant.
+/// Canonical precision for the public confidence contract. Three decimal
+/// places preserve 1e-3 policy resolution while keeping serialized confidence
+/// and the final threshold decision stable across execution contexts.
 const REPORT_CONFIDENCE_SCALE: f64 = 1_000.0;
 
 #[inline]

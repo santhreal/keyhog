@@ -10,12 +10,9 @@ use crate::gpu::evidence;
 fn degradation_sequence_records_fault_and_residual_exactly() {
     let runtime = keyhog_profile::Runtime::new();
     runtime.scope(|| {
-        evidence::record_fault(
-            evidence::BACKEND_WGPU,
-            evidence::fault::READBACK_TIMEOUT,
-        );
+        evidence::record_fault(evidence::BACKEND_WGPU, evidence::fault::DISPATCH);
         evidence::record_residual_batch();
-        evidence::record_fault(evidence::BACKEND_WGPU, evidence::fault::NONFINITE_SCORES);
+        evidence::record_fault(evidence::BACKEND_WGPU, evidence::fault::DISPATCH);
         evidence::record_residual_batch();
     });
     let metrics = runtime.take_session_typed_metrics();
@@ -25,10 +22,7 @@ fn degradation_sequence_records_fault_and_residual_exactly() {
             .find(|metric| metric.metric_id == id)
             .map_or(0, |metric| metric.value)
     };
-    assert_eq!(
-        value(keyhog_profile::CounterId::GpuFaults.metric_id()),
-        2
-    );
+    assert_eq!(value(keyhog_profile::CounterId::GpuFaults.metric_id()), 2);
     assert_eq!(
         value(keyhog_profile::CounterId::GpuResidualBatches.metric_id()),
         2
@@ -41,10 +35,7 @@ fn degradation_sequence_records_fault_and_residual_exactly() {
         .collect();
     assert_eq!(
         kinds,
-        vec![
-            evidence::fault::READBACK_TIMEOUT,
-            evidence::fault::NONFINITE_SCORES
-        ]
+        vec![evidence::fault::DISPATCH, evidence::fault::DISPATCH]
     );
 }
 
@@ -65,10 +56,7 @@ fn recovery_sequence_records_attempts_and_recovery_event() {
             .find(|metric| metric.metric_id == id)
             .map_or(0, |metric| metric.value)
     };
-    assert_eq!(
-        value(keyhog_profile::CounterId::GpuRetries.metric_id()),
-        2
-    );
+    assert_eq!(value(keyhog_profile::CounterId::GpuRetries.metric_id()), 2);
     assert_eq!(
         value(keyhog_profile::CounterId::GpuRecoveries.metric_id()),
         1
@@ -88,19 +76,8 @@ fn recovery_sequence_records_attempts_and_recovery_event() {
     assert_eq!(recoveries, vec![evidence::BACKEND_WGPU]);
 }
 
-/// Fault codes stay stable: dispatch code and external assertions key off
-/// these exact numeric values.
+/// The dispatch fault code remains stable for profile consumers.
 #[test]
 fn fault_codes_are_stable() {
     assert_eq!(evidence::fault::DISPATCH, 1);
-    assert_eq!(evidence::fault::READBACK_TIMEOUT, 2);
-    assert_eq!(evidence::fault::READBACK_DISCONNECTED, 3);
-    assert_eq!(evidence::fault::DEVICE_POLL, 4);
-    assert_eq!(evidence::fault::MAP_ASYNC, 5);
-    assert_eq!(evidence::fault::SCORE_COUNT_MISMATCH, 6);
-    assert_eq!(evidence::fault::NONFINITE_SCORES, 7);
-    assert_eq!(evidence::fault::PARITY_DIVERGENCE, 8);
-    assert_eq!(evidence::fault::INIT, 9);
-    assert_eq!(evidence::fault::BUFFER_POOL_POISON, 10);
-    assert_eq!(evidence::fault::DISPATCH_LAYOUT, 12);
 }

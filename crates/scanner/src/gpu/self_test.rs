@@ -1,14 +1,3 @@
-/// Result from an explicit GPU adapter and dispatch self-test.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GpuSelfTest {
-    /// Human-readable adapter name reported by wgpu.
-    pub adapter_name: String,
-    /// Approximate storage-buffer capability in MiB when available.
-    pub vram_mb: Option<u64>,
-    /// Number of scores produced by the compute dispatch.
-    pub scores: usize,
-}
-
 /// Result from an explicit VYRE GPU scanner self-test.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VyreGpuSelfTest {
@@ -18,78 +7,9 @@ pub struct VyreGpuSelfTest {
     pub coalesced_matches: usize,
 }
 
-#[cfg(feature = "gpu")]
-static GPU_SELF_TEST_CACHE: std::sync::OnceLock<std::result::Result<GpuSelfTest, String>> =
-    std::sync::OnceLock::new();
-
-/// Force a GPU compute dispatch and validate the returned scores.
-///
-/// This is stricter than [`crate::gpu::gpu_available`]: it proves that a
-/// non-software wgpu adapter initialized and that the MoE compute shader can run
-/// at least one production-sized batch.
-pub fn gpu_self_test() -> Result<GpuSelfTest, String> {
-    #[cfg(not(feature = "gpu"))]
-    {
-        Err(
-            "GPU support not compiled in (lean ci build). Rebuild with `--features gpu` \
-             (or the default profile) to exercise the wgpu/CUDA path."
-                .to_string(),
-        )
-    }
-    #[cfg(feature = "gpu")]
-    {
-        GPU_SELF_TEST_CACHE
-            .get_or_init(|| {
-                let gpu = super::backend::get_gpu()
-                    .map_err(|error| error.to_string())?
-                    .ok_or_else(|| {
-                        "GPU adapter unavailable; install or enable a non-software GPU adapter and driver"
-                            .to_string()
-                    })?;
-
-                // PARITY, not "in range". The prior check scored ALL-ZERO feature
-                // vectors and only asserted each result was finite and within
-                // [0,1], which a GPU that returns 0.0 for EVERY input trivially
-                // passes. That masked a real shipped fault: the MoE shader scored
-                // genuine secrets ~0.0 (CPU scored them ~1.0), so on a GPU host the
-                // ML gate silently dropped findings and `--self-test` still reported
-                // HEALTHY. Assert the actual contract instead: the GPU MoE must
-                // reproduce the CPU MoE (`ml_scorer::score_features`, the reference
-                // every confidence floor is tuned/benched against) within tolerance
-                // on a probe that includes real secrets. This is the SAME verdict
-                // the scan path enforces (`batch_score_features` fails closed to CPU
-                // on the same divergence), so doctor and the scanner never disagree.
-                let max_abs = super::backend::gpu_moe_parity_max_divergence(
-                    std::time::Duration::from_millis(
-                        crate::scanner_config::ScannerTuningConfig::GPU_MOE_TIMEOUT_MS_DEFAULT,
-                    ),
-                )?;
-                if max_abs > super::backend::GPU_MOE_PARITY_TOLERANCE {
-                    return Err(format!(
-                        "GPU MoE compute shader diverges from the CPU MoE reference by {max_abs:.4} \
-                         (tolerance {:.4}); the GPU would score findings differently from the \
-                         CPU/SIMD path. Indicates a shader miscompile, weights-packing mismatch, \
-                         or driver bug. Scans record the GPU MoE degrade and use the CPU MoE \
-                         (correct + deterministic), \
-                         so detection is unaffected, but GPU ML acceleration is OFF on this host.",
-                        super::backend::GPU_MOE_PARITY_TOLERANCE
-                    ));
-                }
-
-                Ok(GpuSelfTest {
-                    adapter_name: gpu.gpu_name().to_string(),
-                    vram_mb: gpu.vram_mb(),
-                    scores: crate::ml_scorer::GPU_BATCH_THRESHOLD,
-                })
-            })
-            .clone()
-    }
-}
-
 /// Force the VYRE GPU scanner and coalesced scanner paths.
 ///
-/// Proves the scanner-side GPU dependency is available independently from
-/// KeyHog's MoE GPU scorer. Both counts are populated from real GPU scans.
+/// Both counts are populated from real VYRE GPU scans.
 pub fn vyre_gpu_self_test() -> Result<VyreGpuSelfTest, String> {
     #[cfg(not(feature = "gpu"))]
     {
@@ -228,11 +148,13 @@ fn gpu_region_presence_self_test_impl(
                 message: format!("bundled GPU self-test detector TOML is invalid: {error}"),
             })?;
 
-    let scanner = CompiledScanner::compile(vec![detector]).map_err(|error| {
-        GpuRegionPresenceSelfTestFailure {
-            acquired_backends: Vec::new(),
-            message: format!("CompiledScanner::compile failed during self-test: {error}"),
-        }
+    let scanner = CompiledScanner::compile_with_gpu_policy(
+        vec![detector],
+        crate::compiled_scanner::GpuInitPolicy::ForceEnabled,
+    )
+    .map_err(|error| GpuRegionPresenceSelfTestFailure {
+        acquired_backends: Vec::new(),
+        message: format!("GPU scanner compilation failed during self-test: {error}"),
     })?;
 
     let candidates = scanner.gpu_backend_candidates();
