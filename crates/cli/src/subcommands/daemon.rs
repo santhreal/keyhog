@@ -56,11 +56,6 @@ async fn start(
     crate::runtime_preflight::validate_scan_runtime_config()?;
     let hardware = keyhog_scanner::hw_probe::probe_hardware();
     crate::orchestrator_config::configure_persistent_daemon_threads(hardware.physical_cores)?;
-    crate::orchestrator_config::validate_explicit_detector_path(
-        &detectors_dir,
-        detectors_cli_explicit,
-    )?;
-    let detectors_dir = crate::orchestrator_config::auto_discover_detectors(&detectors_dir)?;
     crate::orchestrator_config::configure_hyperscan_cache_dir(cache_dir)?;
     let backend_override = crate::orchestrator_config::parse_backend_override(backend.as_deref())?;
     let gpu_policy =
@@ -72,25 +67,39 @@ async fn start(
     }
 
     let socket = socket.unwrap_or_else(default_socket_path); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
-                                                             // Use the same load-or-embedded fallback that `scan`, `watch`, `scan-system`
-                                                             // and `explain` go through. Before this, `daemon start` ran
-                                                             // `keyhog_core::load_detectors(&"detectors")` directly and bailed with
-                                                             // `failed to read detector file detectors: No such file or directory`
-                                                             // on every install where the user hadn't `cd`'d into a checked-out
-                                                             // repo - which is every install via `install.sh` / `cargo install`.
-    let detectors = crate::subcommands::detectors::load_detector_corpus(&detectors_dir)
-        .with_context(|| {
-            format!(
-                "daemon start: load detectors from {}",
-                detectors_dir.display()
-            )
-        })?;
+    let (detectors, detector_rules_digest) = if detectors_cli_explicit {
+        crate::orchestrator_config::validate_explicit_detector_path(&detectors_dir, true)?;
+        let detectors_dir = crate::orchestrator_config::auto_discover_detectors(&detectors_dir)?;
+        let detectors = crate::subcommands::detectors::load_detector_corpus(&detectors_dir)
+            .with_context(|| {
+                format!(
+                    "daemon start: load detectors from {}",
+                    detectors_dir.display()
+                )
+            })?;
+        let rules_digest =
+            keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+        (detectors, rules_digest)
+    } else {
+        (
+            keyhog_core::load_embedded_detectors_or_fail()
+                .context("daemon start: load embedded detectors")?,
+            keyhog_core::detector_digest().to_owned(),
+        )
+    };
     let options = server::ServerOptions {
         request_read_timeout: Duration::from_secs(request_timeout_secs),
         mass_service: mass,
         mass_gpu_primary_required: mass_gpu_primary,
     };
-    server::run_with_backend_override(socket, detectors, options, backend_override).await?;
+    server::run_with_backend_override(
+        socket,
+        detectors,
+        detector_rules_digest,
+        options,
+        backend_override,
+    )
+    .await?;
     Ok(ExitCode::SUCCESS)
 }
 

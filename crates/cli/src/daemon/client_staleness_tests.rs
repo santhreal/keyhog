@@ -55,9 +55,7 @@ fn ready_warm_backend(detector_rules_digest: &str) -> WarmBackendStatus {
 /// with the given wire + keyhog version, then closes. Returns once the listener
 /// is bound so the client connect cannot race ahead of it.
 async fn spawn_mock_daemon(socket: PathBuf, wire_version: u32, keyhog_version: String) {
-    let detectors = keyhog_core::load_embedded_detectors_or_fail().expect("embedded detectors");
-    let detector_rules_digest =
-        keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+    let detector_rules_digest = keyhog_core::detector_digest().to_owned();
     spawn_mock_daemon_identity(
         socket,
         wire_version,
@@ -124,9 +122,7 @@ async fn spawn_mock_daemon_response(socket: PathBuf, response: Response) {
 }
 
 async fn spawn_mock_daemon_backend_policy(socket: PathBuf, backend_policy: &str) {
-    let detectors = keyhog_core::load_embedded_detectors_or_fail().expect("embedded detectors");
-    let detector_rules_digest =
-        keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+    let detector_rules_digest = keyhog_core::detector_digest().to_owned();
     spawn_mock_daemon_response(
         socket,
         Response::Hello {
@@ -135,7 +131,7 @@ async fn spawn_mock_daemon_backend_policy(socket: PathBuf, backend_policy: &str)
             git_hash: keyhog_core::git_hash().to_string(),
             detector_rules_digest: detector_rules_digest.clone(),
             backend_policy: backend_policy.to_string(),
-            detector_count: detectors.len(),
+            detector_count: keyhog_core::embedded_detector_count(),
             uptime_secs: 1,
             warm_backend: ready_warm_backend(&detector_rules_digest),
             mass_service: false,

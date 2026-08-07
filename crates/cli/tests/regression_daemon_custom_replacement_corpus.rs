@@ -80,6 +80,47 @@ fn start_daemon(root: &Path, detectors: &Path) -> RunningDaemon {
     panic!("custom-corpus daemon did not become ready within 30 seconds");
 }
 
+fn start_default_daemon(root: &Path) -> RunningDaemon {
+    let socket = root.join("default.sock");
+    let child = Command::new(binary())
+        .current_dir(root)
+        .args(["daemon", "start", "--socket"])
+        .arg(&socket)
+        .args(["--backend", "cpu"])
+        .env("HOME", root)
+        .env("XDG_DATA_HOME", root.join("xdg-data"))
+        .env("XDG_CACHE_HOME", root.join("xdg-cache"))
+        .env_remove("KEYHOG_BACKEND")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("start default-corpus daemon");
+
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
+        if socket.exists() && UnixStream::connect(&socket).is_ok() {
+            return RunningDaemon { child, socket };
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    panic!("default-corpus daemon did not become ready within 30 seconds");
+}
+
+fn scan_default(root: &Path, socket: &Path, fixture: &Path) -> Output {
+    Command::new(binary())
+        .current_dir(root)
+        .args(["scan", "--daemon=on", "--daemon-socket"])
+        .arg(socket)
+        .args(["--format", "json-envelope"])
+        .arg(fixture)
+        .env("HOME", root)
+        .env("XDG_DATA_HOME", root.join("xdg-data"))
+        .env("XDG_CACHE_HOME", root.join("xdg-cache"))
+        .env_remove("KEYHOG_BACKEND")
+        .output()
+        .expect("run default daemon scan")
+}
+
 fn scan(root: &Path, socket: &Path, fixture: &Path, detectors: &Path, overlay: bool) -> Output {
     let mut command = Command::new(binary());
     command
@@ -226,5 +267,47 @@ fn custom_replacement_corpus_requires_exact_daemon_identity() {
     assert!(
         disabled.stdout.is_empty(),
         "a rejected client-only detector policy must not emit scan results"
+    );
+}
+
+/// WHY: a checkout-local `detectors/` directory must not silently replace the
+/// build-bound default corpus, or the static handshake identity could attest to
+/// different rules than the daemon actually compiled.
+#[test]
+fn default_daemon_ignores_unrequested_checkout_detector_directory() {
+    let root = TempDir::new().expect("tempdir");
+    let local_detectors = root.path().join("detectors");
+    write_detector(&local_detectors, "daemon-custom-shadow");
+    let fixture = root.path().join("planted.txt");
+    std::fs::write(&fixture, format!("custom = \"{CUSTOM_TOKEN}\"\n"))
+        .expect("write planted custom secret");
+
+    let daemon = start_default_daemon(root.path());
+    let output = scan_default(root.path(), &daemon.socket, &fixture);
+    assert!(
+        matches!(output.status.code(), Some(0 | 1 | 10)),
+        "default daemon scan must complete; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+        panic!(
+            "default daemon scan must emit a JSON envelope: {error}; stdout={}; stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    let findings = report["findings"]
+        .as_array()
+        .unwrap_or_else(|| panic!("daemon report must contain findings: {report:?}"));
+    assert!(
+        findings
+            .iter()
+            .all(|finding| finding["detector_id"] != "daemon-custom-shadow"),
+        "an unrequested checkout detector must never enter the default daemon: {report:?}"
+    );
+    assert_eq!(
+        report["metadata"]["detector_count"].as_u64(),
+        Some(keyhog_core::embedded_detector_count() as u64),
+        "default daemon must report the build-bound embedded corpus"
     );
 }

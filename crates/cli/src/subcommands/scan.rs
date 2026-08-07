@@ -621,24 +621,16 @@ fn expected_daemon_detector_corpus(args: &ScanArgs) -> Result<ExpectedDaemonDete
     let custom_corpus_selected =
         args.detectors_cli_explicit || args.detectors != PathBuf::from("detectors");
     if !custom_corpus_selected {
-        let detectors = keyhog_core::embedded_detector_specs();
-        let corpus_digest = keyhog_core::hex_encode(
-            &keyhog_core::compute_detector_corpus_digest_for_schema(
-                detectors,
-                keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
-            )
-            .context("serializing embedded daemon detector corpus identity")?,
-        );
         return Ok(ExpectedDaemonDetectorCorpus {
-            rules_digest: None,
-            corpus_digest,
+            rules_digest: Some(keyhog_core::detector_digest().to_owned()),
+            corpus_digest: keyhog_core::detector_digest().to_owned(),
             provenance: crate::orchestrator_config::DetectorCorpusProvenance {
                 mode: "embedded",
                 source: "embedded (daemon)".to_string(),
-                embedded_count: detectors.len(),
+                embedded_count: keyhog_core::embedded_detector_count(),
                 custom_count: 0,
             },
-            detector_count: detectors.len(),
+            detector_count: keyhog_core::embedded_detector_count(),
         });
     }
 

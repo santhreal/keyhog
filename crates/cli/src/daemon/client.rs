@@ -349,9 +349,5 @@ fn validate_backend_policy(policy: &str) -> Result<()> {
 }
 
 fn embedded_detector_rules_digest() -> Result<String> {
-    let detectors = keyhog_core::load_embedded_detectors_or_fail()
-        .context("daemon client: load embedded detector identity")?;
-    Ok(keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(
-        &detectors,
-    )))
+    Ok(keyhog_core::detector_digest().to_owned())
 }

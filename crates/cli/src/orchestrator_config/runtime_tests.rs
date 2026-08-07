@@ -2,7 +2,7 @@
 use super::{
     fused_depth_default, gpu_runtime_policy_for_backend_override, gpu_runtime_policy_from_args,
     persistent_daemon_worker_width, require_keyhog_owned_rayon_pool, sanitise_thread_count,
-    thread_pool_needs_initialization, KEYHOG_WORKER_STACK_BYTES, PERSISTENT_DAEMON_WORKER_CAP,
+    thread_pool_needs_initialization, KEYHOG_WORKER_STACK_BYTES,
 };
 #[cfg(test)]
 use crate::args::ScanArgs;

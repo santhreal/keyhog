@@ -425,6 +425,7 @@ fn ignore_sigpipe_while_serving() {
 pub(crate) async fn run_with_backend_override(
     socket_path: PathBuf,
     detectors: Vec<DetectorSpec>,
+    detector_rules_digest: String,
     options: ServerOptions,
     backend_override: Option<ScanBackend>,
 ) -> Result<()> {
@@ -434,8 +435,6 @@ pub(crate) async fn run_with_backend_override(
     // The count is the pre-compile spec count; the ready line reports the final
     // compiled count.
     announce_daemon_starting(detectors.len());
-    let detector_rules_digest =
-        keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
     let (scanner, router, detector_count, required_backends) =
         compile_daemon_scan_runtime(detectors, backend_override)?;
     let warm_backend =
