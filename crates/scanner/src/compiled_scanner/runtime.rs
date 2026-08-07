@@ -1018,6 +1018,31 @@ impl CompiledScanner {
         )
     }
 
+    pub(crate) fn scan_proven_direct_absence(
+        &self,
+        chunk: &Chunk,
+        deadline: Option<std::time::Instant>,
+        route: crate::ScanExecutionRoute,
+        decoder_absence: bool,
+    ) -> crate::error::Result<Vec<RawMatch>> {
+        crate::telemetry::record_file_scanned(chunk.data.len());
+        self.record_decode_size_decline(chunk);
+        #[cfg(debug_assertions)]
+        self.direct_scan_absence_skipped_bytes.fetch_add(
+            u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        let mut matches = Vec::new();
+        self.post_process_matches_with_decoder_absence(
+            chunk,
+            &mut matches,
+            deadline,
+            route,
+            decoder_absence,
+        )?;
+        Ok(matches)
+    }
+
     pub(crate) fn scan_with_deadline_and_backend_admission_route_and_hints(
         &self,
         chunk: &Chunk,
@@ -1060,22 +1085,7 @@ impl CompiledScanner {
                 chunk.metadata.path.as_deref(),
             )
         {
-            crate::telemetry::record_file_scanned(chunk.data.len());
-            self.record_decode_size_decline(chunk);
-            #[cfg(debug_assertions)]
-            self.direct_scan_absence_skipped_bytes.fetch_add(
-                u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
-                std::sync::atomic::Ordering::Relaxed,
-            );
-            let mut matches = Vec::new();
-            self.post_process_matches_with_decoder_absence(
-                chunk,
-                &mut matches,
-                deadline,
-                route,
-                decoder_absence,
-            )?;
-            return Ok(matches);
+            return self.scan_proven_direct_absence(chunk, deadline, route, decoder_absence);
         }
         if admission != Phase1Admission::Admitted {
             if self.should_scan_no_hit_chunk(chunk, route) {

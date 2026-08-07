@@ -109,6 +109,21 @@ impl CompiledScanner {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_direct_scan_absence_batches_for_diagnostics(&self) {
+        self.direct_scan_absence_batches
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn direct_scan_absence_batches_for_diagnostics(&self) -> u64 {
+        self.direct_scan_absence_batches
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Surface a decode-through pass declined because its source cannot use
     /// bounded decode windows and exceeds `max_decode_bytes`.
     ///

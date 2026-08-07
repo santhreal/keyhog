@@ -420,6 +420,7 @@ fn repeated_payloads_share_generic_keyword_positions() {
     scanner.reset_line_index_scanned_bytes_for_diagnostics();
     scanner.reset_decoder_admission_scanned_bytes_for_diagnostics();
     scanner.reset_direct_scan_absence_skipped_bytes_for_diagnostics();
+    scanner.reset_direct_scan_absence_batches_for_diagnostics();
     let planned_ordinary = scanner
         .scan_coalesced_with_backend_and_admission(
             &ordinary_chunks,
@@ -475,6 +476,11 @@ fn repeated_payloads_share_generic_keyword_positions() {
             .sum::<u64>(),
         "complete direct absence must bypass every repeated payload byte"
     );
+    assert_eq!(
+        scanner.direct_scan_absence_batches_for_diagnostics(),
+        1,
+        "an all-absent coalesced batch must avoid per-chunk Rayon dispatch"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
@@ -486,6 +492,7 @@ fn repeated_payloads_share_generic_keyword_positions() {
     scanner.reset_line_index_scanned_bytes_for_diagnostics();
     scanner.reset_decoder_admission_scanned_bytes_for_diagnostics();
     scanner.reset_direct_scan_absence_skipped_bytes_for_diagnostics();
+    scanner.reset_direct_scan_absence_batches_for_diagnostics();
     let direct_ordinary = scanner
         .scan_coalesced_with_backend(&ordinary_chunks, ScanBackend::CpuFallback)
         .expect("direct ordinary scan");
@@ -525,6 +532,11 @@ fn repeated_payloads_share_generic_keyword_positions() {
         scanner.direct_scan_absence_skipped_bytes_for_diagnostics(),
         0,
         "a direct scan without reusable evidence must not take the absence fast path"
+    );
+    assert_eq!(
+        scanner.direct_scan_absence_batches_for_diagnostics(),
+        0,
+        "a scan without reusable evidence must retain ordinary batch dispatch"
     );
     assert_eq!(planned_ordinary, direct_ordinary);
     assert!(planned_ordinary.iter().all(Vec::is_empty));

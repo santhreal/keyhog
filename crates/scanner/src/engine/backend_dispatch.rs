@@ -67,6 +67,45 @@ impl CompiledScanner {
         let recovery_receipts = crate::gpu::capture_recovery_receipts();
         let profile_runtime = keyhog_profile::current_runtime();
         let entropy_config_digest = self.entropy_evidence_config_digest();
+        if backend == ScanBackend::CpuFallback {
+            if let Some(plan) = admission_plan {
+                let all_proven_absent = chunks.iter().enumerate().all(|(index, chunk)| {
+                    plan.admission_for(index) == Some(Phase1Admission::Admitted)
+                        && plan
+                            .direct_scan_absence_for(
+                                index,
+                                self.config.unicode_normalization,
+                                entropy_config_digest,
+                                self.decoder_admission_context_key(chunk),
+                            )
+                            .unwrap_or(false)
+                        && crate::structured::preprocessing_is_impossible_for_path(
+                            chunk.metadata.path.as_deref(),
+                        )
+                });
+                if all_proven_absent {
+                    #[cfg(debug_assertions)]
+                    self.direct_scan_absence_batches
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let mut results = Vec::with_capacity(chunks.len());
+                    for chunk in chunks {
+                        results.push(self.scan_proven_direct_absence(
+                            chunk,
+                            self.config.per_chunk_deadline(),
+                            route,
+                            true,
+                        )?);
+                    }
+                    super::boundary::scan_chunk_boundaries_with_route(
+                        self,
+                        chunks,
+                        &mut results,
+                        route,
+                    )?;
+                    return Ok(results);
+                }
+            }
+        }
         let scan_one = |index: usize, chunk: &Chunk| {
             let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
             crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
