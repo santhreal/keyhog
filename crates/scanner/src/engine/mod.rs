@@ -614,6 +614,10 @@ pub struct CompiledScanner {
     /// compile-time corpus error and is never replaced with a guessed label.
     pub config: ScannerConfig,
     pub(crate) route_classification: Arc<phase1_admission::RouteClassificationPlan>,
+    #[cfg(debug_assertions)]
+    pub(crate) phase2_keyword_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) generic_keyword_scanned_bytes: std::sync::atomic::AtomicU64,
 }
 
 impl CompiledScanner {

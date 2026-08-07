@@ -186,6 +186,131 @@ fn phase1_plan_classifies_each_distinct_payload_once() {
     );
 }
 
+/// WHY: autoroute already scans byte-distinct representatives for phase-two
+/// keywords. The production CPU scan must consume those exact hints instead of
+/// rescanning every repeated payload, while preserving phase-two-only findings.
+#[test]
+fn repeated_payloads_share_phase2_keyword_hints() {
+    let mut phase2_detector = detector(vec![PatternSpec {
+        regex: r"([a-z]{4}[0-9]{4})".into(),
+        group: Some(1),
+        ..Default::default()
+    }]);
+    phase2_detector.keywords = vec!["phasekw".into()];
+    let scanner =
+        CompiledScanner::compile(vec![phase2_detector]).expect("compile phase-two detector");
+    let payload = "phasekw = abcd1234\n".repeat(512);
+    let chunks = vec![
+        chunk("phase2-0.txt", payload.clone()),
+        chunk("phase2-1.txt", payload.clone()),
+        chunk("phase2-2.txt", payload),
+    ];
+
+    let plan = scanner.phase1_admission_plan(&chunks);
+    let first = plan
+        .phase2_keyword_hints_for_diagnostics(0)
+        .expect("first hint row");
+    assert!(
+        !first.is_empty(),
+        "fixture must activate a phase-two keyword"
+    );
+    assert_eq!(
+        plan.phase2_keyword_hints_for_diagnostics(1),
+        Some(first),
+        "byte-identical payloads must reference the same persisted hint row"
+    );
+    let total_bytes = chunks
+        .iter()
+        .map(|chunk| chunk.data.len() as u64)
+        .sum::<u64>();
+    scanner.reset_phase2_keyword_scanned_bytes_for_diagnostics();
+
+    let planned = scanner
+        .scan_coalesced_with_backend_and_admission(&chunks, ScanBackend::CpuFallback, Some(&plan))
+        .expect("planned scan");
+    assert_eq!(
+        scanner.phase2_keyword_scanned_bytes_for_diagnostics(),
+        0,
+        "planned scan must consume persisted hints without rescanning payload bytes"
+    );
+    scanner.clear_fragment_cache();
+    scanner.reset_phase2_keyword_scanned_bytes_for_diagnostics();
+    let direct = scanner
+        .scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback)
+        .expect("direct scan");
+    assert_eq!(
+        scanner.phase2_keyword_scanned_bytes_for_diagnostics(),
+        total_bytes,
+        "direct scan must establish the diagnostic fallback-byte control"
+    );
+    assert_eq!(planned, direct);
+    assert!(
+        planned.iter().all(|matches| !matches.is_empty()),
+        "phase-two keyword hints must retain every repeated finding"
+    );
+}
+
+/// WHY: generic assignment stem localization is payload-only and is already
+/// computed while autoroute classifies exact representatives. CPU dispatch must
+/// consume those persisted positions without rescanning duplicate chunk bytes.
+#[test]
+fn repeated_payloads_share_generic_keyword_positions() {
+    let mut detector_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    detector_dir.pop();
+    detector_dir.pop();
+    detector_dir.push("detectors");
+    let scanner = CompiledScanner::compile(
+        keyhog_core::load_detectors(&detector_dir).expect("production detectors"),
+    )
+    .expect("compile production scanner");
+    let payload = "secret = Ab3dEf5hJk7mNp9qRs2uVw4yXz6Bcd8F\n".repeat(128);
+    let chunks = vec![
+        chunk("generic-0.txt", payload.clone()),
+        chunk("generic-1.txt", payload.clone()),
+        chunk("generic-2.txt", payload),
+    ];
+
+    let plan = scanner.phase1_admission_plan(&chunks);
+    let first = plan
+        .generic_keyword_positions_for_diagnostics(0)
+        .expect("first generic position row");
+    assert!(!first.is_empty(), "fixture must activate a generic stem");
+    assert_eq!(
+        plan.generic_keyword_positions_for_diagnostics(1),
+        Some(first),
+        "byte-identical payloads must reference the same generic position row"
+    );
+
+    scanner.reset_generic_keyword_scanned_bytes_for_diagnostics();
+    let planned = scanner
+        .scan_coalesced_with_backend_and_admission(&chunks, ScanBackend::CpuFallback, Some(&plan))
+        .expect("planned scan");
+    assert_eq!(
+        scanner.generic_keyword_scanned_bytes_for_diagnostics(),
+        0,
+        "planned scan must consume generic positions without rescanning bytes"
+    );
+
+    scanner.clear_fragment_cache();
+    scanner.reset_generic_keyword_scanned_bytes_for_diagnostics();
+    let direct = scanner
+        .scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback)
+        .expect("direct scan");
+    assert_eq!(
+        scanner.generic_keyword_scanned_bytes_for_diagnostics(),
+        chunks
+            .iter()
+            .map(|chunk| chunk.data.len() as u64)
+            .sum::<u64>(),
+        "direct scan must establish the generic prefilter byte control"
+    );
+    assert_eq!(planned, direct);
+    assert!(
+        planned.iter().all(|matches| !matches.is_empty()),
+        "generic position hints must retain every repeated finding"
+    );
+}
+
 #[test]
 fn prefixless_dynamic_pattern_stays_in_explicit_always_admit_lane() {
     let scanner = CompiledScanner::compile(vec![detector(vec![

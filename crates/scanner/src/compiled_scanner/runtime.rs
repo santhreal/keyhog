@@ -998,6 +998,27 @@ impl CompiledScanner {
         admission: Option<crate::engine::Phase1Admission>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
+        self.scan_with_deadline_and_backend_admission_route_and_hints(
+            chunk,
+            deadline,
+            selected_backend,
+            admission,
+            None,
+            None,
+            route,
+        )
+    }
+
+    pub(crate) fn scan_with_deadline_and_backend_admission_route_and_hints(
+        &self,
+        chunk: &Chunk,
+        deadline: Option<std::time::Instant>,
+        selected_backend: crate::hw_probe::ScanBackend,
+        admission: Option<crate::engine::Phase1Admission>,
+        phase2_keyword_hints: Option<&[u32]>,
+        generic_keyword_positions: Option<&[u32]>,
+        route: crate::ScanExecutionRoute,
+    ) -> crate::error::Result<Vec<RawMatch>> {
         if scan_deadline_expired(deadline) {
             return Ok(Vec::new());
         }
@@ -1020,10 +1041,10 @@ impl CompiledScanner {
                     prepared,
                     &[],
                     deadline,
+                    phase2_keyword_hints,
                     None,
                     None,
-                    None,
-                    None,
+                    generic_keyword_positions,
                     route,
                 )?;
                 if scan_deadline_expired(deadline) {
@@ -1061,7 +1082,14 @@ impl CompiledScanner {
         let mut matches = if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
             self.scan_windowed(chunk, selected_backend, deadline, route)?
         } else {
-            self.scan_inner(chunk, selected_backend, deadline, route)?
+            self.scan_inner_with_admission_hints(
+                chunk,
+                selected_backend,
+                deadline,
+                phase2_keyword_hints,
+                generic_keyword_positions,
+                route,
+            )?
         };
 
         if scan_deadline_expired(deadline) {

@@ -71,11 +71,17 @@ impl CompiledScanner {
             crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
                 crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
                     let admission = admission_plan.and_then(|plan| plan.admission_for(index));
-                    self.scan_with_deadline_and_backend_admission_and_route(
+                    let phase2_keyword_hints =
+                        admission_plan.and_then(|plan| plan.phase2_keyword_hints_for(index));
+                    let generic_keyword_positions =
+                        admission_plan.and_then(|plan| plan.generic_keyword_positions_for(index));
+                    self.scan_with_deadline_and_backend_admission_route_and_hints(
                         chunk,
                         self.config.per_chunk_deadline(),
                         backend,
                         admission,
+                        phase2_keyword_hints,
+                        generic_keyword_positions,
                         route,
                     )
                 })

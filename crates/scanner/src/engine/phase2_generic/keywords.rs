@@ -204,6 +204,40 @@ pub(crate) fn collect_generic_keyword_lines_with(
     }
 }
 
+/// Collect one trusted generic-stem byte position per matching line.
+///
+/// Autoroute classifies byte-distinct payload representatives before CPU
+/// dispatch. Persisting these positions lets every exact duplicate reuse that
+/// scan; the generic bridge maps them back to line ids and still performs its
+/// ordinary regex extraction and path-sensitive adjudication per chunk.
+pub(crate) fn collect_generic_keyword_positions_with(
+    stem_set: &GenericKeywordStemSet,
+    text: &str,
+    out: &mut Vec<u32>,
+) {
+    let bytes = text.as_bytes();
+    let mut idx = 0usize;
+    while idx < bytes.len() {
+        if bytes[idx] == b'\n' {
+            idx += 1;
+            continue;
+        }
+        if stem_set.has_first[bytes[idx] as usize] && generic_stem_matches_at(bytes, idx, stem_set)
+        {
+            let Ok(position) = u32::try_from(idx) else {
+                return;
+            };
+            out.push(position);
+            match memchr::memchr(b'\n', &bytes[idx..]) {
+                Some(relative) => idx += relative + 1,
+                None => break,
+            }
+            continue;
+        }
+        idx += 1;
+    }
+}
+
 /// Collect zero-based line indexes from trusted generic-stem match positions.
 ///
 /// The GPU region path supplies these positions only when its literal haystack

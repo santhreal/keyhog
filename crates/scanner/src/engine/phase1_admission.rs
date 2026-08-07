@@ -64,6 +64,10 @@ pub struct Phase1AdmissionPlan {
     chunk_shapes: Vec<(usize, usize)>,
     summary: Phase1AdmissionSummary,
     phase2_keyword_triggers: Phase2KeywordTriggerSummary,
+    phase2_keyword_hints: Vec<Vec<u32>>,
+    phase2_keyword_hint_rows: Vec<usize>,
+    generic_keyword_positions: Vec<Vec<u32>>,
+    generic_keyword_position_rows: Vec<usize>,
     #[cfg(debug_assertions)]
     unique_payloads: usize,
 }
@@ -87,9 +91,35 @@ impl Phase1AdmissionPlan {
         self.unique_payloads
     }
 
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn phase2_keyword_hints_for_diagnostics(&self, index: usize) -> Option<&[u32]> {
+        self.phase2_keyword_hints_for(index)
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn generic_keyword_positions_for_diagnostics(&self, index: usize) -> Option<&[u32]> {
+        self.generic_keyword_positions_for(index)
+    }
+
     #[inline]
     pub(crate) fn admission_for(&self, index: usize) -> Option<Phase1Admission> {
         self.admissions.get(index).copied()
+    }
+
+    #[inline]
+    pub(crate) fn phase2_keyword_hints_for(&self, index: usize) -> Option<&[u32]> {
+        let row = *self.phase2_keyword_hint_rows.get(index)?;
+        self.phase2_keyword_hints.get(row).map(Vec::as_slice)
+    }
+
+    #[inline]
+    pub(crate) fn generic_keyword_positions_for(&self, index: usize) -> Option<&[u32]> {
+        let row = *self.generic_keyword_position_rows.get(index)?;
+        self.generic_keyword_positions.get(row).map(Vec::as_slice)
     }
 
     #[inline]
@@ -133,10 +163,23 @@ impl Phase1AdmissionPlan {
                 >= self.phase2_keyword_triggers.keyword_trigger_chunks
             && (self.phase2_keyword_triggers.keyword_trigger_chunks == 0)
                 == (self.phase2_keyword_triggers.keyword_trigger_count == 0);
+        let keyword_hints_valid = self.phase2_keyword_hint_rows.len() == self.chunk_shapes.len()
+            && self
+                .phase2_keyword_hint_rows
+                .iter()
+                .all(|&row| row < self.phase2_keyword_hints.len());
+        let generic_positions_valid = self.generic_keyword_position_rows.len()
+            == self.chunk_shapes.len()
+            && self
+                .generic_keyword_position_rows
+                .iter()
+                .all(|&row| row < self.generic_keyword_positions.len());
         if self.admissions.len() != self.chunk_shapes.len()
             || summary_chunks != shape_count
             || summary_bytes != shape_bytes
             || !keyword_summary_valid
+            || !keyword_hints_valid
+            || !generic_positions_valid
             || self
                 .chunk_shapes
                 .iter()
@@ -261,16 +304,22 @@ impl CompiledScanner {
         Phase1Admission::Admitted
     }
 
-    #[inline]
-    fn phase2_keyword_trigger_count(&self, data: &str) -> u64 {
-        self.route_classification
-            .phase2_keyword_ac
-            .as_ref()
-            .map_or(0, |keyword_ac| {
-                keyword_ac
-                    .find_iter(data)
-                    .fold(0u64, |count, _| count.saturating_add(1))
-            })
+    fn phase2_keyword_triggers(&self, data: &str) -> (u64, Vec<u32>) {
+        let Some(keyword_ac) = self.route_classification.phase2_keyword_ac.as_ref() else {
+            return (0, Vec::new());
+        };
+        let mut count = 0u64;
+        let mut hints = Vec::new();
+        for mat in keyword_ac.find_iter(data) {
+            count = count.saturating_add(1);
+            let Ok(keyword_idx) = u32::try_from(mat.pattern().as_usize()) else {
+                continue;
+            };
+            if !hints.contains(&keyword_idx) {
+                hints.push(keyword_idx);
+            }
+        }
+        (count, hints)
     }
 
     /// Classify direct-literal phase-1 work with the exact compiled prefilters
@@ -343,7 +392,21 @@ impl CompiledScanner {
             } else {
                 self.phase1_admission(chunk.data.as_bytes())
             };
-            (admission, self.phase2_keyword_trigger_count(&chunk.data))
+            let (keyword_trigger_count, keyword_hints) = self.phase2_keyword_triggers(&chunk.data);
+            let mut generic_positions = Vec::new();
+            if let Some(generic_plan) = self.detector_plans.generic_assignment() {
+                crate::engine::phase2_generic::keywords::collect_generic_keyword_positions_with(
+                    generic_plan.stems(),
+                    &chunk.data,
+                    &mut generic_positions,
+                );
+            }
+            (
+                admission,
+                keyword_trigger_count,
+                keyword_hints,
+                generic_positions,
+            )
         };
 
         let mut representatives = Vec::<([u8; 32], usize)>::new();
@@ -390,26 +453,36 @@ impl CompiledScanner {
         let mut phase2_keyword_triggers = Phase2KeywordTriggerSummary::default();
         let mut admissions = Vec::with_capacity(chunks.len());
         let mut chunk_shapes = Vec::with_capacity(chunks.len());
-        for (chunk, representative_position) in chunks.iter().zip(representative_for) {
-            let (admission, keyword_trigger_count) = classified[representative_position];
+        for (chunk, representative_position) in
+            chunks.iter().zip(representative_for.iter().copied())
+        {
+            let (admission, keyword_trigger_count, _, _) = &classified[representative_position];
             let data = chunk.data.as_bytes();
             let len = data.len();
-            summary.record(admission, len as u64);
-            if keyword_trigger_count != 0 {
+            summary.record(*admission, len as u64);
+            if *keyword_trigger_count != 0 {
                 phase2_keyword_triggers.keyword_trigger_chunks += 1;
                 phase2_keyword_triggers.keyword_trigger_bytes += len as u64;
                 phase2_keyword_triggers.keyword_trigger_count = phase2_keyword_triggers
                     .keyword_trigger_count
-                    .saturating_add(keyword_trigger_count);
+                    .saturating_add(*keyword_trigger_count);
             }
-            admissions.push(admission);
+            admissions.push(*admission);
             chunk_shapes.push((data.as_ptr() as usize, len));
         }
+        let (phase2_keyword_hints, generic_keyword_positions) = classified
+            .into_iter()
+            .map(|(_, _, hints, positions)| (hints, positions))
+            .unzip();
         Phase1AdmissionPlan {
             admissions,
             chunk_shapes,
             summary,
             phase2_keyword_triggers,
+            phase2_keyword_hints,
+            phase2_keyword_hint_rows: representative_for.clone(),
+            generic_keyword_positions,
+            generic_keyword_position_rows: representative_for,
             #[cfg(debug_assertions)]
             unique_payloads: representatives.len(),
         }

@@ -89,6 +89,18 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
+        self.scan_inner_with_admission_hints(chunk, backend, deadline, None, None, route)
+    }
+
+    pub(crate) fn scan_inner_with_admission_hints(
+        &self,
+        chunk: &Chunk,
+        backend: crate::hw_probe::ScanBackend,
+        deadline: Option<std::time::Instant>,
+        phase2_keyword_hints: Option<&[u32]>,
+        generic_keyword_positions: Option<&[u32]>,
+        route: crate::ScanExecutionRoute,
+    ) -> crate::error::Result<Vec<RawMatch>> {
         if crate::deadline::expired(deadline) {
             return Ok(Vec::new());
         }
@@ -109,7 +121,14 @@ impl CompiledScanner {
             return Ok(Vec::new());
         }
         self.scan_prepared_with_triggered(
-            prepared, &triggered, deadline, None, None, None, None, route,
+            prepared,
+            &triggered,
+            deadline,
+            phase2_keyword_hints,
+            None,
+            None,
+            generic_keyword_positions,
+            route,
         )
     }
 }

@@ -441,6 +441,11 @@ impl CompiledScanner {
                         }
                     }
                 } else {
+                    #[cfg(debug_assertions)]
+                    self.phase2_keyword_scanned_bytes.fetch_add(
+                        u64::try_from(data.len()).unwrap_or(u64::MAX),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
                     for mat in keyword_ac.find_iter(data) {
                         let keyword_idx = mat.pattern().as_usize();
                         if let Some(pattern_indices) =
@@ -592,5 +597,20 @@ impl CompiledScanner {
 
     pub(crate) fn phase2_profile_reset(&self) {
         phase2_pattern_prof_reset(self.phase2_patterns.len());
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_phase2_keyword_scanned_bytes_for_diagnostics(&self) {
+        self.phase2_keyword_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn phase2_keyword_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.phase2_keyword_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
