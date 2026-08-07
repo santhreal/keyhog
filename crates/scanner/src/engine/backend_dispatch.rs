@@ -86,6 +86,12 @@ impl CompiledScanner {
                             )
                         })
                         .unwrap_or(false);
+                    let multiline_absence = normalization_passthrough
+                        && admission_plan
+                            .and_then(|plan| {
+                                plan.multiline_absence_for(index, entropy_config_digest)
+                            })
+                            .unwrap_or(false);
                     let phase2_keyword_hints =
                         admission_plan.and_then(|plan| plan.phase2_keyword_hints_for(index));
                     let generic_keyword_positions =
@@ -109,6 +115,7 @@ impl CompiledScanner {
                         backend,
                         admission,
                         normalization_passthrough,
+                        multiline_absence,
                         confirmed_patterns_absence,
                         entropy_absence,
                         cpu_trigger_hints,
@@ -148,13 +155,14 @@ impl CompiledScanner {
     }
 
     pub(crate) fn prepare_chunk<'a>(&self, chunk: &'a Chunk) -> PreparedChunk<'a> {
-        self.prepare_chunk_with_normalization_passthrough(chunk, false)
+        self.prepare_chunk_with_normalization_passthrough(chunk, false, false)
     }
 
     pub(crate) fn prepare_chunk_with_normalization_passthrough<'a>(
         &self,
         chunk: &'a Chunk,
         normalization_passthrough: bool,
+        multiline_absence: bool,
     ) -> PreparedChunk<'a> {
         let _g = super::profile::span(keyhog_profile::Stage::Preprocess);
         // Note: non-ASCII normalization used to swap `chunk` to an
@@ -229,8 +237,15 @@ impl CompiledScanner {
         } else {
             #[cfg(feature = "multiline")]
             {
-                let has_multiline_candidate =
-                    crate::multiline::config::has_concatenation_indicators_with_keyword_gate(
+                #[cfg(debug_assertions)]
+                if !multiline_absence {
+                    self.multiline_admission_scanned_bytes.fetch_add(
+                        u64::try_from(data_to_pp.len()).unwrap_or(u64::MAX),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
+                let has_multiline_candidate = !multiline_absence
+                    && crate::multiline::config::has_concatenation_indicators_with_keyword_gate(
                         &data_to_pp,
                         |bytes| {
                             let matcher = self
@@ -278,6 +293,21 @@ impl CompiledScanner {
     #[must_use]
     pub fn normalization_scanned_bytes_for_diagnostics(&self) -> u64 {
         self.normalization_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_multiline_admission_scanned_bytes_for_diagnostics(&self) {
+        self.multiline_admission_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn multiline_admission_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.multiline_admission_scanned_bytes
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 }

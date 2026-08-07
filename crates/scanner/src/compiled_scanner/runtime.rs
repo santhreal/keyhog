@@ -1006,6 +1006,7 @@ impl CompiledScanner {
             false,
             false,
             false,
+            false,
             None,
             None,
             None,
@@ -1021,6 +1022,7 @@ impl CompiledScanner {
         selected_backend: crate::hw_probe::ScanBackend,
         admission: Option<crate::engine::Phase1Admission>,
         normalization_passthrough: bool,
+        multiline_absence: bool,
         confirmed_patterns_absence: bool,
         entropy_absence: bool,
         cpu_trigger_hints: Option<&[u64]>,
@@ -1048,8 +1050,11 @@ impl CompiledScanner {
         let admission = admission.unwrap_or_else(|| self.phase1_admission(chunk.data.as_bytes()));
         if admission != Phase1Admission::Admitted {
             if self.should_scan_no_hit_chunk(chunk, route) {
-                let prepared = self
-                    .prepare_chunk_with_normalization_passthrough(chunk, normalization_passthrough);
+                let prepared = self.prepare_chunk_with_normalization_passthrough(
+                    chunk,
+                    normalization_passthrough,
+                    multiline_absence,
+                );
                 let mut matches = self.scan_prepared_with_triggered(
                     prepared,
                     &[],
@@ -1102,6 +1107,7 @@ impl CompiledScanner {
                 selected_backend,
                 deadline,
                 normalization_passthrough,
+                multiline_absence,
                 confirmed_patterns_absence,
                 entropy_absence,
                 cpu_trigger_hints,

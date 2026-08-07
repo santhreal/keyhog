@@ -1285,6 +1285,8 @@ impl CompiledScanner {
             confirmed_pattern_scanned_bytes: std::sync::atomic::AtomicU64::new(0),
             #[cfg(debug_assertions)]
             entropy_scanned_bytes: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(debug_assertions)]
+            multiline_admission_scanned_bytes: std::sync::atomic::AtomicU64::new(0),
             fragment_cache: crate::fragment_cache::FragmentCache::new(1000),
             reusable_phase1_evidence: parking_lot::Mutex::new(
                 crate::engine::phase1_admission::ReusablePhase1EvidenceCache::default(),

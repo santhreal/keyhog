@@ -630,6 +630,8 @@ pub struct CompiledScanner {
     pub(crate) confirmed_pattern_scanned_bytes: std::sync::atomic::AtomicU64,
     #[cfg(debug_assertions)]
     pub(crate) entropy_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) multiline_admission_scanned_bytes: std::sync::atomic::AtomicU64,
 }
 
 impl CompiledScanner {

@@ -75,6 +75,7 @@ pub struct Phase1AdmissionPlan {
     unicode_normalization_enabled: bool,
     confirmed_patterns_absence: Vec<bool>,
     entropy_absence: Vec<bool>,
+    multiline_absence: Vec<bool>,
     entropy_config_digest: [u8; 32],
     #[cfg(debug_assertions)]
     unique_payloads: usize,
@@ -94,6 +95,7 @@ struct ReusablePhase1Evidence {
     normalization_passthrough: bool,
     confirmed_patterns_absence: bool,
     entropy_absence: bool,
+    multiline_absence: bool,
 }
 
 #[derive(Debug)]
@@ -259,6 +261,14 @@ impl Phase1AdmissionPlan {
         self.entropy_absence.get(row).copied()
     }
 
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn multiline_absence_for_diagnostics(&self, index: usize) -> Option<bool> {
+        let row = *self.phase2_keyword_hint_rows.get(index)?;
+        self.multiline_absence.get(row).copied()
+    }
+
     #[inline]
     pub(crate) fn admission_for(&self, index: usize) -> Option<Phase1Admission> {
         self.admissions.get(index).copied()
@@ -318,6 +328,19 @@ impl Phase1AdmissionPlan {
         }
         let row = *self.phase2_keyword_hint_rows.get(index)?;
         self.entropy_absence.get(row).copied()
+    }
+
+    #[inline]
+    pub(crate) fn multiline_absence_for(
+        &self,
+        index: usize,
+        evidence_config_digest: [u8; 32],
+    ) -> Option<bool> {
+        if evidence_config_digest != self.entropy_config_digest {
+            return None;
+        }
+        let row = *self.phase2_keyword_hint_rows.get(index)?;
+        self.multiline_absence.get(row).copied()
     }
     #[inline]
     pub(crate) fn validate_chunks(
@@ -380,6 +403,8 @@ impl Phase1AdmissionPlan {
         let confirmed_patterns_absence_valid =
             self.confirmed_patterns_absence.len() == self.phase2_keyword_hints.len();
         let entropy_absence_valid = self.entropy_absence.len() == self.phase2_keyword_hints.len();
+        let multiline_absence_valid =
+            self.multiline_absence.len() == self.phase2_keyword_hints.len();
         if self.admissions.len() != self.chunk_shapes.len()
             || summary_chunks != shape_count
             || summary_bytes != shape_bytes
@@ -391,6 +416,7 @@ impl Phase1AdmissionPlan {
             || !normalization_passthrough_valid
             || !confirmed_patterns_absence_valid
             || !entropy_absence_valid
+            || !multiline_absence_valid
             || self
                 .chunk_shapes
                 .iter()
@@ -716,6 +742,29 @@ impl CompiledScanner {
         true
     }
 
+    #[cfg(feature = "multiline")]
+    fn multiline_absent(&self, data: &str) -> bool {
+        !crate::multiline::config::has_concatenation_indicators_with_keyword_gate(
+            data,
+            |bytes| {
+                let matcher = self
+                    .assignment_keyword_matcher
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .resolve(
+                        &self.config.secret_keywords,
+                        self.detector_plans.generic_ownership().policy_keywords(),
+                    );
+                matcher.matches(bytes)
+            },
+        )
+    }
+
+    #[cfg(not(feature = "multiline"))]
+    fn multiline_absent(&self, _data: &str) -> bool {
+        true
+    }
+
     fn classify_phase1_payload(
         &self,
         chunk: &Chunk,
@@ -769,6 +818,7 @@ impl CompiledScanner {
                 && self.normalization_passthrough(&chunk.data),
             confirmed_patterns_absence,
             entropy_absence: classify_reusable_evidence && self.entropy_absent(&chunk.data),
+            multiline_absence: classify_reusable_evidence && self.multiline_absent(&chunk.data),
         };
         if let Some(cache) = reusable_cache.as_mut() {
             cache.insert(
@@ -893,6 +943,7 @@ impl CompiledScanner {
         let mut normalization_passthrough = Vec::with_capacity(classified.len());
         let mut confirmed_patterns_absence = Vec::with_capacity(classified.len());
         let mut entropy_absence = Vec::with_capacity(classified.len());
+        let mut multiline_absence = Vec::with_capacity(classified.len());
         for evidence in classified {
             phase2_keyword_hints.push(evidence.keyword_hints);
             generic_keyword_positions.push(evidence.generic_positions);
@@ -901,6 +952,7 @@ impl CompiledScanner {
             normalization_passthrough.push(evidence.normalization_passthrough);
             confirmed_patterns_absence.push(evidence.confirmed_patterns_absence);
             entropy_absence.push(evidence.entropy_absence);
+            multiline_absence.push(evidence.multiline_absence);
         }
         Phase1AdmissionPlan {
             admissions,
@@ -917,6 +969,7 @@ impl CompiledScanner {
             unicode_normalization_enabled: self.config.unicode_normalization,
             confirmed_patterns_absence,
             entropy_absence,
+            multiline_absence,
             entropy_config_digest,
             #[cfg(debug_assertions)]
             unique_payloads: representatives.len(),

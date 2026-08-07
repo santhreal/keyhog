@@ -90,7 +90,7 @@ impl CompiledScanner {
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
         self.scan_inner_with_admission_hints(
-            chunk, backend, deadline, false, false, false, None, None, None, None, route,
+            chunk, backend, deadline, false, false, false, false, None, None, None, None, route,
         )
     }
 
@@ -100,6 +100,7 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         deadline: Option<std::time::Instant>,
         normalization_passthrough: bool,
+        multiline_absence: bool,
         confirmed_patterns_absence: bool,
         entropy_absence: bool,
         cpu_trigger_hints: Option<&[u64]>,
@@ -119,8 +120,11 @@ impl CompiledScanner {
         }
         // prepare_chunk and phase-1 timing are owned by the unified profiler's
         // Preprocess / Phase1Triggers leaf spans (opened inside those calls).
-        let prepared =
-            self.prepare_chunk_with_normalization_passthrough(chunk, normalization_passthrough);
+        let prepared = self.prepare_chunk_with_normalization_passthrough(
+            chunk,
+            normalization_passthrough,
+            multiline_absence,
+        );
         if crate::deadline::expired(deadline) {
             return Ok(Vec::new());
         }
