@@ -55,6 +55,11 @@ impl GenericKeywordStemSet {
         }
         false
     }
+
+    #[inline]
+    pub(crate) fn has_assignment_delimiter_after_stem(&self, line: &[u8]) -> bool {
+        assignment_stem_before_delimiter(self, line).is_some()
+    }
 }
 
 /// Canonical detector-corpus inputs for generic assignment extraction and its
@@ -161,50 +166,30 @@ impl GenericAssignmentKeywordPlan {
     }
 }
 
-/// Collect zero-based line indexes whose text contains any generic assignment
-/// prefilter stem.
+/// Collect zero-based line indexes whose text contains a generic assignment
+/// prefilter stem followed by an assignment delimiter.
 ///
-/// This is the hot-path replacement for a whole-chunk Aho-Corasick prefilter
-/// over eight compact stems. It walks the bytes once, maps newlines as it goes,
-/// and stops scanning a line after its first stem hit because the generic bridge
-/// only needs to decide which lines should run the heavier assignment regex.
+/// The regex cannot match without `=` or `:` after its keyword. Enforcing that
+/// necessary condition here keeps broad stems such as `pass` out of the heavier
+/// extraction path when they occur only in ordinary text.
 pub(crate) fn collect_generic_keyword_lines_with(
     stem_set: &GenericKeywordStemSet,
     text: &str,
     out: &mut Vec<u32>,
 ) {
-    let bytes = text.as_bytes();
-    let mut idx = 0usize;
     let mut line_idx = 0u32;
-    while idx < bytes.len() {
-        if bytes[idx] == b'\n' {
-            let Some(next_line) = line_idx.checked_add(1) else {
-                return;
-            };
-            line_idx = next_line;
-            idx += 1;
-            continue;
-        }
-        if stem_set.has_first[bytes[idx] as usize] && generic_stem_matches_at(bytes, idx, stem_set)
-        {
+    for line in text.as_bytes().split(|byte| *byte == b'\n') {
+        if assignment_stem_before_delimiter(stem_set, line).is_some() {
             out.push(line_idx);
-            match memchr::memchr(b'\n', &bytes[idx..]) {
-                Some(rel) => {
-                    idx += rel + 1;
-                    let Some(next_line) = line_idx.checked_add(1) else {
-                        return;
-                    };
-                    line_idx = next_line;
-                }
-                None => break,
-            }
-            continue;
         }
-        idx += 1;
+        let Some(next_line) = line_idx.checked_add(1) else {
+            return;
+        };
+        line_idx = next_line;
     }
 }
 
-/// Collect one trusted generic-stem byte position per matching line.
+/// Collect one trusted generic-assignment stem byte position per matching line.
 ///
 /// Autoroute classifies byte-distinct payload representatives before CPU
 /// dispatch. Persisting these positions lets every exact duplicate reuse that
@@ -215,34 +200,25 @@ pub(crate) fn collect_generic_keyword_positions_with(
     text: &str,
     out: &mut Vec<u32>,
 ) {
-    let bytes = text.as_bytes();
-    let mut idx = 0usize;
-    while idx < bytes.len() {
-        if bytes[idx] == b'\n' {
-            idx += 1;
-            continue;
-        }
-        if stem_set.has_first[bytes[idx] as usize] && generic_stem_matches_at(bytes, idx, stem_set)
-        {
-            let Ok(position) = u32::try_from(idx) else {
+    let mut line_start = 0usize;
+    for line in text.as_bytes().split(|byte| *byte == b'\n') {
+        if let Some(relative) = assignment_stem_before_delimiter(stem_set, line) {
+            let Ok(position) = u32::try_from(line_start + relative) else {
                 return;
             };
             out.push(position);
-            match memchr::memchr(b'\n', &bytes[idx..]) {
-                Some(relative) => idx += relative + 1,
-                None => break,
-            }
-            continue;
         }
-        idx += 1;
+        let Some(next_start) = line_start.checked_add(line.len().saturating_add(1)) else {
+            return;
+        };
+        line_start = next_start;
     }
 }
-
 /// Collect zero-based line indexes from trusted generic-stem match positions.
 ///
 /// The GPU region path supplies these positions only when its literal haystack
 /// is byte-identical to the preprocessed text, so this helper performs mapping
-/// and deduplication only. Text scanning stays in [`collect_generic_keyword_lines`].
+/// and deduplication only.
 pub(crate) fn collect_generic_keyword_lines_from_positions(
     line_index: &crate::context::LineContextIndex,
     positions: &[u32],
@@ -261,6 +237,22 @@ pub(crate) fn collect_generic_keyword_lines_from_positions(
     }
     out.sort_unstable();
     out.dedup();
+}
+
+#[inline]
+fn assignment_stem_before_delimiter(
+    stem_set: &GenericKeywordStemSet,
+    line: &[u8],
+) -> Option<usize> {
+    let last_delimiter = memchr::memrchr2(b'=', b':', line)?;
+    for (index, &byte) in line[..=last_delimiter].iter().enumerate() {
+        if stem_set.has_first[byte as usize]
+            && generic_stem_matches_at(line, index, stem_set)
+        {
+            return Some(index);
+        }
+    }
+    None
 }
 
 #[inline]

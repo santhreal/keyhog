@@ -1,6 +1,6 @@
 use super::{
-    collect_generic_keyword_lines_from_positions, collect_generic_keyword_positions_with,
-    GenericKeywordStemSet,
+    collect_generic_keyword_lines_from_positions, collect_generic_keyword_lines_with,
+    collect_generic_keyword_positions_with, GenericKeywordStemSet,
 };
 
 #[test]
@@ -36,15 +36,15 @@ fn empty_text_yields_empty() {
 /// the line-scoped bridge, while misses and later lines must remain distinct.
 #[test]
 fn representative_positions_preserve_matching_lines() {
-    let text = "ordinary\nphasekw first\nplain\nphasekw second phasekw\n";
+    let text = "ordinary\nphasekw=first\nplain\nphasekw:second phasekw\n";
     let stems = GenericKeywordStemSet::compile(["phasekw"]);
     let mut positions = Vec::new();
     collect_generic_keyword_positions_with(&stems, text, &mut positions);
     assert_eq!(
         positions,
         vec![
-            text.find("phasekw first").unwrap() as u32,
-            text.find("phasekw second").unwrap() as u32,
+            text.find("phasekw=first").unwrap() as u32,
+            text.find("phasekw:second").unwrap() as u32,
         ]
     );
 
@@ -52,4 +52,33 @@ fn representative_positions_preserve_matching_lines() {
     let mut lines = Vec::new();
     collect_generic_keyword_lines_from_positions(&line_index, &positions, &mut lines);
     assert_eq!(lines, vec![1, 3]);
+}
+
+/// WHY: broad stems such as `pass` must not promote ordinary repeated text to
+/// generic-regex candidate lines. Assignment-shaped uses, including the shipped
+/// `*_PASS=` form, remain admitted at the same boundary.
+#[test]
+fn broad_stems_require_a_following_assignment_delimiter() {
+    let text = concat!(
+        "value value value\n",
+        "compassion bypass passport value\n",
+        "CACHE_PASS=gjbubxsu\n",
+        "dbPassValue: BadCbc0#-DE&1$FA\n",
+        "secret without an assignment\n",
+    );
+    let stems = GenericKeywordStemSet::compile(["pass", "secret"]);
+    let mut lines = Vec::new();
+
+    collect_generic_keyword_lines_with(&stems, text, &mut lines);
+    let mut positions = Vec::new();
+    collect_generic_keyword_positions_with(&stems, text, &mut positions);
+    assert_eq!(
+        positions,
+        vec![
+            text.find("PASS=gjbubxsu").unwrap() as u32,
+            text.find("PassValue").unwrap() as u32,
+        ]
+    );
+
+    assert_eq!(lines, vec![2, 3]);
 }

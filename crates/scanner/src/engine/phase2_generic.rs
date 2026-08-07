@@ -166,6 +166,11 @@ impl CompiledScanner {
                 normalized_line = crate::unicode_hardening::normalize_homoglyphs(raw_line);
                 &normalized_line
             };
+            if generic_keyword_positions.is_some()
+                && !generic_keyword_stems.has_assignment_delimiter_after_stem(line.as_bytes())
+            {
+                continue;
+            }
             let mut covered_until = 0;
 
             for (capture_iter, caps) in generic_re.captures_iter(line).enumerate() {
