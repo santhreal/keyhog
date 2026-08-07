@@ -13,6 +13,9 @@ use std::collections::BTreeSet;
 pub const ROUTE_MATCHER_SECTION_VERSION: u16 = 4;
 static RUNTIME_LOCALIZATION_HINT_FALLBACKS: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
+std::thread_local! {
+    static RUNTIME_CANONICAL_REENCODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 #[doc(hidden)]
 pub fn runtime_localization_hint_fallbacks() -> usize {
@@ -21,6 +24,11 @@ pub fn runtime_localization_hint_fallbacks() -> usize {
 
 pub(crate) fn record_runtime_localization_hint_fallback() {
     RUNTIME_LOCALIZATION_HINT_FALLBACKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[doc(hidden)]
+pub fn runtime_canonical_reencodes() -> usize {
+    RUNTIME_CANONICAL_REENCODES.get()
 }
 #[doc(hidden)]
 pub fn compile_state_builder_invocations() -> usize {
@@ -298,6 +306,7 @@ pub(crate) fn validate_compile_state_sections(
         literal_index,
         regex_programs,
         suppression_policy,
+        false,
     )
     .map(|_| ())
 }
@@ -307,11 +316,14 @@ fn decode_validated_compile_state_sections(
     literal_index: &[u8],
     regex_programs: &[u8],
     suppression_policy: &[u8],
+    authenticated: bool,
 ) -> Result<(LiteralEnvelope, RegexEnvelope, SuppressionEnvelope), ExecutionPackError> {
-    let literal: LiteralEnvelope = decode_canonical("literal index", literal_index, backend)?;
-    let regex: RegexEnvelope = decode_canonical("regex programs", regex_programs, backend)?;
+    let literal: LiteralEnvelope =
+        decode_canonical("literal index", literal_index, backend, authenticated)?;
+    let regex: RegexEnvelope =
+        decode_canonical("regex programs", regex_programs, backend, authenticated)?;
     let suppression: SuppressionEnvelope =
-        decode_canonical("suppression policy", suppression_policy, backend)?;
+        decode_canonical("suppression policy", suppression_policy, backend, authenticated)?;
     if literal.detector_count != regex.detector_count
         || literal.detector_count != suppression.detector_count
     {
@@ -346,19 +358,55 @@ fn decode_validated_compile_state_sections(
             "compiled route localization-hint cardinality is invalid".to_owned(),
         ));
     }
-    let mut seen = BTreeSet::new();
-    for (name, bytes) in [
+    let sections = [
         ("literal index", literal_index),
         ("regex programs", regex_programs),
         ("suppression policy", suppression_policy),
-    ] {
-        if !seen.insert(*blake3::hash(bytes).as_bytes()) {
-            return Err(ExecutionPackError::InvalidPack(format!(
-                "compiled route {name} duplicates another matcher section"
-            )));
+    ];
+    if authenticated {
+        for (index, (name, bytes)) in sections.iter().enumerate() {
+            if sections[..index]
+                .iter()
+                .any(|(_, prior)| prior.len() == bytes.len() && *prior == *bytes)
+            {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "compiled route {name} duplicates another matcher section"
+                )));
+            }
+        }
+    } else {
+        let mut seen = BTreeSet::new();
+        for (name, bytes) in sections {
+            if !seen.insert(*blake3::hash(bytes).as_bytes()) {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "compiled route {name} duplicates another matcher section"
+                )));
+            }
         }
     }
     Ok((literal, regex, suppression))
+}
+
+pub(crate) fn decode_authenticated_compile_state_sections(
+    backend: ExecutionPackBackend,
+    literal_index: &[u8],
+    regex_programs: &[u8],
+    suppression_policy: &[u8],
+    expected_detector_ir_digest: [u8; 32],
+    detectors: &[keyhog_core::DetectorSpec],
+) -> Result<CompileState, ExecutionPackError> {
+    let detector_ids = detectors
+        .iter()
+        .map(|detector| detector.id.as_str())
+        .collect::<Vec<_>>();
+    decode_authenticated_compile_state_sections_from_ids(
+        backend,
+        literal_index,
+        regex_programs,
+        suppression_policy,
+        expected_detector_ir_digest,
+        &detector_ids,
+    )
 }
 
 pub(crate) fn decode_compile_state_sections(
@@ -383,6 +431,25 @@ pub(crate) fn decode_compile_state_sections(
     )
 }
 
+pub(crate) fn decode_authenticated_compile_state_sections_from_ids(
+    backend: ExecutionPackBackend,
+    literal_index: &[u8],
+    regex_programs: &[u8],
+    suppression_policy: &[u8],
+    expected_detector_ir_digest: [u8; 32],
+    detector_ids: &[&str],
+) -> Result<CompileState, ExecutionPackError> {
+    decode_compile_state_sections_from_ids_inner(
+        backend,
+        literal_index,
+        regex_programs,
+        suppression_policy,
+        expected_detector_ir_digest,
+        detector_ids,
+        true,
+    )
+}
+
 pub(crate) fn decode_compile_state_sections_from_ids(
     backend: ExecutionPackBackend,
     literal_index: &[u8],
@@ -391,11 +458,32 @@ pub(crate) fn decode_compile_state_sections_from_ids(
     expected_detector_ir_digest: [u8; 32],
     detector_ids: &[&str],
 ) -> Result<CompileState, ExecutionPackError> {
+    decode_compile_state_sections_from_ids_inner(
+        backend,
+        literal_index,
+        regex_programs,
+        suppression_policy,
+        expected_detector_ir_digest,
+        detector_ids,
+        false,
+    )
+}
+
+fn decode_compile_state_sections_from_ids_inner(
+    backend: ExecutionPackBackend,
+    literal_index: &[u8],
+    regex_programs: &[u8],
+    suppression_policy: &[u8],
+    expected_detector_ir_digest: [u8; 32],
+    detector_ids: &[&str],
+    authenticated: bool,
+) -> Result<CompileState, ExecutionPackError> {
     let (literal, regex, _suppression) = decode_validated_compile_state_sections(
         backend,
         literal_index,
         regex_programs,
         suppression_policy,
+        authenticated,
     )?;
     if literal.detector_ir_digest != expected_detector_ir_digest {
         return Err(ExecutionPackError::Incompatible(
@@ -531,6 +619,7 @@ fn decode_canonical<T>(
     name: &'static str,
     bytes: &[u8],
     backend: ExecutionPackBackend,
+    authenticated: bool,
 ) -> Result<T, ExecutionPackError>
 where
     T: serde::de::DeserializeOwned + Serialize + MatcherEnvelopeIdentity,
@@ -545,15 +634,18 @@ where
             "compiled route {name} version or backend is incompatible"
         )));
     }
-    let canonical = serde_json::to_vec(&decoded).map_err(|error| {
-        ExecutionPackError::InvalidPack(format!(
-            "compiled route {name} cannot be canonicalized: {error}"
-        ))
-    })?;
-    if canonical != bytes {
-        return Err(ExecutionPackError::InvalidPack(format!(
-            "compiled route {name} is not canonically encoded"
-        )));
+    if !authenticated {
+        RUNTIME_CANONICAL_REENCODES.set(RUNTIME_CANONICAL_REENCODES.get().saturating_add(1));
+        let canonical = serde_json::to_vec(&decoded).map_err(|error| {
+            ExecutionPackError::InvalidPack(format!(
+                "compiled route {name} cannot be canonicalized: {error}"
+            ))
+        })?;
+        if canonical != bytes {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "compiled route {name} is not canonically encoded"
+            )));
+        }
     }
     Ok(decoded)
 }

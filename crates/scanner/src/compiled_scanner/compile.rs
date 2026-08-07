@@ -449,23 +449,47 @@ impl CompiledScanner {
                 .iter()
                 .map(Arc::as_ref)
                 .collect::<Vec<_>>();
-            crate::execution_pack::matcher_sections::decode_compile_state_sections_from_ids(
-                identity.backend,
-                section(Section::LiteralIndex)?,
-                section(Section::RegexPrograms)?,
-                section(Section::SuppressionPolicy)?,
-                identity.detector_digest,
-                &detector_ids,
-            )
+            if pack.signature_authenticated() {
+                crate::execution_pack::matcher_sections::
+                    decode_authenticated_compile_state_sections_from_ids(
+                        identity.backend,
+                        section(Section::LiteralIndex)?,
+                        section(Section::RegexPrograms)?,
+                        section(Section::SuppressionPolicy)?,
+                        identity.detector_digest,
+                        &detector_ids,
+                    )
+            } else {
+                crate::execution_pack::matcher_sections::decode_compile_state_sections_from_ids(
+                    identity.backend,
+                    section(Section::LiteralIndex)?,
+                    section(Section::RegexPrograms)?,
+                    section(Section::SuppressionPolicy)?,
+                    identity.detector_digest,
+                    &detector_ids,
+                )
+            }
         } else {
-            crate::execution_pack::matcher_sections::decode_compile_state_sections(
-                identity.backend,
-                section(Section::LiteralIndex)?,
-                section(Section::RegexPrograms)?,
-                section(Section::SuppressionPolicy)?,
-                identity.detector_digest,
-                &detectors,
-            )
+            if pack.signature_authenticated() {
+                crate::execution_pack::matcher_sections::
+                    decode_authenticated_compile_state_sections(
+                        identity.backend,
+                        section(Section::LiteralIndex)?,
+                        section(Section::RegexPrograms)?,
+                        section(Section::SuppressionPolicy)?,
+                        identity.detector_digest,
+                        &detectors,
+                    )
+            } else {
+                crate::execution_pack::matcher_sections::decode_compile_state_sections(
+                    identity.backend,
+                    section(Section::LiteralIndex)?,
+                    section(Section::RegexPrograms)?,
+                    section(Section::SuppressionPolicy)?,
+                    identity.detector_digest,
+                    &detectors,
+                )
+            }
         }
         .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
         // Section decoders above now own every byte they retain. Drop the

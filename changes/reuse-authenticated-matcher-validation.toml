@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "Authenticated execution-pack hydration now reuses whole-pack signature verification instead of reserializing and rehashing matcher sections while preserving structural validation."
+crates = ["scanner"]

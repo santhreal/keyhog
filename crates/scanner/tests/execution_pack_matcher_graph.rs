@@ -5,7 +5,7 @@ use keyhog_core::{
 use keyhog_scanner::execution_pack::{
     compose_policy_execution_pack, BackendPlan, CanonicalDetectorExecutionIr,
     CompiledRouteMatcherSections, ExecutionPack, ExecutionPackBackend, ExecutionPackIdentity,
-    ExecutionPackPolicy, PolicyPlanSections, ScalarCpuExecutionProgram,
+    ExecutionPackPolicy, ExecutionPackSigningKey, PolicyPlanSections, ScalarCpuExecutionProgram,
 };
 use keyhog_scanner::CompiledScanner;
 
@@ -206,6 +206,7 @@ fn packed_scanner_construction_bypasses_build_compile_state() {
 fn mapped_pack(
     detectors: &[DetectorSpec],
     backend_digest_override: Option<[u8; 32]>,
+    authenticated: bool,
 ) -> (tempfile::TempDir, ExecutionPack) {
     let ir = CanonicalDetectorExecutionIr::compile(detectors).expect("compile detector IR");
     let matchers = CompiledRouteMatcherSections::compile(&ir, ExecutionPackBackend::Cpu)
@@ -237,8 +238,49 @@ fn mapped_pack(
     let directory = tempfile::tempdir().expect("temporary pack directory");
     let path = directory.path().join("matcher-graph.khpack");
     std::fs::write(&path, compiled.as_bytes()).expect("write execution pack");
-    let pack = ExecutionPack::open(&path, identity).expect("map execution pack");
+    let pack = if authenticated {
+        let key = ExecutionPackSigningKey::from_bytes([0x5a; 32]).expect("fixture signing key");
+        let signature_path = directory.path().join("matcher-graph.sig");
+        std::fs::write(
+            &signature_path,
+            key.sign(&compiled)
+                .canonical_bytes()
+                .expect("encode execution pack signature"),
+        )
+        .expect("write execution pack signature");
+        ExecutionPack::open_authenticated(&path, &signature_path, identity, &key)
+            .expect("authenticate execution pack")
+    } else {
+        ExecutionPack::open(&path, identity).expect("map execution pack")
+    };
     (directory, pack)
+}
+
+/// WHY: whole-pack signature verification authenticates the exact immutable matcher bytes, so normal installed-pack hydration must not allocate and reserialize the complete matcher graph merely to prove canonical JSON a second time. Unsigned development packs retain that validation.
+#[test]
+fn authenticated_matcher_hydration_skips_canonical_reencoding() {
+    let detectors = detectors();
+    let (_signed_directory, signed_pack) = mapped_pack(&detectors, None, true);
+    let signed_before =
+        keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes();
+    CompiledScanner::compile_from_execution_pack(&signed_pack)
+        .expect("hydrate authenticated matcher graph");
+    assert_eq!(
+        keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes(),
+        signed_before,
+        "authenticated matcher hydration must trust install-time canonical encoding"
+    );
+
+    let (_unsigned_directory, unsigned_pack) = mapped_pack(&detectors, None, false);
+    let unsigned_before =
+        keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes();
+    CompiledScanner::compile_from_execution_pack(&unsigned_pack)
+        .expect("hydrate unsigned matcher graph");
+    assert_eq!(
+        keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes(),
+        unsigned_before + 3,
+        "unsigned matcher hydration must revalidate all three canonical sections"
+    );
 }
 
 /// WHY: every packed scanner must own all runtime state after construction; keeping the authenticated mmap alive duplicates the selected policy and lets future borrowed-section dependencies hide until an installed long-lived process drops its source generation.
@@ -246,7 +288,7 @@ fn mapped_pack(
 fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     let detectors = detectors();
     let ordinary = CompiledScanner::compile(detectors.clone()).expect("compile ordinary scanner");
-    let (directory, pack) = mapped_pack(&detectors, None);
+    let (directory, pack) = mapped_pack(&detectors, None, false);
     let schema_reconstructions_before =
         keyhog_scanner::execution_pack::detector_plan::detector_spec_schema_reconstructions();
     let localization_fallbacks_before =
@@ -380,7 +422,7 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
 #[test]
 fn mapped_execution_pack_rejects_backend_program_identity_corruption() {
     let detectors = detectors();
-    let (_directory, pack) = mapped_pack(&detectors, Some([0x99; 32]));
+    let (_directory, pack) = mapped_pack(&detectors, Some([0x99; 32]), false);
     let error = match CompiledScanner::compile_from_execution_pack(&pack) {
         Ok(_) => panic!("backend identity drift must fail"),
         Err(error) => error,
