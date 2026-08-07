@@ -13,6 +13,7 @@ use super::{
 };
 
 const GHIDRA_STDERR_EXCERPT_BYTES: usize = 4096;
+const GHIDRA_SCAN_CHUNK_BYTES: usize = crate::strings::BOUNDED_DERIVED_TEXT_CHUNK_BYTES;
 
 pub(in crate::binary) struct GhidraAnalyzer {
     executable: PathBuf,
@@ -142,57 +143,115 @@ pub(super) fn parse_decompiled_output(
         ));
     }
 
-    let reader = std::io::BufReader::new(file);
-    let mut decompiled_text = String::new();
-    let mut string_literals = Vec::new();
+    let path: Option<std::sync::Arc<str>> =
+        Some(crate::filesystem::display_path(request.path).into());
+    let mut decompiled = GhidraChunkBuilder::new("binary:ghidra:decompiled", path.clone());
+    let mut literals = GhidraChunkBuilder::new("binary:ghidra:strings", path);
+    let mut line_literals = Vec::new();
 
-    for line in reader.lines() {
+    for line in std::io::BufReader::new(file).lines() {
         let line = line.map_err(SourceError::Io)?;
-        decompiled_text.push_str(&line);
-        decompiled_text.push('\n');
-        super::super::literals::extract_string_literals(&line, &mut string_literals);
+        decompiled.push_text(&line);
+        decompiled.push_text("\n");
+
+        line_literals.clear();
+        super::super::literals::extract_string_literals(&line, &mut line_literals);
+        for literal in &line_literals {
+            literals.push_separated(literal);
+        }
     }
 
-    let path = Some(crate::filesystem::display_path(request.path).into());
-    let mut chunks = Vec::new();
-    if !decompiled_text.is_empty() {
-        chunks.push(Chunk {
-            data: decompiled_text.into(),
-            metadata: ChunkMetadata {
-                base_offset: 0,
-                base_line: 0,
-                source_type: "binary:ghidra:decompiled".into(),
-                path: path.clone(),
-                commit: None,
-                author: None,
-                date: None,
-                mtime_ns: None,
-                size_bytes: None,
-                decoded_span: None,
-            },
-        });
-    }
-    if !string_literals.is_empty() {
-        chunks.push(Chunk {
-            data: string_literals.join("\n").into(),
-            metadata: ChunkMetadata {
-                base_offset: 0,
-                base_line: 0,
-                source_type: "binary:ghidra:strings".into(),
-                path,
-                commit: None,
-                author: None,
-                date: None,
-                mtime_ns: None,
-                size_bytes: None,
-                decoded_span: None,
-            },
-        });
-    }
-
+    let mut chunks = decompiled.finish();
+    chunks.extend(literals.finish());
     Ok(BinaryAnalysisOutcome::Complete(chunks))
 }
 
+struct GhidraChunkBuilder {
+    chunks: Vec<Chunk>,
+    buffer: String,
+    base_offset: usize,
+    base_line: usize,
+    has_value: bool,
+    source_type: &'static str,
+    path: Option<std::sync::Arc<str>>,
+}
+
+impl GhidraChunkBuilder {
+    fn new(source_type: &'static str, path: Option<std::sync::Arc<str>>) -> Self {
+        Self {
+            chunks: Vec::new(),
+            buffer: String::with_capacity(GHIDRA_SCAN_CHUNK_BYTES),
+            base_offset: 0,
+            base_line: 0,
+            has_value: false,
+            source_type,
+            path,
+        }
+    }
+
+    fn push_separated(&mut self, value: &str) {
+        if self.has_value {
+            self.push_text("\n");
+        }
+        self.push_text(value);
+        self.has_value = true;
+    }
+
+    fn push_text(&mut self, mut text: &str) {
+        while !text.is_empty() {
+            if self.buffer.len() == GHIDRA_SCAN_CHUNK_BYTES {
+                self.flush();
+            }
+            let available = GHIDRA_SCAN_CHUNK_BYTES - self.buffer.len();
+            let mut split = text.len().min(available);
+            while split > 0 && !text.is_char_boundary(split) {
+                split -= 1;
+            }
+            if split == 0 {
+                self.flush();
+                continue;
+            }
+            self.buffer.push_str(&text[..split]);
+            text = &text[split..];
+        }
+    }
+
+    fn flush(&mut self) {
+        if self.buffer.is_empty() {
+            return;
+        }
+        let bytes = self.buffer.len();
+        let lines = self
+            .buffer
+            .as_bytes()
+            .iter()
+            .filter(|&&byte| byte == b'\n')
+            .count();
+        self.chunks.push(Chunk {
+            data: std::mem::take(&mut self.buffer).into(),
+            metadata: ChunkMetadata {
+                base_offset: self.base_offset,
+                base_line: self.base_line,
+                source_type: self.source_type.into(),
+                path: self.path.clone(),
+                commit: None,
+                author: None,
+                date: None,
+                mtime_ns: None,
+                size_bytes: None,
+                decoded_span: None,
+            },
+        });
+        self.base_offset += bytes;
+        self.base_line += lines;
+        self.buffer = String::with_capacity(GHIDRA_SCAN_CHUNK_BYTES);
+    }
+
+    fn finish(mut self) -> Vec<Chunk> {
+        self.flush();
+        self.chunks
+    }
+}
 fn kill_and_reap_ghidra_child(child: &mut Child, context: &str) -> std::io::Result<()> {
     let kill_result = terminate_analyzer_process_tree(child);
     let wait_result = child.wait();

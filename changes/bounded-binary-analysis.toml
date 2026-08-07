@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "Binary and Ghidra analysis now emit gapless 256 KiB text chunks, avoiding whole-output joins and retaining only compact printable-run descriptors before bounded materialization."
+crates = ["sources"]

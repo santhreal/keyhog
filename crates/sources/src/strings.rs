@@ -7,6 +7,7 @@ use keyhog_core::SensitiveString;
 /// caller, binary sections/literals, web WASM extraction, and filesystem
 /// archive/PDF strings. Tune the strings-scan recall floor here and nowhere else.
 pub(crate) const MIN_PRINTABLE_STRING_LEN: usize = 8;
+pub(crate) const BOUNDED_DERIVED_TEXT_CHUNK_BYTES: usize = 256 * 1024;
 
 /// Separator placed between two independent printable runs recovered from the
 /// same non-text input.
@@ -28,8 +29,16 @@ pub(crate) const RUN_SEPARATOR: &str = "\n\0\n";
 
 /// A printable run recovered from non-text bytes, with the byte span it
 /// occupied in the input.
+#[derive(Clone, Copy)]
+enum PrintableEncoding {
+    Ascii,
+    Utf16Le,
+    Utf16Be,
+}
+
+#[derive(Clone, Copy)]
 struct PrintableRun {
-    value: SensitiveString,
+    encoding: PrintableEncoding,
     start: usize,
     end: usize,
 }
@@ -53,8 +62,35 @@ struct PrintableRun {
 pub(crate) fn extract_printable_strings(bytes: &[u8], min_len: usize) -> Vec<SensitiveString> {
     extract_printable_runs(bytes, min_len)
         .into_iter()
-        .map(|run| run.value)
+        .map(|run| SensitiveString::from(materialize_run(bytes, run)))
         .collect()
+}
+
+/// Extract the same ordered run stream as [`extract_printable_strings`] into
+/// bounded, gapless scan bodies without retaining one allocation per run.
+pub(crate) fn extract_printable_string_chunks(
+    bytes: &[u8],
+    min_len: usize,
+    chunk_bytes: usize,
+) -> Vec<SensitiveString> {
+    let chunk_bytes = chunk_bytes.max(1);
+    let runs = extract_printable_runs(bytes, min_len);
+    let mut chunks = Vec::new();
+    let mut buffer = String::with_capacity(chunk_bytes);
+
+    for (index, run) in runs.into_iter().enumerate() {
+        if index > 0 {
+            append_ascii_bounded(
+                RUN_SEPARATOR.as_bytes(),
+                chunk_bytes,
+                &mut buffer,
+                &mut chunks,
+            );
+        }
+        append_run_bounded(bytes, run, chunk_bytes, &mut buffer, &mut chunks);
+    }
+    flush_printable_chunk(&mut buffer, chunk_bytes, &mut chunks);
+    chunks
 }
 
 fn extract_printable_runs(bytes: &[u8], min_len: usize) -> Vec<PrintableRun> {
@@ -84,35 +120,107 @@ fn extract_printable_runs(bytes: &[u8], min_len: usize) -> Vec<PrintableRun> {
 
 fn extract_ascii_runs(bytes: &[u8], min_len: usize) -> Vec<PrintableRun> {
     let mut runs = Vec::new();
-    let mut current = String::with_capacity(64);
-    let mut start = 0;
-    for (index, &byte) in bytes.iter().enumerate() {
-        if byte.is_ascii_graphic() || byte == b' ' || byte == b'\t' {
-            if current.is_empty() {
-                start = index;
-            }
-            current.push(byte as char);
-        } else {
-            if current.len() >= min_len {
-                runs.push(PrintableRun {
-                    value: SensitiveString::from(current.as_str()),
-                    start,
-                    end: index,
-                });
-            }
-            current.clear();
+    let mut index = 0;
+    while index < bytes.len() {
+        while index < bytes.len() && !is_printable_ascii(bytes[index]) {
+            index += 1;
         }
-    }
-    if current.len() >= min_len {
-        runs.push(PrintableRun {
-            value: SensitiveString::from(current.as_str()),
-            start,
-            end: bytes.len(),
-        });
+        let start = index;
+        while index < bytes.len() && is_printable_ascii(bytes[index]) {
+            index += 1;
+        }
+        if index - start >= min_len {
+            runs.push(PrintableRun {
+                encoding: PrintableEncoding::Ascii,
+                start,
+                end: index,
+            });
+        }
     }
     runs
 }
 
+#[inline]
+fn is_printable_ascii(byte: u8) -> bool {
+    byte.is_ascii_graphic() || byte == b' ' || byte == b'\t'
+}
+
+fn materialize_run(bytes: &[u8], run: PrintableRun) -> String {
+    let capacity = match run.encoding {
+        PrintableEncoding::Ascii => run.end - run.start,
+        PrintableEncoding::Utf16Le | PrintableEncoding::Utf16Be => (run.end - run.start) / 2,
+    };
+    let mut value = String::with_capacity(capacity);
+    append_run(&mut value, bytes, run);
+    value
+}
+
+fn append_run(out: &mut String, bytes: &[u8], run: PrintableRun) {
+    match run.encoding {
+        PrintableEncoding::Ascii => {
+            out.push_str(String::from_utf8_lossy(&bytes[run.start..run.end]).as_ref());
+        }
+        PrintableEncoding::Utf16Le | PrintableEncoding::Utf16Be => {
+            let little = matches!(run.encoding, PrintableEncoding::Utf16Le);
+            for pair in bytes[run.start..run.end].chunks_exact(2) {
+                out.push(if little { pair[0] } else { pair[1] } as char);
+            }
+        }
+    }
+}
+
+fn append_run_bounded(
+    bytes: &[u8],
+    run: PrintableRun,
+    chunk_bytes: usize,
+    buffer: &mut String,
+    chunks: &mut Vec<SensitiveString>,
+) {
+    match run.encoding {
+        PrintableEncoding::Ascii => {
+            append_ascii_bounded(&bytes[run.start..run.end], chunk_bytes, buffer, chunks)
+        }
+        PrintableEncoding::Utf16Le | PrintableEncoding::Utf16Be => {
+            let little = matches!(run.encoding, PrintableEncoding::Utf16Le);
+            for pair in bytes[run.start..run.end].chunks_exact(2) {
+                if buffer.len() == chunk_bytes {
+                    flush_printable_chunk(buffer, chunk_bytes, chunks);
+                }
+                buffer.push(if little { pair[0] } else { pair[1] } as char);
+            }
+        }
+    }
+}
+
+fn append_ascii_bounded(
+    mut bytes: &[u8],
+    chunk_bytes: usize,
+    buffer: &mut String,
+    chunks: &mut Vec<SensitiveString>,
+) {
+    while !bytes.is_empty() {
+        if buffer.len() == chunk_bytes {
+            flush_printable_chunk(buffer, chunk_bytes, chunks);
+        }
+        let take = bytes.len().min(chunk_bytes - buffer.len());
+        buffer.push_str(String::from_utf8_lossy(&bytes[..take]).as_ref());
+        bytes = &bytes[take..];
+    }
+}
+
+fn flush_printable_chunk(
+    buffer: &mut String,
+    chunk_bytes: usize,
+    chunks: &mut Vec<SensitiveString>,
+) {
+    if buffer.is_empty() {
+        return;
+    }
+    chunks.push(SensitiveString::from(std::mem::replace(
+        buffer,
+        String::with_capacity(chunk_bytes),
+    )));
+}
 /// Join printable runs recovered from one non-text input into one scannable
 /// body. The SINGLE owner of that separator choice; see [`RUN_SEPARATOR`] for
 /// why it is not `"\n"`.
@@ -135,33 +243,41 @@ pub(crate) fn join_sensitive_strings(parts: &[SensitiveString], sep: &str) -> Se
 /// can otherwise report shifted suffixes for the same bytes.
 fn extract_utf16_runs(bytes: &[u8], min_len: usize, little: bool) -> Vec<PrintableRun> {
     let mut runs = Vec::new();
-    let mut current = String::with_capacity(64);
+    let mut run_len = 0;
     let mut run_start = 0;
     let mut i = 0;
     while i + 1 < bytes.len() {
         let (a, b) = (bytes[i], bytes[i + 1]);
         let (lo, hi) = if little { (a, b) } else { (b, a) };
-        if hi == 0 && (lo.is_ascii_graphic() || lo == b' ' || lo == b'\t') {
-            if current.is_empty() {
+        if hi == 0 && is_printable_ascii(lo) {
+            if run_len == 0 {
                 run_start = i;
             }
-            current.push(lo as char);
+            run_len += 1;
             i += 2;
         } else {
-            if current.len() >= min_len {
+            if run_len >= min_len {
                 runs.push(PrintableRun {
-                    value: SensitiveString::from(current.as_str()),
+                    encoding: if little {
+                        PrintableEncoding::Utf16Le
+                    } else {
+                        PrintableEncoding::Utf16Be
+                    },
                     start: run_start,
                     end: i,
                 });
             }
-            current.clear();
+            run_len = 0;
             i += 1;
         }
     }
-    if current.len() >= min_len {
+    if run_len >= min_len {
         runs.push(PrintableRun {
-            value: SensitiveString::from(current),
+            encoding: if little {
+                PrintableEncoding::Utf16Le
+            } else {
+                PrintableEncoding::Utf16Be
+            },
             start: run_start,
             end: i,
         });

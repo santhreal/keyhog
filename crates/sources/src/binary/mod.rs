@@ -12,6 +12,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicUsize;
+const BINARY_SCAN_CHUNK_BYTES: usize = crate::strings::BOUNDED_DERIVED_TEXT_CHUNK_BYTES;
 
 /// How many binaries had their requested Ghidra deep-decompiler analysis
 /// degrade to shallow strings-only extraction (Ghidra failed, timed out, or
@@ -218,21 +219,35 @@ impl BinarySource {
             }
         }
 
-        // Always do full strings extraction as fallback/supplement
-        let strings = {
+        // Always do full strings extraction as fallback/supplement. Materialize
+        // the synthetic run stream in bounded, gapless chunks so the input
+        // bytes never overlap one giant joined copy at peak RSS.
+        let string_chunks = {
             let _extract = crate::profile::decode_span();
-            extract_printable_strings(&bytes, crate::strings::MIN_PRINTABLE_STRING_LEN)
+            crate::strings::extract_printable_string_chunks(
+                &bytes,
+                crate::strings::MIN_PRINTABLE_STRING_LEN,
+                BINARY_SCAN_CHUNK_BYTES,
+            )
         };
-        if !strings.is_empty() {
-            let data = crate::strings::join_printable_runs(&strings);
-            crate::profile::add_derived_bytes(data.len() as u64);
+        let path: std::sync::Arc<str> = path_display.into();
+        let mut base_offset = 0;
+        let mut base_line = 0;
+        for data in string_chunks {
+            let data_len = data.len();
+            let line_count = data
+                .as_bytes()
+                .iter()
+                .filter(|&&byte| byte == b'\n')
+                .count();
+            crate::profile::add_derived_bytes(data_len as u64);
             chunks.push(Ok(Chunk {
                 data,
                 metadata: ChunkMetadata {
-                    base_offset: 0,
-                    base_line: 0,
+                    base_offset,
+                    base_line,
                     source_type: "binary:strings".into(),
-                    path: Some(path_display.into()),
+                    path: Some(path.clone()),
                     commit: None,
                     author: None,
                     date: None,
@@ -241,6 +256,8 @@ impl BinarySource {
                     decoded_span: None,
                 },
             }));
+            base_offset += data_len;
+            base_line += line_count;
         }
 
         if chunks.is_empty() {

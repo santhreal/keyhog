@@ -143,3 +143,41 @@ fn oversized_analyzer_output_uses_visible_strings_fallback() {
             && chunk.data.as_ref().contains("raw-printable-fixture-value")
     }));
 }
+
+#[test]
+fn strings_mode_emits_bounded_gapless_chunks() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let path = temp.path().join("large.bin");
+    let bytes = vec![b'x'; BINARY_SCAN_CHUNK_BYTES * 2 + 17];
+    std::fs::write(&path, &bytes).expect("write fixture");
+
+    let chunks = BinarySource::strings_only(path)
+        .strings_chunks()
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("extract printable strings");
+    let strings = chunks
+        .iter()
+        .filter(|chunk| chunk.metadata.source_type.as_ref() == "binary:strings")
+        .collect::<Vec<_>>();
+
+    assert_eq!(strings.len(), 3);
+    assert!(strings
+        .iter()
+        .all(|chunk| chunk.data.len() <= BINARY_SCAN_CHUNK_BYTES));
+    assert_eq!(
+        strings
+            .iter()
+            .map(|chunk| chunk.data.as_ref())
+            .collect::<String>()
+            .as_bytes(),
+        bytes
+    );
+    for pair in strings.windows(2) {
+        assert_eq!(
+            pair[1].metadata.base_offset,
+            pair[0].metadata.base_offset + pair[0].data.len()
+        );
+        assert_eq!(pair[1].metadata.base_line, pair[0].metadata.base_line);
+    }
+}

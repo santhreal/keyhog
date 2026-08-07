@@ -278,6 +278,88 @@ fn timeout_kills_and_reaps_the_analyzer_process() {
 }
 
 #[test]
+fn decompiler_output_is_split_into_bounded_gapless_chunks() {
+    use std::fmt::Write as _;
+
+    const CHUNK_BYTES: usize = crate::strings::BOUNDED_DERIVED_TEXT_CHUNK_BYTES;
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let input = temp.path().join("fixture.bin");
+    let output = temp.path().join("decompiled.c");
+    std::fs::write(&input, b"binary fixture").expect("write input");
+
+    let mut contents = String::with_capacity(CHUNK_BYTES * 4);
+    for index in 0..40_000 {
+        writeln!(
+            contents,
+            "const char *value_{index} = \"AKIAQYLPMN5HFIQ6R7EX{index:08}\"; /* decompiler padding */"
+        )
+        .expect("write decompiler fixture");
+    }
+    assert!(contents.len() > CHUNK_BYTES);
+    std::fs::write(&output, &contents).expect("write output");
+
+    let outcome = parse_decompiled_output(
+        &output,
+        BinaryAnalysisRequest {
+            path: &input,
+            decompiled_bytes_limit: contents.len() as u64,
+            timeout: std::time::Duration::from_secs(1),
+        },
+    )
+    .expect("parse bounded output");
+    let BinaryAnalysisOutcome::Complete(chunks) = outcome else {
+        panic!("bounded output unexpectedly degraded")
+    };
+
+    let decompiled = chunks
+        .iter()
+        .filter(|chunk| chunk.metadata.source_type.as_ref() == "binary:ghidra:decompiled")
+        .collect::<Vec<_>>();
+    assert!(decompiled.len() > 1);
+    assert!(decompiled
+        .iter()
+        .all(|chunk| chunk.data.len() <= CHUNK_BYTES));
+    assert_eq!(
+        decompiled
+            .iter()
+            .map(|chunk| chunk.data.as_ref())
+            .collect::<String>(),
+        contents
+    );
+    for pair in decompiled.windows(2) {
+        assert_eq!(
+            pair[1].metadata.base_offset,
+            pair[0].metadata.base_offset + pair[0].data.len()
+        );
+        assert_eq!(
+            pair[1].metadata.base_line,
+            pair[0].metadata.base_line
+                + pair[0]
+                    .data
+                    .as_bytes()
+                    .iter()
+                    .filter(|&&byte| byte == b'\n')
+                    .count()
+        );
+    }
+
+    let literals = chunks
+        .iter()
+        .filter(|chunk| chunk.metadata.source_type.as_ref() == "binary:ghidra:strings")
+        .collect::<Vec<_>>();
+    assert!(literals.len() > 1);
+    assert!(literals.iter().all(|chunk| chunk.data.len() <= CHUNK_BYTES));
+    assert_eq!(
+        literals
+            .iter()
+            .map(|chunk| chunk.data.matches('\n').count())
+            .sum::<usize>(),
+        39_999
+    );
+}
+
+#[test]
 fn oversized_output_returns_typed_degradation_without_reading_contents() {
     let temp = tempfile::tempdir().expect("tempdir");
     let input = temp.path().join("fixture.bin");
