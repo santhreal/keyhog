@@ -52,21 +52,25 @@ pub(crate) const CONFIRMED_MAX_LITERALS_PER_PATTERN: usize = 8;
 struct LazyAnchorAc {
     literals: Mutex<Option<Box<[Arc<str>]>>>,
     ascii_case_insensitive: bool,
-    label: &'static str,
-    cell: OnceLock<AhoCorasick>,
+    failure_message: &'static str,
+    cell: OnceLock<Option<AhoCorasick>>,
 }
 
 impl LazyAnchorAc {
-    fn new(literals: Vec<Arc<str>>, ascii_case_insensitive: bool, label: &'static str) -> Self {
+    fn new(
+        literals: Vec<Arc<str>>,
+        ascii_case_insensitive: bool,
+        failure_message: &'static str,
+    ) -> Self {
         Self {
             literals: Mutex::new(Some(literals.into_boxed_slice())),
             ascii_case_insensitive,
-            label,
+            failure_message,
             cell: OnceLock::new(),
         }
     }
 
-    fn get(&self) -> (&AhoCorasick, bool) {
+    fn get(&self) -> (Option<&AhoCorasick>, bool) {
         let already_initialized = self.cell.get().is_some();
         let anchor = self.cell.get_or_init(|| {
             let literals = self
@@ -75,18 +79,28 @@ impl LazyAnchorAc {
                 .unwrap_or_else(|error| error.into_inner())
                 .take()
                 .expect("lazy phase-2 anchor literals must exist before initialization");
-            AhoCorasickBuilder::new()
+            match AhoCorasickBuilder::new()
                 .match_kind(MatchKind::Standard)
                 .ascii_case_insensitive(self.ascii_case_insensitive)
                 .build(literals.iter().map(|literal| literal.as_bytes()))
-                .unwrap_or_else(|error| {
-                    panic!(
-                        "BUILD-INVARIANT VIOLATION: {} Aho-Corasick failed to compile: {error}",
-                        self.label
-                    )
-                })
+            {
+                Ok(anchor) => Some(anchor),
+                Err(error) => {
+                    tracing::warn!(
+                        literals = literals.len(),
+                        %error,
+                        "{}",
+                        self.failure_message
+                    );
+                    None
+                }
+            }
         });
-        (anchor, !already_initialized)
+        (anchor.as_ref(), !already_initialized)
+    }
+
+    fn is_available(&self) -> bool {
+        !matches!(self.cell.get(), Some(None))
     }
 }
 
@@ -195,7 +209,11 @@ impl Phase2AnchorIndex {
 
     #[inline]
     pub(crate) fn is_eligible(&self, phase2_idx: usize) -> bool {
-        if self.anchor_ac.is_none() {
+        if !self
+            .anchor_ac
+            .as_ref()
+            .is_some_and(LazyAnchorAc::is_available)
+        {
             return false;
         }
         matches!(self.eligible.get(phase2_idx), Some(true)) // LAW10: pattern not anchor-eligible => caller runs whole-chunk; anchor is a prefilter opt, recall-preserving
@@ -353,8 +371,13 @@ impl Phase2AnchorIndex {
         let anchor_first_bigram = (!literals.is_empty()).then(|| {
             FirstBigramSet::from_literals(literals.iter().map(|literal| literal.as_bytes()), true)
         });
-        let anchor_ac = (!literals.is_empty())
-            .then(|| LazyAnchorAc::new(literals, true, "phase-2 shared-anchor"));
+        let anchor_ac = (!literals.is_empty()).then(|| {
+            LazyAnchorAc::new(
+                literals,
+                true,
+                "phase-2 shared-anchor Aho-Corasick build failed; keyword-triggered anchored patterns stay on the whole-chunk path (recall preserved)",
+            )
+        });
         let always_anchor_first_bigram = (!always_literals.is_empty()).then(|| {
             FirstBigramSet::from_literals(always_literals.iter().map(String::as_bytes), true)
         });
@@ -386,8 +409,13 @@ impl Phase2AnchorIndex {
                 false,
             )
         });
-        let plain_anchor_ac = (!plain_literals.is_empty())
-            .then(|| LazyAnchorAc::new(plain_literals, false, "phase-2 plain-anchor"));
+        let plain_anchor_ac = (!plain_literals.is_empty()).then(|| {
+            LazyAnchorAc::new(
+                plain_literals,
+                false,
+                "phase-2 plain-anchor Aho-Corasick build failed; plain patterns stay on the folded RegexSet path (recall preserved)",
+            )
+        });
 
         Some(Self {
             anchor_ac,
@@ -434,7 +462,7 @@ impl Phase2AnchorIndex {
         {
             return;
         }
-        let Some(ac) = self.anchor_ac.as_ref().map(|anchor| anchor.get().0) else {
+        let Some(ac) = self.anchor_ac.as_ref().and_then(|anchor| anchor.get().0) else {
             return;
         };
         for m in ac.find_overlapping_iter(text) {
@@ -528,7 +556,10 @@ impl Phase2AnchorIndex {
         if !phase2_plain_localizer {
             return false;
         }
-        self.plain_anchor_ac.is_some() || !self.plain_always_mark.is_empty()
+        self.plain_anchor_ac
+            .as_ref()
+            .is_some_and(LazyAnchorAc::is_available)
+            || (!self.plain_always_mark.is_empty() && self.plain_anchor_ac.is_none())
     }
 
     /// Plain patterns with no folded leading literal (run whole-chunk on ASCII).
@@ -554,7 +585,11 @@ impl Phase2AnchorIndex {
         {
             return;
         }
-        let Some(ac) = self.plain_anchor_ac.as_ref().map(|anchor| anchor.get().0) else {
+        let Some(ac) = self
+            .plain_anchor_ac
+            .as_ref()
+            .and_then(|anchor| anchor.get().0)
+        else {
             return;
         };
         for m in ac.find_overlapping_iter(text) {
