@@ -265,12 +265,18 @@ fn authenticated_matcher_hydration_skips_canonical_reencoding() {
         keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes();
     let signed_companion_validations =
         keyhog_scanner::execution_pack::matcher_sections::runtime_companion_validations();
+    let signed_scalar_reencodes = ScalarCpuExecutionProgram::runtime_canonical_reencodes();
     CompiledScanner::compile_from_execution_pack(&signed_pack)
         .expect("hydrate authenticated matcher graph");
     assert_eq!(
         keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes(),
         signed_before,
         "authenticated matcher hydration must trust install-time canonical encoding"
+    );
+    assert_eq!(
+        ScalarCpuExecutionProgram::runtime_canonical_reencodes(),
+        signed_scalar_reencodes,
+        "authenticated scalar hydration must trust install-time canonical encoding"
     );
     assert_eq!(
         keyhog_scanner::execution_pack::matcher_sections::runtime_companion_validations(),
@@ -283,12 +289,18 @@ fn authenticated_matcher_hydration_skips_canonical_reencoding() {
         keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes();
     let unsigned_companion_validations =
         keyhog_scanner::execution_pack::matcher_sections::runtime_companion_validations();
+    let unsigned_scalar_reencodes = ScalarCpuExecutionProgram::runtime_canonical_reencodes();
     CompiledScanner::compile_from_execution_pack(&unsigned_pack)
         .expect("hydrate unsigned matcher graph");
     assert_eq!(
         keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes(),
         unsigned_before + 3,
         "unsigned matcher hydration must revalidate all three canonical sections"
+    );
+    assert_eq!(
+        ScalarCpuExecutionProgram::runtime_canonical_reencodes(),
+        unsigned_scalar_reencodes + 1,
+        "unsigned scalar hydration must revalidate canonical encoding"
     );
     assert_eq!(
         keyhog_scanner::execution_pack::matcher_sections::runtime_companion_validations(),

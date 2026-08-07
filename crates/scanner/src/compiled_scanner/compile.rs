@@ -395,11 +395,18 @@ impl CompiledScanner {
         }
         let packed_simd_program: Option<PackedSimdProgram> = match identity.backend {
             crate::execution_pack::ExecutionPackBackend::Cpu => {
-                crate::execution_pack::ScalarCpuExecutionProgram::decode(
-                    backend_program,
-                    identity.detector_digest,
-                )
-                .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+                let decoded = if pack.signature_authenticated() {
+                    crate::execution_pack::ScalarCpuExecutionProgram::decode_authenticated(
+                        backend_program,
+                        identity.detector_digest,
+                    )
+                } else {
+                    crate::execution_pack::ScalarCpuExecutionProgram::decode(
+                        backend_program,
+                        identity.detector_digest,
+                    )
+                };
+                decoded.map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
                 None
             }
             crate::execution_pack::ExecutionPackBackend::Simd => {

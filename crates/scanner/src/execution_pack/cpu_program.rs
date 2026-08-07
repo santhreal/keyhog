@@ -1,5 +1,10 @@
 use super::{CanonicalDetectorExecutionIr, ExecutionPackError};
 use serde::{Deserialize, Serialize};
+use std::cell::Cell;
+
+thread_local! {
+    static RUNTIME_CANONICAL_REENCODES: Cell<usize> = const { Cell::new(0) };
+}
 
 pub const SCALAR_CPU_PROGRAM_VERSION: u16 = 1;
 
@@ -83,6 +88,23 @@ impl ScalarCpuExecutionProgram {
     }
 
     pub fn decode(bytes: &[u8], expected_ir_digest: [u8; 32]) -> Result<Self, ExecutionPackError> {
+        Self::decode_inner(bytes, expected_ir_digest, false)
+    }
+
+    /// Decode structurally typed bytes after the exact immutable pack mapping
+    /// and its signature have already been authenticated.
+    pub(crate) fn decode_authenticated(
+        bytes: &[u8],
+        expected_ir_digest: [u8; 32],
+    ) -> Result<Self, ExecutionPackError> {
+        Self::decode_inner(bytes, expected_ir_digest, true)
+    }
+
+    fn decode_inner(
+        bytes: &[u8],
+        expected_ir_digest: [u8; 32],
+        authenticated: bool,
+    ) -> Result<Self, ExecutionPackError> {
         let program: Self = serde_json::from_slice(bytes).map_err(|error| {
             ExecutionPackError::InvalidPack(format!(
                 "scalar CPU execution program is invalid: {error}"
@@ -99,12 +121,20 @@ impl ScalarCpuExecutionProgram {
                 "scalar CPU program detector IR identity does not match its pack".to_owned(),
             ));
         }
-        let canonical = program.canonical_bytes()?;
-        if canonical != bytes {
-            return Err(ExecutionPackError::InvalidPack(
-                "scalar CPU execution program is not canonically encoded".to_owned(),
-            ));
+        if !authenticated {
+            RUNTIME_CANONICAL_REENCODES.set(RUNTIME_CANONICAL_REENCODES.get().saturating_add(1));
+            let canonical = program.canonical_bytes()?;
+            if canonical != bytes {
+                return Err(ExecutionPackError::InvalidPack(
+                    "scalar CPU execution program is not canonically encoded".to_owned(),
+                ));
+            }
         }
         Ok(program)
+    }
+
+    #[doc(hidden)]
+    pub fn runtime_canonical_reencodes() -> usize {
+        RUNTIME_CANONICAL_REENCODES.get()
     }
 }
