@@ -5,6 +5,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::process::ChildStdout;
 
+#[cfg(debug_assertions)]
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use gix::objs::Kind;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use rayon::prelude::*;
@@ -25,6 +28,27 @@ const GIT_PARALLEL_BLOB_BATCH_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Metadata item bound for one parallel blob decode batch.
 const GIT_PARALLEL_BLOB_BATCH_ITEMS: usize = 4096;
+
+#[cfg(debug_assertions)]
+static MAX_BUFFERED_GIT_BLOB_CHUNKS: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(debug_assertions)]
+pub(crate) fn reset_max_buffered_git_blob_chunks() {
+    MAX_BUFFERED_GIT_BLOB_CHUNKS.store(0, Ordering::Relaxed);
+}
+
+#[cfg(debug_assertions)]
+pub(crate) fn max_buffered_git_blob_chunks() -> usize {
+    MAX_BUFFERED_GIT_BLOB_CHUNKS.load(Ordering::Relaxed)
+}
+
+#[cfg(debug_assertions)]
+fn record_buffered_git_blob_chunks(chunks: usize) {
+    MAX_BUFFERED_GIT_BLOB_CHUNKS.fetch_max(chunks, Ordering::Relaxed);
+}
+
+#[cfg(not(debug_assertions))]
+fn record_buffered_git_blob_chunks(_chunks: usize) {}
 
 #[derive(Debug, Clone)]
 struct GitBlobCandidate {
@@ -81,6 +105,28 @@ struct GitCommitBlobSet {
     author: String,
     blob_metadata: Vec<(gix::ObjectId, Vec<u8>)>,
     errors: Vec<SourceError>,
+}
+
+struct PendingGitBlobDecode {
+    blob_metadata: std::vec::IntoIter<(gix::ObjectId, Vec<u8>)>,
+    provenance: PendingGitBlobProvenance,
+}
+
+enum PendingGitBlobProvenance {
+    Commit { commit_id: String, author: String },
+    Unreachable,
+}
+
+impl PendingGitBlobProvenance {
+    fn borrowed(&self) -> GitBlobProvenance<'_> {
+        match self {
+            Self::Commit { commit_id, author } => GitBlobProvenance::Commit {
+                commit_id,
+                author,
+            },
+            Self::Unreachable => GitBlobProvenance::Unreachable,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -474,6 +520,7 @@ fn stream_git_blobs(
     // so memoizing them prunes nearly all repeated descents.
     let mut walked_trees: HashSet<gix::ObjectId> = HashSet::new();
     let mut unreachable_objects: Option<UnreachableGitObjects> = None;
+    let mut pending_blob_decode: Option<PendingGitBlobDecode> = None;
     let mut total_bytes = 0usize;
     let mut chunk_count = 0usize;
     let mut done = false;
@@ -487,6 +534,37 @@ fn stream_git_blobs(
         loop {
             if let Some(chunk) = current_tree_blobs.pop_front() {
                 return Some(Ok(chunk));
+            }
+
+            if let Some(pending) = pending_blob_decode.as_mut() {
+                let chunk_decoder = GitBlobChunkDecoder {
+                    repo: &repo_handle,
+                    repo_path: &repo_owned,
+                    head_blob_paths: &head_blob_paths,
+                    limits,
+                };
+                let PendingGitBlobDecode {
+                    blob_metadata,
+                    provenance,
+                } = pending;
+                current_tree_blobs.extend(chunk_decoder.decode_next_batch(
+                    blob_metadata,
+                    provenance.borrowed(),
+                    &mut total_bytes,
+                    &mut chunk_count,
+                    &mut pending_errors,
+                ));
+                let exhausted = blob_metadata.as_slice().is_empty()
+                    || super::git_history_cap_status(total_bytes, chunk_count, limits).is_some();
+                if exhausted {
+                    pending_blob_decode = None;
+                }
+                if let Some(chunk) = current_tree_blobs.pop_front() {
+                    return Some(Ok(chunk));
+                }
+                if pending_blob_decode.is_some() {
+                    continue;
+                }
             }
 
             if let Some(error) = pending_errors.pop_front() {
@@ -546,27 +624,20 @@ fn stream_git_blobs(
                         return Some(Err(error));
                     }
                 };
-                pending_errors.extend(commit_blobs.errors);
+                let GitCommitBlobSet {
+                    commit_id,
+                    author,
+                    blob_metadata,
+                    errors,
+                } = commit_blobs;
+                pending_errors.extend(errors);
 
-                if !commit_blobs.blob_metadata.is_empty() {
-                    let chunk_decoder = GitBlobChunkDecoder {
-                        repo: &repo_handle,
-                        repo_path: &repo_owned,
-                        head_blob_paths: &head_blob_paths,
-                        limits,
-                    };
-                    current_tree_blobs.extend(chunk_decoder.decode_commit_chunks(
-                        commit_blobs.blob_metadata,
-                        &commit_blobs.commit_id,
-                        &commit_blobs.author,
-                        &mut total_bytes,
-                        &mut chunk_count,
-                        &mut pending_errors,
-                    ));
-
-                    if let Some(chunk) = current_tree_blobs.pop_front() {
-                        return Some(Ok(chunk));
-                    }
+                if !blob_metadata.is_empty() {
+                    pending_blob_decode = Some(PendingGitBlobDecode {
+                        blob_metadata: blob_metadata.into_iter(),
+                        provenance: PendingGitBlobProvenance::Commit { commit_id, author },
+                    });
+                    continue;
                 }
             } else if let Some(objects) = unreachable_objects.as_mut() {
                 current_tree_blobs.extend(decode_unreachable_tag_message_chunks(
@@ -597,22 +668,11 @@ fn stream_git_blobs(
                     return None;
                 }
 
-                let chunk_decoder = GitBlobChunkDecoder {
-                    repo: &repo_handle,
-                    repo_path: &repo_owned,
-                    head_blob_paths: &head_blob_paths,
-                    limits,
-                };
-                current_tree_blobs.extend(chunk_decoder.decode_unreachable_chunks(
-                    blob_metadata.metadata,
-                    &mut total_bytes,
-                    &mut chunk_count,
-                    &mut pending_errors,
-                ));
-
-                if let Some(chunk) = current_tree_blobs.pop_front() {
-                    return Some(Ok(chunk));
-                }
+                pending_blob_decode = Some(PendingGitBlobDecode {
+                    blob_metadata: blob_metadata.metadata.into_iter(),
+                    provenance: PendingGitBlobProvenance::Unreachable,
+                });
+                continue;
             }
         }
     }))
@@ -737,132 +797,89 @@ struct GitBlobChunkDecoder<'a> {
 }
 
 impl GitBlobChunkDecoder<'_> {
-    fn decode_commit_chunks(
+    fn decode_next_batch(
         &self,
-        blob_metadata: Vec<(gix::ObjectId, Vec<u8>)>,
-        commit_id: &str,
-        author: &str,
-        total_bytes: &mut usize,
-        chunk_count: &mut usize,
-        pending_errors: &mut VecDeque<SourceError>,
-    ) -> VecDeque<Chunk> {
-        self.decode_chunks(
-            blob_metadata,
-            GitBlobProvenance::Commit { commit_id, author },
-            total_bytes,
-            chunk_count,
-            pending_errors,
-        )
-    }
-
-    fn decode_unreachable_chunks(
-        &self,
-        blob_metadata: Vec<(gix::ObjectId, Vec<u8>)>,
-        total_bytes: &mut usize,
-        chunk_count: &mut usize,
-        pending_errors: &mut VecDeque<SourceError>,
-    ) -> VecDeque<Chunk> {
-        self.decode_chunks(
-            blob_metadata,
-            GitBlobProvenance::Unreachable,
-            total_bytes,
-            chunk_count,
-            pending_errors,
-        )
-    }
-
-    fn decode_chunks(
-        &self,
-        blob_metadata: Vec<(gix::ObjectId, Vec<u8>)>,
+        blob_metadata: &mut std::vec::IntoIter<(gix::ObjectId, Vec<u8>)>,
         provenance: GitBlobProvenance<'_>,
         total_bytes: &mut usize,
         chunk_count: &mut usize,
         pending_errors: &mut VecDeque<SourceError>,
     ) -> VecDeque<Chunk> {
         let mut chunks = VecDeque::new();
-        let mut blob_metadata = blob_metadata.into_iter();
+        if super::git_history_cap_status(*total_bytes, *chunk_count, self.limits).is_some() {
+            return chunks;
+        }
 
-        'blob_batches: loop {
+        let batch = next_git_blob_batch(self.repo, blob_metadata, self.limits);
+        if batch.is_empty() {
+            return chunks;
+        }
+
+        // Blob payload reads (one decode per UNIQUE blob oid in this batch;
+        // duplicate (oid, path) entries fan out the shared decoded text).
+        let _blob_read = crate::profile::read_span();
+        let mut unique_candidates: Vec<GitBlobCandidate> = Vec::new();
+        let mut oid_slots: HashMap<gix::ObjectId, usize> = HashMap::new();
+        for item in &batch {
+            if let GitBlobBatchItem::Candidate(candidate) = item {
+                if !oid_slots.contains_key(&candidate.oid) {
+                    oid_slots.insert(candidate.oid, unique_candidates.len());
+                    unique_candidates.push(candidate.clone());
+                }
+            }
+        }
+        let outcomes = decode_git_blob_candidates(self.repo, self.repo_path, unique_candidates);
+
+        for item in batch {
             if super::git_history_cap_status(*total_bytes, *chunk_count, self.limits).is_some() {
                 break;
             }
 
-            let batch = next_git_blob_batch(self.repo, &mut blob_metadata, self.limits);
-            if batch.is_empty() {
-                break;
-            }
-
-            // Blob payload reads (one decode per UNIQUE blob oid in this
-            // batch; duplicate (oid, path) entries fan out the shared decoded
-            // text instead of re-reading and re-inflating the same object).
-            let _blob_read = crate::profile::read_span();
-            let mut unique_candidates: Vec<GitBlobCandidate> = Vec::new();
-            let mut oid_slots: HashMap<gix::ObjectId, usize> = HashMap::new();
-            for item in &batch {
-                if let GitBlobBatchItem::Candidate(candidate) = item {
-                    if !oid_slots.contains_key(&candidate.oid) {
-                        oid_slots.insert(candidate.oid, unique_candidates.len());
-                        unique_candidates.push(candidate.clone());
-                    }
+            let decoded_blob = match item {
+                GitBlobBatchItem::Skip(skip) => {
+                    record_git_blob_skip(skip, pending_errors);
+                    continue;
                 }
-            }
-            let outcomes = decode_git_blob_candidates(
-                self.repo,
-                self.repo_path,
-                unique_candidates,
-            );
-
-            for item in batch {
-                if super::git_history_cap_status(*total_bytes, *chunk_count, self.limits).is_some()
-                {
-                    break 'blob_batches;
-                }
-
-                let decoded_blob = match item {
-                    GitBlobBatchItem::Skip(skip) => {
-                        record_git_blob_skip(skip, pending_errors);
-                        continue;
-                    }
-                    GitBlobBatchItem::Candidate(candidate) => {
-                        let slot = oid_slots[&candidate.oid];
-                        match &outcomes[slot] {
-                            Some(Ok(shared)) => DecodedGitBlob {
-                                oid: candidate.oid,
-                                filepath: candidate.filepath,
-                                size_bytes: shared.size_bytes,
-                                file_text: shared.file_text.clone(),
-                            },
-                            Some(Err(kind)) => {
-                                record_git_blob_skip(
-                                    kind.with_identity(candidate.oid, candidate.filepath),
-                                    pending_errors,
-                                );
-                                continue;
-                            }
-                            None => {
-                                tracing::warn!(
-                                    %candidate.oid,
-                                    "git blob decode batch lost an outcome; blob NOT scanned"
-                                );
-                                record_git_object_unreadable();
-                                pending_errors.push_back(git_unscanned_object_error(format!(
-                                    "git blob {} at {} lost its decode outcome; blob was not scanned",
-                                    candidate.oid,
-                                    git_blob_path_display(&candidate.filepath)
-                                )));
-                                continue;
-                            }
+                GitBlobBatchItem::Candidate(candidate) => {
+                    let slot = oid_slots[&candidate.oid];
+                    match &outcomes[slot] {
+                        Some(Ok(shared)) => DecodedGitBlob {
+                            oid: candidate.oid,
+                            filepath: candidate.filepath,
+                            size_bytes: shared.size_bytes,
+                            file_text: shared.file_text.clone(),
+                        },
+                        Some(Err(kind)) => {
+                            record_git_blob_skip(
+                                kind.with_identity(candidate.oid, candidate.filepath),
+                                pending_errors,
+                            );
+                            continue;
+                        }
+                        None => {
+                            tracing::warn!(
+                                %candidate.oid,
+                                "git blob decode batch lost an outcome; blob NOT scanned"
+                            );
+                            record_git_object_unreadable();
+                            pending_errors.push_back(git_unscanned_object_error(format!(
+                                "git blob {} at {} lost its decode outcome; blob was not scanned",
+                                candidate.oid,
+                                git_blob_path_display(&candidate.filepath)
+                            )));
+                            continue;
                         }
                     }
-                };
+                }
+            };
 
-                let chunk = self.chunk_from_decoded_blob(decoded_blob, provenance);
-                *total_bytes = total_bytes.saturating_add(chunk.data.len());
-                *chunk_count += 1;
-                chunks.push_back(chunk);
-            }
+            let chunk = self.chunk_from_decoded_blob(decoded_blob, provenance);
+            *total_bytes = total_bytes.saturating_add(chunk.data.len());
+            *chunk_count += 1;
+            chunks.push_back(chunk);
         }
 
+        record_buffered_git_blob_chunks(chunks.len());
         chunks
     }
 
@@ -927,10 +944,11 @@ fn next_git_blob_batch(
         };
         batch_items += 1;
 
-        let header = match header_memo
-            .entry(oid)
-            .or_insert_with(|| repo.find_header(oid).map(|h| (h.kind(), h.size())).map_err(|e| e.to_string()))
-        {
+        let header = match header_memo.entry(oid).or_insert_with(|| {
+            repo.find_header(oid)
+                .map(|h| (h.kind(), h.size()))
+                .map_err(|e| e.to_string())
+        }) {
             Ok(header) => *header,
             Err(error) => {
                 batch.push(GitBlobBatchItem::Skip(GitBlobSkip::HeaderUnreadable {
