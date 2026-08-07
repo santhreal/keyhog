@@ -233,50 +233,24 @@ impl ScanRuntimeInput {
     }
 }
 
-/// The scan worker width `rayon::current_num_threads()` would report, WITHOUT
-/// creating Rayon's global registry.
+/// The scan worker width KeyHog would configure, WITHOUT creating Rayon's
+/// global registry.
 ///
-/// That call looks like a read and is a write: when nobody has claimed the
-/// global pool it CREATES one at Rayon's default width, permanently. Any later
-/// [`configure_threads`] then fails with "Rayon worker pool was initialized
-/// outside KeyHog", because `build_global` cannot replace an existing registry.
+/// Daemon clients compute this value only to bind their expected runtime
+/// identity. Using `rayon::current_num_threads()` there would create Rayon's
+/// default logical-core pool before KeyHog can install its bounded
+/// physical-core pool. That both changes the identity and leaves twice as many
+/// long-lived worker stacks on SMT hosts.
 ///
-/// The daemon route reached that call while merely computing an identity
-/// digest, on every client connect that got a `Hello` back. A `--daemon=auto`
-/// scan whose daemon then turned out to be incompatible, or died mid-scan,
-/// announced "running in-process scanner" and exited 2 having scanned nothing:
-/// the in-process retry could no longer own a pool.
-///
-/// The value is EXACTLY what Rayon would report, so digests built from it do
-/// not move: KeyHog's configured width once [`configure_threads`] has run, and
-/// otherwise Rayon's own unconfigured default, `RAYON_NUM_THREADS` included.
-/// Only the side effect is gone.
-///
-/// Honouring `RAYON_NUM_THREADS` here is not a preference, it is required for
-/// correctness. [`crate::subcommands::scan`] still calls
-/// `rayon::current_num_threads()` directly when resolving the `--daemon=mass`
-/// scan config, and `validate_mass_daemon_policy` compares that config's digest
-/// against this one. Reading the environment differently from Rayon split those
-/// two digests and made every `--daemon=mass` scan fail with a spurious policy
-/// mismatch whenever `RAYON_NUM_THREADS` was set.
+/// An already configured KeyHog pool remains authoritative. Otherwise this
+/// mirrors [`configure_threads`]'s default physical-core policy.
 pub(crate) fn keyhog_worker_threads() -> usize {
     if let Some(configured) = CONFIGURED_RAYON_THREADS.get().copied() {
         return configured;
     }
-    // Rayon's unconfigured default, resolved the way Rayon resolves it: a
-    // positive `RAYON_NUM_THREADS`, else the host's available parallelism.
-    if let Some(env_threads) = std::env::var("RAYON_NUM_THREADS")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|threads| *threads > 0)
-    {
-        return env_threads;
-    }
-    std::thread::available_parallelism()
-        .map(std::num::NonZeroUsize::get)
-        // LAW10: host probe failure => single worker; identity-only value,
-        // recall-irrelevant.
-        .unwrap_or(1)
+    keyhog_scanner::hw_probe::probe_hardware()
+        .physical_cores
+        .max(1)
 }
 
 pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) -> Result<usize> {

@@ -54,6 +54,8 @@ async fn start(
     mass_gpu_primary: bool,
 ) -> Result<ExitCode> {
     crate::runtime_preflight::validate_scan_runtime_config()?;
+    let hardware = keyhog_scanner::hw_probe::probe_hardware();
+    crate::orchestrator_config::configure_threads(None, hardware.physical_cores)?;
     crate::orchestrator_config::validate_explicit_detector_path(
         &detectors_dir,
         detectors_cli_explicit,
@@ -94,11 +96,11 @@ async fn start(
 
 async fn stop(socket: Option<PathBuf>) -> Result<ExitCode> {
     let socket = socket.unwrap_or_else(default_socket_path); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
-                                                            // `connect_any_version`, not `connect`: a daemon left running across a
-                                                            // `keyhog update` reports an older keyhog version, and the whole point of
-                                                            // `daemon stop` is to clear exactly that stale daemon. The strict
-                                                            // version-gated `connect` (used by the scan route) would REFUSE to talk to
-                                                            // it, stranding the stale process; `stop` must still be able to shut it down.
+                                                             // `connect_any_version`, not `connect`: a daemon left running across a
+                                                             // `keyhog update` reports an older keyhog version, and the whole point of
+                                                             // `daemon stop` is to clear exactly that stale daemon. The strict
+                                                             // version-gated `connect` (used by the scan route) would REFUSE to talk to
+                                                             // it, stranding the stale process; `stop` must still be able to shut it down.
     let connected = keyhog_profile::instrument_future(
         keyhog_profile::Stage::Preprocess,
         client::connect_any_version(&socket),

@@ -711,7 +711,7 @@ async fn run_via_mass_daemon(args: &mut ScanArgs) -> Result<ExitCode> {
     let wall_start = chrono::Utc::now();
     let mut resolved = crate::orchestrator_config::resolve_scan_config(args)?;
     if resolved.threads.is_none() {
-        resolved.threads = Some(rayon::current_num_threads());
+        resolved.threads = Some(crate::orchestrator_config::keyhog_worker_threads());
     }
     validate_mass_daemon_policy(args, &resolved)?;
     let ExpectedDaemonDetectorCorpus {

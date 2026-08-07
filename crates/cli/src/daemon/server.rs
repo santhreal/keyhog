@@ -278,9 +278,7 @@ impl ServerState {
             backend_override,
             backend_recoveries: AtomicU64::new(0),
             last_backend_fault: std::sync::Mutex::new(None),
-            request_identity: RequestIdAllocator::new(
-                warm_backend.daemon_generation().to_string(),
-            ),
+            request_identity: RequestIdAllocator::new(warm_backend.daemon_generation().to_string()),
             warm_backend,
             mass_service: options.mass_service,
             mass_gpu_primary_required: options.mass_gpu_primary_required,
@@ -1118,10 +1116,7 @@ impl Drop for RequestSlot<'_> {
 /// the write once the socket buffer fills. Untimed, that permanently consumes
 /// the connection's admission permit; the timeout turns it into a closed
 /// connection and a released slot.
-async fn send_response(
-    transport: &mut frame::ServerTransport,
-    response: Response,
-) -> Result<()> {
+async fn send_response(transport: &mut frame::ServerTransport, response: Response) -> Result<()> {
     let kind = crate::daemon::protocol::response_kind(&response);
     match tokio::time::timeout(RESPONSE_WRITE_TIMEOUT, transport.send(response)).await {
         Ok(result) => result,
@@ -1261,7 +1256,8 @@ async fn scan_text(
     if dogfood {
         telemetry.enable_dogfood();
     }
-    let profile_capture = profile.then(|| RequestProfileCapture::new(state.request_identity.next()));
+    let profile_capture =
+        profile.then(|| RequestProfileCapture::new(state.request_identity.next()));
     let _fragment_guard = fragment_scan_lock.lock_owned().await;
     scanner.clear_fragment_cache();
     // Hand the actual scan to a blocking thread - calibrated backend scanning
@@ -1448,7 +1444,8 @@ async fn scan_path(
     if dogfood {
         telemetry.enable_dogfood();
     }
-    let profile_capture = profile.then(|| RequestProfileCapture::new(state.request_identity.next()));
+    let profile_capture =
+        profile.then(|| RequestProfileCapture::new(state.request_identity.next()));
     let _fragment_guard = fragment_scan_lock.lock_owned().await;
     scanner.clear_fragment_cache();
     type ScanOutput = (
@@ -1629,7 +1626,8 @@ async fn scan_mass_batch(
     if dogfood {
         telemetry.enable_dogfood();
     }
-    let profile_capture = profile.then(|| RequestProfileCapture::new(state.request_identity.next()));
+    let profile_capture =
+        profile.then(|| RequestProfileCapture::new(state.request_identity.next()));
     let res = tokio::task::spawn_blocking(move || -> Result<_> {
         let _profile_guard = profile_capture.as_ref().map(RequestProfileCapture::enter);
         let profile_started = Instant::now();
@@ -1645,49 +1643,53 @@ async fn scan_mass_batch(
             let (matches, backend_recovery, gpu) = keyhog_scanner::telemetry::with_scan_telemetry(
                 &telemetry,
                 || -> Result<(Vec<RawMatch>, Option<BackendRecoveryStatus>, bool)> {
-                let selection =
-                    router.choose_with_plan(scanner.as_ref(), backend_override, &chunks)?;
-                let outcome = crate::orchestrator::scan_selected_batch(
-                    scanner.as_ref(),
-                    &chunks,
-                    selection.backend,
-                    selection.phase1_plan.as_ref(),
-                    selection.execution_route,
-                    selection
-                        .recovery_plan
-                        .filter(|_| recover_automatic_backend_faults),
-                )
-                .with_context(|| {
-                    format!(
-                        "selected backend {} failed during mass daemon dispatch",
-                        selection.backend.label()
+                    let selection =
+                        router.choose_with_plan(scanner.as_ref(), backend_override, &chunks)?;
+                    let outcome = crate::orchestrator::scan_selected_batch(
+                        scanner.as_ref(),
+                        &chunks,
+                        selection.backend,
+                        selection.phase1_plan.as_ref(),
+                        selection.execution_route,
+                        selection
+                            .recovery_plan
+                            .filter(|_| recover_automatic_backend_faults),
                     )
-                })?;
-                if let Some(recovery) = outcome.recovery.as_ref() {
-                    router.quarantine_recovered_route(&selection, recovery)?;
-                }
-                let backend_recovery = outcome
-                    .recovery
-                    .as_ref()
-                    .map(backend_recovery_status_from_receipt)
-                    .or_else(|| {
-                        selection.autoroute_recovery.as_ref().map(|recovery| {
-                            autoroute_state_recovery_status(&chunks, selection.backend, recovery)
-                        })
-                    });
-                let gpu = selection.backend.is_gpu() && !outcome.recovered;
-                let mut per_chunk = outcome.per_chunk;
-                crate::inline_suppression::attach_inline_suppression_context(
-                    &chunks,
-                    &mut per_chunk,
-                );
-                Ok((
-                    per_chunk.into_iter().flatten().collect(),
-                    backend_recovery,
-                    gpu,
-                ))
-            },
-        )?;
+                    .with_context(|| {
+                        format!(
+                            "selected backend {} failed during mass daemon dispatch",
+                            selection.backend.label()
+                        )
+                    })?;
+                    if let Some(recovery) = outcome.recovery.as_ref() {
+                        router.quarantine_recovered_route(&selection, recovery)?;
+                    }
+                    let backend_recovery = outcome
+                        .recovery
+                        .as_ref()
+                        .map(backend_recovery_status_from_receipt)
+                        .or_else(|| {
+                            selection.autoroute_recovery.as_ref().map(|recovery| {
+                                autoroute_state_recovery_status(
+                                    &chunks,
+                                    selection.backend,
+                                    recovery,
+                                )
+                            })
+                        });
+                    let gpu = selection.backend.is_gpu() && !outcome.recovered;
+                    let mut per_chunk = outcome.per_chunk;
+                    crate::inline_suppression::attach_inline_suppression_context(
+                        &chunks,
+                        &mut per_chunk,
+                    );
+                    Ok((
+                        per_chunk.into_iter().flatten().collect(),
+                        backend_recovery,
+                        gpu,
+                    ))
+                },
+            )?;
             Ok((matches, telemetry.drain(), backend_recovery, gpu))
         })();
         let (matches, telemetry, backend_recovery, gpu) = scanned?;
@@ -1863,10 +1865,9 @@ impl PinnedFile {
     /// The open handle keeps that inode alive, so an inode difference here means
     /// the pathname was rebound to different content during the scan.
     fn verify_unreplaced(&self, path: &Path) -> Result<()> {
-        let pinned = self
-            .0
-            .metadata()
-            .with_context(|| format!("daemon: re-identify pinned scan target {}", path.display()))?;
+        let pinned = self.0.metadata().with_context(|| {
+            format!("daemon: re-identify pinned scan target {}", path.display())
+        })?;
         let current = std::fs::symlink_metadata(path).with_context(|| {
             format!(
                 "daemon: re-identify scan target path {} after reading it",
