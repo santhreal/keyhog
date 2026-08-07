@@ -380,6 +380,7 @@ impl ScanOrchestrator {
                     let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceWalk);
                     source.chunks()
                 };
+                super::super::run::release_current_allocator_arena();
                 loop {
                     let chunk_result = {
                         let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceRead);
