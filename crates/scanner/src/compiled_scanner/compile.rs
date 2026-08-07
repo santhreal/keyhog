@@ -1275,6 +1275,8 @@ impl CompiledScanner {
             phase2_keyword_scanned_bytes: std::sync::atomic::AtomicU64::new(0),
             #[cfg(debug_assertions)]
             generic_keyword_scanned_bytes: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(debug_assertions)]
+            phase2_prefilter_scanned_bytes: std::sync::atomic::AtomicU64::new(0),
             fragment_cache: crate::fragment_cache::FragmentCache::new(1000),
         };
 

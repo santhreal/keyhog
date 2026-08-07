@@ -309,6 +309,46 @@ fn repeated_payloads_share_generic_keyword_positions() {
         planned.iter().all(|matches| !matches.is_empty()),
         "generic position hints must retain every repeated finding"
     );
+
+    let ordinary_payload = "const ordinary_value = 1234567890;\n".repeat(2_925);
+    let ordinary_chunks = vec![
+        chunk("ordinary-0.txt", ordinary_payload.clone()),
+        chunk("ordinary-1.txt", ordinary_payload.clone()),
+        chunk("ordinary-2.txt", ordinary_payload),
+    ];
+    let ordinary_plan = scanner.phase1_admission_plan(&ordinary_chunks);
+    assert_eq!(
+        ordinary_plan.phase2_always_active_absence_for_diagnostics(0),
+        Some(true),
+        "repeated clean fixture must establish complete always-active absence"
+    );
+
+    scanner.clear_fragment_cache();
+    scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
+    let planned_ordinary = scanner
+        .scan_coalesced_with_backend_and_admission(
+            &ordinary_chunks,
+            ScanBackend::CpuFallback,
+            Some(&ordinary_plan),
+        )
+        .expect("planned ordinary scan");
+    assert_eq!(
+        scanner.phase2_prefilter_scanned_bytes_for_diagnostics(),
+        0,
+        "complete representative absence must suppress repeated prefilter scans"
+    );
+
+    scanner.clear_fragment_cache();
+    scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
+    let direct_ordinary = scanner
+        .scan_coalesced_with_backend(&ordinary_chunks, ScanBackend::CpuFallback)
+        .expect("direct ordinary scan");
+    assert!(
+        scanner.phase2_prefilter_scanned_bytes_for_diagnostics() > 0,
+        "direct scan must establish the always-active prefilter control"
+    );
+    assert_eq!(planned_ordinary, direct_ordinary);
+    assert!(planned_ordinary.iter().all(Vec::is_empty));
 }
 
 #[test]

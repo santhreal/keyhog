@@ -403,6 +403,11 @@ impl CompiledScanner {
                 // on EVERY chunk. This span is the cost the old vague label hid.
                 let _g = super::profile::span(keyhog_profile::Stage::Phase2Prefilter);
                 if !always_active_absence_proven {
+                    #[cfg(debug_assertions)]
+                    self.phase2_prefilter_scanned_bytes.fetch_add(
+                        u64::try_from(match_text.len()).unwrap_or(u64::MAX),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
                     match &self.phase2_always_active_prefilter {
                         Some(prefilter) => prefilter.mark_matches(
                             &self.phase2_patterns,
@@ -611,6 +616,21 @@ impl CompiledScanner {
     #[must_use]
     pub fn phase2_keyword_scanned_bytes_for_diagnostics(&self) -> u64 {
         self.phase2_keyword_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_phase2_prefilter_scanned_bytes_for_diagnostics(&self) {
+        self.phase2_prefilter_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn phase2_prefilter_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.phase2_prefilter_scanned_bytes
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 }

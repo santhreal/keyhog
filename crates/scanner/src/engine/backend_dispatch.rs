@@ -75,12 +75,20 @@ impl CompiledScanner {
                         admission_plan.and_then(|plan| plan.phase2_keyword_hints_for(index));
                     let generic_keyword_positions =
                         admission_plan.and_then(|plan| plan.generic_keyword_positions_for(index));
+                    let phase2_always_active_evidence = admission_plan
+                        .and_then(|plan| plan.phase2_always_active_absence_for(index))
+                        .and_then(|absence| {
+                            absence.then_some(
+                                super::phase2::Phase2AlwaysActiveGpuEvidence::exact_absence(),
+                            )
+                        });
                     self.scan_with_deadline_and_backend_admission_route_and_hints(
                         chunk,
                         self.config.per_chunk_deadline(),
                         backend,
                         admission,
                         phase2_keyword_hints,
+                        phase2_always_active_evidence,
                         generic_keyword_positions,
                         route,
                     )

@@ -1005,6 +1005,7 @@ impl CompiledScanner {
             admission,
             None,
             None,
+            None,
             route,
         )
     }
@@ -1016,6 +1017,9 @@ impl CompiledScanner {
         selected_backend: crate::hw_probe::ScanBackend,
         admission: Option<crate::engine::Phase1Admission>,
         phase2_keyword_hints: Option<&[u32]>,
+        phase2_always_active_evidence: Option<
+            crate::engine::phase2::Phase2AlwaysActiveGpuEvidence<'_>,
+        >,
         generic_keyword_positions: Option<&[u32]>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
@@ -1042,7 +1046,7 @@ impl CompiledScanner {
                     &[],
                     deadline,
                     phase2_keyword_hints,
-                    None,
+                    phase2_always_active_evidence,
                     None,
                     generic_keyword_positions,
                     route,
@@ -1087,6 +1091,7 @@ impl CompiledScanner {
                 selected_backend,
                 deadline,
                 phase2_keyword_hints,
+                phase2_always_active_evidence,
                 generic_keyword_positions,
                 route,
             )?
