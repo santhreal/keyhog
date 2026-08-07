@@ -162,6 +162,7 @@ fn phase1_plan_classifies_each_distinct_payload_once() {
     let mut repeated = repeated[..BYTES].to_owned();
     let mut colliding = repeated.clone();
     colliding.replace_range(BYTES / 2..BYTES / 2 + CREDENTIAL.len(), CREDENTIAL);
+    let colliding_repeated = colliding.clone();
     let chunks = vec![
         chunk("repeated-0.txt", repeated.clone()),
         chunk("repeated-1.txt", repeated.clone()),
@@ -173,6 +174,28 @@ fn phase1_plan_classifies_each_distinct_payload_once() {
     assert_eq!(plan.unique_payloads_for_diagnostics(), 2);
     assert_eq!(plan.summary().bigram_rejected_chunks, 3);
     assert_eq!(plan.summary().admitted_chunks, 1);
+    scanner.reset_reusable_phase1_evidence_hits_for_diagnostics();
+    let collision_chunks = vec![
+        chunk("collision-0.txt", colliding_repeated.clone()),
+        chunk("collision-1.txt", colliding_repeated.clone()),
+        chunk("collision-2.txt", colliding_repeated),
+    ];
+    let collision_plan = scanner.phase1_admission_plan(&collision_chunks);
+    assert_eq!(
+        collision_plan.summary().admitted_chunks,
+        3,
+        "sampled-fingerprint collisions must classify by full payload bytes"
+    );
+    assert_eq!(
+        scanner.reusable_phase1_evidence_hits_for_diagnostics(),
+        0,
+        "a sampled-fingerprint collision must not hit the reusable evidence cache"
+    );
+    scanner.phase1_admission_plan(&collision_chunks);
+    assert!(
+        scanner.reusable_phase1_evidence_hits_for_diagnostics() > 0,
+        "the exact colliding payload must become reusable after independent classification"
+    );
     let planned = scanner
         .scan_coalesced_with_backend_and_admission(&chunks, ScanBackend::CpuFallback, Some(&plan))
         .expect("planned scan");
@@ -321,7 +344,19 @@ fn repeated_payloads_share_generic_keyword_positions() {
         chunk("ordinary-1.txt", ordinary_payload.clone()),
         chunk("ordinary-2.txt", ordinary_payload),
     ];
+    scanner.reset_reusable_phase1_evidence_hits_for_diagnostics();
+    let initial_ordinary_plan = scanner.phase1_admission_plan(&ordinary_chunks);
+    assert_eq!(
+        scanner.reusable_phase1_evidence_hits_for_diagnostics(),
+        0,
+        "the first exact payload classification must populate rather than hit the cache"
+    );
     let ordinary_plan = scanner.phase1_admission_plan(&ordinary_chunks);
+    assert_eq!(ordinary_plan.summary(), initial_ordinary_plan.summary());
+    assert!(
+        scanner.reusable_phase1_evidence_hits_for_diagnostics() > 0,
+        "a later batch must reuse exact representative evidence"
+    );
     assert_eq!(
         ordinary_plan.phase2_always_active_absence_for_diagnostics(0),
         Some(true),

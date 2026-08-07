@@ -1,7 +1,8 @@
 //! Scanner-owned direct-literal admission classification.
 
 use super::{CompiledScanner, BIGRAM_BLOOM_MIN_CHUNK_BYTES};
-use keyhog_core::Chunk;
+use keyhog_core::{Chunk, SensitiveString};
+use std::collections::VecDeque;
 
 /// Route-neutral admission state used to classify workload before a backend is materialized.
 pub(crate) struct RouteClassificationPlan {
@@ -77,6 +78,116 @@ pub struct Phase1AdmissionPlan {
     entropy_config_digest: [u8; 32],
     #[cfg(debug_assertions)]
     unique_payloads: usize,
+}
+
+const REUSABLE_EVIDENCE_MAX_BYTES: usize = 1024 * 1024;
+const REUSABLE_EVIDENCE_MAX_ENTRIES: usize = 16;
+
+#[derive(Clone, Debug)]
+struct ReusablePhase1Evidence {
+    admission: Phase1Admission,
+    keyword_trigger_count: u64,
+    keyword_hints: Vec<u32>,
+    generic_positions: Vec<u32>,
+    phase2_always_active_absence: bool,
+    cpu_trigger_hints: Option<Vec<u64>>,
+    normalization_passthrough: bool,
+    confirmed_patterns_absence: bool,
+    entropy_absence: bool,
+}
+
+#[derive(Debug)]
+struct CachedReusablePhase1Evidence {
+    fingerprint: [u8; 32],
+    bypass_bigram: bool,
+    unicode_normalization_enabled: bool,
+    entropy_config_digest: [u8; 32],
+    payload: SensitiveString,
+    evidence: ReusablePhase1Evidence,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct ReusablePhase1EvidenceCache {
+    entries: VecDeque<CachedReusablePhase1Evidence>,
+    resident_bytes: usize,
+    #[cfg(debug_assertions)]
+    hits: u64,
+}
+
+impl ReusablePhase1EvidenceCache {
+    fn get(
+        &mut self,
+        fingerprint: [u8; 32],
+        bypass_bigram: bool,
+        unicode_normalization_enabled: bool,
+        entropy_config_digest: [u8; 32],
+        payload: &SensitiveString,
+    ) -> Option<ReusablePhase1Evidence> {
+        let position = self.entries.iter().position(|entry| {
+            entry.fingerprint == fingerprint
+                && entry.bypass_bigram == bypass_bigram
+                && entry.unicode_normalization_enabled == unicode_normalization_enabled
+                && entry.entropy_config_digest == entropy_config_digest
+                && entry.payload.eq(payload)
+        })?;
+        let entry = self
+            .entries
+            .remove(position)
+            .expect("cache position came from the same deque");
+        let evidence = entry.evidence.clone();
+        self.entries.push_back(entry);
+        #[cfg(debug_assertions)]
+        {
+            self.hits = self.hits.saturating_add(1);
+        }
+        Some(evidence)
+    }
+
+    fn insert(
+        &mut self,
+        fingerprint: [u8; 32],
+        bypass_bigram: bool,
+        unicode_normalization_enabled: bool,
+        entropy_config_digest: [u8; 32],
+        payload: SensitiveString,
+        evidence: ReusablePhase1Evidence,
+    ) {
+        let payload_len = payload.len();
+        if payload_len > REUSABLE_EVIDENCE_MAX_BYTES {
+            return;
+        }
+        if let Some(position) = self.entries.iter().position(|entry| {
+            entry.fingerprint == fingerprint
+                && entry.bypass_bigram == bypass_bigram
+                && entry.unicode_normalization_enabled == unicode_normalization_enabled
+                && entry.entropy_config_digest == entropy_config_digest
+                && entry.payload.eq(&payload)
+        }) {
+            let entry = self
+                .entries
+                .remove(position)
+                .expect("cache position came from the same deque");
+            self.entries.push_back(entry);
+            return;
+        }
+        while self.entries.len() >= REUSABLE_EVIDENCE_MAX_ENTRIES
+            || self.resident_bytes.saturating_add(payload_len) > REUSABLE_EVIDENCE_MAX_BYTES
+        {
+            let Some(evicted) = self.entries.pop_front() else {
+                break;
+            };
+            self.resident_bytes = self.resident_bytes.saturating_sub(evicted.payload.len());
+        }
+        self.resident_bytes = self.resident_bytes.saturating_add(payload_len);
+        self.entries.push_back(CachedReusablePhase1Evidence {
+            fingerprint,
+            bypass_bigram,
+            unicode_normalization_enabled,
+            entropy_config_digest,
+            payload,
+            evidence,
+        });
+    }
 }
 
 impl Phase1AdmissionPlan {
@@ -605,45 +716,90 @@ impl CompiledScanner {
         true
     }
 
+    fn classify_phase1_payload(
+        &self,
+        chunk: &Chunk,
+        fingerprint: [u8; 32],
+        bypass_bigram: bool,
+        classify_reusable_evidence: bool,
+        entropy_config_digest: [u8; 32],
+    ) -> ReusablePhase1Evidence {
+        if classify_reusable_evidence {
+            if let Some(evidence) = self.reusable_phase1_evidence.lock().get(
+                fingerprint,
+                bypass_bigram,
+                self.config.unicode_normalization,
+                entropy_config_digest,
+                &chunk.data,
+            ) {
+                return evidence;
+            }
+        }
+
+        let admission = if bypass_bigram {
+            self.phase1_admission_bypassing_bigram(chunk.data.as_bytes())
+        } else {
+            self.phase1_admission(chunk.data.as_bytes())
+        };
+        let (keyword_trigger_count, keyword_hints) = self.phase2_keyword_triggers(&chunk.data);
+        let mut generic_positions = Vec::new();
+        if let Some(generic_plan) = self.detector_plans.generic_assignment() {
+            crate::engine::phase2_generic::keywords::collect_generic_keyword_positions_with(
+                generic_plan.stems(),
+                &chunk.data,
+                &mut generic_positions,
+            );
+        }
+        let cpu_trigger_hints =
+            classify_reusable_evidence.then(|| self.collect_triggered_patterns_cpu(&chunk.data));
+        let confirmed_patterns_absence = cpu_trigger_hints
+            .as_deref()
+            .is_some_and(|triggers| self.confirmed_patterns_absent(&chunk.data, triggers));
+        let evidence = ReusablePhase1Evidence {
+            admission,
+            keyword_trigger_count,
+            keyword_hints,
+            generic_positions,
+            phase2_always_active_absence: classify_reusable_evidence
+                && self.phase2_always_active_absence(&chunk.data),
+            cpu_trigger_hints,
+            normalization_passthrough: classify_reusable_evidence
+                && self.normalization_passthrough(&chunk.data),
+            confirmed_patterns_absence,
+            entropy_absence: classify_reusable_evidence && self.entropy_absent(&chunk.data),
+        };
+        if classify_reusable_evidence {
+            self.reusable_phase1_evidence.lock().insert(
+                fingerprint,
+                bypass_bigram,
+                self.config.unicode_normalization,
+                entropy_config_digest,
+                chunk.data.clone(),
+                evidence.clone(),
+            );
+        }
+        evidence
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_reusable_phase1_evidence_hits_for_diagnostics(&self) {
+        self.reusable_phase1_evidence.lock().hits = 0;
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn reusable_phase1_evidence_hits_for_diagnostics(&self) -> u64 {
+        self.reusable_phase1_evidence.lock().hits
+    }
+
     fn phase1_admission_plan_with_bigram_mode(
         &self,
         chunks: &[Chunk],
         bypass_bigram: bool,
     ) -> Phase1AdmissionPlan {
         let entropy_config_digest = self.entropy_evidence_config_digest();
-        let classify = |chunk: &Chunk, classify_reusable_evidence: bool| {
-            let admission = if bypass_bigram {
-                self.phase1_admission_bypassing_bigram(chunk.data.as_bytes())
-            } else {
-                self.phase1_admission(chunk.data.as_bytes())
-            };
-            let (keyword_trigger_count, keyword_hints) = self.phase2_keyword_triggers(&chunk.data);
-            let mut generic_positions = Vec::new();
-            if let Some(generic_plan) = self.detector_plans.generic_assignment() {
-                crate::engine::phase2_generic::keywords::collect_generic_keyword_positions_with(
-                    generic_plan.stems(),
-                    &chunk.data,
-                    &mut generic_positions,
-                );
-            }
-            let cpu_trigger_hints = classify_reusable_evidence
-                .then(|| self.collect_triggered_patterns_cpu(&chunk.data));
-            let confirmed_patterns_absence = cpu_trigger_hints
-                .as_deref()
-                .is_some_and(|triggers| self.confirmed_patterns_absent(&chunk.data, triggers));
-            let entropy_absence = classify_reusable_evidence && self.entropy_absent(&chunk.data);
-            (
-                admission,
-                keyword_trigger_count,
-                keyword_hints,
-                generic_positions,
-                classify_reusable_evidence && self.phase2_always_active_absence(&chunk.data),
-                cpu_trigger_hints,
-                classify_reusable_evidence && self.normalization_passthrough(&chunk.data),
-                confirmed_patterns_absence,
-                entropy_absence,
-            )
-        };
 
         let mut representatives = Vec::<([u8; 32], usize)>::new();
         let mut representative_for = Vec::with_capacity(chunks.len());
@@ -681,16 +837,28 @@ impl CompiledScanner {
             representatives
                 .par_iter()
                 .enumerate()
-                .map(|(position, (_, index))| {
-                    classify(&chunks[*index], representative_counts[position] > 1)
+                .map(|(position, (fingerprint, index))| {
+                    self.classify_phase1_payload(
+                        &chunks[*index],
+                        *fingerprint,
+                        bypass_bigram,
+                        representative_counts[position] > 1,
+                        entropy_config_digest,
+                    )
                 })
                 .collect::<Vec<_>>()
         } else {
             representatives
                 .iter()
                 .enumerate()
-                .map(|(position, (_, index))| {
-                    classify(&chunks[*index], representative_counts[position] > 1)
+                .map(|(position, (fingerprint, index))| {
+                    self.classify_phase1_payload(
+                        &chunks[*index],
+                        *fingerprint,
+                        bypass_bigram,
+                        representative_counts[position] > 1,
+                        entropy_config_digest,
+                    )
                 })
                 .collect::<Vec<_>>()
         };
@@ -702,19 +870,18 @@ impl CompiledScanner {
         for (chunk, representative_position) in
             chunks.iter().zip(representative_for.iter().copied())
         {
-            let (admission, keyword_trigger_count, _, _, _, _, _, _, _) =
-                &classified[representative_position];
+            let evidence = &classified[representative_position];
             let data = chunk.data.as_bytes();
             let len = data.len();
-            summary.record(*admission, len as u64);
-            if *keyword_trigger_count != 0 {
+            summary.record(evidence.admission, len as u64);
+            if evidence.keyword_trigger_count != 0 {
                 phase2_keyword_triggers.keyword_trigger_chunks += 1;
                 phase2_keyword_triggers.keyword_trigger_bytes += len as u64;
                 phase2_keyword_triggers.keyword_trigger_count = phase2_keyword_triggers
                     .keyword_trigger_count
-                    .saturating_add(*keyword_trigger_count);
+                    .saturating_add(evidence.keyword_trigger_count);
             }
-            admissions.push(*admission);
+            admissions.push(evidence.admission);
             chunk_shapes.push((data.as_ptr() as usize, len));
         }
         let mut phase2_keyword_hints = Vec::with_capacity(classified.len());
@@ -724,25 +891,14 @@ impl CompiledScanner {
         let mut normalization_passthrough = Vec::with_capacity(classified.len());
         let mut confirmed_patterns_absence = Vec::with_capacity(classified.len());
         let mut entropy_absence = Vec::with_capacity(classified.len());
-        for (
-            _,
-            _,
-            hints,
-            positions,
-            absence,
-            triggers,
-            passthrough,
-            confirmed_absence,
-            entropy_absent,
-        ) in classified
-        {
-            phase2_keyword_hints.push(hints);
-            generic_keyword_positions.push(positions);
-            phase2_always_active_absence.push(absence);
-            cpu_trigger_hints.push(triggers);
-            normalization_passthrough.push(passthrough);
-            confirmed_patterns_absence.push(confirmed_absence);
-            entropy_absence.push(entropy_absent);
+        for evidence in classified {
+            phase2_keyword_hints.push(evidence.keyword_hints);
+            generic_keyword_positions.push(evidence.generic_positions);
+            phase2_always_active_absence.push(evidence.phase2_always_active_absence);
+            cpu_trigger_hints.push(evidence.cpu_trigger_hints);
+            normalization_passthrough.push(evidence.normalization_passthrough);
+            confirmed_patterns_absence.push(evidence.confirmed_patterns_absence);
+            entropy_absence.push(evidence.entropy_absence);
         }
         Phase1AdmissionPlan {
             admissions,

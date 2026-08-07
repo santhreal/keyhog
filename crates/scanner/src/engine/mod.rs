@@ -491,6 +491,8 @@ pub struct CompiledScanner {
     /// Complete BLAKE3 identity for the compiled detector and decoder execution plan.
     pub(crate) compiled_plan_digest: [u8; 32],
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,
+    pub(crate) reusable_phase1_evidence:
+        parking_lot::Mutex<phase1_admission::ReusablePhase1EvidenceCache>,
     pub(crate) ac: Option<AhoCorasick>,
     /// Exact selected route or the temporary all-peer calibration census.
     pub(crate) backend_state: ScannerBackendState,
