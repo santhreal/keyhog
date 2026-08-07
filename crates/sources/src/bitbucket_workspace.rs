@@ -1,7 +1,5 @@
 //! Bitbucket Cloud workspace source: clone and scan every repository in a workspace.
 
-use std::thread;
-
 use base64::Engine as _;
 use keyhog_core::{Chunk, Source, SourceError};
 use reqwest::blocking::Client;
@@ -15,6 +13,7 @@ const DEFAULT_ENDPOINT: &str = "https://api.bitbucket.org/2.0";
 const MISSING_REQUIRED_FIELDS_ERROR: &str =
     "workspace, username, and app password parameters are required";
 
+#[derive(Clone)]
 pub(crate) struct BitbucketWorkspaceSource {
     workspace: String,
     username: String,
@@ -68,42 +67,36 @@ impl Source for BitbucketWorkspaceSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        // Hold the scan read lease across the synchronous fetch so a
-        // counter-asserting test's exclusive scope serializes this source's skip
-        // recording (unreachable API / bad token). A no-op in production where the
-        // gate is never armed; see `skip::gate_scan`.
-        crate::gate_scan(|| {
-            // Propagate the active profiling runtime onto the fetch thread so
-            // workspace enumeration and clone spans record there.
-            let profile_runtime = crate::profile::current_runtime();
-            let result = thread::scope(|s| {
-                match s
-                    .spawn(move || {
-                        let _profile_guard =
-                            profile_runtime.as_ref().map(|runtime| runtime.enter());
-                        collect_workspace_chunks(
-                            &self.workspace,
-                            &self.username,
-                            &self.token,
-                            &self.endpoint,
-                            &self.http,
-                            self.limits,
-                            self.respect_default_excludes,
-                        )
-                    })
-                    .join()
-                {
-                    Ok(result) => result,
-                    Err(_panic) => Err(SourceError::Other(
-                        "bitbucket-workspace fetch thread panicked".to_string(),
-                    )),
+        let lease = crate::acquire_scan_read_lease();
+        let source = self.clone();
+        let worker_lease = lease.clone();
+        let profile_runtime = crate::profile::current_runtime();
+        let stream = hosted_git::HostedChunkStream::spawn(
+            "keyhog-bitbucket-workspace",
+            "bitbucket-workspace",
+            worker_lease,
+            move |sender, worker_lease| {
+                let _attributed = worker_lease.enter();
+                let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
+                let result = stream_workspace_chunks(
+                    &source.workspace,
+                    &source.username,
+                    &source.token,
+                    &source.endpoint,
+                    &source.http,
+                    source.limits,
+                    source.respect_default_excludes,
+                    |row| sender.send(row).is_ok(),
+                );
+                if let Err(error) = result {
+                    let _ = sender.send(Err(error));
                 }
-            });
-            match result {
-                Ok(rows) => Box::new(rows.into_iter()),
-                Err(err) => Box::new(std::iter::once(Err(err))),
-            }
-        })
+            },
+        );
+        match stream {
+            Ok(stream) => crate::attach_scan_lease(lease, Box::new(stream)),
+            Err(error) => crate::attach_scan_lease(lease, Box::new(std::iter::once(Err(error)))),
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -134,7 +127,7 @@ struct BitbucketCloneLink {
     href: String,
 }
 
-fn collect_workspace_chunks(
+fn stream_workspace_chunks(
     workspace: &str,
     username: &str,
     token: &str,
@@ -142,15 +135,14 @@ fn collect_workspace_chunks(
     http: &crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
-) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
+    mut emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<(), SourceError> {
     validate_workspace(workspace)?;
     validate_basic_auth(username, token)?;
     let (api_root, screened) =
         hosted_git::validated_api_endpoint("bitbucket", endpoint, http.allow_private_endpoint)?;
     let client = build_client(username, token, http, screened.as_ref())?;
     let (repos, listing_errors) = {
-        // Workspace repo enumeration is the acquisition boundary; cloning and
-        // per-repo scans record inside `hosted_git::scan_hosted_repos`.
         let _enumerate = crate::profile::acquire_span();
         list_repositories(
             &client,
@@ -161,7 +153,7 @@ fn collect_workspace_chunks(
         )?
     };
     let expected_clone_origin = hosted_git::ExpectedCloneOrigin::bitbucket(&api_root)?;
-    let mut rows = hosted_git::scan_hosted_repos(
+    hosted_git::stream_hosted_repos(
         "bitbucket",
         "bitbucket-workspace",
         Some(workspace),
@@ -171,9 +163,14 @@ fn collect_workspace_chunks(
         &repos,
         limits,
         respect_default_excludes,
+        &mut emit,
     )?;
-    rows.extend(listing_errors.into_iter().map(Err));
-    Ok(rows)
+    for error in listing_errors {
+        if !emit(Err(error)) {
+            break;
+        }
+    }
+    Ok(())
 }
 
 fn build_client(
