@@ -545,74 +545,81 @@ impl GitHubCollaborationSource {
         chunks: &mut ChunkOutput<'_>,
     ) -> Result<(), GitHubGap> {
         let list_path = format!("/users/{}/gists", self.owner);
-        let (summaries, page_gap): (Vec<GistSummary>, _) = api.pages("gists", &list_path, "");
-        for summary in summaries {
-            validate_hex_id("gists", "gist id", &summary.id)?;
-            let revisions_path = format!("/gists/{}/commits", summary.id);
-            let (revisions, revisions_gap): (Vec<GistRevision>, _) =
-                api.pages("gists", &revisions_path, "");
-            for revision in revisions {
-                validate_hex_id("gists", "gist revision", &revision.version)?;
-                let revision_path = format!("/gists/{}/{}", summary.id, revision.version);
-                let revision_gist: Gist = api.one("gists", &revision_path, "")?;
-                if revision_gist.id != summary.id {
-                    return Err(GitHubGap::inaccessible(
-                        "gists",
-                        self.repository(),
-                        "GitHub returned a different gist identity for a requested revision",
-                    ));
-                }
-                for (name, file) in revision_gist.files {
-                    let encoded_name = percent_encode_path(&name);
-                    if file.truncated {
-                        return Err(GitHubGap::truncated(
+        api.pages_each("gists", &list_path, "", |api, summaries: Vec<GistSummary>| {
+            for summary in summaries {
+                validate_hex_id("gists", "gist id", &summary.id)?;
+                let revisions_path = format!("/gists/{}/commits", summary.id);
+                api.pages_each(
+                    "gists",
+                    &revisions_path,
+                    "",
+                    |api, revisions: Vec<GistRevision>| {
+                        for revision in revisions {
+                            validate_hex_id("gists", "gist revision", &revision.version)?;
+                            let revision_path =
+                                format!("/gists/{}/{}", summary.id, revision.version);
+                            let revision_gist: Gist = api.one("gists", &revision_path, "")?;
+                            if revision_gist.id != summary.id {
+                                return Err(GitHubGap::inaccessible(
+                                    "gists",
+                                    self.repository(),
+                                    "GitHub returned a different gist identity for a requested revision",
+                                ));
+                            }
+                            for (name, file) in revision_gist.files {
+                                let encoded_name = percent_encode_path(&name);
+                                if file.truncated {
+                                    return Err(GitHubGap::truncated(
+                                        "gists",
+                                        self.repository(),
+                                        format!("GitHub truncated gist file {encoded_name}"),
+                                    ));
+                                }
+                                let Some(content) = file.content else {
+                                    continue;
+                                };
+                                push_text_chunk(
+                                    chunks,
+                                    seen,
+                                    budget,
+                                    "gists",
+                                    format!(
+                                        "gist:{}:{}:{}",
+                                        summary.id, revision.version, encoded_name
+                                    ),
+                                    format!(
+                                        "github://gists/{}/{encoded_name}@{}",
+                                        summary.id, revision.version
+                                    ),
+                                    &revision.version,
+                                    revision.user.as_ref().map(|actor| actor.login.as_str()),
+                                    &revision.committed_at,
+                                    content,
+                                )?;
+                            }
+                        }
+                        Ok(())
+                    },
+                )?;
+                let comments_path = format!("/gists/{}/comments", summary.id);
+                api.pages_each(
+                    "gists",
+                    &comments_path,
+                    "",
+                    |_api, comments: Vec<Comment>| {
+                        append_comments(
+                            chunks,
+                            seen,
+                            budget,
                             "gists",
-                            self.repository(),
-                            format!("GitHub truncated gist file {encoded_name}"),
-                        ));
-                    }
-                    let Some(content) = file.content else {
-                        continue;
-                    };
-                    push_text_chunk(
-                        chunks,
-                        seen,
-                        budget,
-                        "gists",
-                        format!("gist:{}:{}:{}", summary.id, revision.version, encoded_name),
-                        format!(
-                            "github://gists/{}/{encoded_name}@{}",
-                            summary.id, revision.version
-                        ),
-                        &revision.version,
-                        revision.user.as_ref().map(|actor| actor.login.as_str()),
-                        &revision.committed_at,
-                        content,
-                    )?;
-                }
+                            &format!("github://gists/{}", summary.id),
+                            comments,
+                        )
+                    },
+                )?;
             }
-            if let Some(gap) = revisions_gap {
-                return Err(gap);
-            }
-            let comments_path = format!("/gists/{}/comments", summary.id);
-            let (comments, comments_gap): (Vec<Comment>, _) =
-                api.pages("gists", &comments_path, "");
-            append_comments(
-                chunks,
-                seen,
-                budget,
-                "gists",
-                &format!("github://gists/{}", summary.id),
-                comments,
-            )?;
-            if let Some(gap) = comments_gap {
-                return Err(gap);
-            }
-        }
-        if let Some(gap) = page_gap {
-            return Err(gap);
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     /// Release notes are operator-authored free text on the same footing as an
