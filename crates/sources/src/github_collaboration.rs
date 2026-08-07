@@ -629,42 +629,38 @@ impl GitHubCollaborationSource {
         chunks: &mut ChunkOutput<'_>,
     ) -> Result<(), GitHubGap> {
         let path = format!("/repos/{}/{}/releases", self.owner, self.repo);
-        let (releases, page_gap): (Vec<Release>, _) = api.pages("releases", &path, "");
-        for release in releases {
-            // A draft release has no `published_at`; `created_at` is then the
-            // only timestamp GitHub exposes for it.
-            let revision_time = release
-                .published_at
-                .as_deref()
-                .unwrap_or(&release.created_at);
-            let revision = revision_identity(&release.node_id, revision_time);
-            let title = release.name.as_deref().unwrap_or(&release.tag_name);
-            let mut text = join_title_body(title, release.body.as_deref());
-            for asset in &release.assets {
-                text.push('\n');
-                text.push_str(&asset.name);
-                if let Some(label) = asset.label.as_deref().filter(|label| !label.is_empty()) {
+        api.pages_each("releases", &path, "", |releases: Vec<Release>| {
+            for release in releases {
+                let revision_time = release
+                    .published_at
+                    .as_deref()
+                    .unwrap_or(&release.created_at);
+                let revision = revision_identity(&release.node_id, revision_time);
+                let title = release.name.as_deref().unwrap_or(&release.tag_name);
+                let mut text = join_title_body(title, release.body.as_deref());
+                for asset in &release.assets {
                     text.push('\n');
-                    text.push_str(label);
+                    text.push_str(&asset.name);
+                    if let Some(label) = asset.label.as_deref().filter(|label| !label.is_empty()) {
+                        text.push('\n');
+                        text.push_str(label);
+                    }
                 }
+                push_text_chunk(
+                    chunks,
+                    seen,
+                    budget,
+                    "releases",
+                    format!("release:{revision}"),
+                    self.provenance(&format!("releases/{}", release.id)),
+                    &revision,
+                    release.author.as_ref().map(|actor| actor.login.as_str()),
+                    revision_time,
+                    text,
+                )?;
             }
-            push_text_chunk(
-                chunks,
-                seen,
-                budget,
-                "releases",
-                format!("release:{revision}"),
-                self.provenance(&format!("releases/{}", release.id)),
-                &revision,
-                release.author.as_ref().map(|actor| actor.login.as_str()),
-                revision_time,
-                text,
-            )?;
-        }
-        if let Some(gap) = page_gap {
-            return Err(gap);
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn provenance(&self, suffix: &str) -> String {
@@ -899,6 +895,31 @@ impl<'a> GitHubApi<'a> {
             items.extend(page_items);
             if count < API_PAGE_SIZE {
                 return (items, None);
+            }
+            page += 1;
+        }
+    }
+
+    fn pages_each<T: DeserializeOwned>(
+        &mut self,
+        surface: &'static str,
+        path: &str,
+        extra_query: &str,
+        mut consume: impl FnMut(Vec<T>) -> Result<(), GitHubGap>,
+    ) -> Result<(), GitHubGap> {
+        let mut page = 1;
+        loop {
+            let _page_span = crate::profile::walk_span();
+            let query = if extra_query.is_empty() {
+                format!("per_page={API_PAGE_SIZE}&page={page}")
+            } else {
+                format!("{extra_query}&per_page={API_PAGE_SIZE}&page={page}")
+            };
+            let page_items: Vec<T> = self.request_json(surface, path, &query)?;
+            let count = page_items.len();
+            consume(page_items)?;
+            if count < API_PAGE_SIZE {
+                return Ok(());
             }
             page += 1;
         }
