@@ -210,7 +210,7 @@ def _filesystem_fixture(
                 chunk = block[:remaining]
                 handle.write(chunk)
                 remaining -= len(chunk)
-        return [_answer("single-line.json")], True
+        return [_answer("single-line.json")], False
     if wid == "filesystem-over-size-limit":
         size = _scaled(101 * 1024 * 1024, scale, len(CANARY_LINE))
         _write_sized(input_root / "over-limit.log", size)

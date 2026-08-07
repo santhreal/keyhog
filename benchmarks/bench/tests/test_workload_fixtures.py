@@ -184,7 +184,7 @@ def test_one_long_line_fixture_is_one_line_with_a_delimited_canary(
     assert payload.startswith(f"GITHUB_TOKEN={CANARY} ".encode())
     assert b"\n" not in payload
     assert receipt.expected_findings == 1
-    assert receipt.expected_coverage_gap is True
+    assert receipt.expected_coverage_gap is False
 
 def test_fixture_oracles_require_expected_coverage_gaps(
     tmp_path: pathlib.Path,
@@ -193,7 +193,6 @@ def test_fixture_oracles_require_expected_coverage_gaps(
     catalog = load_workload_catalog(CATALOG_PATH)
     gap_ids = {
         "filesystem-empty-directory",
-        "filesystem-one-long-line",
         "filesystem-sparse-files",
         "stdin-empty",
         "stdin-large-bounded",
@@ -208,7 +207,6 @@ def test_fixture_oracles_require_expected_coverage_gaps(
             0.001
             if workload_id
             in {
-                "filesystem-one-long-line",
                 "filesystem-sparse-files",
             }
             else 1.0
