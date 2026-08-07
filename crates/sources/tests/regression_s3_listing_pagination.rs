@@ -26,7 +26,7 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_sources::skip_counts;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use std::sync::{Mutex, MutexGuard};
 use support::split_chunk_results;
 
@@ -949,11 +949,10 @@ fn listing_auth_failure_counts_one_listing_failure() {
     );
 }
 
-/// A mid-pagination listing failure (page 2 returns 500) is counted as exactly
-/// one unreadable listing skip and surfaces one error row. NOTE: the current
-/// `collect_s3_chunks` propagates the page-2 error with `?`, discarding the
-/// already-collected page-1 chunk, so the result is a single error row. This
-/// pins that behavior (the failure is loud + counted, not a silent false-clean).
+/// A mid-pagination listing failure (page 2 returns 500) preserves already
+/// scanned page-1 findings, counts exactly one unreadable listing skip, and
+/// surfaces one error row. Streaming must never relabel the failed suffix clean,
+/// but it also must not discard findings from an earlier completed page.
 #[test]
 fn mid_pagination_listing_failure_counts_one_and_is_surfaced() {
     let _guard = counter_guard();
@@ -986,9 +985,10 @@ fn mid_pagination_listing_failure_counts_one_and_is_surfaced() {
 
     assert_eq!(
         ok.len(),
-        0,
-        "the page-2 listing error is propagated with `?`, discarding page-1 chunks"
+        1,
+        "the streamed page-1 chunk must survive a later listing-page failure"
     );
+    assert_eq!(ok[0].data.as_ref(), "first\n");
     assert_eq!(errors.len(), 1, "exactly one listing-failure error row");
     let err = errors[0].to_string();
     assert!(
