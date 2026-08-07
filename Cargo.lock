@@ -5340,6 +5340,7 @@ checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
 [[package]]
 name = "vyre"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "blake3",
  "bytemuck",
@@ -5355,6 +5356,7 @@ dependencies = [
 [[package]]
 name = "vyre-driver"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "arc-swap",
  "blake3",
@@ -5380,6 +5382,7 @@ dependencies = [
 [[package]]
 name = "vyre-driver-cuda"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "blake3",
  "bytemuck",
@@ -5402,6 +5405,7 @@ dependencies = [
 [[package]]
 name = "vyre-driver-metal"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "inventory",
  "metal",
@@ -5415,6 +5419,7 @@ dependencies = [
 [[package]]
 name = "vyre-driver-wgpu"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "arc-swap",
  "bincode",
@@ -5448,6 +5453,7 @@ dependencies = [
 [[package]]
 name = "vyre-emit-metal"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "bincode",
  "blake3",
@@ -5463,6 +5469,7 @@ dependencies = [
 [[package]]
 name = "vyre-emit-naga"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "blake3",
  "inventory",
@@ -5479,6 +5486,7 @@ dependencies = [
 [[package]]
 name = "vyre-emit-ptx"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "rustc-hash 2.1.3",
  "serde",
@@ -5491,6 +5499,7 @@ dependencies = [
 [[package]]
 name = "vyre-foundation"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "arrayvec",
  "blake3",
@@ -5518,6 +5527,7 @@ dependencies = [
 [[package]]
 name = "vyre-intrinsics"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "inventory",
  "thiserror 2.0.19",
@@ -5528,6 +5538,7 @@ dependencies = [
 [[package]]
 name = "vyre-libs"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "blake3",
  "bytemuck",
@@ -5550,6 +5561,7 @@ dependencies = [
 [[package]]
 name = "vyre-lower"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "im",
  "rustc-hash 2.1.3",
@@ -5562,6 +5574,7 @@ dependencies = [
 [[package]]
 name = "vyre-macros"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5571,6 +5584,7 @@ dependencies = [
 [[package]]
 name = "vyre-megakernel"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "blake3",
  "serde",
@@ -5582,6 +5596,7 @@ dependencies = [
 [[package]]
 name = "vyre-primitives"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "bytemuck",
  "inventory",
@@ -5592,6 +5607,7 @@ dependencies = [
 [[package]]
 name = "vyre-runtime"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "arc-swap",
  "blake3",
@@ -5612,6 +5628,7 @@ dependencies = [
 [[package]]
 name = "vyre-self-substrate"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "rustc-hash 2.1.3",
  "tracing",
@@ -5622,6 +5639,7 @@ dependencies = [
 [[package]]
 name = "vyre-spec"
 version = "0.7.2"
+source = "git+https://github.com/santhreal/vyre.git?rev=8be30afe43fb54e38965dd9e9ae46a1b39b824a2#8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 dependencies = [
  "serde",
  "smallvec",

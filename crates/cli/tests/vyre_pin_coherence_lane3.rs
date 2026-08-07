@@ -1,9 +1,8 @@
 //! Lane 3 - VYRE INTEGRATION coherence regression tests.
 //!
-//! KeyHog consumes VYRE from crates.io, not from a path mirror and not from any
-//! retired repository `vendor/` snapshot. These tests pin the registry contract:
-//! all five runtime VYRE crates are exact `=0.6.5` pins, they stay in lockstep,
-//! no VYRE dependency carries `path =`, and repository `vendor/` does not exist.
+//! KeyHog consumes one reviewed VYRE 0.7.2 upstream revision, not a path mirror
+//! or retired repository `vendor/` snapshot. These tests require every runtime
+//! VYRE crate to use the same exact version, Git source, and commit identity.
 
 use std::path::{Path, PathBuf};
 use toml::Value;
@@ -110,20 +109,26 @@ fn workspace_deps(cargo: &Value) -> &toml::value::Table {
         .expect("[workspace.dependencies] table")
 }
 
-const REQUIRED_VERSION: &str = "=0.6.5";
+const REQUIRED_VERSION: &str = "=0.7.2";
+const REQUIRED_GIT: &str = "https://github.com/santhreal/vyre.git";
+const REQUIRED_REV: &str = "8be30afe43fb54e38965dd9e9ae46a1b39b824a2";
 
-/// (dep key in [workspace.dependencies], published package name).
+/// (dep key in [workspace.dependencies], upstream package name).
 const VYRE: &[(&str, &str)] = &[
     ("vyre", "vyre"),
     ("vyre_libs", "vyre-libs"),
     ("vyre-driver-wgpu", "vyre-driver-wgpu"),
     ("vyre-driver-cuda", "vyre-driver-cuda"),
+    ("vyre-driver-metal", "vyre-driver-metal"),
     ("vyre-runtime", "vyre-runtime"),
 ];
 
-fn dep_version_and_path<'a>(key: &str, spec: &'a Value) -> (&'a str, Option<&'a str>) {
+fn dep_identity<'a>(
+    key: &str,
+    spec: &'a Value,
+) -> (&'a str, Option<&'a str>, Option<&'a str>, Option<&'a str>) {
     if let Some(version) = spec.as_str() {
-        return (version, None);
+        return (version, None, None, None);
     }
     let table = spec
         .as_table()
@@ -133,11 +138,13 @@ fn dep_version_and_path<'a>(key: &str, spec: &'a Value) -> (&'a str, Option<&'a 
         .and_then(|v| v.as_str())
         .unwrap_or_else(|| panic!("vyre dep '{key}' has no string version"));
     let path = table.get("path").and_then(|v| v.as_str());
-    (version, path)
+    let git = table.get("git").and_then(|v| v.as_str());
+    let rev = table.get("rev").and_then(|v| v.as_str());
+    (version, path, git, rev)
 }
 
 #[test]
-fn all_five_vyre_pins_present_exact_registry_and_lockstep() {
+fn all_vyre_pins_use_one_exact_upstream_revision() {
     let cargo = root_cargo();
     let deps = workspace_deps(&cargo);
 
@@ -146,19 +153,33 @@ fn all_five_vyre_pins_present_exact_registry_and_lockstep() {
         let spec = deps
             .get(*key)
             .unwrap_or_else(|| panic!("[workspace.dependencies] missing vyre dep '{key}'"));
-        let (version, path) = dep_version_and_path(key, spec);
+        let (version, path, git, rev) = dep_identity(key, spec);
         assert_eq!(
             version, REQUIRED_VERSION,
             "vyre dep '{key}' must pin exactly {REQUIRED_VERSION}, got {version}"
         );
         assert_eq!(
             path, None,
-            "vyre dep '{key}' must be a crates.io registry pin, not path override {path:?}"
+            "vyre dep '{key}' must not depend on a sibling checkout: {path:?}"
+        );
+        assert_eq!(
+            git,
+            Some(REQUIRED_GIT),
+            "vyre dep '{key}' must resolve from the reviewed upstream repository"
+        );
+        assert_eq!(
+            rev,
+            Some(REQUIRED_REV),
+            "vyre dep '{key}' must pin the reviewed commit exactly"
         );
         seen.push((*key, version.to_string()));
     }
 
-    assert_eq!(seen.len(), 5, "expected exactly 5 vyre deps");
+    assert_eq!(
+        seen.len(),
+        VYRE.len(),
+        "every VYRE dependency must be checked"
+    );
     let first = seen[0].1.clone();
     for (key, version) in &seen {
         assert_eq!(
@@ -209,7 +230,7 @@ fn repository_vendor_tree_is_absent_and_never_a_build_dependency() {
     assert_eq!(
         vendor_dirs,
         Vec::<PathBuf>::new(),
-        "repository vendor/ trees must not exist; keyhog consumes published dependencies from crates.io"
+        "repository vendor/ trees must not exist; KeyHog consumes the reviewed upstream VYRE revision"
     );
     assert!(
         !exclude.iter().any(|entry| entry.starts_with("vendor/")),
@@ -249,7 +270,7 @@ fn repository_vendor_tree_is_absent_and_never_a_build_dependency() {
 }
 
 #[test]
-fn vyre_docs_match_registry_pin_contract() {
+fn vyre_docs_match_upstream_revision_contract() {
     let root = repo_root();
     let cases: &[(&str, &str)] = &[
         ("PUBLISHING.md", "third_party/vyre"),
@@ -275,6 +296,6 @@ fn vyre_docs_match_registry_pin_contract() {
     assert_eq!(
         offending,
         Vec::<String>::new(),
-        "VYRE-facing docs must describe crates.io =0.6.5 pins, not retired path mirrors"
+        "VYRE-facing docs must describe the reviewed upstream 0.7.2 revision, not retired path mirrors"
     );
 }

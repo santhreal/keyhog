@@ -1,9 +1,9 @@
 # VYRE integration
 
-KeyHog pins the five VYRE runtime crates to exact crates.io version `=0.6.5`
-(VYRE v0.6.5). The pin is shared by every workspace crate and recorded in
-`Cargo.lock`; KeyHog does not carry a vendored VYRE tree or resolve VYRE through
-machine-local paths.
+KeyHog pins six VYRE runtime crates to exact version `=0.7.2` at reviewed
+upstream commit `8be30afe43fb54e38965dd9e9ae46a1b39b824a2`. Every workspace
+crate shares that immutable source identity through `Cargo.lock`; KeyHog carries
+no vendored VYRE tree and never resolves VYRE through machine-local paths.
 
 ## Production ownership
 
@@ -67,8 +67,8 @@ completed GPU work, and quarantines the affected autoroute workload identity.
 
 | Build feature | VYRE surface |
 |---|---|
-| `portable` | CPU-side VYRE support primitives only; no VYRE scan backend, WGPU, or CUDA driver |
-| `gpu` | Runtime-probed WGPU and CUDA drivers behind the shared GPU contract |
+| `portable` | CPU-side VYRE support primitives only; no VYRE scan backend or GPU driver |
+| `gpu` | Runtime-probed CUDA, native Metal, and WGPU drivers behind the shared GPU contract |
 
 The retired per-rule megakernel catalog and environment-selected GPU side routes
 are not production KeyHog backends. Backend names and runtime policy are the
