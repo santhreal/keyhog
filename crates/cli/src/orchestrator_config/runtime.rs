@@ -11,6 +11,9 @@ pub(crate) const MAX_THREADS_CAP: usize = 256;
 /// parsing and traversal are iterative; reserving 8 MiB per worker multiplied
 /// address-space and allocator commitment without a corresponding call depth.
 pub(crate) const KEYHOG_WORKER_STACK_BYTES: usize = 2 * 1024 * 1024;
+/// Persistent daemons trade a small amount of single-request parallelism for a
+/// bounded compile cache and worker-local scratch footprint.
+pub(crate) const PERSISTENT_DAEMON_WORKER_CAP: usize = 8;
 
 /// Documented conventional ML threshold value.
 ///
@@ -243,14 +246,16 @@ impl ScanRuntimeInput {
 /// long-lived worker stacks on SMT hosts.
 ///
 /// An already configured KeyHog pool remains authoritative. Otherwise this
-/// mirrors [`configure_threads`]'s default physical-core policy.
+/// returns the bounded persistent-daemon width used by daemon startup.
 pub(crate) fn keyhog_worker_threads() -> usize {
     if let Some(configured) = CONFIGURED_RAYON_THREADS.get().copied() {
         return configured;
     }
-    keyhog_scanner::hw_probe::probe_hardware()
-        .physical_cores
-        .max(1)
+    persistent_daemon_worker_width(keyhog_scanner::hw_probe::probe_hardware().physical_cores)
+}
+
+fn persistent_daemon_worker_width(physical_cores: usize) -> usize {
+    physical_cores.clamp(1, PERSISTENT_DAEMON_WORKER_CAP)
 }
 
 pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) -> Result<usize> {
@@ -265,7 +270,22 @@ pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) -
     } else {
         (physical_cores.max(1), "physical-cores")
     };
+    configure_resolved_threads(n, source, physical_cores)
+}
 
+pub(crate) fn configure_persistent_daemon_threads(physical_cores: usize) -> Result<usize> {
+    configure_resolved_threads(
+        persistent_daemon_worker_width(physical_cores),
+        "persistent-daemon",
+        physical_cores,
+    )
+}
+
+fn configure_resolved_threads(
+    n: usize,
+    source: &'static str,
+    physical_cores: usize,
+) -> Result<usize> {
     let _configuration_guard = RAYON_CONFIGURATION_LOCK
         .lock()
         .map_err(|error| anyhow::anyhow!("Rayon configuration lock was poisoned: {error}"))?;

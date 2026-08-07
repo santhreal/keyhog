@@ -1,3 +1,3 @@
 category = "Performance"
-summary = "Persistent daemons now configure KeyHog's physical-core Rayon pool before detector loading, preventing an accidental logical-core pool and its duplicate resident worker stacks."
+summary = "Persistent daemons now configure at most eight physical-core Rayon workers before detector loading, preventing accidental logical-core pools and bounding resident worker-local caches."
 crates = ["cli"]

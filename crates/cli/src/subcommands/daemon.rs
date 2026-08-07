@@ -55,7 +55,7 @@ async fn start(
 ) -> Result<ExitCode> {
     crate::runtime_preflight::validate_scan_runtime_config()?;
     let hardware = keyhog_scanner::hw_probe::probe_hardware();
-    crate::orchestrator_config::configure_threads(None, hardware.physical_cores)?;
+    crate::orchestrator_config::configure_persistent_daemon_threads(hardware.physical_cores)?;
     crate::orchestrator_config::validate_explicit_detector_path(
         &detectors_dir,
         detectors_cli_explicit,

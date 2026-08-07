@@ -1,8 +1,8 @@
 #[cfg(test)]
 use super::{
     fused_depth_default, gpu_runtime_policy_for_backend_override, gpu_runtime_policy_from_args,
-    require_keyhog_owned_rayon_pool, sanitise_thread_count, thread_pool_needs_initialization,
-    KEYHOG_WORKER_STACK_BYTES,
+    persistent_daemon_worker_width, require_keyhog_owned_rayon_pool, sanitise_thread_count,
+    thread_pool_needs_initialization, KEYHOG_WORKER_STACK_BYTES, PERSISTENT_DAEMON_WORKER_CAP,
 };
 #[cfg(test)]
 use crate::args::ScanArgs;
@@ -91,6 +91,14 @@ fn fused_default_allows_only_active_and_blocked_send_batches() {
 #[test]
 fn worker_stack_reservation_matches_the_bounded_runtime_contract() {
     assert_eq!(KEYHOG_WORKER_STACK_BYTES, 2 * 1024 * 1024);
+}
+
+#[cfg(test)]
+#[test]
+fn persistent_daemon_worker_width_is_bounded() {
+    assert_eq!(persistent_daemon_worker_width(1), 1);
+    assert_eq!(persistent_daemon_worker_width(8), 8);
+    assert_eq!(persistent_daemon_worker_width(32), 8);
 }
 
 #[cfg(test)]
