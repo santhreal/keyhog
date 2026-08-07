@@ -4,7 +4,8 @@ use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::execution_pack::{
     compose_policy_execution_pack, BackendPlan, CanonicalDetectorExecutionIr,
     CompiledRouteMatcherSections, ExecutionPack, ExecutionPackBackend, ExecutionPackIdentity,
-    ExecutionPackPolicy, HyperscanSimdExecutionProgram, PolicyPlanSections,
+    ExecutionPackPolicy, ExecutionPackSigningKey, HyperscanSimdExecutionProgram,
+    PolicyPlanSections,
 };
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::sync::{Mutex, MutexGuard};
@@ -64,6 +65,7 @@ fn chunk(text: &str) -> Chunk {
 
 fn mapped_pack(
     detectors: &[DetectorSpec],
+    authenticated: bool,
     mutate: impl FnOnce(&mut HyperscanSimdExecutionProgram),
 ) -> (tempfile::TempDir, ExecutionPack) {
     let ir = CanonicalDetectorExecutionIr::compile(detectors).expect("compile detector IR");
@@ -97,7 +99,21 @@ fn mapped_pack(
     let directory = tempfile::tempdir().expect("temporary pack directory");
     let path = directory.path().join("packed-simd.khpack");
     std::fs::write(&path, compiled.as_bytes()).expect("write SIMD execution pack");
-    let pack = ExecutionPack::open(&path, identity).expect("map SIMD execution pack");
+    let pack = if authenticated {
+        let signing_key =
+            ExecutionPackSigningKey::from_bytes([0x45; 32]).expect("SIMD pack signing key");
+        let signature = signing_key.sign(&compiled);
+        let signature_path = directory.path().join("packed-simd.sig");
+        std::fs::write(
+            &signature_path,
+            signature.canonical_bytes().expect("encode SIMD signature"),
+        )
+        .expect("write SIMD signature");
+        ExecutionPack::open_authenticated(&path, &signature_path, identity, &signing_key)
+            .expect("authenticate SIMD execution pack")
+    } else {
+        ExecutionPack::open(&path, identity).expect("map SIMD execution pack")
+    };
     (directory, pack)
 }
 
@@ -106,7 +122,7 @@ fn mapped_pack(
 fn packed_simd_rejects_authenticated_but_invalid_native_shard_bytes() {
     let _guard = serialized_tests();
     let detectors = detectors();
-    let (_directory, pack) = mapped_pack(&detectors, |program| {
+    let (_directory, pack) = mapped_pack(&detectors, true, |program| {
         let shard = program
             .serialized_shards
             .first_mut()
@@ -132,7 +148,7 @@ fn packed_simd_rejects_authenticated_but_invalid_native_shard_bytes() {
 fn packed_simd_rejects_swapped_canonical_ac_mapping_identities() {
     let _guard = serialized_tests();
     let detectors = detectors();
-    let (_directory, pack) = mapped_pack(&detectors, |program| {
+    let (_directory, pack) = mapped_pack(&detectors, true, |program| {
         let right = program
             .patterns
             .iter()
@@ -164,7 +180,7 @@ fn packed_simd_rejects_swapped_canonical_ac_mapping_identities() {
 fn packed_simd_rejects_detector_mapping_identity_drift() {
     let _guard = serialized_tests();
     let detectors = detectors();
-    let (_directory, pack) = mapped_pack(&detectors, |program| {
+    let (_directory, pack) = mapped_pack(&detectors, true, |program| {
         program.patterns[0].detector_index =
             (program.patterns[0].detector_index + 1) % detectors.len() as u32;
     });
@@ -177,7 +193,7 @@ fn packed_simd_rejects_detector_mapping_identity_drift() {
         .contains("detector identity does not match"));
 }
 
-/// WHY: install-compiled shards replace only database construction, so positive, negative, byte-boundary, and unsupported-pattern recovery findings must remain exactly equal to the ordinary scanner.
+/// WHY: signed install-compiled shards replace only database construction, so positive, negative, byte-boundary, and unsupported-pattern recovery findings must remain exactly equal to the ordinary scanner.
 #[test]
 fn packed_simd_native_shards_preserve_exact_findings_and_unsupported_recovery() {
     let _guard = serialized_tests();
@@ -185,7 +201,7 @@ fn packed_simd_native_shards_preserve_exact_findings_and_unsupported_recovery() 
     let ordinary =
         CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::CpuFallback)
             .expect("compile ordinary scalar scanner");
-    let (_directory, pack) = mapped_pack(&detectors, |_| {});
+    let (_directory, pack) = mapped_pack(&detectors, true, |_| {});
     let packed = CompiledScanner::compile_from_execution_pack(&pack)
         .expect("construct scanner from native SIMD pack");
     for (text, expected_findings) in [
@@ -226,15 +242,21 @@ fn packed_simd_native_shards_preserve_exact_findings_and_unsupported_recovery() 
     }
 }
 
-/// WHY: a valid mapped SIMD pack already owns native databases, so scanner construction and repeated first-use materialization must not call the runtime compiler.
+/// WHY: a valid signed SIMD pack already owns native databases, so scanner construction and repeated first-use materialization must not call the runtime compiler.
 #[test]
 fn packed_simd_first_use_never_invokes_compile_with_opts() {
     let _guard = serialized_tests();
     let detectors = detectors();
-    let (_directory, pack) = mapped_pack(&detectors, |_| {});
+    let verified_before = HyperscanSimdExecutionProgram::verified_shard_bytes();
+    let (_directory, pack) = mapped_pack(&detectors, true, |_| {});
     let after_install_compile = HyperscanSimdExecutionProgram::compile_with_opts_invocations();
     let scanner = CompiledScanner::compile_from_execution_pack(&pack)
         .expect("construct scanner from native SIMD pack");
+    assert_eq!(
+        HyperscanSimdExecutionProgram::verified_shard_bytes(),
+        verified_before,
+        "signed scanner construction rehashed native shard payloads"
+    );
     assert_eq!(
         HyperscanSimdExecutionProgram::compile_with_opts_invocations(),
         after_install_compile
@@ -248,5 +270,20 @@ fn packed_simd_first_use_never_invokes_compile_with_opts() {
         HyperscanSimdExecutionProgram::compile_with_opts_invocations(),
         after_install_compile,
         "packed SIMD scanner invoked compile_with_opts at scan time"
+    );
+}
+
+/// WHY: only an installation signature permits reuse of prior whole-pack authentication; unsigned mapped packs must still hash every native shard before retaining it.
+#[test]
+fn unsigned_simd_pack_revalidates_native_shard_payloads() {
+    let _guard = serialized_tests();
+    let detectors = detectors();
+    let verified_before = HyperscanSimdExecutionProgram::verified_shard_bytes();
+    let (_directory, pack) = mapped_pack(&detectors, false, |_| {});
+    CompiledScanner::compile_from_execution_pack(&pack)
+        .expect("construct scanner from unsigned mapped SIMD pack");
+    assert!(
+        HyperscanSimdExecutionProgram::verified_shard_bytes() > verified_before,
+        "unsigned scanner construction trusted native shard payloads without hashing"
     );
 }

@@ -351,43 +351,47 @@ impl CompiledScanner {
                 ))
             })
         };
-        if pack
-            .digest_mapped_bytes_and_release(section(Section::DetectorIr)?)
-            .map_err(|error| crate::error::ScanError::Config(error.to_string()))?
-            != identity.detector_digest
-        {
-            return Err(crate::error::ScanError::Config(
-                "execution pack DetectorIr identity does not match its header".to_owned(),
-            ));
-        }
-        let backend_program = section(Section::BackendProgram)?;
-        let backend_identity_bytes = if identity.backend.is_gpu() {
-            #[cfg(feature = "gpu")]
-            {
-                crate::execution_pack::VyreOrchestrationProgram::backend_section_receipt(
-                    backend_program,
-                    identity.backend,
-                )
+        if !pack.signature_authenticated() {
+            if pack
+                .digest_mapped_bytes_and_release(section(Section::DetectorIr)?)
                 .map_err(|error| crate::error::ScanError::Config(error.to_string()))?
-            }
-            #[cfg(not(feature = "gpu"))]
+                != identity.detector_digest
             {
                 return Err(crate::error::ScanError::Config(
-                    "execution pack selects GPU but this scanner was built without GPU support"
-                        .to_owned(),
+                    "execution pack DetectorIr identity does not match its header".to_owned(),
                 ));
             }
-        } else {
-            backend_program
-        };
-        if pack
-            .digest_mapped_bytes_and_release(backend_identity_bytes)
-            .map_err(|error| crate::error::ScanError::Config(error.to_string()))?
-            != identity.backend_digest
-        {
-            return Err(crate::error::ScanError::Config(
-                "execution pack BackendProgram identity does not match its header".to_owned(),
-            ));
+        }
+        let backend_program = section(Section::BackendProgram)?;
+        if !pack.signature_authenticated() {
+            let backend_identity_bytes = if identity.backend.is_gpu() {
+                #[cfg(feature = "gpu")]
+                {
+                    crate::execution_pack::VyreOrchestrationProgram::backend_section_receipt(
+                        backend_program,
+                        identity.backend,
+                    )
+                    .map_err(|error| crate::error::ScanError::Config(error.to_string()))?
+                }
+                #[cfg(not(feature = "gpu"))]
+                {
+                    return Err(crate::error::ScanError::Config(
+                        "execution pack selects GPU but this scanner was built without GPU support"
+                            .to_owned(),
+                    ));
+                }
+            } else {
+                backend_program
+            };
+            if pack
+                .digest_mapped_bytes_and_release(backend_identity_bytes)
+                .map_err(|error| crate::error::ScanError::Config(error.to_string()))?
+                != identity.backend_digest
+            {
+                return Err(crate::error::ScanError::Config(
+                    "execution pack BackendProgram identity does not match its header".to_owned(),
+                ));
+            }
         }
         let packed_simd_program: Option<PackedSimdProgram> = match identity.backend {
             crate::execution_pack::ExecutionPackBackend::Cpu => {
@@ -401,7 +405,15 @@ impl CompiledScanner {
             crate::execution_pack::ExecutionPackBackend::Simd => {
                 #[cfg(feature = "simd")]
                 {
-                    Some(
+                    let decoded = if pack.signature_authenticated() {
+                        crate::execution_pack::HyperscanSimdExecutionProgram::
+                            decode_authenticated_mapped_with_release(
+                                backend_program,
+                                identity.detector_digest,
+                                |bytes| pack.mapped_bytes(bytes),
+                                |bytes| pack.release_mapped_bytes(bytes),
+                            )
+                    } else {
                         crate::execution_pack::HyperscanSimdExecutionProgram::
                             decode_mapped_with_release(
                                 backend_program,
@@ -409,7 +421,10 @@ impl CompiledScanner {
                                 |bytes| pack.mapped_bytes(bytes),
                                 |bytes| pack.release_mapped_bytes(bytes),
                             )
-                        .map_err(|error| crate::error::ScanError::Config(error.to_string()))?,
+                    };
+                    Some(
+                        decoded
+                            .map_err(|error| crate::error::ScanError::Config(error.to_string()))?,
                     )
                 }
                 #[cfg(not(feature = "simd"))]
