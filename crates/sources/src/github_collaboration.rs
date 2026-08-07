@@ -166,7 +166,7 @@ impl GitHubCollaborationSource {
         api: &mut GitHubApi<'_>,
         budget: &mut ContentBudget,
         seen: &mut HashSet<String>,
-        chunks: &mut Vec<Chunk>,
+        chunks: &mut ChunkOutput<'_>,
     ) -> Result<(), GitHubGap> {
         let path = format!("/repos/{}/{}/issues", self.owner, self.repo);
         let (issues, page_gap): (Vec<Issue>, _) =
@@ -217,7 +217,7 @@ impl GitHubCollaborationSource {
         api: &mut GitHubApi<'_>,
         budget: &mut ContentBudget,
         seen: &mut HashSet<String>,
-        chunks: &mut Vec<Chunk>,
+        chunks: &mut ChunkOutput<'_>,
     ) -> Result<(), GitHubGap> {
         let path = format!("/repos/{}/{}/pulls", self.owner, self.repo);
         let (pulls, page_gap): (Vec<PullRequest>, _) =
@@ -292,7 +292,7 @@ impl GitHubCollaborationSource {
         api: &mut GitHubApi<'_>,
         budget: &mut ContentBudget,
         seen: &mut HashSet<String>,
-        chunks: &mut Vec<Chunk>,
+        chunks: &mut ChunkOutput<'_>,
     ) -> Result<(), GitHubGap> {
         let mut cursor: Option<String> = None;
         loop {
@@ -346,7 +346,7 @@ impl GitHubCollaborationSource {
         api: &mut GitHubApi<'_>,
         budget: &mut ContentBudget,
         seen: &mut HashSet<String>,
-        chunks: &mut Vec<Chunk>,
+        chunks: &mut ChunkOutput<'_>,
         number: u64,
     ) -> Result<(), GitHubGap> {
         let mut cursor: Option<String> = None;
@@ -435,7 +435,7 @@ impl GitHubCollaborationSource {
         _api: &mut GitHubApi<'_>,
         budget: &mut ContentBudget,
         seen: &mut HashSet<String>,
-        chunks: &mut Vec<Chunk>,
+        chunks: &mut ChunkOutput<'_>,
     ) -> Result<(), GitHubGap> {
         let temp = tempfile::tempdir().map_err(|_| {
             GitHubGap::inaccessible(
@@ -482,7 +482,7 @@ impl GitHubCollaborationSource {
         clone_path: &std::path::Path,
         budget: &mut ContentBudget,
         seen: &mut HashSet<String>,
-        chunks: &mut Vec<Chunk>,
+        chunks: &mut ChunkOutput<'_>,
     ) -> Result<(), GitHubGap> {
         let source = crate::GitSource::new(clone_path.to_path_buf()).with_limits(self.limits);
         for row in source.chunks() {
@@ -534,7 +534,7 @@ impl GitHubCollaborationSource {
         api: &mut GitHubApi<'_>,
         budget: &mut ContentBudget,
         seen: &mut HashSet<String>,
-        chunks: &mut Vec<Chunk>,
+        chunks: &mut ChunkOutput<'_>,
     ) -> Result<(), GitHubGap> {
         let list_path = format!("/users/{}/gists", self.owner);
         let (summaries, page_gap): (Vec<GistSummary>, _) = api.pages("gists", &list_path, "");
@@ -626,7 +626,7 @@ impl GitHubCollaborationSource {
         api: &mut GitHubApi<'_>,
         budget: &mut ContentBudget,
         seen: &mut HashSet<String>,
-        chunks: &mut Vec<Chunk>,
+        chunks: &mut ChunkOutput<'_>,
     ) -> Result<(), GitHubGap> {
         let path = format!("/repos/{}/{}/releases", self.owner, self.repo);
         let (releases, page_gap): (Vec<Release>, _) = api.pages("releases", &path, "");
@@ -691,11 +691,16 @@ pub(crate) fn collect_wiki_repo_for_test(
     .with_limits(limits);
     let mut budget = ContentBudget::new(limits);
     let mut seen = HashSet::new();
-    let mut chunks = Vec::new();
+    let mut rows = Vec::new();
+    let mut emit = |row| {
+        rows.push(row);
+        true
+    };
+    let mut output = ChunkOutput::new(&mut emit);
     source
-        .collect_wiki_repo(clone_path, &mut budget, &mut seen, &mut chunks)
+        .collect_wiki_repo(clone_path, &mut budget, &mut seen, &mut output)
         .map_err(GitHubGap::into_source_error)?;
-    Ok(chunks)
+    rows.into_iter().collect()
 }
 
 impl Source for GitHubCollaborationSource {
@@ -732,27 +737,45 @@ impl Source for GitHubCollaborationSource {
     }
 }
 
+struct ChunkOutput<'a> {
+    emit: &'a mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+    accepted: bool,
+}
+
+impl<'a> ChunkOutput<'a> {
+    fn new(emit: &'a mut dyn FnMut(Result<Chunk, SourceError>) -> bool) -> Self {
+        Self {
+            emit,
+            accepted: true,
+        }
+    }
+
+    fn push(&mut self, chunk: Chunk) {
+        if self.accepted {
+            self.accepted = (self.emit)(Ok(chunk));
+        }
+    }
+}
+
 fn stream_surface<F>(
     surface: &'static str,
     emit: &mut impl FnMut(Result<Chunk, SourceError>) -> bool,
     collect: F,
 ) -> bool
 where
-    F: FnOnce(&mut Vec<Chunk>) -> Result<(), GitHubGap>,
+    F: FnOnce(&mut ChunkOutput<'_>) -> Result<(), GitHubGap>,
 {
-    let mut chunks = Vec::new();
-    let result = collect(&mut chunks);
-    for chunk in chunks {
-        if !emit(Ok(chunk)) {
-            return false;
-        }
+    let mut output = ChunkOutput::new(emit);
+    let result = collect(&mut output);
+    if !output.accepted {
+        return false;
     }
     if let Err(gap) = result {
         if gap.kind == SourceCoverageGapKind::Truncated {
             let _recorded = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
         }
         debug_assert_eq!(surface, gap.surface);
-        return emit(Err(gap.into_source_error()));
+        return (output.emit)(Err(gap.into_source_error()));
     }
     true
 }
@@ -1122,7 +1145,7 @@ fn validate_hex_id(surface: &'static str, kind: &str, value: &str) -> Result<(),
 }
 
 fn push_text_chunk(
-    output: &mut Vec<Chunk>,
+    output: &mut ChunkOutput<'_>,
     seen: &mut HashSet<String>,
     budget: &mut ContentBudget,
     surface: &'static str,
@@ -1158,7 +1181,7 @@ fn push_text_chunk(
 }
 
 fn append_comments(
-    output: &mut Vec<Chunk>,
+    output: &mut ChunkOutput<'_>,
     seen: &mut HashSet<String>,
     budget: &mut ContentBudget,
     surface: &'static str,
