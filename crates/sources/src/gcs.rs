@@ -5,6 +5,7 @@ use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use reqwest::blocking::Client;
 use serde::Deserialize;
 
+#[derive(Clone)]
 pub struct GcsSource {
     bucket: String,
     prefix: Option<String>,
@@ -71,30 +72,38 @@ impl Source for GcsSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        // Hold the scan read lease across the synchronous object listing so a
-        // counter-asserting test's exclusive scope serializes this source's skip
-        // recording (unreadable objects). A no-op in production where the gate is
-        // never armed; see `skip::gate_scan`.
-        crate::gate_scan(|| {
-            let result = crate::cloud::collect_on_blocking_thread("gcs", || {
-                collect_gcs_chunks(
-                    &self.bucket,
-                    self.prefix.as_deref(),
-                    &self.endpoint,
-                    match self.max_objects {
-                        Some(max_objects) => max_objects,
-                        None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
-                    },
-                    self.limits,
-                    &self.http,
-                    self.allow_token_forward,
-                )
-            });
-            match result {
-                Ok(rows) => Box::new(rows.into_iter()),
-                Err(error) => Box::new(std::iter::once(Err(error))),
-            }
-        })
+        let lease = crate::acquire_scan_read_lease();
+        let source = self.clone();
+        let worker_lease = lease.clone();
+        let profile_runtime = crate::profile::current_runtime();
+        let stream = crate::cloud::CloudChunkStream::spawn(
+            "keyhog-gcs",
+            "gcs",
+            worker_lease,
+            move |sender, worker_lease| {
+                let _attributed = worker_lease.enter();
+                let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
+                let result = stream_gcs_chunks(
+                    &source.bucket,
+                    source.prefix.as_deref(),
+                    &source.endpoint,
+                    source
+                        .max_objects
+                        .unwrap_or(source.limits.cloud_max_objects),
+                    source.limits,
+                    &source.http,
+                    source.allow_token_forward,
+                    |row| sender.send(row).is_ok(),
+                );
+                if let Err(error) = result {
+                    let _ = sender.send(Err(error));
+                }
+            },
+        );
+        match stream {
+            Ok(stream) => crate::attach_scan_lease(lease, Box::new(stream)),
+            Err(error) => crate::attach_scan_lease(lease, Box::new(std::iter::once(Err(error)))),
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -131,7 +140,7 @@ impl GcsObject {
     }
 }
 
-fn collect_gcs_chunks(
+fn stream_gcs_chunks(
     bucket: &str,
     prefix: Option<&str>,
     endpoint: &str,
@@ -139,23 +148,17 @@ fn collect_gcs_chunks(
     limits: crate::SourceLimits,
     http: &crate::http::HttpClientConfig,
     allow_token_forward: bool,
-) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
+    mut emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<(), SourceError> {
     let bucket = validate_bucket_name(bucket)?;
-    // Bucket acquisition: endpoint validation, client build, and auth.
     let _acquire = crate::profile::acquire_span();
     let (endpoint, screened) =
         crate::cloud::validate_cloud_endpoint(endpoint, "GCS", http.allow_private_endpoint, true)?;
     let client = crate::cloud::blocking_client("GCS", http, screened.as_ref())?;
     let bearer = resolve_gcs_auth(&endpoint, allow_token_forward)?;
     drop(_acquire);
-    let mut chunks = Vec::new();
     let mut coverage = crate::cloud::CloudListingCoverage::new("gcs", "objects", max_objects);
-    let fetch_pool = crate::cloud::object_fetch_pool("gcs")?;
-
-    // First listing page is fetched inline; every later page prefetches during
-    // the previous page's download batch (`ListingPrefetch`), hiding listing
-    // latency behind the downloads. Page contents, cursor threading, and
-    // coverage accounting are identical to the serial loop.
+    let mut control_rows = Vec::new();
     let mut listing = {
         let _page = crate::profile::walk_span();
         fetch_gcs_listing_page(
@@ -170,18 +173,12 @@ fn collect_gcs_chunks(
     };
 
     loop {
-        if !coverage.has_capacity_or_record(&mut chunks) {
+        if !coverage.has_capacity_or_record(&mut control_rows) {
+            emit_gcs_control_rows(&mut control_rows, &mut emit);
             break;
         }
 
         let (page, reached_limit) = coverage.take_page(listing.items);
-
-        // An empty/whitespace `nextPageToken` means the listing is exhausted;
-        // re-requesting with it would restart from page one and re-download
-        // the same objects. See `crate::cloud::meaningful_continuation_token`.
-        // Decided BEFORE the download batch so the next listing page can
-        // overlap it; the max_objects gap still records at the exact serial
-        // position (after this page's chunks are pushed).
         let next_token = if reached_limit {
             None
         } else {
@@ -212,26 +209,62 @@ fn collect_gcs_chunks(
             _ => crate::cloud::ListingPrefetch::none(),
         };
 
-        // Object downloads: one read span per page batch.
-        let page_chunks = {
+        let accepted = {
             let _download = crate::profile::read_span();
-            download_gcs_listing_page(
-                &fetch_pool,
+            crate::cloud::stream_ordered_fetch(
                 &page,
-                &client,
-                &endpoint,
-                &bucket,
-                bearer.as_deref(),
-                limits.gcs_object_bytes,
+                crate::cloud::OBJECT_FETCH_THREADS,
+                |object| {
+                    let listed_size = object.size_bytes()?;
+                    if listed_size == Some(0) {
+                        return Ok(None);
+                    }
+                    if !crate::cloud::is_probably_text_object_key(&object.name) {
+                        tracing::warn!(
+                            bucket = %bucket,
+                            key = %object.name,
+                            "skipping GCS object: extension is treated as binary/container content; NOT scanned as text",
+                        );
+                        return Err(crate::cloud::record_unscanned_object_skip(
+                            crate::SourceSkipEvent::Binary,
+                            "GCS object",
+                            "object",
+                            &format!("gs://{bucket}/{}", object.name),
+                            "extension is treated as binary/container content",
+                        ));
+                    }
+                    fetch_gcs_object_chunk(
+                        &client,
+                        &endpoint,
+                        &bucket,
+                        &object.name,
+                        listed_size,
+                        bearer.as_deref(),
+                        limits.gcs_object_bytes,
+                    )
+                },
+                |result| match result {
+                    Ok(Some(chunk)) => {
+                        crate::profile::add_input_units(1);
+                        crate::profile::add_input_bytes(chunk.data.len() as u64);
+                        emit(Ok(chunk))
+                    }
+                    Ok(None) => true,
+                    Err(error) => emit(Err(error)),
+                },
             )
         };
-        crate::cloud::push_page_chunks(&mut chunks, page_chunks);
+        if !accepted {
+            let _ = prefetch.join();
+            return Ok(());
+        }
 
         if reached_limit {
             coverage.record_truncated(
-                &mut chunks,
+                &mut control_rows,
                 "max_objects limit reached within the current GCS listing page",
             );
+            emit_gcs_control_rows(&mut control_rows, &mut emit);
             break;
         }
         if next_token.is_none() {
@@ -239,16 +272,27 @@ fn collect_gcs_chunks(
         }
         match prefetch.join() {
             Some(next_listing) => listing = next_listing?,
-            // Capacity exactly exhausted by this page: the serial loop-top
-            // check recorded the max_objects gap here without fetching again.
             None => {
-                coverage.has_capacity_or_record(&mut chunks);
+                coverage.has_capacity_or_record(&mut control_rows);
+                emit_gcs_control_rows(&mut control_rows, &mut emit);
                 break;
             }
         }
     }
 
-    Ok(chunks)
+    Ok(())
+}
+
+fn emit_gcs_control_rows(
+    rows: &mut Vec<Result<Chunk, SourceError>>,
+    emit: &mut impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    for row in rows.drain(..) {
+        if !emit(row) {
+            return false;
+        }
+    }
+    true
 }
 
 fn resolve_gcs_auth(
@@ -304,52 +348,6 @@ fn fetch_gcs_listing_page(
             "objects",
             format!("failed to parse listing response: {error}"),
         )
-    })
-}
-
-fn download_gcs_listing_page(
-    fetch_pool: &rayon::ThreadPool,
-    page: &[GcsObject],
-    client: &Client,
-    endpoint: &str,
-    bucket: &str,
-    bearer: Option<&str>,
-    max_object_bytes: u64,
-) -> Vec<Result<Option<Chunk>, SourceError>> {
-    use rayon::prelude::*;
-
-    fetch_pool.install(|| {
-        page.par_iter()
-            .map(|object| -> Result<Option<Chunk>, SourceError> {
-                let listed_size = object.size_bytes()?;
-                if listed_size == Some(0) {
-                    return Ok(None);
-                }
-                if !crate::cloud::is_probably_text_object_key(&object.name) {
-                    tracing::warn!(
-                        bucket = %bucket,
-                        key = %object.name,
-                        "skipping GCS object: extension is treated as binary/container content; NOT scanned as text",
-                    );
-                    return Err(crate::cloud::record_unscanned_object_skip(
-                        crate::SourceSkipEvent::Binary,
-                        "GCS object",
-                        "object",
-                        &format!("gs://{bucket}/{}", object.name),
-                        "extension is treated as binary/container content",
-                    ));
-                }
-                fetch_gcs_object_chunk(
-                    client,
-                    endpoint,
-                    bucket,
-                    &object.name,
-                    listed_size,
-                    bearer,
-                    max_object_bytes,
-                )
-            })
-            .collect()
     })
 }
 
