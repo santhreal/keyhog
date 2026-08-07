@@ -1,6 +1,7 @@
 #[cfg(target_os = "linux")]
 use super::descriptor_walk::{walk_descriptor_relative, DescriptorEntryKind};
-use codewalk::{CodeWalker, FileEntry};
+use super::filter::FilesystemWalkConfig;
+use codewalk::FileEntry;
 use keyhog_core::SourceError;
 use std::path::{Path, PathBuf};
 
@@ -126,16 +127,109 @@ impl Iterator for CompactEntries {
     }
 }
 
-/// Collect an unbounded parallel walk into bounded, deterministic metadata.
+type MetadataWalkResult = Result<FileEntry, String>;
+
+fn configured_walk_builder(root: &Path, config: &FilesystemWalkConfig) -> ignore::WalkBuilder {
+    let mut builder = ignore::WalkBuilder::new(root);
+    builder
+        .hidden(false)
+        .git_ignore(config.respect_gitignore)
+        .git_global(config.respect_gitignore)
+        .git_exclude(config.respect_gitignore)
+        .follow_links(false)
+        .add_custom_ignore_filename(".keyhogignore");
+
+    if !config.ignore_overrides.is_empty() {
+        let mut overrides = ignore::overrides::OverrideBuilder::new(root);
+        for pattern in &config.ignore_overrides {
+            if let Err(error) = overrides.add(pattern) {
+                tracing::warn!(%pattern, %error, "invalid filesystem ignore override");
+            }
+        }
+        match overrides.build() {
+            Ok(overrides) => {
+                builder.overrides(overrides);
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to build filesystem ignore overrides");
+            }
+        }
+    }
+    builder
+}
+
+fn validate_walk_root(root: &Path) -> Result<(), String> {
+    let mut current = PathBuf::new();
+    for component in root.components() {
+        current.push(component.as_os_str());
+        let metadata = std::fs::symlink_metadata(&current).map_err(|error| {
+            format!(
+                "failed to inspect filesystem root component '{}': {error}",
+                current.display()
+            )
+        })?;
+        if metadata.file_type().is_symlink() {
+            return Err(format!(
+                "refusing filesystem root with symlink component '{}'",
+                current.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn metadata_walk_result(
+    result: Result<ignore::DirEntry, ignore::Error>,
+) -> Option<MetadataWalkResult> {
+    let entry = match result {
+        Ok(entry) => entry,
+        Err(error) => return Some(Err(error.to_string())),
+    };
+    if !entry
+        .file_type()
+        .is_some_and(|file_type| file_type.is_file())
+    {
+        return None;
+    }
+    Some(
+        entry
+            .metadata()
+            .map(|metadata| FileEntry {
+                path: entry.into_path(),
+                size: metadata.len(),
+                is_binary: false,
+            })
+            .map_err(|error| error.to_string()),
+    )
+}
+
+pub(super) fn walk_metadata(
+    root: &Path,
+    config: &FilesystemWalkConfig,
+    mut visit: impl FnMut(MetadataWalkResult) -> bool,
+) {
+    if let Err(error) = validate_walk_root(root) {
+        visit(Err(error));
+        return;
+    }
+    for result in configured_walk_builder(root, config)
+        .build()
+        .filter_map(metadata_walk_result)
+    {
+        if !visit(result) {
+            break;
+        }
+    }
+}
+
+/// Collect an unbounded walk into bounded, deterministic metadata.
 ///
 /// File reads still start only after discovery completes, preserving the
 /// path-sorted chunk order required by autoroute replay. Unix external-merges
 /// bounded native-byte runs so path metadata does not remain heap-resident.
 pub(super) fn collect_unbounded_sorted(
-    walker: CodeWalker,
     root: &Path,
-    walk_threads: usize,
-    respect_gitignore: bool,
+    config: &FilesystemWalkConfig,
     has_ignore_patterns: bool,
 ) -> (SortedEntries, Vec<SourceError>, usize, u64) {
     let _walk = crate::profile::walk_span();
@@ -161,21 +255,21 @@ pub(super) fn collect_unbounded_sorted(
     let can_walk = true;
 
     if can_walk {
-        for result in walker.walk_parallel(walk_threads) {
+        walk_metadata(root, config, |result| {
             match result {
                 Ok(entry) => {
                     let size = entry.size;
                     #[cfg(unix)]
                     {
                         let Some(active_builder) = builder.as_mut() else {
-                            break;
+                            return false;
                         };
                         if let Err(error) = active_builder.push(entry) {
                             let _event =
                                 crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                             errors.push(error);
                             builder = None;
-                            break;
+                            return false;
                         }
                     }
                     #[cfg(not(unix))]
@@ -187,7 +281,7 @@ pub(super) fn collect_unbounded_sorted(
                     #[cfg(target_os = "linux")]
                     if is_name_too_long(&error) {
                         path_limit_failed = true;
-                        continue;
+                        return true;
                     }
                     let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                     tracing::warn!(
@@ -199,12 +293,13 @@ pub(super) fn collect_unbounded_sorted(
                     )));
                 }
             }
-        }
+            true
+        });
     }
 
     #[cfg(target_os = "linux")]
     if path_limit_failed {
-        match rebuild_descriptor_entries(root, respect_gitignore, has_ignore_patterns) {
+        match rebuild_descriptor_entries(root, config.respect_gitignore, has_ignore_patterns) {
             Ok((replacement, replacement_count, replacement_bytes)) => {
                 builder = Some(replacement);
                 count = replacement_count;

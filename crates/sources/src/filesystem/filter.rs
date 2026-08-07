@@ -1,4 +1,3 @@
-use codewalk::WalkConfig;
 use std::collections::{BTreeSet, HashSet};
 use std::sync::LazyLock;
 
@@ -318,11 +317,24 @@ fn is_default_excluded_segment(segment: &[u8]) -> bool {
         .any(|skip| segment.eq_ignore_ascii_case(skip.as_bytes()))
 }
 
+#[derive(Clone)]
+pub(super) struct FilesystemWalkConfig {
+    pub(super) respect_gitignore: bool,
+    pub(super) ignore_overrides: Vec<String>,
+}
+
+impl FilesystemWalkConfig {
+    pub(super) fn respect_gitignore(mut self, respect: bool) -> Self {
+        self.respect_gitignore = respect;
+        self
+    }
+}
+
 pub(super) fn walker_config(
     max_file_size: u64,
     ignore_paths: &[String],
     respect_default_excludes: bool,
-) -> WalkConfig {
+) -> FilesystemWalkConfig {
     let ignore_overrides = ignore_paths
         .iter()
         .map(|pattern| {
@@ -334,26 +346,14 @@ pub(super) fn walker_config(
         })
         .collect();
 
-    // Pass max_file_size=0 (unlimited) to codewalk so the cap is
-    // enforced inside keyhog instead. That moves the silent walker
-    // skip into `extract::process_entry` where we can warn + count it
-    // (kimi-1 dogfood #130). codewalk's size filter runs before its
-    // binary-detect read, so disabling it adds ~4 KiB of extra read
-    // per over-size file - negligible at the scale where users hit
-    // the cap.
-    // Default excludes stay out of codewalk so every skipped file reaches
-    // `extract::process_entry`, where it is counted through SourceSkipEvent.
-    let _ = max_file_size; // LAW10: unused-binding marker; no runtime effect, not a fallback
-    let _ = respect_default_excludes; // LAW10: walker does not own default-exclude decisions; process_entry owns visible skip accounting
+    // Discovery owns metadata only. Size caps, binary/container classification,
+    // and default excludes stay in `extract::process_entry`, where each skip is
+    // visible and the no-follow content reader validates the opened object.
+    let _ = max_file_size;
+    let _ = respect_default_excludes;
 
-    WalkConfig::default()
-        .max_file_size(0)
-        .follow_symlinks(false)
-        .respect_gitignore(true)
-        .skip_hidden(false)
-        .skip_binary(false)
-        .exclude_extensions(HashSet::new())
-        .exclude_dirs(HashSet::new())
-        .ignore_files(vec![".keyhogignore".to_string()])
-        .ignore_patterns(ignore_overrides)
+    FilesystemWalkConfig {
+        respect_gitignore: true,
+        ignore_overrides,
+    }
 }
