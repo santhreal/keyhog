@@ -1003,6 +1003,7 @@ impl CompiledScanner {
             deadline,
             selected_backend,
             admission,
+            false,
             None,
             None,
             None,
@@ -1017,6 +1018,7 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         selected_backend: crate::hw_probe::ScanBackend,
         admission: Option<crate::engine::Phase1Admission>,
+        normalization_passthrough: bool,
         cpu_trigger_hints: Option<&[u64]>,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_evidence: Option<
@@ -1042,7 +1044,8 @@ impl CompiledScanner {
         let admission = admission.unwrap_or_else(|| self.phase1_admission(chunk.data.as_bytes()));
         if admission != Phase1Admission::Admitted {
             if self.should_scan_no_hit_chunk(chunk, route) {
-                let prepared = self.prepare_chunk(chunk);
+                let prepared = self
+                    .prepare_chunk_with_normalization_passthrough(chunk, normalization_passthrough);
                 let mut matches = self.scan_prepared_with_triggered(
                     prepared,
                     &[],
@@ -1092,6 +1095,7 @@ impl CompiledScanner {
                 chunk,
                 selected_backend,
                 deadline,
+                normalization_passthrough,
                 cpu_trigger_hints,
                 phase2_keyword_hints,
                 phase2_always_active_evidence,

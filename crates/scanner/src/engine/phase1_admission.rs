@@ -70,6 +70,8 @@ pub struct Phase1AdmissionPlan {
     generic_keyword_position_rows: Vec<usize>,
     phase2_always_active_absence: Vec<bool>,
     cpu_trigger_hints: Vec<Option<Vec<u64>>>,
+    normalization_passthrough: Vec<bool>,
+    unicode_normalization_enabled: bool,
     #[cfg(debug_assertions)]
     unique_payloads: usize,
 }
@@ -121,6 +123,13 @@ impl Phase1AdmissionPlan {
         self.cpu_trigger_hints_for(index)
     }
 
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn normalization_passthrough_for_diagnostics(&self, index: usize) -> Option<bool> {
+        self.normalization_passthrough_for(index, self.unicode_normalization_enabled)
+    }
+
     #[inline]
     pub(crate) fn admission_for(&self, index: usize) -> Option<Phase1Admission> {
         self.admissions.get(index).copied()
@@ -148,6 +157,19 @@ impl Phase1AdmissionPlan {
     pub(crate) fn cpu_trigger_hints_for(&self, index: usize) -> Option<&[u64]> {
         let row = *self.phase2_keyword_hint_rows.get(index)?;
         self.cpu_trigger_hints.get(row)?.as_deref()
+    }
+
+    #[inline]
+    pub(crate) fn normalization_passthrough_for(
+        &self,
+        index: usize,
+        unicode_normalization_enabled: bool,
+    ) -> Option<bool> {
+        if unicode_normalization_enabled != self.unicode_normalization_enabled {
+            return None;
+        }
+        let row = *self.phase2_keyword_hint_rows.get(index)?;
+        self.normalization_passthrough.get(row).copied()
     }
 
     #[inline]
@@ -206,6 +228,8 @@ impl Phase1AdmissionPlan {
             self.phase2_always_active_absence.len() == self.phase2_keyword_hints.len();
         let cpu_trigger_hints_valid =
             self.cpu_trigger_hints.len() == self.phase2_keyword_hints.len();
+        let normalization_passthrough_valid =
+            self.normalization_passthrough.len() == self.phase2_keyword_hints.len();
         if self.admissions.len() != self.chunk_shapes.len()
             || summary_chunks != shape_count
             || summary_bytes != shape_bytes
@@ -214,6 +238,7 @@ impl Phase1AdmissionPlan {
             || !generic_positions_valid
             || !always_active_absence_valid
             || !cpu_trigger_hints_valid
+            || !normalization_passthrough_valid
             || self
                 .chunk_shapes
                 .iter()
@@ -430,6 +455,19 @@ impl CompiledScanner {
         }
     }
 
+    fn normalization_passthrough(&self, data: &str) -> bool {
+        if !self.config.unicode_normalization {
+            return true;
+        }
+        matches!(
+            crate::unicode_hardening::normalize_homoglyphs(data),
+            std::borrow::Cow::Borrowed(_)
+        ) && matches!(
+            crate::unicode_hardening::strip_interior_evasion_controls(data),
+            std::borrow::Cow::Borrowed(_)
+        )
+    }
+
     fn phase1_admission_plan_with_bigram_mode(
         &self,
         chunks: &[Chunk],
@@ -459,6 +497,7 @@ impl CompiledScanner {
                 generic_positions,
                 classify_reusable_evidence && self.phase2_always_active_absence(&chunk.data),
                 cpu_trigger_hints,
+                classify_reusable_evidence && self.normalization_passthrough(&chunk.data),
             )
         };
 
@@ -519,7 +558,7 @@ impl CompiledScanner {
         for (chunk, representative_position) in
             chunks.iter().zip(representative_for.iter().copied())
         {
-            let (admission, keyword_trigger_count, _, _, _, _) =
+            let (admission, keyword_trigger_count, _, _, _, _, _) =
                 &classified[representative_position];
             let data = chunk.data.as_bytes();
             let len = data.len();
@@ -538,11 +577,13 @@ impl CompiledScanner {
         let mut generic_keyword_positions = Vec::with_capacity(classified.len());
         let mut phase2_always_active_absence = Vec::with_capacity(classified.len());
         let mut cpu_trigger_hints = Vec::with_capacity(classified.len());
-        for (_, _, hints, positions, absence, triggers) in classified {
+        let mut normalization_passthrough = Vec::with_capacity(classified.len());
+        for (_, _, hints, positions, absence, triggers, passthrough) in classified {
             phase2_keyword_hints.push(hints);
             generic_keyword_positions.push(positions);
             phase2_always_active_absence.push(absence);
             cpu_trigger_hints.push(triggers);
+            normalization_passthrough.push(passthrough);
         }
         Phase1AdmissionPlan {
             admissions,
@@ -555,6 +596,8 @@ impl CompiledScanner {
             generic_keyword_position_rows: representative_for,
             phase2_always_active_absence,
             cpu_trigger_hints,
+            normalization_passthrough,
+            unicode_normalization_enabled: self.config.unicode_normalization,
             #[cfg(debug_assertions)]
             unique_payloads: representatives.len(),
         }

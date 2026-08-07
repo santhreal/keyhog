@@ -77,6 +77,14 @@ impl CompiledScanner {
                         }
                         _ => None,
                     };
+                    let normalization_passthrough = admission_plan
+                        .and_then(|plan| {
+                            plan.normalization_passthrough_for(
+                                index,
+                                self.config.unicode_normalization,
+                            )
+                        })
+                        .unwrap_or(false);
                     let phase2_keyword_hints =
                         admission_plan.and_then(|plan| plan.phase2_keyword_hints_for(index));
                     let generic_keyword_positions =
@@ -93,6 +101,7 @@ impl CompiledScanner {
                         self.config.per_chunk_deadline(),
                         backend,
                         admission,
+                        normalization_passthrough,
                         cpu_trigger_hints,
                         phase2_keyword_hints,
                         phase2_always_active_evidence,
@@ -130,6 +139,14 @@ impl CompiledScanner {
     }
 
     pub(crate) fn prepare_chunk<'a>(&self, chunk: &'a Chunk) -> PreparedChunk<'a> {
+        self.prepare_chunk_with_normalization_passthrough(chunk, false)
+    }
+
+    pub(crate) fn prepare_chunk_with_normalization_passthrough<'a>(
+        &self,
+        chunk: &'a Chunk,
+        normalization_passthrough: bool,
+    ) -> PreparedChunk<'a> {
         let _g = super::profile::span(keyhog_profile::Stage::Preprocess);
         // Note: non-ASCII normalization used to swap `chunk` to an
         // owned `Chunk` via `normalize_scannable_chunk`. That path
@@ -153,7 +170,16 @@ impl CompiledScanner {
         // call inside `PreparedChunk<'a>`. We therefore chain the two
         // normalization stages explicitly: a stage that rewrites bytes yields
         // `Cow::Owned`; a no-op stage preserves the `&'a chunk.data` borrow.
-        let data_to_pp: std::borrow::Cow<'a, str> = if self.config.unicode_normalization {
+        #[cfg(debug_assertions)]
+        if self.config.unicode_normalization && !normalization_passthrough {
+            self.normalization_scanned_bytes.fetch_add(
+                u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
+        let data_to_pp: std::borrow::Cow<'a, str> = if normalization_passthrough {
+            std::borrow::Cow::Borrowed(&chunk.data)
+        } else if self.config.unicode_normalization {
             match crate::unicode_hardening::normalize_homoglyphs(&chunk.data) {
                 // Homoglyph stage rewrote the bytes: the owned String is the
                 // canonical text. The interior-control strip then operates on
@@ -229,5 +255,20 @@ impl CompiledScanner {
             preprocessed,
             line_index: std::sync::OnceLock::new(),
         }
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_normalization_scanned_bytes_for_diagnostics(&self) {
+        self.normalization_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn normalization_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.normalization_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }

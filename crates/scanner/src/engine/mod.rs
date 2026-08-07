@@ -622,6 +622,8 @@ pub struct CompiledScanner {
     pub(crate) phase2_prefilter_scanned_bytes: std::sync::atomic::AtomicU64,
     #[cfg(debug_assertions)]
     pub(crate) phase1_trigger_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) normalization_scanned_bytes: std::sync::atomic::AtomicU64,
 }
 
 impl CompiledScanner {

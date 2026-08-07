@@ -334,10 +334,16 @@ fn repeated_payloads_share_generic_keyword_positions() {
         Some(ordinary_triggers),
         "byte-identical payloads must reference the same CPU trigger row"
     );
+    assert_eq!(
+        ordinary_plan.normalization_passthrough_for_diagnostics(0),
+        Some(true),
+        "repeated ASCII fixture must establish exact normalization passthrough"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
     scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
+    scanner.reset_normalization_scanned_bytes_for_diagnostics();
     let planned_ordinary = scanner
         .scan_coalesced_with_backend_and_admission(
             &ordinary_chunks,
@@ -355,10 +361,16 @@ fn repeated_payloads_share_generic_keyword_positions() {
         0,
         "planned scan must consume CPU trigger hints without rescanning bytes"
     );
+    assert_eq!(
+        scanner.normalization_scanned_bytes_for_diagnostics(),
+        0,
+        "planned scan must consume normalization passthrough without rescanning bytes"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
     scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
+    scanner.reset_normalization_scanned_bytes_for_diagnostics();
     let direct_ordinary = scanner
         .scan_coalesced_with_backend(&ordinary_chunks, ScanBackend::CpuFallback)
         .expect("direct ordinary scan");
@@ -369,6 +381,10 @@ fn repeated_payloads_share_generic_keyword_positions() {
     assert!(
         scanner.phase1_trigger_scanned_bytes_for_diagnostics() > 0,
         "direct scan must establish the phase-one trigger byte control"
+    );
+    assert!(
+        scanner.normalization_scanned_bytes_for_diagnostics() > 0,
+        "direct scan must establish the normalization byte control"
     );
     assert_eq!(planned_ordinary, direct_ordinary);
     assert!(planned_ordinary.iter().all(Vec::is_empty));
