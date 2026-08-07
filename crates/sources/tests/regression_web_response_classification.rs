@@ -1,7 +1,7 @@
 #![cfg(feature = "web")]
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 fn loopback_source(url: String) -> keyhog_sources::WebSource {
     TestApi.web_source_with_autoroute_loopback_calibration(vec![url], true)
@@ -107,4 +107,112 @@ fn ordinary_json_response_stays_raw_web_text() {
         "generic JSON must remain a raw scanned web chunk, got {:?}",
         chunks
     );
+}
+
+const BOUNDED_WEB_CHUNK_BYTES: usize = 256 * 1024;
+
+fn assert_gapless_web_body(chunks: &[keyhog_core::Chunk], expected: &str, source_type: &str) {
+    assert!(chunks.len() > 1);
+    assert!(chunks.iter().all(|chunk| {
+        chunk.metadata.source_type.as_ref() == source_type
+            && chunk.data.len() <= BOUNDED_WEB_CHUNK_BYTES
+    }));
+    assert_eq!(
+        chunks
+            .iter()
+            .map(|chunk| chunk.data.as_ref())
+            .collect::<String>(),
+        expected
+    );
+    for pair in chunks.windows(2) {
+        assert_eq!(
+            pair[1].metadata.base_offset,
+            pair[0].metadata.base_offset + pair[0].data.len()
+        );
+        assert_eq!(
+            pair[1].metadata.base_line,
+            pair[0].metadata.base_line
+                + pair[0]
+                    .data
+                    .as_bytes()
+                    .iter()
+                    .filter(|&&byte| byte == b'\n')
+                    .count()
+        );
+    }
+}
+
+#[test]
+fn large_javascript_response_emits_bounded_utf8_chunks() {
+    let body = format!(
+        "{}é{}\n{}",
+        "x".repeat(BOUNDED_WEB_CHUNK_BYTES - 1),
+        "y".repeat(BOUNDED_WEB_CHUNK_BYTES),
+        "z".repeat(31)
+    );
+    let server = httpmock::MockServer::start();
+    let _app = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/large.js");
+        then.status(200)
+            .header("content-type", "application/javascript")
+            .body(body.clone());
+    });
+
+    let chunks = loopback_source(server.url("/large.js"))
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("large JavaScript response should be scanned");
+
+    assert_gapless_web_body(&chunks, &body, "web:js");
+}
+
+#[test]
+fn large_sourcemap_entry_emits_bounded_chunks() {
+    let source = format!(
+        "{}\n{}",
+        "const x = 'value';".repeat(20_000),
+        "const end = true;"
+    );
+    let body = serde_json::json!({
+        "version": 3,
+        "sources": ["large.ts"],
+        "sourcesContent": [source],
+        "mappings": ""
+    })
+    .to_string();
+    let server = httpmock::MockServer::start();
+    let _map = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/large.js.map");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(body);
+    });
+
+    let chunks = loopback_source(server.url("/large.js.map"))
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("large source map should be scanned");
+
+    assert_gapless_web_body(&chunks, &source, "web:sourcemap");
+}
+
+#[test]
+fn large_wasm_string_stream_emits_bounded_chunks() {
+    let printable = "w".repeat(BOUNDED_WEB_CHUNK_BYTES * 2 + 17);
+    let mut wasm = Vec::from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+    wasm.extend_from_slice(printable.as_bytes());
+    let server = httpmock::MockServer::start();
+    let _module = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/large.wasm");
+        then.status(200)
+            .header("content-type", "application/wasm")
+            .body(wasm);
+    });
+
+    let chunks = loopback_source(server.url("/large.wasm"))
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("large WASM response should be scanned");
+
+    assert_gapless_web_body(&chunks, &printable, "web:wasm");
 }

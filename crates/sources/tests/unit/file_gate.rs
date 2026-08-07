@@ -1,7 +1,7 @@
 //! FILE_GATE micro tests for sources crate src files.
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{create_source, FilesystemSource, StdinSource};
 
 // ── crates/sources/src/lib.rs ─────────────────────────────────────────
@@ -364,12 +364,13 @@ fn web_happy() {
     );
     assert!(
         web.contains("for (i, content) in contents.into_iter().enumerate()")
-            && web.contains("data: code.into()")
+            && web.contains("chunks.extend(web_text_rows(code, \"web:sourcemap\", path))")
             && web.contains(".and_then(Option::take)")
+            && web.contains("drop(map);")
             && !web.contains("contents.iter().enumerate()")
             && !web.contains("data: code.clone().into()")
             && !web.contains(".and_then(|name| name.clone())"),
-        "WebSource source-map expansion must move parsed sourcesContent strings into chunks without cloning large source bodies"
+        "WebSource source-map expansion must move parsed fields out of the wire graph before bounded chunking"
     );
 }
 #[cfg(feature = "web")]

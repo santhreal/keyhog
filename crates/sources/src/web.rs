@@ -48,7 +48,7 @@ pub(crate) use ssrf::{
 const WEB_FETCH_THREADS: usize = 8;
 
 /// SSRF-pinned clients shared across the endpoints (and redirect hops) of one
-/// `fetch_all` scan, keyed by `(redirect_pin_key, calibration-flag)`. A cached
+/// streamed scan, keyed by `(redirect_pin_key, calibration-flag)`. A cached
 /// client already pins its host:port to the screened resolution, so reuse
 /// across same-host endpoints is exactly the per-hop reuse
 /// `send_with_pinned_redirects` already did, extended across URLs: N
@@ -63,9 +63,7 @@ const WEB_FETCH_THREADS: usize = 8;
 /// skip/error accounting stays identical to the serial fetch.
 #[derive(Default)]
 struct PinnedWebClientCache {
-    slots: std::sync::Mutex<
-        std::collections::HashMap<(String, bool), PinnedWebClientSlot>,
-    >,
+    slots: std::sync::Mutex<std::collections::HashMap<(String, bool), PinnedWebClientSlot>>,
 }
 
 enum PinnedWebClientSlot {
@@ -179,11 +177,52 @@ impl BuildSignal {
 /// URLs ending in `.map` are treated as source maps and have `sourcesContent`
 /// entries split into individual chunks. Everything else is treated as
 /// JavaScript text.
+#[derive(Clone)]
 pub struct WebSource {
     urls: Vec<String>,
     http: crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
     allow_autoroute_loopback_calibration: bool,
+}
+
+struct WebChunkStream {
+    receiver: Option<std::sync::mpsc::Receiver<Result<Chunk, SourceError>>>,
+    worker: Option<std::thread::JoinHandle<()>>,
+    reported_worker_failure: bool,
+}
+
+impl Iterator for WebChunkStream {
+    type Item = Result<Chunk, SourceError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let received = self.receiver.as_ref()?.recv();
+        match received {
+            Ok(row) => Some(row),
+            Err(_) => {
+                self.receiver.take();
+                let worker = self.worker.take()?;
+                match worker.join() {
+                    Ok(()) => None,
+                    Err(_) if !self.reported_worker_failure => {
+                        self.reported_worker_failure = true;
+                        Some(Err(SourceError::Other(
+                            "web: bounded fetch worker panicked".to_string(),
+                        )))
+                    }
+                    Err(_) => None,
+                }
+            }
+        }
+    }
+}
+
+impl Drop for WebChunkStream {
+    fn drop(&mut self) {
+        self.receiver.take();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
 }
 
 impl WebSource {
@@ -237,69 +276,86 @@ impl WebSource {
         self
     }
 
-    /// Fetch all URLs and produce chunks.
-    ///
-    /// Uses `reqwest::blocking` directly; the blocking client internally manages
-    /// its own background runtime, so no dedicated thread wrapper is required.
-    ///
-    /// Endpoints are fetched CONCURRENTLY on a bounded rayon pool
-    /// (`WEB_FETCH_THREADS`): a scan of N endpoints used to pay N x (DNS +
-    /// TLS + response latency) serially, so endpoint latency dominated remote
-    /// web scans. Results are collected by index, so chunk order stays the
-    /// configured URL order and per-URL error semantics are unchanged. Each
-    /// URL and redirect hop still gets an SSRF-screened, DNS-pinned client
-    /// via [`build_web_client`]; clients are additionally shared across
-    /// endpoints (and hops) with the same pinned host:port through
-    /// [`PinnedWebClientCache`], so N endpoints on one host pay ONE DNS
-    /// resolve + screen + TLS connector build instead of N.
-    fn fetch_all(&self) -> Vec<Result<Chunk, SourceError>> {
+    /// Fetch all URLs concurrently and stream ordered chunks through a bounded
+    /// channel. At most one result row plus one result per fetch worker is
+    /// retained, rather than every response body across the full URL list.
+    fn stream_all(
+        self,
+        output: std::sync::mpsc::SyncSender<Result<Chunk, SourceError>>,
+        lease: crate::skip::ScanReadLease,
+    ) {
+        let _attributed = lease.enter();
         let proxy_in_use = matches!(
             self.http.effective_proxy().as_deref(),
             Some(p) if !matches!(p, "off" | "none" | "")
         );
-
-        // Endpoint acquisition: URL screening plus the HTTP fetch of every
-        // configured endpoint is this adapter's acquisition boundary.
         let _acquire = crate::profile::acquire_span();
-
-        let pool = match rayon::ThreadPoolBuilder::new()
-            .num_threads(WEB_FETCH_THREADS)
-            .build()
-        {
-            Ok(pool) => pool,
-            // Loud failure, never a silent serial fallback: the operator must
-            // see that the bounded fetch pool could not be built.
-            Err(error) => {
-                return vec![Err(SourceError::Other(format!(
-                    "web: rayon pool build: {error}"
-                )))]
-            }
-        };
         let shared_clients = PinnedWebClientCache::default();
-        // Propagate the active profiling runtime into the fetch workers so
-        // per-endpoint wire spans and chunk counters record there.
         let profile_runtime = crate::profile::current_runtime();
-        let per_url: Vec<Vec<Result<Chunk, SourceError>>> = pool.install(|| {
-            use rayon::prelude::*;
-            self.urls
-                .par_iter()
-                .map(|url| {
-                    let _profile_guard =
-                        profile_runtime.as_ref().map(|runtime| runtime.enter());
-                    self.fetch_one(url, proxy_in_use, &shared_clients)
-                })
-                .collect()
-        });
-
-        let mut results = Vec::new();
-        for chunks in per_url {
-            results.extend(chunks);
+        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let next_job = std::sync::atomic::AtomicUsize::new(0);
+        let (completed, completions) = std::sync::mpsc::sync_channel::<(
+            usize,
+            Vec<Result<Chunk, SourceError>>,
+        )>(WEB_FETCH_THREADS);
+        let (release_slot, available_slots) = crossbeam_channel::bounded::<()>(WEB_FETCH_THREADS);
+        for _ in 0..WEB_FETCH_THREADS {
+            let _ = release_slot.send(());
         }
-        results
+
+        std::thread::scope(|scope| {
+            for _ in 0..WEB_FETCH_THREADS.min(self.urls.len()) {
+                let completed = completed.clone();
+                let cancelled = std::sync::Arc::clone(&cancelled);
+                let profile_runtime = profile_runtime.clone();
+                let worker_lease = lease.clone();
+                let source = &self;
+                let shared_clients = &shared_clients;
+                let next_job = &next_job;
+                let available_slots = available_slots.clone();
+                scope.spawn(move || {
+                    let _attributed = worker_lease.enter();
+                    let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
+                    loop {
+                        if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                            break;
+                        }
+                        if available_slots.recv().is_err() {
+                            break;
+                        }
+                        let index = next_job.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(url) = source.urls.get(index) else {
+                            break;
+                        };
+                        let rows = source.fetch_one(url, proxy_in_use, shared_clients);
+                        if completed.send((index, rows)).is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+            drop(completed);
+
+            let mut pending = std::collections::BTreeMap::new();
+            let mut next_output = 0;
+            while let Ok((index, rows)) = completions.recv() {
+                pending.insert(index, rows);
+                while let Some(rows) = pending.remove(&next_output) {
+                    for row in rows {
+                        if output.send(row).is_err() {
+                            cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+                            return;
+                        }
+                    }
+                    next_output += 1;
+                    let _ = release_slot.send(());
+                }
+            }
+        });
     }
 
     /// Validate, SSRF-screen, and fetch one configured URL, recording per-chunk
-    /// emission counters. Runs on a `fetch_all` pool worker.
+    /// emission counters. Runs on a bounded fetch worker.
     fn fetch_one(
         &self,
         url: &str,
@@ -309,8 +365,8 @@ impl WebSource {
         if let Err(error) = validate_initial_web_url(url) {
             return vec![Err(error)];
         }
-        let allow_calibration_url = self.allow_autoroute_loopback_calibration
-            && is_autoroute_loopback_calibration_url(url);
+        let allow_calibration_url =
+            self.allow_autoroute_loopback_calibration && is_autoroute_loopback_calibration_url(url);
         // SSRF defense (host pre-filter): the verifier already has this
         // gate via bogon for live verifications; WebSource was the
         // missing surface. Without it,
@@ -350,26 +406,31 @@ impl Source for WebSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        // Hold the scan read lease across the whole scan so a counter-asserting
-        // test's exclusive scope serializes this source's skip-counter recording
-        // (a blocked/SSRF-refused URL records `Unreadable`). `fetch_all` is
-        // synchronous, so the lease taken here is held for the entire recording
-        // window. A no-op in production (the gate is never armed); see
-        // `skip::gate_scan`. Without it, a concurrent web scan's `Unreadable`
-        // increment pollutes another test's `reset -> scan -> read` window.
-        crate::gate_scan(|| {
-            // `reqwest::blocking` must run off the CLI's `#[tokio::main]` thread:
-            // dropping its internal runtime inside an async context aborts the
-            // process. `fetch_all` is eager, so run it on a scoped std thread that
-            // carries no ambient tokio runtime. `collect_on_blocking_thread`
-            // propagates the active profiling runtime onto that thread.
-            match crate::blocking_thread::collect_on_blocking_thread("web", || Ok(self.fetch_all()))
-            {
-                Ok(all) => Box::new(all.into_iter()),
-                Err(error) => Box::new(std::iter::once(Err(error))),
-            }
-        })
+        let lease = crate::acquire_scan_read_lease();
+        let source = self.clone();
+        let worker_lease = lease.clone();
+        let profile_runtime = crate::profile::current_runtime();
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let worker = std::thread::Builder::new()
+            .name("keyhog-web-fetch".to_string())
+            .spawn(move || {
+                let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
+                source.stream_all(sender, worker_lease);
+            });
+
+        let inner: Box<dyn Iterator<Item = Result<Chunk, SourceError>>> = match worker {
+            Ok(worker) => Box::new(WebChunkStream {
+                receiver: Some(receiver),
+                worker: Some(worker),
+                reported_worker_failure: false,
+            }),
+            Err(error) => Box::new(std::iter::once(Err(SourceError::Other(format!(
+                "web: failed to spawn bounded fetch worker: {error}"
+            ))))),
+        };
+        crate::attach_scan_lease(lease, inner)
     }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -377,7 +438,7 @@ impl Source for WebSource {
 
 /// Fetch a single URL and produce one or more chunks based on content type.
 ///
-/// The caller (`fetch_all`) has already screened `url` with
+/// The bounded fetch worker has already screened `url` with
 /// `is_disallowed_web_host` and built `client` through `build_web_client`,
 /// which pins the resolved (screened) IP and installs the per-hop
 /// SSRF-revalidating redirect policy. The pre-filter is repeated here as a
@@ -573,12 +634,7 @@ fn send_with_pinned_redirects(
             }
             // Unparseable URL: force a fresh build so `build_web_client`
             // surfaces the real parse error rather than reusing a stale client.
-            None => build_web_client(
-                http,
-                &current_url,
-                proxy_in_use,
-                allow_current_private_url,
-            )?,
+            None => build_web_client(http, &current_url, proxy_in_use, allow_current_private_url)?,
         };
         let resp = client.get(&current_url).send().map_err(|e| {
             let safe_url = redact_url(&current_url);
@@ -656,14 +712,14 @@ fn web_skip_error(event: crate::SourceSkipEvent, message: String) -> SourceError
     SourceError::Other(message)
 }
 
-/// Handle a JavaScript file: return the full text as a single chunk.
+/// Handle a JavaScript file through bounded, gapless scan chunks.
 fn handle_js(
     resp: reqwest::blocking::Response,
     url: &str,
     max_response_bytes: usize,
 ) -> Vec<Result<Chunk, SourceError>> {
     match read_text_response(resp, max_response_bytes) {
-        Ok(body) => vec![Ok(web_text_chunk(body, url))],
+        Ok(body) => web_text_rows(body, "web:js", chunk_path(url)),
         Err(e) => vec![Err(e)],
     }
 }
@@ -683,7 +739,7 @@ fn handle_json(
     // again inside `expand_sourcemap_body` to walk it.
     match serde_json::from_str::<serde_json::Value>(&body) {
         Ok(value) if is_sourcemap_shaped_value(&value) => expand_sourcemap_value(value, body, url),
-        _ => vec![Ok(web_text_chunk(body, url))],
+        _ => web_text_rows(body, "web:js", chunk_path(url)),
     }
 }
 
@@ -701,22 +757,66 @@ fn chunk_path(url: &str) -> std::sync::Arc<str> {
     redact_url(url).as_ref().into()
 }
 
-fn web_text_chunk(body: String, url: &str) -> Chunk {
-    Chunk {
-        data: body.into(),
-        metadata: ChunkMetadata {
-            base_offset: 0,
-            base_line: 0,
-            source_type: "web:js".into(),
-            path: Some(chunk_path(url)),
-            commit: None,
-            author: None,
-            date: None,
-            mtime_ns: None,
-            size_bytes: None,
-            decoded_span: None,
-        },
+fn web_text_rows(
+    body: String,
+    source_type: &'static str,
+    path: std::sync::Arc<str>,
+) -> Vec<Result<Chunk, SourceError>> {
+    bounded_web_text_chunks(body, source_type, path)
+        .into_iter()
+        .map(Ok)
+        .collect()
+}
+
+fn bounded_web_text_chunks(
+    body: String,
+    source_type: &'static str,
+    path: std::sync::Arc<str>,
+) -> Vec<Chunk> {
+    let chunk_bytes = crate::strings::BOUNDED_DERIVED_TEXT_CHUNK_BYTES;
+    if body.len() <= chunk_bytes {
+        return vec![Chunk {
+            data: body.into(),
+            metadata: ChunkMetadata {
+                source_type: source_type.into(),
+                path: Some(path),
+                ..Default::default()
+            },
+        }];
     }
+
+    let bytes = body.into_bytes();
+    let mut chunks = Vec::with_capacity(bytes.len().div_ceil(chunk_bytes));
+    let mut start = 0;
+    let mut base_line = 0;
+    while start < bytes.len() {
+        let mut end = (start + chunk_bytes).min(bytes.len());
+        while end > start && std::str::from_utf8(&bytes[start..end]).is_err() {
+            end -= 1;
+        }
+        if end == start {
+            end = (start + chunk_bytes).min(bytes.len());
+        }
+        let data = String::from_utf8_lossy(&bytes[start..end]).into_owned();
+        let line_count = data
+            .as_bytes()
+            .iter()
+            .filter(|&&byte| byte == b'\n')
+            .count();
+        chunks.push(Chunk {
+            data: data.into(),
+            metadata: ChunkMetadata {
+                base_offset: start,
+                base_line,
+                source_type: source_type.into(),
+                path: Some(path.clone()),
+                ..Default::default()
+            },
+        });
+        base_line += line_count;
+        start = end;
+    }
+    chunks
 }
 
 /// Handle a source map: parse JSON and emit each `sourcesContent` entry
@@ -740,7 +840,7 @@ fn expand_sourcemap_body(body: String, url: &str) -> Vec<Result<Chunk, SourceErr
             let _event =
                 crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
             tracing::warn!(url = %redact_url(url), err = %e, "failed to parse source map JSON");
-            return vec![Ok(sourcemap_raw_chunk(body, url))];
+            return sourcemap_raw_rows(body, url);
         }
     };
     expand_sourcemap_value(map, body, url)
@@ -757,14 +857,15 @@ fn expand_sourcemap_value(
     url: &str,
 ) -> Vec<Result<Chunk, SourceError>> {
     let mut malformed_sources = false;
-    let mut sources: Vec<Option<String>> = match map.get("sources") {
-        Some(value) => match value.as_array() {
+    let mut sources: Vec<Option<String>> = match map.get_mut("sources") {
+        Some(value) => match value.as_array_mut() {
             Some(arr) => arr
-                .iter()
-                .map(|entry| match entry.as_str() {
-                    Some(name) => Some(name.to_string()),
-                    None => {
-                        if !entry.is_null() {
+                .iter_mut()
+                .map(|entry| match entry.take() {
+                    serde_json::Value::String(name) => Some(name),
+                    serde_json::Value::Null => None,
+                    other => {
+                        if !other.is_null() {
                             malformed_sources = true;
                         }
                         None
@@ -821,6 +922,12 @@ fn expand_sourcemap_value(
         );
     }
 
+    let has_decoded_content = contents
+        .iter()
+        .any(|content| content.as_ref().is_some_and(|code| !code.is_empty()));
+    let raw_body = (!has_decoded_content || malformed_sources_content).then_some(body);
+    drop(map);
+
     let mut chunks = Vec::new();
 
     for (i, content) in contents.into_iter().enumerate() {
@@ -832,28 +939,15 @@ fn expand_sourcemap_value(
                 .get_mut(i)
                 .and_then(Option::take)
                 .unwrap_or_else(|| format!("source_{i}")); // LAW10: synthetic label for an unnamed sourcemap entry; the content is still scanned
-            chunks.push(Ok(Chunk {
-                data: code.into(),
-                metadata: ChunkMetadata {
-                    base_offset: 0,
-                    base_line: 0,
-                    source_type: "web:sourcemap".into(),
-                    path: Some(format!("{}!{source_name}", redact_url(url)).into()),
-                    commit: None,
-                    author: None,
-                    date: None,
-                    mtime_ns: None,
-                    size_bytes: None,
-                    decoded_span: None,
-                },
-            }));
+            let path: std::sync::Arc<str> = format!("{}!{source_name}", redact_url(url)).into();
+            chunks.extend(web_text_rows(code, "web:sourcemap", path));
         }
     }
 
     // If no sourcesContent, treat the raw map as scannable text. If only some
     // entries were malformed, scan raw too so malformed embedded code is covered.
-    if chunks.is_empty() || malformed_sources_content {
-        chunks.push(Ok(sourcemap_raw_chunk(body, url)));
+    if let Some(body) = raw_body {
+        chunks.extend(sourcemap_raw_rows(body, url));
     }
 
     chunks
@@ -866,22 +960,8 @@ fn is_sourcemap_shaped_value(value: &serde_json::Value) -> bool {
             && value.get("mappings").is_some())
 }
 
-fn sourcemap_raw_chunk(body: String, url: &str) -> Chunk {
-    Chunk {
-        data: body.into(),
-        metadata: ChunkMetadata {
-            base_offset: 0,
-            base_line: 0,
-            source_type: "web:sourcemap:raw".into(),
-            path: Some(chunk_path(url)),
-            commit: None,
-            author: None,
-            date: None,
-            mtime_ns: None,
-            size_bytes: None,
-            decoded_span: None,
-        },
-    }
+fn sourcemap_raw_rows(body: String, url: &str) -> Vec<Result<Chunk, SourceError>> {
+    web_text_rows(body, "web:sourcemap:raw", chunk_path(url))
 }
 
 /// Handle a WASM binary: extract printable strings and scan as text.
@@ -904,8 +984,11 @@ fn handle_wasm(
         )))];
     }
 
-    let strings =
-        crate::strings::extract_printable_strings(&bytes, crate::strings::MIN_PRINTABLE_STRING_LEN);
+    let strings = crate::strings::extract_printable_string_chunks(
+        &bytes,
+        crate::strings::MIN_PRINTABLE_STRING_LEN,
+        crate::strings::BOUNDED_DERIVED_TEXT_CHUNK_BYTES,
+    );
     if strings.is_empty() {
         let safe_url = redact_url(url);
         tracing::warn!(
@@ -918,21 +1001,38 @@ fn handle_wasm(
         )))];
     }
 
-    vec![Ok(Chunk {
-        data: crate::strings::join_sensitive_strings(&strings, "\n"),
-        metadata: ChunkMetadata {
-            base_offset: 0,
-            base_line: 0,
-            source_type: "web:wasm".into(),
-            path: Some(chunk_path(url)),
-            commit: None,
-            author: None,
-            date: None,
-            mtime_ns: None,
-            size_bytes: None,
-            decoded_span: None,
-        },
-    })]
+    let path = chunk_path(url);
+    let mut base_offset = 0;
+    let mut base_line = 0;
+    strings
+        .into_iter()
+        .map(|data| {
+            let data_len = data.len();
+            let line_count = data
+                .as_bytes()
+                .iter()
+                .filter(|&&byte| byte == b'\n')
+                .count();
+            let chunk = Chunk {
+                data,
+                metadata: ChunkMetadata {
+                    base_offset,
+                    base_line,
+                    source_type: "web:wasm".into(),
+                    path: Some(path.clone()),
+                    commit: None,
+                    author: None,
+                    date: None,
+                    mtime_ns: None,
+                    size_bytes: None,
+                    decoded_span: None,
+                },
+            };
+            base_offset += data_len;
+            base_line += line_count;
+            Ok(chunk)
+        })
+        .collect()
 }
 
 /// Read an HTTP response body as text, capping raw and decoded bytes at the
