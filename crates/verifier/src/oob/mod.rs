@@ -44,11 +44,14 @@ mod decrypt;
 mod session;
 
 pub(crate) use client::MintedUrl;
-pub use client::{Interaction, InteractionProtocol, InteractshClient, InteractshError};
+pub use client::{
+    prewarm_key_generation, Interaction, InteractionProtocol, InteractshClient, InteractshError,
+};
 pub use session::{redact_interactsh_error, OobAccept, OobConfig, OobObservation, OobSession};
 // Crate-internal poller-degradation helpers, surfaced to the re-homed
 // `tests/unit/oob_poller_degradation.rs` through `pub fn` wrappers in the
 // `testing` facade (the `oob::session` no-inline-tests gate forbids testing them
+pub(crate) use client::{consume_prewarmed_key_for_test, prewarmed_key_pending_for_test};
 // in place). Kept `pub(crate)` so they do NOT widen the crate's public API.
 pub(crate) use session::{elapsed_verdict, poller_is_degraded, OOB_DEGRADED_ERROR_THRESHOLD};
 

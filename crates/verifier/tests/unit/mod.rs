@@ -24,6 +24,7 @@ pub mod oob_accept_protocol_negative_twins;
 pub mod oob_config_boundary_timeouts;
 pub mod oob_config_defaults_safe;
 pub mod oob_interaction_protocol_parse_exact;
+pub mod oob_key_prewarm;
 pub mod oob_poller_degradation;
 pub mod oob_redact_transport_errors;
 pub mod pinned_client_key;

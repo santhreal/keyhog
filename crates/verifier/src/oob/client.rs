@@ -15,7 +15,7 @@
 //! - We never log credentials, public keys, or decrypted payloads. Errors
 //!   carry stable strings - useful for support, opaque to leaks.
 
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
@@ -134,6 +134,71 @@ pub struct InteractshClient {
 /// (`for_test` is test-only), so it costs nothing there.
 static TEST_RSA_KEY: LazyLock<Result<RsaPrivateKey, String>> =
     LazyLock::new(|| RsaPrivateKey::new(&mut OsRng, 2048).map_err(|e| e.to_string()));
+type GeneratedPrivateKey = Result<RsaPrivateKey, String>;
+
+static PREWARMED_RSA_KEY: LazyLock<Mutex<Option<std::thread::JoinHandle<GeneratedPrivateKey>>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+/// Start the OOB session key generation before findings reach verification.
+///
+/// Registration consumes this one-shot key. A second registration still
+/// generates a fresh key, preserving the session-key isolation contract.
+pub fn prewarm_key_generation() {
+    let mut slot = PREWARMED_RSA_KEY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if slot.is_some() {
+        return;
+    }
+    match std::thread::Builder::new()
+        .name("keyhog-oob-keygen".to_owned())
+        .spawn(generate_private_key)
+    {
+        Ok(handle) => *slot = Some(handle),
+        Err(error) => {
+            debug!(target: "keyhog::oob", %error, "could not prewarm OOB key generation");
+        }
+    }
+}
+
+fn generate_private_key() -> GeneratedPrivateKey {
+    RsaPrivateKey::new(&mut OsRng, 2048).map_err(|error| error.to_string())
+}
+
+fn take_or_generate_private_key() -> Result<RsaPrivateKey, InteractshError> {
+    let prewarmed = PREWARMED_RSA_KEY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take();
+    let generated = match prewarmed {
+        Some(handle) => handle
+            .join()
+            .map_err(|_| InteractshError::KeyGen("prewarm thread panicked".to_owned()))?,
+        None => generate_private_key(),
+    };
+    generated.map_err(InteractshError::KeyGen)
+}
+pub(crate) fn prewarmed_key_pending_for_test() -> bool {
+    PREWARMED_RSA_KEY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .is_some()
+}
+
+pub(crate) fn consume_prewarmed_key_for_test() -> Result<Vec<u8>, InteractshError> {
+    use rsa::traits::PublicKeyParts;
+
+    let prewarmed = PREWARMED_RSA_KEY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
+        .ok_or_else(|| InteractshError::KeyGen("prewarmed key missing".to_owned()))?;
+    let key = prewarmed
+        .join()
+        .map_err(|_| InteractshError::KeyGen("prewarm thread panicked".to_owned()))?
+        .map_err(InteractshError::KeyGen)?;
+    Ok(key.n().to_bytes_be())
+}
 
 impl InteractshClient {
     /// Test-only constructor without network registration. Returns
@@ -255,13 +320,11 @@ impl InteractshClient {
         proxy_in_use: bool,
         insecure_tls: bool,
     ) -> Result<Self, InteractshError> {
-        // RSA-2048 keygen happens on a blocking thread - it's CPU-bound for
-        // ~100ms and would otherwise stall the runtime.
-        let private_key = tokio::task::spawn_blocking(|| {
-            RsaPrivateKey::new(&mut OsRng, 2048).map_err(|e| InteractshError::KeyGen(e.to_string()))
-        })
-        .await
-        .map_err(|e| InteractshError::KeyGen(format!("join error: {e}")))??;
+        // RSA-2048 keygen runs before verification when the CLI can overlap it
+        // with scanning. Direct library callers retain the blocking-pool path.
+        let private_key = tokio::task::spawn_blocking(take_or_generate_private_key)
+            .await
+            .map_err(|error| InteractshError::KeyGen(format!("join error: {error}")))??;
 
         let public_key = RsaPublicKey::from(&private_key);
         let pem = public_key

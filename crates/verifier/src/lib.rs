@@ -335,6 +335,12 @@ pub mod testing {
     pub use crate::cache::oldest_eviction_batch;
     pub use crate::interpolate::{missing_companion_refs, MAX_TEMPLATE_TOKENS};
     pub use crate::oob::redact_interactsh_error;
+    pub fn prewarm_oob_key_for_test() -> Result<(bool, Vec<u8>), crate::oob::InteractshError> {
+        crate::oob::prewarm_key_generation();
+        let pending = crate::oob::prewarmed_key_pending_for_test();
+        let modulus = crate::oob::consume_prewarmed_key_for_test()?;
+        Ok((pending, modulus))
+    }
 
     /// Exercise the real `cache::evict_oldest_dashmap_entries` primitive (the
     /// shared oldest-first bounded-cache eviction used by the DNS-resolution and

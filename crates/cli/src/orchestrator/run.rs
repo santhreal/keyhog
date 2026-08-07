@@ -1254,6 +1254,10 @@ impl ScanOrchestrator {
                 );
             }
         }
+        #[cfg(feature = "verify")]
+        if self.effective_config.verify.oob.enabled {
+            keyhog_verifier::oob::prewarm_key_generation();
+        }
 
         let hw = keyhog_scanner::hw_probe::probe_hardware();
         let scanner_status = self.scanner.runtime_status();
