@@ -112,7 +112,7 @@ fn impossible_admission_implies_zero_output_for_every_builtin_decoder() {
         let bytes = hostile_bytes(case_index, &mut rng);
         let chunk = chunk(case_index, &bytes);
         super::super::extractor::clear_shared_candidates();
-        super::super::extractor::prime_shared_candidates(&chunk.data);
+        super::super::extractor::prime_shared_candidates(&chunk.data, false);
 
         for decoder in &decoders {
             match decoder.admission(&chunk, policy) {
