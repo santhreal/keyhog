@@ -874,7 +874,7 @@ pub(super) fn process_entry(
             |row| match row {
                 Ok(w) => {
                     let chunk = Ok(Chunk {
-                        data: w.text.into(),
+                        data: w.text,
                         metadata: ChunkMetadata {
                             source_type: "filesystem/windowed".into(),
                             path: Some(display.clone().into()),

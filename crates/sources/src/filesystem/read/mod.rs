@@ -92,7 +92,7 @@ pub(crate) fn slice_into_windows_for_test(
 ) -> Vec<String> {
     window::slice_into_windows(bytes, window_size, overlap)
         .into_iter()
-        .map(|window| window.text)
+        .map(|window| window.text.as_str().to_owned())
         .collect()
 }
 
@@ -123,7 +123,7 @@ pub(crate) fn slice_into_windows_with_offsets_for_test(
 ) -> Vec<(usize, String)> {
     window::slice_into_windows(bytes, window_size, overlap)
         .into_iter()
-        .map(|window| (window.offset, window.text))
+        .map(|window| (window.offset, window.text.as_str().to_owned()))
         .collect()
 }
 
@@ -135,7 +135,7 @@ pub(crate) fn read_file_windowed_mmap_for_test(
     window::read_file_windowed_mmap(path, window_size, overlap).map(|windows| {
         windows
             .into_iter()
-            .map(|window| (window.offset, window.text))
+            .map(|window| (window.offset, window.text.as_str().to_owned()))
             .collect()
     })
 }
@@ -156,7 +156,7 @@ where
 {
     match window::for_each_file_windowed_mmap(path, window_size, overlap, |row| {
         emit(
-            row.map(|window| (window.offset, window.text))
+            row.map(|window| (window.offset, window.text.as_str().to_owned()))
                 .map_err(|error| error.to_string()),
         )
     }) {

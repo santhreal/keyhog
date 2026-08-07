@@ -193,7 +193,6 @@ def test_fixture_oracles_require_expected_coverage_gaps(
     catalog = load_workload_catalog(CATALOG_PATH)
     gap_ids = {
         "filesystem-empty-directory",
-        "filesystem-single-large-file",
         "filesystem-one-long-line",
         "filesystem-sparse-files",
         "stdin-empty",
@@ -209,7 +208,6 @@ def test_fixture_oracles_require_expected_coverage_gaps(
             0.001
             if workload_id
             in {
-                "filesystem-single-large-file",
                 "filesystem-one-long-line",
                 "filesystem-sparse-files",
             }
@@ -217,6 +215,14 @@ def test_fixture_oracles_require_expected_coverage_gaps(
         )
         receipt = materialize_fixture(workload, tmp_path, scale=scale)
         assert receipt.expected_coverage_gap is True
+    large = next(
+        item for item in catalog.workloads
+        if item.workload_id == "filesystem-single-large-file"
+    )
+    assert (
+        materialize_fixture(large, tmp_path, scale=0.001).expected_coverage_gap
+        is False
+    )
     changing = next(
         item for item in catalog.workloads if item.workload_id == "filesystem-changing-size"
     )

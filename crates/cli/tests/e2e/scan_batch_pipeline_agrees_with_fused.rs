@@ -1,11 +1,9 @@
 //! E2E: the coalesced batch pipeline and the fused pipeline report the same
 //! bytes, run after run.
 //!
-//! The batch consumer used to be a single `recv`-then-scan loop, so it scanned
-//! exactly one batch at a time and every batch boundary idled the machine. It
-//! now bridges the batch channel onto the global pool, which means several
-//! batches are in flight at once, findings are produced out of order, and the
-//! measured backend router is shared across threads.
+//! The fused consumer retires explicit CPU and SIMD batches in bounded worker
+//! waves. Repeated large-file windows may reuse a byte-identical prior result,
+//! while every replay rebases locations and preserves scan accounting.
 //!
 //! That is a big change to make silently. These contracts pin the two things a
 //! user can observe and would never forgive breaking: the pipeline choice must
@@ -56,6 +54,9 @@ fn scan(dir: &Path, pipeline: &str) -> String {
             "--backend",
             "cpu",
             pipeline,
+            "--dedup",
+            "none",
+            "--no-suppress-test-fixtures",
             "--format",
             "jsonl",
         ])
@@ -114,4 +115,33 @@ fn batch_pipeline_report_is_stable_across_runs() {
             "run {run} of the batch pipeline reported a different byte sequence"
         );
     }
+}
+
+/// WHY: repeated-window reuse must be indistinguishable from scanning every
+/// overlapping window, including absolute offsets and line numbers.
+#[test]
+fn repeated_window_reuse_matches_the_batch_pipeline() {
+    const WINDOW: usize = 1024 * 1024;
+    const OVERLAP: usize = 128 * 1024;
+    const STRIDE: usize = WINDOW - OVERLAP;
+    const WINDOWS: usize = 20;
+    const SECRET: &[u8] = b"AWS_ACCESS_KEY_ID=AKIAFD5HUC556YILCDMN\n";
+
+    let dir = TempDir::new().expect("tempdir");
+    let mut block = vec![b' '; STRIDE];
+    block[100..100 + SECRET.len()].copy_from_slice(SECRET);
+    let mut body = Vec::with_capacity(STRIDE * WINDOWS + OVERLAP);
+    for _ in 0..WINDOWS {
+        body.extend_from_slice(&block);
+    }
+    body.extend_from_slice(&block[..OVERLAP]);
+    std::fs::write(dir.path().join("periodic.txt"), body).expect("write periodic fixture");
+
+    let fused = scan(dir.path(), "--no-batch-pipeline");
+    let batched = scan(dir.path(), "--batch-pipeline");
+    assert!(!fused.is_empty(), "periodic fixture must produce findings");
+    assert_eq!(
+        batched, fused,
+        "reused windows must preserve every finding identity and absolute location"
+    );
 }

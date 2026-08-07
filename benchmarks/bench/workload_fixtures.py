@@ -128,7 +128,7 @@ def _filesystem_fixture(
     if wid == "filesystem-single-large-file":
         size = _scaled(300 * 1024 * 1024, scale, len(CANARY_LINE))
         _write_sized(input_root / "one-large.txt", size)
-        return [_answer("one-large.txt")], True
+        return [_answer("one-large.txt")], False
     if wid == "filesystem-many-small-files":
         count = _scaled(3000, scale)
         size = _scaled(100 * 1024, scale, len(CANARY_LINE))
