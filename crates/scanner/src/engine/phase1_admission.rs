@@ -724,16 +724,18 @@ impl CompiledScanner {
         classify_reusable_evidence: bool,
         entropy_config_digest: [u8; 32],
     ) -> ReusablePhase1Evidence {
-        if classify_reusable_evidence {
-            if let Some(evidence) = self.reusable_phase1_evidence.lock().get(
+        let mut reusable_cache =
+            classify_reusable_evidence.then(|| self.reusable_phase1_evidence.lock());
+        if let Some(evidence) = reusable_cache.as_mut().and_then(|cache| {
+            cache.get(
                 fingerprint,
                 bypass_bigram,
                 self.config.unicode_normalization,
                 entropy_config_digest,
                 &chunk.data,
-            ) {
-                return evidence;
-            }
+            )
+        }) {
+            return evidence;
         }
 
         let admission = if bypass_bigram {
@@ -768,8 +770,8 @@ impl CompiledScanner {
             confirmed_patterns_absence,
             entropy_absence: classify_reusable_evidence && self.entropy_absent(&chunk.data),
         };
-        if classify_reusable_evidence {
-            self.reusable_phase1_evidence.lock().insert(
+        if let Some(cache) = reusable_cache.as_mut() {
+            cache.insert(
                 fingerprint,
                 bypass_bigram,
                 self.config.unicode_normalization,
