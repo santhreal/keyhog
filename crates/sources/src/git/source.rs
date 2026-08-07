@@ -13,8 +13,8 @@ use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use rayon::prelude::*;
 
 use super::tag_messages::{
-    collect_reachable_tag_messages, decode_tag_message_chunks,
-    decode_unreachable_tag_message_chunks,
+    collect_reachable_tag_messages, decode_next_tag_message,
+    decode_next_unreachable_tag_message,
 };
 use super::{git_unscanned_object_error, parse_git_object_id_line, record_git_object_unreadable};
 
@@ -584,15 +584,14 @@ fn stream_git_blobs(
                         if let Some(error) = commit_ids.take_unreachable_truncation_error() {
                             pending_errors.push_back(error);
                         }
-                        current_tree_blobs.extend(decode_tag_message_chunks(
+                        if let Some(chunk) = decode_next_tag_message(
                             &repo_handle,
                             &mut reachable_tags,
                             limits,
                             &mut total_bytes,
                             &mut chunk_count,
                             &mut pending_errors,
-                        ));
-                        if let Some(chunk) = current_tree_blobs.pop_front() {
+                        ) {
                             return Some(Ok(chunk));
                         }
                         unreachable_objects =
@@ -640,15 +639,14 @@ fn stream_git_blobs(
                     continue;
                 }
             } else if let Some(objects) = unreachable_objects.as_mut() {
-                current_tree_blobs.extend(decode_unreachable_tag_message_chunks(
+                if let Some(chunk) = decode_next_unreachable_tag_message(
                     &repo_handle,
                     &mut objects.tags,
                     limits,
                     &mut total_bytes,
                     &mut chunk_count,
                     &mut pending_errors,
-                ));
-                if let Some(chunk) = current_tree_blobs.pop_front() {
+                ) {
                     return Some(Ok(chunk));
                 }
 
