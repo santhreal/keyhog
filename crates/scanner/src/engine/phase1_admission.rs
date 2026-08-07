@@ -78,6 +78,8 @@ pub struct Phase1AdmissionPlan {
     entropy_absence: Vec<bool>,
     multiline_absence: Vec<bool>,
     line_context_indices: Vec<Option<Arc<crate::context::LineContextIndex>>>,
+    decoder_admission_contexts: Vec<Option<u8>>,
+    decoder_absence: Vec<bool>,
     entropy_config_digest: [u8; 32],
     #[cfg(debug_assertions)]
     unique_payloads: usize,
@@ -99,6 +101,7 @@ struct ReusablePhase1Evidence {
     entropy_absence: bool,
     multiline_absence: bool,
     line_context_index: Option<Arc<crate::context::LineContextIndex>>,
+    decoder_absence: bool,
 }
 
 #[derive(Debug)]
@@ -107,6 +110,7 @@ struct CachedReusablePhase1Evidence {
     bypass_bigram: bool,
     unicode_normalization_enabled: bool,
     entropy_config_digest: [u8; 32],
+    decoder_admission_context: Option<u8>,
     payload: SensitiveString,
     evidence: ReusablePhase1Evidence,
 }
@@ -137,6 +141,7 @@ impl ReusablePhase1EvidenceCache {
         bypass_bigram: bool,
         unicode_normalization_enabled: bool,
         entropy_config_digest: [u8; 32],
+        decoder_admission_context: Option<u8>,
         payload: &SensitiveString,
     ) -> Option<ReusablePhase1Evidence> {
         let position = self.entries.iter().position(|entry| {
@@ -144,6 +149,7 @@ impl ReusablePhase1EvidenceCache {
                 && entry.bypass_bigram == bypass_bigram
                 && entry.unicode_normalization_enabled == unicode_normalization_enabled
                 && entry.entropy_config_digest == entropy_config_digest
+                && entry.decoder_admission_context == decoder_admission_context
                 && entry.payload.eq(payload)
         })?;
         let entry = self
@@ -165,6 +171,7 @@ impl ReusablePhase1EvidenceCache {
         bypass_bigram: bool,
         unicode_normalization_enabled: bool,
         entropy_config_digest: [u8; 32],
+        decoder_admission_context: Option<u8>,
         payload: SensitiveString,
         evidence: ReusablePhase1Evidence,
     ) {
@@ -182,6 +189,7 @@ impl ReusablePhase1EvidenceCache {
                 && entry.bypass_bigram == bypass_bigram
                 && entry.unicode_normalization_enabled == unicode_normalization_enabled
                 && entry.entropy_config_digest == entropy_config_digest
+                && entry.decoder_admission_context == decoder_admission_context
                 && entry.payload.eq(&payload)
         }) {
             let entry = self
@@ -205,6 +213,7 @@ impl ReusablePhase1EvidenceCache {
             bypass_bigram,
             unicode_normalization_enabled,
             entropy_config_digest,
+            decoder_admission_context,
             payload,
             evidence,
         });
@@ -298,6 +307,14 @@ impl Phase1AdmissionPlan {
             .map(|index| index.is_some())
     }
 
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn decoder_absence_for_diagnostics(&self, index: usize) -> Option<bool> {
+        let row = *self.phase2_keyword_hint_rows.get(index)?;
+        self.decoder_absence.get(row).copied()
+    }
+
     #[inline]
     pub(crate) fn admission_for(&self, index: usize) -> Option<Phase1Admission> {
         self.admissions.get(index).copied()
@@ -381,6 +398,19 @@ impl Phase1AdmissionPlan {
         self.line_context_indices.get(row)?.as_ref()
     }
     #[inline]
+    pub(crate) fn decoder_absence_for(
+        &self,
+        index: usize,
+        decoder_admission_context: Option<u8>,
+    ) -> Option<bool> {
+        let row = *self.phase2_keyword_hint_rows.get(index)?;
+        if self.decoder_admission_contexts.get(row).copied()? != decoder_admission_context {
+            return None;
+        }
+        self.decoder_absence.get(row).copied()
+    }
+
+    #[inline]
     pub(crate) fn validate_chunks(
         &self,
         chunks: &[Chunk],
@@ -445,6 +475,9 @@ impl Phase1AdmissionPlan {
             self.multiline_absence.len() == self.phase2_keyword_hints.len();
         let line_context_indices_valid =
             self.line_context_indices.len() == self.phase2_keyword_hints.len();
+        let decoder_admission_contexts_valid =
+            self.decoder_admission_contexts.len() == self.phase2_keyword_hints.len();
+        let decoder_absence_valid = self.decoder_absence.len() == self.phase2_keyword_hints.len();
         if self.admissions.len() != self.chunk_shapes.len()
             || summary_chunks != shape_count
             || summary_bytes != shape_bytes
@@ -458,6 +491,8 @@ impl Phase1AdmissionPlan {
             || !entropy_absence_valid
             || !multiline_absence_valid
             || !line_context_indices_valid
+            || !decoder_admission_contexts_valid
+            || !decoder_absence_valid
             || self
                 .chunk_shapes
                 .iter()
@@ -803,6 +838,20 @@ impl CompiledScanner {
         true
     }
 
+    #[cfg(feature = "decode")]
+    fn decoder_admission_absent(&self, chunk: &Chunk) -> bool {
+        crate::decode::decoder_admission(
+            chunk,
+            self.detector_plans.decode_transforms(),
+            self.detector_plans.decoder_plan(),
+        ) == crate::decode::DecodeAdmission::Impossible
+    }
+
+    #[cfg(not(feature = "decode"))]
+    fn decoder_admission_absent(&self, _chunk: &Chunk) -> bool {
+        true
+    }
+
     fn classify_phase1_payload(
         &self,
         chunk: &Chunk,
@@ -810,6 +859,7 @@ impl CompiledScanner {
         bypass_bigram: bool,
         classify_reusable_evidence: bool,
         entropy_config_digest: [u8; 32],
+        decoder_admission_context: Option<u8>,
     ) -> ReusablePhase1Evidence {
         let mut reusable_cache =
             classify_reusable_evidence.then(|| self.reusable_phase1_evidence.lock());
@@ -819,6 +869,7 @@ impl CompiledScanner {
                 bypass_bigram,
                 self.config.unicode_normalization,
                 entropy_config_digest,
+                decoder_admission_context,
                 &chunk.data,
             )
         }) {
@@ -868,6 +919,9 @@ impl CompiledScanner {
             confirmed_patterns_absence,
             entropy_absence,
             multiline_absence: classify_reusable_evidence && self.multiline_absent(&chunk.data),
+            decoder_absence: classify_reusable_evidence
+                && decoder_admission_context.is_some()
+                && self.decoder_admission_absent(chunk),
             line_context_index,
         };
         if let Some(cache) = reusable_cache.as_mut() {
@@ -876,6 +930,7 @@ impl CompiledScanner {
                 bypass_bigram,
                 self.config.unicode_normalization,
                 entropy_config_digest,
+                decoder_admission_context,
                 chunk.data.clone(),
                 evidence.clone(),
             );
@@ -928,6 +983,16 @@ impl CompiledScanner {
         for &position in &representative_for {
             representative_counts[position] += 1;
         }
+        let mut representative_decoder_contexts = representatives
+            .iter()
+            .map(|(_, index)| self.decoder_admission_context_key(&chunks[*index]))
+            .collect::<Vec<_>>();
+        for (chunk, position) in chunks.iter().zip(representative_for.iter().copied()) {
+            let context = self.decoder_admission_context_key(chunk);
+            if representative_decoder_contexts[position] != context {
+                representative_decoder_contexts[position] = None;
+            }
+        }
 
         let representative_bytes = representatives
             .iter()
@@ -946,6 +1011,7 @@ impl CompiledScanner {
                         bypass_bigram,
                         representative_counts[position] > 1,
                         entropy_config_digest,
+                        representative_decoder_contexts[position],
                     )
                 })
                 .collect::<Vec<_>>()
@@ -960,6 +1026,7 @@ impl CompiledScanner {
                         bypass_bigram,
                         representative_counts[position] > 1,
                         entropy_config_digest,
+                        representative_decoder_contexts[position],
                     )
                 })
                 .collect::<Vec<_>>()
@@ -995,6 +1062,7 @@ impl CompiledScanner {
         let mut entropy_absence = Vec::with_capacity(classified.len());
         let mut multiline_absence = Vec::with_capacity(classified.len());
         let mut line_context_indices = Vec::with_capacity(classified.len());
+        let mut decoder_absence = Vec::with_capacity(classified.len());
         for evidence in classified {
             phase2_keyword_hints.push(evidence.keyword_hints);
             generic_keyword_positions.push(evidence.generic_positions);
@@ -1005,6 +1073,7 @@ impl CompiledScanner {
             entropy_absence.push(evidence.entropy_absence);
             multiline_absence.push(evidence.multiline_absence);
             line_context_indices.push(evidence.line_context_index);
+            decoder_absence.push(evidence.decoder_absence);
         }
         Phase1AdmissionPlan {
             admissions,
@@ -1023,6 +1092,8 @@ impl CompiledScanner {
             entropy_absence,
             multiline_absence,
             line_context_indices,
+            decoder_admission_contexts: representative_decoder_contexts,
+            decoder_absence,
             entropy_config_digest,
             #[cfg(debug_assertions)]
             unique_payloads: representatives.len(),

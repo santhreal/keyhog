@@ -1008,6 +1008,7 @@ impl CompiledScanner {
             None,
             false,
             false,
+            false,
             None,
             None,
             None,
@@ -1027,6 +1028,7 @@ impl CompiledScanner {
         line_context_index: Option<&std::sync::Arc<crate::context::LineContextIndex>>,
         confirmed_patterns_absence: bool,
         entropy_absence: bool,
+        decoder_absence: bool,
         cpu_trigger_hints: Option<&[u64]>,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_evidence: Option<
@@ -1073,19 +1075,31 @@ impl CompiledScanner {
                 if scan_deadline_expired(deadline) {
                     return Ok(matches);
                 }
-                self.post_process_matches(chunk, &mut matches, deadline, route)?;
+                self.post_process_matches_with_decoder_absence(
+                    chunk,
+                    &mut matches,
+                    deadline,
+                    route,
+                    decoder_absence,
+                )?;
                 if scan_deadline_expired(deadline) {
                     return Ok(matches);
                 }
                 return Ok(matches);
             }
 
-            if self.chunk_needs_decode_postprocess(chunk) {
+            if self.chunk_needs_decode_postprocess_with_absence(chunk, decoder_absence) {
                 if scan_deadline_expired(deadline) {
                     return Ok(Vec::new());
                 }
                 let mut matches = Vec::new();
-                self.post_process_matches(chunk, &mut matches, deadline, route)?;
+                self.post_process_matches_with_decoder_absence(
+                    chunk,
+                    &mut matches,
+                    deadline,
+                    route,
+                    decoder_absence,
+                )?;
                 if scan_deadline_expired(deadline) {
                     return Ok(matches);
                 }
@@ -1125,7 +1139,13 @@ impl CompiledScanner {
         if scan_deadline_expired(deadline) {
             return Ok(matches);
         }
-        self.post_process_matches(chunk, &mut matches, deadline, route)?;
+        self.post_process_matches_with_decoder_absence(
+            chunk,
+            &mut matches,
+            deadline,
+            route,
+            decoder_absence,
+        )?;
         if scan_deadline_expired(deadline) {
             return Ok(matches);
         }

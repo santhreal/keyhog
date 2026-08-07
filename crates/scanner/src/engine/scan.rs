@@ -13,15 +13,47 @@ impl CompiledScanner {
 
     #[cfg(feature = "decode")]
     #[inline]
+    pub(crate) fn decoder_admission_context_key(&self, chunk: &keyhog_core::Chunk) -> Option<u8> {
+        self.detector_plans
+            .decoder_plan()
+            .admission_context_key(chunk)
+    }
+
+    #[cfg(not(feature = "decode"))]
+    #[inline]
+    pub(crate) fn decoder_admission_context_key(&self, _chunk: &keyhog_core::Chunk) -> Option<u8> {
+        None
+    }
+
+    #[cfg(feature = "decode")]
+    #[inline]
     pub(crate) fn chunk_needs_decode_postprocess(&self, chunk: &keyhog_core::Chunk) -> bool {
+        self.chunk_needs_decode_postprocess_with_absence(chunk, false)
+    }
+
+    #[cfg(feature = "decode")]
+    #[inline]
+    pub(crate) fn chunk_needs_decode_postprocess_with_absence(
+        &self,
+        chunk: &keyhog_core::Chunk,
+        decoder_absence: bool,
+    ) -> bool {
         self.config.max_decode_depth > 0
             && (chunk.data.len() <= self.config.max_decode_bytes
                 || self.chunk_uses_bounded_decode_windows(chunk))
-            && crate::decode::decoder_admission(
-                chunk,
-                self.detector_plans.decode_transforms(),
-                self.detector_plans.decoder_plan(),
-            ) != crate::decode::DecodeAdmission::Impossible
+            && !decoder_absence
+            && {
+                #[cfg(debug_assertions)]
+                self.decoder_admission_scanned_bytes.fetch_add(
+                    u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                crate::decode::decoder_admission(
+                    chunk,
+                    self.detector_plans.decode_transforms(),
+                    self.detector_plans.decoder_plan(),
+                ) != crate::decode::DecodeAdmission::Impossible
+            }
     }
 
     #[cfg(feature = "decode")]
@@ -36,6 +68,31 @@ impl CompiledScanner {
     #[inline]
     pub(crate) fn chunk_needs_decode_postprocess(&self, _chunk: &keyhog_core::Chunk) -> bool {
         false
+    }
+
+    #[cfg(not(feature = "decode"))]
+    #[inline]
+    pub(crate) fn chunk_needs_decode_postprocess_with_absence(
+        &self,
+        _chunk: &keyhog_core::Chunk,
+        _decoder_absence: bool,
+    ) -> bool {
+        false
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_decoder_admission_scanned_bytes_for_diagnostics(&self) {
+        self.decoder_admission_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn decoder_admission_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.decoder_admission_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
     /// Surface a decode-through pass declined because its source cannot use
     /// bounded decode windows and exceeds `max_decode_bytes`.

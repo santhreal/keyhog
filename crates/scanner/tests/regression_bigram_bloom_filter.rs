@@ -399,6 +399,11 @@ fn repeated_payloads_share_generic_keyword_positions() {
         Some(true),
         "repeated passthrough fixture must persist one reusable line index"
     );
+    assert_eq!(
+        ordinary_plan.decoder_absence_for_diagnostics(0),
+        Some(true),
+        "repeated clean fixture must establish exact decoder-admission absence"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
@@ -408,6 +413,7 @@ fn repeated_payloads_share_generic_keyword_positions() {
     scanner.reset_entropy_scanned_bytes_for_diagnostics();
     scanner.reset_multiline_admission_scanned_bytes_for_diagnostics();
     scanner.reset_line_index_scanned_bytes_for_diagnostics();
+    scanner.reset_decoder_admission_scanned_bytes_for_diagnostics();
     let planned_ordinary = scanner
         .scan_coalesced_with_backend_and_admission(
             &ordinary_chunks,
@@ -450,6 +456,11 @@ fn repeated_payloads_share_generic_keyword_positions() {
         0,
         "planned scan must consume the shared line index without rebuilding it"
     );
+    assert_eq!(
+        scanner.decoder_admission_scanned_bytes_for_diagnostics(),
+        0,
+        "planned scan must consume decoder absence without rescanning bytes"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
@@ -459,6 +470,7 @@ fn repeated_payloads_share_generic_keyword_positions() {
     scanner.reset_entropy_scanned_bytes_for_diagnostics();
     scanner.reset_multiline_admission_scanned_bytes_for_diagnostics();
     scanner.reset_line_index_scanned_bytes_for_diagnostics();
+    scanner.reset_decoder_admission_scanned_bytes_for_diagnostics();
     let direct_ordinary = scanner
         .scan_coalesced_with_backend(&ordinary_chunks, ScanBackend::CpuFallback)
         .expect("direct ordinary scan");
@@ -490,6 +502,10 @@ fn repeated_payloads_share_generic_keyword_positions() {
         scanner.line_index_scanned_bytes_for_diagnostics() > 0,
         "direct scan must establish the line-index byte control"
     );
+    assert!(
+        scanner.decoder_admission_scanned_bytes_for_diagnostics() > 0,
+        "direct scan must establish the decoder-admission byte control"
+    );
     assert_eq!(planned_ordinary, direct_ordinary);
     assert!(planned_ordinary.iter().all(Vec::is_empty));
 
@@ -504,6 +520,34 @@ fn repeated_payloads_share_generic_keyword_positions() {
         multiline_plan.multiline_absence_for_diagnostics(0),
         Some(false),
         "a concatenated assignment must never claim multiline-admission absence"
+    );
+
+    let encoded_payload = "payload = U0VDUkVUX1BBWUxPQUQ=\n".repeat(128);
+    let encoded_chunks = vec![
+        chunk("encoded-0.txt", encoded_payload.clone()),
+        chunk("encoded-1.txt", encoded_payload.clone()),
+        chunk("encoded-2.txt", encoded_payload),
+    ];
+    let encoded_plan = scanner.phase1_admission_plan(&encoded_chunks);
+    assert_eq!(
+        encoded_plan.decoder_absence_for_diagnostics(0),
+        Some(false),
+        "a decodable repeated payload must never claim decoder absence"
+    );
+
+    let mixed_context_payload = "const ordinary_value = 1234567890;\n".repeat(128);
+    let mut reverse_context = chunk("context-1.txt", mixed_context_payload.clone());
+    reverse_context.metadata.source_type = "kh-1237/reverse".into();
+    let mixed_context_chunks = vec![
+        chunk("context-0.txt", mixed_context_payload.clone()),
+        reverse_context,
+        chunk("context-2.txt", mixed_context_payload),
+    ];
+    let mixed_context_plan = scanner.phase1_admission_plan(&mixed_context_chunks);
+    assert_eq!(
+        mixed_context_plan.decoder_absence_for_diagnostics(0),
+        Some(false),
+        "metadata-distinct decoder contexts must fail closed instead of sharing absence"
     );
 
     scanner.config.entropy_threshold = (scanner.config.entropy_threshold - 0.01).max(0.0);

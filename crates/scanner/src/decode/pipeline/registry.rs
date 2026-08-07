@@ -69,6 +69,57 @@ impl RegisteredDecoder {
         }
     }
 
+    /// Metadata context that can change this decoder's admission result.
+    ///
+    /// Exact payload equality is checked separately. The explicit built-in
+    /// allowlist is fail-closed: custom and newly added decoders disable
+    /// cross-chunk admission reuse until their metadata dependency is reviewed.
+    fn admission_context_key(&self, chunk: &keyhog_core::Chunk) -> Option<u8> {
+        const JAVASCRIPT_STATIC_SOURCE: u8 = 1 << 0;
+        const REVERSE_SOURCE: u8 = 1 << 1;
+        const CAESAR_SOURCE: u8 = 1 << 2;
+        const CAESAR_PATH_CLASS: u8 = 1 << 3;
+
+        match self {
+            Self::Shared(decoder) => match decoder.name() {
+                "base64"
+                | "hex"
+                | "url"
+                | "quoted-printable"
+                | "html-named-entity"
+                | "html-numeric-entity"
+                | "octal-escape"
+                | "mime-encoded-word"
+                | "json"
+                | "unicode-escape"
+                | "z85" => Some(0),
+                "javascript-static" => Some(
+                    if chunk.metadata.source_type.contains("/javascript-static") {
+                        JAVASCRIPT_STATIC_SOURCE
+                    } else {
+                        0
+                    },
+                ),
+                _ => None,
+            },
+            Self::Reverse => Some(if chunk.metadata.source_type.contains("/reverse") {
+                REVERSE_SOURCE
+            } else {
+                0
+            }),
+            Self::Caesar => {
+                let mut key = 0;
+                if chunk.metadata.source_type.contains("/caesar") {
+                    key |= CAESAR_SOURCE;
+                }
+                if crate::decode::caesar::is_source_code_path(chunk.metadata.path.as_deref()) {
+                    key |= CAESAR_PATH_CLASS;
+                }
+                Some(key)
+            }
+        }
+    }
+
     #[cfg(any(feature = "decode", test))]
     fn admission_sketch(
         &self,
@@ -195,6 +246,14 @@ impl CompiledDecoderPlan {
 
     pub(crate) fn uses_only_default_decoders(&self) -> bool {
         self.all_decoder_trigger.is_some()
+    }
+
+    pub(crate) fn admission_context_key(&self, chunk: &keyhog_core::Chunk) -> Option<u8> {
+        self.decoders.iter().try_fold(0, |context, decoder| {
+            decoder
+                .admission_context_key(chunk)
+                .map(|decoder_context| context | decoder_context)
+        })
     }
 }
 

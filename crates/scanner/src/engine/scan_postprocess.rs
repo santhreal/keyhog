@@ -31,7 +31,18 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<()> {
-        self.post_process_matches_inner(chunk, matches, deadline, route)
+        self.post_process_matches_with_decoder_absence(chunk, matches, deadline, route, false)
+    }
+
+    pub(crate) fn post_process_matches_with_decoder_absence(
+        &self,
+        chunk: &Chunk,
+        matches: &mut Vec<RawMatch>,
+        deadline: Option<std::time::Instant>,
+        route: crate::ScanExecutionRoute,
+        decoder_absence: bool,
+    ) -> crate::error::Result<()> {
+        self.post_process_matches_inner(chunk, matches, deadline, route, decoder_absence)
     }
 
     pub(crate) fn post_process_matches_inner(
@@ -40,6 +51,7 @@ impl CompiledScanner {
         matches: &mut Vec<RawMatch>,
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
+        decoder_absence: bool,
     ) -> crate::error::Result<()> {
         if crate::deadline::expired(deadline) {
             return Ok(());
@@ -196,7 +208,7 @@ impl CompiledScanner {
                 Ok(())
             };
             if chunk.data.len() <= self.config.max_decode_bytes {
-                if self.chunk_needs_decode_postprocess(chunk) {
+                if self.chunk_needs_decode_postprocess_with_absence(chunk, decoder_absence) {
                     decode_parent(chunk, matches)?;
                 }
             } else if self.chunk_uses_bounded_decode_windows(chunk) {

@@ -112,6 +112,10 @@ impl CompiledScanner {
                     let entropy_absence = admission_plan
                         .and_then(|plan| plan.entropy_absence_for(index, entropy_config_digest))
                         .unwrap_or(false);
+                    let decoder_admission_context = self.decoder_admission_context_key(chunk);
+                    let decoder_absence = admission_plan
+                        .and_then(|plan| plan.decoder_absence_for(index, decoder_admission_context))
+                        .unwrap_or(false);
                     self.scan_with_deadline_and_backend_admission_route_and_hints(
                         chunk,
                         self.config.per_chunk_deadline(),
@@ -122,6 +126,7 @@ impl CompiledScanner {
                         line_context_index,
                         confirmed_patterns_absence,
                         entropy_absence,
+                        decoder_absence,
                         cpu_trigger_hints,
                         phase2_keyword_hints,
                         phase2_always_active_evidence,
