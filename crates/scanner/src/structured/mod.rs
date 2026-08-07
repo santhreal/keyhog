@@ -158,12 +158,49 @@ pub(crate) fn detects_k8s_secret_document(text: &str, path: Option<&str>) -> boo
     detect_format(text, path, true) == Some(StructuredFormat::K8sSecret)
 }
 
+/// Exact path-only proof that no structured parser can apply.
+///
+/// This is the coarse owner for structured-format path admission. YAML remains
+/// conservatively eligible because its body decides between Kubernetes and
+/// Compose parsing. Adding a format requires extending this predicate before
+/// its detector can become reachable below.
+pub(crate) fn preprocessing_is_impossible_for_path(path: Option<&str>) -> bool {
+    let path = path.map(str::as_bytes).unwrap_or(&[]);
+    let last_sep = path
+        .iter()
+        .rposition(|&byte| byte == b'/' || byte == b'\\')
+        .map_or(0, |index| index + 1);
+    let file = &path[last_sep..];
+    let ends_ci = |suffix: &[u8]| {
+        path.len() >= suffix.len() && path[path.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+    };
+    let file_starts_ci = |prefix: &[u8]| {
+        file.len() >= prefix.len() && file[..prefix.len()].eq_ignore_ascii_case(prefix)
+    };
+    let file_ends_ci = |suffix: &[u8]| {
+        file.len() >= suffix.len() && file[file.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+    };
+
+    !(file_starts_ci(b".env")
+        || file_ends_ci(b".env")
+        || ends_ci(b".yaml")
+        || ends_ci(b".yml")
+        || ends_ci(b".tfstate")
+        || ends_ci(b".tf")
+        || ends_ci(b".tfvars")
+        || ends_ci(b".hcl")
+        || ends_ci(b".ipynb"))
+}
+
 /// Detect which structured format `text`/`path` is. When `parse_yaml` is true,
 /// Kubernetes YAML is parsed far enough to identify the actual `kind` field.
 /// Oversized input passes false and uses the allocation-free conservative field
 /// hint below, so deciding whether to count a lost decode surface cannot bypass
 /// the parse-size bound.
 fn detect_format(text: &str, path: Option<&str>, parse_yaml: bool) -> Option<StructuredFormat> {
+    if preprocessing_is_impossible_for_path(path) {
+        return None;
+    }
     // ASCII case-insensitive byte compares - every chunk runs through this
     // detector to decide whether a structured parser applies. The previous
     // flow built a fully-lowercased copy of the path on every call.

@@ -1009,6 +1009,7 @@ impl CompiledScanner {
             false,
             false,
             false,
+            false,
             None,
             None,
             None,
@@ -1029,6 +1030,7 @@ impl CompiledScanner {
         confirmed_patterns_absence: bool,
         entropy_absence: bool,
         decoder_absence: bool,
+        direct_scan_absence: bool,
         cpu_trigger_hints: Option<&[u64]>,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_evidence: Option<
@@ -1052,6 +1054,29 @@ impl CompiledScanner {
         // traffic keeps the fast skip.
         // LAW10: recall-preserving; `None` computes the identical admission predicate once rather than changing routes or findings.
         let admission = admission.unwrap_or_else(|| self.phase1_admission(chunk.data.as_bytes()));
+        if admission == Phase1Admission::Admitted
+            && direct_scan_absence
+            && crate::structured::preprocessing_is_impossible_for_path(
+                chunk.metadata.path.as_deref(),
+            )
+        {
+            crate::telemetry::record_file_scanned(chunk.data.len());
+            self.record_decode_size_decline(chunk);
+            #[cfg(debug_assertions)]
+            self.direct_scan_absence_skipped_bytes.fetch_add(
+                u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            let mut matches = Vec::new();
+            self.post_process_matches_with_decoder_absence(
+                chunk,
+                &mut matches,
+                deadline,
+                route,
+                decoder_absence,
+            )?;
+            return Ok(matches);
+        }
         if admission != Phase1Admission::Admitted {
             if self.should_scan_no_hit_chunk(chunk, route) {
                 let prepared = self.prepare_chunk_with_normalization_passthrough(

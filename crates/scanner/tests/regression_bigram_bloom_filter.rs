@@ -342,7 +342,7 @@ fn repeated_payloads_share_generic_keyword_positions() {
     let ordinary_chunks = vec![
         chunk("ordinary-0.txt", ordinary_payload.clone()),
         chunk("ordinary-1.txt", ordinary_payload.clone()),
-        chunk("ordinary-2.txt", ordinary_payload),
+        chunk("ordinary-2.txt", ordinary_payload.clone()),
     ];
     scanner.reset_reusable_phase1_evidence_hits_for_diagnostics();
     let initial_ordinary_plan = scanner.phase1_admission_plan(&ordinary_chunks);
@@ -404,6 +404,11 @@ fn repeated_payloads_share_generic_keyword_positions() {
         Some(true),
         "repeated clean fixture must establish exact decoder-admission absence"
     );
+    assert_eq!(
+        ordinary_plan.direct_scan_absence_for_diagnostics(0),
+        Some(true),
+        "all direct matching lanes must prove absence for the clean representative"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
@@ -414,6 +419,7 @@ fn repeated_payloads_share_generic_keyword_positions() {
     scanner.reset_multiline_admission_scanned_bytes_for_diagnostics();
     scanner.reset_line_index_scanned_bytes_for_diagnostics();
     scanner.reset_decoder_admission_scanned_bytes_for_diagnostics();
+    scanner.reset_direct_scan_absence_skipped_bytes_for_diagnostics();
     let planned_ordinary = scanner
         .scan_coalesced_with_backend_and_admission(
             &ordinary_chunks,
@@ -461,6 +467,14 @@ fn repeated_payloads_share_generic_keyword_positions() {
         0,
         "planned scan must consume decoder absence without rescanning bytes"
     );
+    assert_eq!(
+        scanner.direct_scan_absence_skipped_bytes_for_diagnostics(),
+        ordinary_chunks
+            .iter()
+            .map(|chunk| chunk.data.len() as u64)
+            .sum::<u64>(),
+        "complete direct absence must bypass every repeated payload byte"
+    );
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
@@ -471,6 +485,7 @@ fn repeated_payloads_share_generic_keyword_positions() {
     scanner.reset_multiline_admission_scanned_bytes_for_diagnostics();
     scanner.reset_line_index_scanned_bytes_for_diagnostics();
     scanner.reset_decoder_admission_scanned_bytes_for_diagnostics();
+    scanner.reset_direct_scan_absence_skipped_bytes_for_diagnostics();
     let direct_ordinary = scanner
         .scan_coalesced_with_backend(&ordinary_chunks, ScanBackend::CpuFallback)
         .expect("direct ordinary scan");
@@ -505,6 +520,11 @@ fn repeated_payloads_share_generic_keyword_positions() {
     assert!(
         scanner.decoder_admission_scanned_bytes_for_diagnostics() > 0,
         "direct scan must establish the decoder-admission byte control"
+    );
+    assert_eq!(
+        scanner.direct_scan_absence_skipped_bytes_for_diagnostics(),
+        0,
+        "a direct scan without reusable evidence must not take the absence fast path"
     );
     assert_eq!(planned_ordinary, direct_ordinary);
     assert!(planned_ordinary.iter().all(Vec::is_empty));
@@ -548,6 +568,31 @@ fn repeated_payloads_share_generic_keyword_positions() {
         mixed_context_plan.decoder_absence_for_diagnostics(0),
         Some(false),
         "metadata-distinct decoder contexts must fail closed instead of sharing absence"
+    );
+
+    let structured_chunks = vec![
+        chunk("structured-0.yaml", ordinary_payload.clone()),
+        chunk("structured-1.yaml", ordinary_payload.clone()),
+        chunk("structured-2.yaml", ordinary_payload.clone()),
+    ];
+    let structured_plan = scanner.phase1_admission_plan(&structured_chunks);
+    assert_eq!(
+        structured_plan.direct_scan_absence_for_diagnostics(0),
+        Some(true),
+        "fixture must isolate the path-level structured preprocessing guard"
+    );
+    scanner.reset_direct_scan_absence_skipped_bytes_for_diagnostics();
+    scanner
+        .scan_coalesced_with_backend_and_admission(
+            &structured_chunks,
+            ScanBackend::CpuFallback,
+            Some(&structured_plan),
+        )
+        .expect("structured-path planned scan");
+    assert_eq!(
+        scanner.direct_scan_absence_skipped_bytes_for_diagnostics(),
+        0,
+        "a structured-format path must retain ordinary preprocessing"
     );
 
     scanner.config.entropy_threshold = (scanner.config.entropy_threshold - 0.01).max(0.0);

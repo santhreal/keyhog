@@ -116,6 +116,17 @@ impl CompiledScanner {
                     let decoder_absence = admission_plan
                         .and_then(|plan| plan.decoder_absence_for(index, decoder_admission_context))
                         .unwrap_or(false);
+                    let direct_scan_absence = matches!(backend, ScanBackend::CpuFallback)
+                        && admission_plan
+                            .and_then(|plan| {
+                                plan.direct_scan_absence_for(
+                                    index,
+                                    self.config.unicode_normalization,
+                                    entropy_config_digest,
+                                    decoder_admission_context,
+                                )
+                            })
+                            .unwrap_or(false);
                     self.scan_with_deadline_and_backend_admission_route_and_hints(
                         chunk,
                         self.config.per_chunk_deadline(),
@@ -127,6 +138,7 @@ impl CompiledScanner {
                         confirmed_patterns_absence,
                         entropy_absence,
                         decoder_absence,
+                        direct_scan_absence,
                         cpu_trigger_hints,
                         phase2_keyword_hints,
                         phase2_always_active_evidence,
