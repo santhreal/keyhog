@@ -226,7 +226,7 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
-path = "crates/cli/src/orchestrator/dispatch/backend/tests.rs"
+path = "crates/cli/src/orchestrator/dispatch/backend/tests/mod.rs"
 boundary = true
 error = true
 adversarial = true
