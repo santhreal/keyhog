@@ -128,6 +128,8 @@ mod recovery;
 pub use recovery::{BackendRecoveryReceipt, CoalescedScanOutcome, RecoveredInputRange};
 mod scan;
 mod scan_coalesced;
+#[cfg(feature = "simd")]
+pub(crate) use scan_coalesced::ReusableSimdTriggerCache;
 pub(crate) mod scan_filters;
 pub(crate) mod scan_postprocess;
 pub(crate) use scan_postprocess::{
@@ -640,6 +642,9 @@ pub struct CompiledScanner {
     pub(crate) direct_scan_absence_skipped_bytes: std::sync::atomic::AtomicU64,
     #[cfg(debug_assertions)]
     pub(crate) direct_scan_absence_batches: std::sync::atomic::AtomicU64,
+    #[cfg(feature = "simd")]
+    pub(crate) reusable_simd_triggers:
+        parking_lot::Mutex<scan_coalesced::ReusableSimdTriggerCache>,
     #[cfg(debug_assertions)]
     pub(crate) simd_phase2_tail_absence_skipped_bytes: std::sync::atomic::AtomicU64,
 }

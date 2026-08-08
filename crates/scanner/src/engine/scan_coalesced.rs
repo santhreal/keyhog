@@ -10,6 +10,98 @@ use super::*;
 #[cfg(feature = "simd")]
 use std::cell::RefCell;
 
+#[cfg(feature = "simd")]
+const REUSABLE_SIMD_TRIGGER_MAX_BYTES: usize = 1024 * 1024;
+#[cfg(feature = "simd")]
+const REUSABLE_SIMD_TRIGGER_MAX_ENTRIES: usize = 16;
+
+#[cfg(feature = "simd")]
+struct ReusableSimdTriggerEntry {
+    fingerprint: [u8; 32],
+    payload: keyhog_core::SensitiveString,
+    triggers: Option<Vec<u64>>,
+}
+
+#[cfg(feature = "simd")]
+impl ReusableSimdTriggerEntry {
+    fn resident_bytes(&self) -> usize {
+        self.payload
+            .len()
+            .saturating_add(self.triggers.as_ref().map_or(0, |row| {
+                row.len().saturating_mul(std::mem::size_of::<u64>())
+            }))
+    }
+}
+
+#[cfg(feature = "simd")]
+#[derive(Default)]
+pub(crate) struct ReusableSimdTriggerCache {
+    entries: std::collections::VecDeque<ReusableSimdTriggerEntry>,
+    resident_bytes: usize,
+    #[cfg(debug_assertions)]
+    hits: u64,
+}
+
+#[cfg(feature = "simd")]
+impl ReusableSimdTriggerCache {
+    fn get_or_compute(
+        &mut self,
+        payload: &keyhog_core::SensitiveString,
+        compute: impl FnOnce() -> Result<Option<Vec<u64>>, String>,
+    ) -> Result<Option<Vec<u64>>, String> {
+        let fingerprint = super::phase1_admission::phase1_payload_fingerprint(payload.as_bytes());
+        if let Some(position) = self
+            .entries
+            .iter()
+            .position(|entry| entry.fingerprint == fingerprint && entry.payload.eq(payload))
+        {
+            let entry = self
+                .entries
+                .remove(position)
+                .expect("cache position came from the same deque");
+            let triggers = entry.triggers.clone();
+            self.entries.push_back(entry);
+            #[cfg(debug_assertions)]
+            {
+                self.hits = self.hits.saturating_add(1);
+            }
+            return Ok(triggers);
+        }
+
+        let triggers = compute()?;
+        let entry = ReusableSimdTriggerEntry {
+            fingerprint,
+            payload: payload.clone(),
+            triggers: triggers.clone(),
+        };
+        let resident_bytes = entry.resident_bytes();
+        if resident_bytes > REUSABLE_SIMD_TRIGGER_MAX_BYTES {
+            return Ok(triggers);
+        }
+        while self.entries.len() >= REUSABLE_SIMD_TRIGGER_MAX_ENTRIES
+            || self.resident_bytes.saturating_add(resident_bytes) > REUSABLE_SIMD_TRIGGER_MAX_BYTES
+        {
+            let Some(evicted) = self.entries.pop_front() else {
+                break;
+            };
+            self.resident_bytes = self.resident_bytes.saturating_sub(evicted.resident_bytes());
+        }
+        self.resident_bytes = self.resident_bytes.saturating_add(resident_bytes);
+        self.entries.push_back(entry);
+        Ok(triggers)
+    }
+
+    #[cfg(debug_assertions)]
+    pub(super) fn reset_hits(&mut self) {
+        self.hits = 0;
+    }
+
+    #[cfg(debug_assertions)]
+    pub(super) fn hits(&self) -> u64 {
+        self.hits
+    }
+}
+
 // The trigger-buffer pool is only used in the Hyperscan-prefilter scratch path
 // of `scan_coalesced`. The pool's win is reuse of buffers that stay inside the
 // pool; extending it to per-chunk trigger builders regressed long-lines benches.
@@ -455,11 +547,16 @@ impl CompiledScanner {
                     if let Some(reusable) = reusable {
                         return reusable
                             .get_or_init(|| {
-                                self.compute_one_coalesced_simd_trigger(
-                                    data,
-                                    prefilter,
-                                    ac_len,
-                                    words_needed,
+                                self.reusable_simd_triggers.lock().get_or_compute(
+                                    &chunk.data,
+                                    || {
+                                        self.compute_one_coalesced_simd_trigger(
+                                            data,
+                                            prefilter,
+                                            ac_len,
+                                            words_needed,
+                                        )
+                                    },
                                 )
                             })
                             .clone();
@@ -653,7 +750,6 @@ impl CompiledScanner {
             false
         }
     }
-
 
     #[cfg(any(feature = "simd", feature = "gpu", test))]
     fn normalize_coalesced_phase2_triggers(

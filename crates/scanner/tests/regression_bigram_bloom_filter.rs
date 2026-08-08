@@ -153,16 +153,30 @@ fn direct_literal_enabled_and_bypass_findings_are_identical() {
 fn phase1_plan_classifies_each_distinct_payload_once() {
     const BYTES: usize = 100 * 1024;
     const CREDENTIAL: &str = "TOKEN_abcdefghijklmnopqrstuvwx";
-    let scanner = CompiledScanner::compile(vec![detector(vec![PatternSpec {
+    let detectors = vec![detector(vec![PatternSpec {
         regex: r"TOKEN_[A-Za-z0-9]{24}".into(),
         ..Default::default()
-    }])])
-    .expect("compile direct detector");
+    }])];
+    let scanner = CompiledScanner::compile(detectors.clone()).expect("compile direct detector");
+    #[cfg(feature = "simd")]
+    let simd_scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::SimdCpu)
+        .expect("compile SIMD detector");
     let repeated = "T_O_K_E_N".repeat(BYTES.div_ceil(9));
     let mut repeated = repeated[..BYTES].to_owned();
     let mut colliding = repeated.clone();
     colliding.replace_range(BYTES / 2..BYTES / 2 + CREDENTIAL.len(), CREDENTIAL);
     let colliding_repeated = colliding.clone();
+    #[cfg(feature = "simd")]
+    let simd_collision_payloads = {
+        let mut benign = repeated.clone();
+        let benign_candidate = format!("TOKEN_{}-", "x".repeat(23));
+        assert_eq!(benign_candidate.len(), CREDENTIAL.len());
+        benign.replace_range(
+            BYTES / 2..BYTES / 2 + benign_candidate.len(),
+            &benign_candidate,
+        );
+        (benign, colliding.clone())
+    };
     let chunks = vec![
         chunk("repeated-0.txt", repeated.clone()),
         chunk("repeated-1.txt", repeated.clone()),
@@ -207,6 +221,53 @@ fn phase1_plan_classifies_each_distinct_payload_once() {
         planned, direct,
         "deduplicated admission planning must preserve per-chunk findings"
     );
+    #[cfg(feature = "simd")]
+    {
+        let benign_chunks = vec![chunk(
+            "simd-benign-collision.txt",
+            simd_collision_payloads.0,
+        )];
+        let benign_plan = simd_scanner.phase1_admission_plan(&benign_chunks);
+        simd_scanner
+            .scan_coalesced_with_backend_and_admission(
+                &benign_chunks,
+                ScanBackend::SimdCpu,
+                Some(&benign_plan),
+            )
+            .expect("populate SIMD trigger cache");
+
+        simd_scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
+        simd_scanner.reset_reusable_simd_trigger_hits_for_diagnostics();
+        let secret_chunks = vec![chunk(
+            "simd-secret-collision.txt",
+            simd_collision_payloads.1,
+        )];
+        let secret_plan = simd_scanner.phase1_admission_plan(&secret_chunks);
+        let secret_results = simd_scanner
+            .scan_coalesced_with_backend_and_admission(
+                &secret_chunks,
+                ScanBackend::SimdCpu,
+                Some(&secret_plan),
+            )
+            .expect("scan sampled-fingerprint collision");
+        assert_eq!(
+            simd_scanner.phase1_trigger_scanned_bytes_for_diagnostics(),
+            BYTES as u64,
+            "a sampled-fingerprint collision must execute an independent SIMD trigger scan"
+        );
+        assert_eq!(
+            simd_scanner.reusable_simd_trigger_hits_for_diagnostics(),
+            0,
+            "sampled-fingerprint collisions must not hit the SIMD trigger cache"
+        );
+        assert!(
+            secret_results
+                .iter()
+                .flatten()
+                .any(|finding| { finding.credential.as_str().contains(CREDENTIAL) }),
+            "independently scanned colliding payload must retain its finding"
+        );
+    }
 }
 
 /// WHY: autoroute already scans byte-distinct representatives for phase-two
@@ -282,14 +343,12 @@ fn repeated_payloads_share_generic_keyword_positions() {
     detector_dir.pop();
     detector_dir.pop();
     detector_dir.push("detectors");
-    let detectors =
-        keyhog_core::load_detectors(&detector_dir).expect("production detectors");
+    let detectors = keyhog_core::load_detectors(&detector_dir).expect("production detectors");
     let mut scanner =
         CompiledScanner::compile(detectors.clone()).expect("compile production scanner");
     #[cfg(feature = "simd")]
-    let mut simd_scanner =
-        CompiledScanner::compile_for_backend(detectors, ScanBackend::SimdCpu)
-            .expect("compile production SIMD scanner");
+    let mut simd_scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::SimdCpu)
+        .expect("compile production SIMD scanner");
     let payload = "secret = Ab3dEf5hJk7mNp9qRs2uVw4yXz6Bcd8F\n".repeat(128);
     let chunks = vec![
         chunk("generic-0.txt", payload.clone()),
@@ -517,6 +576,27 @@ fn repeated_payloads_share_generic_keyword_positions() {
                 .sum::<u64>(),
             "complete exact negative evidence must skip every SIMD phase-two tail byte"
         );
+
+        simd_scanner.clear_fragment_cache();
+        simd_scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
+        simd_scanner.reset_reusable_simd_trigger_hits_for_diagnostics();
+        let replayed_simd = simd_scanner
+            .scan_coalesced_with_backend_and_admission(
+                &ordinary_chunks,
+                ScanBackend::SimdCpu,
+                Some(&simd_plan),
+            )
+            .expect("replayed planned SIMD scan");
+        assert_eq!(
+            simd_scanner.phase1_trigger_scanned_bytes_for_diagnostics(),
+            0,
+            "a later exact batch must reuse the scanner-level SIMD trigger row"
+        );
+        assert!(
+            simd_scanner.reusable_simd_trigger_hits_for_diagnostics() > 0,
+            "a later exact batch must hit the bounded SIMD trigger cache"
+        );
+        assert_eq!(planned_simd, replayed_simd);
 
         simd_scanner.clear_fragment_cache();
         simd_scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();

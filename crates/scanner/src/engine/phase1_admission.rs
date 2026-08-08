@@ -652,7 +652,7 @@ impl Phase1AdmissionSummary {
     }
 }
 
-fn phase1_payload_fingerprint(data: &[u8]) -> [u8; 32] {
+pub(super) fn phase1_payload_fingerprint(data: &[u8]) -> [u8; 32] {
     const SAMPLE_COUNT: usize = 8;
     const SAMPLE_BYTES: usize = 64;
 

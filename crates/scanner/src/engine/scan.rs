@@ -139,6 +139,19 @@ impl CompiledScanner {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    #[doc(hidden)]
+    #[cfg(all(debug_assertions, feature = "simd"))]
+    pub fn reset_reusable_simd_trigger_hits_for_diagnostics(&self) {
+        self.reusable_simd_triggers.lock().reset_hits();
+    }
+
+    #[doc(hidden)]
+    #[cfg(all(debug_assertions, feature = "simd"))]
+    #[must_use]
+    pub fn reusable_simd_trigger_hits_for_diagnostics(&self) -> u64 {
+        self.reusable_simd_triggers.lock().hits()
+    }
+
     /// Surface a decode-through pass declined because its source cannot use
     /// bounded decode windows and exceeds `max_decode_bytes`.
     ///
