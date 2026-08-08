@@ -1,5 +1,16 @@
 use clap::Parser;
 use std::path::PathBuf;
+#[derive(Parser)]
+pub struct CompileExecutionPacksArgs {
+    /// Publish the complete immutable execution-pack generation here.
+    #[arg(long, value_name = "DIR")]
+    pub output_dir: PathBuf,
+
+    /// Read the exact 32-byte installation signing key from this regular file.
+    #[arg(long, value_name = "PATH")]
+    pub signing_key: PathBuf,
+}
+
 
 #[derive(Parser)]
 pub struct CompletionArgs {

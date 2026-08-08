@@ -99,7 +99,9 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
     println!("\n{dim}verifying the new binary on this host...{reset}\n");
     installer::install_with_rollback_checked(&exe, &bytes, |candidate| {
         let gpu_transaction = installer::install_gpu_literal_files(&gpu_literal_files)?;
+        let execution_transaction = installer::install_execution_generation(candidate)?;
         installer::verify_candidate_release(candidate, &latest, current, allow_explicit_downgrade)?;
+        execution_transaction.commit();
         gpu_transaction.commit();
         Ok(())
     })?;

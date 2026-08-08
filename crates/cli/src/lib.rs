@@ -463,6 +463,9 @@ pub async fn cli_main() -> ExitCode {
             outcome
         }
         Some(args::Command::Config(args)) => subcommands::config::run(*args),
+        Some(args::Command::CompileExecutionPacks(args)) => {
+            subcommands::compile_execution_packs::run(args).map(|()| ExitCode::SUCCESS)
+        }
         Some(args::Command::ActionReport(args)) => match args.command {
             args::ActionReportCommand::Verify(args) => action_report::verify(args),
         },

@@ -28,7 +28,8 @@ pub use explain::ExplainArgs;
 pub use hook::HookCommand;
 pub use limits::SourceLimitArgs;
 pub use maintenance::{
-    BackendArgs, CompletionArgs, DoctorArgs, RepairArgs, UninstallArgs, UpdateArgs,
+    BackendArgs, CompileExecutionPacksArgs, CompletionArgs, DoctorArgs, RepairArgs, UninstallArgs,
+    UpdateArgs,
 };
 pub use scan::{CliDedupScope, DaemonMode, DetectorMode, OutputFormat, ScanArgs, SeverityFilter};
 pub use scan_system::{parse_space_bytes, ScanSystemArgs};
@@ -83,6 +84,10 @@ pub enum Command {
     /// Verify a report against KeyHog's internal composite-Action receipt
     #[command(verbatim_doc_comment, hide = true)]
     ActionReport(ActionReportArgs),
+    /// Compile and transactionally publish one host execution-pack generation
+    #[command(verbatim_doc_comment, hide = true)]
+    CompileExecutionPacks(CompileExecutionPacksArgs),
+
 
     /// Manage git pre-commit hooks
     #[command(verbatim_doc_comment)]

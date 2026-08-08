@@ -33,8 +33,10 @@
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 
+mod execution_packs;
 mod gpu_artifacts;
 mod release;
+pub(crate) use execution_packs::*;
 pub(crate) use gpu_artifacts::*;
 pub(crate) use release::*;
 
@@ -383,7 +385,7 @@ fn parse_artifact_pid(raw: &str) -> Option<u32> {
 }
 
 #[cfg(unix)]
-fn process_is_running(pid: u32) -> bool {
+pub(crate) fn process_is_running(pid: u32) -> bool {
     if pid == std::process::id() {
         return false;
     }
@@ -401,7 +403,7 @@ fn process_is_running(pid: u32) -> bool {
 }
 
 #[cfg(windows)]
-fn process_is_running(pid: u32) -> bool {
+pub(crate) fn process_is_running(pid: u32) -> bool {
     use std::ffi::c_void;
 
     if pid == std::process::id() {
@@ -433,7 +435,7 @@ fn process_is_running(pid: u32) -> bool {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn process_is_running(_pid: u32) -> bool {
+pub(crate) fn process_is_running(_pid: u32) -> bool {
     false
 }
 
