@@ -64,6 +64,9 @@ pub(super) fn validate_cache_global_identity(
     if cache.rules_digest != rules_digest {
         return Err("rules digest mismatch; cache is for a different detector rule set".into());
     }
+    if !is_gpu_decision_valid(cache, "gpu") {
+        return Err("GPU sidecar or VYRE artifact digest mismatch; cache is bound to different GPU artifacts".into());
+    }
     Ok(())
 }
 

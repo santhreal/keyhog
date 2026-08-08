@@ -10,7 +10,10 @@ pub(super) use match_identity::{
     canonical_match_differences, canonical_match_digest, canonical_matches,
     canonical_matches_equal_reference, differing_canonical_match_fields, CanonicalMatch,
 };
-pub(super) use timing::{BackendTimingEvidence, TimingConfidenceInterval};
+pub(super) use timing::{
+    BackendTimingEvidence, ColdWarmStatisticalModel, PairedDifferenceDistribution,
+    TimingConfidenceInterval,
+};
 
 use super::workload::MeasurementShapeEvidence;
 use super::{AUTOROUTE_ACCELERATOR_WARM_TRIALS, AUTOROUTE_CALIBRATION_TRIALS};
@@ -80,19 +83,16 @@ fn selected_route_margin_ns(
 fn accelerator_cold_warm_route_evidence(
     timing: &BackendTimingEvidence,
 ) -> Option<(u128, BackendTimingEvidence, u128)> {
-    let (&cold_ns, warm_trials) = timing.trials_ns.split_first()?;
-    if warm_trials.len() != AUTOROUTE_ACCELERATOR_WARM_TRIALS {
+    let model = timing.cold_warm_model()?;
+    if model.warm_trials_ns.len() != AUTOROUTE_ACCELERATOR_WARM_TRIALS {
         return None;
     }
-    let warm_timing = BackendTimingEvidence::from_trial_ns(warm_trials.to_vec())?;
+    let warm_timing = BackendTimingEvidence::from_trial_ns(model.warm_trials_ns.clone())?;
     if !warm_timing.is_valid_for_trials(AUTOROUTE_ACCELERATOR_WARM_TRIALS) {
         return None;
     }
-    // A single lucky minimum is not representative routing evidence. Use the
-    // warm median, while retaining the real first dispatch as a lower bound for
-    // one-shot routing. The daemon path consumes the warm median directly.
-    let route_ns = cold_ns.max(warm_timing.median_ns());
-    Some((cold_ns, warm_timing, route_ns))
+    let route_ns = model.cold_one_shot_ns.max(model.warm_median_ns);
+    Some((model.cold_one_shot_ns, warm_timing, route_ns))
 }
 
 pub(super) fn gpu_cold_warm_route_evidence(

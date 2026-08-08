@@ -249,6 +249,63 @@ pub struct MemoryInsightV2 {
     /// Allocation owners sorted by attributed bytes, largest first.
     pub stages: Vec<StageMemoryV2>,
 }
+/// Startup RSS component attribution (KH-2035).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StartupRssAttribution {
+    pub engine_init_floor_bytes: u64,
+    pub execution_pack_mapping_bytes: u64,
+    pub regex_lazy_dfa_bytes: u64,
+    pub allocated_scratch_bytes: u64,
+    pub total_startup_rss_bytes: u64,
+}
+
+impl StartupRssAttribution {
+    pub fn new(
+        engine_init_floor_bytes: u64,
+        execution_pack_mapping_bytes: u64,
+        regex_lazy_dfa_bytes: u64,
+        allocated_scratch_bytes: u64,
+    ) -> Self {
+        let total_startup_rss_bytes = engine_init_floor_bytes
+            .saturating_add(execution_pack_mapping_bytes)
+            .saturating_add(regex_lazy_dfa_bytes)
+            .saturating_add(allocated_scratch_bytes);
+        Self {
+            engine_init_floor_bytes,
+            execution_pack_mapping_bytes,
+            regex_lazy_dfa_bytes,
+            allocated_scratch_bytes,
+            total_startup_rss_bytes,
+        }
+    }
+}
+/// Quarter historical peak memory proof (KH-2038).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HistoricalPeakMemoryProof {
+    pub historical_peak_bytes: u64,
+    pub current_peak_bytes: u64,
+    pub ratio_milli: u64,
+    pub is_quarter_or_less: bool,
+}
+
+impl HistoricalPeakMemoryProof {
+    pub fn verify(current_peak_bytes: u64, historical_peak_bytes: u64) -> Self {
+        let ratio_milli = if historical_peak_bytes == 0 {
+            0
+        } else {
+            (current_peak_bytes.saturating_mul(1000)) / historical_peak_bytes
+        };
+        let is_quarter_or_less = current_peak_bytes <= historical_peak_bytes / 4;
+        Self {
+            historical_peak_bytes,
+            current_peak_bytes,
+            ratio_milli,
+            is_quarter_or_less,
+        }
+    }
+}
 
 /// Per-worker time and how much of the machine the run reached.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1369,4 +1426,35 @@ fn rank_findings(
         true
     });
     findings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn startup_rss_attribution_computes_total_and_denies_unknown_fields() {
+        let attr = StartupRssAttribution::new(10_000_000, 5_000_000, 2_000_000, 1_000_000);
+        assert_eq!(attr.engine_init_floor_bytes, 10_000_000);
+        assert_eq!(attr.execution_pack_mapping_bytes, 5_000_000);
+        assert_eq!(attr.regex_lazy_dfa_bytes, 2_000_000);
+        assert_eq!(attr.allocated_scratch_bytes, 1_000_000);
+        assert_eq!(attr.total_startup_rss_bytes, 18_000_000);
+
+        let json = serde_json::to_string(&attr).expect("serialize StartupRssAttribution");
+        let deserialized: StartupRssAttribution =
+            serde_json::from_str(&json).expect("deserialize StartupRssAttribution");
+        assert_eq!(deserialized, attr);
+    }
+
+    #[test]
+    fn historical_peak_memory_proof_verifies_quarter_ceiling() {
+        let historical = 400_000_000;
+        let proof_quarter = HistoricalPeakMemoryProof::verify(100_000_000, historical);
+        assert!(proof_quarter.is_quarter_or_less);
+        assert_eq!(proof_quarter.ratio_milli, 250);
+
+        let proof_over = HistoricalPeakMemoryProof::verify(100_000_001, historical);
+        assert!(!proof_over.is_quarter_or_less);
+    }
 }
