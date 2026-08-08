@@ -65,3 +65,7 @@ dropping this pattern's matches (Law 10). error={error}",
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/anchored_regex_cases.rs"]
+mod tests;

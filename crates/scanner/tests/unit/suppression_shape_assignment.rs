@@ -111,6 +111,7 @@ fn high_entropy_base64_secret_recall_and_negative_suppression_boundaries() {
     let entropy_secret = 5.2;
 
     assert!(!looks_like_generic_random_base64_blob_decoy(base64_secret, entropy_secret));
+    assert!(generic_base64_candidate_is_ambiguous(base64_secret, entropy_secret));
 
     let doc_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE_123456";
     let hex_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
