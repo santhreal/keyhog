@@ -95,11 +95,11 @@ pub(crate) struct DetectorPlanRecord {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct DetectorPlanPreludeRecord<'a> {
-    pub(crate) id: &'a str,
-    pub(crate) name: &'a str,
-    pub(crate) service: &'a str,
-    pub(crate) companion_names: Vec<&'a str>,
+pub struct DetectorPlanPreludeRecord<'a> {
+    pub id: &'a str,
+    pub name: &'a str,
+    pub service: &'a str,
+    pub companion_names: Vec<&'a str>,
     #[serde(borrow)]
     pub(crate) entropy_fallback: Option<DetectorPlanPreludeEntropyFallback<'a>>,
 }
@@ -239,11 +239,11 @@ pub struct CompiledDetectorPlanSection {
 }
 
 #[derive(Debug)]
-pub(crate) struct HydratedDetectorPlanHeader {
+pub struct HydratedDetectorPlanHeader {
     pub(crate) decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
-    pub(crate) detector_ir_digest: [u8; 32],
-    pub(crate) compiled_plan_digest: [u8; 32],
-    pub(crate) detector_count: usize,
+    pub detector_ir_digest: [u8; 32],
+    pub compiled_plan_digest: [u8; 32],
+    pub detector_count: usize,
 }
 
 struct WireRowResidency;
@@ -506,7 +506,7 @@ impl CompiledDetectorPlanSection {
         })
     }
 
-    pub(crate) fn stream_prelude_records<F>(
+    pub fn stream_prelude_records<F>(
         bytes: &[u8],
         expected_detector_ir_digest: [u8; 32],
         mut visit: F,
