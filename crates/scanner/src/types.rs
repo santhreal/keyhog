@@ -461,6 +461,9 @@ impl LazyRegex {
             })
             .as_ref()
     }
+    pub(crate) fn is_compiled(&self) -> bool {
+        self.state.cell.get().is_some()
+    }
 }
 
 /// A process-wide never-matching regex used as the fail-closed sentinel when a
@@ -538,6 +541,12 @@ pub(crate) struct CompiledCompanion {
     pub(crate) scope: keyhog_core::EvidenceScope,
     pub(crate) requirement: keyhog_core::EvidenceRequirement,
     pub(crate) value_relation: keyhog_core::EvidenceValueRelation,
+}
+impl CompiledCompanion {
+    #[allow(dead_code)]
+    pub(crate) fn is_compiled(&self) -> bool {
+        self.regex.is_compiled()
+    }
 }
 
 #[cfg(feature = "entropy")]

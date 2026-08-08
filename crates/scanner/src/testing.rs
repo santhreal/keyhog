@@ -2573,6 +2573,47 @@ pub fn compact_line_index_for_test(text: &str) -> Result<CompactLineIndexForTest
         .map(CompactLineIndexForTest)
         .map_err(|_| "text exceeds compact line-index capacity")
 }
+impl CompactLineIndexForTest {
+    pub fn line_number_for_offset(&self, offset: usize) -> usize {
+        self.0.line_number_for_offset(offset)
+    }
+}
+
+pub struct LazyCompanionForTest {
+    regex: crate::types::LazyRegex,
+}
+
+impl LazyCompanionForTest {
+    pub fn is_compiled(&self) -> bool {
+        self.regex.is_compiled()
+    }
+    pub fn get(&self) -> &regex::Regex {
+        self.regex.get()
+    }
+}
+
+pub fn companion_lazy_regex_for_test(pattern: &str) -> LazyCompanionForTest {
+    LazyCompanionForTest {
+        regex: crate::types::LazyRegex::companion(pattern),
+    }
+}
+
+#[cfg(feature = "simd")]
+pub struct HsScannerForTest(crate::simd::backend::HsScanner);
+
+#[cfg(feature = "simd")]
+impl HsScannerForTest {
+    pub fn compile(patterns: &[(usize, usize, &str, bool)]) -> Result<Self, String> {
+        crate::simd::backend::HsScanner::compile_with_opts(
+            patterns,
+            crate::simd::backend::HsCompileOpts::default(),
+        )
+        .map(|(scanner, _)| Self(scanner))
+    }
+    pub fn memory_attribution(&self) -> crate::execution_pack::simd_program::SimdPackMemoryAttribution {
+        self.0.memory_attribution()
+    }
+}
 
 pub fn code_lines_from_compact_index_for_test(text: &str) -> Result<Vec<&str>, &'static str> {
     let index = compact_line_index_for_test(text)?;

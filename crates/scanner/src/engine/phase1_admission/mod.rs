@@ -192,10 +192,14 @@ impl ReusablePhase1EvidenceCache {
                 && entry.decoder_admission_context == decoder_admission_context
                 && entry.payload.eq(&payload)
         }) {
-            let entry = self
+            let mut entry = self
                 .entries
                 .remove(position)
                 .expect("cache position came from the same deque");
+            self.resident_bytes = self.resident_bytes.saturating_sub(entry.resident_bytes());
+            entry.evidence = evidence;
+            let updated_bytes = entry.resident_bytes();
+            self.resident_bytes = self.resident_bytes.saturating_add(updated_bytes);
             self.entries.push_back(entry);
             return;
         }
