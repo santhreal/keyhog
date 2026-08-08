@@ -12,6 +12,21 @@ use gates::entropy_match_suppression_stage;
 use line_context::entropy_value_line;
 #[cfg(feature = "entropy")]
 use std::sync::Arc;
+thread_local! {
+    static ENTROPY_SKIP_LINES_SCRATCH: std::cell::RefCell<std::collections::HashSet<usize>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+struct SkipLinesGuard(std::collections::HashSet<usize>);
+
+impl Drop for SkipLinesGuard {
+    fn drop(&mut self) {
+        self.0.clear();
+        ENTROPY_SKIP_LINES_SCRATCH.with(|cell| {
+            cell.replace(std::mem::take(&mut self.0));
+        });
+    }
+}
 
 #[cfg(feature = "entropy")]
 impl CompiledScanner {
@@ -97,7 +112,9 @@ impl CompiledScanner {
         }
 
         // Avoid entropy duplicates on lines already claimed by named detectors.
-        let mut skip_lines = std::collections::HashSet::new();
+        let mut skip_lines_owned = SkipLinesGuard(ENTROPY_SKIP_LINES_SCRATCH.with(|cell| cell.take()));
+        skip_lines_owned.0.clear();
+        let skip_lines = &mut skip_lines_owned.0;
         if !scan_state.matches.is_empty() {
             for m in &scan_state.matches {
                 // Phase-2 entropy runs once after regex and generic producers,

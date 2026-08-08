@@ -92,6 +92,8 @@ pub(crate) struct ScannerTuning {
     phase2_plain_localizer: AtomicU8,
     /// Override for the GPU region-presence full CPU recall floor.
     gpu_recall_floor: AtomicU8,
+    /// Override for chunk lane threshold sweeping (`usize::MAX` = default).
+    chunk_lane_threshold: AtomicUsize,
 }
 
 impl Default for ScannerTuning {
@@ -117,6 +119,7 @@ impl ScannerTuning {
             no_candidate_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
             phase2_plain_localizer: AtomicU8::new(BoolOverride::Default.as_byte()),
             gpu_recall_floor: AtomicU8::new(BoolOverride::Default.as_byte()),
+            chunk_lane_threshold: AtomicUsize::new(usize::MAX),
         }
     }
 
@@ -135,6 +138,7 @@ impl ScannerTuning {
         self.set_no_candidate_gate(config.no_candidate_gate);
         self.set_phase2_plain_localizer(config.fallback_localizer);
         self.set_gpu_recall_floor(config.gpu_recall_floor);
+        self.set_chunk_lane_threshold(config.chunk_lane_threshold);
     }
 
     /// Resolve every per-scanner tuning override once into a plain copyable
@@ -198,6 +202,22 @@ impl ScannerTuning {
     pub(crate) fn set_hs_prefilter_max_len(&self, threshold: Option<usize>) {
         self.hs_max_len
             .store(threshold.unwrap_or(usize::MAX), Relaxed); // LAW10: None is the documented compiled-default sentinel, not an error fallback.
+    }
+
+    // ── Chunk lane threshold sweeping ─────────────────────────────────────
+
+    /// Get the current configured chunk lane threshold for small file scanning.
+    pub(crate) fn chunk_lane_threshold(&self) -> usize {
+        match self.chunk_lane_threshold.load(Relaxed) {
+            usize::MAX => crate::engine::batch_topology::SMALL_CHUNK_MAX_BYTES,
+            val => val,
+        }
+    }
+
+    /// Force the chunk lane threshold for small file performance tuning and sweeping.
+    pub(crate) fn set_chunk_lane_threshold(&self, threshold: Option<usize>) {
+        self.chunk_lane_threshold
+            .store(threshold.unwrap_or(usize::MAX), Relaxed);
     }
 
     // ── Shared-anchor phase-2 localization ────────────────────────────────
@@ -370,5 +390,27 @@ impl ScannerTuning {
     pub(crate) fn gpu_recall_floor_enabled(&self) -> bool {
         BoolOverride::from_raw(self.gpu_recall_floor.load(Relaxed))
             .resolve(ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT)
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chunk_lane_threshold_tuning() {
+        let tuning = ScannerTuning::from_defaults();
+        assert_eq!(
+            tuning.chunk_lane_threshold(),
+            crate::engine::batch_topology::SMALL_CHUNK_MAX_BYTES
+        );
+
+        tuning.set_chunk_lane_threshold(Some(32 * 1024));
+        assert_eq!(tuning.chunk_lane_threshold(), 32 * 1024);
+
+        tuning.set_chunk_lane_threshold(None);
+        assert_eq!(
+            tuning.chunk_lane_threshold(),
+            crate::engine::batch_topology::SMALL_CHUNK_MAX_BYTES
+        );
     }
 }

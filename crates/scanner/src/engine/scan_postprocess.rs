@@ -176,7 +176,12 @@ impl CompiledScanner {
                         }
                     }
                     // Lowest real source offset wins aliases; `seen` starts with raw findings.
-                    decoded_candidates.sort_by_key(|m| m.location.offset);
+                    decoded_candidates.sort_by(|a, b| {
+                        a.location
+                            .offset
+                            .cmp(&b.location.offset)
+                            .then_with(|| a.cmp(b))
+                    });
                     for m in decoded_candidates {
                         let key = (Arc::clone(&m.detector_id), m.credential.clone());
                         if seen.insert(key) {

@@ -2,7 +2,7 @@ use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 
 fn scanner() -> CompiledScanner {
-    CompiledScanner::compile(vec![DetectorSpec {
+    CompiledScanner::compile_with_gpu_policy(vec![DetectorSpec {
         tests: Vec::new(),
         id: "phase1-admission-token".into(),
         name: "Phase 1 admission token".into(),
@@ -22,7 +22,7 @@ fn scanner() -> CompiledScanner {
         match_confidence: keyhog_core::detector_spec_by_id("github-classic-pat")
             .and_then(|detector| detector.match_confidence),
         ..Default::default()
-    }])
+    }], keyhog_scanner::GpuInitPolicy::FromRuntimePolicy)
     .expect("phase-1 admission scanner compiles")
 }
 
