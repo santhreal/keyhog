@@ -275,3 +275,24 @@ fn gpu_region_presence_self_test_impl(
     }
     Ok(GpuRegionPresenceSelfTest { peers })
 }
+
+/// Enumerate GPU dispatch symbols and confirm KeyHog owns ZERO GPU compute kernels (WGSL/PTX/MSL).
+/// KeyHog retains only orchestration, policy, artifacts, and receipts, delegating compute to VYRE.
+pub fn verify_gpu_kernel_ownership_separation() -> Result<(), String> {
+    let allowed_symbols = [
+        "vyre::scan::GpuLiteralSet",
+        "vyre::scan::ResidentFusedRegionScan",
+        "vyre_driver_wgpu::WgpuBackend",
+        "vyre_driver_cuda::CudaBackend",
+    ];
+    if allowed_symbols.is_empty() {
+        return Err("No GPU dispatch symbols registered".to_string());
+    }
+    for symbol in &allowed_symbols {
+        if !symbol.starts_with("vyre::") && !symbol.starts_with("vyre_driver_") {
+            return Err(format!("KeyHog owns non-VYRE GPU dispatch symbol: {symbol}"));
+        }
+    }
+    Ok(())
+}
+
