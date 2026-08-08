@@ -182,25 +182,40 @@ impl<'a> PreprocessedText<'a> {
         source_offset_from_mapping(source, m, offset, credential)
     }
 
-    pub(crate) fn transport_decoded_for_offset(&self, offset: usize) -> bool {
-        transport_decoded_for_offset(&self.mappings, offset)
-    }
-
-    pub(crate) fn passthrough(line: impl Into<std::borrow::Cow<'a, str>>) -> Self {
-        let line: std::borrow::Cow<'a, str> = line.into();
-        let end_offset = line.len();
-        Self {
-            // Carried as-is: `Cow::Borrowed` for a byte-identical passthrough
-            // (no body copy), `Cow::Owned` only when normalization rewrote it.
-            text: line,
-            mappings: vec![LineMapping {
-                line_number: 1,
-                start_offset: 0,
-                end_offset,
-                original_start_offset: 0,
-                transport_decoded: false,
-            }],
+    pub(crate) fn passthrough(text: impl Into<std::borrow::Cow<'a, str>>) -> Self {
+        // Carried as-is: `Cow::Borrowed` for a byte-identical passthrough (no
+        // body copy), `Cow::Owned` only when normalization rewrote it.
+        let text: std::borrow::Cow<'a, str> = text.into();
+        // One LineMapping PER physical line so `line_for_offset` resolves the
+        // correct 1-based line for every offset. The prior form built a single
+        // whole-text mapping with `line_number: 1`, which labeled EVERY offset
+        // in a multi-line chunk as line 1: `match_line_number` then reported
+        // line 1 for credentials on later lines, and
+        // `infer_context_with_documentation` read the line ABOVE the credential.
+        // A secret directly under a `# url` / `// note` comment was therefore
+        // mis-classified as Comment context and silently hard-suppressed (a
+        // recall bug on the ubiquitous "comment line, then key=value" shape).
+        // `start_offset == original_start_offset` on every mapping keeps
+        // `source_offset_from_mapping` on its identity fast-path (no remapping
+        // for the non-`multiline` passthrough). Mirrors the `multiline`
+        // PreprocessedText::passthrough so both feature builds attribute lines
+        // identically.
+        let mut mappings = Vec::new();
+        let mut offset = 0;
+        for (line_idx, line) in text.split('\n').enumerate() {
+            let end = offset + line.len();
+            mappings.push(LineMapping {
+                line_number: line_idx + 1,
+                start_offset: offset,
+                end_offset: end + 1,
+                original_start_offset: offset,
+            });
+            offset = end + 1;
         }
+        if let Some(last) = mappings.last_mut() {
+            last.end_offset = text.len();
+        }
+        Self { text, mappings }
     }
 }
 

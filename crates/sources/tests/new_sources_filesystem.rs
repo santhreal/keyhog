@@ -218,6 +218,41 @@ fn default_excludes_drop_lockfile_then_flag_includes_it() {
     );
 }
 
+#[test]
+fn default_excludes_drop_build_dir_then_flag_includes_it() {
+    // Regression: the DIRECTORY excludes (build/, dist/, vendor/, node_modules/,
+    // ...) were applied UNCONDITIONALLY in `walker_config`, so
+    // `--no-default-excludes` (with_default_excludes(false)) silently still
+    // pruned the whole subtree at traversal time — the per-file extract gate
+    // never even saw those files. A real secret under `.../build/...` was
+    // unreachable no matter the flag (the flag lied about its own contract).
+    // The walker must honor the opt-out for directories too.
+    const SENTINEL: &str = "ghp_newsourcesbuilddirsentinel0123456789";
+    let dir = tempfile::tempdir().unwrap();
+    let build = dir.path().join("build");
+    fs::create_dir_all(&build).unwrap();
+    fs::write(build.join("creds.env"), format!("TOKEN={SENTINEL}\n")).unwrap();
+    fs::write(dir.path().join("config.env"), "control_marker_value\n").unwrap();
+
+    // Default: the build/ subtree is pruned, so the secret is never scanned.
+    let kept = collect(&FilesystemSource::new(dir.path().to_path_buf()));
+    assert!(body_contains(&kept, "control_marker_value"));
+    assert!(
+        !body_contains(&kept, SENTINEL),
+        "a file under build/ must be excluded by default (walker dir skip)"
+    );
+
+    // Flag off: the walker descends into build/ and the secret is scanned.
+    let included =
+        collect(&FilesystemSource::new(dir.path().to_path_buf()).with_default_excludes(false));
+    assert!(body_contains(&included, "control_marker_value"));
+    assert!(
+        body_contains(&included, SENTINEL),
+        "with default-excludes off the walker MUST descend into build/ (the flag's \
+         silent contract gap: directory skips ignored the opt-out)"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // with_respect_gitignore
 //
