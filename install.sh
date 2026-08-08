@@ -1300,15 +1300,14 @@ verify_install() {
     err "  exit=$verify_status"
     [ -n "$verify_err" ] && err "  stderr: $verify_err"
 
-    # Surface dynamic-link failures on Linux. The Linux Hyperscan build
-    # depends on libhyperscan.so.5 at runtime; Ubuntu hosted runners
-    # ship libhyperscan-dev only when explicitly installed.
+    # Surface dynamic-link failures on Linux. Distribution builds expose the
+    # same Hyperscan ABI as libhs, libhyperscan, or libvectorscan.
     if [ "$OS" = "linux" ] && command -v ldd >/dev/null 2>&1; then
         missing=$(ldd "$INSTALL_DIR/keyhog" 2>/dev/null | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ')
         if [ -n "$missing" ]; then
             err "  Missing shared libraries: $missing"
             case "$missing" in
-                *libhyperscan*)
+                *libhs.so*|*libhyperscan*|*libvectorscan*)
                     err "  Install Hyperscan runtime:"
                     err "    Ubuntu/Debian: sudo apt-get install -y libhyperscan5"
                     err "    Fedora/RHEL:   sudo dnf install -y hyperscan"
