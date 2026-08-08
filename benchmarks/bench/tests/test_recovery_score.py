@@ -101,3 +101,30 @@ def test_recovery_score_rejects_an_unknown_schema_version():
 )
 def test_agentre_decoded_c2_credit_matches_upstream(expected, observed, credit):
     assert score_agentre_decoded_c2(expected, observed) == credit
+
+def test_aes_support_material_not_credited_as_recovered_secret():
+    """KH-2081: Exact recovered plaintext is the only credited recovery value; support material (key/IV) gets no credit."""
+    expected_secret = "ghp_0123456789abcdef0123456789abcd32"
+    aes_key_support_material = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    aes_iv_support_material = "0123456789abcdef0123456789abcdef"
+
+    result = score_recovery(
+        [expectation("recovered_secret", expected_secret)],
+        [
+            observation("recovered_secret", aes_key_support_material),
+            observation("recovered_secret", aes_iv_support_material),
+        ],
+    )
+    assert result.overall.tp == 0
+    assert result.overall.fp == 2
+    assert result.overall.fn == 1
+
+    result_with_exact = score_recovery(
+        [expectation("recovered_secret", expected_secret)],
+        [
+            observation("recovered_secret", expected_secret),
+            observation("recovered_secret", aes_key_support_material),
+        ],
+    )
+    assert result_with_exact.overall.tp == 1
+    assert result_with_exact.overall.fp == 1

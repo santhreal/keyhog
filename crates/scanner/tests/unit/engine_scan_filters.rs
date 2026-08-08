@@ -297,3 +297,54 @@ fn at_least_min_run_zero_clamps_to_one() {
     assert!(has_high_entropy_run_at_least(b"a", 0));
     assert!(!has_high_entropy_run_at_least(b"", 0));
 }
+
+#[test]
+fn structured_preprocessing_admission_checks_all_owners_and_extensions() {
+    use keyhog_scanner::testing::structured_preprocessing_is_impossible_for_path;
+
+    let admissible_extensions = [
+        ".env",
+        ".env.local",
+        ".env.production",
+        "config.env",
+        "values.yaml",
+        "values.yml",
+        "terraform.tfstate",
+        "main.tf",
+        "variables.tfvars",
+        "config.hcl",
+        "analysis.ipynb",
+        "FILE.ENV",
+        "CONFIG.YAML",
+        "CONFIG.YML",
+        "MAIN.TFSTATE",
+        "MAIN.TF",
+        "VARIABLES.TFVARS",
+        "CONFIG.HCL",
+        "NOTEBOOK.IPYNB",
+    ];
+
+    for path in &admissible_extensions {
+        assert!(
+            !structured_preprocessing_is_impossible_for_path(Some(path)),
+            "path {path} must be admitted for structured preprocessing"
+        );
+    }
+
+    let non_admissible = [
+        "main.rs",
+        "script.py",
+        "program.c",
+        "document.txt",
+        "image.png",
+        "archive.zip",
+        "data.json",
+    ];
+
+    for path in &non_admissible {
+        assert!(
+            structured_preprocessing_is_impossible_for_path(Some(path)),
+            "path {path} must be rejected for structured preprocessing"
+        );
+    }
+}
