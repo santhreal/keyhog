@@ -1299,10 +1299,16 @@ impl CliTestApi for TestApi {
             keyhog_scanner::ScanBackend::GpuWgpu,
             None,
             scanner.execution_route_for_backend(keyhog_scanner::ScanBackend::GpuWgpu),
-            recover_automatic_backend_faults.then_some(crate::orchestrator::BackendRecoveryPlan {
-                backend: keyhog_scanner::ScanBackend::SimdCpu,
-                execution_route: scanner
-                    .execution_route_for_backend(keyhog_scanner::ScanBackend::SimdCpu),
+            recover_automatic_backend_faults.then_some({
+                let recovery_backend = if scanner.warm_backend(keyhog_scanner::ScanBackend::SimdCpu) {
+                    keyhog_scanner::ScanBackend::SimdCpu
+                } else {
+                    keyhog_scanner::ScanBackend::CpuFallback
+                };
+                crate::orchestrator::BackendRecoveryPlan {
+                    backend: recovery_backend,
+                    execution_route: scanner.execution_route_for_backend(recovery_backend),
+                }
             }),
         )?;
         if recover_automatic_backend_faults && !outcome.recovered {
