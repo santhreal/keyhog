@@ -128,6 +128,20 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
+path = "crates/cli/src/daemon/control.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/daemon/sigpipe.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
 path = "crates/cli/src/exit_codes.rs"
 boundary = true
 error = true
@@ -156,7 +170,70 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
+path = "crates/cli/src/execution_pack_install.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
 path = "crates/cli/src/installer/release.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/installer/execution_packs.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/orchestrator/dispatch/backend/store/telemetry.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/orchestrator/reporting/progress.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/subcommands/backend/autoroute.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/subcommands/backend/report.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/subcommands/backend/self_test.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/subcommands/compile_execution_packs.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/subcommands/detectors/mechanisms.rs"
 boundary = true
 error = true
 adversarial = true
@@ -1603,12 +1680,6 @@ path = "crates/sources/src/filesystem/extract/seven_zip.rs"
 path = "crates/sources/src/filesystem/filter.rs"
 
 [[module]]
-path = "crates/sources/src/filesystem/descriptor_walk.rs"
-
-[[module]]
-path = "crates/sources/src/filesystem/discovery.rs"
-
-[[module]]
 path = "crates/sources/src/filesystem/path.rs"
 
 [[module]]
@@ -1682,9 +1753,6 @@ path = "crates/sources/src/hosted_git.rs"
 
 [[module]]
 path = "crates/sources/src/hosted_git/sanitize.rs"
-
-[[module]]
-path = "crates/sources/src/hosted_git/process.rs"
 
 [[module]]
 path = "crates/sources/src/gitlab_group.rs"
