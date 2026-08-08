@@ -1,6 +1,8 @@
-"""Executable product target for deterministic P0-P12 secret recovery."""
+"""Executable product target for bounded static secret recovery."""
 
 from __future__ import annotations
+
+from collections import Counter
 
 import pytest
 
@@ -12,31 +14,29 @@ from bench.score import score
 
 pytestmark = pytest.mark.target_spec
 
-EXPECTED_RECOVERY_CATEGORIES = {
-    "recovery/p00-plaintext",
-    "recovery/p01-base64",
-    "recovery/p02-identifier-obfuscation",
-    "recovery/p03-dead-code",
-    "recovery/p04-structural-obfuscation",
-    "recovery/p05-xor",
-    "recovery/p06-aes-256-cbc",
-    "recovery/p07-xor-simple-obfuscation",
-    "recovery/p08-aes-simple-obfuscation",
-    "recovery/p09-xor-dead-code",
-    "recovery/p10-aes-dead-code",
-    "recovery/p11-xor-structural-obfuscation",
-    "recovery/p12-aes-structural-obfuscation",
-}
-
 
 @pytest.fixture(scope="session")
-def deep_recovery_detection() -> Detection:
+def recovery_contract():
     corpus = IocRecoveryCorpus()
     if not corpus.manifest.is_file():
         pytest.fail(
             "IoC-recovery corpus is absent; run "
             "`make -C benchmarks ioc-recovery-corpus`"
         )
+    records = corpus.records()
+    expected = Counter(
+        record.category
+        for record in records
+        if record.label and not record.ignore
+    )
+    if not expected:
+        pytest.fail("IoC-recovery corpus contains no positive recovery records")
+    return corpus, records, dict(sorted(expected.items()))
+
+
+@pytest.fixture(scope="session")
+def deep_recovery_detection(recovery_contract) -> Detection:
+    corpus, records, _expected = recovery_contract
     binary = resolve_keyhog_binary()
     if binary is None:
         pytest.fail("current KeyHog release binary is absent; build it before scoring")
@@ -52,59 +52,83 @@ def deep_recovery_detection() -> Detection:
     assert scanner.exit_success(stats.exit_code), (
         f"deep recovery scan exited {stats.exit_code}, so no score is trustworthy"
     )
-    return score(corpus.records(), findings, corpus.file_root)
+    return score(records, findings, corpus.file_root)
+
+
+def _assert_exact_recovery(
+    detection: Detection,
+    expected: dict[str, int],
+) -> None:
+    outcome = detection.overall
+    expected_total = sum(expected.values())
+    assert (outcome.tp, outcome.fp, outcome.fn) == (expected_total, 0, 0), (
+        "deep recovery target requires exact recovery without extra findings "
+        f"across every positive fixture; expected TP={expected_total}, "
+        f"got TP={outcome.tp}, FP={outcome.fp}, FN={outcome.fn}"
+    )
+
+
+def _assert_no_blind_recovery_category(
+    detection: Detection,
+    expected: dict[str, int],
+) -> None:
+    assert set(detection.per_category) == set(expected)
+    failures = {
+        category: (outcome.tp, outcome.fp, outcome.fn)
+        for category, outcome in detection.per_category.items()
+        if (outcome.tp, outcome.fp, outcome.fn)
+        != (expected[category], 0, 0)
+    }
+    assert not failures, f"deep recovery category gaps: {failures}"
 
 
 def test_deep_mode_recovers_every_plaintext_exactly(
     deep_recovery_detection: Detection,
+    recovery_contract,
 ):
-    outcome = deep_recovery_detection.overall
-    assert (outcome.tp, outcome.fp, outcome.fn) == (4_368, 0, 0), (
-        "deep recovery target requires exact recovery without extra findings "
-        f"across all P0-P12 fixtures; got TP={outcome.tp}, "
-        f"FP={outcome.fp}, FN={outcome.fn}"
-    )
+    _corpus, _records, expected = recovery_contract
+    _assert_exact_recovery(deep_recovery_detection, expected)
 
 
-def test_deep_mode_has_no_blind_recovery_phase(
+def test_deep_mode_has_no_blind_recovery_category(
     deep_recovery_detection: Detection,
+    recovery_contract,
 ):
-    assert set(deep_recovery_detection.per_category) == EXPECTED_RECOVERY_CATEGORIES
-    failures = {
-        category: (outcome.tp, outcome.fp, outcome.fn)
-        for category, outcome in deep_recovery_detection.per_category.items()
-        if (outcome.tp, outcome.fp, outcome.fn) != (336, 0, 0)
-    }
-    assert not failures, f"deep recovery phase gaps: {failures}"
+    _corpus, _records, expected = recovery_contract
+    _assert_no_blind_recovery_category(deep_recovery_detection, expected)
 
 
 def test_deep_recovery_target_rejects_one_extra_finding():
+    expected = {
+        "recovery/phase/plaintext/checksum": 2,
+        "recovery/phase/plaintext/fixed-prefix": 3,
+    }
     detection = Detection(
-        overall=Outcome(tp=4_368, fp=1, fn=0),
+        overall=Outcome(tp=5, fp=1, fn=0),
         per_category={
-            category: Outcome(tp=336, fp=int("p07-" in category), fn=0)
-            for category in EXPECTED_RECOVERY_CATEGORIES
+            "recovery/phase/plaintext/checksum": Outcome(tp=2, fp=1, fn=0),
+            "recovery/phase/plaintext/fixed-prefix": Outcome(tp=3, fp=0, fn=0),
         },
     )
 
     with pytest.raises(AssertionError, match=r"FP=1"):
-        test_deep_mode_recovers_every_plaintext_exactly(detection)
-    with pytest.raises(AssertionError, match=r"p07.*336, 1, 0"):
-        test_deep_mode_has_no_blind_recovery_phase(detection)
+        _assert_exact_recovery(detection, expected)
+    with pytest.raises(AssertionError, match=r"checksum.*2, 1, 0"):
+        _assert_no_blind_recovery_category(detection, expected)
 
 
-def test_deep_recovery_target_rejects_renamed_phase():
-    renamed = {
-        category: Outcome(tp=336, fp=0, fn=0)
-        for category in EXPECTED_RECOVERY_CATEGORIES
+def test_deep_recovery_target_rejects_renamed_category():
+    expected = {
+        "recovery/phase/plaintext/checksum": 2,
+        "recovery/phase/plaintext/fixed-prefix": 3,
     }
-    renamed["recovery/p07-renamed"] = renamed.pop(
-        "recovery/p07-xor-simple-obfuscation"
-    )
     detection = Detection(
-        overall=Outcome(tp=4_368, fp=0, fn=0),
-        per_category=renamed,
+        overall=Outcome(tp=5, fp=0, fn=0),
+        per_category={
+            "recovery/phase/plaintext/checksum": Outcome(tp=2, fp=0, fn=0),
+            "recovery/phase/plaintext/renamed": Outcome(tp=3, fp=0, fn=0),
+        },
     )
 
     with pytest.raises(AssertionError):
-        test_deep_mode_has_no_blind_recovery_phase(detection)
+        _assert_no_blind_recovery_category(detection, expected)
