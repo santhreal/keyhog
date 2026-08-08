@@ -43,6 +43,7 @@ class KeyhogVersionError(Exception):
 
 
 def workspace_keyhog_version(repo_root: pathlib.Path = _REPO_ROOT) -> str:
+    """Read and return the workspace package version from root Cargo.toml."""
     cargo = repo_root / "Cargo.toml"
     try:
         data = tomllib.loads(cargo.read_text())
@@ -57,11 +58,13 @@ def workspace_keyhog_version(repo_root: pathlib.Path = _REPO_ROOT) -> str:
 
 
 def scanner_semver(raw: str) -> str | None:
+    """Extract semver string from scanner version or output string."""
     match = _SEMVER_RE.search(raw)
     return match.group(1) if match else None
 
 
 def assert_version_matches_workspace(raw_version: str, *, what: str) -> None:
+    """Assert that raw_version matches the current workspace Cargo.toml version."""
     expected = workspace_keyhog_version()
     observed = scanner_semver(raw_version)
     if observed is None:
@@ -77,6 +80,7 @@ def assert_version_matches_workspace(raw_version: str, *, what: str) -> None:
 
 
 def workspace_git_hash(repo_root: pathlib.Path = _REPO_ROOT) -> str:
+    """Resolve and return the current workspace git commit SHA."""
     proc = subprocess.run(
         ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
         capture_output=True,

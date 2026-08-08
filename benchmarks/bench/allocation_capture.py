@@ -133,6 +133,7 @@ class DeviceAllocationReconciliation:
     reconciled: bool
 
     def to_json(self) -> dict[str, object]:
+        """Return a JSON-serializable dictionary representation of reconciliation result."""
         return {
             "workload_id": self.workload_id,
             "vyre_vram_bytes": self.vyre_vram_bytes,

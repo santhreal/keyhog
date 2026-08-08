@@ -13,6 +13,7 @@ class PerformanceContractError(RuntimeError):
 
 
 def _rows(payload: Mapping[str, object], label: str) -> dict[str, Mapping[str, object]]:
+    """Extract and validate workload rows from baseline or candidate payload."""
     raw = payload.get("workloads")
     if not isinstance(raw, list):
         raise PerformanceContractError(f"{label} workloads must be an array")
@@ -33,6 +34,7 @@ def _rows(payload: Mapping[str, object], label: str) -> dict[str, Mapping[str, o
 
 
 def _positive(row: Mapping[str, object], field: str, label: str) -> float:
+    """Extract a positive numeric metric field from a workload row."""
     value = row.get(field)
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
         raise PerformanceContractError(f"{label} {field} must be positive, got {value!r}")

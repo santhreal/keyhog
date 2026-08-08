@@ -39,6 +39,7 @@ def betterleaks_command(binary: pathlib.Path, target: pathlib.Path, *, stdin: bo
 
 
 def _trial(stdout: str, stats: RunStats) -> BaselineTrial:
+    """Parse stdout and run statistics into a structured BaselineTrial."""
     if stats.timed_out or stats.exit_code != 0:
         raise BaselineCaptureError(
             f"Betterleaks exited {stats.exit_code}, timed_out={stats.timed_out}"
@@ -184,6 +185,7 @@ def capture_betterleaks_catalog(
 
 
 def _main() -> int:
+    """Execute CLI entry point for Betterleaks baseline capture."""
     parser = argparse.ArgumentParser(description="Capture canonical Betterleaks baselines")
     parser.add_argument("--catalog", default="workload-catalog.toml")
     parser.add_argument("--fixture-lock", default="workload-fixtures.lock.json")

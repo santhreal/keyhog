@@ -200,16 +200,19 @@ def sha256_file(path: str | pathlib.Path) -> str:
             hasher.update(chunk)
     return hasher.hexdigest()
 def _detector_args(detectors: pathlib.Path | None) -> list[str]:
+    """Format CLI detector flags for executable invocation."""
     return [] if detectors is None else ["--detectors", str(detectors)]
 
 
 def _resolve_detectors(detectors: str | pathlib.Path | None) -> pathlib.Path | None:
+    """Resolve strict path for detector rules file if supplied."""
     return None if detectors is None else pathlib.Path(detectors).resolve(strict=True)
 
 
 def _load_execution_pack_manifest(
     path: str | pathlib.Path, binary: pathlib.Path,
 ) -> tuple[pathlib.Path, dict[str, object]]:
+    """Load and validate execution pack manifest JSON against expected path structure."""
     manifest_path = pathlib.Path(path).resolve(strict=True)
     if (
         manifest_path.name != "manifest.json"

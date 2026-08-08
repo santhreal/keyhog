@@ -74,6 +74,8 @@ class ResultSelectionError(ValueError):
 
 @dataclass(frozen=True)
 class RunDeclaration:
+    """Declaration of one committed run artifact binding scanner identity and host provenance."""
+
     scanner: str
     config_id: str
     path: str
@@ -87,6 +89,8 @@ class RunDeclaration:
 
 @dataclass(frozen=True)
 class RunSet:
+    """Set of declared run artifacts representing a canonical benchmark inventory."""
+
     corpus: str
     runs: tuple[RunDeclaration, ...]
 
@@ -101,6 +105,7 @@ def _cell(value: object) -> str:
 
 
 def _run_date_error(value: str) -> str | None:
+    """Validate ISO timestamp format and timezone specifier of a run date."""
     if not value:
         return "run date (`generated_at`) is missing"
     try:
