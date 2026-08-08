@@ -712,6 +712,28 @@ fn runtime_rejects_mismatched_section_schema_version_with_rebuild_suggestion() {
     assert!(err_msg.contains("uses schema 99"), "error must mention invalid schema version; got: {err_msg}");
     assert!(err_msg.contains("keyhog compile-execution-packs to rebuild"), "error must suggest rebuild command; got: {err_msg}");
 }
+#[test]
+fn runtime_rejects_version_zero_section_schema() {
+    let compiled = compile_execution_pack(ExecutionPackCompileInput {
+        identity: identity(),
+        sections: &sections(),
+    })
+    .expect("compile pack");
+
+    let mut tampered_bytes = compiled.as_bytes().to_vec();
+    let version_offset = EXECUTION_PACK_HEADER_LEN + 2;
+    tampered_bytes[version_offset] = 0;
+    tampered_bytes[version_offset + 1] = 0;
+
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("zero_version.khpack");
+    fs::write(&path, tampered_bytes).expect("publish tampered pack");
+
+    let error = ExecutionPack::open(&path, identity()).expect_err("version 0 section must fail");
+    let err_msg = error.to_string();
+    assert!(err_msg.contains("uses schema 0"), "error must mention invalid schema version 0; got: {err_msg}");
+    assert!(err_msg.contains("keyhog compile-execution-packs to rebuild"), "error must suggest rebuild command; got: {err_msg}");
+}
 
 #[test]
 fn detector_spec_reconstruction_counter_is_zero_for_prelude_hydration() {

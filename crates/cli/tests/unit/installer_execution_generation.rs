@@ -1,4 +1,5 @@
 use super::*;
+use keyhog_scanner::execution_pack::ExecutionPackSigningKey;
 
 fn write(path: &Path, bytes: &[u8]) {
     fs::write(path, bytes).expect("write test fixture");
