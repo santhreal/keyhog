@@ -17,6 +17,8 @@ pub mod regression;
 // are dead weight, and the regression it guards can ship silently. The
 // `scripts/gates/recall_locks_wired.py` gate fails the build if any top-level
 // `regression_*.rs` is orphaned, so this list stays exhaustive. Keep sorted.
+#[path = "unit/root_facade/backlog_kh2040_kh2049_tests.rs"]
+pub mod backlog_kh2040_kh2049_tests;
 #[path = "property/decoded_generic_entropy_guard_proptest.rs"]
 pub mod decoded_generic_entropy_guard_proptest;
 #[path = "regression_ac_literal_prefilter.rs"]

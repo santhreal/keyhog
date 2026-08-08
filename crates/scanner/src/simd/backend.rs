@@ -299,6 +299,26 @@ impl Drop for HsScanner {
         scan::purge_scanner_scratch(scanner_id);
     }
 }
+pub use crate::execution_pack::simd_program::SimdPackMemoryAttribution;
+
+impl HsScanner {
+    pub(crate) fn memory_attribution(&self) -> SimdPackMemoryAttribution {
+        let native_database_bytes = self
+            .shards
+            .iter()
+            .map(|shard| shard.db.size().unwrap_or(0))
+            .sum();
+        let scratch_bytes = scan::scanner_scratch_bytes(self.scanner_id);
+        let mapping_residency_bytes =
+            self.pattern_map.len() * std::mem::size_of::<(usize, usize, usize, bool)>();
+        SimdPackMemoryAttribution {
+            native_database_bytes,
+            serialized_shard_bytes: 0,
+            scratch_bytes,
+            mapping_residency_bytes,
+        }
+    }
+}
 
 /// Per-pattern compilation options for [`HsScanner::compile_with_opts`].
 ///

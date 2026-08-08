@@ -34,7 +34,25 @@ impl SerializedHyperscanShard {
 
     pub fn release_resident_pages(&self) -> Result<(), ExecutionPackError> {
         match &self.0 {
-            SerializedHyperscanShardStorage::Owned(_) => Ok(()),
+            SerializedHyperscanShardStorage::Owned(bytes) => {
+                #[cfg(unix)]
+                {
+                    let ptr = bytes.as_ptr() as usize;
+                    let page_size = 4096;
+                    let start = (ptr + page_size - 1) & !(page_size - 1);
+                    let end = (ptr + bytes.len()) & !(page_size - 1);
+                    if end > start {
+                        unsafe {
+                            libc::madvise(
+                                start as *mut libc::c_void,
+                                end - start,
+                                libc::MADV_DONTNEED,
+                            );
+                        }
+                    }
+                }
+                Ok(())
+            }
             SerializedHyperscanShardStorage::Mapped(bytes) => bytes.release_resident_pages(),
         }
     }
@@ -132,6 +150,13 @@ pub struct HyperscanSimdExecutionProgram {
     pub unsupported_pattern_ids: Vec<u32>,
     pub serialized_shards: Vec<SerializedHyperscanShard>,
     pub phase2_scopes: Vec<HyperscanPhase2ScopeProgram>,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SimdPackMemoryAttribution {
+    pub native_database_bytes: usize,
+    pub serialized_shard_bytes: usize,
+    pub scratch_bytes: usize,
+    pub mapping_residency_bytes: usize,
 }
 
 impl HyperscanSimdExecutionProgram {
@@ -290,6 +315,28 @@ impl HyperscanSimdExecutionProgram {
         };
         program.validate_structure()?;
         Ok(program)
+    }
+    pub fn memory_attribution(&self) -> SimdPackMemoryAttribution {
+        let serialized_shard_bytes = self
+            .serialized_shards
+            .iter()
+            .map(|shard| shard.len())
+            .sum();
+        let mapping_residency_bytes = self
+            .patterns
+            .iter()
+            .map(|pattern| {
+                pattern.regex.len()
+                    + pattern.scalar_pattern_indices.len() * std::mem::size_of::<u32>()
+                    + pattern.ac_map_indices.len() * std::mem::size_of::<u32>()
+            })
+            .sum();
+        SimdPackMemoryAttribution {
+            native_database_bytes: 0,
+            serialized_shard_bytes,
+            scratch_bytes: 0,
+            mapping_residency_bytes,
+        }
     }
 
     pub fn canonical_bytes(&self) -> Result<Vec<u8>, ExecutionPackError> {

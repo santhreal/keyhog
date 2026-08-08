@@ -7,6 +7,7 @@ mod api_consistency;
 #[cfg(feature = "multiline")]
 mod audit_speed;
 mod autoroute_gpu_optin_contract;
+mod backlog_kh2040_kh2049_tests;
 mod backend_collapse_regression;
 mod backend_collapse_surface_regression;
 #[cfg(feature = "simd")]
