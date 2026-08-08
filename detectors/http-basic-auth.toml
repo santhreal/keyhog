@@ -1,0 +1,32 @@
+# Docs: RFC 7617 — The 'Basic' HTTP Authentication Scheme
+# Format: `Authorization: Basic <base64(user:password)>`
+# Verify: base64-decode the captured blob; a real credential decodes to `user:pass`.
+#
+# Recall lane (CredData-measured): the `Authorization: Basic <base64>` header has
+# NO `keyword = value` assignment, so keyhog's generic keyword bridge never
+# generated a candidate for it — all 643 labeled "Auth:Basic" positives were
+# NEVER-CANDIDATE (decompose, 2026-06-21). The "Basic " scheme token is itself a
+# strong HTTP structural anchor (RFC 7617), and the captured value is base64 of
+# `user:password`. The miss_analysis `basic_auth` candidate measured 643 TP / 15
+# FP (precision 0.977) on the labeled CredData files — keyhog's placeholder /
+# shape / prose suppression further filters the residual non-credential matches.
+# `Basic` (5 chars) is >= MIN_LITERAL_PREFIX_CHARS (3), so it is a first-class
+# AC-literal / Hyperscan trigger — no fallback-only regression.
+
+[detector]
+id = "http-basic-auth"
+name = "HTTP Basic Authorization Credential"
+service = "http-basic-auth"
+severity = "medium"
+# `Basic` is the RFC 7617 auth-scheme token that immediately precedes the
+# base64(user:password) blob in every `Authorization: Basic …` header.
+keywords = ["Basic"]
+
+[[detector.patterns]]
+# Capture ONLY the base64 blob (group 1) so the extracted credential matches the
+# CredData value span (the base64, not the `Basic ` prefix). `{16,}` requires a
+# blob long enough to encode a real `user:password` (>= ~12 decoded bytes),
+# excluding the trivially-short decoy values.
+regex = "Basic\\s+([A-Za-z0-9+/]{16,}={0,2})"
+group = 1
+description = "HTTP Authorization: Basic <base64(user:password)> credential blob"
