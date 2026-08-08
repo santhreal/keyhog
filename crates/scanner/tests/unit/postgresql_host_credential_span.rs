@@ -17,13 +17,14 @@ fn test_postgresql_connection_string_host_credential_span() {
     };
 
     let scanner = CompiledScanner::compile(vec![spec]).expect("compile postgresql spec");
-    let chunk = Chunk::from("pg-url: postgres://user:secret_pass_12345@db.internal.example.com:5432/app_db");
+    let chunk = Chunk::from("pg-url: postgres://user:secret_pass_12345@db.internal.example.com:5432/app_db?sslmode=require");
     let matches = scanner.scan_coalesced(&[chunk]).expect("scan chunk");
 
     assert!(!matches.is_empty() && !matches[0].is_empty(), "postgres url pattern must match");
     let matched_cred = matches[0][0].credential.as_ref();
-    assert!(
-        matched_cred.starts_with("postgres://user:secret_pass_12345@db.internal.example.com"),
-        "postgres credential span must capture the user:pass@host portion: got {matched_cred}"
+    assert_eq!(
+        matched_cred,
+        "postgres://user:secret_pass_12345@db.internal.example.com",
+        "postgres credential span must capture exactly the host-bounded user:pass@host portion: got {matched_cred}"
     );
 }
