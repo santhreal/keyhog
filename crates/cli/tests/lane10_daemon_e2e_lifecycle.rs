@@ -8,6 +8,7 @@
 
 #![cfg(unix)]
 
+use keyhog_scanner::hw_probe::{parse_backend_str, BACKEND_OVERRIDE_VALUES};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::path::{Path, PathBuf};
@@ -114,6 +115,49 @@ fn daemon_start_status_stop_lifecycle_and_socket_hygiene() {
         !socket.exists(),
         "daemon stop must remove the socket file so a later start does not refuse it"
     );
+}
+
+/// WHY: every explicit host route must keep accelerator discovery closed before
+/// persistent daemon setup, or driver mappings stay resident for its lifetime.
+#[cfg(target_os = "linux")]
+#[test]
+fn explicit_host_daemons_do_not_load_gpu_runtime_libraries() {
+    let host_backends: Vec<_> = BACKEND_OVERRIDE_VALUES
+        .iter()
+        .copied()
+        .filter(|value| parse_backend_str(value).is_some_and(|backend| !backend.is_gpu()))
+        .collect();
+    assert!(
+        !host_backends.is_empty(),
+        "the advertised backend registry must retain at least one host route"
+    );
+    for backend in host_backends {
+        let dir = TempDir::new().unwrap();
+        let (mut child, socket) = start_daemon(dir.path(), &["--backend", backend]);
+        let maps = std::fs::read_to_string(format!("/proc/{}/maps", child.id()))
+            .expect("read live daemon memory mappings");
+
+        assert_eq!(stop_daemon(&socket), Some(0), "stop {backend} daemon");
+        let status = child.wait().expect("reap host-only daemon");
+        assert!(
+            status.success(),
+            "{backend} daemon must exit successfully after stop"
+        );
+
+        let loaded_gpu_libraries: Vec<_> = maps
+            .lines()
+            .filter(|line| {
+                ["libcuda", "libnvidia", "libvulkan", "libwgpu"]
+                    .iter()
+                    .any(|library| line.contains(library))
+            })
+            .collect();
+        assert!(
+            loaded_gpu_libraries.is_empty(),
+            "{backend} daemon loaded GPU runtime libraries:\n{}",
+            loaded_gpu_libraries.join("\n")
+        );
+    }
 }
 
 #[test]

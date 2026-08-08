@@ -54,13 +54,13 @@ async fn start(
     mass_gpu_primary: bool,
 ) -> Result<ExitCode> {
     crate::runtime_preflight::validate_scan_runtime_config()?;
-    let hardware = keyhog_scanner::hw_probe::probe_hardware();
-    crate::orchestrator_config::configure_persistent_daemon_threads(hardware.physical_cores)?;
     crate::orchestrator_config::configure_hyperscan_cache_dir(cache_dir)?;
     let backend_override = crate::orchestrator_config::parse_backend_override(backend.as_deref())?;
     let gpu_policy =
         crate::orchestrator_config::gpu_runtime_policy_for_backend_override(backend_override)?;
     keyhog_scanner::gpu::set_gpu_runtime_policy(gpu_policy);
+    let hardware = crate::orchestrator::probe_route_hardware(backend_override, gpu_policy);
+    crate::orchestrator_config::configure_persistent_daemon_threads(hardware.physical_cores)?;
     if gpu_policy == keyhog_scanner::gpu::GpuRuntimePolicy::Required {
         keyhog_scanner::gpu::require_gpu_preflight()
             .map_err(crate::orchestrator::daemon_gpu_preflight_failure)?;
@@ -77,8 +77,7 @@ async fn start(
                     detectors_dir.display()
                 )
             })?;
-        let rules_digest =
-            keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+        let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
         (detectors, rules_digest)
     } else {
         (
