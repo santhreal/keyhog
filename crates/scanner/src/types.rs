@@ -543,6 +543,7 @@ pub(crate) struct CompiledCompanion {
     pub(crate) value_relation: keyhog_core::EvidenceValueRelation,
 }
 impl CompiledCompanion {
+    #[allow(dead_code)]
     pub(crate) fn is_compiled(&self) -> bool {
         self.regex.is_compiled()
     }

@@ -2587,6 +2587,9 @@ impl LazyCompanionForTest {
     pub fn is_compiled(&self) -> bool {
         self.regex.is_compiled()
     }
+    pub fn get(&self) -> &regex::Regex {
+        self.regex.get()
+    }
 }
 
 pub fn companion_lazy_regex_for_test(pattern: &str) -> LazyCompanionForTest {

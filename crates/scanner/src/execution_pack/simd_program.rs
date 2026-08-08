@@ -62,7 +62,27 @@ impl SerializedHyperscanShard {
         range: std::ops::Range<usize>,
     ) -> Result<(), ExecutionPackError> {
         match &self.0 {
-            SerializedHyperscanShardStorage::Owned(_) => Ok(()),
+            SerializedHyperscanShardStorage::Owned(bytes) => {
+                #[cfg(unix)]
+                {
+                    if range.start < range.end && range.end <= bytes.len() {
+                        let ptr = bytes.as_ptr() as usize;
+                        let page_size = 4096;
+                        let start = (ptr + range.start + page_size - 1) & !(page_size - 1);
+                        let end = (ptr + range.end) & !(page_size - 1);
+                        if end > start && end <= ptr + bytes.len() {
+                            unsafe {
+                                libc::madvise(
+                                    start as *mut libc::c_void,
+                                    end - start,
+                                    libc::MADV_DONTNEED,
+                                );
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            }
             SerializedHyperscanShardStorage::Mapped(bytes) => bytes.release_resident_range(range),
         }
     }
