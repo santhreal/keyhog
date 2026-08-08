@@ -51,10 +51,7 @@
 //! - loud GPU-degrade / fail-closed helpers ....................... gpu_forced.rs
 //! - compile (build the scanner, acquire backends) .... compiled_scanner/compile.rs
 
-mod backend;
-mod backend_dispatch;
-mod backend_prepared;
-mod backend_triggered;
+pub(crate) mod backend;
 mod batch_topology;
 mod boundary;
 pub(crate) use boundary::derive_pattern_boundary_context;
@@ -157,9 +154,9 @@ mod windowed_support;
 // too. Gate the
 // import to match, or non-simd builds (the `portable` feature used for the
 // macOS/Windows/musl release assets) fail with E0432.
-pub(crate) use backend_prepared::PreparedChunk;
+pub(crate) use backend::PreparedChunk;
 #[cfg(feature = "simd")]
-pub(crate) use backend_prepared::{
+pub(crate) use backend::{
     build_packed_simd_compile_plan, build_simd_compile_plan, SimdPhase1CompilePlan,
     SimdPhase1Prefilter,
 };

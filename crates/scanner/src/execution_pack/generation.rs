@@ -28,6 +28,7 @@ impl CompiledNativeBackendPrograms {
     }
 
     pub fn artifacts(&self) -> Vec<BackendProgramArtifact<'_>> {
+        #[allow(unused_mut)]
         let mut artifacts = vec![BackendProgramArtifact::Cpu(&self.cpu)];
         #[cfg(feature = "simd")]
         artifacts.push(BackendProgramArtifact::Simd(&self.simd));

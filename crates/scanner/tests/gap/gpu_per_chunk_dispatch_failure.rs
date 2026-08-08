@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 fn backend_triggered_src() -> String {
     fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/engine/backend_triggered.rs"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/engine/backend/triggered.rs"),
     )
     .expect("backend_triggered.rs readable")
 }

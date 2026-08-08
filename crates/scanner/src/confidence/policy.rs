@@ -532,7 +532,7 @@ pub(crate) fn ml_score_for_candidate_text(text: &str, score: impl FnOnce() -> f6
     }
 }
 
-#[cfg(all(feature = "ml", feature = "gpu"))]
+#[cfg(all(test, feature = "ml", feature = "gpu"))]
 pub(crate) fn apply_empty_candidate_score_policy<'a>(
     texts: impl IntoIterator<Item = &'a str>,
     scores: &mut [f64],
