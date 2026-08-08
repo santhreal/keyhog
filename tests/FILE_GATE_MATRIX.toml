@@ -1573,6 +1573,12 @@ path = "crates/sources/src/factory.rs"
 path = "crates/sources/src/filesystem.rs"
 
 [[module]]
+path = "crates/sources/src/filesystem/descriptor_walk.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/discovery.rs"
+
+[[module]]
 path = "crates/sources/src/filesystem/extract.rs"
 
 [[module]]
@@ -1673,6 +1679,9 @@ path = "crates/sources/src/github_org.rs"
 
 [[module]]
 path = "crates/sources/src/hosted_git.rs"
+
+[[module]]
+path = "crates/sources/src/hosted_git/process.rs"
 
 [[module]]
 path = "crates/sources/src/hosted_git/sanitize.rs"
