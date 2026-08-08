@@ -390,7 +390,10 @@ impl CompiledScanner {
                 .map(|_| std::sync::OnceLock::new())
                 .collect::<Vec<std::sync::OnceLock<Result<Option<Vec<u64>>, String>>>>()
         });
-        let lane_width = super::batch_topology::coalesced_lane_width(chunks);
+        let lane_width = super::batch_topology::coalesced_lane_width_with_threshold(
+            chunks,
+            self.tuning.chunk_lane_threshold(),
+        );
         let triggers = if lane_width == 1 {
             chunks
                 .par_iter()

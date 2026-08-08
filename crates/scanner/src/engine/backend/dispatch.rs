@@ -180,7 +180,10 @@ impl CompiledScanner {
                 })
             })
         };
-        let lane_width = super::batch_topology::coalesced_lane_width(chunks);
+        let lane_width = super::batch_topology::coalesced_lane_width_with_threshold(
+            chunks,
+            self.tuning.chunk_lane_threshold(),
+        );
         let mut results: Vec<Vec<RawMatch>> = if lane_width == 1 {
             chunks
                 .par_iter()

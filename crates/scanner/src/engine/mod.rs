@@ -52,7 +52,7 @@
 //! - compile (build the scanner, acquire backends) .... compiled_scanner/compile.rs
 
 pub(crate) mod backend;
-mod batch_topology;
+pub(crate) mod batch_topology;
 mod boundary;
 pub(crate) use boundary::derive_pattern_boundary_context;
 #[cfg(feature = "gpu")]
