@@ -61,6 +61,21 @@ fn paired_route_trials_are_faster(selected: &[u128], competitor: &[u128]) -> boo
     if shared_rounds == 0 {
         return false;
     }
+    let selected_trials = selected[selected.len() - shared_rounds..].to_vec();
+    let competitor_trials = competitor[competitor.len() - shared_rounds..].to_vec();
+    if let (Some(selected_ev), Some(competitor_ev)) = (
+        BackendTimingEvidence::from_trial_ns(selected_trials),
+        BackendTimingEvidence::from_trial_ns(competitor_trials),
+    ) {
+        if let (Some(selected_model), Some(competitor_model)) = (
+            ColdWarmStatisticalModel::from_timing(&selected_ev),
+            ColdWarmStatisticalModel::from_timing(&competitor_ev),
+        ) {
+            return selected_model
+                .paired_difference(&competitor_model)
+                .is_statistically_faster_95;
+        }
+    }
     timing::paired_candidate_is_faster_95(
         &selected[selected.len() - shared_rounds..],
         &competitor[competitor.len() - shared_rounds..],

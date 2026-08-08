@@ -127,7 +127,7 @@ impl ColdWarmStatisticalModel {
             })
             .sum::<f64>()
             / (count_f64 - 1.0);
-        let half_width = two_sided_95_student_t_critical(count) * variance.sqrt() / count_f64.sqrt();
+        let half_width = two_sided_95_student_t_critical(count) * variance.max(0.0).sqrt() / count_f64.sqrt();
         PairedDifferenceDistribution {
             count,
             mean_diff_ns: mean,
@@ -168,7 +168,7 @@ pub(crate) fn paired_candidate_is_faster_95(
         })
         .sum::<f64>()
         / (count_f64 - 1.0);
-    let half_width = two_sided_95_student_t_critical(count) * variance.sqrt() / count_f64.sqrt();
+    let half_width = two_sided_95_student_t_critical(count) * variance.max(0.0).sqrt() / count_f64.sqrt();
     mean - half_width > 0.0
 }
 
@@ -180,6 +180,12 @@ pub(crate) struct TimingConfidenceInterval {
 
 impl TimingConfidenceInterval {
     fn from_trials(trials_ns: &[u128]) -> Self {
+        if trials_ns.is_empty() {
+            return Self {
+                low_ns: 0,
+                high_ns: 0,
+            };
+        }
         let count = trials_ns.len() as f64;
         let mean = trials_ns.iter().map(|&ns| ns as f64).sum::<f64>() / count;
         let variance = if trials_ns.len() > 1 {
@@ -195,7 +201,7 @@ impl TimingConfidenceInterval {
             0.0
         };
         let half_width =
-            two_sided_95_student_t_critical(trials_ns.len()) * variance.sqrt() / count.sqrt();
+            two_sided_95_student_t_critical(trials_ns.len()) * variance.max(0.0).sqrt() / count.sqrt();
         Self {
             low_ns: (mean - half_width).max(0.0).floor() as u128,
             high_ns: (mean + half_width).ceil() as u128,
