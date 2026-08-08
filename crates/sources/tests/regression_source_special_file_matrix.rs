@@ -181,12 +181,14 @@ fn read_mmap_facade_none_for_fifo_some_text_for_regular() {
     // `read_file_mmap` bumps the process-global Unreadable counter when it
     // refuses the FIFO, so hold the exclusive scan scope to serialize this
     // ungated bump against the counter-snapshot tests below.
-    let _guard = TestApi.skip_counter_guard();
     let dir = tempfile::tempdir().unwrap();
     let fifo = dir.path().join("pipe");
     make_fifo(&fifo);
     let probe = fifo.clone();
-    let mmap_fifo = within_timeout(move || TestApi.read_file_mmap(&probe));
+    let mmap_fifo = within_timeout(move || {
+        let _guard = TestApi.skip_counter_guard();
+        TestApi.read_file_mmap(&probe)
+    });
     assert_eq!(
         mmap_fifo, None,
         "read_file_mmap must skip (None) a FIFO, not block or map it"

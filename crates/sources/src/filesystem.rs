@@ -900,7 +900,10 @@ impl Source for FilesystemSource {
                             self.root.display()
                         ),
                     ));
-                    return Box::new(std::iter::once(Err(error)));
+                    return crate::attach_scan_lease(
+                        scan_lease,
+                        Box::new(std::iter::once(Err(error))),
+                    );
                 }
                 Err(error) => {
                     let error = SourceError::Io(std::io::Error::new(
@@ -910,7 +913,10 @@ impl Source for FilesystemSource {
                             self.root.display()
                         ),
                     ));
-                    return Box::new(std::iter::once(Err(error)));
+                    return crate::attach_scan_lease(
+                        scan_lease,
+                        Box::new(std::iter::once(Err(error))),
+                    );
                 }
             }
         }

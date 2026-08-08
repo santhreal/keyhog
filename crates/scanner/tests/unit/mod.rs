@@ -1,4 +1,5 @@
 pub mod a3_decode;
+pub mod anchored_regex_cases;
 #[cfg(feature = "multiline")]
 pub mod a3_multiline;
 pub mod a3_pipeline;

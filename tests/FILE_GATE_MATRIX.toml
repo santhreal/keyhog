@@ -773,6 +773,31 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/core/src/access_target.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/core/src/correlation.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/core/src/retry.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/core/src/spec/validate/regex_ast.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/core/src/spec/validate/verify.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/alphabet_filter.rs"
 error = true
 adversarial = true
@@ -1578,6 +1603,12 @@ path = "crates/sources/src/filesystem/extract/seven_zip.rs"
 path = "crates/sources/src/filesystem/filter.rs"
 
 [[module]]
+path = "crates/sources/src/filesystem/descriptor_walk.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/discovery.rs"
+
+[[module]]
 path = "crates/sources/src/filesystem/path.rs"
 
 [[module]]
@@ -1651,6 +1682,9 @@ path = "crates/sources/src/hosted_git.rs"
 
 [[module]]
 path = "crates/sources/src/hosted_git/sanitize.rs"
+
+[[module]]
+path = "crates/sources/src/hosted_git/process.rs"
 
 [[module]]
 path = "crates/sources/src/gitlab_group.rs"
@@ -2541,6 +2575,21 @@ adversarial = true
 
 [[module]]
 path = "crates/sources/src/filesystem/extract/tex_package.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/sources/src/filesystem/descriptor_walk.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/sources/src/filesystem/discovery.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/sources/src/hosted_git/process.rs"
 error = true
 adversarial = true
 
