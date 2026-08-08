@@ -517,8 +517,13 @@ def select_declared_results(
         selected.append(result)
     if errors:
         raise ResultSelectionError("invalid report run set: " + "; ".join(errors))
+    hosts = {r.host.hostname_hash for r in selected}
+    if len(hosts) > 1:
+        raise ResultSelectionError(f"invalid report run set: mixed-host rows detected: {sorted(hosts)}")
+    detectors = {r.scanner.detector_corpus_sha256 for r in selected if getattr(r.scanner, "detector_corpus_sha256", None)}
+    if len(detectors) > 1:
+        raise ResultSelectionError(f"invalid report run set: mixed-detector rows detected: {sorted(detectors)}")
     return selected
-
 
 def _default_config_id(scanner_name: str) -> str | None:
     from .scanners import resolve_scanner

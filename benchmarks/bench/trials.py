@@ -31,7 +31,15 @@ class CacheState(str, Enum):
     COLD = "cold"
     WARM = "warm"
     STEADY = "steady"
+    INCREMENTAL_WARM = "incremental-warm"
 
+
+class ExecutionRoute(str, Enum):
+    """The process execution route a trial is measured under."""
+
+    IN_PROCESS = "in-process"
+    WARM_DAEMON = "warm-daemon"
+    MASS_DAEMON = "mass-daemon"
 
 @dataclass(frozen=True)
 class NoiseReceipt:

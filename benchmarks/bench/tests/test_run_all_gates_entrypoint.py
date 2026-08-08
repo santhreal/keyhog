@@ -63,7 +63,7 @@ def test_run_all_source_only_exits_zero_on_clean_tree():
     proc = subprocess.run(
         ["bash", str(RUN_ALL)],
         cwd=REPO,
-        env={"GATES_SOURCE_ONLY": "1", "PATH": _path()},
+        env={"GATES_SOURCE_ONLY": "1", "PATH": _path(), "PYTHONDONTWRITEBYTECODE": "1"},
         capture_output=True,
         text=True,
         timeout=300,

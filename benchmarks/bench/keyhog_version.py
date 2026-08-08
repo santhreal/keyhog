@@ -9,6 +9,7 @@ regression into a false green.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import pathlib
 import re
@@ -386,3 +387,124 @@ def assert_keyhog_binary_current(binary: str, *, pass_fds: tuple[int, ...] = ())
     assert_reported_identity_matches_workspace(output, what=f"keyhog binary {binary!r}")
     assert_workspace_tracked_tree_clean()
     return output
+def build_evidence_inventory(
+    *,
+    catalog_path: str | pathlib.Path | None = None,
+    fixture_lock_path: str | pathlib.Path | None = None,
+    target_matrix_path: str | pathlib.Path | None = None,
+    binary: str | pathlib.Path | None = None,
+    repo_root: pathlib.Path = _REPO_ROOT,
+    execution_pack_manifest_path: str | pathlib.Path | None = None,
+) -> dict[str, object]:
+    """Prove catalog, fixture lock, target, binary, detector corpus, pack manifest, and route identities agree.
+
+    Emits one authoritative evidence inventory with exactly 59 workloads and no stale or ambiguous artifact references.
+    """
+    c_path = pathlib.Path(catalog_path) if catalog_path else repo_root / "benchmarks" / "workload-catalog.toml"
+    l_path = pathlib.Path(fixture_lock_path) if fixture_lock_path else repo_root / "benchmarks" / "workload-fixtures.lock.json"
+    t_path = pathlib.Path(target_matrix_path) if target_matrix_path else repo_root / "benchmarks" / "target-matrix.toml"
+
+    from .workload_catalog import load_workload_catalog
+    from .target_matrix import load_target_matrix, target_matrix_sha256
+    from .workload_fixtures import validate_fixture_lock
+
+    catalog = load_workload_catalog(c_path)
+    if len(catalog.workloads) != 59:
+        raise KeyhogVersionError(
+            f"workload catalog must contain exactly 59 workloads, got {len(catalog.workloads)}"
+        )
+
+    lock = validate_fixture_lock(c_path, l_path)
+    lock_workloads = lock.get("workloads", [])
+    if len(lock_workloads) != 59:
+        raise KeyhogVersionError(
+            f"fixture lock must contain exactly 59 workloads, got {len(lock_workloads)}"
+        )
+
+    cat_ids = [w.workload_id for w in catalog.workloads]
+    lock_ids = [row["workload_id"] for row in lock_workloads]
+    if set(cat_ids) != set(lock_ids):
+        raise KeyhogVersionError(
+            "workload catalog and fixture lock workload IDs differ"
+        )
+
+    matrix = load_target_matrix(t_path)
+    workspace_ver = workspace_keyhog_version(repo_root)
+    if matrix.software.workspace_version != workspace_ver:
+        raise KeyhogVersionError(
+            f"target matrix software version {matrix.software.workspace_version!r} "
+            f"does not match workspace version {workspace_ver!r}"
+        )
+
+    detector_sha256 = workspace_detector_corpus_sha256(repo_root)
+    detector_digest = workspace_detector_digest(repo_root)
+
+    binary_info = None
+    if binary is not None:
+        bin_path = pathlib.Path(binary).resolve(strict=True)
+        assert_keyhog_binary_current(str(bin_path))
+        with bin_path.open("rb") as handle:
+            bin_sha256 = hashlib.sha256(handle.read()).hexdigest()
+        binary_info = {
+            "path": str(bin_path),
+            "sha256": bin_sha256,
+            "version": workspace_ver,
+        }
+
+    pack_info = None
+    if execution_pack_manifest_path is not None:
+        p_path = pathlib.Path(execution_pack_manifest_path).resolve(strict=True)
+        try:
+            pack_data = json.loads(p_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise KeyhogVersionError(f"cannot load execution pack manifest {p_path}: {exc}") from exc
+        if not isinstance(pack_data, dict):
+            raise KeyhogVersionError("execution pack manifest must be a JSON object")
+        pack_info = {
+            "path": str(p_path),
+            "version": pack_data.get("version"),
+            "detector_digest": pack_data.get("detector_digest"),
+            "binary_digest": pack_data.get("binary_digest"),
+            "fixture_digest": pack_data.get("fixture_digest"),
+        }
+
+    lock_by_id = {row["workload_id"]: row for row in lock_workloads}
+    workload_entries = []
+    for wl in catalog.workloads:
+        receipt = lock_by_id[wl.workload_id]
+        workload_entries.append(
+            {
+                "workload_id": wl.workload_id,
+                "family": wl.family,
+                "surface": wl.surface,
+                "owner": wl.owner,
+                "fixture": wl.fixture,
+                "execution_routes": list(wl.execution_routes),
+                "betterleaks_comparable": wl.betterleaks_comparable,
+                "gpu_eligible": wl.gpu_eligible,
+                "fixture_input_sha256": receipt["input_sha256"],
+                "fixture_answer_sha256": receipt["answer_sha256"],
+                "expected_findings": receipt["expected_findings"],
+                "expected_coverage_gap": receipt["expected_coverage_gap"],
+            }
+        )
+
+    with c_path.open("rb") as f:
+        c_sha256 = hashlib.sha256(f.read()).hexdigest()
+    with l_path.open("rb") as f:
+        l_sha256 = hashlib.sha256(f.read()).hexdigest()
+
+    return {
+        "schema_version": 1,
+        "workload_count": 59,
+        "workspace_version": workspace_ver,
+        "git_commit": workspace_git_hash(repo_root),
+        "catalog_sha256": c_sha256,
+        "fixture_lock_sha256": l_sha256,
+        "target_matrix_sha256": target_matrix_sha256(t_path),
+        "detector_corpus_sha256": detector_sha256,
+        "detector_set_digest": detector_digest,
+        "binary": binary_info,
+        "execution_pack_manifest": pack_info,
+        "workloads": workload_entries,
+    }

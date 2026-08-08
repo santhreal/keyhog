@@ -2180,12 +2180,22 @@ def validate_baseline_payload(
             raise BaselineCaptureError(f"baseline {workload_id} trial count differs")
         walls = [trial["wall_ms"] for trial in trials]
         rss = [trial["peak_rss_kb"] for trial in trials]
+        minor_faults = [trial.get("minor_page_faults") for trial in trials]
+        major_faults = [trial.get("major_page_faults") for trial in trials]
+        measured_minor = [v for v in minor_faults if v is not None]
+        measured_major = [v for v in major_faults if v is not None]
         expected_stats = {
             "p50_wall_ms": statistics.median(walls),
             "p95_wall_ms": percentile_nearest_rank(walls, 0.95),
             "median_peak_rss_kb": statistics.median(rss),
             "max_peak_rss_kb": max(rss),
         }
+        if len(measured_minor) == len(trials):
+            expected_stats["p50_minor_page_faults"] = statistics.median(measured_minor)
+            expected_stats["p95_minor_page_faults"] = percentile_nearest_rank(measured_minor, 0.95)
+        if len(measured_major) == len(trials):
+            expected_stats["p50_major_page_faults"] = statistics.median(measured_major)
+            expected_stats["p95_major_page_faults"] = percentile_nearest_rank(measured_major, 0.95)
         for field, expected in expected_stats.items():
             if row.get(field) != expected:
                 raise BaselineCaptureError(

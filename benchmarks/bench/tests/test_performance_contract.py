@@ -7,9 +7,8 @@ import pathlib
 
 import pytest
 
-from bench.performance_contract import PerformanceContractError, evaluate_betterleaks_memory_contract, evaluate_performance_contract
+from bench.performance_contract import PerformanceContractError, evaluate_betterleaks_memory_contract, evaluate_exhaustive_performance_gate, evaluate_performance_contract
 from bench.workload_catalog import load_workload_catalog
-
 CATALOG = load_workload_catalog(pathlib.Path(__file__).resolve().parents[2] / "workload-catalog.toml")
 
 
@@ -258,3 +257,23 @@ def test_standalone_betterleaks_memory_gate_requires_exact_shared_provenance() -
     better["target_id"] = "different-host"
     with pytest.raises(PerformanceContractError, match="target_id provenance differs"):
         evaluate_betterleaks_memory_contract(candidate, better, CATALOG)
+def test_evaluate_exhaustive_performance_gate_enforces_all_backends() -> None:
+    """WHY: KH-2007 requires a single gate to enumerate the catalog and fail on any backend/workload violation."""
+    cpu_base, cpu_cand = _evidence(backend="cpu", speedup=2.0)
+    simd_base, simd_cand = _evidence(backend="simd", speedup=2.0)
+    gpu_base, gpu_cand = _evidence(backend="gpu-cuda", speedup=10.0)
+
+    runs = {
+        "cpu": (cpu_base, cpu_cand),
+        "simd": (simd_base, simd_cand),
+        "gpu-cuda": (gpu_base, gpu_cand),
+    }
+
+    violations = evaluate_exhaustive_performance_gate(runs, CATALOG)
+    assert violations == []
+
+    # Inject a violation in simd
+    simd_cand["workloads"][0]["parity_ok"] = False
+    violations = evaluate_exhaustive_performance_gate(runs, CATALOG)
+    assert len(violations) >= 1
+    assert any("[simd]" in v for v in violations)

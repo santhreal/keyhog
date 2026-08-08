@@ -216,3 +216,35 @@ def evaluate_performance_contract(
                     f"strictly below Betterleaks {int(competitor_rss)} KiB"
                 )
     return violations
+def evaluate_exhaustive_performance_gate(
+    runs_by_backend: Mapping[str, tuple[Mapping[str, object], Mapping[str, object]]],
+    catalog: WorkloadCatalog,
+    *,
+    betterleaks: Mapping[str, object] | None = None,
+) -> list[str]:
+    """Enforce the exhaustive performance contract across every catalog workload and backend route.
+
+    Checks:
+    1. Finding parity on every workload and backend route.
+    2. Minimum 2.0x speedup for CPU/SIMD workloads.
+    3. Minimum 10.0x speedup for GPU-eligible workloads.
+    4. Peak RSS ratio at most 0.25 (quarter memory).
+    5. CPU/SIMD peak RSS at most 128 MiB (134,217,728 bytes).
+    6. BetterLeaks time ratio at most 0.25 and strictly lower max RSS for all 18 shared workloads.
+    7. Device VRAM ratio at most 0.25 for GPU-eligible workloads.
+    """
+    violations: list[str] = []
+    if not runs_by_backend:
+        raise PerformanceContractError("exhaustive performance gate requires at least one backend run set")
+
+    for backend, (baseline, candidate) in sorted(runs_by_backend.items()):
+        backend_violations = evaluate_performance_contract(
+            baseline,
+            candidate,
+            catalog,
+            betterleaks=betterleaks if backend in {"cpu", "simd"} else None,
+        )
+        for v in backend_violations:
+            violations.append(f"[{backend}] {v}")
+
+    return violations

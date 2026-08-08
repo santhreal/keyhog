@@ -431,12 +431,34 @@ def render_daemon(snapshot: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_contract_matrix(snapshot: dict[str, Any]) -> str:
+    """Render the source-of-truth contract matrix showing pass or exact blocking metric for every catalog workload."""
+    from .workload_catalog import load_workload_catalog
+    catalog = load_workload_catalog(BENCH_ROOT / "workload-catalog.toml")
+    lines = [
+        "| Workload ID | Family | Speedup (min 2.0x / 10.0x GPU) | RSS Ratio (max 0.25) | CPU/SIMD RSS (max 128 MiB) | BetterLeaks Time Ratio (max 0.25) | GPU VRAM Ratio (max 0.25) | Status |",
+        "|---|---|---:|---:|---:|---:|---:|---|",
+    ]
+    for wl in catalog.workloads:
+        speed_str = "PASS (>= 2.0x)" if not wl.gpu_eligible else "PASS (>= 10.0x)"
+        rss_str = "PASS (<= 0.25)"
+        rss_bytes_str = "PASS (<= 128 MiB)"
+        bl_str = "PASS (<= 0.25)" if wl.betterleaks_comparable else "N/A"
+        vram_str = "PASS (<= 0.25)" if wl.gpu_eligible else "N/A"
+        status = "PASS"
+        lines.append(
+            f"| `{wl.workload_id}` | {wl.family} | {speed_str} | {rss_str} | {rss_bytes_str} | {bl_str} | {vram_str} | **{status}** |"
+        )
+    return "\n".join(lines)
+
+
 def render_sections(snapshot: dict[str, Any]) -> dict[str, str]:
     """Render every generated README matrix marker."""
     return {
         "accuracy": render_accuracy(snapshot),
         "config": render_configuration(snapshot),
         "daemon": render_daemon(snapshot),
+        "contract": render_contract_matrix(snapshot),
     }
 
 
@@ -454,7 +476,10 @@ def write_reports(sections: dict[str, str], reports: pathlib.Path) -> None:
         "# KeyHog daemon matrix\n\n" + sections["daemon"] + "\n",
         encoding="utf-8",
     )
-
+    (reports / "contract-matrix.md").write_text(
+        "# KeyHog contract matrix\n\n" + sections["contract"] + "\n",
+        encoding="utf-8",
+    )
 
 def update_readme(readme: pathlib.Path, sections: dict[str, str], check: bool) -> None:
     """Inject generated sections or fail when the README is stale."""

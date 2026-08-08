@@ -541,3 +541,13 @@ def test_workspace_cleanliness_honors_allow_dirty_env(tmp_path, monkeypatch):
     monkeypatch.setenv("KEYHOG_BENCH_ALLOW_DIRTY", "1")
     # With the env, the check passes despite the uncommitted edit.
     keyhog_version.assert_workspace_tracked_tree_clean(tmp_path)
+def test_build_evidence_inventory_produces_59_workloads():
+    """WHY: KH-2000 requires proving catalog, fixture lock, target, binary, detector corpus, and route identities agree, emitting 59 workloads."""
+    inventory = keyhog_version.build_evidence_inventory()
+    assert inventory["schema_version"] == 1
+    assert inventory["workload_count"] == 59
+    assert len(inventory["workloads"]) == 59
+    assert isinstance(inventory["catalog_sha256"], str)
+    assert isinstance(inventory["fixture_lock_sha256"], str)
+    assert isinstance(inventory["target_matrix_sha256"], str)
+    assert isinstance(inventory["detector_corpus_sha256"], str)

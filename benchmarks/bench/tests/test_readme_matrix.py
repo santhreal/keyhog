@@ -242,7 +242,8 @@ def test_readme_check_detects_hand_edited_generated_bytes(tmp_path) -> None:
     readme.write_text(
         "before\n<!-- BENCH:accuracy:start -->\nold\n<!-- BENCH:accuracy:end -->\n"
         "<!-- BENCH:config:start -->\nold\n<!-- BENCH:config:end -->\n"
-        "<!-- BENCH:daemon:start -->\nold\n<!-- BENCH:daemon:end -->\nafter\n",
+        "<!-- BENCH:daemon:start -->\nold\n<!-- BENCH:daemon:end -->\n"
+        "<!-- BENCH:contract:start -->\nold\n<!-- BENCH:contract:end -->\nafter\n",
         encoding="utf-8",
     )
     readme_matrix.update_readme(readme, sections, check=False)
@@ -260,3 +261,17 @@ def test_snapshot_loader_rejects_unknown_schema(tmp_path) -> None:
 
     with pytest.raises(readme_matrix.MatrixError, match="unsupported"):
         readme_matrix.load_snapshot(snapshot)
+def test_render_contract_matrix_contains_59_catalog_workloads(tmp_path) -> None:
+    """WHY: KH-2009 requires generating a source-of-truth contract matrix for every catalog workload."""
+    config_results, daemon_results, daemon_corpus = _matrix_fixture(tmp_path)
+    snapshot = readme_matrix.capture_snapshot(
+        config_results,
+        daemon_results,
+        daemon_corpus,
+        "clean",
+    )
+    rendered = readme_matrix.render_contract_matrix(snapshot)
+    assert "| Workload ID |" in rendered
+    assert "filesystem-empty-directory" in rendered
+    assert "stdin-empty" in rendered
+    assert rendered.count("| `") == 59

@@ -320,6 +320,35 @@ def test_run_set_rejects_wrong_corpus_or_config(field, value, diagnostic):
     with pytest.raises(report.ResultSelectionError, match=diagnostic):
         report.select_declared_results([result], "mirror", run_set)
 
+def test_select_declared_results_rejects_mixed_host_and_mixed_detector():
+    """WHY: KH-2008 requires report loading to reject mixed-host and mixed-detector rows."""
+    res1 = _result("keyhog", 5, 20.0)
+    res1.scanner.executable_sha256 = "a" * 64
+    res1.scanner.detector_corpus_sha256 = "d" * 64
+    res1.host.hostname_hash = "h11111111111"
+    res1._report_source = "res1.json"
+
+    res2 = _result("kingfisher", 4, 10.0)
+    res2.scanner.executable_sha256 = "b" * 64
+    res2.scanner.detector_corpus_sha256 = "d" * 64
+    res2.host.hostname_hash = "h22222222222"
+    res2._report_source = "res2.json"
+
+    decl1 = report.RunDeclaration("keyhog", res1.scanner.config_id, "res1.json", res1.generated_at, res1.scanner.executable_sha256, res1.host.hostname_hash, res1.corpus.fixture_count, res1.corpus.labeled_positives, res1.corpus.bytes)
+    decl2 = report.RunDeclaration("kingfisher", res2.scanner.config_id, "res2.json", res2.generated_at, res2.scanner.executable_sha256, res2.host.hostname_hash, res2.corpus.fixture_count, res2.corpus.labeled_positives, res2.corpus.bytes)
+    run_set = report.RunSet(corpus="mirror", runs=(decl1, decl2))
+
+    with pytest.raises(report.ResultSelectionError, match="mixed-host"):
+        report.select_declared_results([res1, res2], "mirror", run_set)
+
+    # Fix host, vary detector
+    res2.host.hostname_hash = "h11111111111"
+    decl2_fixed = report.RunDeclaration("kingfisher", res2.scanner.config_id, "res2.json", res2.generated_at, res2.scanner.executable_sha256, "h11111111111", res2.corpus.fixture_count, res2.corpus.labeled_positives, res2.corpus.bytes)
+    res2.scanner.detector_corpus_sha256 = "different_detector"
+    run_set_fixed = report.RunSet(corpus="mirror", runs=(decl1, decl2_fixed))
+
+    with pytest.raises(report.ResultSelectionError, match="mixed-detector"):
+        report.select_declared_results([res1, res2], "mirror", run_set_fixed)
 
 def test_undeclared_duplicate_default_results_are_ambiguous():
     """Regression: generated_at must never act as a silent newest-row policy."""

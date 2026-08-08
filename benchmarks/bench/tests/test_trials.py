@@ -4,13 +4,13 @@ import pytest
 
 from bench.trials import (
     CacheState,
+    ExecutionRoute,
     NoiseProber,
     NoiseReceipt,
     TrialOutcome,
     TrialSet,
     run_trials,
 )
-
 
 def _prober(*, governor="performance", freq=4200.0, load=0.5):
     return NoiseProber(
@@ -270,3 +270,18 @@ def test_noise_receipt_from_json_strict():
     payload["load_avg_before"] = [0.1]
     with pytest.raises(ValueError, match="load_avg_before"):
         NoiseReceipt.from_json(payload)
+def test_cache_state_and_execution_route_identities():
+    """WHY: KH-2006 requires distinct schema identities for all cache states and execution routes."""
+    assert set(CacheState) == {
+        CacheState.COLD,
+        CacheState.WARM,
+        CacheState.STEADY,
+        CacheState.INCREMENTAL_WARM,
+    }
+    assert set(ExecutionRoute) == {
+        ExecutionRoute.IN_PROCESS,
+        ExecutionRoute.WARM_DAEMON,
+        ExecutionRoute.MASS_DAEMON,
+    }
+    assert CacheState.INCREMENTAL_WARM.value == "incremental-warm"
+    assert ExecutionRoute.WARM_DAEMON.value == "warm-daemon"
