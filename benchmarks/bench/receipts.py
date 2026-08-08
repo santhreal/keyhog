@@ -43,7 +43,7 @@ class PerformanceReceipt:
             )
         if not self.workload:
             raise ValueError("receipt workload must be a non-empty string")
-        if self.role not in ("control", "candidate"):
+        if self.role not in ("control", "candidate", "unprofiled"):
             raise ValueError(f"receipt role is invalid: {self.role!r}")
         if not is_sha256(self.binary_sha256):
             raise ValueError("receipt binary_sha256 must be a lowercase SHA-256")

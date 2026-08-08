@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-06-02T19:34:07Z",
+  "host": {
+    "cores": 32,
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_vram_mb": 32607,
+    "hostname_hash": "82fcd9288623",
+    "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+    "os": "Linux 6.17.0-19-generic",
+    "ram_mb": 94140
+  }
+}

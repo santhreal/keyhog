@@ -1,0 +1,55 @@
+"""Whole-process allocation evidence contracts."""
+
+from __future__ import annotations
+
+import pytest
+
+from bench.allocation_capture import parse_massif
+from bench.baseline_capture import BaselineCaptureError
+
+
+def test_massif_parser_selects_exact_peak_mapped_snapshot() -> None:
+    """WHY: the quarter-memory redesign needs the mapped high-water mark; using the final snapshot or heap-tree prose misses transient startup mappings."""
+    evidence = """desc: --pages-as-heap=yes --time-unit=ms
+cmd: /keyhog scan fixture
+snapshot=0
+time=0
+mem_heap_B=4096
+mem_heap_extra_B=0
+snapshot=1
+time=2
+mem_heap_B=16384
+mem_heap_extra_B=0
+snapshot=2
+time=3
+mem_heap_B=8192
+mem_heap_extra_B=0
+"""
+    summary = parse_massif(evidence)
+    assert summary.peak_mapped_bytes == 16_384
+    assert summary.peak_snapshot == 1
+    assert summary.snapshots == 3
+
+
+def test_massif_parser_rejects_heap_only_measurement() -> None:
+    """WHY: allocator heap is not process memory; accepting a run without pages-as-heap would hide mmap-backed detector plans and thread stacks."""
+    with pytest.raises(BaselineCaptureError, match="pages-as-heap"):
+        parse_massif("desc: --pages-as-heap=no\nsnapshot=0\nmem_heap_B=1\n")
+
+
+def test_massif_parser_rejects_missing_snapshot() -> None:
+    """WHY: dropped or reordered snapshots make the reported peak unverifiable and can silently remove the actual high-water event."""
+    evidence = """desc: --pages-as-heap=yes
+snapshot=0
+mem_heap_B=1
+snapshot=2
+mem_heap_B=4
+"""
+    with pytest.raises(BaselineCaptureError, match="incomplete or reordered"):
+        parse_massif(evidence)
+
+
+def test_massif_parser_rejects_negative_mapped_bytes() -> None:
+    """WHY: malformed profiler output must fail closed rather than yielding an impossible low allocation baseline that weakens the memory gate."""
+    with pytest.raises(BaselineCaptureError, match="negative"):
+        parse_massif("desc: --pages-as-heap=yes\nsnapshot=0\nmem_heap_B=-1\n")

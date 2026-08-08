@@ -2,9 +2,8 @@
 
 Runs both binaries of a benchmark pair over the same workload with causal
 profile capture enabled (``--profile-out <PATH>``) and stores both artifacts
-alongside the run results. A nonzero exit or a missing/invalid artifact is a
-hard error: the pair contract is that a profiled run always leaves exactly
-one valid artifact.
+alongside the run results. Finding-bearing and coverage-gap scan exits are
+successful; an execution failure or a missing/invalid artifact is a hard error.
 """
 
 from __future__ import annotations
@@ -19,6 +18,9 @@ from typing import Callable, Sequence
 from .profile_artifact import PROFILE_OUT_FLAG, artifact_for
 from .schema import ProfileArtifact
 from .trials import TrialOutcome
+
+
+SUCCESSFUL_SCAN_EXITS = frozenset({0, 1, 10, 13})
 
 
 class ProfileCaptureError(RuntimeError):
@@ -42,13 +44,13 @@ def subprocess_runner(argv: Sequence[str]) -> CaptureOutcome:
     start = time.perf_counter()
     proc = subprocess.run(argv, capture_output=True)
     wall_ms = (time.perf_counter() - start) * 1000.0
-    if proc.returncode != 0:
+    if proc.returncode not in SUCCESSFUL_SCAN_EXITS:
         stderr = proc.stderr.decode("utf-8", "replace")[-2000:]
         raise ProfileCaptureError(
             f"profiled command exited {proc.returncode}: {shlex.join(argv)}\n"
             f"{stderr}"
         )
-    return CaptureOutcome(exit_code=0, wall_ms=wall_ms)
+    return CaptureOutcome(exit_code=proc.returncode, wall_ms=wall_ms)
 
 
 def capture_profiled_run(
@@ -63,14 +65,14 @@ def capture_profiled_run(
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     argv = [str(binary), *scan_args, PROFILE_OUT_FLAG, str(artifact_path)]
     outcome = runner(argv)
-    if outcome.exit_code != 0:
+    if outcome.exit_code not in SUCCESSFUL_SCAN_EXITS:
         raise ProfileCaptureError(
             f"profiled command exited {outcome.exit_code}: {shlex.join(argv)}; "
-            "a failed run never yields a benchmark trial"
+            f"successful scan exits are {sorted(SUCCESSFUL_SCAN_EXITS)}"
         )
     if not artifact_path.exists():
         raise ProfileCaptureError(
-            f"profiled command exited 0 but wrote no artifact at "
+            f"profiled command exited {outcome.exit_code} but wrote no artifact at "
             f"{artifact_path}; the binary lacks {PROFILE_OUT_FLAG} support"
         )
     artifact = artifact_for(artifact_path)

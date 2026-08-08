@@ -316,3 +316,17 @@ def test_duplicate_keyhog_rows_are_rejected():
     rows = [_row("mirror", 100.0), _row("mirror", 200.0)]
     with pytest.raises(BudgetError, match="duplicate keyhog rows"):
         evaluate_workflow_speed(rows, [], _budgets(_budget()))
+
+
+def test_unprofiled_role_is_valid_overhead_evidence() -> None:
+    """WHY: profiler overhead needs an explicitly unprofiled leg; relabeling it control would make stage-comparison receipts ambiguous."""
+    from bench.trials import TRIAL_SET_SCHEMA_VERSION, TrialSet
+    trial_set=TrialSet(schema_version=TRIAL_SET_SCHEMA_VERSION,workload="tiny",role="unprofiled",trials=())
+    assert trial_set.role=="unprofiled"
+
+
+def test_unprofiled_receipt_is_valid_overhead_provenance() -> None:
+    """WHY: an unprofiled overhead leg needs immutable binary and trial provenance without pretending to be a stage-control profile."""
+    from bench.receipts import RECEIPT_SCHEMA_VERSION, PerformanceReceipt
+    receipt=PerformanceReceipt(schema_version=RECEIPT_SCHEMA_VERSION,workload="tiny",role="unprofiled",binary_sha256="a"*64,git_hash="b"*40,hostname_hash="host",os="linux",cpu="x86",trial_set_digest="c"*64,profile_artifacts=())
+    assert receipt.role=="unprofiled"

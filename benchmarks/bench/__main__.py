@@ -250,7 +250,7 @@ def _profile_run(args: argparse.Namespace) -> int:
                 start = time.perf_counter()
                 proc = subprocess.run([str(_binary), *scan_args],
                                       capture_output=True)
-                if proc.returncode != 0:
+                if proc.returncode not in {0, 1, 10, 13}:
                     raise ProfileCaptureError(
                         f"priming run exited {proc.returncode} for {_binary}"
                     )
@@ -298,6 +298,37 @@ def _profile_run(args: argparse.Namespace) -> int:
         invalid = sum(1 for trial in trial_set.trials if not trial.valid)
         print(f"{role}: {len(trial_set.trials)} trials ({invalid} invalid), "
               f"receipt digest {receipt.digest()}", file=sys.stderr)
+
+    unprofiled_binary = pathlib.Path(args.candidate_bin)
+    def unprofiled_executor(_state, _index):
+        start = time.perf_counter()
+        proc = subprocess.run([str(unprofiled_binary), *scan_args], capture_output=True)
+        if proc.returncode not in {0, 1, 10, 13}:
+            raise ProfileCaptureError(
+                f"unprofiled run exited {proc.returncode} for {unprofiled_binary}"
+            )
+        return TrialOutcome(wall_ms=(time.perf_counter() - start) * 1000.0)
+
+    try:
+        unprofiled = run_trials(
+            workload=args.workload, role="unprofiled", executor=unprofiled_executor,
+            cold=args.cold, warm=args.warm, steady=args.steady,
+            pin_affinity=not args.no_affinity, governor_required=args.governor,
+            clear_caches=clear_caches,
+        )
+    except ProfileCaptureError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    unprofiled_receipt = build_receipt(
+        unprofiled, binary_sha256=sha256_file(unprofiled_binary.resolve(strict=True)),
+        git_hash=workspace_git_hash(), host=host,
+    )
+    (out_dir / f"unprofiled-{args.workload}-trials.json").write_text(
+        json.dumps(unprofiled.to_json(), indent=2, sort_keys=True) + "\n", encoding="utf-8",
+    )
+    (out_dir / f"unprofiled-{args.workload}-receipt.json").write_text(
+        json.dumps(unprofiled_receipt.to_json(), indent=2, sort_keys=True) + "\n", encoding="utf-8",
+    )
     return 0
 
 

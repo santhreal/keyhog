@@ -112,6 +112,8 @@ def _find_gnu_time() -> str | None:
 
 _GNU_TIME = _find_gnu_time()
 _RSS_RE = re.compile(r"Maximum resident set size \(kbytes\):\s*(\d+)")
+_MINOR_FAULT_RE = re.compile(r"Minor \(reclaiming a frame\) page faults:\s*(\d+)")
+_MAJOR_FAULT_RE = re.compile(r"Major \(requiring I/O\) page faults:\s*(\d+)")
 
 
 def _has_gnu_time() -> bool:
@@ -134,6 +136,7 @@ def run_measured(
     cwd: str | None = None,
     timeout: int = 1800,
     pass_fds: tuple[int, ...] = (),
+    stdin_path: str | pathlib.Path | None = None,
 ) -> tuple[str, str, RunStats]:
     """Run ``cmd``, return (stdout, stderr, RunStats). GNU time captures peak
     RSS into a private file so the child's own stdout/stderr stay clean for
@@ -153,7 +156,10 @@ def run_measured(
 
     t0 = time.perf_counter()
     timed_out = False
+    stdin_handle = None
     try:
+        if stdin_path is not None:
+            stdin_handle = pathlib.Path(stdin_path).open("rb")
         popen_kwargs = {}
         if os.name == "nt":
             popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -163,6 +169,7 @@ def run_measured(
                 popen_kwargs["pass_fds"] = pass_fds
         process = subprocess.Popen(
             run_cmd,
+            stdin=stdin_handle,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -183,15 +190,26 @@ def run_measured(
         stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
         rc = -1
         timed_out = True
+    finally:
+        if stdin_handle is not None:
+            stdin_handle.close()
     wall_ms = (time.perf_counter() - t0) * 1000.0
 
     peak_rss_kb = 0
+    minor_page_faults: int | None = None
+    major_page_faults: int | None = None
     if rss_file is not None:
         try:
             text = pathlib.Path(rss_file.name).read_text()
             m = _RSS_RE.search(text)
             if m:
                 peak_rss_kb = int(m.group(1))
+            minor = _MINOR_FAULT_RE.search(text)
+            major = _MAJOR_FAULT_RE.search(text)
+            if minor:
+                minor_page_faults = int(minor.group(1))
+            if major:
+                major_page_faults = int(major.group(1))
         except OSError:
             pass
         finally:
@@ -213,7 +231,9 @@ def run_measured(
             peak_rss_kb = after
 
     return stdout, stderr, RunStats(
-        wall_ms=wall_ms, peak_rss_kb=peak_rss_kb, exit_code=rc, timed_out=timed_out)
+        wall_ms=wall_ms, peak_rss_kb=peak_rss_kb,
+        minor_page_faults=minor_page_faults, major_page_faults=major_page_faults,
+        exit_code=rc, timed_out=timed_out)
 
 
 def _kill_process_tree(process: subprocess.Popen) -> None:

@@ -134,3 +134,15 @@ def test_capture_invalid_artifact_is_hard_error(tmp_path):
             profile_path=tmp_path / "p.json",
             runner=bad_runner,
         )
+
+
+@pytest.mark.parametrize("exit_code", [1, 10, 13])
+def test_capture_accepts_finding_and_coverage_scan_exits(tmp_path, exit_code):
+    """WHY: KeyHog uses nonzero success exits for findings and coverage gaps; rejecting them made every finding-bearing canonical profile impossible to capture."""
+    outcome, artifact = capture_profiled_run(
+        binary="/bin/keyhog", scan_args=["scan"],
+        profile_path=tmp_path / f"profile-{exit_code}.json",
+        runner=_runner([], exit_code=exit_code),
+    )
+    assert outcome.wall_ms == 12.5
+    assert artifact.bytes > 0

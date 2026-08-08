@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-06-02T19:30:53Z",
+  "host": {
+    "cores": 12,
+    "cpu": "Apple M4 Pro",
+    "gpu": "",
+    "gpu_vram_mb": 0,
+    "hostname_hash": "43599213ed33",
+    "kernel": "Darwin Kernel Version 25.3.0: Wed Jan 28 20:48:41 PST 2026; root:xnu-12377.81.4~5/RELEASE_ARM64_T6041",
+    "os": "Darwin 25.3.0",
+    "ram_mb": 24576
+  }
+}

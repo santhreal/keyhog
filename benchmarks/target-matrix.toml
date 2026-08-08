@@ -1,0 +1,70 @@
+schema_version = 1
+
+[software]
+workspace_version = "0.5.68"
+rustc = "1.89.0 (29483883e 2025-08-04)"
+python = "3.12"
+vyre = "0.7.2"
+hyperscan = "5.4.2"
+workload_catalog = "workload-catalog.toml"
+fixture_lock = "workload-fixtures.lock.json"
+
+[[target]]
+id = "linux-x86_64-rtx5090"
+os = "linux"
+arch = "x86_64"
+class = "desktop"
+identity_mode = "exact"
+cpu = "AMD Ryzen 9 9950X 16-Core Processor"
+logical_cores = 32
+min_ram_mb = 94140
+gpu = "NVIDIA GeForce RTX 5090"
+min_gpu_vram_mb = 32607
+gpu_driver = "580.178.04"
+required_backends = ["auto", "cpu", "simd", "gpu-cuda", "gpu-wgpu"]
+evidence = "target-evidence/linux-x86_64-rtx5090.json"
+
+[[target]]
+id = "macos-arm64-m4-pro"
+os = "macos"
+arch = "aarch64"
+class = "laptop"
+identity_mode = "exact"
+cpu = "Apple M4 Pro"
+logical_cores = 12
+min_ram_mb = 24576
+gpu = "Apple M4 Pro integrated GPU"
+min_gpu_vram_mb = 0
+gpu_driver = "Darwin 25.3.0"
+required_backends = ["auto", "cpu", "simd", "gpu-metal", "gpu-wgpu"]
+evidence = "target-evidence/macos-arm64-m4-pro.json"
+
+[[target]]
+id = "linux-x86_64-hosted-four-core"
+os = "linux"
+arch = "x86_64"
+class = "hosted"
+identity_mode = "runner-image"
+cpu = "GitHub hosted Ubuntu 24.04 x64"
+logical_cores = 4
+min_ram_mb = 7000
+gpu = "none"
+min_gpu_vram_mb = 0
+gpu_driver = "none"
+required_backends = ["auto", "cpu", "simd"]
+evidence = "cpu-gates/github-ubuntu-24.04-4core-nightly.json"
+
+[[target]]
+id = "windows-x86_64-laptop"
+os = "windows"
+arch = "x86_64"
+class = "laptop"
+identity_mode = "constrained"
+cpu = "x86_64 Windows laptop"
+logical_cores = 4
+min_ram_mb = 8192
+gpu = "optional"
+min_gpu_vram_mb = 0
+gpu_driver = "host-recorded"
+required_backends = ["auto", "cpu", "gpu-wgpu"]
+evidence = "profile-matrix/nightly.toml"

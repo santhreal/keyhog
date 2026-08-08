@@ -396,6 +396,7 @@ def test_scanner_exit_contracts_distinguish_findings_from_failures():
     assert keyhog.exit_success(0)
     assert keyhog.exit_success(1)
     assert keyhog.exit_success(10)
+    assert keyhog.exit_success(13)
     assert not keyhog.exit_success(2)
     assert betterleaks.exit_success(0)
     assert not betterleaks.exit_success(1)
@@ -1198,3 +1199,12 @@ def test_run_measured_falls_back_without_gnu_time(monkeypatch):
     assert stats.exit_code == 0
     assert stats.wall_ms > 0
     assert stats.peak_rss_kb > 0
+
+
+def test_mass_daemon_remote_command_serializes_explicit_source_endpoint(tmp_path):
+    """WHY: the remote workload must cross the mass-daemon request boundary with its source specification and private-endpoint opt-in, not run acquisition in the lightweight client."""
+    command=keyhog_daemon.daemon_mass_remote_client_command(pathlib.Path("/keyhog"),tmp_path/"daemon.sock","http://127.0.0.1:4321",tmp_path/"result.json")
+    assert "--daemon=mass" in command
+    assert "--allow-private-cloud-endpoint" in command
+    source=command[command.index("--source")+1]
+    assert source=="slack:xoxb-benchmark\nhttp://127.0.0.1:4321"

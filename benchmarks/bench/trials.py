@@ -161,7 +161,7 @@ class TrialSet:
                 f"trial set schema_version must be {TRIAL_SET_SCHEMA_VERSION!r}, "
                 f"got {self.schema_version!r}"
             )
-        if self.role not in ("control", "candidate"):
+        if self.role not in ("control", "candidate", "unprofiled"):
             raise ValueError(f"trial set role is invalid: {self.role!r}")
 
     def valid_wall_ms(self, cache_state: CacheState | None = None) -> list[float]:
