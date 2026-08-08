@@ -640,6 +640,8 @@ pub struct CompiledScanner {
     pub(crate) direct_scan_absence_skipped_bytes: std::sync::atomic::AtomicU64,
     #[cfg(debug_assertions)]
     pub(crate) direct_scan_absence_batches: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) simd_phase2_tail_absence_skipped_bytes: std::sync::atomic::AtomicU64,
 }
 
 impl CompiledScanner {

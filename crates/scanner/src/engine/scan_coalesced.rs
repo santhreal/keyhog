@@ -363,8 +363,49 @@ impl CompiledScanner {
                 self.compute_coalesced_triggers(chunks, prefilter, admission_plan)
                     .map_err(crate::error::ScanError::Simd)?
             };
-            return self.scan_coalesced_phase2(chunks, triggers, route);
+            return self.scan_coalesced_phase2_with_admission(
+                chunks,
+                triggers,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                admission_plan,
+                route,
+            );
         }
+    }
+
+    #[cfg(feature = "simd")]
+    fn compute_one_coalesced_simd_trigger(
+        &self,
+        data: &[u8],
+        prefilter: &super::SimdPhase1Prefilter,
+        ac_len: usize,
+        words_needed: usize,
+    ) -> Result<Option<Vec<u64>>, String> {
+        #[cfg(debug_assertions)]
+        self.phase1_trigger_scanned_bytes.fetch_add(
+            u64::try_from(data.len()).unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        with_trigger_buffer(words_needed, |scratch| {
+            let scanner = prefilter.scanner();
+            scanner.scan_each_result(data, |hs_id| {
+                mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
+            })?;
+            prefilter.for_each_recovery_match(data, |pattern_index| {
+                self.mark_triggered_pattern(scratch, pattern_index);
+            });
+            if scratch.iter().any(|&word| word != 0) {
+                Ok(Some(scratch.to_vec()))
+            } else {
+                Ok(None)
+            }
+        })
     }
 
     /// Phase 1 of the coalesced scan: Hyperscan-confirmed rows plus exact
@@ -382,6 +423,11 @@ impl CompiledScanner {
         let ac_len = self.ac_map.len();
         let words_needed = super::trigger_bitmap::words_for(ac_len);
         let profile_runtime = keyhog_profile::current_runtime();
+        let reusable_triggers = admission_plan.map(|plan| {
+            (0..plan.payload_evidence_row_count())
+                .map(|_| std::sync::OnceLock::new())
+                .collect::<Vec<std::sync::OnceLock<Result<Option<Vec<u64>>, String>>>>()
+        });
         let lane_width = super::batch_topology::coalesced_lane_width(chunks);
         let triggers = if lane_width == 1 {
             chunks
@@ -399,20 +445,26 @@ impl CompiledScanner {
                     if admission != super::Phase1Admission::Admitted {
                         return Ok(None);
                     }
-                    with_trigger_buffer(words_needed, |scratch| {
-                        let scanner = prefilter.scanner();
-                        scanner.scan_each_result(data, |hs_id| {
-                            mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
-                        })?;
-                        prefilter.for_each_recovery_match(data, |pattern_index| {
-                            self.mark_triggered_pattern(scratch, pattern_index);
-                        });
-                        if scratch.iter().any(|&word| word != 0) {
-                            Ok(Some(scratch.to_vec()))
-                        } else {
-                            Ok(None)
-                        }
-                    })
+                    let reusable =
+                        admission_plan
+                            .zip(reusable_triggers.as_ref())
+                            .and_then(|(plan, rows)| {
+                                let row = plan.payload_evidence_row_for(chunk_index)?;
+                                rows.get(row)
+                            });
+                    if let Some(reusable) = reusable {
+                        return reusable
+                            .get_or_init(|| {
+                                self.compute_one_coalesced_simd_trigger(
+                                    data,
+                                    prefilter,
+                                    ac_len,
+                                    words_needed,
+                                )
+                            })
+                            .clone();
+                    }
+                    self.compute_one_coalesced_simd_trigger(data, prefilter, ac_len, words_needed)
                 })
                 .collect::<Result<Vec<_>, String>>()?
         } else {
@@ -602,20 +654,6 @@ impl CompiledScanner {
         }
     }
 
-    /// Shared phase-2 tail for the SIMD coalesced producer and GPU
-    /// region-presence producer. Both backends feed identical per-chunk trigger
-    /// bitmaps into this owner so findings remain backend-invariant.
-    #[cfg(any(feature = "simd", feature = "gpu", test))]
-    pub(crate) fn scan_coalesced_phase2(
-        &self,
-        chunks: &[keyhog_core::Chunk],
-        triggers: Vec<Option<Vec<u64>>>,
-        route: crate::ScanExecutionRoute,
-    ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
-        self.scan_coalesced_phase2_with_admission(
-            chunks, triggers, None, None, None, None, None, None, None, route,
-        )
-    }
 
     #[cfg(any(feature = "simd", feature = "gpu", test))]
     fn normalize_coalesced_phase2_triggers(
@@ -658,11 +696,10 @@ impl CompiledScanner {
         recomputed
     }
 
-    /// [`scan_coalesced_phase2`](Self::scan_coalesced_phase2) with an optional
-    /// producer-side phase-2 admission bitmap. A complete negative prefixless
-    /// row composed with complete fused-anchor absence skips the redundant CPU
-    /// always-active prefilter and extraction. Keyword-triggered phase two,
-    /// generic, entropy, multiline, decode, normalized text, ML, and recovery
+    /// Shared coalesced phase-two tail with optional GPU admission rows or an
+    /// exact CPU/SIMD phase-one plan. Complete negative evidence skips redundant
+    /// prefixless, generic, confirmed, entropy, multiline, and decode work while
+    /// triggered rows, normalization, ML, recovery, and path-sensitive handling
     /// remain under their canonical owners.
     #[cfg(any(feature = "simd", feature = "gpu", test))]
     pub(crate) fn scan_coalesced_phase2_with_admission(
@@ -676,6 +713,7 @@ impl CompiledScanner {
         phase2_always_anchor_literal_matches: Option<&[Vec<(u32, u32)>]>,
         confirmed_anchor_literal_matches: Option<&[Vec<(u32, u32)>]>,
         generic_keyword_positions: Option<&[Vec<u32>]>,
+        phase1_plan: Option<&super::Phase1AdmissionPlan>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
         use rayon::prelude::*;
@@ -690,6 +728,7 @@ impl CompiledScanner {
         let telemetry = crate::telemetry::capture_scan_telemetry();
         let recovery_receipts = crate::gpu::capture_recovery_receipts();
         let profile_runtime = keyhog_profile::current_runtime();
+        let entropy_config_digest = self.entropy_evidence_config_digest();
         struct CoalescedChunkOutput {
             state: Option<crate::types::ScanState>,
             matches: Vec<keyhog_core::RawMatch>,
@@ -704,9 +743,13 @@ impl CompiledScanner {
                 let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
                 crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
                     crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
-                        let keyword_hints = phase2_keyword_hints
-                            .and_then(|rows| rows.get(chunk_index))
-                            .map(Vec::as_slice);
+                        let keyword_hints = phase1_plan
+                            .and_then(|plan| plan.phase2_keyword_hints_for(chunk_index))
+                            .or_else(|| {
+                                phase2_keyword_hints
+                                    .and_then(|rows| rows.get(chunk_index))
+                                    .map(Vec::as_slice)
+                            });
                         let always_anchor_present = phase2_always_anchor_presence
                             .and_then(|rows| rows.get(chunk_index).copied());
                         let always_anchor_literal_matches = phase2_always_anchor_literal_matches
@@ -726,21 +769,51 @@ impl CompiledScanner {
                             Some(complete) => complete,
                             None => false,
                         };
-                        let phase2_always_active_gpu_evidence =
-                            always_anchor_present.map(|anchor_present| {
-                                Phase2AlwaysActiveGpuEvidence {
-                                    prefixless_admitted: admitted_by_phase2_gpu,
-                                    prefixless_complete: phase2_gpu_complete,
-                                    anchor_present,
-                                    anchor_literal_matches: always_anchor_literal_matches,
-                                }
+                        let phase2_always_active_gpu_evidence = phase1_plan
+                            .and_then(|plan| plan.phase2_always_active_absence_for(chunk_index))
+                            .and_then(|absence| {
+                                absence.then_some(Phase2AlwaysActiveGpuEvidence::exact_absence())
+                            })
+                            .or_else(|| {
+                                always_anchor_present.map(|anchor_present| {
+                                    Phase2AlwaysActiveGpuEvidence {
+                                        prefixless_admitted: admitted_by_phase2_gpu,
+                                        prefixless_complete: phase2_gpu_complete,
+                                        anchor_present,
+                                        anchor_literal_matches: always_anchor_literal_matches,
+                                    }
+                                })
                             });
                         let confirmed_anchor_matches = confirmed_anchor_literal_matches
                             .and_then(|rows| rows.get(chunk_index))
                             .map(Vec::as_slice);
-                        let generic_keyword_positions = generic_keyword_positions
-                            .and_then(|rows| rows.get(chunk_index))
-                            .map(Vec::as_slice);
+                        let generic_keyword_positions = phase1_plan
+                            .and_then(|plan| plan.generic_keyword_positions_for(chunk_index))
+                            .or_else(|| {
+                                generic_keyword_positions
+                                    .and_then(|rows| rows.get(chunk_index))
+                                    .map(Vec::as_slice)
+                            });
+                        let simd_phase2_tail_absence = phase1_plan
+                            .and_then(|plan| {
+                                plan.simd_phase2_tail_absence_for(
+                                    chunk_index,
+                                    self.config.unicode_normalization,
+                                    entropy_config_digest,
+                                    self.decoder_admission_context_key(chunk),
+                                )
+                            })
+                            .unwrap_or(false)
+                            && crate::structured::preprocessing_is_impossible_for_path(
+                                chunk.metadata.path.as_deref(),
+                            );
+                        if simd_phase2_tail_absence {
+                            #[cfg(debug_assertions)]
+                            self.simd_phase2_tail_absence_skipped_bytes.fetch_add(
+                                u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
+                                std::sync::atomic::Ordering::Relaxed,
+                            );
+                        }
                         if let Some(triggered) = triggered_opt {
                             if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
                                 let matches = self.scan_windowed_with_triggered(
@@ -764,8 +837,19 @@ impl CompiledScanner {
                                     prepared,
                                     &triggered,
                                     None,
-                                    false,
-                                    false,
+                                    phase1_plan
+                                        .and_then(|plan| {
+                                            plan.confirmed_patterns_absence_for(chunk_index)
+                                        })
+                                        .unwrap_or(false),
+                                    phase1_plan
+                                        .and_then(|plan| {
+                                            plan.entropy_absence_for(
+                                                chunk_index,
+                                                entropy_config_digest,
+                                            )
+                                        })
+                                        .unwrap_or(false),
                                     keyword_hints,
                                     phase2_always_active_gpu_evidence,
                                     confirmed_anchor_matches,
@@ -779,11 +863,24 @@ impl CompiledScanner {
                                 });
                             }
                         }
+                        if simd_phase2_tail_absence {
+                            let mut matches = Vec::new();
+                            self.post_process_matches_with_decoder_absence(
+                                chunk,
+                                &mut matches,
+                                None,
+                                route,
+                                true,
+                            )?;
+                            return Ok(CoalescedChunkOutput {
+                                state: None,
+                                matches,
+                                needs_postprocess: false,
+                            });
+                        }
                         let raw_phase2_absence_proven = phase2_always_active_gpu_evidence
                             .is_some_and(|evidence| evidence.absence_proven())
-                            && phase2_keyword_hints
-                                .and_then(|rows| rows.get(chunk_index))
-                                .is_some();
+                            && keyword_hints.is_some();
                         let admitted_by_phase2_keyword_hint =
                             keyword_hints.is_some_and(|hints| !hints.is_empty());
                         let admitted_by_phase2_always_anchor = match always_anchor_present {
@@ -832,8 +929,14 @@ impl CompiledScanner {
                             prepared,
                             &[],
                             None,
-                            false,
-                            false,
+                            phase1_plan
+                                .and_then(|plan| plan.confirmed_patterns_absence_for(chunk_index))
+                                .unwrap_or(false),
+                            phase1_plan
+                                .and_then(|plan| {
+                                    plan.entropy_absence_for(chunk_index, entropy_config_digest)
+                                })
+                                .unwrap_or(false),
                             keyword_hints,
                             phase2_always_active_gpu_evidence,
                             confirmed_anchor_matches,

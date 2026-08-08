@@ -124,6 +124,21 @@ impl CompiledScanner {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_simd_phase2_tail_absence_skipped_bytes_for_diagnostics(&self) {
+        self.simd_phase2_tail_absence_skipped_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn simd_phase2_tail_absence_skipped_bytes_for_diagnostics(&self) -> u64 {
+        self.simd_phase2_tail_absence_skipped_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Surface a decode-through pass declined because its source cannot use
     /// bounded decode windows and exceeds `max_decode_bytes`.
     ///

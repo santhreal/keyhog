@@ -431,6 +431,7 @@ fn complete_always_active_negative_preserves_triggered_row_keyword_phase2_findin
         None,
         None,
         None,
+        None,
         scanner.default_execution_route(),
     );
     let results = results.expect("always-active negative phase-two scan succeeds");
@@ -511,6 +512,7 @@ fn normalized_triggered_rows_discard_raw_gpu_evidence_and_recompute_admission() 
         Some(&complete),
         Some(&raw_keyword_hints),
         Some(&anchors_present),
+        None,
         None,
         None,
         None,

@@ -323,9 +323,27 @@ impl Phase1AdmissionPlan {
         self.direct_scan_absence_at_row(row)
     }
 
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn simd_phase2_tail_absence_for_diagnostics(&self, index: usize) -> Option<bool> {
+        let row = *self.phase2_keyword_hint_rows.get(index)?;
+        self.phase2_tail_absence_at_row(row)
+    }
+
     #[inline]
     pub(crate) fn admission_for(&self, index: usize) -> Option<Phase1Admission> {
         self.admissions.get(index).copied()
+    }
+
+    #[inline]
+    pub(crate) fn payload_evidence_row_for(&self, index: usize) -> Option<usize> {
+        self.phase2_keyword_hint_rows.get(index).copied()
+    }
+
+    #[inline]
+    pub(crate) fn payload_evidence_row_count(&self) -> usize {
+        self.phase2_keyword_hints.len()
     }
 
     #[inline]
@@ -419,7 +437,7 @@ impl Phase1AdmissionPlan {
     }
 
     #[inline]
-    fn direct_scan_absence_at_row(&self, row: usize) -> Option<bool> {
+    fn phase2_tail_absence_at_row(&self, row: usize) -> Option<bool> {
         Some(
             *self.normalization_passthrough.get(row)?
                 && *self.confirmed_patterns_absence.get(row)?
@@ -427,10 +445,34 @@ impl Phase1AdmissionPlan {
                 && *self.multiline_absence.get(row)?
                 && *self.decoder_absence.get(row)?
                 && *self.phase2_always_active_absence.get(row)?
-                && self.cpu_trigger_hints.get(row)?.is_some()
                 && self.phase2_keyword_hints.get(row)?.is_empty()
                 && self.generic_keyword_positions.get(row)?.is_empty(),
         )
+    }
+
+    #[inline]
+    fn direct_scan_absence_at_row(&self, row: usize) -> Option<bool> {
+        Some(self.phase2_tail_absence_at_row(row)? && self.cpu_trigger_hints.get(row)?.is_some())
+    }
+
+    #[inline]
+    pub(crate) fn simd_phase2_tail_absence_for(
+        &self,
+        index: usize,
+        unicode_normalization_enabled: bool,
+        evidence_config_digest: [u8; 32],
+        decoder_admission_context: Option<u8>,
+    ) -> Option<bool> {
+        if unicode_normalization_enabled != self.unicode_normalization_enabled
+            || evidence_config_digest != self.entropy_config_digest
+        {
+            return None;
+        }
+        let row = *self.phase2_keyword_hint_rows.get(index)?;
+        if self.decoder_admission_contexts.get(row).copied()? != decoder_admission_context {
+            return None;
+        }
+        self.phase2_tail_absence_at_row(row)
     }
 
     #[inline]

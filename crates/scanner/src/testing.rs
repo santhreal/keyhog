@@ -1643,6 +1643,7 @@ pub fn scan_coalesced_phase2_with_admission_for_test(
             None,
             None,
             None,
+            None,
             scanner.default_execution_route(),
         )
         .expect("test phase-2 admission scan succeeds")

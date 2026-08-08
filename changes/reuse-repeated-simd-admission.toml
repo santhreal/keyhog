@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "SIMD scans now reuse exact payload-representative trigger results and authenticated negative phase-two evidence without reusing path-dependent findings."
+crates = ["scanner"]

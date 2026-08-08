@@ -282,10 +282,14 @@ fn repeated_payloads_share_generic_keyword_positions() {
     detector_dir.pop();
     detector_dir.pop();
     detector_dir.push("detectors");
-    let mut scanner = CompiledScanner::compile(
-        keyhog_core::load_detectors(&detector_dir).expect("production detectors"),
-    )
-    .expect("compile production scanner");
+    let detectors =
+        keyhog_core::load_detectors(&detector_dir).expect("production detectors");
+    let mut scanner =
+        CompiledScanner::compile(detectors.clone()).expect("compile production scanner");
+    #[cfg(feature = "simd")]
+    let mut simd_scanner =
+        CompiledScanner::compile_for_backend(detectors, ScanBackend::SimdCpu)
+            .expect("compile production SIMD scanner");
     let payload = "secret = Ab3dEf5hJk7mNp9qRs2uVw4yXz6Bcd8F\n".repeat(128);
     let chunks = vec![
         chunk("generic-0.txt", payload.clone()),
@@ -481,6 +485,60 @@ fn repeated_payloads_share_generic_keyword_positions() {
         1,
         "an all-absent coalesced batch must avoid per-chunk Rayon dispatch"
     );
+
+    #[cfg(feature = "simd")]
+    {
+        let simd_plan = simd_scanner.phase1_admission_plan(&ordinary_chunks);
+        assert_eq!(
+            simd_plan.simd_phase2_tail_absence_for_diagnostics(0),
+            Some(true),
+            "fixture must establish complete SIMD phase-two tail absence"
+        );
+        simd_scanner.clear_fragment_cache();
+        simd_scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
+        simd_scanner.reset_simd_phase2_tail_absence_skipped_bytes_for_diagnostics();
+        let planned_simd = simd_scanner
+            .scan_coalesced_with_backend_and_admission(
+                &ordinary_chunks,
+                ScanBackend::SimdCpu,
+                Some(&simd_plan),
+            )
+            .expect("planned SIMD scan");
+        assert_eq!(
+            simd_scanner.phase1_trigger_scanned_bytes_for_diagnostics(),
+            ordinary_chunks[0].data.len() as u64,
+            "SIMD must scan one exact payload representative per admission row"
+        );
+        assert_eq!(
+            simd_scanner.simd_phase2_tail_absence_skipped_bytes_for_diagnostics(),
+            ordinary_chunks
+                .iter()
+                .map(|chunk| chunk.data.len() as u64)
+                .sum::<u64>(),
+            "complete exact negative evidence must skip every SIMD phase-two tail byte"
+        );
+
+        simd_scanner.clear_fragment_cache();
+        simd_scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
+        simd_scanner.reset_simd_phase2_tail_absence_skipped_bytes_for_diagnostics();
+        let direct_simd = simd_scanner
+            .scan_coalesced_with_backend(&ordinary_chunks, ScanBackend::SimdCpu)
+            .expect("direct SIMD scan");
+        assert_eq!(
+            simd_scanner.phase1_trigger_scanned_bytes_for_diagnostics(),
+            ordinary_chunks
+                .iter()
+                .map(|chunk| chunk.data.len() as u64)
+                .sum::<u64>(),
+            "SIMD without admission evidence must scan every chunk"
+        );
+        assert_eq!(
+            simd_scanner.simd_phase2_tail_absence_skipped_bytes_for_diagnostics(),
+            0,
+            "SIMD without admission evidence must retain the ordinary phase-two tail"
+        );
+        assert_eq!(planned_simd, direct_simd);
+    }
 
     scanner.clear_fragment_cache();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
