@@ -19,3 +19,27 @@ fn paired_difference_rejects_ties_and_reversed_routes() {
         &faster_competitor
     ));
 }
+#[test]
+fn cold_warm_statistical_model_computes_distributions() {
+    use super::{BackendTimingEvidence, ColdWarmStatisticalModel};
+
+    let candidate_timing = BackendTimingEvidence::from_trial_ns(vec![
+        500_000, 100_000, 300_000, 120_000, 280_000, 140_000, 260_000, 160_000,
+    ])
+    .unwrap();
+    let competitor_timing = BackendTimingEvidence::from_trial_ns(vec![
+        600_000, 110_000, 310_000, 130_000, 290_000, 150_000, 270_000, 170_000,
+    ])
+    .unwrap();
+
+    let candidate_model = ColdWarmStatisticalModel::from_timing(&candidate_timing).unwrap();
+    let competitor_model = ColdWarmStatisticalModel::from_timing(&competitor_timing).unwrap();
+
+    assert_eq!(candidate_model.cold_one_shot_ns, 500_000);
+    assert_eq!(competitor_model.cold_one_shot_ns, 600_000);
+    assert_eq!(candidate_model.warm_trials_ns.len(), 7);
+
+    let diff = candidate_model.paired_difference(&competitor_model);
+    assert!(diff.is_statistically_faster_95);
+    assert!(diff.mean_diff_ns > 0.0);
+}

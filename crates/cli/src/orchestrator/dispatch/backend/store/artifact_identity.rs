@@ -37,3 +37,34 @@ pub(super) fn current_executable_sha256(
         .as_deref()
         .map_err(|error| error.clone().into())
 }
+pub(super) fn current_gpu_sidecar_sha256() -> Option<String> {
+    let cache_dir = keyhog_scanner::gpu_literal_artifact_cache_dir().ok()?;
+    let manifest_path = cache_dir.join("manifest.json");
+    let mut file = std::fs::File::open(manifest_path).ok()?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).ok()?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Some(format!("{:x}", hasher.finalize()))
+}
+
+pub(super) fn current_vyre_artifact_sha256() -> Option<String> {
+    let cache_dir = keyhog_scanner::gpu_literal_artifact_cache_dir().ok()?;
+    let vyre_path = cache_dir.join("vyre_artifacts.bin");
+    let mut file = std::fs::File::open(vyre_path).ok()?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).ok()?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Some(format!("{:x}", hasher.finalize()))
+}

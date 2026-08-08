@@ -62,6 +62,87 @@ impl BackendTimingEvidence {
         self.trials_ns.len() == expected_trials && self.trials_ns.iter().all(|&trial| trial > 0)
     }
 }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ColdWarmStatisticalModel {
+    pub(crate) cold_one_shot_ns: u128,
+    pub(crate) warm_trials_ns: Vec<u128>,
+    pub(crate) warm_median_ns: u128,
+    pub(crate) warm_ci: TimingConfidenceInterval,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PairedDifferenceDistribution {
+    pub(crate) count: usize,
+    pub(crate) mean_diff_ns: f64,
+    pub(crate) variance: f64,
+    pub(crate) ci_half_width_ns: f64,
+    pub(crate) is_statistically_faster_95: bool,
+}
+
+impl ColdWarmStatisticalModel {
+    pub(crate) fn from_timing(timing: &BackendTimingEvidence) -> Option<Self> {
+        let (&cold_one_shot_ns, warm_trials) = timing.trials_ns.split_first()?;
+        if warm_trials.is_empty() {
+            return None;
+        }
+        let warm_timing = BackendTimingEvidence::from_trial_ns(warm_trials.to_vec())?;
+        let warm_median_ns = warm_timing.median_ns();
+        let warm_ci = warm_timing.confidence_interval_95_ns();
+        Some(Self {
+            cold_one_shot_ns,
+            warm_trials_ns: warm_trials.to_vec(),
+            warm_median_ns,
+            warm_ci,
+        })
+    }
+
+    pub(crate) fn paired_difference(
+        &self,
+        competitor: &ColdWarmStatisticalModel,
+    ) -> PairedDifferenceDistribution {
+        let count = self.warm_trials_ns.len().min(competitor.warm_trials_ns.len());
+        if count < 2 {
+            return PairedDifferenceDistribution {
+                count,
+                mean_diff_ns: 0.0,
+                variance: 0.0,
+                ci_half_width_ns: 0.0,
+                is_statistically_faster_95: false,
+            };
+        }
+        let paired_diffs: Vec<f64> = self.warm_trials_ns[..count]
+            .iter()
+            .zip(&competitor.warm_trials_ns[..count])
+            .map(|(&cand, &comp)| comp as f64 - cand as f64)
+            .collect();
+        let count_f64 = count as f64;
+        let mean = paired_diffs.iter().sum::<f64>() / count_f64;
+        let variance = paired_diffs
+            .iter()
+            .map(|&diff| {
+                let d = diff - mean;
+                d * d
+            })
+            .sum::<f64>()
+            / (count_f64 - 1.0);
+        let half_width = two_sided_95_student_t_critical(count) * variance.max(0.0).sqrt() / count_f64.sqrt();
+        PairedDifferenceDistribution {
+            count,
+            mean_diff_ns: mean,
+            variance,
+            ci_half_width_ns: half_width,
+            is_statistically_faster_95: mean - half_width > 0.0,
+        }
+    }
+}
+
+impl BackendTimingEvidence {
+    pub(crate) fn cold_warm_model(&self) -> Option<ColdWarmStatisticalModel> {
+        ColdWarmStatisticalModel::from_timing(self)
+    }
+}
 
 pub(crate) fn paired_candidate_is_faster_95(
     candidate_trials_ns: &[u128],
@@ -87,7 +168,7 @@ pub(crate) fn paired_candidate_is_faster_95(
         })
         .sum::<f64>()
         / (count_f64 - 1.0);
-    let half_width = two_sided_95_student_t_critical(count) * variance.sqrt() / count_f64.sqrt();
+    let half_width = two_sided_95_student_t_critical(count) * variance.max(0.0).sqrt() / count_f64.sqrt();
     mean - half_width > 0.0
 }
 
@@ -99,6 +180,12 @@ pub(crate) struct TimingConfidenceInterval {
 
 impl TimingConfidenceInterval {
     fn from_trials(trials_ns: &[u128]) -> Self {
+        if trials_ns.is_empty() {
+            return Self {
+                low_ns: 0,
+                high_ns: 0,
+            };
+        }
         let count = trials_ns.len() as f64;
         let mean = trials_ns.iter().map(|&ns| ns as f64).sum::<f64>() / count;
         let variance = if trials_ns.len() > 1 {
@@ -114,7 +201,7 @@ impl TimingConfidenceInterval {
             0.0
         };
         let half_width =
-            two_sided_95_student_t_critical(trials_ns.len()) * variance.sqrt() / count.sqrt();
+            two_sided_95_student_t_critical(trials_ns.len()) * variance.max(0.0).sqrt() / count.sqrt();
         Self {
             low_ns: (mean - half_width).max(0.0).floor() as u128,
             high_ns: (mean + half_width).ceil() as u128,

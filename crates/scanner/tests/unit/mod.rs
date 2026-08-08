@@ -1,4 +1,5 @@
 pub mod a3_decode;
+pub mod memory_ceiling_and_page_fault_tests;
 #[cfg(feature = "multiline")]
 pub mod a3_multiline;
 pub mod a3_pipeline;

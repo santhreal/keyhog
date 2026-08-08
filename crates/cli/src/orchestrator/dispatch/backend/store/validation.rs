@@ -16,6 +16,24 @@ use super::super::workload::{
 use super::super::AUTOROUTE_CALIBRATION_TRIALS;
 use super::artifact_identity::current_executable_sha256;
 use super::schema::{AutorouteBuildFeatures, AutorouteCache};
+use super::artifact_identity::{current_gpu_sidecar_sha256, current_vyre_artifact_sha256};
+
+pub(super) fn is_gpu_decision_valid(cache: &AutorouteCache, backend_str: &str) -> bool {
+    if !backend_str.starts_with("gpu") {
+        return true;
+    }
+    if let Some(expected_sidecar) = &cache.gpu_sidecar_digest {
+        if current_gpu_sidecar_sha256().as_ref() != Some(expected_sidecar) {
+            return false;
+        }
+    }
+    if let Some(expected_vyre) = &cache.vyre_artifact_digest {
+        if current_vyre_artifact_sha256().as_ref() != Some(expected_vyre) {
+            return false;
+        }
+    }
+    true
+}
 
 pub(super) fn validate_cache_global_identity(
     cache: &AutorouteCache,
@@ -45,6 +63,9 @@ pub(super) fn validate_cache_global_identity(
     }
     if cache.rules_digest != rules_digest {
         return Err("rules digest mismatch; cache is for a different detector rule set".into());
+    }
+    if !is_gpu_decision_valid(cache, "gpu") {
+        return Err("GPU sidecar or VYRE artifact digest mismatch; cache is bound to different GPU artifacts".into());
     }
     Ok(())
 }
@@ -509,4 +530,29 @@ pub(super) fn current_unix_time_ms() -> Result<u128, Box<dyn std::error::Error +
             "system clock predates the Unix epoch; correct the system clock and re-run calibration"
                 .into()
         })
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gpu_decision_validation_allows_host_backends_without_gpu_artifacts() {
+        let cache = AutorouteCache {
+            version: 1,
+            binary_version: "0.5.68".into(),
+            git_hash: "test".into(),
+            executable_sha256: "test".into(),
+            build_features: AutorouteBuildFeatures::default(),
+            detector_digest: 0,
+            rules_digest: "test".into(),
+            gpu_sidecar_digest: Some("mismatched_sidecar".into()),
+            vyre_artifact_digest: Some("mismatched_vyre".into()),
+            execution_pack_generation: None,
+            configs: vec![],
+        };
+
+        assert!(is_gpu_decision_valid(&cache, "cpu-fallback"));
+        assert!(is_gpu_decision_valid(&cache, "simd-cpu"));
+        assert!(!is_gpu_decision_valid(&cache, "gpu-cuda"));
+    }
 }
