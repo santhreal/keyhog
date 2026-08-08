@@ -349,8 +349,8 @@ pub(super) fn walker_config(
     // Discovery owns metadata only. Size caps, binary/container classification,
     // and default excludes stay in `extract::process_entry`, where each skip is
     // visible and the no-follow content reader validates the opened object.
-    let _ = max_file_size;
-    let _ = respect_default_excludes;
+    let _ = max_file_size; // LAW10: cfg-independent unused-parameter binding; extraction enforces the size cap and records every skip.
+    let _ = respect_default_excludes; // LAW10: cfg-independent unused-parameter binding; extraction owns and visibly records default-exclude skips.
 
     FilesystemWalkConfig {
         respect_gitignore: true,

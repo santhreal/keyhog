@@ -165,6 +165,7 @@ pub(crate) fn detects_k8s_secret_document(text: &str, path: Option<&str>) -> boo
 /// Compose parsing. Adding a format requires extending this predicate before
 /// its detector can become reachable below.
 pub(crate) fn preprocessing_is_impossible_for_path(path: Option<&str>) -> bool {
+    // LAW10: an absent path has no structured-format suffix, so no path-gated parser can apply.
     let path = path.map(str::as_bytes).unwrap_or(&[]);
     let last_sep = path
         .iter()

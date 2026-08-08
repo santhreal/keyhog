@@ -48,7 +48,11 @@ impl MemoryContent {
     }
 
     fn read_count(&self, path: &str) -> usize {
-        self.reads.borrow().iter().filter(|seen| *seen == path).count()
+        self.reads
+            .borrow()
+            .iter()
+            .filter(|seen| *seen == path)
+            .count()
     }
 }
 
@@ -75,7 +79,12 @@ impl FileContentSource for MemoryContent {
     }
 }
 
-fn finding(credential: &str, source: &str, path: Option<&str>, line: Option<usize>) -> VerifiedFinding {
+fn finding(
+    credential: &str,
+    source: &str,
+    path: Option<&str>,
+    line: Option<usize>,
+) -> VerifiedFinding {
     VerifiedFinding {
         detector_id: Arc::from("generic-password"),
         detector_name: Arc::from("Generic Password"),
@@ -170,9 +179,12 @@ fn a_candidate_that_is_a_reported_credential_is_dropped() {
     // must drop it whatever the rule thought.
     let body = "url: postgres://svc@db.internal:5432/hunter2hunter2\n";
     let content = MemoryContent::with("conf.yaml", body);
-    let findings = vec![
-        finding("hunter2hunter2", "filesystem", Some("conf.yaml"), Some(1)),
-    ];
+    let findings = vec![finding(
+        "hunter2hunter2",
+        "filesystem",
+        Some("conf.yaml"),
+        Some(1),
+    )];
 
     let report = associate_access_targets_with(&findings, &content);
     let values: Vec<&str> = report
@@ -228,7 +240,12 @@ fn distance_decays_confidence_and_a_far_match_ranks_below_a_near_one() {
         .replace("host: far", "url: postgres://svc@far");
 
     let content = MemoryContent::with("conf.yaml", &body);
-    let findings = vec![finding("secret-value", "filesystem", Some("conf.yaml"), Some(1))];
+    let findings = vec![finding(
+        "secret-value",
+        "filesystem",
+        Some("conf.yaml"),
+        Some(1),
+    )];
 
     let report = associate_access_targets_with(&findings, &content);
     let targets = &report.targets[0].targets;
@@ -251,8 +268,14 @@ fn distance_decays_confidence_and_a_far_match_ranks_below_a_near_one() {
     );
     assert!(far.evidence.provenance.decay_steps >= 1);
 
-    let near_position = targets.iter().position(|t| t.value.starts_with("near.")).unwrap_or(usize::MAX);
-    let far_position = targets.iter().position(|t| t.value.starts_with("far.")).unwrap_or(0);
+    let near_position = targets
+        .iter()
+        .position(|t| t.value.starts_with("near."))
+        .unwrap_or(usize::MAX);
+    let far_position = targets
+        .iter()
+        .position(|t| t.value.starts_with("far."))
+        .unwrap_or(0);
     assert!(near_position < far_position, "near target must sort first");
 }
 
@@ -293,10 +316,18 @@ fn a_file_larger_than_the_cap_is_reported_truncated_not_silently_complete() {
     body.push_str("url: postgres://svc@hidden.example.org:5432/late\n");
 
     let content = MemoryContent::with("big.txt", &body);
-    let findings = vec![finding("secret-value", "filesystem", Some("big.txt"), Some(1))];
+    let findings = vec![finding(
+        "secret-value",
+        "filesystem",
+        Some("big.txt"),
+        Some(1),
+    )];
 
     let report = associate_access_targets_with(&findings, &content);
-    assert!(!report.coverage.complete, "truncation must break completeness");
+    assert!(
+        !report.coverage.complete,
+        "truncation must break completeness"
+    );
     let gap = report
         .coverage
         .gaps
@@ -322,14 +353,23 @@ fn a_git_history_finding_is_a_coverage_gap_not_an_empty_result() {
         report.coverage.gaps[0].reason,
         CoverageGapReason::HistoricalContent
     );
-    assert_eq!(content.read_count("app.js"), 0, "history must not read the working tree");
+    assert_eq!(
+        content.read_count("app.js"),
+        0,
+        "history must not read the working tree"
+    );
 }
 
 #[test]
 fn a_non_filesystem_source_is_a_coverage_gap() {
     let content = MemoryContent::default();
     let report = associate_access_targets_with(
-        &[finding("secret-value", "docker", Some("layer/etc/app.conf"), Some(3))],
+        &[finding(
+            "secret-value",
+            "docker",
+            Some("layer/etc/app.conf"),
+            Some(3),
+        )],
         &content,
     );
     assert!(!report.coverage.complete);
@@ -338,7 +378,9 @@ fn a_non_filesystem_source_is_a_coverage_gap() {
         CoverageGapReason::SourceNotReadable
     );
     assert_eq!(report.coverage.gaps[0].findings, 1);
-    assert!(report.coverage.gaps[0].examples.contains(&"layer/etc/app.conf".to_string()));
+    assert!(report.coverage.gaps[0]
+        .examples
+        .contains(&"layer/etc/app.conf".to_string()));
 }
 
 #[test]
@@ -442,7 +484,12 @@ fn the_same_findings_always_produce_the_same_bytes() {
 #[test]
 fn credential_hash_type_is_the_join_key_back_to_the_finding() {
     let content = MemoryContent::with("app.js", CONNECTION_STRING);
-    let one = finding("DXGlyfbp9xHZQajM381Sfwmx", "filesystem", Some("app.js"), Some(1));
+    let one = finding(
+        "DXGlyfbp9xHZQajM381Sfwmx",
+        "filesystem",
+        Some("app.js"),
+        Some(1),
+    );
     let expected: CredentialHash = one.credential_hash;
     let report = associate_access_targets_with(&[one], &content);
     assert_eq!(
@@ -495,7 +542,12 @@ fn a_permanent_read_failure_is_reported_as_permanent() {
     }
 
     let report = associate_access_targets_with(
-        &[finding("secret-value", "filesystem", Some("locked.conf"), Some(1))],
+        &[finding(
+            "secret-value",
+            "filesystem",
+            Some("locked.conf"),
+            Some(1),
+        )],
         &Denied,
     );
     assert!(!report.coverage.complete);
@@ -504,7 +556,9 @@ fn a_permanent_read_failure_is_reported_as_permanent() {
         CoverageGapReason::PermanentReadFailed
     );
     assert!(
-        report.coverage.gaps[0].explanation.contains("rerunning will not"),
+        report.coverage.gaps[0]
+            .explanation
+            .contains("rerunning will not"),
         "{:?}",
         report.coverage.gaps[0]
     );

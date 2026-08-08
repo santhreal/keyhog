@@ -456,6 +456,7 @@ fn store_sparse_policies(
     let one_based = policies
         .len()
         .checked_add(1)
+        // LAW10: failed checked conversion reaches ok_or_else and rejects the plan; no sparse policy is dropped.
         .and_then(|index| u16::try_from(index).ok())
         .and_then(std::num::NonZeroU16::new)
         .ok_or_else(|| "compiled sparse detector policy count exceeds u16".to_string())?;

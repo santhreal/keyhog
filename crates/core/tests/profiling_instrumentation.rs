@@ -69,13 +69,15 @@ fn merkle_save_and_load_record_mapped_stages() {
             .save_with_spec(&cache_path, &spec_hash)
             .expect("save fresh cache");
         let report = keyhog_core::MerkleIndex::load_with_spec_report(&cache_path, &spec_hash);
-        loaded_status.set(matches!(
-            report.status(),
-            keyhog_core::MerkleLoadStatus::Loaded { .. }
-        ) || !matches!(
-            report.status(),
-            keyhog_core::MerkleLoadStatus::Missing { .. }
-        ));
+        loaded_status.set(
+            matches!(
+                report.status(),
+                keyhog_core::MerkleLoadStatus::Loaded { .. }
+            ) || !matches!(
+                report.status(),
+                keyhog_core::MerkleLoadStatus::Missing { .. }
+            ),
+        );
     });
     assert!(loaded_status.get(), "freshly saved cache must load back");
     assert_eq!(

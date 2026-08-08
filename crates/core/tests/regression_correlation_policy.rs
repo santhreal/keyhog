@@ -128,20 +128,39 @@ fn policy_validation_fails_closed_on_degenerate_shapes() {
     validate_correlation_policy(VALID_POLICY, "<valid>").expect("baseline policy must load");
 
     let cases = [
-        ("reuse_min_files = 2", "reuse_min_files = 1", "reuse_min_files"),
+        (
+            "reuse_min_files = 2",
+            "reuse_min_files = 1",
+            "reuse_min_files",
+        ),
         (
             "reuse_confidence_bonus = 0.15",
             "reuse_confidence_bonus = 0.0",
             "reuse_confidence_bonus",
         ),
-        ("max_confidence = 0.99", "max_confidence = 1.5", "max_confidence"),
-        ("required = [\"a\", \"b\"]", "required = [\"a\"]", "required parts"),
-        ("required = [\"a\", \"b\"]", "required = [\"a\", \"a\"]", "more than once"),
+        (
+            "max_confidence = 0.99",
+            "max_confidence = 1.5",
+            "max_confidence",
+        ),
+        (
+            "required = [\"a\", \"b\"]",
+            "required = [\"a\"]",
+            "required parts",
+        ),
+        (
+            "required = [\"a\", \"b\"]",
+            "required = [\"a\", \"a\"]",
+            "more than once",
+        ),
         ("impact = \"both halves\"", "impact = \"\"", "empty impact"),
     ];
     for (from, to, expected) in cases {
         let broken = VALID_POLICY.replace(from, to);
-        assert_ne!(broken, VALID_POLICY, "test case {to:?} did not patch anything");
+        assert_ne!(
+            broken, VALID_POLICY,
+            "test case {to:?} did not patch anything"
+        );
         let error = validate_correlation_policy(&broken, "<broken>")
             .expect_err(&format!("{to:?} must be rejected"));
         assert!(
@@ -173,7 +192,13 @@ fn policy_validation_fails_closed_on_degenerate_shapes() {
 fn value_reuse_groups_one_secret_seen_in_several_files() {
     let findings = vec![
         finding("adobe-api-key", "adobe", "SHARED", "a/one.rs", 0.50),
-        finding("spotify-client-credentials", "spotify", "SHARED", "b/two.rs", 0.45),
+        finding(
+            "spotify-client-credentials",
+            "spotify",
+            "SHARED",
+            "b/two.rs",
+            0.45,
+        ),
         finding("adobe-api-key", "adobe", "OTHER", "a/three.rs", 0.90),
     ];
 
@@ -222,7 +247,13 @@ fn one_finding_spanning_files_is_reuse_but_one_file_is_not() {
 fn composite_reports_a_split_pair_and_lifts_severity_from_tier_b() {
     let findings = vec![
         finding("aws-access-key", "aws", "AKIA0", "infra/main.tf", 0.60),
-        finding("aws-secret-access-key", "aws", "SECRET0", "infra/.env", 0.55),
+        finding(
+            "aws-secret-access-key",
+            "aws",
+            "SECRET0",
+            "infra/.env",
+            0.55,
+        ),
     ];
 
     let correlations = correlate_findings(&findings);
@@ -253,7 +284,13 @@ fn composite_reports_a_split_pair_and_lifts_severity_from_tier_b() {
 fn composite_is_silent_when_one_file_already_holds_both_parts() {
     let findings = vec![
         finding("aws-access-key", "aws", "AKIA0", "infra/all.env", 0.60),
-        finding("aws-secret-access-key", "aws", "SECRET0", "infra/all.env", 0.55),
+        finding(
+            "aws-secret-access-key",
+            "aws",
+            "SECRET0",
+            "infra/all.env",
+            0.55,
+        ),
     ];
     let composites = correlate_findings(&findings)
         .into_iter()
@@ -270,7 +307,13 @@ fn composite_is_silent_when_the_directory_pairing_is_ambiguous() {
     let findings = vec![
         finding("aws-access-key", "aws", "AKIA0", "infra/a.tf", 0.60),
         finding("aws-access-key", "aws", "AKIA1", "infra/b.tf", 0.60),
-        finding("aws-secret-access-key", "aws", "SECRET0", "infra/.env", 0.55),
+        finding(
+            "aws-secret-access-key",
+            "aws",
+            "SECRET0",
+            "infra/.env",
+            0.55,
+        ),
     ];
     let composites = correlate_findings(&findings)
         .into_iter()
@@ -286,8 +329,20 @@ fn composite_is_silent_when_the_directory_pairing_is_ambiguous() {
 fn composite_admits_an_optional_part_without_requiring_it() {
     let findings = vec![
         finding("aws-access-key", "aws", "AKIA0", "infra/main.tf", 0.60),
-        finding("aws-secret-access-key", "aws", "SECRET0", "infra/.env", 0.55),
-        finding("aws-session-token", "aws", "TOKEN0", "infra/session.sh", 0.50),
+        finding(
+            "aws-secret-access-key",
+            "aws",
+            "SECRET0",
+            "infra/.env",
+            0.55,
+        ),
+        finding(
+            "aws-session-token",
+            "aws",
+            "TOKEN0",
+            "infra/session.sh",
+            0.50,
+        ),
     ];
     let group = correlate_findings(&findings)
         .into_iter()
@@ -308,9 +363,21 @@ fn composite_admits_an_optional_part_without_requiring_it() {
 fn correlation_output_is_order_independent() {
     let mut findings = vec![
         finding("aws-access-key", "aws", "AKIA0", "infra/main.tf", 0.60),
-        finding("aws-secret-access-key", "aws", "SECRET0", "infra/.env", 0.55),
+        finding(
+            "aws-secret-access-key",
+            "aws",
+            "SECRET0",
+            "infra/.env",
+            0.55,
+        ),
         finding("adobe-api-key", "adobe", "SHARED", "a/one.rs", 0.50),
-        finding("spotify-client-credentials", "spotify", "SHARED", "b/two.rs", 0.45),
+        finding(
+            "spotify-client-credentials",
+            "spotify",
+            "SHARED",
+            "b/two.rs",
+            0.45,
+        ),
     ];
     let forward = serde_json::to_string(&correlate_findings(&findings)).expect("serialize");
     findings.reverse();

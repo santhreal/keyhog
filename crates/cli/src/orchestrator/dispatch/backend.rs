@@ -55,8 +55,7 @@ use self::routing::{
 };
 pub(crate) use self::routing::{
     AutorouteRoutingError, AutorouteRoutingErrorKind, AutorouteStateRecovery, BackendRecoveryPlan,
-    BackendSelection,
-    RuntimeRouteIdentity,
+    BackendSelection, RuntimeRouteIdentity,
 };
 use self::runtime_health::{
     clear_runtime_route_faults, load_runtime_route_faults, persist_runtime_route_fault,

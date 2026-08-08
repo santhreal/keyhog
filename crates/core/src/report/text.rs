@@ -118,8 +118,8 @@ impl<W: Write + Send> TextReporter<W> {
     /// An empty slice leaves the report untouched. Idempotent; later calls
     /// replace.
     pub(crate) fn set_correlations(&mut self, correlations: &[CorrelatedCredential]) {
-        self.correlations_block = (!correlations.is_empty())
-            .then(|| render_correlations(correlations, self.color));
+        self.correlations_block =
+            (!correlations.is_empty()).then(|| render_correlations(correlations, self.color));
     }
 }
 
@@ -503,26 +503,23 @@ impl_writer_backed!(TextReporter);
 /// terminal-sanitized on the way out, exactly like finding locations.
 fn render_correlations(correlations: &[CorrelatedCredential], color: bool) -> String {
     let mut out = String::new();
-    let border = report_style::muted_border(
-        "━━━ Correlated credentials ━━━━━━━━━━━━━━━━━━━━━",
-        color,
-    );
-    let _ = writeln!(out, "  {border}");
+    let border =
+        report_style::muted_border("━━━ Correlated credentials ━━━━━━━━━━━━━━━━━━━━━", color);
+    let _ = writeln!(out, "  {border}"); // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
     let plural = if correlations.len() == 1 { "" } else { "s" };
     let _ = writeln!(
+        // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
         out,
         "  {}",
         report_style::highlight(
-            &format!(
-                "{} cross-file correlation{plural}",
-                correlations.len()
-            ),
+            &format!("{} cross-file correlation{plural}", correlations.len()),
             color
         )
     );
     for correlation in correlations {
-        let _ = writeln!(out);
+        let _ = writeln!(out); // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
         let _ = writeln!(
+            // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
             out,
             "  {} {} {}",
             report_style::severity_label(correlation.severity, color),
@@ -539,11 +536,13 @@ fn render_correlations(correlations: &[CorrelatedCredential], color: bool) -> St
             _ => "confidence unscored".to_string(),
         };
         let _ = writeln!(
+            // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
             out,
             "      {}",
             report_style::dim(&confidence, color)
         );
         let _ = writeln!(
+            // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
             out,
             "      {}",
             report_style::warning(&sanitize_terminal(&correlation.impact), color)
@@ -554,6 +553,7 @@ fn render_correlations(correlations: &[CorrelatedCredential], color: bool) -> St
                     .line
                     .map_or_else(String::new, |line| format!(":{line}"));
                 let _ = writeln!(
+                    // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
                     out,
                     "      {} {} {}{}",
                     sanitize_terminal(&member.detector_id),
@@ -564,7 +564,7 @@ fn render_correlations(correlations: &[CorrelatedCredential], color: bool) -> St
             }
         }
     }
-    let _ = writeln!(out);
+    let _ = writeln!(out); // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
     out
 }
 

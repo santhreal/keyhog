@@ -2661,7 +2661,6 @@ pub fn detector_regex_captures_len_for_test(pattern: &str) -> Result<usize, rege
 
 /// Probe that the shared detector-regex cache deduplicates concurrently live
 /// owners but does not retain compiled programs after their workload drops.
-#[cfg(test)]
 pub fn shared_regex_cache_workload_probe_for_test(pattern: &str) -> (usize, usize) {
     crate::compiler::compiler_compile::shared_regex_cache_workload_probe(pattern)
 }
@@ -5735,4 +5734,258 @@ pub(crate) fn parse_jupyter_derived(text: &str, decode_derived: bool) -> Vec<Str
 /// overlapping-substring resolution via `find_overlapping_iter`.
 pub fn resolve_line_number_options_for_test(text: &str, needles: &[&str]) -> Vec<Option<usize>> {
     crate::structured::parsers::resolve_line_number_options(text, needles)
+}
+/// Run one anchored verifier match without exposing the scanner's regex owner.
+pub fn anchored_regex_capture_for_test(
+    source: &str,
+    case_insensitive: bool,
+    with_left_context: bool,
+    haystack: &str,
+) -> Option<(usize, usize)> {
+    let anchored = crate::anchored_regex::AnchoredRegex::new(source, case_insensitive);
+    let regex = if with_left_context {
+        anchored.get_with_left_context()
+    } else {
+        anchored.get()
+    };
+    let mut locations = regex.capture_locations();
+    regex
+        .captures_read(&mut locations, haystack)
+        .map(|matched| (matched.start(), matched.end()))
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct Phase2KeywordStorageSnapshot {
+    pub mapping: Vec<Vec<u32>>,
+    pub keywords: Vec<String>,
+    pub borrowed: Vec<bool>,
+    pub borrowed_points_to_input: Vec<bool>,
+}
+
+/// Compile one phase-two pattern and report the keyword index's retained
+/// ownership and pattern mapping without exposing compiler-only types.
+pub fn phase2_keyword_storage_snapshot_for_test(
+    regex: &str,
+    keywords: Vec<String>,
+) -> Phase2KeywordStorageSnapshot {
+    let pattern = crate::compiler::compiler_compile::compile_pattern(
+        0,
+        0,
+        &keyhog_core::PatternSpec {
+            regex: regex.to_owned(),
+            ..Default::default()
+        },
+        "phase2-keyword-storage",
+        &keywords,
+    )
+    .expect("compile phase-two storage fixture");
+    let phase2 = vec![(pattern, keywords)];
+    let (_, mapping, stored) =
+        crate::compiler::compiler_compile::build_phase2_keyword_index(&phase2);
+    let borrowed = stored
+        .iter()
+        .map(|keyword| matches!(keyword, std::borrow::Cow::Borrowed(_)))
+        .collect();
+    let borrowed_points_to_input = stored
+        .iter()
+        .map(|keyword| match keyword {
+            std::borrow::Cow::Borrowed(value) => phase2[0]
+                .1
+                .iter()
+                .any(|input| std::ptr::eq(value.as_ptr(), input.as_ptr())),
+            std::borrow::Cow::Owned(_) => false,
+        })
+        .collect();
+    Phase2KeywordStorageSnapshot {
+        mapping: mapping.iter().map(<[u32]>::to_vec).collect(),
+        keywords: stored.iter().map(|keyword| keyword.to_string()).collect(),
+        borrowed,
+        borrowed_points_to_input,
+    }
+}
+
+/// Run the compact phase-two keyword iterator for a caller-authored catalog.
+/// `None` means the catalog contains an unindexable short literal and gating
+/// therefore fails open.
+pub fn phase2_keyword_matches_for_test(keywords: &[&str], haystack: &str) -> Option<Vec<usize>> {
+    let keywords = keywords
+        .iter()
+        .copied()
+        .map(std::borrow::Cow::Borrowed)
+        .collect::<Vec<_>>();
+    crate::compiler::compiler_compile::Phase2KeywordIndex::build(&keywords)
+        .map(|index| index.find_iter(haystack).collect())
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct CsrSnapshot {
+    pub row_count: usize,
+    pub is_empty: bool,
+    pub rows: Vec<Vec<u32>>,
+    pub out_of_range_is_none: bool,
+    pub storage_lengths: (usize, usize),
+}
+
+/// Build the production CSR representation from flat pairs and expose only its
+/// observable rows and retained vector lengths.
+pub fn csr_from_pairs_snapshot_for_test(
+    row_count: usize,
+    pairs: Vec<(usize, usize)>,
+) -> CsrSnapshot {
+    let table = crate::engine::CsrU32::from_pairs(row_count, pairs);
+    CsrSnapshot {
+        row_count: table.len(),
+        is_empty: table.is_empty(),
+        rows: table.iter().map(<[u32]>::to_vec).collect(),
+        out_of_range_is_none: table.get(row_count).is_none(),
+        storage_lengths: table.storage_lengths(),
+    }
+}
+
+#[cfg(feature = "simd")]
+#[derive(Debug, Eq, PartialEq)]
+pub struct ExactScannerStorageSnapshot {
+    pub omits_scalar_literal_index: bool,
+    pub confirmed_structural_flags: Vec<bool>,
+    pub confirmed_structural_row: Vec<u32>,
+    pub confirmed_structural_storage: (usize, usize),
+    pub phase2_structural_flags: Vec<bool>,
+    pub phase2_structural_row: Vec<u32>,
+    pub phase2_structural_storage: (usize, usize),
+    pub confirmed_suffix_gate_rows: usize,
+    pub confirmed_suffix_gate_storage: (usize, usize),
+}
+
+/// Compile an exact host route and report matcher/relation ownership without
+/// exposing `CompiledScanner` internals.
+#[cfg(feature = "simd")]
+pub fn exact_scanner_storage_snapshot_for_test(
+    detector: keyhog_core::DetectorSpec,
+    simd: bool,
+) -> Result<ExactScannerStorageSnapshot, String> {
+    let backend = if simd {
+        crate::hw_probe::ScanBackend::SimdCpu
+    } else {
+        crate::hw_probe::ScanBackend::CpuFallback
+    };
+    let scanner = crate::CompiledScanner::compile_for_backend(vec![detector], backend)
+        .map_err(|error| error.to_string())?;
+    Ok(ExactScannerStorageSnapshot {
+        omits_scalar_literal_index: scanner.ac.is_none(),
+        confirmed_structural_flags: scanner
+            .ac_map
+            .iter()
+            .map(|pattern| pattern.structural_password_slot)
+            .collect(),
+        confirmed_structural_row: scanner
+            .structural_confirmed_patterns
+            .get(0)
+            .expect("LAW10: infallible: one compiled detector retains structural-confirmed row 0")
+            .to_vec(),
+        confirmed_structural_storage: scanner.structural_confirmed_patterns.storage_lengths(),
+        phase2_structural_flags: scanner
+            .phase2_patterns
+            .iter()
+            .map(|(pattern, _)| pattern.structural_password_slot)
+            .collect(),
+        phase2_structural_row: scanner
+            .structural_phase2_patterns
+            .get(0)
+            .expect("LAW10: infallible: one compiled detector retains structural-phase2 row 0")
+            .to_vec(),
+        phase2_structural_storage: scanner.structural_phase2_patterns.storage_lengths(),
+        confirmed_suffix_gate_rows: scanner.ac_suffix_gate.len(),
+        confirmed_suffix_gate_storage: scanner.ac_suffix_gate.storage_lengths(),
+    })
+}
+
+#[cfg(all(feature = "simd", feature = "gpu"))]
+#[derive(Debug, Eq, PartialEq)]
+pub struct ExactHostGpuStorageSnapshot {
+    pub omits_gpu_literals: bool,
+    pub omits_gpu_matcher: bool,
+    pub omits_match_upper_bounds: bool,
+    pub gpu_max_literal_len: usize,
+    pub gpu_available: bool,
+}
+
+/// Report GPU-only ownership retained by an exact CPU or SIMD route.
+#[cfg(all(feature = "simd", feature = "gpu"))]
+pub fn exact_host_gpu_storage_snapshot_for_test(
+    detector: keyhog_core::DetectorSpec,
+    simd: bool,
+) -> Result<ExactHostGpuStorageSnapshot, String> {
+    let backend = if simd {
+        crate::hw_probe::ScanBackend::SimdCpu
+    } else {
+        crate::hw_probe::ScanBackend::CpuFallback
+    };
+    let scanner = crate::CompiledScanner::compile_for_backend(vec![detector], backend)
+        .map_err(|error| error.to_string())?;
+    Ok(ExactHostGpuStorageSnapshot {
+        omits_gpu_literals: scanner.gpu_literals.is_none(),
+        omits_gpu_matcher: scanner.gpu_matcher.get().is_none(),
+        omits_match_upper_bounds: scanner.ac_match_upper_bounds.is_none(),
+        gpu_max_literal_len: scanner.gpu_max_literal_len,
+        gpu_available: scanner.backend_state.gpu_availability().any(),
+    })
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct DetectorPlanStreamSnapshot {
+    pub detector_ir_digest: [u8; 32],
+    pub detector_count: usize,
+    pub ids: Vec<String>,
+    pub live_wire_rows: usize,
+    pub peak_live_wire_rows: usize,
+}
+
+/// Compile a canonical detector-plan fixture and return its framed bytes and
+/// DetectorIr digest.
+pub fn detector_plan_fixture_for_test(ids: &[&str]) -> Result<(Vec<u8>, [u8; 32]), String> {
+    let detectors = ids
+        .iter()
+        .map(|id| keyhog_core::DetectorSpec {
+            id: (*id).to_owned(),
+            name: format!("{id} fixture"),
+            service: "detector-plan-fixture".to_owned(),
+            ..Default::default()
+        })
+        .collect::<Vec<_>>();
+    let ir = crate::execution_pack::CanonicalDetectorExecutionIr::compile(&detectors)
+        .map_err(|error| error.to_string())?;
+    let digest = ir.digest();
+    let section = crate::execution_pack::CompiledDetectorPlanSection::compile(&ir)
+        .map_err(|error| error.to_string())?;
+    Ok((section.as_bytes().to_vec(), digest))
+}
+
+pub fn reset_detector_plan_ownership_telemetry_for_test() {
+    crate::execution_pack::detector_plan::reset_detector_plan_ownership_telemetry();
+}
+
+/// Stream detector-plan rows through the production decoder and return their
+/// canonical order and one-row-at-a-time residency telemetry.
+pub fn stream_detector_plan_for_test(
+    bytes: &[u8],
+    digest: [u8; 32],
+) -> Result<DetectorPlanStreamSnapshot, String> {
+    let mut ids = Vec::new();
+    let header = crate::execution_pack::CompiledDetectorPlanSection::stream_records(
+        bytes,
+        digest,
+        |_, row| {
+            ids.push(row.id);
+            Ok(())
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(DetectorPlanStreamSnapshot {
+        detector_ir_digest: header.detector_ir_digest,
+        detector_count: header.detector_count,
+        ids,
+        live_wire_rows: crate::execution_pack::detector_plan::detector_plan_live_wire_rows(),
+        peak_live_wire_rows:
+            crate::execution_pack::detector_plan::detector_plan_peak_live_wire_rows(),
+    })
 }

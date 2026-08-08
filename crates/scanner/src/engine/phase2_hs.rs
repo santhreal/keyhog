@@ -138,14 +138,8 @@ impl HsSubEngine {
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         indices: &[usize],
         program: &crate::execution_pack::simd_program::HyperscanPhase2DatabaseProgram,
-    ) -> std::result::Result<
-        (
-            Vec<usize>,
-            Vec<usize>,
-            Vec<(usize, usize, usize, bool)>,
-        ),
-        String,
-    > {
+    ) -> std::result::Result<(Vec<usize>, Vec<usize>, Vec<(usize, usize, usize, bool)>), String>
+    {
         let expected = indices
             .iter()
             .copied()
@@ -386,11 +380,7 @@ impl Phase2HsEngine {
         if non_homoglyph.len() < indices.len() {
             match program.ascii_lean.as_ref() {
                 Some(ascii_program) => {
-                    HsSubEngine::validate_program(
-                        phase2_patterns,
-                        &non_homoglyph,
-                        ascii_program,
-                    )?;
+                    HsSubEngine::validate_program(phase2_patterns, &non_homoglyph, ascii_program)?;
                 }
                 None => {
                     if non_homoglyph.iter().any(|&index| {

@@ -1,22 +1,13 @@
-//! Regression: the `CsrU32` build reserves exact capacity (Law 7) and is
-//! byte-identical to the old grow-from-empty build.
+//! Regression: the `CsrU32` flat-pair build reserves exact capacity and is
+//! byte-identical to the prior nested-row representation.
 //!
-//! The type doc claims CSR "collapses each table to exactly two allocations".
-//! That was true of the STORED form but not the BUILD: `from_rows` grew both
-//! `data` and `offsets` from empty, reallocating ~log(n) times as ~1000+ rows
-//! were pushed. The four real builders all construct via `From<Vec<Vec<usize>>>`,
-//! which knows the row count AND the total element count up front, so it now
-//! reserves both vectors exactly and the build does exactly two allocations.
+//! Production builders now emit `(row, value)` pairs directly. `from_pairs`
+//! knows the complete value count and row count before constructing either
+//! retained vector, so it reserves `pairs.len()` data slots and
+//! `row_count + 1` offsets without temporary per-row vectors.
 //!
-//! This pins two things:
-//!   (1) BEHAVIOUR, the build reconstructs the input rows byte-for-byte,
-//!       including the empty rows CSR specifically optimizes (proves the
-//!       restructure into `from_rows_sized` changed no output);
-//!   (2) SOURCE SHAPE, the `From` path computes the exact `data` capacity from
-//!       the row lengths and both vectors are `with_capacity`-reserved, and the
-//!       concatenation loop lives in exactly one place (`from_rows_sized`), so a
-//!       future edit can't quietly reintroduce the grow-from-empty reallocations
-//!       or a duplicate second build loop.
+//! This pins both the exact row reconstruction contract and the two allocation
+//! capacities at the single production constructor.
 
 use keyhog_scanner::testing::csr_from_rows_roundtrip_for_test as roundtrip;
 
@@ -48,29 +39,20 @@ fn csr_build_is_byte_identical_and_exactly_reserved() {
     // Zero rows yields zero rows.
     assert_eq!(roundtrip(vec![]), Vec::<Vec<u32>>::new());
 
-    // (2) Source shape: the exact-capacity reservation and single loop owner.
+    // (2) Source shape: the production pair constructor reserves both retained
+    // vectors from exact input cardinalities.
     let src = read_src("src/engine/csr.rs");
     assert!(
-        src.contains("fn from_rows_sized"),
-        "the CSR concatenation loop must live in one owner, from_rows_sized"
+        src.contains("let mut data = Vec::with_capacity(pairs.len());"),
+        "CSR data storage must reserve the exact pair count"
     );
     assert!(
-        src.contains("rows.iter().map(Vec::len).sum()"),
-        "From<Vec<Vec<usize>>> must compute the exact data capacity from row lengths"
+        src.contains("let mut offsets = Vec::with_capacity(row_count + 1);"),
+        "CSR offsets must reserve exactly row_count + 1 entries"
     );
-    assert!(
-        src.contains("Vec::with_capacity(data_cap)")
-            && src.contains("Vec::with_capacity(offsets_cap)"),
-        "both data and offsets must be capacity-reserved (exactly two allocations on the build)"
-    );
-    // The old grow-from-empty seeds must be gone from the build.
     assert!(
         !src.contains("let mut data = Vec::new();"),
-        "data must not grow from an unreserved Vec::new() (reintroduces reallocations)"
-    );
-    assert!(
-        !src.contains("let mut offsets = vec![0u32];"),
-        "offsets must not grow from an unreserved vec![0u32] (reintroduces reallocations)"
+        "CSR data must not grow from an unreserved vector"
     );
 }
 

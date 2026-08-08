@@ -55,23 +55,35 @@ def test_ioc_recovery_generator_is_deterministic_and_executable(tmp_path):
     assert tree_sha256(left) == tree_sha256(right)
     assert not (left / "corpus" / "manifest.jsonl").exists()
 
-    records = [json.loads(line) for line in (left / "manifest.jsonl").read_text().splitlines()]
-    assert len(records) == 26
-    assert {record["phase"] for record in records} == set(range(13))
-    assert {record["match_mode"] for record in records} == {"exact"}
-    first_secret = next(
-        record["secret"]
-        for record in records
-        if record["source_id"] == "synthetic-js-0000"
+    records = [
+        json.loads(line) for line in (left / "manifest.jsonl").read_text().splitlines()
+    ]
+    sample_count = 2
+    family_count = len(ioc_generator.FAMILIES)
+    phase_count = len(ioc_generator.PHASES)
+    expected_phase_rows = family_count * 2 * sample_count * phase_count
+    expected_holdout_rows = family_count * sample_count * (
+        len(ioc_generator.HOLDOUT_VARIANTS)
+        + len(ioc_generator.METAMORPHIC_VARIANTS)
     )
-    assert first_secret == "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"
-    assert {record["secret"] for record in records} == {
-        "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",
-        "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",
+    assert len(records) == expected_phase_rows + expected_holdout_rows
+    phase_records = [record for record in records if record["kind"] == "phase"]
+    assert {record["phase"] for record in phase_records} == {
+        phase for phase, _name in ioc_generator.PHASES
+    }
+    assert {record["match_mode"] for record in records} == {"exact"}
+    checksum_secrets = {
+        record["secret"]
+        for record in phase_records
+        if record["family"] == "checksum" and record["polarity"] == "positive"
+    }
+    assert checksum_secrets == {
+        "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",
+        "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",
     }
 
     metadata = json.loads((left / "corpus.json").read_text())
-    assert metadata["schema_version"] == 3
+    assert metadata["schema_version"] == 4
     assert metadata["methodology_url"] == "https://arxiv.org/abs/2605.06910v1"
     assert metadata["methodology_arxiv_id"] == "2605.06910"
     assert metadata["methodology_revision"] == 1
@@ -91,16 +103,21 @@ def test_ioc_recovery_generator_is_deterministic_and_executable(tmp_path):
     assert metadata["artifact_relationship"] == "methodology-adaptation"
     assert metadata["match_mode"] == "exact"
     assert metadata["credential_shape"] == (
-        "checksum-valid synthetic GitHub classic PAT"
+        "six synthetic detector families, positive and negative"
     )
+    assert metadata["families"] == [
+        str(family["name"]) for family in ioc_generator.FAMILIES
+    ]
 
     # Execute every phase for one source sample. This proves that Base64, XOR,
     # AES, and combined structural variants recover the exact expected value,
     # not merely that the generator wrote files with plausible names.
     sample_records = [
         record
-        for record in records
-        if record["source_id"] == "synthetic-js-0000"
+        for record in phase_records
+        if record["family"] == "checksum"
+        and record["polarity"] == "positive"
+        and record["source_id"] == "synthetic-js-checksum-0000"
     ]
     for record in sample_records:
         source = left / "corpus" / record["on_disk_path"]
@@ -126,9 +143,17 @@ def test_ioc_recovery_adapter_excludes_answer_key_and_loads_exact_records(tmp_pa
     records = corpus.records()
     info = corpus.info()
 
-    assert len(records) == 13
-    assert info.fixture_count == 13
-    assert info.labeled_positives == 13
+    expected_fixtures = len(ioc_generator.FAMILIES) * (
+        2 * len(ioc_generator.PHASES)
+        + len(ioc_generator.HOLDOUT_VARIANTS)
+        + len(ioc_generator.METAMORPHIC_VARIANTS)
+    )
+    expected_positives = len(ioc_generator.FAMILIES) * (
+        len(ioc_generator.PHASES) + len(ioc_generator.HOLDOUT_VARIANTS)
+    )
+    assert len(records) == expected_fixtures
+    assert info.fixture_count == expected_fixtures
+    assert info.labeled_positives == expected_positives
     assert corpus.scan_root == home / "corpus"
     assert corpus.file_root == corpus.scan_root
     assert corpus.manifest == home / "manifest.jsonl"
@@ -183,21 +208,21 @@ def test_ioc_recovery_generator_times_out_node_and_removes_staging(
 
 
 @pytest.mark.parametrize(
-    ("node_stdout", "error"),
+    ("node_value", "error"),
     [
-        ("{}", "not an array"),
-        ('[""]', "not a non-empty Base64 string"),
-        ('["%%%"]', "not canonical Base64"),
-        ('["QUFBQUFBQUFBQUFBQUFBQe=="]', "not canonical Base64"),
-        ('["YQ=="]', "not canonical AES-CBC ciphertext"),
+        (None, "not an array"),
+        ("", "not a non-empty Base64 string"),
+        ("%%%", "not canonical Base64"),
+        ("QUFBQUFBQUFBQUFBQUFBQe==", "not canonical Base64"),
+        ("YQ==", "not canonical AES-CBC ciphertext"),
         (
-            '["AAECAwQFBgcICQoLDA0ODw=="]',
+            "AAECAwQFBgcICQoLDA0ODw==",
             "not canonical AES-CBC ciphertext",
         ),
     ],
 )
 def test_ioc_recovery_generator_rejects_invalid_aes_output_and_removes_staging(
-    monkeypatch, tmp_path, node_stdout, error
+    monkeypatch, tmp_path, node_value, error
 ):
     """Guards ioc recovery generator rejects invalid aes output and removes staging; prevents this evidence regression from false-passing or crashing."""
     class Process:
@@ -205,7 +230,10 @@ def test_ioc_recovery_generator_rejects_invalid_aes_output_and_removes_staging(
 
         def communicate(self, _input, timeout):
             assert timeout == ioc_generator.NODE_AES_TIMEOUT_SECONDS
-            return node_stdout, ""
+            if node_value is None:
+                return "{}", ""
+            row_count = len(ioc_generator.FAMILIES) * 2
+            return json.dumps([node_value] * row_count), ""
 
     monkeypatch.setattr(ioc_generator.shutil, "which", lambda _name: "/resolved/node")
     monkeypatch.setattr(

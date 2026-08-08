@@ -7,8 +7,8 @@ mod match_identity;
 mod timing;
 
 pub(super) use match_identity::{
-    canonical_match_differences, canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
-    differing_canonical_match_fields, CanonicalMatch,
+    canonical_match_differences, canonical_match_digest, canonical_matches,
+    canonical_matches_equal_reference, differing_canonical_match_fields, CanonicalMatch,
 };
 pub(super) use timing::{BackendTimingEvidence, TimingConfidenceInterval};
 
@@ -1212,7 +1212,10 @@ impl AutorouteDecision {
             .iter()
             .map(resolve)
             .collect::<Option<Vec<_>>>()?;
-        if resolved.iter().any(|route| route.backend != selected.backend) {
+        if resolved
+            .iter()
+            .any(|route| route.backend != selected.backend)
+        {
             return None;
         }
         if resolved.iter().all(|route| *route == selected) {
@@ -1226,8 +1229,7 @@ impl AutorouteDecision {
         self.calibration_points
             .iter()
             .all(|point| {
-                point.compiled_default_phase2_plain_localizer
-                    == default_plan.phase2_plain_localizer
+                point.compiled_default_phase2_plain_localizer == default_plan.phase2_plain_localizer
                     && point.compiled_default_phase2_keyword_localizer
                         == default_plan.phase2_keyword_localizer
                     && point.measured_routes().contains(&default_plan)

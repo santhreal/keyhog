@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+import os
+import sys
+
+# Keep source-only organization gates hermetic when tests spawn Python children.
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+sys.dont_write_bytecode = True
+
 import pytest
 
 from bench.corpora.creddata import CredDataCorpus

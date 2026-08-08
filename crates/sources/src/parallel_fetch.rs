@@ -42,11 +42,13 @@ impl Iterator for RemoteChunkStream {
         match received {
             Ok(row) => Some(row),
             Err(_) => {
+                // LAW10: result-channel closure triggers the worker join below, which surfaces any worker panic as a SourceError.
                 self.receiver.take();
                 let worker = self.worker.take()?;
                 match worker.join() {
                     Ok(()) => None,
                     Err(_) => Some(Err(SourceError::Other(format!(
+                        // LAW10: worker panic is returned as an explicit source error instead of normal stream completion.
                         "{} stream worker panicked",
                         self.label
                     )))),
@@ -60,7 +62,7 @@ impl Drop for RemoteChunkStream {
     fn drop(&mut self) {
         self.receiver.take();
         if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
+            let _ = worker.join(); // LAW10: Drop means the result consumer abandoned the stream; joining only reclaims the worker and cannot report to a recipient.
         }
     }
 }
@@ -83,12 +85,12 @@ where
     let (jobs, pending_jobs) = crossbeam_channel::unbounded();
     let (release_slot, available_slots) = crossbeam_channel::bounded::<()>(worker_count.max(1));
     for _ in 0..worker_count {
-        let _ = release_slot.send(());
+        let _ = release_slot.send(()); // LAW10: the bounded slot receiver is retained throughout initialization, so seeding this channel cannot fail.
     }
     let mut receivers = Vec::with_capacity(items.len());
     for item in items {
         let (output, receiver) = std::sync::mpsc::sync_channel(1);
-        let _ = jobs.send((item, output));
+        let _ = jobs.send((item, output)); // LAW10: the unbounded job receiver is retained until after enqueueing, so this send cannot fail during construction.
         receivers.push(receiver);
     }
     drop(jobs);
@@ -131,7 +133,7 @@ where
                 accepting = false;
                 cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
             }
-            let _ = release_slot.send(());
+            let _ = release_slot.send(()); // LAW10: slot release failure only occurs after the scheduler receiver closes during cancellation; no further job can consume it.
             if !accepting {
                 break;
             }

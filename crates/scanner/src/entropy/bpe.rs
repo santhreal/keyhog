@@ -169,6 +169,7 @@ fn byte_pair_count_small(piece: &[u8]) -> usize {
     let mut parts = Vec::with_capacity(piece.len() + 1);
     let mut minimum = (u32::MAX, usize::MAX);
     for index in 0..piece.len() - 1 {
+        // LAW10: an absent BPE rank is the algorithm's u32::MAX no-merge sentinel, not a degraded tokenizer path.
         let rank = token_rank(&piece[index..index + 2]).unwrap_or(u32::MAX);
         if rank < minimum.0 {
             minimum = (rank, index);
@@ -182,12 +183,14 @@ fn byte_pair_count_small(piece: &[u8]) -> usize {
         let index = minimum.1;
         if index > 0 {
             parts[index - 1].1 = if index + 2 < parts.len() {
+                // LAW10: an absent BPE rank is the algorithm's u32::MAX no-merge sentinel.
                 token_rank(&piece[parts[index - 1].0..parts[index + 2].0]).unwrap_or(u32::MAX)
             } else {
                 u32::MAX
             };
         }
         parts[index].1 = if index + 3 < parts.len() {
+            // LAW10: an absent BPE rank is the algorithm's u32::MAX no-merge sentinel.
             token_rank(&piece[parts[index].0..parts[index + 3].0]).unwrap_or(u32::MAX)
         } else {
             u32::MAX
@@ -198,6 +201,7 @@ fn byte_pair_count_small(piece: &[u8]) -> usize {
             .enumerate()
             .map(|(index, &(_, rank))| (rank, index))
             .min()
+            // LAW10: an empty candidate range terminates with the documented no-merge sentinel.
             .unwrap_or((u32::MAX, usize::MAX));
     }
     parts.len() - 1

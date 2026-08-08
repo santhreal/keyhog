@@ -32,7 +32,9 @@ use std::sync::LazyLock;
 use crate::{hex_encode, CredentialHash, MatchLocation, Severity, VerifiedFinding};
 
 /// How a correlation group was joined.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum CorrelationKind {
     /// One credential value observed at several distinct file paths.
@@ -55,7 +57,9 @@ impl CorrelationKind {
 }
 
 /// Why one finding belongs to a correlation group.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum CorrelationRole {
     /// The member carries the correlated credential value itself.
@@ -233,7 +237,9 @@ fn validate_policy(policy: &CorrelationPolicy, origin: &str) -> Result<(), Strin
         ));
     }
     if settings.reuse_impact.trim().is_empty() {
-        return Err(format!("{origin} [settings] reuse_impact must not be empty"));
+        return Err(format!(
+            "{origin} [settings] reuse_impact must not be empty"
+        ));
     }
 
     let mut seen_ids = BTreeSet::new();
@@ -246,7 +252,9 @@ fn validate_policy(policy: &CorrelationPolicy, origin: &str) -> Result<(), Strin
             return Err(format!("{origin} [[composite]] duplicate id {id:?}"));
         }
         if composite.service.trim().is_empty() {
-            return Err(format!("{origin} [[composite]] {id:?} has an empty service"));
+            return Err(format!(
+                "{origin} [[composite]] {id:?} has an empty service"
+            ));
         }
         if composite.name.trim().is_empty() {
             return Err(format!("{origin} [[composite]] {id:?} has an empty name"));
@@ -270,7 +278,9 @@ fn validate_policy(policy: &CorrelationPolicy, origin: &str) -> Result<(), Strin
         for part in composite.required.iter().chain(composite.optional.iter()) {
             let part = part.trim();
             if part.is_empty() {
-                return Err(format!("{origin} [[composite]] {id:?} has an empty part id"));
+                return Err(format!(
+                    "{origin} [[composite]] {id:?} has an empty part id"
+                ));
             }
             if !seen_parts.insert(part) {
                 return Err(format!(
@@ -345,7 +355,11 @@ fn strongest_confidence<'a>(members: impl Iterator<Item = &'a VerifiedFinding>) 
 /// Apply a Tier-B bonus to the strongest member confidence, clamped to the
 /// configured ceiling. A member already at the ceiling keeps its value.
 fn lift(strongest: Option<f64>, bonus: f64) -> Option<f64> {
-    strongest.map(|value| (value + bonus).min(POLICY.settings.max_confidence).max(value))
+    strongest.map(|value| {
+        (value + bonus)
+            .min(POLICY.settings.max_confidence)
+            .max(value)
+    })
 }
 
 /// Render a member for a correlation group, keeping only the locations that
@@ -483,7 +497,7 @@ fn value_reuse_groups(findings: &[VerifiedFinding]) -> Vec<CorrelatedCredential>
             .iter()
             .map(|member| member.severity)
             .max()
-            .unwrap_or_default();
+            .unwrap_or_default(); // LAW10: an empty correlated member set has no severity; this display model default cannot remove source findings.
         groups.push(CorrelatedCredential {
             id: format!("reuse:{}", hex_encode(digest)),
             kind: CorrelationKind::ValueReuse,
@@ -612,7 +626,7 @@ fn composite_group(
         .iter()
         .map(|member| member.severity)
         .max()
-        .unwrap_or_default()
+        .unwrap_or_default() // LAW10: absent companion severity leaves the composite's own severity authoritative; all member findings remain retained.
         .max(composite.severity);
     Some(CorrelatedCredential {
         id: format!("composite:{}@{directory}", composite.id),

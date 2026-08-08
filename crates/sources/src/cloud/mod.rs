@@ -282,6 +282,7 @@ impl<T: Send + 'static> ListingPrefetch<T> {
     pub(crate) fn join(self) -> Option<Result<T, SourceError>> {
         self.join.map(|handle| {
             handle.join().unwrap_or_else(|_panic| {
+                // LAW10: worker panic is converted into the explicit SourceError returned by this join boundary.
                 Err(SourceError::Other(
                     "cloud listing prefetch thread panicked".into(),
                 ))

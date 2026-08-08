@@ -74,6 +74,7 @@ fn run_derived_extractor(
     let mut derived_bytes = 0_u64;
     extract(&mut |chunk| {
         if let Ok(chunk) = &chunk {
+            // LAW10: this branch updates profile byte accounting only; the original Ok or Err row is emitted unchanged below.
             derived_bytes = derived_bytes.saturating_add(chunk.data.len() as u64);
         }
         emit(chunk)
@@ -796,6 +797,7 @@ pub(super) fn process_entry(
                         let mut derived_bytes = 0_u64;
                         for chunk in har_chunks {
                             if let Ok(chunk) = &chunk {
+                                // LAW10: this branch updates profile byte accounting only; the original Ok or Err row is emitted unchanged below.
                                 derived_bytes =
                                     derived_bytes.saturating_add(chunk.data.len() as u64);
                             }

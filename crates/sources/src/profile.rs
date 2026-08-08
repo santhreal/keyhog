@@ -97,6 +97,7 @@ pub(crate) fn current_runtime() -> Option<Runtime> {
 #[inline]
 pub(crate) fn record_emitted_chunk(row: &Result<keyhog_core::Chunk, keyhog_core::SourceError>) {
     if let Ok(chunk) = row {
+        // LAW10: this branch updates success-only profile counters; the caller still propagates every SourceError unchanged.
         add_input_units(1);
         add_input_bytes(chunk.data.len() as u64);
     }

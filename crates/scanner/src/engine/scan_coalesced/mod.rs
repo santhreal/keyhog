@@ -481,6 +481,7 @@ impl CompiledScanner {
     ) -> Result<Option<Vec<u64>>, String> {
         #[cfg(debug_assertions)]
         self.phase1_trigger_scanned_bytes.fetch_add(
+            // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; scan behavior is unchanged.
             u64::try_from(data.len()).unwrap_or(u64::MAX),
             std::sync::atomic::Ordering::Relaxed,
         );
@@ -575,6 +576,7 @@ impl CompiledScanner {
                     let admitted = |offset: usize, data: &[u8]| {
                         admission_plan
                             .and_then(|plan| plan.admission_for(base + offset))
+                            // LAW10: missing cached admission recomputes the full production admission result.
                             .unwrap_or_else(|| self.phase1_admission(data))
                             == super::Phase1Admission::Admitted
                     };
@@ -897,12 +899,14 @@ impl CompiledScanner {
                                     self.config.unicode_normalization,
                                 )
                             })
+                            // LAW10: missing passthrough evidence runs normalization instead of skipping it.
                             .unwrap_or(false);
                         let multiline_absence = normalization_passthrough
                             && phase1_plan
                                 .and_then(|plan| {
                                     plan.multiline_absence_for(chunk_index, entropy_config_digest)
                                 })
+                                // LAW10: missing multiline-absence evidence runs multiline admission in full.
                                 .unwrap_or(false);
                         let line_context_index = normalization_passthrough
                             .then(|| {
@@ -919,6 +923,7 @@ impl CompiledScanner {
                                     self.decoder_admission_context_key(chunk),
                                 )
                             })
+                            // LAW10: missing complete tail-absence evidence keeps SIMD phase-two work enabled.
                             .unwrap_or(false)
                             && crate::structured::preprocessing_is_impossible_for_path(
                                 chunk.metadata.path.as_deref(),
@@ -926,6 +931,7 @@ impl CompiledScanner {
                         if simd_phase2_tail_absence {
                             #[cfg(debug_assertions)]
                             self.simd_phase2_tail_absence_skipped_bytes.fetch_add(
+                                // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; scan behavior is unchanged.
                                 u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
                                 std::sync::atomic::Ordering::Relaxed,
                             );
@@ -962,6 +968,7 @@ impl CompiledScanner {
                                         .and_then(|plan| {
                                             plan.confirmed_patterns_absence_for(chunk_index)
                                         })
+                                        // LAW10: missing confirmed-pattern absence evidence keeps confirmed matching enabled.
                                         .unwrap_or(false),
                                     phase1_plan
                                         .and_then(|plan| {
@@ -970,6 +977,7 @@ impl CompiledScanner {
                                                 entropy_config_digest,
                                             )
                                         })
+                                        // LAW10: missing entropy absence evidence keeps entropy matching enabled.
                                         .unwrap_or(false),
                                     keyword_hints,
                                     phase2_always_active_gpu_evidence,
@@ -1057,11 +1065,13 @@ impl CompiledScanner {
                             None,
                             phase1_plan
                                 .and_then(|plan| plan.confirmed_patterns_absence_for(chunk_index))
+                                // LAW10: missing confirmed-pattern absence evidence keeps confirmed matching enabled.
                                 .unwrap_or(false),
                             phase1_plan
                                 .and_then(|plan| {
                                     plan.entropy_absence_for(chunk_index, entropy_config_digest)
                                 })
+                                // LAW10: missing entropy absence evidence keeps entropy matching enabled.
                                 .unwrap_or(false),
                             keyword_hints,
                             phase2_always_active_gpu_evidence,

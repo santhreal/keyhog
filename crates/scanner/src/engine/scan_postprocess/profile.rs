@@ -199,6 +199,7 @@ pub(crate) fn ml_batch_profile_from_parts(
                 .map(|bucket| (bucket.lower_bound, bucket.upper_bound, bucket.count))
                 .collect()
         })
+        // LAW10: an absent optional ML distribution is represented by zero buckets; scan counters remain intact.
         .unwrap_or_default();
     MlBatchProfile {
         calls: value(CounterId::MlBatchCalls),

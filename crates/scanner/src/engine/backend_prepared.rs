@@ -27,6 +27,7 @@ impl<'a> PreparedChunk<'a> {
                 #[cfg(debug_assertions)]
                 if let Some(scanned_bytes) = self.line_index_scanned_bytes {
                     scanned_bytes.fetch_add(
+                        // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; line indexing is unchanged.
                         u64::try_from(self.preprocessed.text.len()).unwrap_or(u64::MAX),
                         std::sync::atomic::Ordering::Relaxed,
                     );

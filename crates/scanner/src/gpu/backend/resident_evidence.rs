@@ -583,13 +583,22 @@ impl Drop for PendingGpuResidentLiteralEvidence<'_> {
         let retirement = dispatch.await_into(&mut output, &mut matches);
         GpuResidentLiteralState::zero_output_contents(&mut output);
         matches.clear();
-        if let Ok(mut slot) = self.slot.lock() {
-            if let GpuResidentLiteralSlot::Ready(state) = &mut *slot {
-                if let Some(session) = state.sessions.get_mut(self.session_index) {
-                    session.in_flight = false;
-                    GpuResidentLiteralState::zero_output_contents(&mut session.output);
-                    session.matches.clear();
+        match self.slot.lock() {
+            Ok(mut slot) => {
+                if let GpuResidentLiteralSlot::Ready(state) = &mut *slot {
+                    if let Some(session) = state.sessions.get_mut(self.session_index) {
+                        session.in_flight = false;
+                        GpuResidentLiteralState::zero_output_contents(&mut session.output);
+                        session.matches.clear();
+                    }
                 }
+            }
+            // LAW10: lock poison is surfaced here through a fault receipt and unconditional stderr.
+            Err(_) => {
+                evidence::record_fault(self.backend_code, evidence::fault::DISPATCH);
+                eprintln!(
+                    "keyhog: GPU resident pipeline lock was poisoned while abandoning pending work. Restart the scanner before reusing the selected GPU route."
+                );
             }
         }
         if let Err(error) = retirement {
@@ -780,7 +789,9 @@ pub(crate) fn submit_gpu_literal_evidence_by_region_resident<'a>(
     }
     let haystack_bytes = u64::try_from(haystack.len())
         .map_err(|_| "GPU resident haystack byte accounting exceeds u64".to_string())?;
+    // LAW10: conversion failure remains an error through the final ok_or_else; no accounting value is substituted.
     let region_bytes = u64::try_from(region_starts.len())
+        // LAW10: conversion failure is propagated by the final ok_or_else.
         .ok()
         .and_then(|regions| regions.checked_mul(4))
         .ok_or_else(|| "GPU resident region-control byte accounting exceeds u64".to_string())?;
@@ -874,11 +885,14 @@ pub(crate) fn finish_gpu_literal_evidence_by_region_resident<R>(
                     evidence::capability::KERNEL_TIMESTAMPS,
                 ),
             }
+            // LAW10: every conversion or arithmetic failure reaches the final ok_or_else and aborts readback accounting.
             let output_bytes = u64::try_from(session.output.len())
+                // LAW10: conversion failure is propagated by the final ok_or_else.
                 .ok()
                 .and_then(|words| words.checked_mul(4))
                 .and_then(|bytes| {
                     u64::try_from(session.matches.len())
+                        // LAW10: conversion failure is propagated by the final ok_or_else.
                         .ok()
                         .and_then(|matches| matches.checked_mul(12))
                         .and_then(|match_bytes| bytes.checked_add(match_bytes))

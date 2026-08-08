@@ -85,7 +85,7 @@ pub(crate) fn current_target_digest() -> [u8; 32] {
         u8::from(hardware.has_neon),
         u8::from(hardware.hyperscan_available),
     ];
-    let total_memory_mb = hardware.total_memory_mb.unwrap_or_default().to_le_bytes();
+    let total_memory_mb = hardware.total_memory_mb.unwrap_or_default().to_le_bytes(); // LAW10: absent optional memory metadata is disambiguated by the adjacent presence flag in this hardware digest.
     let option_flags = [
         u8::from(hardware.total_memory_mb.is_some()),
         u8::from(hardware.hyperscan_runtime_identity.is_some()),
@@ -106,7 +106,7 @@ pub(crate) fn current_target_digest() -> [u8; 32] {
         hardware
             .hyperscan_runtime_identity
             .as_deref()
-            .unwrap_or_default()
+            .unwrap_or_default() // LAW10: absent optional runtime identity is disambiguated by the adjacent presence flag in this hardware digest.
             .as_bytes(),
     ])
 }

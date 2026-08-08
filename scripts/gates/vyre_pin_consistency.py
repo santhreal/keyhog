@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """Gate - VYRE PIN CONSISTENCY.
 
-KeyHog consumes VYRE as five runtime crates from crates.io:
-`vyre`, `vyre-libs`, `vyre-driver-wgpu`, `vyre-driver-cuda`, and
-`vyre-runtime`.
+KeyHog consumes VYRE as six runtime crates from one authenticated Git revision:
+`vyre`, `vyre-libs`, `vyre-driver-wgpu`, `vyre-driver-cuda`,
+`vyre-driver-metal`, and `vyre-runtime`.
 
-This gate is intentionally source-only and fast. It prevents the failure modes
-that made the old setup brittle:
+This gate is intentionally source-only and fast. It prevents split VYRE graphs:
 
-  1. all five deps exist in root `[workspace.dependencies]`;
-  2. all five are exact registry pins at the same version;
-  3. none of the five carries a `path =` override;
-  4. the repository has no `vendor/` source tree;
-  5. no Cargo manifest resolves a dependency through `vendor/`;
-  6. no Cargo manifest reintroduces the retired `third_party/vyre` mirror;
-  7. the key VYRE docs agree that the active build uses crates.io pins.
+  1. all six dependencies exist in root `[workspace.dependencies]`;
+  2. all six use the same exact package version;
+  3. all six use the canonical repository and immutable revision;
+  4. none carries a `path =` override;
+  5. the repository has no `vendor/` source tree;
+  6. no Cargo manifest resolves a dependency through `vendor/`;
+  7. no Cargo manifest reintroduces the retired `third_party/vyre` mirror;
+  8. the key VYRE docs do not claim a retired source layout.
 
 Run: python3 scripts/gates/vyre_pin_consistency.py
 """
@@ -27,7 +27,9 @@ import tomllib
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 ROOT_CARGO = REPO / "Cargo.toml"
-REQUIRED_VERSION = "0.6.5"
+REQUIRED_VERSION = "0.7.2"
+REQUIRED_GIT = "https://github.com/santhreal/vyre.git"
+REQUIRED_REV = "8be30afe43fb54e38965dd9e9ae46a1b39b824a2"
 
 # Logical dep key in [workspace.dependencies] -> published crate name.
 VYRE_DEPS: dict[str, str] = {
@@ -35,32 +37,33 @@ VYRE_DEPS: dict[str, str] = {
     "vyre_libs": "vyre-libs",
     "vyre-driver-wgpu": "vyre-driver-wgpu",
     "vyre-driver-cuda": "vyre-driver-cuda",
+    "vyre-driver-metal": "vyre-driver-metal",
     "vyre-runtime": "vyre-runtime",
 }
 
 
 def _strip_version_op(v: str) -> str:
-    """`=0.6.4` -> `0.6.4`; `0.6.4` -> `0.6.4`."""
+    """`=0.7.2` -> `0.7.2`; `0.7.2` -> `0.7.2`."""
     return v.lstrip("=").strip()
 
 
-def _manifest_version_and_path(
+def _manifest_identity(
     key: str, pkg: str, spec: object, violations: list[str]
-) -> tuple[str | None, str | None]:
-    """Return (version, path) for a workspace dependency spec."""
+) -> tuple[str | None, str | None, str | None, str | None]:
+    """Return (version, path, git, rev) for a workspace dependency spec."""
     if isinstance(spec, str):
         if key != pkg:
             violations.append(
                 f"vyre dep '{key}' must be a table with package='{pkg}' because "
                 f"the dependency key differs from the published crate name."
             )
-        return spec, None
+        return spec, None, None, None
 
     if not isinstance(spec, dict):
         violations.append(
             f"vyre dep '{key}' must be an exact string pin or an inline table, got: {spec!r}"
         )
-        return None, None
+        return None, None, None, None
 
     declared_pkg = spec.get("package", key)
     if declared_pkg != pkg:
@@ -78,7 +81,17 @@ def _manifest_version_and_path(
         violations.append(f"vyre dep '{key}' has non-string `path`: {path!r}.")
         path = None
 
-    return version, path
+    git = spec.get("git")
+    if git is not None and not isinstance(git, str):
+        violations.append(f"vyre dep '{key}' has non-string `git`: {git!r}.")
+        git = None
+
+    rev = spec.get("rev")
+    if rev is not None and not isinstance(rev, str):
+        violations.append(f"vyre dep '{key}' has non-string `rev`: {rev!r}.")
+        rev = None
+
+    return version, path, git, rev
 
 
 def _cargo_manifests() -> list[pathlib.Path]:
@@ -164,7 +177,7 @@ def check() -> list[str]:
             )
             continue
 
-        version, path = _manifest_version_and_path(key, pkg, deps[key], violations)
+        version, path, git, rev = _manifest_identity(key, pkg, deps[key], violations)
         if version is not None:
             if not version.startswith("="):
                 violations.append(
@@ -182,6 +195,15 @@ def check() -> list[str]:
             violations.append(
                 f"vyre dep '{key}' still has path override '{path}'. KeyHog must "
                 "consume VYRE from crates.io exact pins only."
+            )
+
+        if git != REQUIRED_GIT:
+            violations.append(
+                f"vyre dep '{key}' uses git source {git!r}, expected {REQUIRED_GIT!r}."
+            )
+        if rev != REQUIRED_REV:
+            violations.append(
+                f"vyre dep '{key}' pins revision {rev!r}, expected {REQUIRED_REV!r}."
             )
 
     distinct = set(versions.values())
@@ -250,7 +272,8 @@ def main() -> int:
         return 1
     print(
         "vyre pin consistency gate passed "
-        f"(5 crates, lockstep registry pins at ={REQUIRED_VERSION}, no path overrides)."
+        f"({len(VYRE_DEPS)} crates, ={REQUIRED_VERSION}, revision {REQUIRED_REV}, "
+        "no path overrides)."
     )
     return 0
 

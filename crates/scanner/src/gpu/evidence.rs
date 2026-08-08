@@ -104,6 +104,7 @@ fn claim_once(context: u64, slot: u16) -> bool {
     // panic (insert-only) and failing closed here would drop GPU evidence instead.
     let mut claims = CONTEXT_CLAIMS
         .lock()
+        // LAW10: poison recovery retains the insert-only evidence set, so no claim is lost.
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     claims.claim(context, slot)
 }
@@ -232,8 +233,7 @@ pub(crate) fn record_dispatch_submitted() {
 }
 
 /// One accelerator fault. `kind` is a [`fault`] code.
-pub(crate) fn record_fault(backend_code: u64, kind: u64) {
-    let _ = backend_code; // kind already namespaces the fault; backend rides the identity channel
+pub(crate) fn record_fault(_backend_code: u64, kind: u64) {
     keyhog_profile::add_counter(CounterId::GpuFaults, 1);
     keyhog_profile::record_event(EventId::GpuFault, kind);
 }

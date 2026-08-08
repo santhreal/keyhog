@@ -55,6 +55,7 @@ fn selected_gpu_peer(backend: crate::hw_probe::ScanBackend) -> SelectedGpuPeer {
                                 "CUDA peer acquired without reproducible runtime identity"
                             );
                         })
+                        // LAW10: missing CUDA runtime identity is already warned and retained as unavailable provenance.
                         .ok();
                     peer.mark_available(device_identity, runtime_identity, false);
                 }
@@ -450,14 +451,15 @@ impl CompiledScanner {
             bytes: backend_program,
             pack_identity: identity,
         });
-        let state = if let Some(prelude) = packed_detector_plan.as_ref() {
-            let detector_ids = prelude
-                .detector_ids
-                .iter()
-                .map(Arc::as_ref)
-                .collect::<Vec<_>>();
-            if pack.signature_authenticated() {
-                crate::execution_pack::matcher_sections::
+        let state =
+            if let Some(prelude) = packed_detector_plan.as_ref() {
+                let detector_ids = prelude
+                    .detector_ids
+                    .iter()
+                    .map(Arc::as_ref)
+                    .collect::<Vec<_>>();
+                if pack.signature_authenticated() {
+                    crate::execution_pack::matcher_sections::
                     decode_authenticated_compile_state_sections_from_ids(
                         identity.backend,
                         section(Section::LiteralIndex)?,
@@ -466,19 +468,19 @@ impl CompiledScanner {
                         identity.detector_digest,
                         &detector_ids,
                     )
+                } else {
+                    crate::execution_pack::matcher_sections::decode_compile_state_sections_from_ids(
+                        identity.backend,
+                        section(Section::LiteralIndex)?,
+                        section(Section::RegexPrograms)?,
+                        section(Section::SuppressionPolicy)?,
+                        identity.detector_digest,
+                        &detector_ids,
+                    )
+                }
             } else {
-                crate::execution_pack::matcher_sections::decode_compile_state_sections_from_ids(
-                    identity.backend,
-                    section(Section::LiteralIndex)?,
-                    section(Section::RegexPrograms)?,
-                    section(Section::SuppressionPolicy)?,
-                    identity.detector_digest,
-                    &detector_ids,
-                )
-            }
-        } else {
-            if pack.signature_authenticated() {
-                crate::execution_pack::matcher_sections::
+                if pack.signature_authenticated() {
+                    crate::execution_pack::matcher_sections::
                     decode_authenticated_compile_state_sections(
                         identity.backend,
                         section(Section::LiteralIndex)?,
@@ -487,18 +489,18 @@ impl CompiledScanner {
                         identity.detector_digest,
                         &detectors,
                     )
-            } else {
-                crate::execution_pack::matcher_sections::decode_compile_state_sections(
-                    identity.backend,
-                    section(Section::LiteralIndex)?,
-                    section(Section::RegexPrograms)?,
-                    section(Section::SuppressionPolicy)?,
-                    identity.detector_digest,
-                    &detectors,
-                )
+                } else {
+                    crate::execution_pack::matcher_sections::decode_compile_state_sections(
+                        identity.backend,
+                        section(Section::LiteralIndex)?,
+                        section(Section::RegexPrograms)?,
+                        section(Section::SuppressionPolicy)?,
+                        identity.detector_digest,
+                        &detectors,
+                    )
+                }
             }
-        }
-        .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
+            .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
         // Section decoders above now own every byte they retain. Drop the
         // immutable mapping's faulted pages before allocating runtime indexes,
         // otherwise large native programs overlap their decoded ownership at
@@ -658,6 +660,7 @@ impl CompiledScanner {
                 }
                 (prelude.compiled_plan_digest, plans, prelude.detector_count)
             } else {
+                // LAW10: unpacked development compilation computes the same canonical digest from exact detector and decoder inputs.
                 let digest = packed_schema_digest.unwrap_or_else(|| {
                     super::detector_digest::from_execution_plan(
                         keyhog_core::compute_spec_hash(&detectors),
@@ -869,6 +872,7 @@ impl CompiledScanner {
                 };
                 #[cfg(not(feature = "gpu"))]
                 let (peers, failures) = {
+                    // LAW10: non-GPU builds consume the resolved policy only to keep cfg branches warning-free; no backend fallback occurs.
                     let _ = gpu_disabled;
                     (GpuBackendPeers::default(), Vec::new())
                 };
@@ -906,6 +910,7 @@ impl CompiledScanner {
                     "selected packed VYRE peer {selected:?} could not be acquired: {}",
                     backend_state
                         .gpu_backend_initialization_error(selected)
+                        // LAW10: absent optional backend diagnostics use a loud operator-facing acquisition message.
                         .unwrap_or("backend unavailable")
                 ))
             })?;
@@ -1352,118 +1357,6 @@ impl CompiledScanner {
     pub fn with_tuning_config(self, config: ScannerTuningConfig) -> Self {
         self.tuning.apply_config(&config);
         self
-    }
-}
-
-#[cfg(all(test, feature = "simd"))]
-mod tests {
-    use super::*;
-    use keyhog_core::{DetectorSpec, PatternSpec, Severity};
-
-    fn detector() -> DetectorSpec {
-        DetectorSpec {
-            id: "selected-simd-index-owner".into(),
-            name: "Selected SIMD Index Owner".into(),
-            service: "test".into(),
-            severity: Severity::Medium,
-            patterns: vec![PatternSpec {
-                regex: r"STATIC_SECRET_[0-9]+".into(),
-                ..Default::default()
-            }],
-            ..crate::testing::named_detector_fixture_defaults()
-        }
-    }
-
-    /// WHY: retaining the complete scalar automaton beside exact SIMD shards doubles phase-one matcher ownership and makes every single-chunk SIMD scan repeat the same trigger pass.
-    #[test]
-    fn exact_simd_scanner_omits_overlapping_scalar_literal_index() {
-        let scanner = CompiledScanner::compile_for_backend(
-            vec![detector()],
-            crate::hw_probe::ScanBackend::SimdCpu,
-        )
-        .expect("compile exact SIMD scanner");
-
-        assert!(
-            scanner.ac.is_none(),
-            "exact SIMD ownership is native shards plus unsupported-pattern recovery"
-        );
-    }
-
-    /// WHY: GPU-only matcher rows and lazy matcher cells used to be populated by
-    /// universal scanner construction even when autoroute had already selected
-    /// a host backend, multiplying inactive buffers across concurrent scans.
-    #[cfg(feature = "gpu")]
-    #[test]
-    fn exact_host_scanners_omit_gpu_matcher_buffers() {
-        for backend in [
-            crate::hw_probe::ScanBackend::CpuFallback,
-            crate::hw_probe::ScanBackend::SimdCpu,
-        ] {
-            let scanner = CompiledScanner::compile_for_backend(vec![detector()], backend)
-                .expect("compile exact host scanner");
-
-            assert!(scanner.gpu_literals.is_none());
-            assert!(scanner.gpu_matcher.get().is_none());
-            assert!(scanner.ac_match_upper_bounds.is_none());
-            assert_eq!(scanner.gpu_max_literal_len, 0);
-            assert!(!scanner.backend_state.gpu_availability().any());
-        }
-    }
-
-    /// WHY: detector and pattern partitions used to retain one inner vector per row even when almost every row was empty.
-    #[test]
-    fn scanner_relations_retain_only_flat_offset_tables() {
-        let mut spec = detector();
-        spec.keywords = vec!["credential".into()];
-        spec.patterns[0].structural_password_slot = true;
-        spec.patterns.push(PatternSpec {
-            regex: r"[A-Za-z_]+[:=]([A-Z0-9]{16})".into(),
-            group: Some(1),
-            structural_password_slot: true,
-            ..Default::default()
-        });
-        let scanner = CompiledScanner::compile_for_backend(
-            vec![spec],
-            crate::hw_probe::ScanBackend::CpuFallback,
-        )
-        .expect("compile compact relation fixture");
-
-        let expected_confirmed = scanner
-            .ac_map
-            .iter()
-            .enumerate()
-            .filter_map(|(index, pattern)| pattern.structural_password_slot.then_some(index as u32))
-            .collect::<Vec<_>>();
-        let expected_phase2 = scanner
-            .phase2_patterns
-            .iter()
-            .enumerate()
-            .filter_map(|(index, (pattern, _))| {
-                pattern.structural_password_slot.then_some(index as u32)
-            })
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            scanner.structural_confirmed_patterns.get(0),
-            Some(expected_confirmed.as_slice())
-        );
-        assert_eq!(
-            scanner.structural_phase2_patterns.get(0),
-            Some(expected_phase2.as_slice())
-        );
-        assert_eq!(
-            scanner.structural_confirmed_patterns.storage_lengths(),
-            (expected_confirmed.len(), 2)
-        );
-        assert_eq!(
-            scanner.structural_phase2_patterns.storage_lengths(),
-            (expected_phase2.len(), 2)
-        );
-        assert_eq!(scanner.ac_suffix_gate.len(), scanner.ac_map.len());
-        assert_eq!(
-            scanner.ac_suffix_gate.storage_lengths().1,
-            scanner.ac_map.len() + 1
-        );
     }
 }
 

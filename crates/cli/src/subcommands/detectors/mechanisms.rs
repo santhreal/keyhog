@@ -82,7 +82,9 @@ impl Mechanism {
         match self {
             Self::Regex => "phase-1 pattern anchors",
             Self::Keywords => "phase-2 keyword triggers for shapeless candidates",
-            Self::Structure => "offline structural proof: checksum, payload decode, or declared shape",
+            Self::Structure => {
+                "offline structural proof: checksum, payload decode, or declared shape"
+            }
             Self::Entropy => "detector-owned Shannon entropy floors",
             Self::Bpe => "BPE token-efficiency precision gate",
             Self::BytePairLikelihood => "fixed-point byte-pair log-likelihood scoring",
@@ -90,7 +92,9 @@ impl Mechanism {
             Self::Companions => "secondary patterns that confirm a match",
             Self::DetectorRelations => "relations to findings from other detectors",
             Self::Verification => "live verification against the provider",
-            Self::Suppression => "detector-owned allowlists, stopwords, and public-identifier markers",
+            Self::Suppression => {
+                "detector-owned allowlists, stopwords, and public-identifier markers"
+            }
             Self::SourceAdmission => "positive source selectors gating where this detector fires",
         }
     }
@@ -245,7 +249,7 @@ fn mechanisms_for(detector: &DetectorSpec) -> Vec<ActiveMechanism> {
         None => detector
             .bpe_max_bytes_per_token
             .map(|_| vec!["bpe_max_bytes_per_token"])
-            .unwrap_or_default(),
+            .unwrap_or_default(), // LAW10: absent optional BPE settings correctly declare no BPE mechanism evidence in this manifest.
     };
     push(Mechanism::Bpe, bpe);
 
@@ -270,7 +274,10 @@ fn mechanisms_for(detector: &DetectorSpec) -> Vec<ActiveMechanism> {
     );
     push(
         Mechanism::DetectorRelations,
-        field(!detector.detector_relations.is_empty(), "detector_relations"),
+        field(
+            !detector.detector_relations.is_empty(),
+            "detector_relations",
+        ),
     );
     push(
         Mechanism::Verification,
@@ -364,27 +371,36 @@ pub(crate) fn render_text(manifest: &MechanismManifest, out: &mut String) {
     use std::fmt::Write;
 
     let _ = writeln!(
+        // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
         out,
         "Mechanism manifest: {} detectors from {}",
-        manifest.detector_count, manifest.corpus
+        manifest.detector_count,
+        manifest.corpus
     );
-    let _ = writeln!(out);
+    let _ = writeln!(out); // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
     for row in &manifest.summary {
         if row.available {
             let _ = writeln!(
+                // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
                 out,
                 "  {:<22} {:>5}  {}",
-                row.id, row.detectors, row.description
+                row.id,
+                row.detectors,
+                row.description
             );
         } else {
             let _ = writeln!(
+                // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
                 out,
                 "  {:<22} {:>5}  {} [UNAVAILABLE: {}]",
-                row.id, "n/a", row.description, "see --format json for the reason"
+                row.id,
+                "n/a",
+                row.description,
+                "see --format json for the reason"
             );
         }
     }
-    let _ = writeln!(out);
+    let _ = writeln!(out); // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
 
     // Every detector must list its mechanisms, so a detector that declares none
     // is named rather than dropped: an empty contract is a finding about the
@@ -397,8 +413,10 @@ pub(crate) fn render_text(manifest: &MechanismManifest, out: &mut String) {
         .collect();
     if silent.is_empty() {
         let _ = writeln!(out, "Every detector declares at least one mechanism.");
+    // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
     } else {
         let _ = writeln!(
+            // LAW10: formatting into String is infallible; fmt::Write cannot return an operator-visible I/O failure.
             out,
             "{} detector(s) declare NO mechanism at all: {}",
             silent.len(),

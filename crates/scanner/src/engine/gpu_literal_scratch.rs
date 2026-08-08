@@ -48,9 +48,7 @@ pub(in crate::engine) fn zero_scan_dispatch_scratch(
 }
 
 fn with_gpu_literal_scratch<R>(
-    f: impl FnOnce(
-        &mut vyre::scan::dispatch_io::ScanDispatchScratch,
-    ) -> std::result::Result<R, String>,
+    f: impl FnOnce(&mut vyre::scan::dispatch_io::ScanDispatchScratch) -> std::result::Result<R, String>,
 ) -> std::result::Result<R, String> {
     GPU_LITERAL_SCAN_SCRATCH
         .try_with(|cell| {

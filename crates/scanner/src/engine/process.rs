@@ -83,6 +83,7 @@ impl CompiledScanner {
         );
         let line = preprocessed
             .line_for_offset(credential_start)
+            // LAW10: missing transformed-line mapping uses the exact original line index.
             .unwrap_or_else(|| line_index.line_number_for_offset(credential_start));
         let execution_policy = &detector_plan.execution;
         let match_confidence = self.detector_plans.match_confidence(entry.detector_index);

@@ -252,10 +252,13 @@ fn api_endpoint_rejects_embedded_credentials_without_leaking_secrets() {
 #[cfg(any(feature = "gitlab", feature = "bitbucket"))]
 #[test]
 fn api_endpoint_and_pagination_errors_redact_query_fragment_and_userinfo() {
-    let endpoint_err =
-        super::validated_api_endpoint("gitlab", "https://gitlab.example/api/v4?token=SECRET", false)
-            .expect_err("API endpoints with query material must be refused")
-            .to_string();
+    let endpoint_err = super::validated_api_endpoint(
+        "gitlab",
+        "https://gitlab.example/api/v4?token=SECRET",
+        false,
+    )
+    .expect_err("API endpoints with query material must be refused")
+    .to_string();
     assert!(
         endpoint_err.contains("query or fragment")
             && endpoint_err.contains("https://gitlab.example/api/v4")

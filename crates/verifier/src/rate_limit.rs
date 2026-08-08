@@ -235,8 +235,8 @@ fn reserve_service_slot_with_burst(
     let next_slot = limit.last_request + limit.interval;
     let tolerance = limit
         .interval
-        .saturating_mul(u32::try_from(burst.saturating_sub(1)).unwrap_or(u32::MAX));
-    let earliest = next_slot.checked_sub(tolerance).unwrap_or(now);
+        .saturating_mul(u32::try_from(burst.saturating_sub(1)).unwrap_or(u32::MAX)); // LAW10: burst tolerance intentionally saturates at Duration's multiplier bound; it cannot wrap into a shorter allowance.
+    let earliest = next_slot.checked_sub(tolerance).unwrap_or(now); // LAW10: tolerance before Instant's representable origin conservatively permits the current request rather than wrapping time.
     if now >= earliest {
         limit.last_request = next_slot.max(now);
         None

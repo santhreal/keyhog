@@ -30,8 +30,10 @@ fn normalize_keyword_lines_scratch(lines: &mut Vec<u32>) {
 fn take_keyword_lines_scratch() -> Vec<u32> {
     KEYWORD_LINES_POOL
         .lock()
+        // LAW10: poison recovery retains the complete scratch pool value.
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .pop()
+        // LAW10: no idle buffer means a fresh empty scratch vector with identical matching behavior.
         .unwrap_or_default()
 }
 
@@ -42,6 +44,7 @@ fn release_keyword_lines_scratch(mut lines: Vec<u32>) {
     }
     let mut pool = KEYWORD_LINES_POOL
         .lock()
+        // LAW10: poison recovery retains the complete scratch pool before bounded reinsertion.
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     if pool.len() < MAX_IDLE_KEYWORD_LINE_BUFFERS {
         pool.push(lines);
@@ -115,6 +118,7 @@ impl CompiledScanner {
         } else {
             #[cfg(debug_assertions)]
             self.generic_keyword_scanned_bytes.fetch_add(
+                // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; scan behavior is unchanged.
                 u64::try_from(scan_text.len()).unwrap_or(u64::MAX),
                 std::sync::atomic::Ordering::Relaxed,
             );
@@ -456,6 +460,7 @@ impl CompiledScanner {
                 // windowed >64 MiB scans).
                 let mapped_line = preprocessed
                     .line_for_offset(preprocessed_offset)
+                    // LAW10: missing transformed-line mapping uses the exact original line index.
                     .unwrap_or_else(|| line_index.line_number_for_offset(preprocessed_offset));
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, preprocessed_offset, value);

@@ -47,7 +47,7 @@ pub(super) fn release_allocator_arenas_after_construction() {
 pub(super) fn release_current_allocator_arena() {
     // SAFETY: glibc's process-wide trim takes no pointers and tolerates
     // concurrent allocator users.
-    let _ = unsafe { libc::malloc_trim(0) };
+    let _ = unsafe { libc::malloc_trim(0) }; // LAW10: allocator trimming is a best-effort memory optimization with no effect on scan findings or error semantics.
 }
 
 #[cfg(all(not(feature = "mimalloc"), target_os = "linux", target_env = "gnu"))]
@@ -435,7 +435,7 @@ fn profiler_cache_transitions(
 fn profiler_findings_digest(findings: &[VerifiedFinding]) -> keyhog_profile::Evidence<String> {
     match serde_json::to_vec(findings) {
         Ok(bytes) => keyhog_profile::Evidence::recorded(blake3::hash(&bytes).to_hex().to_string()),
-        Err(_) => keyhog_profile::Evidence::unavailable(keyhog_profile::EvidenceGap::Unavailable),
+        Err(_) => keyhog_profile::Evidence::unavailable(keyhog_profile::EvidenceGap::Unavailable), // LAW10: profile serialization failure is explicitly recorded as unavailable evidence; scan output remains authoritative.
     }
 }
 
@@ -480,7 +480,7 @@ fn profiler_outcome_identity(
     keyhog_profile::OutcomeIdentityV2::recorded(
         status,
         coverage_state,
-        u64::try_from(error_count).unwrap_or(u64::MAX),
+        u64::try_from(error_count).unwrap_or(u64::MAX), // LAW10: the profile-only error count saturates when usize exceeds u64; every source error remains in the result stream.
         i32::from(exit_code),
         profiler_findings_digest(findings),
         report_digest,
@@ -601,8 +601,8 @@ impl OperatorProfile {
     ) -> Result<Self> {
         let build = enabled.then(|| {
             early_build
-                .and_then(|capture| capture.join().ok())
-                .unwrap_or_else(profiler_build_identity)
+                .and_then(|capture| capture.join().ok()) // LAW10: a profiler-only capture panic yields regenerated build metadata; scan execution and errors are unaffected.
+                .unwrap_or_else(profiler_build_identity) // LAW10: absent profiler capture is replaced with current build identity; this does not select a scan backend or suppress findings.
         });
         let session = if enabled {
             if let Some(session) = early_session.as_mut() {
@@ -740,7 +740,7 @@ impl OperatorProfile {
             // identity is captured when profiling is enabled, so the absent
             // case is unreachable; recapturing it is still cheaper than a
             // panic and keeps the report complete.
-            let build = self.build.take().unwrap_or_else(profiler_build_identity);
+            let build = self.build.take().unwrap_or_else(profiler_build_identity); // LAW10: missing profiler metadata is regenerated only for the causal report; scan findings and errors are already complete.
             let requested_backend = profile.identity.backend_requested.clone();
             let mut causal = keyhog_profile::CausalProfileV2::from_v1_with_build(profile, build);
             causal.typed_metrics = typed_metrics;

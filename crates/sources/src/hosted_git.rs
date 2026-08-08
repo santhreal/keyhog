@@ -117,7 +117,7 @@ pub(crate) fn stream_hosted_repos(
     let mut receivers = Vec::with_capacity(repos.len());
     for repo in repos {
         let (output, receiver) = std::sync::mpsc::sync_channel(1);
-        let _ = jobs.send((repo, output));
+        let _ = jobs.send((repo, output)); // LAW10: the unbounded job receiver is retained until after enqueueing, so this send cannot fail during normal construction.
         receivers.push(receiver);
     }
     drop(jobs);
@@ -157,6 +157,7 @@ pub(crate) fn stream_hosted_repos(
                         Ok(false) => break,
                         Err(error) => {
                             let _ = output.send(Err(repo_unreadable_error(
+                                // LAW10: a failed send means this repository's result consumer is already closed; no recipient remains.
                                 platform,
                                 &repo.display_path,
                                 error,

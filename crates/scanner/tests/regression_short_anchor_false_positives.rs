@@ -169,7 +169,11 @@ fn cmcom_ignores_the_cm_inside_another_identifier() {
     let scanner = scanner();
 
     assert_silent(&scanner, "cmcom-api-key", &format!("WEBCM_TOKEN={UUID}"));
-    assert_fires(&scanner, "cmcom-api-key", &format!("CM_PRODUCT_TOKEN={UUID}"));
+    assert_fires(
+        &scanner,
+        "cmcom-api-key",
+        &format!("CM_PRODUCT_TOKEN={UUID}"),
+    );
     assert_fires(
         &scanner,
         "cmcom-api-key",
@@ -194,7 +198,10 @@ fn a_short_anchor_after_a_letter_never_fires() {
         ("bluejeans-api", format!("WEBBJN_API_KEY={a32}")),
         ("carbon-black-api-key", format!("WEBCB_API_KEY={hexu}")),
         ("eu-open-data-api-key", format!("MENU_CLIENT_ID={UUID}")),
-        ("oracle-cloud-api-key", "XOCI_API_KEY=/path/to/key.pem".to_string()),
+        (
+            "oracle-cloud-api-key",
+            "XOCI_API_KEY=/path/to/key.pem".to_string(),
+        ),
         ("openweathermap-api-key", format!("SHOWM_API_KEY={h32}")),
         ("powerbi-credentials", format!("XPBI_CLIENT_ID={UUID}")),
         ("sap-api-key", format!("WHATSAP_CLIENT_SECRET={a32}")),
@@ -202,7 +209,10 @@ fn a_short_anchor_after_a_letter_never_fires() {
         ("singapore-govtech-api-key", format!("MSG_API_KEY={a32}")),
         ("wix-api-credentials", format!("UNIWIX APP_ID={UUID}")),
         ("workday-api-key", format!("FWD_TOKEN={a32}")),
-        ("worldweatheronline-api-key", format!("SHOWWO_API_KEY={h32}")),
+        (
+            "worldweatheronline-api-key",
+            format!("SHOWWO_API_KEY={h32}"),
+        ),
         ("zscaler-api-key", format!("XZPA_CLIENT_ID={a32}")),
     ] {
         assert_silent(&scanner, detector, &text);
@@ -233,7 +243,10 @@ fn a_short_anchor_after_a_separator_still_fires() {
         ("sap-api-key", "MY_SAP_CLIENT_ID=SapClientId12".to_string()),
         ("singapore-govtech-api-key", format!("MY_SG_API_KEY={a32}")),
         ("wix-api-credentials", format!("MY_WIX_APP_ID={UUID}")),
-        ("worldweatheronline-api-key", format!("MY_WWO_API_KEY={h32}")),
+        (
+            "worldweatheronline-api-key",
+            format!("MY_WWO_API_KEY={h32}"),
+        ),
         ("zscaler-api-key", format!("MY_ZPA_CLIENT_ID={a32}")),
         ("cmcom-api-key", format!("MY_CM_PRODUCT_TOKEN={UUID}")),
         ("newrelic-license-key", format!("MY_NR_LICENSE_KEY={HEX40}")),

@@ -218,7 +218,7 @@ fn ensure_signing_key(path: &Path) -> Result<bool> {
     use std::io::Write;
     if let Err(error) = file.write_all(&key).and_then(|()| file.sync_all()) {
         key.fill(0);
-        let _ = fs::remove_file(path);
+        let _ = fs::remove_file(path); // LAW10: best-effort removal cannot hide the signing-key persistence error returned immediately below.
         return Err(error).context("persisting execution-pack signing key");
     }
     key.fill(0);

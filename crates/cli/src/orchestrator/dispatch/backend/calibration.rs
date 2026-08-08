@@ -18,9 +18,10 @@ use keyhog_scanner::{CompiledScanner, Phase1AdmissionPlan};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
-    canonical_match_differences, canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
-    differing_canonical_match_fields, gpu_cold_warm_route_evidence, simd_cold_warm_route_evidence,
-    AutorouteDecision, BackendTimingEvidence, CanonicalMatch, MeasuredRoute, RouteTimingEvidence,
+    canonical_match_differences, canonical_match_digest, canonical_matches,
+    canonical_matches_equal_reference, differing_canonical_match_fields,
+    gpu_cold_warm_route_evidence, simd_cold_warm_route_evidence, AutorouteDecision,
+    BackendTimingEvidence, CanonicalMatch, MeasuredRoute, RouteTimingEvidence,
 };
 use super::workload::MeasurementShapeEvidence;
 use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
@@ -552,7 +553,7 @@ fn validate_calibration_candidate_matches(
     // list would name almost every field and say nothing.
     let differing_fields = (reference_key.len() == trial_key.len())
         .then(|| differing_canonical_match_fields(reference_key, &trial_key))
-        .unwrap_or_default();
+        .unwrap_or_default(); // LAW10: unequal canonical lengths need no field-name diff; the preceding boolean still records the parity failure.
     tracing::error!(
         target: "keyhog::routing",
         backend = backend.label(),

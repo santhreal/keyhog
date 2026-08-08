@@ -49,6 +49,7 @@ impl LazyPatternShape {
                 format!("^(?:{pattern})")
             }
         }))
+        // LAW10: invalid built-in validator regexes terminate with a loud build-invariant panic.
         .unwrap_or_else(|error| {
             panic!(
                 "BUILD-INVARIANT VIOLATION: detector {:?} pattern-shape validator failed to compile: {error}",
@@ -519,6 +520,7 @@ fn validate_base64_payload(
 
 #[cfg(test)]
 pub(crate) fn base64_scratch_capacity_after_payload_for_test(payload: &str) -> usize {
+    // LAW10: the test helper intentionally discards the validation verdict and inspects zeroized scratch capacity.
     let _ = validate_base64_payload(
         payload,
         keyhog_core::DetectorBase64Alphabet::Standard,

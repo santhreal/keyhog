@@ -174,6 +174,7 @@ impl Phase2AlwaysActivePrefilter {
             )?;
             let mut packed = packed_slot
                 .lock()
+                // LAW10: poison recovery retains the complete packed program slot for validation.
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             if packed.replace(program).is_some() {
                 return Err(format!(
@@ -238,6 +239,7 @@ impl Phase2AlwaysActivePrefilter {
         slot.get_or_init(|| {
             let packed = packed_slot
                 .lock()
+                // LAW10: poison recovery retains the complete packed program slot for one-time hydration.
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .take();
             match packed {

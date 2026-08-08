@@ -271,7 +271,7 @@ pub(crate) fn profiling_source_identity(
                 "git.diff.path",
                 args.git_diff_path
                     .as_deref()
-                    .unwrap_or_else(|| std::path::Path::new(".")),
+                    .unwrap_or_else(|| std::path::Path::new(".")), // LAW10: absent optional diff path denotes the documented current-directory diff target.
             );
         }
         profile_paths(&mut target, "git.history", args.git_history.iter().cloned());

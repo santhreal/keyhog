@@ -3,17 +3,24 @@
 #[cfg(test)]
 use super::{
     request_timeout, DAEMON_HEALTH_TIMEOUT, DAEMON_REQUEST_TIMEOUT, DAEMON_SCAN_TEXT_TIMEOUT,
+    DAEMON_SHUTDOWN_TIMEOUT,
 };
 #[cfg(test)]
 use crate::daemon::protocol::Request;
 
 #[cfg(test)]
 #[test]
-fn health_hello_shutdown_use_short_timeout() {
+fn health_and_hello_use_short_timeout() {
     assert_eq!(request_timeout(&Request::Health), DAEMON_HEALTH_TIMEOUT);
     assert_eq!(request_timeout(&Request::Hello), DAEMON_HEALTH_TIMEOUT);
-    assert_eq!(request_timeout(&Request::Shutdown), DAEMON_HEALTH_TIMEOUT);
     assert_eq!(DAEMON_HEALTH_TIMEOUT.as_secs(), 5);
+}
+
+#[cfg(test)]
+#[test]
+fn shutdown_timeout_exceeds_the_bounded_server_drain() {
+    assert_eq!(request_timeout(&Request::Shutdown), DAEMON_SHUTDOWN_TIMEOUT);
+    assert_eq!(DAEMON_SHUTDOWN_TIMEOUT.as_secs(), 45);
 }
 
 #[cfg(test)]

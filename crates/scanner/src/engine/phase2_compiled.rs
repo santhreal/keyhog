@@ -404,6 +404,7 @@ impl CompiledScanner {
                 if !always_active_absence_proven {
                     #[cfg(debug_assertions)]
                     self.phase2_prefilter_scanned_bytes.fetch_add(
+                        // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; scan behavior is unchanged.
                         u64::try_from(match_text.len()).unwrap_or(u64::MAX),
                         std::sync::atomic::Ordering::Relaxed,
                     );
@@ -447,6 +448,7 @@ impl CompiledScanner {
                 } else {
                     #[cfg(debug_assertions)]
                     self.phase2_keyword_scanned_bytes.fetch_add(
+                        // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; scan behavior is unchanged.
                         u64::try_from(data.len()).unwrap_or(u64::MAX),
                         std::sync::atomic::Ordering::Relaxed,
                     );

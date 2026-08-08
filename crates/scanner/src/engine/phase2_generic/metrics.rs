@@ -94,5 +94,3 @@ pub(super) fn record_regex_capture() {
 pub(super) fn record_emit() {
     keyhog_profile::add_counter(keyhog_profile::CounterId::GenericEmits, 1);
 }
-
-

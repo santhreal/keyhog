@@ -440,7 +440,11 @@ fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), SourceError> {
     file.write_all(bytes).map_err(SourceError::Io)
 }
 
-pub(super) fn validate_auth_part(platform: &str, label: &str, value: &str) -> Result<(), SourceError> {
+pub(super) fn validate_auth_part(
+    platform: &str,
+    label: &str,
+    value: &str,
+) -> Result<(), SourceError> {
     if value.is_empty() || value.chars().any(char::is_control) {
         return Err(SourceError::Other(format!(
             "{platform}: {label} contains unsafe characters"

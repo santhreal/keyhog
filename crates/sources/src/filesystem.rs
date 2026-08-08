@@ -444,7 +444,7 @@ fn collect_descriptor_archive_symlink_errors(
             let resolved_target = if target.is_absolute() {
                 target.clone()
             } else {
-                entry.path.parent().unwrap_or(root).join(target)
+                entry.path.parent().unwrap_or(root).join(target) // LAW10: a parentless relative symlink entry is resolved from the enumerated scan root; expansion checks still run on the result.
             };
             if is_expandable_path(&entry.path) || is_expandable_path(&resolved_target) {
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
@@ -494,7 +494,7 @@ fn inspect_walk_archive_path(
 ) -> bool {
     let relative_path = match path.strip_prefix(root) {
         Ok(relative) => relative.to_string_lossy(),
-        Err(_) => path.to_string_lossy(),
+        Err(_) => path.to_string_lossy(), // LAW10: a path outside the root keeps its full path for conservative exclude matching; the entry is not silently discarded here.
     };
     if respect_default_excludes && filter::is_default_excluded(&relative_path) {
         return true;

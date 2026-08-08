@@ -58,8 +58,7 @@ fn line_attr_detector() -> DetectorSpec {
 /// → hard-suppressed. The fix surfaces it at line 2.
 #[test]
 fn credential_under_hash_comment_surfaces_on_line_two() {
-    let scanner =
-        CompiledScanner::compile(vec![line_attr_detector()]).expect("scanner compiles");
+    let scanner = CompiledScanner::compile(vec![line_attr_detector()]).expect("scanner compiles");
     // SECRET is a 24-char high-entropy body the detector captures verbatim.
     const SECRET: &str = "Xk9mPq2wL5nR8tWvZ4YbHc7T";
     let text = format!("# https://service.example/docs\nlineattr_key={SECRET}");
@@ -98,8 +97,7 @@ fn credential_under_hash_comment_surfaces_on_line_two() {
 /// resolves arbitrary line indices (not just line 2) and is not a one-off.
 #[test]
 fn credential_on_line_three_reports_line_three() {
-    let scanner =
-        CompiledScanner::compile(vec![line_attr_detector()]).expect("scanner compiles");
+    let scanner = CompiledScanner::compile(vec![line_attr_detector()]).expect("scanner compiles");
     const SECRET: &str = "Qm4Rs7Tw8Vk2Bn5Lp9Zc3Xj";
     let text = format!("first config line\n// auth section below\nlineattr_key={SECRET}");
     let matches = scanner

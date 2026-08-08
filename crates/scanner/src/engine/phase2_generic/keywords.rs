@@ -246,9 +246,7 @@ fn assignment_stem_before_delimiter(
 ) -> Option<usize> {
     let last_delimiter = memchr::memrchr2(b'=', b':', line)?;
     for (index, &byte) in line[..=last_delimiter].iter().enumerate() {
-        if stem_set.has_first[byte as usize]
-            && generic_stem_matches_at(line, index, stem_set)
-        {
+        if stem_set.has_first[byte as usize] && generic_stem_matches_at(line, index, stem_set) {
             return Some(index);
         }
     }

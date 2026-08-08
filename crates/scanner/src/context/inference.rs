@@ -124,6 +124,7 @@ pub(crate) fn infer_context_with_documentation(
     documentation_lines: &[bool],
 ) -> CodeContext {
     infer_context_from_lines(lines, line_idx, file_path, |idx| {
+        // LAW10: a missing documentation flag is conservatively treated as code, which cannot suppress a finding.
         documentation_lines.get(idx).copied().unwrap_or(false)
     })
 }

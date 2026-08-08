@@ -13,7 +13,7 @@ fn guard_enforces_byte_and_entry_caps() {
     std::fs::write(root.join("payload"), b"0123456789").expect("payload");
 
     let bytes = clone_materialization_cap(CloneMaterializationGuard::new(&root, 9, 10))
-    .expect("materialization observation");
+        .expect("materialization observation");
     assert_eq!(
         bytes,
         Some(CloneMaterializationCap::Bytes {
@@ -23,13 +23,13 @@ fn guard_enforces_byte_and_entry_caps() {
     );
     assert_eq!(
         clone_materialization_cap(CloneMaterializationGuard::new(&root, 10, 1))
-        .expect("exact-cap observation"),
+            .expect("exact-cap observation"),
         None,
         "materialization exactly at both configured maxima remains valid"
     );
 
     let entries = clone_materialization_cap(CloneMaterializationGuard::new(&root, usize::MAX, 0))
-    .expect("materialization observation");
+        .expect("materialization observation");
     assert_eq!(
         entries,
         Some(CloneMaterializationCap::Entries {
@@ -87,7 +87,7 @@ fn guard_does_not_follow_symlinks() {
 
     let cap = outside.as_os_str().len() + 1;
     let result = clone_materialization_cap(CloneMaterializationGuard::new(&root, cap, 1))
-    .expect("materialization observation");
+        .expect("materialization observation");
     assert_eq!(
         result, None,
         "the guard must count the symlink itself without traversing its target"

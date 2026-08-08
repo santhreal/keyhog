@@ -337,7 +337,6 @@ fn execution_pack_backend_name(route_backend: &str) -> Option<&'static str> {
     }
 }
 
-
 pub(crate) fn save_autoroute_cache(
     path: &std::path::Path,
     detector_digest: u64,

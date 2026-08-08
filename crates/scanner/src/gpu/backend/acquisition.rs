@@ -125,6 +125,7 @@ impl SelectedGpuPeer {
         if backend != self.backend {
             return None;
         }
+        // LAW10: acquisition errors are retained by initialization_error and logged by get; this status accessor returns only successful peers.
         self.acquisition.get()?.as_ref().ok()
     }
 

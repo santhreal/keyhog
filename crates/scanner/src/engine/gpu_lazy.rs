@@ -48,6 +48,7 @@ impl CompiledScanner {
                     }
                 };
                 if matcher.is_some() {
+                    // LAW10: profiler duration saturates on impossible u128-to-u64 overflow; matcher behavior is unchanged.
                     let elapsed = u64::try_from(cold.finish().as_nanos()).unwrap_or(u64::MAX);
                     self.autoroute_gpu_shared_cold_ns
                         .store(elapsed.max(1), std::sync::atomic::Ordering::Release);

@@ -2263,47 +2263,59 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
     )
     .unwrap();
     let serialized = std::fs::read_to_string(&path).expect("autoroute cache JSON");
-    let version_field = format!("\"version\": {AUTOROUTE_CACHE_VERSION}");
-    assert!(
-        serialized.contains(&version_field)
-            && serialized.contains("\"build_features\"")
-            && serialized.contains("\"cli_features\"")
-            && serialized.contains("\"scanner_features\"")
-            && serialized.contains("\"sources_features\"")
-            && serialized.contains("\"verifier_features\"")
-            && serialized.contains("\"executable_sha256\"")
-            && serialized.contains("\"rules_digest\"")
-            && serialized.contains("\"cpu_model\"")
-            && serialized.contains("\"physical_cores\"")
-            && serialized.contains("\"logical_cores\"")
-            && serialized.contains("\"total_memory_mb\"")
-            && serialized.contains("\"hyperscan_runtime_identity\"")
-            && serialized.contains("\"gpu_runtime_backend\"")
-            && serialized.contains("\"gpu_driver_runtime_identity\"")
-            && serialized.contains("\"gpu_batch_input_limit_bytes\"")
-            && serialized.contains("\"decode_kind_mask\"")
-            && serialized.contains("\"decode_candidate_count_bucket\"")
-            && serialized.contains("\"decode_candidate_bytes_bucket\"")
-            && serialized.contains("\"decode_unknown\"")
-            && !serialized.contains("\"decode_density_bucket\"")
-            && serialized.contains("\"candidate_receipts\"")
-            && serialized.contains("\"phase2_plain_localizer\": true")
-            && serialized.contains("\"phase2_keyword_localizer\": false")
-            && serialized.contains("\"correctness_digest\"")
-            && serialized.contains("\"completed_trials\"")
-            && serialized.contains("\"evidence_digest\"")
-            && serialized.contains("\"calibrated_at_unix_ms\"")
-            && serialized.contains("\"route_timings\"")
-            && !serialized.contains("\"simd_timing\"")
-            && serialized.contains("\"trials_ns\"")
-            && !serialized.contains("\"confidence_interval_95_ns\"")
-            && !serialized.contains("\"best_ns\"")
-            && !serialized.contains("\"mean_ns\""),
-        // v31 persists primary timing evidence, workload binding, and per-candidate parity receipts.
-        // GPU cold/warm/route, and selected-margin keys are derived from the
-        // trial vectors on load, never stored.
-        "cache JSON must persist route timing evidence, not only the selected backend"
+    let parsed: serde_json::Value =
+        serde_json::from_str(&serialized).expect("parse autoroute cache JSON");
+    assert_eq!(
+        parsed.get("version").and_then(serde_json::Value::as_u64),
+        Some(AUTOROUTE_CACHE_VERSION as u64)
     );
+    for required in [
+        "\"build_features\"",
+        "\"cli_features\"",
+        "\"scanner_features\"",
+        "\"sources_features\"",
+        "\"verifier_features\"",
+        "\"executable_sha256\"",
+        "\"rules_digest\"",
+        "\"cpu_model\"",
+        "\"physical_cores\"",
+        "\"logical_cores\"",
+        "\"total_memory_mb\"",
+        "\"hyperscan_runtime_identity\"",
+        "\"gpu_runtime_backend\"",
+        "\"gpu_driver_runtime_identity\"",
+        "\"gpu_batch_input_limit_bytes\"",
+        "\"decode_kind_mask\"",
+        "\"decode_candidate_count_bucket\"",
+        "\"decode_candidate_bytes_bucket\"",
+        "\"decode_unknown\"",
+        "\"candidate_receipts\"",
+        "\"phase2_plain_localizer\":true",
+        "\"phase2_keyword_localizer\":false",
+        "\"correctness_digest\"",
+        "\"completed_trials\"",
+        "\"evidence_digest\"",
+        "\"calibrated_at_unix_ms\"",
+        "\"route_timings\"",
+        "\"trials_ns\"",
+    ] {
+        assert!(
+            serialized.contains(required),
+            "cache JSON is missing required primary evidence field {required}"
+        );
+    }
+    for derived in [
+        "\"decode_density_bucket\"",
+        "\"simd_timing\"",
+        "\"confidence_interval_95_ns\"",
+        "\"best_ns\"",
+        "\"mean_ns\"",
+    ] {
+        assert!(
+            !serialized.contains(derived),
+            "cache JSON persisted derived field {derived}"
+        );
+    }
     let loaded =
         load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host).unwrap();
     assert_eq!(loaded, decisions);

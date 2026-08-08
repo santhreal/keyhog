@@ -98,7 +98,11 @@ fn decode_recursion_profile_mirror() {
     if extract_calls != 0 || extract_bytes != 0 || extract_ns != 0 {
         eprintln!(
             "{}",
-            keyhog_scanner::decode::format_extract_profile(extract_calls, extract_bytes, extract_ns)
+            keyhog_scanner::decode::format_extract_profile(
+                extract_calls,
+                extract_bytes,
+                extract_ns
+            )
         );
     }
     let (parents, subchunks, sub_bytes) =

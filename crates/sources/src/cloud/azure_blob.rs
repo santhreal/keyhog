@@ -74,14 +74,14 @@ impl Source for AzureBlobSource {
                     source.prefix.as_deref(),
                     source
                         .max_objects
-                        .unwrap_or(source.limits.cloud_max_objects),
+                        .unwrap_or(source.limits.cloud_max_objects), // LAW10: absent per-source object cap uses the configured global cloud limit; enumeration remains bounded.
                     source.limits,
                     &source.http,
                     &worker_lease,
                     |row| sender.send(row).is_ok(),
                 );
                 if let Err(error) = result {
-                    let _ = sender.send(Err(error));
+                    let _ = sender.send(Err(error)); // LAW10: a failed send means the stream consumer is already closed; no recipient remains for this source error.
                 }
             },
         );
@@ -252,7 +252,7 @@ fn stream_azure_blob_chunks(
             )
         };
         if !accepted {
-            let _ = prefetch.join();
+            let _ = prefetch.join(); // LAW10: callback rejection means the downstream consumer closed; joining only reclaims the abandoned prefetch worker.
             return Ok(());
         }
 

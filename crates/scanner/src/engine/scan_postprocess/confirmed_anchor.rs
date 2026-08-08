@@ -70,7 +70,12 @@ impl ConfirmedAnchorIndex {
 
         for (idx, pattern) in ac_map.iter().enumerate() {
             let pattern_literals = match localization_hints.as_mut() {
-                Some(hints) => hints.next().unwrap_or(None),
+                // LAW10: authenticated hint cardinality drift is a loud build-invariant panic.
+                Some(hints) => hints.next().unwrap_or_else(|| {
+                    panic!(
+                        "BUILD-INVARIANT VIOLATION: confirmed localization hint cardinality is shorter than the compiled pattern set"
+                    )
+                }),
                 None => required_prefix_literals_with_cap(
                     pattern.regex.as_str(),
                     CONFIRMED_MAX_LITERALS_PER_PATTERN,
@@ -135,6 +140,7 @@ impl ConfirmedAnchorIndex {
                 .kind(Some(AhoCorasickKind::ContiguousNFA))
                 .ascii_case_insensitive(true)
                 .build(&self.anchor_literals)
+                // LAW10: automaton compilation failure is a loud build-invariant panic, never a weaker scan path.
                 .unwrap_or_else(|error| {
                     panic!(
                         "BUILD-INVARIANT VIOLATION: confirmed shared-anchor Aho-Corasick failed to compile: {error}"

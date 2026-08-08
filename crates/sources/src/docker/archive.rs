@@ -214,7 +214,13 @@ fn unpack_tar_reader(
     budget: &DockerUnpackBudget,
 ) -> Result<DockerExtractReport, SourceError> {
     let mut archive = tar::Archive::new(reader);
-    extract_docker_archive_entries(&mut archive, destination, limits, enforce_per_file_cap, budget)
+    extract_docker_archive_entries(
+        &mut archive,
+        destination,
+        limits,
+        enforce_per_file_cap,
+        budget,
+    )
 }
 
 enum LayerArchiveEncoding {

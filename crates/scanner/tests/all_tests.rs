@@ -133,6 +133,8 @@ pub mod regression_decode_through_strict;
 pub mod regression_decode_url_plus;
 #[path = "regression_decoded_generic_entropy_guard.rs"]
 pub mod regression_decoded_generic_entropy_guard;
+#[path = "regression_deep_decode_ceiling_pinned.rs"]
+pub mod regression_deep_decode_ceiling_pinned;
 #[path = "regression_deep_preset_recovery.rs"]
 pub mod regression_deep_preset_recovery;
 #[path = "regression_deepl_bare_key_recall.rs"]
@@ -293,6 +295,8 @@ pub mod regression_octal_escape_short_escapes;
 pub mod regression_overbroad_detectors_precision;
 #[path = "regression_package_registry_token_recall.rs"]
 pub mod regression_package_registry_token_recall;
+#[path = "regression_passthrough_line_attribution.rs"]
+pub mod regression_passthrough_line_attribution;
 #[path = "regression_password_slot_mask_suppression.rs"]
 pub mod regression_password_slot_mask_suppression;
 #[path = "regression_payment_vendor_token_recall.rs"]

@@ -115,9 +115,7 @@ pub(crate) fn refine_merkle_warmth(
 }
 
 /// Autoroute decision state comes from the persisted decision cache path.
-pub(crate) fn autoroute_transition(
-    cache_path: Option<&std::path::Path>,
-) -> CacheTransitionRecord {
+pub(crate) fn autoroute_transition(cache_path: Option<&std::path::Path>) -> CacheTransitionRecord {
     let (evidence, transition) = match cache_path {
         None => ("autoroute-cache-not-configured", CacheTransition::Disabled),
         Some(path) if path.exists() => (
@@ -199,7 +197,7 @@ pub(crate) fn reset_workflow_state() {
     // closed here would abort a scan over a telemetry mutex.
     let mut sink = SOURCE_PARTITIONS
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+        .unwrap_or_else(|poisoned| poisoned.into_inner()); // LAW10: poisoned profile-evidence lock recovery preserves accumulated scan evidence and cannot suppress findings.
     sink.records.clear();
     sink.dropped = 0;
     MERKLE_SKIPPED_UNCHANGED.store(0, Ordering::Relaxed);
@@ -212,12 +210,12 @@ pub(crate) fn record_source_partition(kind: &str, units: u64, bytes: u64) {
     // partition records surfaced and never affects findings or coverage gaps.
     let mut sink = SOURCE_PARTITIONS
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+        .unwrap_or_else(|poisoned| poisoned.into_inner()); // LAW10: poisoned profile-evidence lock recovery preserves partition accounting and cannot suppress findings.
     if sink.records.len() >= MAX_RECORDED_PARTITIONS {
         sink.dropped = sink.dropped.saturating_add(1);
         return;
     }
-    let index = u64::try_from(sink.records.len()).unwrap_or(u64::MAX);
+    let index = u64::try_from(sink.records.len()).unwrap_or(u64::MAX); // LAW10: profile partition index saturates only beyond u64 records; scan coverage and findings are unchanged.
     sink.records.push(SourcePartitionRecord {
         index,
         kind: kind.to_owned(),
@@ -232,7 +230,7 @@ pub(crate) fn take_source_partitions() -> (Vec<SourcePartitionRecord>, u64) {
     // counted in `dropped` and drained here, so the cap is never a silent loss.
     let mut sink = SOURCE_PARTITIONS
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+        .unwrap_or_else(|poisoned| poisoned.into_inner()); // LAW10: poisoned profile-evidence lock recovery returns all retained records and the explicit dropped count.
     (
         std::mem::take(&mut sink.records),
         std::mem::take(&mut sink.dropped),
@@ -288,7 +286,10 @@ pub(crate) fn aggregate_verification_findings(
     enabled: bool,
     findings: &[keyhog_core::VerifiedFinding],
 ) -> VerificationAggregate {
-    aggregate_verification_results(enabled, findings.iter().map(|finding| &finding.verification))
+    aggregate_verification_results(
+        enabled,
+        findings.iter().map(|finding| &finding.verification),
+    )
 }
 
 pub(crate) fn aggregate_verification_results<'a>(
@@ -300,7 +301,7 @@ pub(crate) fn aggregate_verification_results<'a>(
         ..VerificationAggregate::default()
     };
     if !enabled {
-        aggregate.skipped = u64::try_from(results.len()).unwrap_or(u64::MAX);
+        aggregate.skipped = u64::try_from(results.len()).unwrap_or(u64::MAX); // LAW10: disabled verifier accounting saturates only beyond u64 results; findings remain unmodified.
         return aggregate;
     }
     for result in results {
@@ -381,7 +382,7 @@ pub(crate) fn parse_daemon_request_identity(request_id: &str) -> Option<DaemonRe
     if generation.is_empty() || sequence.len() != 16 {
         return None;
     }
-    let sequence = u64::from_str_radix(sequence, 16).ok()?;
+    let sequence = u64::from_str_radix(sequence, 16).ok()?; // LAW10: malformed optional daemon identity is rejected as absent; it cannot authorize routing or suppress scan work.
     Some(DaemonRequestIdentity {
         generation: generation.to_owned(),
         sequence,

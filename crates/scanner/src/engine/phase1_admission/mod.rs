@@ -855,6 +855,7 @@ impl CompiledScanner {
         let keyword_matcher = self
             .assignment_keyword_matcher
             .lock()
+            // LAW10: poison recovery retains the complete immutable matcher cache value.
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .resolve(
                 &self.config.secret_keywords,
@@ -902,20 +903,18 @@ impl CompiledScanner {
 
     #[cfg(feature = "multiline")]
     fn multiline_absent(&self, data: &str) -> bool {
-        !crate::multiline::config::has_concatenation_indicators_with_keyword_gate(
-            data,
-            |bytes| {
-                let matcher = self
-                    .assignment_keyword_matcher
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .resolve(
-                        &self.config.secret_keywords,
-                        self.detector_plans.generic_ownership().policy_keywords(),
-                    );
-                matcher.matches(bytes)
-            },
-        )
+        !crate::multiline::config::has_concatenation_indicators_with_keyword_gate(data, |bytes| {
+            let matcher = self
+                .assignment_keyword_matcher
+                .lock()
+                // LAW10: poison recovery retains the complete immutable matcher cache value.
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .resolve(
+                    &self.config.secret_keywords,
+                    self.detector_plans.generic_ownership().policy_keywords(),
+                );
+            matcher.matches(bytes)
+        })
     }
 
     #[cfg(not(feature = "multiline"))]
@@ -983,6 +982,7 @@ impl CompiledScanner {
         let normalization_passthrough =
             classify_reusable_evidence && self.normalization_passthrough(&chunk.data);
         let built_line_context_index = classify_reusable_evidence
+            // LAW10: line-index construction failure disables evidence reuse; the later scan rebuilds context normally.
             .then(|| crate::context::LineContextIndex::try_new(&chunk.data).ok())
             .flatten()
             .map(Arc::new);
@@ -1058,6 +1058,7 @@ impl CompiledScanner {
                     break;
                 }
             }
+            // LAW10: no exact representative creates a new exact payload class instead of reusing evidence.
             let position = representative_position.unwrap_or_else(|| {
                 representatives.push((fingerprint, index));
                 representatives.len() - 1

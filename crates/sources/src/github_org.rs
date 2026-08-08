@@ -111,7 +111,7 @@ impl Source for GitHubOrgSource {
                     |row| sender.send(row).is_ok(),
                 );
                 if let Err(error) = result {
-                    let _ = sender.send(Err(error));
+                    let _ = sender.send(Err(error)); // LAW10: a failed send means the stream consumer is already closed; no recipient remains for this source error.
                 }
             },
         );

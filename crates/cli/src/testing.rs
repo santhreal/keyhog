@@ -1414,7 +1414,7 @@ impl CliTestApi for TestApi {
         }
         #[cfg(not(feature = "verify"))]
         {
-            let _ = orchestrator;
+            let _ = orchestrator; // LAW10: cfg-only test adapter consumes the unused reference when verifier support is not compiled; no runtime failure is discarded.
             0
         }
     }

@@ -742,6 +742,7 @@ pub(crate) fn is_hex_digest_fragment(
     credential: &str,
 ) -> bool {
     let policy = crate::hex_digest_policy::policy();
+    // LAW10: detectors without a local fragment minimum use the canonical hex-policy minimum.
     let min_len = detector_min_len.unwrap_or(policy.fragment_default_min_len);
     if credential.len() < min_len || !credential.bytes().all(|b| b.is_ascii_hexdigit()) {
         return false;

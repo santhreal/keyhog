@@ -698,9 +698,9 @@ fn page_size() -> usize {
     // SAFETY: `sysconf` has no pointer arguments or side effects.
     let value = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
     usize::try_from(value)
-        .ok()
+        .ok() // LAW10: an unavailable OS page-size probe affects only spool-buffer sizing; discovery and source errors are unchanged.
         .filter(|size| *size > 0)
-        .unwrap_or(4096)
+        .unwrap_or(4096) // LAW10: 4096 is the conservative spool-buffer size when optional OS page metadata is unavailable.
 }
 
 #[cfg(unix)]

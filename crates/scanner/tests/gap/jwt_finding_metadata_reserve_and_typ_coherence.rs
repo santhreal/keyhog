@@ -79,4 +79,3 @@ fn alg_none_surfaces_the_unsigned_anomaly() {
     );
     assert_eq!(meta.len(), 3, "jwt.alg + jwt.sub + jwt.alg_none");
 }
-

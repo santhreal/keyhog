@@ -1029,6 +1029,7 @@ impl CompiledScanner {
         self.record_decode_size_decline(chunk);
         #[cfg(debug_assertions)]
         self.direct_scan_absence_skipped_bytes.fetch_add(
+            // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; scan behavior is unchanged.
             u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
             std::sync::atomic::Ordering::Relaxed,
         );

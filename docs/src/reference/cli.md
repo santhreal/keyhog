@@ -72,7 +72,8 @@ or coverage incomplete.
 | `--git-diff-path` | `GIT_DIFF_PATH` |  | Path to git repository for --git-diff (defaults to current directory) |
 | `--git-history` | `PATH` |  | Scan reachable commits using added lines from each commit patch |
 | `--git-staged` |  |  | Scan exact staged index blobs, never substituted working-tree bytes |
-| `--github-all` |  |  | Include every supported collaboration surface for --github-collaboration. This is the concise equivalent of passing all five --github-* surface flags |
+| `--github-all` |  |  | Include every supported collaboration surface for --github-collaboration. This is the concise equivalent of passing all six --github-* surface flags |
+| `--github-api-endpoint` | `URL` |  | GitHub-compatible API endpoint for --github-collaboration |
 | `--github-collaboration` | `OWNER/REPO` |  | GitHub repository whose explicitly selected collaboration surfaces are scanned |
 | `--github-discussions` |  |  | Include discussion text and comments from --github-collaboration |
 | `--github-gists` |  |  | Include public gist revisions and comments for the repository owner |
@@ -82,6 +83,7 @@ or coverage incomplete.
 | `--github-releases` |  |  | Include release notes, including drafts and prereleases, plus every release asset name and label, from --github-collaboration |
 | `--github-token` | `PAT` |  | GitHub personal access token for --github-org or --github-collaboration. Prefer KEYHOG_GITHUB_TOKEN so the token is not exposed in the process list |
 | `--github-wiki` |  |  | Include every readable wiki revision from --github-collaboration |
+| `--github-wiki-url` | `URL` |  | Explicit clone URL for the wiki selected by --github-wiki |
 | `--gitlab-endpoint` | `GITLAB_ENDPOINT` | `https://gitlab.com` | GitLab API endpoint root, for example https://gitlab.example.com |
 | `--gitlab-group` | `GROUP` |  | Scan all projects in a GitLab group, including subgroups |
 | `--gitlab-token` | `PAT` |  | GitLab personal access token for --gitlab-group. Prefer KEYHOG_GITLAB_TOKEN so the token is not exposed in the process list |
@@ -96,7 +98,7 @@ or coverage incomplete.
 | `--limit-cloud-max-objects` | `N` |  | Maximum objects listed from one S3/GCS/Azure container before truncating |
 | `--limit-docker-image-config-bytes` | `SIZE` |  | Maximum bytes accepted for Docker/OCI image config and manifest JSON |
 | `--limit-docker-tar-entry-bytes` | `SIZE` |  | Maximum bytes allowed for one Docker tar entry |
-| `--limit-docker-tar-total-bytes` | `SIZE` |  | Maximum cumulative bytes allowed while unpacking a Docker/OCI layer tar |
+| `--limit-docker-tar-total-bytes` | `SIZE` |  | Maximum cumulative bytes unpacked for one Docker/OCI image, summed across the image tar and every layer tar |
 | `--limit-gcs-object-bytes` | `SIZE` |  | Maximum bytes downloaded for one GCS object |
 | `--limit-git-blob-bytes` | `SIZE` |  | Maximum bytes read from one git blob |
 | `--limit-git-chunks` | `N` |  | Maximum chunk count emitted by a git blob-history scan |
@@ -253,7 +255,8 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--git-diff-path` | `GIT_DIFF_PATH` |  | Path to git repository for --git-diff (defaults to current directory) |
 | `--git-history` | `PATH` |  | Scan reachable commits using added lines from each commit patch |
 | `--git-staged` |  |  | Scan exact staged index blobs, never substituted working-tree bytes |
-| `--github-all` |  |  | Include every supported collaboration surface for --github-collaboration. This is the concise equivalent of passing all five --github-* surface flags |
+| `--github-all` |  |  | Include every supported collaboration surface for --github-collaboration. This is the concise equivalent of passing all six --github-* surface flags |
+| `--github-api-endpoint` | `URL` |  | GitHub-compatible API endpoint for --github-collaboration |
 | `--github-collaboration` | `OWNER/REPO` |  | GitHub repository whose explicitly selected collaboration surfaces are scanned |
 | `--github-discussions` |  |  | Include discussion text and comments from --github-collaboration |
 | `--github-gists` |  |  | Include public gist revisions and comments for the repository owner |
@@ -263,6 +266,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--github-releases` |  |  | Include release notes, including drafts and prereleases, plus every release asset name and label, from --github-collaboration |
 | `--github-token` | `PAT` |  | GitHub personal access token for --github-org or --github-collaboration. Prefer KEYHOG_GITHUB_TOKEN so the token is not exposed in the process list |
 | `--github-wiki` |  |  | Include every readable wiki revision from --github-collaboration |
+| `--github-wiki-url` | `URL` |  | Explicit clone URL for the wiki selected by --github-wiki |
 | `--gitlab-endpoint` | `GITLAB_ENDPOINT` | `https://gitlab.com` | GitLab API endpoint root, for example https://gitlab.example.com |
 | `--gitlab-group` | `GROUP` |  | Scan all projects in a GitLab group, including subgroups |
 | `--gitlab-token` | `PAT` |  | GitLab personal access token for --gitlab-group. Prefer KEYHOG_GITLAB_TOKEN so the token is not exposed in the process list |
@@ -277,7 +281,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--limit-cloud-max-objects` | `N` |  | Maximum objects listed from one S3/GCS/Azure container before truncating |
 | `--limit-docker-image-config-bytes` | `SIZE` |  | Maximum bytes accepted for Docker/OCI image config and manifest JSON |
 | `--limit-docker-tar-entry-bytes` | `SIZE` |  | Maximum bytes allowed for one Docker tar entry |
-| `--limit-docker-tar-total-bytes` | `SIZE` |  | Maximum cumulative bytes allowed while unpacking a Docker/OCI layer tar |
+| `--limit-docker-tar-total-bytes` | `SIZE` |  | Maximum cumulative bytes unpacked for one Docker/OCI image, summed across the image tar and every layer tar |
 | `--limit-gcs-object-bytes` | `SIZE` |  | Maximum bytes downloaded for one GCS object |
 | `--limit-git-blob-bytes` | `SIZE` |  | Maximum bytes read from one git blob |
 | `--limit-git-chunks` | `N` |  | Maximum chunk count emitted by a git blob-history scan |
@@ -373,7 +377,8 @@ verification-template rewrite; other audit findings require an explicit edit.
 | `--dry-run` |  |  | Show the rewrites `--fix` *would* make without writing them. No-op unless `--fix` is also set |
 | `--fix` |  |  | Apply safe automated fixes to the detector TOMLs in `--detectors`. Currently rewrites single-brace template references (`{name}`) to the double-brace form (`{{name}}`) within `[detector.verify*]` blocks: the one fix the interpolator's contract makes safe to perform mechanically. Other validator findings are left alone (they need human judgement). Use `--dry-run` to preview rewrites without touching the filesystem |
 | `--format` | `FORMAT` |  | Output format for the detector listing. `text` (default) is the grouped, human-readable summary; `json` emits the structured detector array. This is the canonical flag, it matches `scan --format` so the two surfaces share one convention (CLI-01). Only `text`/`json` apply to a detector listing, so the format set is intentionally narrower than `scan`'s. Mutually exclusive with `--audit` / `--fix` (they emit their own structured formats) Possible values: `text`, `json`. |
-| `-s`, `--search` | `SEARCH` |  | Filter detectors by substring match (case-insensitive) against id, name, service, and keywords. Useful for finding detectors in the 925-strong corpus (e.g. `keyhog detectors --search aws`). |
+| `--mechanisms` |  |  | Print the generated mechanism manifest: which recovery mechanisms each detector actually declares. KeyHog advertises regex matching, structural validation, entropy scoring, BPE token efficiency, decode recovery, companion confirmation, live verification, and detector-owned suppression, but nothing in the product will tell you which of those a given detector uses. This does, and it derives every answer from the loaded corpus: each mechanism is a predicate over detector TOML fields and the field that made it active is reported as its evidence, so there is no per-detector table in Rust to drift. A mechanism KeyHog cannot express yet is reported as unavailable with the reason rather than omitted, because a missing row cannot be told apart from "no detector uses this". Pairs with `--search` to scope the manifest, and with `--format json` for the machine-readable document. Does not scan. |
+| `-s`, `--search` | `SEARCH` |  | Filter detectors by substring match (case-insensitive) against id, name, service, and keywords. Useful for finding detectors in the 926-strong corpus (e.g. `keyhog detectors --search aws`). |
 | `-v`, `--verbose` |  |  | Print the matching-policy summary (regexes, keywords, companions, verification presence) instead of the grouped service summary. Pairs naturally with `--search`. Use `--format json` for the redaction-safe declared schema, including verification structure and test coverage |
 <!-- /keyhog-generated: cli-reference command="detectors" -->
 
@@ -603,6 +608,7 @@ diagnostic override and does not replace autoroute evidence.
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
 | `--autoroute-cache` | `PATH` |  | Override the persistent autoroute cache file every probe writes to. Must be a writable path. Calibration exists to PERSIST routing decisions, so `off` (which disables persistence) is rejected up front rather than failing every probe closed. Defaults to the same cache a normal scan reads, so a plain `keyhog calibrate-autoroute` primes exactly what later scans resolve against. |
+| `--execution-packs` *(hidden)* | `DIR` |  | Bind persisted route evidence to this authenticated execution-pack generation |
 | `--policy` | `POLICY` | `all` | Select which scan policy to calibrate. `all` preserves the install-time sweep. Select one policy when you need to repair or refresh only the configuration you run. Possible values: `default`, `fast`, `deep`, `precision`, `all`. |
 | `--quiet` |  |  | Suppress the per-probe progress lines; print only the final summary |
 <!-- /keyhog-generated: cli-reference command="calibrate-autoroute" -->

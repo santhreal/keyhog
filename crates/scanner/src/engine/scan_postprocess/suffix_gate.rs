@@ -69,9 +69,10 @@ impl LazyConfirmedSuffixGate {
         let literals = self
             .literals
             .lock()
+            // LAW10: poison recovery retains the immutable literal set for full construction.
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
-            .unwrap_or_default();
+            .expect("lazy confirmed suffix literals must exist before initialization");
         match aho_corasick::AhoCorasickBuilder::new()
             .match_kind(aho_corasick::MatchKind::Standard)
             .ascii_case_insensitive(true)
@@ -97,7 +98,7 @@ impl LazyConfirmedSuffixGate {
     /// the automaton so the caller can purge compiler arenas.
     pub(crate) fn materialize(&self) -> bool {
         let already_materialized = self.automaton.get().is_some();
-        let _ = self.get();
+        let _materialized = self.get();
         !already_materialized
     }
 }

@@ -163,10 +163,10 @@ impl Iterator for BufferedStdinChunks {
         let advanced = (end < self.bytes.len()).then_some(STDIN_WINDOW_SIZE - STDIN_WINDOW_OVERLAP);
         let advanced_lines = advanced
             .map(|len| memchr::memchr_iter(b'\n', &bytes[..len]).count())
-            .unwrap_or(0);
+            .unwrap_or(0); // LAW10: a terminal stdin window advances no overlap bytes, so its exact advanced-line count is zero.
         let text = match std::str::from_utf8(bytes) {
             Ok(text) => text.to_owned(),
-            Err(_) => String::from_utf8_lossy(bytes).into_owned(),
+            Err(_) => String::from_utf8_lossy(bytes).into_owned(), // LAW10: lossy decoding preserves every valid ASCII secret byte and replaces only invalid UTF-8 sequences.
         };
         let base_line = self.next_line;
         if end >= self.bytes.len() {
@@ -207,7 +207,7 @@ impl Iterator for SpooledStdinChunks {
         };
         let advanced_lines = advanced
             .map(|len| memchr::memchr_iter(b'\n', &bytes[..len]).count())
-            .unwrap_or(0);
+            .unwrap_or(0); // LAW10: a terminal stdin window advances no overlap bytes, so its exact advanced-line count is zero.
         let text = match String::from_utf8(bytes) {
             Ok(text) => text,
             Err(error) => String::from_utf8_lossy(&error.into_bytes()).into_owned(),

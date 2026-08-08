@@ -173,7 +173,7 @@ run "Gate #4: surface coverage (every subcommand spawned)" \
   python3 -B scripts/gates/surface_coverage.py
 run "Gate #5: exact complexity ratchet (growth, slack, and metric drift)" \
   python3 -B scripts/gates/complexity_budget.py
-run "VYRE pin consistency: 5 crates lockstep, registry pins, no vendor build-path" \
+run "VYRE pin consistency: 6 crates at one immutable Git revision, no vendor build-path" \
   python3 -B scripts/gates/vyre_pin_consistency.py
 run "Organization unit tests: exact complexity ratchet and owner/reference checks" \
   python3 -B -m unittest scripts.tests.test_complexity_budget scripts.tests.test_org_audit -v
@@ -272,8 +272,8 @@ fi
 echo
 
 if [ $rc -eq 0 ]; then
-  echo "ALL PROJECT CHECKS GREEN."
+  echo "ALL PREVENTION GATES GREEN."
 else
-  echo "PROJECT CHECKS FAILED (rc=$rc)."
+  echo "PREVENTION GATES FAILED (rc=$rc)."
 fi
 exit $rc

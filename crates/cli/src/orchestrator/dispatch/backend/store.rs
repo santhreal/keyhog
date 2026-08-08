@@ -11,12 +11,12 @@ mod validation;
 
 pub(super) use codec::autoroute_cache_file_presence;
 pub(crate) use inspection::{inspect_autoroute_cache, AutorouteReadiness};
+pub(super) use persistence::{
+    load_autoroute_cache, save_autoroute_cache, AutorouteCacheSaveOutcome,
+};
 pub(crate) use telemetry::{
     record_bucket_miss, record_calibration_reuse, record_hit, record_miss, render_missing_buckets,
     render_summary, snapshot, AutorouteCacheMiss,
-};
-pub(super) use persistence::{
-    load_autoroute_cache, save_autoroute_cache, AutorouteCacheSaveOutcome,
 };
 // Staged cache is used by `calibrate_autoroute` via orchestrator re-export.
 pub(crate) use persistence::{

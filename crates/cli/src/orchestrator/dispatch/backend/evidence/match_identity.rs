@@ -193,7 +193,7 @@ pub(crate) fn render_canonical_match(record: &CanonicalMatch<'_>) -> String {
         "chunk {} {} @ {}:{} offset {} credential {}",
         record.chunk_idx,
         record.detector_id,
-        record.file_path.unwrap_or("<no path>"),
+        record.file_path.unwrap_or("<no path>"), // LAW10: absent optional path is rendered only in mismatch diagnostics; canonical match identity remains unchanged.
         record
             .line
             .map_or_else(|| "?".to_string(), |line| line.to_string()),

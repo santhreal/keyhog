@@ -3,7 +3,7 @@
 //! for daemon/watch/scan-system (no long-running work executes).
 //!
 //! A production CLI exits 2 for an unknown flag, names the flag or prints a
-//! usage hint, never panics, and never leaks ANSI. 19 x 16 = 304 distinct tests.
+//! usage hint, never panics, and never leaks ANSI. 20 x 16 = 320 distinct tests.
 
 use crate::reliability::harness::{
     assert_clean_exit, assert_no_ansi, assert_no_panic, run, Profile,
@@ -71,4 +71,5 @@ crate::kh_matrix!(
     scan_system => "scan-system",
     daemon => "daemon",
     calibrate_autoroute => "calibrate-autoroute",
+    compile_execution_packs => "compile-execution-packs",
 );

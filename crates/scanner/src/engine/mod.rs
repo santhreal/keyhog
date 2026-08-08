@@ -234,14 +234,17 @@ static CANDIDATE_SCRATCH_POOL: std::sync::Mutex<Vec<Vec<(u32, u32)>>> =
 pub(crate) fn with_candidate_scratch<R>(f: impl FnOnce(&mut Vec<(u32, u32)>) -> R) -> R {
     let mut values = CANDIDATE_SCRATCH_POOL
         .lock()
+        // LAW10: poison recovery retains the complete scratch pool; an absent buffer allocates an empty scratch vector.
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .pop()
+        // LAW10: no idle scratch buffer means a fresh empty vector, with identical scan semantics.
         .unwrap_or_default();
     let result = f(&mut values);
     release_candidate_scratch(&mut values);
     if values.capacity() != 0 {
         let mut pool = CANDIDATE_SCRATCH_POOL
             .lock()
+            // LAW10: poison recovery retains the complete scratch pool before bounded reinsertion.
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if pool.len() < MAX_IDLE_CANDIDATE_SCRATCH_BUFFERS {
             pool.push(values);
@@ -254,6 +257,7 @@ pub(crate) fn with_candidate_scratch<R>(f: impl FnOnce(&mut Vec<(u32, u32)>) -> 
 pub(crate) fn candidate_scratch_idle_count_for_test() -> usize {
     CANDIDATE_SCRATCH_POOL
         .lock()
+        // LAW10: test-only inspection recovers the retained pool value after poison.
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .len()
 }
@@ -643,8 +647,7 @@ pub struct CompiledScanner {
     #[cfg(debug_assertions)]
     pub(crate) direct_scan_absence_batches: std::sync::atomic::AtomicU64,
     #[cfg(feature = "simd")]
-    pub(crate) reusable_simd_triggers:
-        parking_lot::Mutex<scan_coalesced::ReusableSimdTriggerCache>,
+    pub(crate) reusable_simd_triggers: parking_lot::Mutex<scan_coalesced::ReusableSimdTriggerCache>,
     #[cfg(debug_assertions)]
     pub(crate) simd_phase2_tail_absence_skipped_bytes: std::sync::atomic::AtomicU64,
 }

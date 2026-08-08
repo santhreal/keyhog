@@ -147,7 +147,7 @@ static PREWARMED_RSA_KEY: LazyLock<Mutex<Option<std::thread::JoinHandle<Generate
 pub fn prewarm_key_generation() {
     let mut slot = PREWARMED_RSA_KEY
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+        .unwrap_or_else(std::sync::PoisonError::into_inner); // LAW10: poisoned one-shot key-slot recovery preserves the stored join handle; registration still returns key-generation failures.
     if slot.is_some() {
         return;
     }
@@ -169,7 +169,7 @@ fn generate_private_key() -> GeneratedPrivateKey {
 fn take_or_generate_private_key() -> Result<RsaPrivateKey, InteractshError> {
     let prewarmed = PREWARMED_RSA_KEY
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(std::sync::PoisonError::into_inner) // LAW10: poisoned one-shot key-slot recovery takes the same handle; join and key-generation failures remain explicit.
         .take();
     let generated = match prewarmed {
         Some(handle) => handle
@@ -182,7 +182,7 @@ fn take_or_generate_private_key() -> Result<RsaPrivateKey, InteractshError> {
 pub(crate) fn prewarmed_key_pending_for_test() -> bool {
     PREWARMED_RSA_KEY
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(std::sync::PoisonError::into_inner) // LAW10: test-only state inspection recovers the one-shot slot without affecting verifier behavior.
         .is_some()
 }
 
@@ -191,7 +191,7 @@ pub(crate) fn consume_prewarmed_key_for_test() -> Result<Vec<u8>, InteractshErro
 
     let prewarmed = PREWARMED_RSA_KEY
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(std::sync::PoisonError::into_inner) // LAW10: test-only key consumption recovers the slot while missing, panic, and generation failures remain explicit.
         .take()
         .ok_or_else(|| InteractshError::KeyGen("prewarmed key missing".to_owned()))?;
     let key = prewarmed

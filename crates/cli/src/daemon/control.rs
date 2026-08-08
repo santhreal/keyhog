@@ -152,11 +152,13 @@ impl ControlChannel {
             return Err(ControlError::Unintelligible(anyhow!(
                 "daemon control: expected a hello reply from {}, got kind {}",
                 socket_path.display(),
-                kind.unwrap_or("<absent>")
+                kind.unwrap_or("<absent>") // LAW10: absent reply kind is optional diagnostic metadata; the control operation still returns its explicit protocol error.
             )));
         }
         let identity = DaemonIdentity {
-            wire_version: hello.get("wire_version").and_then(serde_json::Value::as_u64),
+            wire_version: hello
+                .get("wire_version")
+                .and_then(serde_json::Value::as_u64),
             keyhog_version: hello
                 .get("keyhog_version")
                 .and_then(serde_json::Value::as_str)
@@ -177,7 +179,7 @@ impl ControlChannel {
             Some("shutdown") => Ok(()),
             other => Err(ControlError::Unintelligible(anyhow!(
                 "daemon control: shutdown was not acknowledged (reply kind {})",
-                other.unwrap_or("<absent>")
+                other.unwrap_or("<absent>") // LAW10: absent reply kind is optional diagnostic metadata; shutdown still returns an explicit unacknowledged error.
             ))),
         }
     }

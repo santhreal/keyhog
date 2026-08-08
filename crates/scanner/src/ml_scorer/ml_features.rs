@@ -119,9 +119,11 @@ impl CompiledDetectorMlFeatures {
             structural_password_slot: detector.structural_password_slot,
             phase2_generic: detector.kind == keyhog_core::DetectorKind::Phase2Generic,
             entropy_class,
+            // LAW10: absent detector thresholds intentionally hydrate the versioned global ML defaults.
             entropy_high: detector.entropy_high.unwrap_or(HIGH_ENTROPY_THRESHOLD),
             entropy_very_high: detector
                 .entropy_very_high
+                // LAW10: absent very-high threshold hydrates the versioned global ML default.
                 .unwrap_or(VERY_HIGH_ENTROPY_THRESHOLD),
         }
     }

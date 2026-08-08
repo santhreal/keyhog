@@ -432,7 +432,7 @@ impl ScanOrchestrator {
         const MIN_VERIFY_CONFIDENCE: f64 = 0.3;
         let mut verify_candidates = groups;
         let skip_candidates: Vec<_> = verify_candidates
-            .extract_if(.., |m| m.confidence.unwrap_or(0.0) < MIN_VERIFY_CONFIDENCE)
+            .extract_if(.., |m| m.confidence.unwrap_or(0.0) < MIN_VERIFY_CONFIDENCE) // LAW10: absent confidence is conservatively ineligible for verification only; the finding remains in scan output.
             .collect(); // LAW10: absent confidence => 0.0 for verification eligibility only; recall-safe
 
         let skipped_count = skip_candidates.len();

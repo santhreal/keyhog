@@ -41,4 +41,3 @@ fn hidden_testing_facade_exposes_only_the_standalone_probe_contract() {
     };
     assert_eq!(decode_chunk(&chunk, 1, false, None, None).len(), 0);
 }
-

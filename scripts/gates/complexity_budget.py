@@ -42,8 +42,8 @@ COMMIT_SHA = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})")
 BUDGET = {
     "phase2_lanes": 10,          # engine/phase2*.rs files
     "scan_backends": 5,          # ScanBackend:: variants
-    "engine_files": 39,          # *.rs files under engine/
-    "engine_loc": 11621,         # total non-blank LOC under engine/
+    "engine_files": 36,          # top-level *.rs coordination modules under engine/
+    "engine_loc": 11330,         # non-blank LOC in those top-level modules
 }
 
 

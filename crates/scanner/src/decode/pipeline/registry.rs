@@ -357,6 +357,7 @@ pub(super) fn record_decoder_run(
     keyhog_profile::add_indexed_counter(
         keyhog_profile::IndexedCounterId::DecoderElapsedNs,
         slot,
+        // LAW10: profiler duration saturates on impossible u128-to-u64 overflow; decoder behavior is unchanged.
         u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX),
     );
     keyhog_profile::add_indexed_counter(

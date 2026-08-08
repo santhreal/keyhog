@@ -178,9 +178,11 @@ impl HyperscanSimdExecutionProgram {
                         pattern_index,
                         reports_start: entry.group.is_some(),
                         regex: regex.to_owned(),
+                        // LAW10: a regex without scalar companions intentionally records an empty exact companion set.
                         scalar_pattern_indices: scalar_by_regex
                             .get(regex)
                             .cloned()
+                            // LAW10: absence means this regex has no exact scalar companions.
                             .unwrap_or_default(),
                         ac_map_indices: Vec::new(),
                     });

@@ -57,4 +57,3 @@ fn expand_homoglyphs_produces_exact_class_expansion() {
     // Empty input yields empty output.
     assert_eq!(expand(""), "", "empty pattern expands to empty");
 }
-

@@ -36,7 +36,10 @@ fn shipped_policy_defines_the_documented_rule_set() {
         "slack-workspace",
         "declared-api-endpoint",
     ] {
-        assert!(ids.contains(&expected), "rule {expected} disappeared: {ids:?}");
+        assert!(
+            ids.contains(&expected),
+            "rule {expected} disappeared: {ids:?}"
+        );
     }
     // The generic rule must stay last: rules run in file order and the named
     // providers must get first claim on a match.
@@ -215,7 +218,10 @@ decay_max_steps = 0
 decoded_confidence = 0.99
 ",
     );
-    assert!(error.contains("decay_max_steps must be at least 1"), "{error}");
+    assert!(
+        error.contains("decay_max_steps must be at least 1"),
+        "{error}"
+    );
 }
 
 #[test]

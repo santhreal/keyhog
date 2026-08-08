@@ -266,6 +266,7 @@ impl CompiledScanner {
             );
             let mapped_line = preprocessed
                 .line_for_offset(entropy_match.offset)
+                // LAW10: missing transformed-line mapping uses the exact original line index.
                 .unwrap_or_else(|| line_index.line_number_for_offset(entropy_match.offset));
             let source_offset = preprocessed.source_offset_for_match(
                 &chunk.data,

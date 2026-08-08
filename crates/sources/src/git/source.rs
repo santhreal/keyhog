@@ -13,8 +13,7 @@ use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use rayon::prelude::*;
 
 use super::tag_messages::{
-    collect_reachable_tag_messages, decode_next_tag_message,
-    decode_next_unreachable_tag_message,
+    collect_reachable_tag_messages, decode_next_tag_message, decode_next_unreachable_tag_message,
 };
 use super::{git_unscanned_object_error, parse_git_object_id_line, record_git_object_unreadable};
 
@@ -120,10 +119,7 @@ enum PendingGitBlobProvenance {
 impl PendingGitBlobProvenance {
     fn borrowed(&self) -> GitBlobProvenance<'_> {
         match self {
-            Self::Commit { commit_id, author } => GitBlobProvenance::Commit {
-                commit_id,
-                author,
-            },
+            Self::Commit { commit_id, author } => GitBlobProvenance::Commit { commit_id, author },
             Self::Unreachable => GitBlobProvenance::Unreachable,
         }
     }

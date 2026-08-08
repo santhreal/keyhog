@@ -2,18 +2,24 @@
 pub mod support;
 
 mod analyze_keyword_only;
+mod anchored_regex;
 mod api_consistency;
 #[cfg(feature = "multiline")]
 mod audit_speed;
 mod autoroute_gpu_optin_contract;
 mod backend_collapse_regression;
 mod backend_collapse_surface_regression;
+#[cfg(feature = "simd")]
+mod compiled_scanner_compile;
+mod compiler_compile;
 mod confirmed_anchor_parity;
 mod confirmed_gate_parity;
 mod confirmed_pattern_profile;
+mod csr;
 mod decode_focus_parity;
 mod decode_recursion_profile;
 mod decode_test;
+mod detector_plan;
 mod detector_registry_truth_matrix;
 mod entropy_placeholder_marker_truth_table;
 mod fullscan_throughput;

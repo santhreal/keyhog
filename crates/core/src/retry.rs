@@ -160,7 +160,7 @@ fn classify_raw_os(errno: i32, origin: PathOrigin) -> Option<RetryCause> {
             return Some(RetryCause::Locked);
         }
     }
-    let _ = (errno, origin);
+    let _ = (errno, origin); // LAW10: cfg-only unused-parameter binding on platforms without raw retry codes; no Result is discarded.
     None
 }
 
@@ -285,7 +285,6 @@ impl crate::FileContentSource for RetryingContentSource<'_> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,11 +297,10 @@ mod tests {
     #[test]
     fn permission_denied_is_permanent_and_is_never_retried() {
         let attempts = Cell::new(0u32);
-        let result: io::Result<()> =
-            retry_io(RetryPolicy::DEFAULT, PathOrigin::Enumerated, || {
-                attempts.set(attempts.get() + 1);
-                Err(io_error(io::ErrorKind::PermissionDenied))
-            });
+        let result: io::Result<()> = retry_io(RetryPolicy::DEFAULT, PathOrigin::Enumerated, || {
+            attempts.set(attempts.get() + 1);
+            Err(io_error(io::ErrorKind::PermissionDenied))
+        });
         assert!(result.is_err());
         assert_eq!(
             attempts.get(),
@@ -314,15 +312,16 @@ mod tests {
     #[test]
     fn absent_operator_path_is_permanent_but_a_vanished_walk_entry_retries() {
         let operator_attempts = Cell::new(0u32);
-        let _: io::Result<()> = retry_io(
-            RetryPolicy::DEFAULT,
-            PathOrigin::OperatorSupplied,
-            || {
+        let _: io::Result<()> =
+            retry_io(RetryPolicy::DEFAULT, PathOrigin::OperatorSupplied, || {
                 operator_attempts.set(operator_attempts.get() + 1);
                 Err(io_error(io::ErrorKind::NotFound))
-            },
+            });
+        assert_eq!(
+            operator_attempts.get(),
+            1,
+            "a typo in --path is a user error"
         );
-        assert_eq!(operator_attempts.get(), 1, "a typo in --path is a user error");
 
         let walk_attempts = Cell::new(0u32);
         let _: io::Result<()> = retry_io(RetryPolicy::DEFAULT, PathOrigin::Enumerated, || {
@@ -407,11 +406,17 @@ mod tests {
     #[test]
     fn classification_is_origin_sensitive_only_for_absence() {
         assert_eq!(
-            classify_io(&io_error(io::ErrorKind::Interrupted), PathOrigin::OperatorSupplied),
+            classify_io(
+                &io_error(io::ErrorKind::Interrupted),
+                PathOrigin::OperatorSupplied
+            ),
             Some(RetryCause::Interrupted)
         );
         assert_eq!(
-            classify_io(&io_error(io::ErrorKind::NotFound), PathOrigin::OperatorSupplied),
+            classify_io(
+                &io_error(io::ErrorKind::NotFound),
+                PathOrigin::OperatorSupplied
+            ),
             None
         );
         assert_eq!(

@@ -98,7 +98,6 @@ impl CsrU32 {
         (0..self.len()).map(|index| &self[index])
     }
 
-    #[cfg(test)]
     pub(crate) fn storage_lengths(&self) -> (usize, usize) {
         (self.data.len(), self.offsets.len())
     }
@@ -112,51 +111,5 @@ impl std::ops::Index<usize> for CsrU32 {
         let start = self.offsets[i] as usize;
         let end = self.offsets[i + 1] as usize;
         &self.data[start..end]
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::CsrU32;
-
-    /// WHY: flat relation builders emit interleaved row/value pairs, so compaction must restore row order while preserving encounter order inside each row.
-    #[test]
-    fn flat_pairs_roundtrip_with_exact_two_vector_storage() {
-        let table = CsrU32::from_pairs(3, [(2, 2), (0, 4), (2, 7), (0, 9)]);
-
-        assert_eq!(table.len(), 3);
-        assert!(!table.is_empty());
-        assert_eq!(
-            table.iter().collect::<Vec<_>>(),
-            vec![&[4, 9][..], &[][..], &[2, 7][..]]
-        );
-        assert_eq!(table.get(3), None);
-        assert_eq!(
-            table.storage_lengths(),
-            (4, 4),
-            "four values and row_count + 1 offsets are the complete retained representation"
-        );
-    }
-
-    /// WHY: all-empty detector partitions previously retained one inner `Vec` header per detector; CSR must encode those rows with offsets only and zero data entries.
-    #[test]
-    fn empty_rows_consume_no_data_slots() {
-        let table = CsrU32::from_pairs(3, std::iter::empty());
-
-        assert_eq!(table.iter().collect::<Vec<_>>(), vec![&[] as &[u32]; 3]);
-        assert_eq!(table.storage_lengths(), (0, 4));
-    }
-    /// WHY: a malformed builder row would otherwise disappear from the retained table and silently under-route a detector.
-    #[test]
-    #[should_panic(expected = "CSR pair row 3 exceeds 3")]
-    fn out_of_range_row_fails_closed() {
-        let _ = CsrU32::from_pairs(3, [(3, 0)]);
-    }
-
-    /// WHY: narrowing a detector index must never wrap and route a match to a different detector.
-    #[test]
-    #[should_panic(expected = "CSR value exceeds the u32 representation")]
-    fn out_of_range_value_fails_closed() {
-        let _ = CsrU32::from_pairs(1, [(0, u32::MAX as usize + 1)]);
     }
 }

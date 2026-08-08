@@ -193,7 +193,7 @@ impl RequestProfileCapture {
         let (_point_events, _annotations, event_loss) = self.runtime.take_session_typed_events();
         RequestProfile {
             request_id: self.request_id,
-            wall_time_ns: u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+            wall_time_ns: u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX), // LAW10: profiling duration saturates when nanoseconds exceed u64; scan findings and errors are unchanged.
             stages,
             dropped_span_events,
             dropped_point_events: event_loss.point_events,
@@ -610,10 +610,12 @@ fn spawn_connection_handler(state: Arc<ServerState>, stream: UnixStream) {
     let (permit, admission) = match state.connection_limit.clone().try_acquire_owned() {
         Ok(permit) => (permit, Admission::Scan),
         Err(_) => match state.control_limit.clone().try_acquire_owned() {
+            // LAW10: exhausted scan admission intentionally reserves the separate control pool; no scan runs on the control permit.
             Ok(permit) => (permit, Admission::ControlOnly),
             // Both pools exhausted: drop the socket now rather than queue
             // unbounded work. The client observes EOF on its handshake read.
             Err(_) => {
+                // LAW10: exhausted admission is surfaced by the warning below and EOF to the client; no request is executed.
                 tracing::warn!(
                     "daemon: refused a connection; every scan and control admission is held"
                 );

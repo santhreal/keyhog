@@ -76,6 +76,7 @@ impl LazyAnchorAc {
             let literals = self
                 .literals
                 .lock()
+                // LAW10: poison recovery retains the immutable literal set; anchor construction still runs in full.
                 .unwrap_or_else(|error| error.into_inner())
                 .take()
                 .expect("lazy phase-2 anchor literals must exist before initialization");
@@ -286,10 +287,15 @@ impl Phase2AnchorIndex {
         for (idx, (pattern, _keywords)) in phase2_patterns.iter().enumerate() {
             use crate::compiler::compiler_build::Phase2LocalizationHint;
 
-            let hint = localization_hints
-                .as_mut()
-                .and_then(Iterator::next)
-                .unwrap_or_else(|| compile_localization_hint(pattern));
+            let hint = match localization_hints.as_mut() {
+                // LAW10: authenticated hint cardinality drift is a loud build-invariant panic.
+                Some(hints) => hints.next().unwrap_or_else(|| {
+                    panic!(
+                        "BUILD-INVARIANT VIOLATION: phase-2 localization hint cardinality is shorter than the compiled pattern set"
+                    )
+                }),
+                None => compile_localization_hint(pattern),
+            };
             match hint {
                 Phase2LocalizationHint::Prefix {
                     literals: pattern_literals,

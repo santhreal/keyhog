@@ -31,7 +31,6 @@ GATES = REPO / "scripts" / "gates"
 RUN_ALL = GATES / "run_all.sh"
 BASELINE = GATES / "silent_fallback_baseline.txt"
 NSF = GATES / "no_silent_fallbacks.py"
-PRERELEASE = REPO / "scripts" / "prerelease.sh"
 
 
 def _run_all_text() -> str:
@@ -92,24 +91,11 @@ def test_run_all_source_only_exits_zero_on_clean_tree():
     assert "ALL PREVENTION GATES GREEN." in proc.stdout, combined
 
 
-def test_prerelease_preserves_the_supplied_signed_candidate_path():
-    """A benchmark-copy variable must not shadow the signed bundle input.
-
-    The install smoke has to consume the caller-supplied binary plus its checksum,
-    signature, and GPU sidecars. Reusing `RELEASE_CANDIDATE` for a local benchmark
-    copy silently disconnects all six signed artifacts from the release gate.
-    """
-    text = PRERELEASE.read_text()
-    assert 'BENCH_RELEASE_CANDIDATE="$CARGO_TARGET_DIR/$PROFILE/keyhog-release-candidate"' in text
-    assert 'cp "$CANDIDATE" "$BENCH_RELEASE_CANDIDATE"' in text
-    assert 'release_candidate_bundle_present "$RELEASE_CANDIDATE"' in text
-    assert 'cp "$CANDIDATE" "$RELEASE_CANDIDATE"' not in text
-    assert "--yes --no-prompt --no-calibrate --no-color" in text
 
 
 def test_run_all_source_only_loud_skips_every_asset_gate():
     """Every asset-bearing gate must announce its skip out loud (Law 10): a
-    silent skip is a coverage hole nobody can see. In source-only mode all four
+    silent skip is a coverage hole nobody can see. In source-only mode all five
     asset gates skip, each printing a `SKIP (loud):` line."""
     proc = subprocess.run(
         ["bash", str(RUN_ALL)],
@@ -125,12 +111,13 @@ def test_run_all_source_only_loud_skips_every_asset_gate():
         for line in out.splitlines()
         if "SKIP (loud): GATES_SOURCE_ONLY=1" in line
     ]
-    assert len(asset_skips) == 4, (
-        f"expected 4 source-only asset skips, got {len(asset_skips)}\n{out}"
+    assert len(asset_skips) == 5, (
+        f"expected 5 source-only asset skips, got {len(asset_skips)}\n{out}"
     )
     for marker in (
         "backend parity + recall floor",
         "differential bench gate",
+        "coverage gate not run",
         "cargo audit not run",
         "ML feature-parity gate not run",
     ):

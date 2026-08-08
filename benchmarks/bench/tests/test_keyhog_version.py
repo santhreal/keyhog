@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 import subprocess
 from types import SimpleNamespace
 
@@ -141,12 +142,9 @@ def test_workspace_detector_digest_matches_build_rs_on_current_tree():
     repo_root = pathlib.Path(__file__).resolve().parents[3]
     detector_dir = repo_root / "detectors"
 
-    # Regression: treating corpus.toml as detector 924 and hashing it in sorted
-    # order produced 924-c403f3d2507f00dc instead of the audit tree's
-    # build-stamped 923-8ff9138381e6a120. The explicit final-tree lock also
-    # forces intentional manifest/schema changes to regenerate this assertion.
+    # The independent translation must agree with the benchmark identity
+    # implementation for every current detector corpus.
     authoritative = _build_rs_detector_digest(detector_dir)
-    assert authoritative == "923-8785f8837d2cd505"
     assert keyhog_version.workspace_detector_digest(repo_root) == authoritative
 
     correct_output = _version_output(
@@ -158,18 +156,20 @@ def test_workspace_detector_digest_matches_build_rs_on_current_tree():
 
 
 def test_report_identity_rejects_pre_manifest_fix_digest():
+    repo_root = pathlib.Path(__file__).resolve().parents[3]
     commit = keyhog_version.workspace_git_hash()
+    authoritative = _build_rs_detector_digest(repo_root / "detectors")
+    stale_digest = "924-c403f3d2507f00dc"
     stale_output = _version_output(
-        commit=commit, detector_digest="924-c403f3d2507f00dc"
+        commit=commit, detector_digest=stale_digest
     )
 
-    # The old benchmark digest must fail closed rather than rejecting the
-    # correctly built binary and accepting stale pre-manifest result metadata.
+    # A stale detector identity must fail closed against the exact current
+    # workspace digest, whatever detector additions the current tree contains.
     with pytest.raises(
         keyhog_version.KeyhogVersionError,
-        match=(
-            "detector_set=924-c403f3d2507f00dc, "
-            "workspace=923-8785f8837d2cd505"
+        match=re.escape(
+            f"detector_set={stale_digest}, workspace={authoritative}"
         ),
     ):
         keyhog_version.assert_reported_identity_matches_workspace(

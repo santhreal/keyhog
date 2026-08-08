@@ -7,11 +7,11 @@ feature whose only coverage is "the module compiles" is a feature-shaped shell.
 
 This gate enumerates the real subcommand surface from the canonical `clap`
 `enum Command` in `crates/cli/src/args.rs` and asserts that EVERY subcommand is
-exercised by the reliability matrix in `crates/cli/tests/reliability/harness.rs`
-The suite that SPAWNS THE ACTUAL BINARY (`run(profile, &[sub, ...])`) under
-16 hostile profiles and asserts clean exit / no panic / no ANSI leak / a usage
-contract. A subcommand present in the binary but absent from that list = a
-surface with no real-process coverage = RED BUILD.
+exercised by the hostile-profile matrix in
+`crates/cli/tests/reliability/surface_badflag.rs`. That matrix spawns the actual
+binary under every profile and verifies clap rejects an invalid flag cleanly
+before any long-running command body starts. A binary subcommand absent from
+that matrix has no exhaustive real-process coverage and fails the build.
 
 (Interactive surfaces that need a live workflow, a TUI, a daemon stream, must
 additionally carry a PTY/e2e test; there are none today after the TUI removal,
@@ -27,7 +27,7 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 ARGS = REPO / "crates" / "cli" / "src" / "args.rs"
-HARNESS = REPO / "crates" / "cli" / "tests" / "reliability" / "harness.rs"
+SURFACE_MATRIX = REPO / "crates" / "cli" / "tests" / "reliability" / "surface_badflag.rs"
 
 # Subcommands that are interactive/long-running and are deliberately exercised
 # by a DEDICATED bounded test instead of the no-arg reliability sweep, but must
@@ -63,16 +63,20 @@ def command_variants() -> set[str]:
 
 
 def covered_subcommands() -> set[str]:
-    if not HARNESS.exists():
-        print(f"FAIL, reliability harness not found: {HARNESS}", file=sys.stderr)
+    if not SURFACE_MATRIX.exists():
+        print(f"FAIL, reliability surface matrix not found: {SURFACE_MATRIX}", file=sys.stderr)
         sys.exit(2)
-    text = HARNESS.read_text()
-    # The SUBCOMMANDS const is the array containing "scan-system" + "daemon".
-    m = re.search(r"&\[([^\]]*?\"scan-system\"[^\]]*?)\]", text, re.S)
+    text = SURFACE_MATRIX.read_text()
+    m = re.search(
+        r"kh_matrix!\(\s*crate::reliability::surface_badflag::badflag_invariant,"
+        r"(.*?)\n\);",
+        text,
+        re.S,
+    )
     if not m:
-        print("FAIL, could not locate the subcommand list in harness.rs", file=sys.stderr)
+        print("FAIL, could not locate the subcommand matrix in surface_badflag.rs", file=sys.stderr)
         sys.exit(2)
-    return set(re.findall(r'"([a-z][a-z0-9-]*)"', m.group(1)))
+    return set(re.findall(r'=>\s*"([a-z][a-z0-9-]*)"', m.group(1)))
 
 
 def main() -> int:
@@ -91,9 +95,9 @@ def main() -> int:
     if gaps:
         print(f"\nFAIL: {len(gaps)} subcommand(s) in the binary have NO real-process "
               f"coverage: {sorted(gaps)}", file=sys.stderr)
-        print("  Add each to the SUBCOMMANDS list in "
-              "crates/cli/tests/reliability/harness.rs so the reliability matrix "
-              "actually spawns and exercises it. An interactive surface needs a "
+        print("  Add each to the `kh_matrix!` invocation in "
+              "crates/cli/tests/reliability/surface_badflag.rs so the hostile-profile "
+              "matrix actually spawns and exercises it. An interactive surface needs a "
               "PTY/e2e test on top.", file=sys.stderr)
         rc = 1
     if stale:

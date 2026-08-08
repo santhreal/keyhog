@@ -172,10 +172,7 @@ pub(crate) fn record_mark_gate_skip() {
 
 #[inline]
 pub(crate) fn record_mark_perpattern_work() {
-    keyhog_profile::add_counter(
-        keyhog_profile::CounterId::Phase2PrefilterPerPatternWork,
-        1,
-    );
+    keyhog_profile::add_counter(keyhog_profile::CounterId::Phase2PrefilterPerPatternWork, 1);
 }
 
 /// A per-pattern call was served by the Hyperscan SIMD fast path. Fires exactly
@@ -194,10 +191,7 @@ pub(crate) fn record_mark_hs_served() {
 /// (HS unavailable/errored, chunk over the size gate, or a non-`simd` build).
 #[inline]
 pub(crate) fn record_mark_regexset_served() {
-    keyhog_profile::add_counter(
-        keyhog_profile::CounterId::Phase2PrefilterRegexsetServed,
-        1,
-    );
+    keyhog_profile::add_counter(keyhog_profile::CounterId::Phase2PrefilterRegexsetServed, 1);
 }
 
 /// Build a [`MarkSnapshot`] from one drained typed-metric batch

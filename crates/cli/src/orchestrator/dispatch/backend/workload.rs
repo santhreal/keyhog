@@ -82,7 +82,6 @@ pub(crate) fn canonical_source_classes() -> impl ExactSizeIterator<Item = &'stat
     CANONICAL_SOURCE_CLASSES.values().map(String::as_str)
 }
 
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct SourceRouteClass {
     source_class_digest: [u8; 32],

@@ -78,6 +78,7 @@ impl CompiledScanner {
                                 entropy_config_digest,
                                 self.decoder_admission_context_key(chunk),
                             )
+                            // LAW10: missing exact absence evidence disables the shortcut and performs the full direct scan.
                             .unwrap_or(false)
                         && crate::structured::preprocessing_is_impossible_for_path(
                             chunk.metadata.path.as_deref(),
@@ -124,12 +125,14 @@ impl CompiledScanner {
                                 self.config.unicode_normalization,
                             )
                         })
+                        // LAW10: missing passthrough evidence runs normalization instead of skipping it.
                         .unwrap_or(false);
                     let multiline_absence = normalization_passthrough
                         && admission_plan
                             .and_then(|plan| {
                                 plan.multiline_absence_for(index, entropy_config_digest)
                             })
+                            // LAW10: missing multiline-absence evidence runs multiline admission in full.
                             .unwrap_or(false);
                     let line_context_index = normalization_passthrough
                         .then(|| admission_plan.and_then(|plan| plan.line_context_index_for(index)))
@@ -147,13 +150,16 @@ impl CompiledScanner {
                         });
                     let confirmed_patterns_absence = admission_plan
                         .and_then(|plan| plan.confirmed_patterns_absence_for(index))
+                        // LAW10: missing confirmed-pattern absence evidence keeps confirmed matching enabled.
                         .unwrap_or(false);
                     let entropy_absence = admission_plan
                         .and_then(|plan| plan.entropy_absence_for(index, entropy_config_digest))
+                        // LAW10: missing entropy absence evidence keeps entropy matching enabled.
                         .unwrap_or(false);
                     let decoder_admission_context = self.decoder_admission_context_key(chunk);
                     let decoder_absence = admission_plan
                         .and_then(|plan| plan.decoder_absence_for(index, decoder_admission_context))
+                        // LAW10: missing decoder absence evidence keeps decode generation enabled.
                         .unwrap_or(false);
                     let direct_scan_absence = matches!(backend, ScanBackend::CpuFallback)
                         && admission_plan
@@ -165,6 +171,7 @@ impl CompiledScanner {
                                     decoder_admission_context,
                                 )
                             })
+                            // LAW10: missing complete direct-scan absence evidence runs the full matcher.
                             .unwrap_or(false);
                     self.scan_with_deadline_and_backend_admission_route_and_hints(
                         chunk,
@@ -251,6 +258,7 @@ impl CompiledScanner {
         #[cfg(debug_assertions)]
         if self.config.unicode_normalization && !normalization_passthrough {
             self.normalization_scanned_bytes.fetch_add(
+                // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; scan behavior is unchanged.
                 u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
                 std::sync::atomic::Ordering::Relaxed,
             );
@@ -301,6 +309,7 @@ impl CompiledScanner {
                 #[cfg(debug_assertions)]
                 if !multiline_absence {
                     self.multiline_admission_scanned_bytes.fetch_add(
+                        // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; scan behavior is unchanged.
                         u64::try_from(data_to_pp.len()).unwrap_or(u64::MAX),
                         std::sync::atomic::Ordering::Relaxed,
                     );

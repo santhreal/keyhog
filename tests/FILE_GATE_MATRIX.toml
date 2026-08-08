@@ -1063,7 +1063,7 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/gpu_region_dispatch.rs"
+path = "crates/scanner/src/engine/gpu_region_dispatch/mod.rs"
 error = true
 adversarial = true
 
@@ -1103,7 +1103,7 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/scan_coalesced.rs"
+path = "crates/scanner/src/engine/scan_coalesced/mod.rs"
 error = true
 adversarial = true
 
@@ -2413,7 +2413,7 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase1_admission.rs"
+path = "crates/scanner/src/engine/phase1_admission/mod.rs"
 error = true
 adversarial = true
 

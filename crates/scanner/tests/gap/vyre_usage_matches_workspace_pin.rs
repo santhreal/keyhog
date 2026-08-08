@@ -44,9 +44,8 @@ fn vyre_integration_doc_matches_workspace_pin() {
     let version = workspace_vyre_pin(&manifest);
 
     assert!(
-        doc.to_ascii_lowercase()
-            .contains(&format!("vyre v{version}")),
-        "VYRE integration reference must state the workspace pin v{version}"
+        doc.contains(&format!("version `={version}`")),
+        "VYRE integration reference must state the workspace pin ={version}"
     );
     assert!(
         !doc.contains("VYRE is not on crates.io"),

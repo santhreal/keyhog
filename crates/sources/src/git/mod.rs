@@ -140,6 +140,7 @@ pub(crate) fn record_shallow_history_gap(repo: &gix::Repository, source_label: &
         // History is truncated by an unknown amount and the boundary cannot be
         // enumerated, so report the honest floor of one unscanned object.
         Ok(None) | Err(_) => {
+            // LAW10: unreadable shallow metadata emits the warning below and records an explicit unscanned-object coverage gap.
             warn_shallow_history(source_label, 1);
             record_git_object_unreadable();
             return;

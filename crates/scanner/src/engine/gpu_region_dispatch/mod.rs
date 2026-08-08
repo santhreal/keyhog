@@ -112,6 +112,7 @@ impl CompiledScanner {
                 vendor,
                 device,
                 is_software,
+                // LAW10: absent optional adapter names use the selected backend's stable identifier.
                 name: name.unwrap_or(backend.id()),
                 driver: "",
                 driver_info: "",
@@ -1082,5 +1083,5 @@ impl CompiledScanner {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/engine_gpu_region_dispatch.rs"]
+#[path = "../../../tests/unit/engine_gpu_region_dispatch.rs"]
 mod tests;

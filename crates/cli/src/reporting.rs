@@ -6,8 +6,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use keyhog_core::{
     AccessTargetReport, CorrelatedCredential, ReportFormat, ResolvedScanManifest,
-    ScanCompletionStatus, ScanReport,
-    ScanReportMetadata, StaticRecoveryMetrics, VerifiedFinding,
+    ScanCompletionStatus, ScanReport, ScanReportMetadata, StaticRecoveryMetrics, VerifiedFinding,
     STATIC_RECOVERY_METRICS_SCHEMA_VERSION,
 };
 use keyhog_profile::Stage;
@@ -56,7 +55,7 @@ pub(crate) fn report_findings_with_metadata(
                 &correlations,
                 access_targets.as_ref(),
             )
-                .map_err(|error| io::Error::other(format!("{error:#}")))
+            .map_err(|error| io::Error::other(format!("{error:#}")))
         })
         .with_context(|| format!("atomically writing report {}", path.display()))?;
         Ok(())
@@ -328,7 +327,10 @@ fn report_metadata_from_scan_run_inner(
         );
     }
     metadata.resolved_scan = Some(resolved_scan);
-    let has_coverage_gaps = !coverage_gap_summary(&CoverageCounts::current()).is_empty();
+    let has_coverage_gaps = !coverage_gap_summary(&CoverageCounts::current_with_scanned_bytes(
+        source_bytes_scanned,
+    ))
+    .is_empty();
     metadata.scan_status = if has_coverage_gaps {
         ScanCompletionStatus::Partial
     } else if crate::BACKEND_RECOVERY_EVENTS.load(std::sync::atomic::Ordering::Relaxed) > 0 {
@@ -643,19 +645,20 @@ impl CoverageCounts {
     /// place the process-global counters are read; everything downstream is a
     /// pure function of the returned snapshot.
     pub(crate) fn current() -> Self {
+        Self::current_with_scanned_bytes(
+            crate::SCANNED_BYTES.load(std::sync::atomic::Ordering::Relaxed),
+        )
+    }
+
+    fn current_with_scanned_bytes(source_bytes_scanned: u64) -> Self {
         use keyhog_scanner::telemetry;
         let skip = keyhog_sources::skip_counts();
-        // Read at end of scan from the same counter report metadata publishes
-        // as `source_bytes_scanned`, so the gap row and the envelope field can
-        // never disagree.
-        let covered_nothing =
-            crate::SCANNED_BYTES.load(std::sync::atomic::Ordering::Relaxed) == 0;
+        let covered_nothing = source_bytes_scanned == 0;
         // "Policy hid everything" and "there was nothing there" are different
         // operator problems with different fixes, so they are different rows.
         // Any skip at all proves the walker found candidates and dropped them.
-        let anything_skipped = skip.total() > 0
-            || skip.git_lfs_pointer > 0
-            || skip.git_object_unreadable > 0;
+        let anything_skipped =
+            skip.total() > 0 || skip.git_lfs_pointer > 0 || skip.git_object_unreadable > 0;
         CoverageCounts {
             skip,
             source_errors: crate::SOURCE_ERRORS.load(std::sync::atomic::Ordering::Relaxed),

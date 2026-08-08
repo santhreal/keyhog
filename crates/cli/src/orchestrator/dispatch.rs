@@ -584,7 +584,7 @@ pub(crate) fn record_profiled_batch_route(
         .runtime_route
         .as_ref()
         .map(|route| route.workload_key_digest())
-        .unwrap_or_else(|| profiling_explicit_batch_digest(batch));
+        .unwrap_or_else(|| profiling_explicit_batch_digest(batch)); // LAW10: an explicit route has no persisted workload digest, so profiling records the exact batch digest instead.
     let (completed_backend, recovered_from_backend) = outcome.recovery.as_ref().map_or_else(
         || (selection.backend.label(), None),
         |recovery| {

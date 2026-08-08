@@ -533,15 +533,19 @@ fn a_non_contiguous_source_never_splits() {
 #[test]
 fn a_recorded_routing_error_survives_a_poisoned_slot() {
     let slot: std::sync::Mutex<Option<AutorouteRoutingError>> = std::sync::Mutex::new(None);
-    *first_routing_error(&slot) =
-        Some(AutorouteRoutingError::unsupported_backend(ScanBackend::GpuMetal));
+    *first_routing_error(&slot) = Some(AutorouteRoutingError::unsupported_backend(
+        ScanBackend::GpuMetal,
+    ));
 
     let poison = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _guard = slot.lock().expect("uncontended lock");
         panic!("holder panics while the error is recorded");
     }));
     assert!(poison.is_err(), "the test must actually poison the mutex");
-    assert!(slot.is_poisoned(), "the slot must be poisoned for this contract");
+    assert!(
+        slot.is_poisoned(),
+        "the slot must be poisoned for this contract"
+    );
 
     assert!(
         first_routing_error(&slot).is_some(),
@@ -566,7 +570,14 @@ fn an_untouched_routing_slot_reports_no_error() {
 fn the_timed_bridge_yields_every_batch_once_in_order() {
     let (tx, rx) = std::sync::mpsc::channel::<Vec<Chunk>>();
     let sent: Vec<Vec<Chunk>> = (0..5)
-        .map(|index| vec![routed_chunk("filesystem", &format!("f{index}"), "body", true)])
+        .map(|index| {
+            vec![routed_chunk(
+                "filesystem",
+                &format!("f{index}"),
+                "body",
+                true,
+            )]
+        })
         .collect();
     for batch in &sent {
         tx.send(batch.clone()).expect("send batch");
@@ -608,6 +619,7 @@ fn the_timed_bridge_charges_time_spent_waiting_for_a_batch() {
     let sender = std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(40));
         let _ = tx.send(vec![routed_chunk("filesystem", "slow", "body", true)]);
+        // LAW10: test-only producer may observe a closed consumer after assertion failure; no production result is suppressed.
     });
 
     keyhog_profile::set_detail(keyhog_profile::Detail::Stages);
@@ -669,12 +681,17 @@ fn explicit_routing_is_lock_free_and_order_independent() {
                 })
             })
             .collect();
-        handles.into_iter().map(|h| h.join().expect("join")).collect()
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("join"))
+            .collect()
     });
 
     assert_eq!(chosen.len(), 8);
     assert!(
-        chosen.iter().all(|backend| *backend == ScanBackend::CpuFallback),
+        chosen
+            .iter()
+            .all(|backend| *backend == ScanBackend::CpuFallback),
         "an explicit backend must be returned to every concurrent caller"
     );
 }

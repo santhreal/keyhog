@@ -118,8 +118,14 @@ fn stream_git_history_chunks(
     let repo_arg = super::validate_repo_path(repo_path)?;
     // Truncated ancestry is a coverage gap, not a clean scan. One `shallow`
     // file stat on the way in; see `record_shallow_history_gap`.
-    if let Ok(repo) = gix::open(std::path::Path::new(&repo_arg)) {
-        super::record_shallow_history_gap(&repo, "git history source (--git-history)");
+    match gix::open(std::path::Path::new(&repo_arg)) {
+        Ok(repo) => super::record_shallow_history_gap(&repo, "git history source (--git-history)"),
+        Err(error) => {
+            eprintln!(
+                "keyhog: WARNING: git history coverage probe failed: {error}; continuing with git log and recording an unreadable object"
+            );
+            super::record_git_object_unreadable();
+        }
     }
     let mut command = super::git_command()?;
     command.args([

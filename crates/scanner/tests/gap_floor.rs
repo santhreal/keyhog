@@ -4,8 +4,6 @@ mod support;
 
 #[path = "gap/adversarial_bulk_lacks_per_detector_hostile_twins.rs"]
 mod adversarial_bulk_lacks_per_detector_hostile_twins;
-#[path = "gap/alphabet_targets_no_per_pattern_clone.rs"]
-mod alphabet_targets_no_per_pattern_clone;
 #[path = "gap/analyze_keyword_only_must_assert.rs"]
 mod analyze_keyword_only_must_assert;
 #[path = "gap/anchored_candidate_verify_single_owner.rs"]

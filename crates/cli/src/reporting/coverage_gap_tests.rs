@@ -51,7 +51,13 @@ fn zero_count_categories_are_filtered_out() {
         1,
         "only the single non-zero category may appear, got {summary:?}"
     );
-    assert_eq!(count_for(&summary, "exceeded a configured size cap (--max-file-size or the matching --limit-*-bytes)"), Some(4));
+    assert_eq!(
+        count_for(
+            &summary,
+            "exceeded a configured size cap (--max-file-size or the matching --limit-*-bytes)"
+        ),
+        Some(4)
+    );
 }
 
 // ── source-walker categories ─────────────────────────────────────────────────
@@ -62,7 +68,13 @@ fn over_max_size_surfaces() {
         over_max_size: 7,
         ..Default::default()
     }));
-    assert_eq!(count_for(&s, "exceeded a configured size cap (--max-file-size or the matching --limit-*-bytes)"), Some(7));
+    assert_eq!(
+        count_for(
+            &s,
+            "exceeded a configured size cap (--max-file-size or the matching --limit-*-bytes)"
+        ),
+        Some(7)
+    );
 }
 
 #[test]
@@ -113,7 +125,10 @@ fn archive_truncated_surfaces() {
         archive_truncated: 6,
         ..Default::default()
     }));
-    assert_eq!(count_for(&s, "extraction truncated by an unpack budget"), Some(6));
+    assert_eq!(
+        count_for(&s, "extraction truncated by an unpack budget"),
+        Some(6)
+    );
 }
 
 #[test]
@@ -206,10 +221,7 @@ fn nothing_scanned_no_input_surfaces_and_fails_closed() {
         ..Default::default()
     };
     let s = coverage_gap_summary(&counts);
-    assert_eq!(
-        count_for(&s, "no skip was counted"),
-        Some(1)
-    );
+    assert_eq!(count_for(&s, "no skip was counted"), Some(1));
     assert_eq!(
         CoverageGapKind::NothingScannedNoInput.severity(),
         CoverageSeverity::Fail
@@ -518,7 +530,10 @@ fn surfaced_count_equals_input_count() {
         ..Default::default()
     }));
     assert_eq!(
-        count_for(&s, "exceeded a configured size cap (--max-file-size or the matching --limit-*-bytes)"),
+        count_for(
+            &s,
+            "exceeded a configured size cap (--max-file-size or the matching --limit-*-bytes)"
+        ),
         Some(42),
         "the surfaced count must be the exact input count, not a boolean/clamp"
     );

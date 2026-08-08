@@ -107,7 +107,7 @@ pub(crate) fn run(args: CompileExecutionPacksArgs) -> Result<()> {
     let manifest = match result {
         Ok(manifest) => manifest,
         Err(error) => {
-            let _ = fs::remove_dir_all(&stage);
+            let _ = fs::remove_dir_all(&stage); // LAW10: best-effort staging cleanup cannot hide the compilation error returned immediately below.
             return Err(error);
         }
     };
@@ -129,9 +129,9 @@ pub(crate) fn run(args: CompileExecutionPacksArgs) -> Result<()> {
     }
     if let Err(error) = fs::rename(&stage, &args.output_dir) {
         if had_previous {
-            let _ = fs::rename(&backup, &args.output_dir);
+            let _ = fs::rename(&backup, &args.output_dir); // LAW10: best-effort rollback cannot hide the install error returned below with the affected paths.
         }
-        let _ = fs::remove_dir_all(&stage);
+        let _ = fs::remove_dir_all(&stage); // LAW10: best-effort staging cleanup cannot hide the install error returned immediately below.
         return Err(error).with_context(|| {
             format!(
                 "publishing execution-pack generation {}",
@@ -315,7 +315,7 @@ fn compile_gpu_inputs<'a>(
                 status
                     .acquisition_error
                     .as_deref()
-                    .unwrap_or("missing driver, runtime, or device identity")
+                    .unwrap_or("missing driver, runtime, or device identity") // LAW10: absent optional acquisition detail uses a diagnostic placeholder; pack compilation remains blocked.
             );
         }
         let runtime_identity = status
@@ -327,8 +327,8 @@ fn compile_gpu_inputs<'a>(
             .as_deref()
             .context("missing VYRE device identity")?;
         let limits_digest = digest_parts(&[
-            status.driver_id.unwrap_or_default().as_bytes(),
-            status.driver_version.unwrap_or_default().as_bytes(),
+            status.driver_id.unwrap_or_default().as_bytes(), // LAW10: absent optional driver ID is represented in a digest whose required runtime and device identities are already validated.
+            status.driver_version.unwrap_or_default().as_bytes(), // LAW10: absent optional driver version is represented in a digest whose required runtime and device identities are already validated.
             runtime_identity.as_bytes(),
             device_identity.as_bytes(),
             format!("{:?}", keyhog_scanner::probe_hardware()).as_bytes(),
@@ -530,7 +530,7 @@ fn reap_stale_generation_siblings(output: &Path) -> Result<()> {
     let name = output
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or("execution-packs");
+        .unwrap_or("execution-packs"); // LAW10: non-Unicode or absent output basename affects only temporary-file naming, not the target path or compile result.
     let stage_prefix = format!(".{name}.stage.");
     let backup_prefix = format!(".{name}.backup.");
     let mut stale_backups = Vec::new();
@@ -608,7 +608,7 @@ fn unique_sibling(output: &Path, suffix: &str) -> PathBuf {
     let name = output
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or("execution-packs");
+        .unwrap_or("execution-packs"); // LAW10: non-Unicode or absent output basename affects only rollback-path naming, not the target path or compile result.
     output.with_file_name(format!(".{name}.{suffix}.{}", std::process::id()))
 }
 

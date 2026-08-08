@@ -55,4 +55,3 @@ fn stripe_hot_and_confirmed_paths_share_nonzero_base_offset() {
     assert_eq!(stripe[0].location.offset, base_offset + local_offset);
     assert_eq!(stripe[0].location.line, Some(base_line + 1));
 }
-

@@ -328,7 +328,7 @@ impl ScanGate {
     fn lock(&self) -> std::sync::MutexGuard<'_, GateState> {
         self.state
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) // LAW10: poisoned test gate recovery preserves the single-mutex state machine and cannot alter production scan results.
     }
 }
 
@@ -357,7 +357,7 @@ pub(crate) fn enter_exclusive_scan_scope() -> ScanCounterScope {
         state = SCAN_GATE
             .changed
             .wait(state)
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(|poisoned| poisoned.into_inner()); // LAW10: poisoned test gate recovery resumes the same counter-guarded state and cannot suppress a source row.
     }
     state.exclusive_waiters -= 1;
     state.exclusive_owner = Some(std::thread::current().id());
@@ -408,7 +408,7 @@ pub(crate) fn acquire_scan_read_lease() -> ScanReadLease {
         state = SCAN_GATE
             .changed
             .wait(state)
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(|poisoned| poisoned.into_inner()); // LAW10: poisoned test gate recovery resumes the same counter-guarded state and cannot suppress a source row.
     }
     state.active_scans += 1;
     ScanReadLease {
@@ -473,7 +473,7 @@ fn await_recording_admission() {
         state = SCAN_GATE
             .changed
             .wait(state)
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(|poisoned| poisoned.into_inner()); // LAW10: poisoned test gate recovery only waits for test-owned scan counters to drain; production findings are untouched.
     }
 }
 

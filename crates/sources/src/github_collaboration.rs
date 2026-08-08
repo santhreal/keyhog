@@ -275,7 +275,7 @@ impl GitHubCollaborationSource {
                         |_api, reviews: Vec<PullRequestReview>| {
                             for review in reviews {
                                 let revision_time =
-                                    review.submitted_at.as_deref().unwrap_or(&review.commit_id);
+                                    review.submitted_at.as_deref().unwrap_or(&review.commit_id); // LAW10: absent optional review timestamp uses the immutable commit ID only for revision identity; review text is still scanned.
                                 let revision = revision_identity(&review.node_id, revision_time);
                                 push_text_chunk(
                                     chunks,
@@ -289,8 +289,8 @@ impl GitHubCollaborationSource {
                                     )),
                                     &revision,
                                     review.user.as_ref().map(|actor| actor.login.as_str()),
-                                    review.submitted_at.as_deref().unwrap_or(""),
-                                    review.body.unwrap_or_default(),
+                                    review.submitted_at.as_deref().unwrap_or(""), // LAW10: absent optional timestamp renders an empty metadata field; review content remains scanned.
+                                    review.body.unwrap_or_default(), // LAW10: a review without optional body text has no text payload to scan; its metadata chunk is still emitted.
                                 )?;
                             }
                             Ok(())
@@ -656,9 +656,9 @@ impl GitHubCollaborationSource {
                 let revision_time = release
                     .published_at
                     .as_deref()
-                    .unwrap_or(&release.created_at);
+                    .unwrap_or(&release.created_at); // LAW10: absent optional publish time uses required creation time only for revision identity; release text is still scanned.
                 let revision = revision_identity(&release.node_id, revision_time);
-                let title = release.name.as_deref().unwrap_or(&release.tag_name);
+                let title = release.name.as_deref().unwrap_or(&release.tag_name); // LAW10: absent optional release name uses the required tag while preserving all release body and asset text.
                 let mut text = join_title_body(title, release.body.as_deref());
                 for asset in &release.assets {
                     text.push('\n');
@@ -740,7 +740,7 @@ impl Source for GitHubCollaborationSource {
                 let _profile_guard = profile_runtime.as_ref().map(|runtime| runtime.enter());
                 let result = source.stream_chunks(|row| sender.send(row).is_ok());
                 if let Err(error) = result {
-                    let _ = sender.send(Err(error));
+                    let _ = sender.send(Err(error)); // LAW10: a failed send means the stream consumer is already closed; no recipient remains for this source error.
                 }
             },
         );

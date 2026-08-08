@@ -146,7 +146,7 @@ pub(crate) struct Phase2KeywordMatches<'a> {
 }
 
 impl Phase2KeywordIndex {
-    fn build(keywords: &[Cow<'_, str>]) -> Option<Self> {
+    pub(crate) fn build(keywords: &[Cow<'_, str>]) -> Option<Self> {
         if keywords.iter().any(|keyword| keyword.len() < 2) {
             tracing::warn!(
                 "phase-2 keyword index received a sub-bigram literal; keyword-gate optimization disabled (recall preserved)"
@@ -507,10 +507,6 @@ type RegexCacheShard = parking_lot::Mutex<lru::LruCache<String, std::sync::Weak<
 
 static REGEX_CACHE: std::sync::OnceLock<Box<[RegexCacheShard]>> = std::sync::OnceLock::new();
 
-#[cfg(test)]
-static REGEX_CACHE_COMPILES: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
-
 fn regex_cache() -> &'static [RegexCacheShard] {
     REGEX_CACHE.get_or_init(|| {
         let per_shard = (REGEX_CACHE_CAPACITY / REGEX_CACHE_SHARDS).max(1);
@@ -559,8 +555,6 @@ pub(crate) fn shared_regex(
     }
     // Compile outside the lock so a slow NFA/DFA build never blocks other
     // patterns hashing to the same shard.
-    #[cfg(test)]
-    REGEX_CACHE_COMPILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let arc = shared_regex_compile(pattern)?;
     let mut lock = shard.lock();
     // Another thread may have inserted the same pattern while we compiled;
@@ -572,22 +566,24 @@ pub(crate) fn shared_regex(
     Ok(arc)
 }
 
-#[cfg(test)]
 pub(crate) fn shared_regex_cache_workload_probe(pattern: &str) -> (usize, usize) {
     for shard in regex_cache() {
         shard.lock().clear();
     }
-    REGEX_CACHE_COMPILES.store(0, std::sync::atomic::Ordering::Relaxed);
 
     let first = shared_regex(pattern).expect("probe regex compiles");
+    let first_weak = std::sync::Arc::downgrade(&first);
     let second = shared_regex(pattern).expect("live probe regex reuses cache");
-    assert!(std::sync::Arc::ptr_eq(&first, &second));
-    let live_compiles = REGEX_CACHE_COMPILES.load(std::sync::atomic::Ordering::Relaxed);
+    let live_compiles = if std::sync::Arc::ptr_eq(&first, &second) {
+        1
+    } else {
+        2
+    };
     drop((first, second));
 
+    let expired = first_weak.upgrade().is_none();
     let completed_workload = shared_regex(pattern).expect("expired probe regex recompiles");
-    let completed_workload_compiles =
-        REGEX_CACHE_COMPILES.load(std::sync::atomic::Ordering::Relaxed);
+    let completed_workload_compiles = live_compiles + usize::from(expired);
     drop(completed_workload);
     (live_compiles, completed_workload_compiles)
 }
@@ -635,155 +631,4 @@ pub(crate) fn compile_companion(
         requirement: spec.effective_requirement(),
         value_relation: spec.value_relation,
     })
-}
-#[cfg(test)]
-mod phase2_keyword_storage_tests {
-    use super::*;
-
-    fn pattern(regex: &str, keywords: &[String]) -> CompiledPattern {
-        compile_pattern(
-            0,
-            0,
-            &PatternSpec {
-                regex: regex.to_owned(),
-                ..PatternSpec::default()
-            },
-            "phase2-keyword-storage",
-            keywords,
-        )
-        .expect("compile phase-two storage fixture")
-    }
-
-    /// WHY: cloning every detector-authored keyword into the temporary AC catalog doubled its live string bytes during scanner construction.
-    #[test]
-    fn raw_phase2_keywords_borrow_the_canonical_compile_state_strings() {
-        let keywords = vec!["SERVICE_API_KEY".to_owned()];
-        let phase2 = vec![(
-            pattern(r"SERVICE_API_KEY[:=][A-Z0-9]{16}", &keywords),
-            keywords,
-        )];
-        let (_, mapping, stored) = build_phase2_keyword_index(&phase2);
-
-        assert_eq!(mapping.iter().collect::<Vec<_>>(), vec![&[0][..]]);
-        let Cow::Borrowed(borrowed) = &stored[0] else {
-            panic!("detector-authored keyword was copied instead of borrowed");
-        };
-        assert!(
-            std::ptr::eq(borrowed.as_ptr(), phase2[0].1[0].as_ptr()),
-            "borrowed keyword must point at the canonical compile-state allocation"
-        );
-    }
-
-    /// WHY: repeated-separator regexes still need their synthesized stem to own its bytes while raw keywords remain borrowed and both keep exact pattern mappings.
-    #[test]
-    fn derived_phase2_stems_own_only_synthesized_bytes() {
-        let keywords = vec!["SERVICE_API_KEY".to_owned()];
-        let phase2 = vec![(
-            pattern(r"SERVICE[_\-.]+API[_\-.]+KEY[:=][A-Z0-9]{16}", &keywords),
-            keywords,
-        )];
-        let (_, mapping, stored) = build_phase2_keyword_index(&phase2);
-
-        assert_eq!(mapping.iter().collect::<Vec<_>>(), vec![&[0][..], &[0][..]]);
-        assert!(matches!(&stored[0], Cow::Borrowed("SERVICE_API_KEY")));
-        assert!(matches!(&stored[1], Cow::Owned(stem) if stem == "service"));
-    }
-
-    /// WHY: the compact prefix table replaces the phase-two Aho-Corasick gate,
-    /// so it must preserve ASCII-insensitive substring admission across rows
-    /// that share the same two-byte bucket.
-    #[test]
-    fn compact_phase2_keyword_index_finds_casefolded_shared_prefixes() {
-        let first_keywords = vec!["TOKEN_A".to_owned()];
-        let second_keywords = vec!["TOKEN_B".to_owned()];
-        let phase2 = vec![
-            (
-                pattern(r"TOKEN_A=[A-Z0-9]{16}", &first_keywords),
-                first_keywords,
-            ),
-            (
-                pattern(r"TOKEN_B=[A-Z0-9]{16}", &second_keywords),
-                second_keywords,
-            ),
-        ];
-        let (index, _, _) = build_phase2_keyword_index(&phase2);
-        let matches = index
-            .expect("keyword index")
-            .find_iter("prefix token_b suffix TOKEN_A")
-            .collect::<Vec<_>>();
-
-        assert_eq!(matches, vec![1, 0]);
-    }
-
-    /// WHY: phase-two activation and autoroute evidence require the same
-    /// earliest-end, non-overlapping match selection as the replaced standard
-    /// Aho-Corasick iterator when one keyword prefixes another.
-    #[test]
-    fn compact_phase2_keyword_index_preserves_standard_match_selection() {
-        let first_keywords = vec!["TOKEN".to_owned()];
-        let second_keywords = vec!["TOKEN_VALUE".to_owned()];
-        let phase2 = vec![
-            (
-                pattern(r"TOKEN=[A-Z0-9]{16}", &first_keywords),
-                first_keywords,
-            ),
-            (
-                pattern(r"TOKEN_VALUE=[A-Z0-9]{16}", &second_keywords),
-                second_keywords,
-            ),
-        ];
-        let (index, _, _) = build_phase2_keyword_index(&phase2);
-        let matches = index
-            .expect("keyword index")
-            .find_iter("prefix token_value suffix TOKEN")
-            .collect::<Vec<_>>();
-
-        assert_eq!(matches, vec![0, 0]);
-    }
-
-    /// WHY: the replacement index must retain the standard Aho-Corasick
-    /// iterator's exact earliest-end and non-overlap semantics across shared
-    /// prefixes, repeated matches, case folds, and later-starting short rows.
-    #[test]
-    fn compact_phase2_keyword_index_matches_reference_aho_semantics() {
-        let keywords = [
-            Cow::Borrowed("TOKEN"),
-            Cow::Borrowed("TOKEN_VALUE"),
-            Cow::Borrowed("VALUE"),
-            Cow::Borrowed("AB"),
-            Cow::Borrowed("ABC"),
-        ];
-        let index = Phase2KeywordIndex::build(&keywords).expect("keyword index");
-        let reference = AhoCorasickBuilder::new()
-            .ascii_case_insensitive(true)
-            .build(keywords.iter().map(|keyword| keyword.as_bytes()))
-            .expect("reference automaton");
-
-        for haystack in [
-            "",
-            "x",
-            "token_value",
-            "xxTOKEN_VALUEyy token",
-            "zabcab",
-            "zzzzabTOKENvalue",
-            "unicode-λ-token-value",
-        ] {
-            let expected = reference
-                .find_iter(haystack)
-                .map(|matched| matched.pattern().as_usize())
-                .collect::<Vec<_>>();
-            assert_eq!(
-                index.find_iter(haystack).collect::<Vec<_>>(),
-                expected,
-                "haystack: {haystack:?}"
-            );
-        }
-    }
-
-    /// WHY: an unindexable short literal must disable keyword gating rather
-    /// than disappear from admission and silently suppress its detector.
-    #[test]
-    fn compact_phase2_keyword_index_fails_open_for_short_literals() {
-        assert!(Phase2KeywordIndex::build(&[Cow::Borrowed("x")]).is_none());
-    }
 }

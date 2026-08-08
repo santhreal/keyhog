@@ -45,6 +45,7 @@ impl CompiledScanner {
             && {
                 #[cfg(debug_assertions)]
                 self.decoder_admission_scanned_bytes.fetch_add(
+                    // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; scan behavior is unchanged.
                     u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
                     std::sync::atomic::Ordering::Relaxed,
                 );

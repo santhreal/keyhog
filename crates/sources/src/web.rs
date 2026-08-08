@@ -89,7 +89,7 @@ impl PinnedWebClientCache {
             let mut slots = self
                 .slots
                 .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                .unwrap_or_else(|poisoned| poisoned.into_inner()); // LAW10: poisoned cache-lock recovery retains the existing client/build state; fetch errors still propagate.
             match slots.get(&key) {
                 Some(PinnedWebClientSlot::Ready(client)) => return Ok(client.clone()),
                 Some(PinnedWebClientSlot::Building(signal)) => {
@@ -116,7 +116,7 @@ impl PinnedWebClientCache {
                             let mut slots = self
                                 .slots
                                 .lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                .unwrap_or_else(|poisoned| poisoned.into_inner()); // LAW10: poisoned cache-lock recovery installs the successfully built client without changing fetch results.
                             slots.insert(key, PinnedWebClientSlot::Ready(client.clone()));
                             drop(slots);
                             signal.finish();
@@ -126,7 +126,7 @@ impl PinnedWebClientCache {
                             let mut slots = self
                                 .slots
                                 .lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                .unwrap_or_else(|poisoned| poisoned.into_inner()); // LAW10: poisoned cache-lock recovery removes the failed build slot while returning the original build error.
                             slots.remove(&key);
                             drop(slots);
                             signal.finish();
@@ -152,12 +152,12 @@ impl BuildSignal {
         let mut done = self
             .done
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(|poisoned| poisoned.into_inner()); // LAW10: poisoned build-signal recovery reads the same completion flag; client construction errors remain explicit.
         while !*done {
             done = self
                 .cond
                 .wait(done)
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                .unwrap_or_else(|poisoned| poisoned.into_inner()); // LAW10: poisoned build-signal recovery resumes waiting on the same completion flag; no fetch result is discarded.
         }
     }
 
@@ -165,7 +165,7 @@ impl BuildSignal {
         let mut done = self
             .done
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(|poisoned| poisoned.into_inner()); // LAW10: poisoned build-signal recovery sets completion and wakes waiters; the associated client result remains authoritative.
         *done = true;
         self.cond.notify_all();
     }
@@ -199,6 +199,7 @@ impl Iterator for WebChunkStream {
         match received {
             Ok(row) => Some(row),
             Err(_) => {
+                // LAW10: result-channel closure triggers the worker join below, which surfaces the first worker panic as a SourceError.
                 self.receiver.take();
                 let worker = self.worker.take()?;
                 match worker.join() {
@@ -209,7 +210,7 @@ impl Iterator for WebChunkStream {
                             "web: bounded fetch worker panicked".to_string(),
                         )))
                     }
-                    Err(_) => None,
+                    Err(_) => None, // LAW10: a worker panic is emitted at most once above; a later iterator call terminates without duplicating the same error.
                 }
             }
         }
@@ -220,7 +221,7 @@ impl Drop for WebChunkStream {
     fn drop(&mut self) {
         self.receiver.take();
         if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
+            let _ = worker.join(); // LAW10: Drop means the fetch consumer abandoned the stream; joining only reclaims the worker and cannot report to a recipient.
         }
     }
 }
@@ -300,7 +301,7 @@ impl WebSource {
         )>(WEB_FETCH_THREADS);
         let (release_slot, available_slots) = crossbeam_channel::bounded::<()>(WEB_FETCH_THREADS);
         for _ in 0..WEB_FETCH_THREADS {
-            let _ = release_slot.send(());
+            let _ = release_slot.send(()); // LAW10: the bounded slot receiver is retained throughout initialization, so seeding this channel cannot fail.
         }
 
         std::thread::scope(|scope| {
@@ -348,7 +349,7 @@ impl WebSource {
                         }
                     }
                     next_output += 1;
-                    let _ = release_slot.send(());
+                    let _ = release_slot.send(()); // LAW10: slot release failure only occurs after the scoped scheduler receiver closes; no further fetch can consume it.
                 }
             }
         });

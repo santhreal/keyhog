@@ -777,7 +777,7 @@ pub(crate) fn compile_default_scan_runtime(
     backend_override: Option<keyhog_scanner::ScanBackend>,
     map_compile_error: impl FnOnce(&keyhog_scanner::ScanError) -> anyhow::Error,
 ) -> Result<DefaultScanRuntime> {
-    let backend = backend_override.unwrap_or(keyhog_scanner::ScanBackend::CpuFallback);
+    let backend = backend_override.unwrap_or(keyhog_scanner::ScanBackend::CpuFallback); // LAW10: this compiler helper's absent diagnostic override means its declared CPU runtime; autoroute does not call this path.
     let detectors: Arc<[DetectorSpec]> = detectors.into();
     let scanner = Arc::new(
         CompiledScanner::compile_shared_with_gpu_policy_and_tuning(

@@ -106,7 +106,7 @@ fn page_size() -> usize {
     }
     // SAFETY: `sysconf` is thread-safe and takes no pointers.
     let probed = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-    let size = usize::try_from(probed).unwrap_or(0).max(1);
+    let size = usize::try_from(probed).unwrap_or(0).max(1); // LAW10: an unavailable OS page-size probe falls back to a one-byte release granularity; reads and findings are unchanged.
     CACHED.store(size, Ordering::Relaxed);
     size
 }
@@ -656,7 +656,7 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
             #[cfg(unix)]
             releaser.release_below(dead_below);
             #[cfg(not(unix))]
-            let _ = dead_below;
+            let _ = dead_below; // LAW10: cfg-only unused offset on platforms without page-release support; no read result is discarded.
         },
     );
 

@@ -65,7 +65,7 @@ impl Iterator for ChunkReceiver {
             if let Some(row) = self.pending.next() {
                 return Some(row);
             }
-            self.pending = self.receiver.recv().ok()?.into_iter();
+            self.pending = self.receiver.recv().ok()?.into_iter(); // LAW10: channel closure is the iterator EOF after all producer senders are gone; pending rows are drained first.
         }
     }
 }
@@ -107,7 +107,7 @@ impl EntryBatchBuffer {
             batch
                 .3
                 .iter()
-                .filter_map(|row| row.as_ref().ok())
+                .filter_map(|row| row.as_ref().ok()) // LAW10: errors are excluded only from byte accounting; every original row remains queued in the batch.
                 .map(|chunk| chunk.data.len())
                 .sum::<usize>(),
         );
@@ -214,7 +214,7 @@ pub(super) fn spawn_chunk_producer(
                     for chunk in chunks {
                         outbound_bytes = outbound_bytes.saturating_add(match &chunk {
                             Ok(chunk) => chunk.data.len(),
-                            Err(_) => 0,
+                            Err(_) => 0, // LAW10: error rows contribute zero payload bytes to batching only; the SourceError remains in outbound_chunks.
                         });
                         outbound_chunks.push(chunk);
                         if (outbound_bytes >= READER_PART_FLUSH_BYTES
@@ -234,6 +234,7 @@ pub(super) fn spawn_chunk_producer(
             }
         }
         let _ = send_chunk_batch(&tx, &mut outbound_chunks, &mut outbound_bytes);
+        // LAW10: final send failure means the downstream chunk consumer is already closed; no recipient remains.
     });
 
     let profile_runtime = crate::profile::current_runtime();
@@ -271,12 +272,12 @@ pub(super) fn spawn_chunk_producer(
             let (seq, entry) = match item {
                 CursorItem::Entry(seq, entry) => (seq, entry),
                 CursorItem::Error(seq, error) => {
-                    let _ = tx.push((seq, 0, true, vec![Err(error)]));
-                    let _ = tx.flush();
+                    let _ = tx.push((seq, 0, true, vec![Err(error)])); // LAW10: push failure means the downstream reorder consumer is closed; no recipient remains for this source error.
+                    let _ = tx.flush(); // LAW10: flush failure means the downstream reorder consumer is already closed; no recipient remains.
                     return;
                 }
                 CursorItem::End => {
-                    let _ = tx.flush();
+                    let _ = tx.flush(); // LAW10: end-of-stream flush failure means the downstream reorder consumer is already closed; no recipient remains.
                     return;
                 }
             };
@@ -296,7 +297,7 @@ pub(super) fn spawn_chunk_producer(
             let mut emit = |chunk: Result<Chunk, SourceError>| {
                 part_bytes = part_bytes.saturating_add(match &chunk {
                     Ok(chunk) => chunk.data.len(),
-                    Err(_) => 0,
+                    Err(_) => 0, // LAW10: error rows contribute zero payload bytes to batching only; the SourceError remains in chunks.
                 });
                 chunks.push(chunk);
                 if part_bytes < READER_PART_FLUSH_BYTES && chunks.len() < READER_PART_FLUSH_CHUNKS {

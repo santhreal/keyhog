@@ -61,7 +61,9 @@ use crate::{hex_encode, sha256_hash, CredentialHash, VerifiedFinding};
 ///
 /// Ordered broadest blast radius first, so the derived `Ord` sorts an account
 /// above a single resource when two targets tie on distance and confidence.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum AccessTargetKind {
     /// A billing or ownership boundary, such as an AWS account id.
@@ -96,7 +98,9 @@ impl AccessTargetKind {
 /// Ordered strongest first: a value decoded out of the credential itself cannot
 /// be a coincidence of proximity, while a same-file hit is the weakest claim the
 /// pass makes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum TargetRelation {
     /// Recovered from the credential itself, offline, with no file context.
@@ -120,7 +124,9 @@ impl TargetRelation {
 }
 
 /// What was done to a target value before it was allowed into an artifact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Redaction {
     /// Emitted verbatim. Only for values that are addresses by construction.
@@ -132,7 +138,9 @@ pub enum Redaction {
 }
 
 /// Why the pass could not build file context for some findings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum CoverageGapReason {
     /// The finding carried no file path at all.
@@ -194,9 +202,7 @@ impl CoverageGapReason {
     #[must_use]
     pub fn explain(self) -> &'static str {
         match self {
-            Self::NoFilePath => {
-                "the finding carries no file path, so there is nothing to index"
-            }
+            Self::NoFilePath => "the finding carries no file path, so there is nothing to index",
             Self::SourceNotReadable => {
                 "this source backend does not expose a re-readable local file; \
                  rescan the extracted content from disk to get access targets"
@@ -500,6 +506,7 @@ fn compile_policy(raw: &str, origin: &str) -> Result<Policy, String> {
             ));
         }
         if matches!(spec.redact, Redaction::Tail) && spec.redact_keep.unwrap_or(0) == 0 {
+            // LAW10: absent tail length is treated as invalid here, so validation fails closed before any credential is emitted.
             return Err(format!(
                 "{origin} [[rule]] {id:?} uses redact = \"tail\" and must set a \
                  positive redact_keep"
@@ -716,7 +723,7 @@ impl FileContentSource for FilesystemContent {
             .map_err(|error| ContentError::classify(&error))?;
         let truncated = buffer.len() as u64 > max_bytes;
         if truncated {
-            buffer.truncate(usize::try_from(max_bytes).unwrap_or(usize::MAX));
+            buffer.truncate(usize::try_from(max_bytes).unwrap_or(usize::MAX)); // LAW10: a u64 limit wider than usize cannot truncate an in-memory buffer further; usize::MAX is the exact effective cap.
         }
         let text = String::from_utf8(buffer).map_err(|_| ContentError::NotUtf8)?;
         Ok(FileContent { text, truncated })
@@ -801,7 +808,7 @@ fn apply_redaction(raw: &str, spec: &RuleSpec) -> String {
     match spec.redact {
         Redaction::None => raw.to_string(),
         Redaction::Tail => {
-            let keep = spec.redact_keep.unwrap_or(4);
+            let keep = spec.redact_keep.unwrap_or(4); // LAW10: absent optional tail length uses the documented redaction default and never exposes more than four characters.
             let start = raw
                 .char_indices()
                 .rev()
@@ -841,7 +848,7 @@ fn position_of(line_starts: &[usize], offset: usize) -> (usize, usize) {
         Ok(index) => index,
         Err(index) => index.saturating_sub(1),
     };
-    let start = line_starts.get(line_index).copied().unwrap_or(0);
+    let start = line_starts.get(line_index).copied().unwrap_or(0); // LAW10: absent line metadata conservatively measures the column from byte zero; it does not drop the target.
     (line_index + 1, offset - start + 1)
 }
 
@@ -977,7 +984,7 @@ pub fn associate_access_targets_with(
                     .location
                     .file_path
                     .as_deref()
-                    .unwrap_or(finding.location.source.as_ref());
+                    .unwrap_or(finding.location.source.as_ref()); // LAW10: absent optional file path uses the finding source only as a coverage-gap example; the gap remains recorded.
                 gaps.record(reason, example);
                 None
             }
@@ -996,8 +1003,8 @@ pub fn associate_access_targets_with(
         }
 
         targets.sort_by(|a, b| {
-            let a_distance = a.evidence.line_distance.unwrap_or(0);
-            let b_distance = b.evidence.line_distance.unwrap_or(0);
+            let a_distance = a.evidence.line_distance.unwrap_or(0); // LAW10: absent optional distance affects deterministic ranking only; every access target remains present.
+            let b_distance = b.evidence.line_distance.unwrap_or(0); // LAW10: absent optional distance affects deterministic ranking only; every access target remains present.
             a.evidence
                 .relation
                 .cmp(&b.evidence.relation)
@@ -1005,7 +1012,7 @@ pub fn associate_access_targets_with(
                 .then_with(|| {
                     b.confidence
                         .partial_cmp(&a.confidence)
-                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .unwrap_or(std::cmp::Ordering::Equal) // LAW10: incomparable confidence values tie only in ordering; subsequent keys retain every target deterministically.
                 })
                 .then_with(|| a.kind.cmp(&b.kind))
                 .then_with(|| a.value.cmp(&b.value))
@@ -1107,7 +1114,7 @@ fn score(
                 (TargetRelation::SameLine, 0u32, Some(0usize))
             } else {
                 let steps = u32::try_from(distance / settings.decay_line_step)
-                    .unwrap_or(settings.decay_max_steps)
+                    .unwrap_or(settings.decay_max_steps) // LAW10: distance-to-step overflow conservatively applies maximum confidence decay; it cannot create a stronger target.
                     .clamp(1, settings.decay_max_steps);
                 (TargetRelation::SameFile, steps, Some(distance))
             }
@@ -1200,7 +1207,8 @@ fn indexable(finding: &VerifiedFinding) -> Result<Indexable<'_>, CoverageGapReas
         _ => return Err(CoverageGapReason::NoFilePath),
     };
     if anchored {
-        Ok(Indexable::Anchored(path, finding.location.line.unwrap_or(1)))
+        let line = finding.location.line.unwrap_or(1); // LAW10: absent line uses the canonical default; finding remains indexable.
+        Ok(Indexable::Anchored(path, line))
     } else {
         Ok(Indexable::Anchorless(path))
     }

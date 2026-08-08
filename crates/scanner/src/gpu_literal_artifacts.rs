@@ -88,6 +88,7 @@ pub(crate) fn install_compiled_gpu_literal_artifact(
         .iter()
         .copied()
         .max()
+        // LAW10: failed checked conversion reaches ok_or_else and rejects the artifact; no literal length is substituted.
         .and_then(|length| usize::try_from(length).ok())
         .ok_or_else(|| {
             ScanError::Gpu(format!(

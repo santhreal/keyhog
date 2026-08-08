@@ -55,8 +55,7 @@ impl ShardResident {
                 "phase-2 GPU resident presence buffer size overflows host usize. Fix: reduce the batch size."
                     .to_string()
             })?;
-        let transitions =
-            vyre::scan::dispatch_io::u32_words_as_le_bytes(&pipeline.dfa.transitions);
+        let transitions = vyre::scan::dispatch_io::u32_words_as_le_bytes(&pipeline.dfa.transitions);
         let output_offsets =
             vyre::scan::dispatch_io::u32_words_as_le_bytes(&pipeline.dfa.output_offsets);
         let output_records =

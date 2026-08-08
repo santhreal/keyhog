@@ -571,8 +571,8 @@ fn spawn_poller(session: Arc<OobSession>) -> JoinHandle<()> {
                 }
                 continue;
             }
-            let _ = poll_generation.borrow_and_update();
-            // GC at the top so collector outages cannot bypass retention.
+            let _ = poll_generation.borrow_and_update(); // LAW10: watch borrow marks the observed generation; it returns no failure and discards no interaction.
+                                                         // GC at the top so collector outages cannot bypass retention.
             if Instant::now() >= next_gc {
                 session.gc();
                 next_gc = Instant::now() + Duration::from_secs(60);

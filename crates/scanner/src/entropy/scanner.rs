@@ -614,9 +614,11 @@ fn scan_keyword_contexts(
             .min(lines.len());
         for line_idx in start..end {
             if line_idx != keyword_line_index
-                && u32::try_from(line_idx)
-                    .ok()
-                    .is_some_and(|id| keyword_line_ids.binary_search(&id).is_ok())
+                && keyword_line_ids
+                    .binary_search(
+                        &u32::try_from(line_idx).expect("chunk-bounded line index must fit u32"),
+                    )
+                    .is_ok()
             {
                 continue;
             }

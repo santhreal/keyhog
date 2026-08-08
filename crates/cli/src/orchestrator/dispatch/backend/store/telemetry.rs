@@ -305,6 +305,7 @@ pub(crate) fn reset_for_test() {
     }
     MISSING_BUCKETS_ELIDED.store(0, Ordering::Relaxed);
     if let Ok(mut buckets) = MISSING_BUCKETS.lock() {
+        // LAW10: test-only telemetry reset tolerates a poisoned metric lock; production routing and findings are untouched.
         buckets.clear();
     }
 }

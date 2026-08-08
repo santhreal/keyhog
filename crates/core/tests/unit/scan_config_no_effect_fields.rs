@@ -136,5 +136,6 @@ fn the_toml_loader_refuses_a_no_effect_key() {
     // The same document with the default scope loads, so the refusal is about
     // the value and not about the serialized shape.
     let baseline = toml::to_string(&ScanConfig::default()).expect("a default config serializes");
-    ScanConfig::from_toml_str(&baseline).expect("a serialized default must round-trip and validate");
+    ScanConfig::from_toml_str(&baseline)
+        .expect("a serialized default must round-trip and validate");
 }
