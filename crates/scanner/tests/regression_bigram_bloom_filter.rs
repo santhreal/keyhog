@@ -556,6 +556,8 @@ fn repeated_payloads_share_generic_keyword_positions() {
         simd_scanner.clear_fragment_cache();
         simd_scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
         simd_scanner.reset_simd_phase2_tail_absence_skipped_bytes_for_diagnostics();
+        simd_scanner.reset_normalization_scanned_bytes_for_diagnostics();
+        simd_scanner.reset_line_index_scanned_bytes_for_diagnostics();
         let planned_simd = simd_scanner
             .scan_coalesced_with_backend_and_admission(
                 &ordinary_chunks,
@@ -575,6 +577,16 @@ fn repeated_payloads_share_generic_keyword_positions() {
                 .map(|chunk| chunk.data.len() as u64)
                 .sum::<u64>(),
             "complete exact negative evidence must skip every SIMD phase-two tail byte"
+        );
+        assert_eq!(
+            simd_scanner.normalization_scanned_bytes_for_diagnostics(),
+            0,
+            "planned SIMD scans must consume exact normalization passthrough evidence"
+        );
+        assert_eq!(
+            simd_scanner.line_index_scanned_bytes_for_diagnostics(),
+            0,
+            "planned SIMD scans must reuse the representative line index"
         );
 
         simd_scanner.clear_fragment_cache();
@@ -601,6 +613,8 @@ fn repeated_payloads_share_generic_keyword_positions() {
         simd_scanner.clear_fragment_cache();
         simd_scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
         simd_scanner.reset_simd_phase2_tail_absence_skipped_bytes_for_diagnostics();
+        simd_scanner.reset_normalization_scanned_bytes_for_diagnostics();
+        simd_scanner.reset_line_index_scanned_bytes_for_diagnostics();
         let direct_simd = simd_scanner
             .scan_coalesced_with_backend(&ordinary_chunks, ScanBackend::SimdCpu)
             .expect("direct SIMD scan");
@@ -616,6 +630,14 @@ fn repeated_payloads_share_generic_keyword_positions() {
             simd_scanner.simd_phase2_tail_absence_skipped_bytes_for_diagnostics(),
             0,
             "SIMD without admission evidence must retain the ordinary phase-two tail"
+        );
+        assert!(
+            simd_scanner.normalization_scanned_bytes_for_diagnostics() > 0,
+            "SIMD without admission evidence must retain normalization work"
+        );
+        assert!(
+            simd_scanner.line_index_scanned_bytes_for_diagnostics() > 0,
+            "SIMD without admission evidence must retain line-index construction"
         );
         assert_eq!(planned_simd, direct_simd);
     }

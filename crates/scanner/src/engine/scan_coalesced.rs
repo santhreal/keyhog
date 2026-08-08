@@ -890,6 +890,26 @@ impl CompiledScanner {
                                     .and_then(|rows| rows.get(chunk_index))
                                     .map(Vec::as_slice)
                             });
+                        let normalization_passthrough = phase1_plan
+                            .and_then(|plan| {
+                                plan.normalization_passthrough_for(
+                                    chunk_index,
+                                    self.config.unicode_normalization,
+                                )
+                            })
+                            .unwrap_or(false);
+                        let multiline_absence = normalization_passthrough
+                            && phase1_plan
+                                .and_then(|plan| {
+                                    plan.multiline_absence_for(chunk_index, entropy_config_digest)
+                                })
+                                .unwrap_or(false);
+                        let line_context_index = normalization_passthrough
+                            .then(|| {
+                                phase1_plan
+                                    .and_then(|plan| plan.line_context_index_for(chunk_index))
+                            })
+                            .flatten();
                         let simd_phase2_tail_absence = phase1_plan
                             .and_then(|plan| {
                                 plan.simd_phase2_tail_absence_for(
@@ -928,7 +948,12 @@ impl CompiledScanner {
                                     needs_postprocess: true,
                                 });
                             } else {
-                                let prepared = self.prepare_chunk(chunk);
+                                let prepared = self.prepare_chunk_with_normalization_passthrough(
+                                    chunk,
+                                    normalization_passthrough,
+                                    multiline_absence,
+                                    line_context_index,
+                                );
                                 let state = self.scan_prepared_state_with_triggered(
                                     prepared,
                                     &triggered,
@@ -1020,7 +1045,12 @@ impl CompiledScanner {
                             });
                         }
 
-                        let prepared = self.prepare_chunk(chunk);
+                        let prepared = self.prepare_chunk_with_normalization_passthrough(
+                            chunk,
+                            normalization_passthrough,
+                            multiline_absence,
+                            line_context_index,
+                        );
                         let state = self.scan_prepared_state_with_triggered(
                             prepared,
                             &[],
