@@ -55,7 +55,7 @@ mod backend;
 mod backend_dispatch;
 mod backend_prepared;
 mod backend_triggered;
-mod batch_topology;
+pub(crate) mod batch_topology;
 mod boundary;
 pub(crate) use boundary::derive_pattern_boundary_context;
 #[cfg(feature = "gpu")]
@@ -492,7 +492,11 @@ impl CompiledScanner {
     /// stays below 128 MiB across independent concurrent partitions.
     pub fn bound_partition_memory(&mut self) {
         self.ac_map.shrink_to_fit();
+        self.phase2_patterns.shrink_to_fit();
+        self.hot_confirmed_by_pattern.shrink_to_fit();
         self.fragment_cache.clear();
+        let phase1_cache = self.reusable_phase1_evidence.get_mut();
+        phase1_cache.clear();
     }
 }
 

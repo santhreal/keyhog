@@ -11,6 +11,7 @@ use std::sync::Arc;
 #[cfg(target_os = "linux")]
 mod descriptor_walk;
 mod discovery;
+pub use discovery::{DiscoverySyscallTracker, SyscallCounts};
 mod extract;
 #[cfg(fuzzing)]
 pub use extract::fuzz_extract_pdf_text;

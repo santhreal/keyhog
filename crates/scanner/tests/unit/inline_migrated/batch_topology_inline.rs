@@ -58,3 +58,16 @@ fn test_empty_batch_topology() {
     assert_eq!(topology.fused_waves, 1);
     assert_eq!(topology.max_memory_per_lane_bytes, 0);
 }
+#[test]
+fn test_fused_waves_ceiling_division_non_multiple() {
+    let evidence = BatchEvidence {
+        total_chunks: 5,
+        small_chunks: 5,
+        large_chunks: 0,
+        total_bytes: 5 * 100,
+        max_chunk_bytes: 100,
+    };
+    let topology = BatchTopology::select(&evidence, 1);
+    assert!(topology.fused_waves >= 1);
+    assert_eq!(topology.fused_waves, evidence.total_chunks.div_ceil(topology.lane_width));
+}

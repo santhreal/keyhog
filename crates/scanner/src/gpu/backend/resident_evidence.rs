@@ -1143,6 +1143,7 @@ impl CudaTimelineEvidence {
 
     pub fn is_async_proven(&self) -> bool {
         self.resident_ownership_held
+            && self.async_submission_timestamp > 0
             && self.completion_synchronization_timestamp >= self.async_submission_timestamp
     }
 }
@@ -1163,6 +1164,9 @@ pub struct WgpuQueueOverlapProof {
 impl WgpuQueueOverlapProof {
     pub fn prove(slot0: bool, slot1: bool, parity: bool) -> Result<Self, String> {
         let overlap = slot0 && slot1;
+        if !overlap {
+            return Err("WGPU native queue overlap not demonstrated: slots were not concurrently active".to_string());
+        }
         if !parity {
             return Err("WGPU native queue overlap failed parity check".to_string());
         }

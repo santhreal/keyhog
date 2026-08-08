@@ -288,6 +288,11 @@ pub fn verify_gpu_kernel_ownership_separation() -> Result<(), String> {
     if allowed_symbols.is_empty() {
         return Err("No GPU dispatch symbols registered".to_string());
     }
+    for symbol in &allowed_symbols {
+        if !symbol.starts_with("vyre::") && !symbol.starts_with("vyre_driver_") {
+            return Err(format!("KeyHog owns non-VYRE GPU dispatch symbol: {symbol}"));
+        }
+    }
     Ok(())
 }
 

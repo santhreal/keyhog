@@ -4,8 +4,8 @@
 //! only backend-neutral VYRE handles and compact execution evidence.
 
 mod acquisition;
-#[cfg(feature = "gpu")]
-mod resident_evidence;
+#[cfg(any(feature = "gpu", test))]
+pub(crate) mod resident_evidence;
 
 #[cfg(all(test, feature = "gpu", target_os = "linux"))]
 pub(crate) use acquisition::load_dynamic_library;

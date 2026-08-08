@@ -135,6 +135,10 @@ pub(crate) struct ReusablePhase1EvidenceCache {
 }
 
 impl ReusablePhase1EvidenceCache {
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+        self.resident_bytes = 0;
+    }
     fn get(
         &mut self,
         fingerprint: [u8; 32],

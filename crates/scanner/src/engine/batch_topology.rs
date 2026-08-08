@@ -86,8 +86,8 @@ impl BatchTopology {
         };
 
         let max_lane_bytes = lane_width.saturating_mul(evidence.max_chunk_bytes);
-        let fused_waves = (evidence.total_chunks / lane_width).div_ceil(workers).max(1);
-
+        let total_lanes = evidence.total_chunks.div_ceil(lane_width);
+        let fused_waves = total_lanes.div_ceil(workers).max(1);
         Self {
             lane_width,
             fused_waves,
