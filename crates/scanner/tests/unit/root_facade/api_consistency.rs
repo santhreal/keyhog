@@ -36,7 +36,7 @@ fn scanner() -> &'static CompiledScanner {
                 "API consistency detector subset missing shipped detector {id}"
             );
         }
-        CompiledScanner::compile(detectors).expect("compile")
+        CompiledScanner::compile_with_gpu_policy(detectors, keyhog_scanner::GpuInitPolicy::FromRuntimePolicy).expect("compile")
     })
 }
 

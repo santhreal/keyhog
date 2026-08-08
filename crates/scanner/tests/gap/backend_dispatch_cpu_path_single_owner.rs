@@ -21,7 +21,7 @@ fn read_src(rel: &str) -> String {
 
 #[test]
 fn cpu_scan_and_boundary_path_has_single_owner() {
-    let src = read_src("src/engine/backend_dispatch.rs");
+    let src = read_src("src/engine/backend/dispatch.rs");
 
     assert!(
         src.contains("fn scan_chunks_cpu_parallel"),
