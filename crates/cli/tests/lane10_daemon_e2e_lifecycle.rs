@@ -8,6 +8,7 @@
 
 #![cfg(unix)]
 
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_scanner::hw_probe::{parse_backend_str, BACKEND_OVERRIDE_VALUES};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream as StdUnixStream;
@@ -18,6 +19,17 @@ use tempfile::TempDir;
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
+}
+
+#[cfg(target_os = "linux")]
+fn loaded_gpu_runtime_libraries(maps: &str) -> Vec<&str> {
+    maps.lines()
+        .filter(|line| {
+            ["libcuda", "libnvidia", "libvulkan", "libwgpu"]
+                .iter()
+                .any(|library| line.contains(library))
+        })
+        .collect()
 }
 
 /// Start `keyhog daemon start --socket <sock>` and wait until the socket is a
@@ -144,20 +156,28 @@ fn explicit_host_daemons_do_not_load_gpu_runtime_libraries() {
             "{backend} daemon must exit successfully after stop"
         );
 
-        let loaded_gpu_libraries: Vec<_> = maps
-            .lines()
-            .filter(|line| {
-                ["libcuda", "libnvidia", "libvulkan", "libwgpu"]
-                    .iter()
-                    .any(|library| line.contains(library))
-            })
-            .collect();
+        let loaded_gpu_libraries = loaded_gpu_runtime_libraries(&maps);
         assert!(
             loaded_gpu_libraries.is_empty(),
             "{backend} daemon loaded GPU runtime libraries:\n{}",
             loaded_gpu_libraries.join("\n")
         );
     }
+}
+
+/// WHY: execution-pack host identity excludes accelerator state; validating it
+/// must not initialize GPU drivers in short-lived daemon clients.
+#[cfg(target_os = "linux")]
+#[test]
+fn execution_pack_target_identity_does_not_load_gpu_runtime_libraries() {
+    let _digest = API.current_target_digest_for_test();
+    let maps = std::fs::read_to_string("/proc/self/maps").expect("read test process mappings");
+    let loaded_gpu_libraries = loaded_gpu_runtime_libraries(&maps);
+    assert!(
+        loaded_gpu_libraries.is_empty(),
+        "host-only target identity loaded GPU runtime libraries:\n{}",
+        loaded_gpu_libraries.join("\n")
+    );
 }
 
 #[test]

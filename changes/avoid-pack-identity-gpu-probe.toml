@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "Execution-pack host identity checks no longer initialize GPU runtime libraries in short-lived clients."
+crates = ["cli"]
