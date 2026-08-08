@@ -326,11 +326,10 @@ impl ScanOrchestrator {
 
         let skipped_unchanged = Arc::new(AtomicUsize::new(0));
 
-        // Bridge the source's `!Send` chunk iterator into one bounded queued
-        // batch. `scan_coalesced` already parallelizes both scan phases across
-        // the global worker pool, so consuming batches serially preserves full
-        // inner parallelism without nested `par_bridge` workers each retaining
-        // another source batch and its scan scratch.
+        // Bridge the source's `!Send` chunk iterator into a bounded queue.
+        // The consumer retires explicit CPU/SIMD batches in a separate bounded
+        // wave: at most four 1 MiB filesystem batches are resident there, while
+        // the rendezvous channel prevents another completed batch from queuing.
         //
         // The count and byte ceilings trade fork/join amortization against
         // resident source bytes. Explicit CLI/TOML config owns the count and
@@ -650,7 +649,8 @@ impl ScanOrchestrator {
                     | keyhog_scanner::hw_probe::ScanBackend::SimdCpu
             )
         ) {
-            let lane_width = rayon::current_num_threads().max(1);
+            let lane_width =
+                crate::orchestrator_config::fused_cpu_wave_width(rayon::current_num_threads());
             let mut batches = rx.into_iter();
             let mut findings = Vec::new();
             let mut repeated_windows = merkle_ref.is_none().then(RepeatedWindowCache::new);
