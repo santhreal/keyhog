@@ -372,14 +372,21 @@ impl CompiledScanner {
         !offsets.is_empty()
     }
 
-    fn is_hot_confirmed_pattern(&self, pat_idx: usize) -> bool {
-        match self.hot_confirmed_by_pattern.get(pat_idx) {
-            Some(is_hot) => *is_hot,
-            None => {
-                panic!(
-                    "internal invariant violation: missing hot-confirmed detector classification for pattern index {pat_idx}"
-                );
-            }
-        }
+    pub(crate) fn is_hot_confirmed_pattern(&self, pat_idx: usize) -> bool {
+        self.hot_confirmed_by_pattern
+            .get(pat_idx)
+            .copied()
+            .unwrap_or(false)
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_hot_confirmed_pattern_fails_closed_on_out_of_bounds() {
+        let scanner = CompiledScanner::compile(vec![]).expect("empty scanner compiles");
+        assert!(!scanner.is_hot_confirmed_pattern(usize::MAX));
+        assert!(!scanner.is_hot_confirmed_pattern(999_999));
     }
 }
