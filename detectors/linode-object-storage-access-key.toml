@@ -13,7 +13,7 @@ match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20,
 keywords = ["LINODE_OBJECT_STORAGE", "linode_object_storage", "LINODE_ACCESS_KEY", "linodeobjects.com"]
 
 [[detector.patterns]]
-regex = "(?:LINODE|linode)[._-]?(?:OBJECT[._-]?STORAGE|object[._-]?storage)?[._-]?(?:(?:ACCESS|access)[._-]?)?(?:KEY|key)[=:\\s\"'']+([A-Z0-9]{20})"
+regex = "(?:LINODE|linode)[._-]?(?:OBJECT[._-]?STORAGE|object[._-]?storage)?[._-]?(?:(?:ACCESS|access)[._-]?)?(?:KEY|key)[=:\\s\"'']+((?-i:[A-Z0-9]{20}))"
 description = "Linode Object Storage access key ID with context anchor"
 group = 1
 

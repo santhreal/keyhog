@@ -19,7 +19,10 @@ pub(super) use persistence::{
     load_autoroute_cache, save_autoroute_cache, AutorouteCacheSaveOutcome,
 };
 // Staged cache is used by `calibrate_autoroute` via orchestrator re-export.
-pub(crate) use persistence::StagedAutorouteCache;
+pub(crate) use persistence::{
+    bind_autoroute_cache_to_execution_packs, load_execution_pack_generation_binding,
+    StagedAutorouteCache,
+};
 
 pub(super) fn current_engine_identity() -> String {
     schema::AutorouteBuildFeatures::current().describe()

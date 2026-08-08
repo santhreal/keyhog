@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Parser, ValueEnum};
 
 /// Scan policy whose workload ladder should be calibrated.
@@ -38,6 +40,10 @@ pub struct CalibrateAutorouteArgs {
     /// scans resolve against.
     #[arg(long, value_name = "PATH")]
     pub autoroute_cache: Option<String>,
+    /// Bind persisted route evidence to this authenticated execution-pack generation.
+    #[arg(long, value_name = "DIR", hide = true)]
+    pub execution_packs: Option<PathBuf>,
+
 
     /// Select which scan policy to calibrate.
     ///

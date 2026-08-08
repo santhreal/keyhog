@@ -1,0 +1,35 @@
+# Tier-B: hex-digest recognition and fragment-boundary policy.
+#
+# Four related widths/bounds that used to be inline `matches!` arms and a bare
+# `>= 40` in adjudication, which encoded one hash family (SHA-1) directly into
+# the decision. All lengths are in HEX CHARACTERS, not bytes.
+
+[hex_digest_policy]
+# Canonical cryptographic digest widths: md5 = 32, sha1 = 40, sha256 = 64,
+# sha512 = 128. Consumed by the entropy canonical-digest gate and the
+# `<algo>:<hex>` prefixed-digest strip.
+canonical_lengths = [32, 40, 64, 128]
+
+# Every width the bare-hex-digest shape gate recognizes: the canonical widths
+# plus the greedy-capture truncation boundaries detectors produce. A detector
+# that quantifies a hex span without a non-hex terminator (for example
+# honeybadger-api-key's `[a-f0-9]{32,48}`) captures the first 48/56/72 chars of
+# a longer digest; each added width is justified by a SecretBench-medium FP
+# cluster. Must be a superset of `canonical_lengths`.
+bare_digest_lengths = [32, 40, 48, 56, 64, 72, 128]
+
+# Widths a service-anchored detector may legitimately own, so a matched
+# service keyword exempts the capture from the bare-hex-digest arm. A
+# deliberate SUBSET of `bare_digest_lengths`: the digest-only widths 56/72/128
+# are excluded because no service detector requests those key widths.
+service_key_lengths = [32, 40, 48, 64]
+
+# Contiguous hex run (credential plus surrounding hex context) at or above
+# which a detector match is adjudicated as a fragment of a longer digest
+# rather than a credential. 40 = SHA-1 width, the shortest run that cannot
+# plausibly be a coincidental hex neighbourhood around a real credential.
+fragment_run_min_length = 40
+
+# Minimum credential length the fragment check requires when the detector
+# declares no `min_len` of its own.
+fragment_default_min_len = 16

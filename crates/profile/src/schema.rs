@@ -59,11 +59,25 @@ pub enum Stage {
     /// boundary is not lost. Separated from the phase-2 leaves it sits inside
     /// because seam work grows with chunk count, not with input size.
     BoundaryScan,
+    /// Loading detector bytes, cache entries, and parsed specifications.
+    DetectorLoad,
+    /// Validating detector selection, policy, and effective corpus identity.
+    DetectorValidate,
+    /// Selecting the backend- and policy-specific execution plan generation.
+    ExecutionPackSelect,
+    /// Materializing the selected execution plan into the scanner runtime.
+    ExecutionPackMap,
+    /// Discovering backend hardware and runtime availability.
+    BackendAcquire,
+    /// Initializing the selected backend runtime and compiled databases.
+    BackendInit,
+    /// Releasing scanner plans, backend resources, and retained buffers.
+    Teardown,
 }
 
 impl Stage {
     /// Every stage in stable wire order.
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 34] = [
         Self::SourceAcquire,
         Self::SourceWalk,
         Self::SourceRead,
@@ -91,6 +105,13 @@ impl Stage {
         Self::ScannerQueueWait,
         Self::AutorouteCalibration,
         Self::BoundaryScan,
+        Self::DetectorLoad,
+        Self::DetectorValidate,
+        Self::ExecutionPackSelect,
+        Self::ExecutionPackMap,
+        Self::BackendAcquire,
+        Self::BackendInit,
+        Self::Teardown,
     ];
 
     #[inline]
@@ -131,6 +152,13 @@ impl Stage {
             Self::ScannerQueueWait => MetricId::ScannerQueueWait,
             Self::AutorouteCalibration => MetricId::AutorouteCalibration,
             Self::BoundaryScan => MetricId::BoundaryScan,
+            Self::DetectorLoad => MetricId::DetectorLoad,
+            Self::DetectorValidate => MetricId::DetectorValidate,
+            Self::ExecutionPackSelect => MetricId::ExecutionPackSelect,
+            Self::ExecutionPackMap => MetricId::ExecutionPackMap,
+            Self::BackendAcquire => MetricId::BackendAcquire,
+            Self::BackendInit => MetricId::BackendInit,
+            Self::Teardown => MetricId::Teardown,
         }
     }
 
@@ -163,7 +191,14 @@ impl Stage {
             | Self::BackendSelect
             | Self::ScannerQueueWait
             | Self::AutorouteCalibration
-            | Self::BoundaryScan => MacroStageId::Scan,
+            | Self::BoundaryScan
+            | Self::DetectorLoad
+            | Self::DetectorValidate
+            | Self::ExecutionPackSelect
+            | Self::ExecutionPackMap
+            | Self::BackendAcquire
+            | Self::BackendInit
+            | Self::Teardown => MacroStageId::Scan,
             Self::Suppression | Self::ResultMerge => MacroStageId::Resolve,
             Self::LiveVerification => MacroStageId::Verify,
             Self::Reporting => MacroStageId::Report,

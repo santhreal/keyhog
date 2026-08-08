@@ -1,56 +1,20 @@
-//! RECALL/SOUNDNESS TRIPWIRE for the SimdCpu trigger path.
+//! Recall and parity tripwire for explicit CPU and SIMD execution plans.
 //!
-//! ## History: PERF-simd_scan-1 was REFUTED, do not re-derive it
-//! This file was originally a *perf* tripwire asserting the SimdCpu trigger pass
-//! should be no slower than CpuFallback, on the theory that running the scalar
-//! Aho-Corasick sweep AND the Hyperscan scan was redundant ("AC ∪ HS = AC, so HS
-//! is pure overhead"). **That premise is false.** Acting on it, dropping the HS
-//! union so SimdCpu ran the AC literal set alone, silently regressed
-//! `contracts_runner` for ~30 detectors and, on a full sweep of every contract
-//! positive, **49 detectors** were found by SimdCpu (AC ∪ HS) but MISSED by
-//! CpuFallback (AC alone): twilio-auth-token, datadog-api-key,
-//! africastalking-api-key, sentry-auth-token, and 45 more.
+//! The two backends materialize different phase-one matchers. `CpuFallback`
+//! uses the overlapping Aho-Corasick literal plan. `SimdCpu` uses Hyperscan plus
+//! the install-time recovery matcher for patterns that Hyperscan cannot safely
+//! own. A scanner compiled for one plan must never substitute the other plan.
 //!
-//! The two prefilters are INCOMPARABLE, not nested:
-//!   * AC \ HS ≠ ∅: Hyperscan compiles some context-anchored bounded-repeat
-//!     patterns (line / paloalto / tower / keystonejs / snowflake / bandwidth)
-//!     without erroring yet never reports a match, so the AC literal seed is what
-//!     fires them. (This is all the original soundness comment claimed.)
-//!   * HS \ AC ≠ ∅, for detectors whose extracted literal is NOT a *required*
-//!     substring of every match (no fixed prefix; the credential is bare
-//!     32-hex / alnum gated by a nearby keyword), the AC sweep never marks the
-//!     pattern, but Hyperscan's full-regex scan does. These are the 49 above.
+//! Several context-anchored detectors historically fired only through
+//! Hyperscan. The current compiler supplies exact CPU recovery literals for
+//! those detectors, so both plans must now find the same detector and credential
+//! on those fixtures. This file guards both halves of that contract:
 //!
-//! Because the sets are incomparable, the union in
-//! `collect_triggered_patterns_simd` (backend_triggered.rs) is **load-bearing
-//! for recall**, neither half alone is a sound prefilter. SimdCpu therefore
-//! legitimately does MORE work than CpuFallback (it runs both), and on a no-hit
-//! chunk it is ~1% SLOWER *by design*: that ~1% buys the 49 detectors. A speed
-//! assertion that SimdCpu ≤ CpuFallback would be asserting a recall regression,
-//! so this file no longer makes one.
+//! 1. Former SIMD-only fixtures are detector-level findings on both plans.
+//! 2. SIMD never drops a credential value found by the scalar plan.
 //!
-//! ## What this tripwire pins instead
-//! The durable, honest contract is the recall invariant the refuted "fix"
-//! violated, expressed at the BACKEND-DIFFERENTIAL level so it is the exact
-//! guard that fails if anyone drops the union again:
-//!   1. **Load-bearing union**: for known HS\AC detectors, `SimdCpu` finds the
-//!      credential and `CpuFallback` (AC-only) does NOT. If the union is removed,
-//!      `SimdCpu` stops finding them and this fails immediately.
-//!   2. **Superset safety**: on every chunk, `SimdCpu`'s finding set is a
-//!      SUPERSET of `CpuFallback`'s: the SIMD path must never DROP a detection
-//!      the scalar path makes. (Corpus-wide parity on literal-anchored fixtures
-//!      lives in backend_parity_matrix.rs; this adds the context-anchored axis
-//!      that corpus lacks, which is why the regression slipped past it.)
-//!
-//! The genuine remaining perf opportunity (run Hyperscan as the primary scan and
-//! a REDUCED AC over only the ~6 HS-unsound bounded-repeat patterns, instead of
-//! the full AC sweep) requires statically partitioning the pattern set by
-//! HS-soundness and is tracked for rewrite. NOT a removable union.
-//!
-//! When the `simd` feature is compiled out (`--no-default-features` without
-//! `simd`) there is no Hyperscan prefilter, `SimdCpu` falls back to the AC
-//! collector, and the union/HS\AC distinction does not exist, the
-//! differential assertions are skipped (documented at each site).
+//! When the `simd` feature is absent there is no valid SIMD plan, so these
+//! backend-differential assertions are skipped.
 
 mod support;
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata, RawMatch};
@@ -90,13 +54,9 @@ fn credential_values(ms: &[RawMatch]) -> BTreeSet<String> {
     ms.iter().map(|m| m.credential.to_string()).collect()
 }
 
-/// Verified HS\AC fixtures: each is a contract positive (copied from
-/// `crates/scanner/tests/contracts/<id>.toml`) for a detector whose credential
-/// has NO fixed literal prefix, so the AC literal sweep cannot trigger it, only
-/// Hyperscan's full-regex scan does. Empirically, all three are found by SimdCpu
-/// and missed by CpuFallback on the current detector set. The invariant the test
-/// asserts ("the union is load-bearing") only needs ONE of these to remain
-/// HS\AC, so it stays green even if a detector later gains a usable literal.
+/// Context-anchored fixtures that once exposed a gap between Hyperscan and the
+/// CPU literal plan. Each backend must now recover the exact detector and
+/// credential independently.
 const HS_MINUS_AC_FIXTURES: &[(&str, &str, &str)] = &[
     (
         "datadog-api-key",
@@ -116,87 +76,53 @@ const HS_MINUS_AC_FIXTURES: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// The SimdCpu union must catch context-anchored detectors that the AC literal
-/// set alone misses. This is the EXACT regression guard: dropping the Hyperscan
-/// union (so SimdCpu = AC only) makes `simd_found` go false for these fixtures
-/// and trips this test before it can reach `contracts_runner`.
+/// Formerly SIMD-only fixtures must remain detector-level findings on both
+/// independently materialized plans.
 #[test]
-fn simd_union_is_load_bearing_for_recall() {
+fn formerly_simd_only_fixtures_have_backend_parity() {
     if !cfg!(feature = "simd") {
         eprintln!(
-            "perf_simd_scan: `simd` feature not compiled, no Hyperscan prefilter, \
-             SimdCpu == CpuFallback (AC only), so the HS\\AC differential does not \
-             exist; skipping the load-bearing assertion."
+            "perf_simd_scan: `simd` feature not compiled; skipping the backend differential."
         );
         return;
     }
 
     let detectors = load_detectors(&detector_dir()).expect("load detectors");
-    let scanner = CompiledScanner::compile(detectors).expect("compile scanner");
+    let simd_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
+            .expect("compile SIMD scanner");
+    let cpu_scanner =
+        CompiledScanner::compile_for_backend(detectors, ScanBackend::CpuFallback)
+            .expect("compile CPU scanner");
 
-    let mut union_load_bearing = 0usize;
     for &(detector_id, text, credential) in HS_MINUS_AC_FIXTURES {
         let chunk = make_chunk(text);
-        let simd = scanner
+        let simd = simd_scanner
             .scan_with_backend(&chunk, ScanBackend::SimdCpu)
-            .expect("selected backend scan succeeds");
-        let cpu = scanner
+            .expect("selected SIMD scan succeeds");
+        let cpu = cpu_scanner
             .scan_with_backend(&chunk, ScanBackend::CpuFallback)
-            .expect("selected backend scan succeeds");
+            .expect("selected CPU scan succeeds");
 
-        let simd_found = simd
-            .iter()
-            .any(|m| m.detector_id.as_ref() == detector_id && m.credential.as_ref() == credential);
-        let cpu_found = cpu
-            .iter()
-            .any(|m| m.detector_id.as_ref() == detector_id && m.credential.as_ref() == credential);
-
-        // Recall on the DEFAULT CI backend (SimdCpu) is non-negotiable: every
-        // one of these credentials must be found by the SIMD path.
         assert!(
-            simd_found,
-            "SimdCpu (AC ∪ Hyperscan) FAILED to find the `{detector_id}` credential \
-             `{credential}`. The Hyperscan union in collect_triggered_patterns_simd \
-             (backend_triggered.rs) is the only thing that triggers this no-literal \
-             detector: if it was dropped, this is the recall regression PERF-simd_scan-1 \
-             caused (49 detectors lost). Restore the AC ∪ HS union."
+            simd.iter().any(|m| {
+                m.detector_id.as_ref() == detector_id && m.credential.as_ref() == credential
+            }),
+            "SimdCpu failed to find `{detector_id}` credential `{credential}`"
         );
-
-        // Superset safety per fixture: SimdCpu must never drop what CpuFallback
-        // found. (CpuFallback ⊆ SimdCpu.)
         assert!(
-            !cpu_found || simd_found,
-            "SimdCpu dropped a `{detector_id}` finding that CpuFallback made, the SIMD \
-             path must be a superset of the scalar path."
+            cpu.iter().any(|m| {
+                m.detector_id.as_ref() == detector_id && m.credential.as_ref() == credential
+            }),
+            "CpuFallback failed to recover `{detector_id}` credential `{credential}`"
         );
-
-        if simd_found && !cpu_found {
-            union_load_bearing += 1;
-            eprintln!(
-                "perf_simd_scan: union load-bearing for `{detector_id}` \
-                 (SimdCpu finds it, CpuFallback/AC-only misses it)."
-            );
-        }
     }
-
-    assert!(
-        union_load_bearing >= 1,
-        "NONE of the {} known HS\\AC fixtures was missed by CpuFallback, either every \
-         one gained a usable AC literal (update the fixtures) or the CpuFallback path \
-         silently started using Hyperscan. The union must remain provably load-bearing.",
-        HS_MINUS_AC_FIXTURES.len()
-    );
 }
 
-/// On every chunk, the SimdCpu finding set must be a SUPERSET of the CpuFallback
-/// finding set: the vectorized path may find MORE (the HS\AC detectors) but must
-/// never find LESS than the scalar path. Checked per-fixture (each in its OWN
-/// chunk, the contract fixtures share credential substrings, e.g. twilio's
-/// account_sid contains datadog's hex, so a combined chunk would cross-pollute
-/// the differential) plus a literal-anchored control proving the union does not
-/// regress the AC fast path. The strict "SimdCpu finds MORE" direction is proven
-/// per-fixture by `simd_union_is_load_bearing_for_recall`; this guards the other
-/// direction (that SimdCpu never DROPS a scalar finding).
+/// On every chunk, the SimdCpu finding values must be a superset of the
+/// CpuFallback finding values. Each backend gets an independently materialized
+/// scanner so backend substitution cannot make this test green by accident.
+/// Fixtures stay in separate chunks because their credential substrings overlap.
 #[test]
 fn simd_findings_are_a_superset_of_scalar() {
     if !cfg!(feature = "simd") {
@@ -208,45 +134,49 @@ fn simd_findings_are_a_superset_of_scalar() {
     }
 
     let detectors = load_detectors(&detector_dir()).expect("load detectors");
-    let scanner = CompiledScanner::compile(detectors).expect("compile scanner");
+    let simd_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
+            .expect("compile SIMD scanner");
+    let cpu_scanner =
+        CompiledScanner::compile_for_backend(detectors, ScanBackend::CpuFallback)
+            .expect("compile CPU scanner");
 
     // Literal-anchored control: a fixed-prefix secret (AKIA) is in the AC literal
     // set, so BOTH backends must find it. This proves the Hyperscan union did not
     // regress the scalar AC fast path while widening the candidate set.
     let control = make_chunk("const AWS_KEY = \"AKIAQYLPMN5HFIQR7XYA\";\n");
     let control_simd = finding_keys(
-        &scanner
+        &simd_scanner
             .scan_with_backend(&control, ScanBackend::SimdCpu)
             .expect("selected backend scan succeeds"),
     );
     let control_cpu = finding_keys(
-        &scanner
+        &cpu_scanner
             .scan_with_backend(&control, ScanBackend::CpuFallback)
             .expect("selected backend scan succeeds"),
     );
     assert!(
         !control_cpu.is_empty() && control_cpu.is_subset(&control_simd),
         "literal-anchored control regressed: CpuFallback={control_cpu:?} must be non-empty \
-         and a subset of SimdCpu={control_simd:?} (the union must not drop the AC fast path)."
+         and a subset of SimdCpu={control_simd:?}."
     );
 
-    // Per-fixture superset is over SECRET VALUES, not (detector_id, credential):
-    // the recall contract is "SimdCpu loses no SECRET the scalar path found". When
-    // SimdCpu's wider candidate set finds a MORE-SPECIFIC detector the AC fast path
-    // structurally cannot — e.g. datadog-api-key on `DD_API_KEY=<32hex>`, whose only
-    // >=3-byte AC literals are DATADOG/datadog (absent in the `DD_API_KEY` spelling),
-    // so the case-insensitive AC sweep cannot trigger it and only Hyperscan's full
-    // regex does — that specific match correctly SUPPRESSES the generic
-    // entropy-api-key / generic-secret on the SAME value. The secret value is
-    // preserved (re-attributed to the specific detector), so no recall is lost; only
-    // the detector label differs. Keying on value guards the thing that matters (a
-    // genuinely dropped secret VALUE still fails) while tolerating correct
-    // specific-over-generic re-attribution. Detector-level recall of the HS\AC
-    // detector itself stays guarded by `simd_union_is_load_bearing_for_recall`.
+    // Compare credential values rather than detector labels. A more specific
+    // detector may suppress a generic finding for the same value, which changes
+    // attribution without losing the credential. Detector-level parity for
+    // these fixtures is asserted above.
     for &(detector_id, text, _cred) in HS_MINUS_AC_FIXTURES {
         let chunk = make_chunk(text);
-        let simd = credential_values(&scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu));
-        let cpu = credential_values(&scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback));
+        let simd = credential_values(
+            &simd_scanner
+                .scan_with_backend(&chunk, ScanBackend::SimdCpu)
+                .expect("SIMD fixture scan succeeds"),
+        );
+        let cpu = credential_values(
+            &cpu_scanner
+                .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+                .expect("CPU fixture scan succeeds"),
+        );
         let dropped: Vec<_> = cpu.difference(&simd).collect();
         assert!(
             dropped.is_empty(),

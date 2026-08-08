@@ -1,0 +1,37 @@
+# Tier-B: JWT standards vocabulary.
+#
+# `algorithms` is the JWS `alg` registry subset KeyHog treats as standard; an
+# `alg` outside it raises `JwtAnomaly::UnknownAlg`. `media_types` is the JOSE
+# `typ` header subset treated as standard; a `typ` outside it raises
+# `JwtAnomaly::NonStandardTyp`. Both are matched CASE-SENSITIVELY against the
+# decoded header, so entries are stored in their exact registered spelling.
+#
+# `alg = "none"` is deliberately absent: it is not "unknown", it is the
+# unsigned-token security anomaly (`JwtAnomaly::AlgNone`) handled before this
+# vocabulary is consulted.
+
+[jwt_standards]
+algorithms = [
+  "RS256",
+  "RS384",
+  "RS512",
+  "HS256",
+  "HS384",
+  "HS512",
+  "ES256",
+  "ES384",
+  "ES512",
+  "ES256K",
+  "PS256",
+  "PS384",
+  "PS512",
+  "EdDSA",
+]
+
+media_types = [
+  "JWT",
+  "at+jwt",
+  "id+jwt",
+  "dpop+jwt",
+  "logout+jwt",
+]

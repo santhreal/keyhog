@@ -276,6 +276,67 @@ class KeyhogScanner(Scanner):
             "stale install as if it were HEAD and misreport recall."
         )
 
+    def detector_corpus_sha256(self) -> str:
+        return compute_detector_corpus_sha256(self._detector_corpus)
+
+    def assert_freshness(self) -> str:
+        return assert_keyhog_binary_current(self.binary)
+
+    @contextlib.contextmanager
+    def _binary_snapshot(self):
+        with sibling_executable_snapshot(self.binary) as snapshot:
+            version = assert_keyhog_binary_current(
+                str(snapshot.launch_path), pass_fds=snapshot.pass_fds,
+            )
+            yield snapshot.launch_path, snapshot.sha256, version, snapshot.pass_fds
+
+    def _detector_snapshot(self) -> tuple[pathlib.Path, str]:
+        digest = self.detector_corpus_sha256()
+        root = _detector_snapshot_root()
+        target = root / digest / "detectors"
+        if target.is_dir():
+            observed = compute_detector_corpus_sha256(target)
+            if observed != digest:
+                raise RuntimeError(
+                    f"benchmark detector snapshot {target} is corrupt: "
+                    f"expected SHA-256 {digest}, found {observed}. "
+                    "Remove that snapshot directory and rerun"
+                )
+            return target, digest
+
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="keyhog-bench-detectors-", dir=root
+        ) as raw_staging:
+            staging = pathlib.Path(raw_staging)
+            staged_detectors = staging / "detectors"
+            staged_detectors.mkdir(mode=0o700)
+            sources = sorted(
+                self._detector_corpus.glob("*.toml"),
+                key=lambda path: os.fsencode(path.name),
+            )
+            if not sources:
+                raise RuntimeError(
+                    f"{self._detector_corpus} contains no detector TOMLs; "
+                    "cannot run a provenance-bound benchmark"
+                )
+            for source in sources:
+                destination = staged_detectors / source.name
+                shutil.copyfile(source, destination)
+                destination.chmod(0o400)
+            staged_detectors.chmod(0o500)
+            if compute_detector_corpus_sha256(staged_detectors) != digest:
+                raise RuntimeError(
+                    "detector corpus changed while its benchmark snapshot was created; rerun"
+                )
+            published = root / digest
+            try:
+                staging.rename(published)
+            except OSError:
+                if not target.is_dir() or compute_detector_corpus_sha256(target) != digest:
+                    raise
+        return target, digest
+
     # ── config matrix ──────────────────────────────────────────────────
 
     def variants(self) -> list[ScannerConfig]:

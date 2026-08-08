@@ -41,3 +41,8 @@ reason = "Below the 16-char base64 floor (`dGVzdA` = `test`, 6 chars) — a triv
 [[negative]]
 text = "subscription_tier = \"Basic\""
 reason = "`Basic` as a product/config value, not an auth scheme — no base64 follows."
+
+[[evasion]]
+text = "Proxy-Authorization:\tBasic   c3ZjX2FjY291bnQ6S3g5bVBxMndMNW5SOHRXdlo="
+credential = "c3ZjX2FjY291bnQ6S3g5bVBxMndMNW5SOHRXdlo="
+reason = "Proxy authorization header with tab and repeated whitespace."

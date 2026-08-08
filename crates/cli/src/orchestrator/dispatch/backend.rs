@@ -68,10 +68,12 @@ use self::store::{
     AutorouteCacheSaveOutcome,
 };
 pub(crate) use self::store::{
-    inspect_autoroute_cache, render_missing_buckets, render_summary as render_cache_summary,
-    snapshot as autoroute_cache_stats, AutorouteReadiness, StagedAutorouteCache,
+    bind_autoroute_cache_to_execution_packs, inspect_autoroute_cache,
+    load_execution_pack_generation_binding, render_missing_buckets,
+    render_summary as render_cache_summary, snapshot as autoroute_cache_stats, AutorouteReadiness,
+    StagedAutorouteCache,
 };
-pub(crate) use self::workload::{source_route_class, SourceRouteClass};
+pub(crate) use self::workload::{canonical_source_classes, source_route_class, SourceRouteClass};
 use self::workload::{measurement_shape_evidence, render_workload_key, workload_key, WorkloadKey};
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
@@ -146,6 +148,8 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
 // Older sequential-trial rows could encode host drift as backend performance.
 // v41: phase-two Hyperscan is owned only by the measured SIMD route. Older
 // scalar and GPU rows included unreported SIMD work and are not comparable.
+// v52: every calibration generation can bind the authenticated manifest plus exact
+// policy/backend pack identities. Pack replacement now invalidates routing evidence.
 // v40: SIMD timing adopts the same first-materialization plus warm-trial model
 // as GPU. Older rows measured only warm Hyperscan execution and would make a
 // lazy one-shot route look faster than the operator-observed path.
@@ -188,7 +192,7 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 51;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 52;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 

@@ -9,9 +9,9 @@ credential = "dG9rKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp
 reason = "Intercom dG9r-prefixed access token (base64, 100+ body chars)."
 
 [[positive]]
-text = "INTERCOM_ACCESS_TOKEN=dG9rVk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9B"
-credential = "dG9rVk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9B"
-reason = "Env-var assignment around prefix detector."
+text = "INTERCOM_ACCESS_TOKEN=dG9rVk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9BVk9Bn3Lp7Qm2"
+credential = "dG9rVk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9BVk9Bn3Lp7Qm2"
+reason = "Env-var assignment around a token with at least 100 body characters."
 
 [[negative]]
 text = "dG9rshort"

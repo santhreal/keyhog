@@ -657,6 +657,7 @@ pub mod args;
 pub(crate) mod atomic_file;
 pub(crate) mod autoroute_cache_path;
 pub(crate) mod baseline;
+mod execution_pack_install;
 pub(crate) mod benchmark;
 pub(crate) mod bloom_diagnostic;
 pub(crate) mod config;

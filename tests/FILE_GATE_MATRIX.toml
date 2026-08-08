@@ -1203,24 +1203,6 @@ path = "crates/scanner/src/gpu/backend/acquisition.rs"
 error = true
 adversarial = true
 
-[[module]]
-path = "crates/scanner/src/gpu/backend/artifact.rs"
-error = true
-adversarial = true
-
-[[module]]
-path = "crates/scanner/src/gpu/backend/diagnostics.rs"
-error = true
-adversarial = true
-
-[[module]]
-path = "crates/scanner/src/gpu/backend/execution.rs"
-error = true
-adversarial = true
-[[module]]
-path = "crates/scanner/src/gpu/gpu_shader.rs"
-error = true
-adversarial = true
 
 [[module]]
 path = "crates/scanner/src/gpu/self_test.rs"
@@ -2047,11 +2029,6 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase2_generic/line_mapping.rs"
-error = true
-adversarial = true
-
-[[module]]
 path = "crates/scanner/src/engine/phase2_generic/metrics.rs"
 error = true
 adversarial = true
@@ -2785,72 +2762,93 @@ error = true
 adversarial = true
 
 
-# --- KH-GAP-176: scanner src modules added since the matrix was last synced ---
+# Scanner modules added since the matrix was last synchronized.
 [[module]]
-path = "crates/scanner/src/anchored_regex.rs"
+path = "crates/scanner/src/context/line_index.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/detector_ids.rs"
+path = "crates/scanner/src/engine/batch_topology.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase2/first_bigram.rs"
+path = "crates/scanner/src/execution_pack/compiler.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase2_generic/auth_value.rs"
+path = "crates/scanner/src/execution_pack/cpu_program.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase2_generic/line_mapping.rs"
+path = "crates/scanner/src/execution_pack/detector_plan.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase2_generic/metrics.rs"
+path = "crates/scanner/src/execution_pack/format.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase2_gpu_dfa/batch.rs"
+path = "crates/scanner/src/execution_pack/generation.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase2_gpu_dfa/candidates.rs"
+path = "crates/scanner/src/execution_pack/ir.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase2_gpu_dfa/lowering.rs"
+path = "crates/scanner/src/execution_pack/matcher_sections.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase2_gpu_dfa/shard.rs"
+path = "crates/scanner/src/execution_pack/mod.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase2_gpu_dfa/workload.rs"
+path = "crates/scanner/src/execution_pack/parity.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/scan_postprocess/confirmed_anchor.rs"
+path = "crates/scanner/src/execution_pack/runtime.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/scan_postprocess/confirmed_extract.rs"
+path = "crates/scanner/src/execution_pack/selection.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/scan_postprocess/ml.rs"
+path = "crates/scanner/src/execution_pack/signature.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/entropy/isolated.rs"
+path = "crates/scanner/src/execution_pack/simd_program.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/entropy/plausibility.rs"
+path = "crates/scanner/src/execution_pack/vyre_program.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/generic_keyword_owner.rs"
+path = "crates/scanner/src/hex_digest_policy.rs"
+error = true
+adversarial = true
 
 [[module]]
-path = "crates/scanner/src/suppression/shape/canonical.rs"
-
-[[module]]
-path = "crates/scanner/src/suppression/shape/mod.rs"
-
-[[module]]
-path = "crates/scanner/src/suppression/shape/path.rs"
-
-[[module]]
-path = "crates/scanner/src/suppression/shape/prose.rs"
-
-[[module]]
-path = "crates/scanner/src/suppression/shape/public.rs"
-
-[[module]]
-path = "crates/scanner/src/suppression/shape/source.rs"
+path = "crates/scanner/src/ml_scorer/service_vocab_build.rs"
+error = true
+adversarial = true

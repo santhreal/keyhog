@@ -155,6 +155,7 @@ fn malformed_structured_files_are_counted_valid_ones_are_not() {
          decode_derived gate this scan counted 2 false coverage gaps. \
          Depth-0 extraction recall is locked separately by the unit test \
          `structured::parsers::yaml::decode_derived_gate::depth0_extracts_decoded_jwt`."
+    );
     // A `.ipynb` whose body is NOT a JSON object (a code snippet mislabeled with
     // the notebook extension — common in real corpora like CredData) is not a
     // notebook at all: there is no `cells` array to decode-through, so skipping it
@@ -165,7 +166,7 @@ fn malformed_structured_files_are_counted_valid_ones_are_not() {
     scan(&scanner, snippet_ipynb, "/repo/snippet.ipynb");
     assert_eq!(
         structured_parse_failure_count(),
-        4,
+        0,
         "a non-JSON-object .ipynb (mislabeled code snippet) must NOT count as a \
          structured parse failure — there is no notebook to decode-through"
     );
@@ -178,7 +179,7 @@ fn malformed_structured_files_are_counted_valid_ones_are_not() {
     scan(&scanner, broken_notebook, "/repo/broken.ipynb");
     assert_eq!(
         structured_parse_failure_count(),
-        5,
+        1,
         "a JSON-object-shaped but malformed notebook is a genuine decode-through \
          loss and must still be counted"
     );

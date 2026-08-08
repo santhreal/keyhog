@@ -65,12 +65,10 @@ marker_substrings = [
 ]
 
 # Second marker vocabulary consumed by the entropy-plausibility gate
-# (`bytes_contain_entropy_placeholder_marker`, entropy/plausibility.rs). Kept in
-# two lists because it carries two uniform match semantics; the gate's remaining
-# THREE clauses are bespoke rules that stay in code (they are not lists): the
-# length-gated `secret_key` substring (< 20 bytes), the compound `AKIA…` prefix
-# with an `EXAMPLE` suffix or `1234567890` run, and the structural `<`/`>`
-# angle-bracket presence check.
+# (`bytes_contain_entropy_placeholder_marker`, entropy/plausibility.rs). Every
+# clause of that gate is data: two plain lists carrying the two uniform match
+# semantics, plus three typed bounded rule tables (`length_gated_substrings`,
+# `compound_shapes`, `structural_bytes`) that used to be bespoke Rust branches.
 [entropy_markers]
 # Case-insensitive substring markers (matched via ascii_ci over raw bytes). Stored
 # lowercase; may carry `_`/`-` separators.
@@ -79,3 +77,25 @@ ci_substrings = ["your_", "replace_me", "change_me", "insert_here", "fake_", "du
 # lowercase, so, preserving current behavior, only the lowercase whole value
 # suppresses (an uppercase `NULL` is NOT caught by this arm).
 exact_values = ["null", "none", "undefined", "empty", "default", "secret", "password"]
+# Structural placeholder characters: a value containing ANY of these bytes is a
+# fill-in-the-blank template (`<YOUR_KEY_HERE>`). Each entry is exactly one
+# ASCII byte and is matched by byte presence anywhere in the value.
+structural_bytes = ["<", ">"]
+
+# Length-gated substrings: the substring marks a decoy ONLY when the whole value
+# is shorter than `max_length_exclusive`. A long value that merely contains the
+# substring is a real secret and must not be suppressed. Matched
+# case-insensitively.
+[[entropy_markers.length_gated_substrings]]
+substring = "secret_key"
+max_length_exclusive = 20
+
+# Compound shapes: a value starting with `prefix` AND ending with one of
+# `suffixes` OR containing one of `substrings` is a documentation decoy. All
+# three parts are matched case-insensitively, so entries are stored in the
+# canonical spelling the credential class uses. `AKIA…EXAMPLE` and the
+# `1234567890` sequential filler are the published AWS docs decoys.
+[[entropy_markers.compound_shapes]]
+prefix = "AKIA"
+suffixes = ["EXAMPLE"]
+substrings = ["1234567890"]

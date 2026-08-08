@@ -126,6 +126,13 @@ pub enum MetricId {
     NetworkLatencyNs,
     AutorouteCalibration,
     BoundaryScan,
+    DetectorLoad,
+    DetectorValidate,
+    ExecutionPackSelect,
+    ExecutionPackMap,
+    BackendAcquire,
+    BackendInit,
+    Teardown,
 }
 
 /// Stable identifier for a top-level production pipeline stage.
@@ -726,6 +733,13 @@ impl From<crate::Stage> for MetricId {
             crate::Stage::ScannerQueueWait => Self::ScannerQueueWait,
             crate::Stage::AutorouteCalibration => Self::AutorouteCalibration,
             crate::Stage::BoundaryScan => Self::BoundaryScan,
+            crate::Stage::DetectorLoad => Self::DetectorLoad,
+            crate::Stage::DetectorValidate => Self::DetectorValidate,
+            crate::Stage::ExecutionPackSelect => Self::ExecutionPackSelect,
+            crate::Stage::ExecutionPackMap => Self::ExecutionPackMap,
+            crate::Stage::BackendAcquire => Self::BackendAcquire,
+            crate::Stage::BackendInit => Self::BackendInit,
+            crate::Stage::Teardown => Self::Teardown,
         }
     }
 }
@@ -1499,10 +1513,52 @@ pub static METRICS: [MetricDescriptor; MetricId::COUNT] = [
         MetricKind::Duration,
         MetricUnit::Nanoseconds,
     ),
+    metric(
+        MetricId::DetectorLoad,
+        "detector-load",
+        MetricKind::Duration,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::DetectorValidate,
+        "detector-validate",
+        MetricKind::Duration,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::ExecutionPackSelect,
+        "execution-pack-select",
+        MetricKind::Duration,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::ExecutionPackMap,
+        "execution-pack-map",
+        MetricKind::Duration,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::BackendAcquire,
+        "backend-acquire",
+        MetricKind::Duration,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::BackendInit,
+        "backend-init",
+        MetricKind::Duration,
+        MetricUnit::Nanoseconds,
+    ),
+    metric(
+        MetricId::Teardown,
+        "teardown",
+        MetricKind::Duration,
+        MetricUnit::Nanoseconds,
+    ),
 ];
 
 impl MetricId {
-    pub const COUNT: usize = 121;
+    pub const COUNT: usize = 128;
 
     /// Return static metadata with no lookup allocation or hashing.
     #[inline]

@@ -1,0 +1,33 @@
+# Per-detector contract: facebook-access-token
+
+schema_version = 1
+detector_id = "facebook-access-token"
+service = "facebook"
+severity = "high"
+
+[[positive]]
+text = 'fb_access_token: "EAACEdEose0cBAMZD123456789abcdefghijklmnopqrstuvwxyz"'
+credential = "EAACEdEose0cBAMZD123456789abcdefghijklmnopqrstuvwxyz"
+reason = "Canonical uppercase EAA-prefixed Graph API access token."
+
+[[positive]]
+text = "FACEBOOK_ACCESS_TOKEN=EAAZk9mPq2wL5nR8tWvZ4YbHc7T6sDfGjKlQxCvBnM"
+credential = "EAAZk9mPq2wL5nR8tWvZ4YbHc7T6sDfGjKlQxCvBnM"
+reason = "Assignment form preserves the distinctive uppercase token boundary."
+
+[[negative]]
+text = 'fb_access_token: "EAAshort"'
+reason = "The value is below the detector length floor."
+
+[[negative]]
+text = "image = nginx@sha256:eaa35988c9b3f5a761d1c4e6f9972e8ba9de65059bfc"
+reason = "A lowercase digest substring must not satisfy the case-sensitive EAA prefix."
+
+[[negative]]
+text = "prefixEAAZk9mPq2wL5nR8tWvZ4YbHc7T6sDfGjKlQxCvBnM"
+reason = "The EAA prefix is embedded inside another alphanumeric token."
+
+[[evasion]]
+text = "Authorization: Bearer EAAZk9mPq2wL5nR8tWvZ4YbHc7T6sDfGjKlQxCvBnM"
+credential = "EAAZk9mPq2wL5nR8tWvZ4YbHc7T6sDfGjKlQxCvBnM"
+reason = "Bearer-header wrapper around an uppercase EAA token."

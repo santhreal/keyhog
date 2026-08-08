@@ -78,6 +78,10 @@ fn validate_source_class_catalog(classes: &[String]) -> Result<(), String> {
 pub(super) fn source_class_label(digest: &[u8; 32]) -> Option<&'static str> {
     CANONICAL_SOURCE_CLASSES.get(digest).map(String::as_str)
 }
+pub(crate) fn canonical_source_classes() -> impl ExactSizeIterator<Item = &'static str> {
+    CANONICAL_SOURCE_CLASSES.values().map(String::as_str)
+}
+
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct SourceRouteClass {

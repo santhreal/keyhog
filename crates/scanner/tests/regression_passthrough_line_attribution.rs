@@ -39,23 +39,17 @@ fn make_chunk(text: &str) -> Chunk {
 
 fn line_attr_detector() -> DetectorSpec {
     DetectorSpec {
-        tests: Vec::new(),
         id: "line-attr-probe".into(),
         name: "Line Attribution Probe".into(),
         service: "lineattr".into(),
         severity: Severity::High,
         patterns: vec![PatternSpec {
-            // Service-anchored: the `lineattr_key=` keyword is positive evidence,
-            // so the captured high-entropy body is reported as the credential.
             regex: "lineattr_key=([A-Za-z0-9]{20,})".into(),
-            description: None,
             group: Some(1),
-            client_safe: false,
+            ..Default::default()
         }],
-        companions: Vec::new(),
-        verify: None,
         keywords: vec!["lineattr_key".into()],
-        min_confidence: None,
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -69,7 +63,9 @@ fn credential_under_hash_comment_surfaces_on_line_two() {
     // SECRET is a 24-char high-entropy body the detector captures verbatim.
     const SECRET: &str = "Xk9mPq2wL5nR8tWvZ4YbHc7T";
     let text = format!("# https://service.example/docs\nlineattr_key={SECRET}");
-    let matches = scanner.scan(&make_chunk(&text));
+    let matches = scanner
+        .scan(&make_chunk(&text))
+        .expect("line attribution scan succeeds");
 
     let hit = matches
         .iter()
@@ -106,7 +102,9 @@ fn credential_on_line_three_reports_line_three() {
         CompiledScanner::compile(vec![line_attr_detector()]).expect("scanner compiles");
     const SECRET: &str = "Qm4Rs7Tw8Vk2Bn5Lp9Zc3Xj";
     let text = format!("first config line\n// auth section below\nlineattr_key={SECRET}");
-    let matches = scanner.scan(&make_chunk(&text));
+    let matches = scanner
+        .scan(&make_chunk(&text))
+        .expect("line attribution scan succeeds");
 
     let hit = matches
         .iter()

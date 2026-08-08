@@ -37,6 +37,8 @@ pub(crate) enum AutorouteCacheSaveOutcome {
 struct MergeableConfigs {
     configs: Vec<AutorouteConfigDecisions>,
     outcome: AutorouteCacheSaveOutcome,
+    execution_pack_generation:
+        Option<crate::execution_pack_install::ExecutionPackGenerationBinding>,
 }
 
 /// One complete autoroute sweep staged away from the live cache.
@@ -245,6 +247,96 @@ pub(crate) fn load_autoroute_cache(
         .map(|row| (row.workload.clone(), row.decision.clone()))
         .collect())
 }
+pub(crate) fn load_execution_pack_generation_binding(
+    path: &Path,
+) -> AnyhowResult<Option<crate::execution_pack_install::ExecutionPackGenerationBinding>> {
+    let bytes = read_autoroute_cache_file(path)
+        .with_context(|| format!("reading autoroute cache {}", path.display()))?;
+    let cache = parse_autoroute_cache(&bytes)
+        .map_err(|error| anyhow!("invalid autoroute cache: {}", error.diagnostic()))?;
+    validate_cache_structure(&cache)
+        .map_err(|error| anyhow!("invalid autoroute cache: {error}"))?;
+    Ok(cache.execution_pack_generation)
+}
+
+pub(crate) fn bind_autoroute_cache_to_execution_packs(
+    path: &Path,
+    binding: crate::execution_pack_install::ExecutionPackGenerationBinding,
+) -> AnyhowResult<()> {
+    let _write_lock = keyhog_core::StateFileWriteLock::acquire(path)
+        .map_err(|error| anyhow!("{error}"))
+        .with_context(|| format!("locking staged autoroute cache {}", path.display()))?;
+    let bytes = read_autoroute_cache_file(path)
+        .with_context(|| format!("reading staged autoroute cache {}", path.display()))?;
+    let mut cache = parse_autoroute_cache(&bytes).map_err(|error| {
+        anyhow!(
+            "cannot bind execution packs to autoroute cache: {}",
+            error.diagnostic()
+        )
+    })?;
+    if let Some(existing) = cache.execution_pack_generation.as_ref() {
+        if existing != &binding {
+            anyhow::bail!(
+                "autoroute cache is already bound to a different execution-pack generation; rebuild packs and recalibrate transactionally"
+            );
+        }
+    }
+    let pack_keys = binding
+        .packs
+        .iter()
+        .map(|pack| (pack.policy.as_str(), pack.backend.as_str()))
+        .collect::<BTreeSet<_>>();
+    for config in &cache.configs {
+        for row in &config.decisions {
+            let mut backends = vec![row.decision.backend.as_str()];
+            backends.extend(
+                row.decision
+                    .calibration_points
+                    .iter()
+                    .flat_map(|point| point.route_timings.iter())
+                    .map(|timing| timing.backend.as_str()),
+            );
+            for backend in backends {
+                let pack_backend = execution_pack_backend_name(backend).ok_or_else(|| {
+                    anyhow!("autoroute decision names unknown backend {backend:?}; refusing pack binding")
+                })?;
+                for policy in ["default", "fast", "deep", "precision"] {
+                    if !pack_keys.contains(&(policy, pack_backend)) {
+                        anyhow::bail!(
+                            "autoroute backend {backend} has no exact {policy}/{pack_backend} execution pack; rebuild packs before calibration"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    cache.execution_pack_generation = Some(binding);
+    validate_cache_structure(&cache)
+        .map_err(|error| anyhow!("pack-bound autoroute cache is invalid: {error}"))?;
+    let serialized =
+        serde_json::to_vec(&cache).context("serializing pack-bound autoroute cache")?;
+    if serialized.len() as u64 > AUTOROUTE_CACHE_FILE_BYTES {
+        anyhow::bail!(
+            "pack-bound autoroute cache is {} bytes, above the {} byte cap",
+            serialized.len(),
+            AUTOROUTE_CACHE_FILE_BYTES
+        );
+    }
+    crate::atomic_file::write_bytes(path, &serialized)
+        .with_context(|| format!("writing pack-bound autoroute cache {}", path.display()))
+}
+
+fn execution_pack_backend_name(route_backend: &str) -> Option<&'static str> {
+    match route_backend {
+        "cpu-fallback" => Some("cpu"),
+        "simd-regex" => Some("simd"),
+        "gpu-cuda-region-presence" => Some("gpu-cuda"),
+        "gpu-wgpu-region-presence" => Some("gpu-wgpu"),
+        "gpu-metal-region-presence" => Some("gpu-metal"),
+        _ => None,
+    }
+}
+
 
 pub(crate) fn save_autoroute_cache(
     path: &std::path::Path,
@@ -273,6 +365,7 @@ pub(crate) fn save_autoroute_cache(
 
     let mergeable = read_mergeable_configs(path, detector_digest, rules_digest)?;
     let mut configs = mergeable.configs;
+    let execution_pack_generation = mergeable.execution_pack_generation;
     let outcome = mergeable.outcome;
     let mut merged = BTreeMap::new();
     if let Some(prior) = configs
@@ -318,10 +411,11 @@ pub(crate) fn save_autoroute_cache(
         build_features: AutorouteBuildFeatures::current(),
         detector_digest,
         rules_digest: rules_digest.to_string(),
+        execution_pack_generation,
         configs,
     };
     validate_cache_structure(&cache)?;
-    let serialized = serde_json::to_vec_pretty(&cache)?;
+    let serialized = serde_json::to_vec(&cache)?;
     if serialized.len() as u64 > AUTOROUTE_CACHE_FILE_BYTES {
         return Err(format!(
             "autoroute cache would be {} bytes, exceeding the {} byte read limit; \
@@ -345,6 +439,7 @@ fn read_mergeable_configs(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Ok(MergeableConfigs {
                 configs: Vec::new(),
+                execution_pack_generation: None,
                 outcome: AutorouteCacheSaveOutcome::Fresh,
             });
         }
@@ -411,6 +506,7 @@ fn read_mergeable_configs(
     }
     Ok(MergeableConfigs {
         configs: cache.configs,
+        execution_pack_generation: cache.execution_pack_generation,
         outcome: AutorouteCacheSaveOutcome::Merged,
     })
 }
@@ -418,6 +514,7 @@ fn read_mergeable_configs(
 fn replacement(reason: String) -> MergeableConfigs {
     MergeableConfigs {
         configs: Vec::new(),
+        execution_pack_generation: None,
         outcome: AutorouteCacheSaveOutcome::Replaced { reason },
     }
 }

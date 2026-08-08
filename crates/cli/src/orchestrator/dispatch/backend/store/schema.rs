@@ -25,6 +25,9 @@ pub(crate) struct AutorouteCache {
     pub(crate) build_features: AutorouteBuildFeatures,
     pub(crate) detector_digest: u64,
     pub(crate) rules_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) execution_pack_generation:
+        Option<crate::execution_pack_install::ExecutionPackGenerationBinding>,
     pub(crate) configs: Vec<AutorouteConfigDecisions>,
 }
 

@@ -51,12 +51,13 @@ const ANCHORED: &str = "AKIAQYLPMN5HFIQR7XYA";
 /// is caught ONLY by the entropy isolated-bare pass, never by a named detector.
 /// (Same shape proven detectable by the SimdCpu entropy path in the
 /// `keyword_free_scan_detects_isolated_bare_high_entropy_token` unit test.)
-const ENTROPY_ONLY: &str = "Zx9Cv8Bn7Mq6Pw5Er4Ty3Ui2Op1As0DfGh";
+const ENTROPY_ONLY: &str =
+    "qA9zM4nB7vC2xL8pR5tY1uI6oP3sD0fG9hJ2kL7mN4bV8cX1zQ6wE5rT0yU3iO";
 
-fn compile_scanner() -> CompiledScanner {
+fn compile_scanner(backend: ScanBackend) -> CompiledScanner {
     let detectors =
         keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
-    CompiledScanner::compile(detectors).expect("scanner compile")
+    CompiledScanner::compile_for_backend(detectors, backend).expect("scanner compile")
 }
 
 /// Build a chunk strictly LARGER than `MAX_SCAN_CHUNK_BYTES` (1 MiB) so the GPU
@@ -86,11 +87,14 @@ fn big_mixed_corpus() -> String {
 #[test]
 fn gpu_runs_entropy_fallback_for_triggered_large_chunks() {
     require_gpu_or_panic("gpu_runs_entropy_fallback_for_triggered_large_chunks");
-    let scanner = compile_scanner();
+    let simd_scanner = compile_scanner(ScanBackend::SimdCpu);
+    let gpu_scanner = compile_scanner(ScanBackend::GpuWgpu);
 
     let chunks = vec![make_chunk(&big_mixed_corpus(), "fixtures/mixed_secrets.env")];
 
-    let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu);
+    let simd_results = simd_scanner
+        .scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu)
+        .expect("selected SIMD scan succeeds");
     let simd_creds = collect_creds(&simd_results);
 
     // SimdCpu MUST find both: the anchored detector secret and the entropy-only one.
@@ -104,7 +108,9 @@ fn gpu_runs_entropy_fallback_for_triggered_large_chunks() {
          creds={simd_creds:?}"
     );
 
-    let gpu_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu);
+    let gpu_results = gpu_scanner
+        .scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu)
+        .expect("selected WGPU scan succeeds");
     let gpu_creds = collect_creds(&gpu_results);
 
     assert_gpu_not_silent_empty(
@@ -138,23 +144,19 @@ fn gpu_runs_entropy_fallback_for_triggered_large_chunks() {
 #[test]
 fn no_hit_entropy_only_small_chunk_has_backend_parity() {
     require_gpu_or_panic("no_hit_entropy_only_small_chunk_has_backend_parity");
-    let scanner = compile_scanner();
+    let simd_scanner = compile_scanner(ScanBackend::SimdCpu);
+    let gpu_scanner = compile_scanner(ScanBackend::GpuWgpu);
 
-    // Small no-hit chunk: benign filler with NO detector literal + the lone
-    // entropy-only token. Well under the 32 KiB no-hit-entropy admission bound.
-    let mut corpus = String::new();
-    for _ in 0..40 {
-        corpus.push_str("the quick brown fox jumps over the lazy dog and rests\n");
-    }
-    corpus.push_str(&format!("{ENTROPY_ONLY}\n"));
-    for _ in 0..40 {
-        corpus.push_str("another mundane line of plain english prose here today\n");
-    }
+    // Sensitive credential path plus a lone high-entropy token. No detector
+    // literal is present, and the input stays well below the small-chunk bound.
+    let corpus = format!("{ENTROPY_ONLY}\n");
     assert!(corpus.len() <= 32 * 1024, "must stay in the small-chunk class");
 
-    let chunks = vec![make_chunk(&corpus, "fixtures/nohit_entropy.txt")];
+    let chunks = vec![make_chunk(&corpus, "fixtures/credentials.txt")];
 
-    let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu);
+    let simd_results = simd_scanner
+        .scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu)
+        .expect("selected SIMD scan succeeds");
     let simd_creds = collect_creds(&simd_results);
     assert!(
         simd_creds.iter().any(|(c, _)| c == ENTROPY_ONLY),
@@ -162,7 +164,9 @@ fn no_hit_entropy_only_small_chunk_has_backend_parity() {
          (should_scan_no_hit_chunk must admit it); creds={simd_creds:?}"
     );
 
-    let gpu_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu);
+    let gpu_results = gpu_scanner
+        .scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu)
+        .expect("selected WGPU scan succeeds");
     let gpu_creds = collect_creds(&gpu_results);
 
     assert_gpu_not_silent_empty(

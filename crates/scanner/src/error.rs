@@ -70,6 +70,13 @@ pub enum ScanError {
         detectors_len: usize,
     },
     #[error(
+        "compiled scanner materialized backend {materialized}, but dispatch requested {requested}. Fix: select and load the exact execution pack before scanning; runtime backend substitution is forbidden"
+    )]
+    BackendPlanMismatch {
+        materialized: &'static str,
+        requested: &'static str,
+    },
+    #[error(
         "phase-one admission plan identity rejected: {0}. Fix: rebuild the plan for the live chunk batch or use the recovery-aware dispatch API to retain its exact recovery receipt"
     )]
     AdmissionPlanIdentity(String),
