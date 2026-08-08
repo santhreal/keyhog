@@ -86,12 +86,12 @@ impl ReusableSimdTriggerCache {
     }
 
     #[cfg(debug_assertions)]
-    pub(super) fn reset_hits(&mut self) {
+    pub(crate) fn reset_hits(&mut self) {
         self.hits = 0;
     }
 
     #[cfg(debug_assertions)]
-    pub(super) fn hits(&self) -> u64 {
+    pub(crate) fn hits(&self) -> u64 {
         self.hits
     }
 }
@@ -105,7 +105,7 @@ thread_local! {
 
 #[cfg(feature = "simd")]
 #[inline]
-pub(super) fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u64]) -> R) -> R {
+pub(crate) fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u64]) -> R) -> R {
     TRIGGER_POOL.with(|cell| {
         let mut buf = cell.borrow_mut();
         if buf.len() < words_needed {
@@ -119,7 +119,7 @@ pub(super) fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u
 
 #[cfg(feature = "simd")]
 #[inline]
-pub(super) fn mark_hs_trigger(
+pub(crate) fn mark_hs_trigger(
     scratch: &mut [u64],
     prefilter: &super::SimdPhase1Prefilter,
     ac_len: usize,
