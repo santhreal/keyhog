@@ -82,6 +82,14 @@ fn finding_keys(ms: &[RawMatch]) -> BTreeSet<(String, String)> {
         .collect()
 }
 
+/// The set of SECRET VALUES recovered, independent of which detector attributed
+/// each. The recall contract between the SIMD and scalar paths is "no secret
+/// value is lost", not "no (detector_id, value) pair changes" — see
+/// `simd_findings_are_a_superset_of_scalar`.
+fn credential_values(ms: &[RawMatch]) -> BTreeSet<String> {
+    ms.iter().map(|m| m.credential.to_string()).collect()
+}
+
 /// Verified HS\AC fixtures: each is a contract positive (copied from
 /// `crates/scanner/tests/contracts/<id>.toml`) for a detector whose credential
 /// has NO fixed literal prefix, so the AC literal sweep cannot trigger it, only
@@ -222,31 +230,36 @@ fn simd_findings_are_a_superset_of_scalar() {
          and a subset of SimdCpu={control_simd:?} (the union must not drop the AC fast path)."
     );
 
-    // Per-fixture superset: SimdCpu must drop NOTHING the scalar path finds, on
-    // each fixture scanned in isolation (no shared-substring cross-pollution).
+    // Per-fixture superset is over SECRET VALUES, not (detector_id, credential):
+    // the recall contract is "SimdCpu loses no SECRET the scalar path found". When
+    // SimdCpu's wider candidate set finds a MORE-SPECIFIC detector the AC fast path
+    // structurally cannot — e.g. datadog-api-key on `DD_API_KEY=<32hex>`, whose only
+    // >=3-byte AC literals are DATADOG/datadog (absent in the `DD_API_KEY` spelling),
+    // so the case-insensitive AC sweep cannot trigger it and only Hyperscan's full
+    // regex does — that specific match correctly SUPPRESSES the generic
+    // entropy-api-key / generic-secret on the SAME value. The secret value is
+    // preserved (re-attributed to the specific detector), so no recall is lost; only
+    // the detector label differs. Keying on value guards the thing that matters (a
+    // genuinely dropped secret VALUE still fails) while tolerating correct
+    // specific-over-generic re-attribution. Detector-level recall of the HS\AC
+    // detector itself stays guarded by `simd_union_is_load_bearing_for_recall`.
     for &(detector_id, text, _cred) in HS_MINUS_AC_FIXTURES {
         let chunk = make_chunk(text);
-        let simd = finding_keys(
-            &scanner
-                .scan_with_backend(&chunk, ScanBackend::SimdCpu)
-                .expect("selected backend scan succeeds"),
-        );
-        let cpu = finding_keys(
-            &scanner
-                .scan_with_backend(&chunk, ScanBackend::CpuFallback)
-                .expect("selected backend scan succeeds"),
-        );
+        let simd = credential_values(&scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu));
+        let cpu = credential_values(&scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback));
         let dropped: Vec<_> = cpu.difference(&simd).collect();
         assert!(
             dropped.is_empty(),
-            "on the `{detector_id}` fixture, SimdCpu dropped findings the scalar CpuFallback \
-             path made (CpuFallback ⊄ SimdCpu): {dropped:?}. The SIMD path must be a recall \
-             superset of the scalar path."
+            "on the `{detector_id}` fixture, SimdCpu lost a SECRET VALUE the scalar CpuFallback \
+             path recovered: {dropped:?}. The SIMD path must never drop a credential value the \
+             scalar path finds (detector re-attribution when a more-specific detector fires is \
+             allowed; losing the value is not)."
         );
     }
 
     eprintln!(
-        "perf_simd_scan: superset OK, control (AKIA) found by both backends; SimdCpu drops \
-         no scalar finding on any HS\\AC fixture. (Strictness proven by the load-bearing test.)"
+        "perf_simd_scan: superset OK — control (AKIA) found by both backends; SimdCpu drops \
+         no scalar SECRET VALUE on any HS\\AC fixture (specific-over-generic re-attribution \
+         allowed). Detector-level union strictness proven by the load-bearing test."
     );
 }

@@ -305,3 +305,5 @@ mod windowed_triggered_slice_no_per_window_clone;
 mod xml_assignment_tag_open_close_match_exact;
 #[path = "gap/yaml_scalar_mapping_single_owner.rs"]
 mod yaml_scalar_mapping_single_owner;
+#[path = "gap/file_gate_matrix_scanner_missing_submodule_rows.rs"]
+mod file_gate_matrix_scanner_missing_submodule_rows;
