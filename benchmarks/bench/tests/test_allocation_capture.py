@@ -75,3 +75,26 @@ def test_reconcile_device_allocations_rejects_out_of_bound_divergence() -> None:
             driver_vram_bytes=150_000_000,
             max_ratio_difference=0.10,
         )
+def test_reconcile_device_allocations_rejects_invalid_inputs() -> None:
+    """WHY: invalid workload_id or max_ratio_difference (NaN, bool, negative) fails closed."""
+    import math
+    with pytest.raises(BaselineCaptureError, match="non-empty string"):
+        reconcile_device_allocations(
+            workload_id="",
+            vyre_vram_bytes=100_000_000,
+            driver_vram_bytes=102_000_000,
+        )
+    with pytest.raises(BaselineCaptureError, match="finite positive number"):
+        reconcile_device_allocations(
+            workload_id="filesystem-single-large-file",
+            vyre_vram_bytes=100_000_000,
+            driver_vram_bytes=102_000_000,
+            max_ratio_difference=math.nan,
+        )
+    with pytest.raises(BaselineCaptureError, match="finite positive number"):
+        reconcile_device_allocations(
+            workload_id="filesystem-single-large-file",
+            vyre_vram_bytes=100_000_000,
+            driver_vram_bytes=102_000_000,
+            max_ratio_difference=True, # type: ignore
+        )

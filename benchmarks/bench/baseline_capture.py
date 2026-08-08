@@ -2182,8 +2182,22 @@ def validate_baseline_payload(
         rss = [trial["peak_rss_kb"] for trial in trials]
         minor_faults = [trial.get("minor_page_faults") for trial in trials]
         major_faults = [trial.get("major_page_faults") for trial in trials]
+        for v in minor_faults:
+            if v is not None and (isinstance(v, bool) or not isinstance(v, int) or v < 0):
+                raise BaselineCaptureError(f"baseline {workload_id} minor page fault value is invalid: {v!r}")
+        for v in major_faults:
+            if v is not None and (isinstance(v, bool) or not isinstance(v, int) or v < 0):
+                raise BaselineCaptureError(f"baseline {workload_id} major page fault value is invalid: {v!r}")
         measured_minor = [v for v in minor_faults if v is not None]
         measured_major = [v for v in major_faults if v is not None]
+        if 0 < len(measured_minor) < len(trials):
+            raise BaselineCaptureError(f"baseline {workload_id} minor page faults are partially measured across trials")
+        if 0 < len(measured_major) < len(trials):
+            raise BaselineCaptureError(f"baseline {workload_id} major page faults are partially measured across trials")
+        if len(measured_minor) == 0 and ("p50_minor_page_faults" in row or "p95_minor_page_faults" in row):
+            raise BaselineCaptureError(f"baseline {workload_id} contains minor page fault summary metrics but trials have no minor page fault measurements")
+        if len(measured_major) == 0 and ("p50_major_page_faults" in row or "p95_major_page_faults" in row):
+            raise BaselineCaptureError(f"baseline {workload_id} contains major page fault summary metrics but trials have no major page fault measurements")
         expected_stats = {
             "p50_wall_ms": statistics.median(walls),
             "p95_wall_ms": percentile_nearest_rank(walls, 0.95),

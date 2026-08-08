@@ -551,3 +551,8 @@ def test_build_evidence_inventory_produces_59_workloads():
     assert isinstance(inventory["fixture_lock_sha256"], str)
     assert isinstance(inventory["target_matrix_sha256"], str)
     assert isinstance(inventory["detector_corpus_sha256"], str)
+def test_build_evidence_inventory_handles_nonexistent_binary(tmp_path):
+    """WHY: non-existent binary path raises KeyhogVersionError instead of raw OSError/FileNotFoundError."""
+    fake_binary = tmp_path / "nonexistent_keyhog"
+    with pytest.raises(keyhog_version.KeyhogVersionError, match="cannot inspect keyhog binary"):
+        keyhog_version.build_evidence_inventory(binary=fake_binary)

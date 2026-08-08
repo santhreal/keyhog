@@ -1053,3 +1053,63 @@ def test_capture_requires_one_explicit_detector_mode(tmp_path: pathlib.Path) -> 
             **common, detectors=tmp_path,
             execution_pack_manifest=tmp_path / "manifest.json",
         )
+def test_validate_baseline_payload_rejects_partial_and_invalid_page_faults(tmp_path: pathlib.Path) -> None:
+    """WHY: partial measurements, invalid types, or dangling summary stats fail closed."""
+    from bench.baseline_capture import validate_baseline_payload, BaselineCaptureError
+    from bench.workload_catalog import load_workload_catalog
+    from bench.workload_fixtures import validate_fixture_lock
+    catalog = load_workload_catalog(CATALOG_PATH)
+    lock = validate_fixture_lock(CATALOG_PATH, LOCK_PATH)
+    receipt = lock["workloads"][0]
+    wl_id = receipt["workload_id"]
+
+    trials_partial = [
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": 5},
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": 5},
+        {"wall_ms": 10, "peak_rss_kb": 100},
+        {"wall_ms": 10, "peak_rss_kb": 100},
+        {"wall_ms": 10, "peak_rss_kb": 100},
+    ]
+    from bench.baseline_capture import BASELINE_SCHEMA_VERSION, sha256_file
+    payload = {
+        "schema_version": BASELINE_SCHEMA_VERSION,
+        "catalog_sha256": sha256_file(CATALOG_PATH),
+        "fixture_lock_sha256": sha256_file(LOCK_PATH),
+        "target_matrix_sha256": sha256_file(TARGET_PATH),
+        "target_id": "linux-x86_64-rtx5090",
+        "host_evidence": _test_host_evidence(None),
+        "binary_sha256": "a" * 64,
+        "backend": "cpu",
+        "repetitions": 5,
+        "workloads": [
+            {
+                "workload_id": wl_id,
+                "policy": "default",
+                "process_state": "cold",
+                "page_cache_state": "uncontrolled",
+                "output_format": "json-envelope",
+                "execution_route": "in-process",
+                "fixture_input_sha256": receipt["input_sha256"],
+                "fixture_answer_sha256": receipt["answer_sha256"],
+                "binary_sha256": "a" * 64,
+                "backend": "cpu",
+                "p50_wall_ms": 10.0,
+                "p95_wall_ms": 10.0,
+                "median_peak_rss_kb": 100.0,
+                "max_peak_rss_kb": 100,
+                "trials": trials_partial,
+            }
+        ],
+    }
+    with pytest.raises(BaselineCaptureError, match="partially measured"):
+        validate_baseline_payload(payload, catalog_path=CATALOG_PATH, fixture_lock_path=LOCK_PATH, target_matrix_path=TARGET_PATH)
+    trials_invalid = [
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": -1},
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": -1},
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": -1},
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": -1},
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": -1},
+    ]
+    payload["workloads"][0]["trials"] = trials_invalid
+    with pytest.raises(BaselineCaptureError, match="invalid"):
+        validate_baseline_payload(payload, catalog_path=CATALOG_PATH, fixture_lock_path=LOCK_PATH, target_matrix_path=TARGET_PATH)

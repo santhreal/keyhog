@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import pathlib
 import subprocess
 import tempfile
@@ -154,6 +155,16 @@ def reconcile_device_allocations(
     Raises BaselineCaptureError if either measurement is non-positive or if the two
     measurements diverge beyond the declared bound.
     """
+    if not isinstance(workload_id, str) or not workload_id.strip():
+        raise BaselineCaptureError("workload_id must be a non-empty string")
+    if (
+        isinstance(max_ratio_difference, bool)
+        or not isinstance(max_ratio_difference, (int, float))
+        or math.isnan(max_ratio_difference)
+        or math.isinf(max_ratio_difference)
+        or max_ratio_difference <= 0
+    ):
+        raise BaselineCaptureError(f"{workload_id}: max_ratio_difference must be a finite positive number, got {max_ratio_difference!r}")
     if isinstance(vyre_vram_bytes, bool) or not isinstance(vyre_vram_bytes, int) or vyre_vram_bytes <= 0:
         raise BaselineCaptureError(f"{workload_id}: VYRE VRAM measurement must be a positive integer, got {vyre_vram_bytes!r}")
     if isinstance(driver_vram_bytes, bool) or not isinstance(driver_vram_bytes, int) or driver_vram_bytes <= 0:

@@ -277,3 +277,11 @@ def test_evaluate_exhaustive_performance_gate_enforces_all_backends() -> None:
     violations = evaluate_exhaustive_performance_gate(runs, CATALOG)
     assert len(violations) >= 1
     assert any("[simd]" in v for v in violations)
+def test_evaluate_exhaustive_performance_gate_rejects_invalid_inputs() -> None:
+    """WHY: non-mapping or invalid pair structures in runs_by_backend fail closed with PerformanceContractError."""
+    with pytest.raises(PerformanceContractError, match="at least one backend"):
+        evaluate_exhaustive_performance_gate({}, CATALOG)
+    with pytest.raises(PerformanceContractError, match=r"must be a \(baseline, candidate\) pair"):
+        evaluate_exhaustive_performance_gate({"cpu": (1, 2, 3)}, CATALOG) # type: ignore
+    with pytest.raises(PerformanceContractError, match="baseline and candidate must be mappings"):
+        evaluate_exhaustive_performance_gate({"cpu": ("invalid", "invalid")}, CATALOG) # type: ignore

@@ -441,10 +441,15 @@ def build_evidence_inventory(
 
     binary_info = None
     if binary is not None:
-        bin_path = pathlib.Path(binary).resolve(strict=True)
-        assert_keyhog_binary_current(str(bin_path))
-        with bin_path.open("rb") as handle:
-            bin_sha256 = hashlib.sha256(handle.read()).hexdigest()
+        try:
+            bin_path = pathlib.Path(binary).resolve(strict=True)
+            assert_keyhog_binary_current(str(bin_path))
+            with bin_path.open("rb") as handle:
+                bin_sha256 = hashlib.sha256(handle.read()).hexdigest()
+        except (OSError, KeyhogVersionError) as exc:
+            if isinstance(exc, KeyhogVersionError):
+                raise
+            raise KeyhogVersionError(f"cannot inspect keyhog binary {binary!r}: {exc}") from exc
         binary_info = {
             "path": str(bin_path),
             "sha256": bin_sha256,
@@ -453,11 +458,11 @@ def build_evidence_inventory(
 
     pack_info = None
     if execution_pack_manifest_path is not None:
-        p_path = pathlib.Path(execution_pack_manifest_path).resolve(strict=True)
         try:
+            p_path = pathlib.Path(execution_pack_manifest_path).resolve(strict=True)
             pack_data = json.loads(p_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise KeyhogVersionError(f"cannot load execution pack manifest {p_path}: {exc}") from exc
+            raise KeyhogVersionError(f"cannot load execution pack manifest {execution_pack_manifest_path}: {exc}") from exc
         if not isinstance(pack_data, dict):
             raise KeyhogVersionError("execution pack manifest must be a JSON object")
         pack_info = {
@@ -467,7 +472,6 @@ def build_evidence_inventory(
             "binary_digest": pack_data.get("binary_digest"),
             "fixture_digest": pack_data.get("fixture_digest"),
         }
-
     lock_by_id = {row["workload_id"]: row for row in lock_workloads}
     workload_entries = []
     for wl in catalog.workloads:
@@ -489,10 +493,13 @@ def build_evidence_inventory(
             }
         )
 
-    with c_path.open("rb") as f:
-        c_sha256 = hashlib.sha256(f.read()).hexdigest()
-    with l_path.open("rb") as f:
-        l_sha256 = hashlib.sha256(f.read()).hexdigest()
+    try:
+        with c_path.open("rb") as f:
+            c_sha256 = hashlib.sha256(f.read()).hexdigest()
+        with l_path.open("rb") as f:
+            l_sha256 = hashlib.sha256(f.read()).hexdigest()
+    except OSError as exc:
+        raise KeyhogVersionError(f"cannot compute evidence inventory file digests: {exc}") from exc
 
     return {
         "schema_version": 1,

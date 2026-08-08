@@ -349,6 +349,11 @@ def test_select_declared_results_rejects_mixed_host_and_mixed_detector():
 
     with pytest.raises(report.ResultSelectionError, match="mixed-detector"):
         report.select_declared_results([res1, res2], "mirror", run_set_fixed)
+    # Test mixing None detector corpus sha256 with non-None
+    res2.scanner.detector_corpus_sha256 = None
+    run_set_fixed = report.RunSet(corpus="mirror", runs=(decl1, decl2_fixed))
+    with pytest.raises(report.ResultSelectionError, match="mixed-detector"):
+        report.select_declared_results([res1, res2], "mirror", run_set_fixed)
 
 def test_undeclared_duplicate_default_results_are_ambiguous():
     """Regression: generated_at must never act as a silent newest-row policy."""

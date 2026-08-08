@@ -520,9 +520,10 @@ def select_declared_results(
     hosts = {r.host.hostname_hash for r in selected}
     if len(hosts) > 1:
         raise ResultSelectionError(f"invalid report run set: mixed-host rows detected: {sorted(hosts)}")
-    detectors = {r.scanner.detector_corpus_sha256 for r in selected if getattr(r.scanner, "detector_corpus_sha256", None)}
+    detectors = {getattr(r.scanner, "detector_corpus_sha256", None) for r in selected}
     if len(detectors) > 1:
-        raise ResultSelectionError(f"invalid report run set: mixed-detector rows detected: {sorted(detectors)}")
+        reprs = [repr(d) for d in sorted(detectors, key=lambda x: str(x))]
+        raise ResultSelectionError(f"invalid report run set: mixed-detector rows detected: {reprs}")
     return selected
 
 def _default_config_id(scanner_name: str) -> str | None:

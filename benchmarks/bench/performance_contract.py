@@ -234,10 +234,15 @@ def evaluate_exhaustive_performance_gate(
     7. Device VRAM ratio at most 0.25 for GPU-eligible workloads.
     """
     violations: list[str] = []
-    if not runs_by_backend:
+    if not isinstance(runs_by_backend, Mapping) or not runs_by_backend:
         raise PerformanceContractError("exhaustive performance gate requires at least one backend run set")
 
-    for backend, (baseline, candidate) in sorted(runs_by_backend.items()):
+    for backend, run_pair in sorted(runs_by_backend.items()):
+        if not isinstance(run_pair, (tuple, list)) or len(run_pair) != 2:
+            raise PerformanceContractError(f"backend {backend!r} run set must be a (baseline, candidate) pair")
+        baseline, candidate = run_pair
+        if not isinstance(baseline, Mapping) or not isinstance(candidate, Mapping):
+            raise PerformanceContractError(f"backend {backend!r} baseline and candidate must be mappings")
         backend_violations = evaluate_performance_contract(
             baseline,
             candidate,
