@@ -165,17 +165,19 @@ fn explicit_host_daemons_do_not_load_gpu_runtime_libraries() {
     }
 }
 
-/// WHY: execution-pack host identity excludes accelerator state; validating it
-/// must not initialize GPU drivers in short-lived daemon clients.
+/// WHY: execution-pack and daemon compatibility identities exclude accelerator
+/// state; validating either must not initialize GPU drivers in short-lived
+/// clients.
 #[cfg(target_os = "linux")]
 #[test]
-fn execution_pack_target_identity_does_not_load_gpu_runtime_libraries() {
-    let _digest = API.current_target_digest_for_test();
+fn host_only_identities_do_not_load_gpu_runtime_libraries() {
+    let _target_digest = API.current_target_digest_for_test();
+    let _config_digest = API.autoroute_default_config_identity_for_test();
     let maps = std::fs::read_to_string("/proc/self/maps").expect("read test process mappings");
     let loaded_gpu_libraries = loaded_gpu_runtime_libraries(&maps);
     assert!(
         loaded_gpu_libraries.is_empty(),
-        "host-only target identity loaded GPU runtime libraries:\n{}",
+        "host-only identity loaded GPU runtime libraries:\n{}",
         loaded_gpu_libraries.join("\n")
     );
 }

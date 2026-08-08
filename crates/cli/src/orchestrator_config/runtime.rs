@@ -258,7 +258,7 @@ pub(crate) fn keyhog_worker_threads() -> usize {
     if let Some(configured) = CONFIGURED_RAYON_THREADS.get().copied() {
         return configured;
     }
-    persistent_daemon_worker_width(keyhog_scanner::hw_probe::probe_hardware().physical_cores)
+    persistent_daemon_worker_width(keyhog_scanner::hw_probe::probe_host_hardware().physical_cores)
 }
 
 fn persistent_daemon_worker_width(physical_cores: usize) -> usize {

@@ -437,6 +437,7 @@ pub trait CliTestApi {
     ) -> bool;
     fn router_uses_gpu_probe_for_test(&self, gpu_participates: bool) -> bool;
     fn current_target_digest_for_test(&self) -> [u8; 32];
+    fn autoroute_default_config_identity_for_test(&self) -> String;
     fn allowlist_root_for_test(&self, path: &Path) -> PathBuf;
     fn backend_requires_coalesced_batch_pipeline_for_test(
         &self,
@@ -1338,6 +1339,9 @@ impl CliTestApi for TestApi {
     }
     fn current_target_digest_for_test(&self) -> [u8; 32] {
         crate::execution_pack_install::current_target_digest()
+    }
+    fn autoroute_default_config_identity_for_test(&self) -> String {
+        crate::orchestrator::autoroute_default_config_identity()
     }
     fn allowlist_root_for_test(&self, path: &Path) -> PathBuf {
         crate::orchestrator::allowlist_root_for_test(path)
