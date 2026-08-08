@@ -130,3 +130,19 @@ fn committed_generation_retains_published_artifacts() {
     );
     assert_eq!(fs::read(&signing_key).expect("published key"), vec![5; 32]);
 }
+#[test]
+fn signing_key_debug_formatting_does_not_leak_key_bytes() {
+    let raw_key = [0xab; 32];
+    let key = ExecutionPackSigningKey::from_bytes(raw_key).expect("valid signing key");
+    let debug_str = format!("{key:?}");
+    assert!(!debug_str.contains("ab"), "debug output must not leak secret key bytes");
+    assert!(debug_str.contains("key_id"), "debug output must include public key_id");
+}
+
+#[test]
+fn independent_installations_have_isolated_signing_keys() {
+    let key_a = ExecutionPackSigningKey::from_bytes([0x11; 32]).expect("key A");
+    let key_b = ExecutionPackSigningKey::from_bytes([0x22; 32]).expect("key B");
+
+    assert_ne!(key_a.key_id(), key_b.key_id(), "different keys must have distinct key IDs");
+}

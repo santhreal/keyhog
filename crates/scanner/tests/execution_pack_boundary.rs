@@ -689,3 +689,44 @@ fn canonical_ir_rejects_tampered_normalized_metadata() {
         .to_string()
         .contains("normalized metadata does not match"));
 }
+#[test]
+fn runtime_rejects_mismatched_section_schema_version_with_rebuild_suggestion() {
+    let compiled = compile_execution_pack(ExecutionPackCompileInput {
+        identity: identity(),
+        sections: &sections(),
+    })
+    .expect("compile pack");
+
+    let mut tampered_bytes = compiled.as_bytes().to_vec();
+    // Section header table starts at offset 320. Section 0 is DetectorIr.
+    // Base is 320, schema_version is u16 at base + 2.
+    let version_offset = EXECUTION_PACK_HEADER_LEN + 2;
+    tampered_bytes[version_offset] = 99; // Set invalid schema version 99
+
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("invalid_version.khpack");
+    fs::write(&path, tampered_bytes).expect("publish tampered pack");
+
+    let error = ExecutionPack::open(&path, identity()).expect_err("mismatched section version must fail");
+    let err_msg = error.to_string();
+    assert!(err_msg.contains("uses schema 99"), "error must mention invalid schema version; got: {err_msg}");
+    assert!(err_msg.contains("keyhog compile-execution-packs to rebuild"), "error must suggest rebuild command; got: {err_msg}");
+}
+
+#[test]
+fn detector_spec_reconstruction_counter_is_zero_for_prelude_hydration() {
+    let before = keyhog_scanner::execution_pack::detector_spec_schema_reconstructions();
+    let ir = CanonicalDetectorExecutionIr::compile(&[detector("zero-recon")]).expect("compile IR");
+    let plan_section = keyhog_scanner::execution_pack::CompiledDetectorPlanSection::compile(&ir).expect("compile plan section");
+
+    let header = keyhog_scanner::execution_pack::CompiledDetectorPlanSection::stream_prelude_records(
+        plan_section.as_bytes(),
+        ir.digest(),
+        |_, _record| Ok(std::sync::Arc::from("zero-recon")),
+    )
+    .expect("stream prelude records");
+
+    assert_eq!(header.detector_count, 1);
+    let after = keyhog_scanner::execution_pack::detector_spec_schema_reconstructions();
+    assert_eq!(after, before, "prelude streaming must not increment detector spec schema reconstructions");
+}

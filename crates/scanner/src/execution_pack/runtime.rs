@@ -120,6 +120,18 @@ pub struct ExecutionPack {
     signature_authenticated: bool,
 }
 
+impl std::fmt::Debug for ExecutionPack {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ExecutionPack")
+            .field("path", &self.path)
+            .field("identity", &self.identity)
+            .field("content_digest", &keyhog_core::hex_encode(&self.content_digest))
+            .field("signature_authenticated", &self.signature_authenticated)
+            .finish_non_exhaustive()
+    }
+}
+
 impl ExecutionPack {
     pub fn open(
         path: impl AsRef<Path>,
@@ -418,26 +430,6 @@ impl ExecutionPack {
         }
         validate_identity(&path, identity, expected)?;
         let content_digest = array32(bytes, 248);
-        if verify_content_digest {
-            let mut content_hasher = blake3::Hasher::new();
-            update_mapping_and_release(
-                &mapping,
-                &path,
-                EXECUTION_PACK_HEADER_LEN..bytes.len(),
-                "discard content-authentication pages",
-                |chunk| {
-                    content_hasher.update(chunk);
-                },
-            )?;
-            let actual_digest = *content_hasher.finalize().as_bytes();
-            if actual_digest != content_digest {
-                return Err(ExecutionPackError::InvalidPack(format!(
-                    "{} content digest mismatch; reinstall or recalibrate this generation",
-                    path.display()
-                )));
-            }
-        }
-
         let mut seen = BTreeSet::new();
         let mut sections = Vec::with_capacity(section_count);
         let mut previous_end = table_end;
@@ -459,7 +451,7 @@ impl ExecutionPack {
             let schema_version = read_u16(bytes, base + 2);
             if schema_version != kind.schema_version() {
                 return Err(ExecutionPackError::Incompatible(format!(
-                    "{} section {kind} uses schema {schema_version}; this binary requires {}",
+                    "{} section {kind} uses schema {schema_version}; this binary requires {}; run keyhog compile-execution-packs to rebuild",
                     path.display(),
                     kind.schema_version()
                 )));
@@ -508,6 +500,26 @@ impl ExecutionPack {
             if !seen.contains(&required) {
                 return Err(ExecutionPackError::InvalidPack(format!(
                     "{} has no required {required} section",
+                    path.display()
+                )));
+            }
+        }
+
+        if verify_content_digest {
+            let mut content_hasher = blake3::Hasher::new();
+            update_mapping_and_release(
+                &mapping,
+                &path,
+                EXECUTION_PACK_HEADER_LEN..bytes.len(),
+                "discard content-authentication pages",
+                |chunk| {
+                    content_hasher.update(chunk);
+                },
+            )?;
+            let actual_digest = *content_hasher.finalize().as_bytes();
+            if actual_digest != content_digest {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "{} content digest mismatch; reinstall or recalibrate this generation",
                     path.display()
                 )));
             }
