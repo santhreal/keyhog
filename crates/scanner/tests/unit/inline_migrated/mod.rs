@@ -26,3 +26,7 @@ mod telemetry_inline;
 #[cfg(feature = "multiline")]
 mod types_inline;
 mod util_hash_inline;
+mod batch_topology_inline;
+mod gpu_region_batch_inline;
+mod resident_evidence_inline;
+mod self_test_inline;

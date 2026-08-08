@@ -87,7 +87,7 @@ pub fn record_window_match(
 
 pub fn line_number_for_offset(text: &str, offset: usize) -> usize {
     let safe_offset = floor_char_boundary(text, offset.min(text.len()));
-    text[..safe_offset].chars().filter(|&ch| ch == '\n').count() + 1
+    memchr::memchr_iter(b'\n', &text.as_bytes()[..safe_offset]).count() + 1
 }
 
 pub fn floor_char_boundary(text: &str, index: usize) -> usize {
@@ -148,5 +148,14 @@ mod absolute_composition_tests {
     fn absolute_line_composes_and_saturates() {
         assert_eq!(absolute_line(100, 44), 144);
         assert_eq!(absolute_line(usize::MAX, 1), usize::MAX);
+    }
+
+    #[test]
+    fn long_line_vectorized_delimiter_search_and_bounds() {
+        let mut long_line = "a".repeat(100_000);
+        long_line.push('\n');
+        long_line.push_str(&"b".repeat(50_000));
+        assert_eq!(super::line_number_for_offset(&long_line, 50_000), 1);
+        assert_eq!(super::line_number_for_offset(&long_line, 100_001), 2);
     }
 }

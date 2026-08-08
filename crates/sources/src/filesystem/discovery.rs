@@ -4,6 +4,7 @@ use super::filter::FilesystemWalkConfig;
 use codewalk::FileEntry;
 use keyhog_core::SourceError;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 #[cfg(unix)]
 use std::cmp::Ordering;
@@ -717,4 +718,79 @@ fn metadata_limit_error() -> SourceError {
         "filesystem discovery metadata exceeded the supported 4 GiB path table; remaining files were not scanned"
             .to_owned(),
     )
+}
+/// Syscall tracker for filesystem discovery benchmark harness.
+#[derive(Debug, Default)]
+pub struct DiscoverySyscallTracker {
+    pub statx_count: AtomicU64,
+    pub futex_count: AtomicU64,
+    pub open_count: AtomicU64,
+    pub read_count: AtomicU64,
+    pub close_count: AtomicU64,
+}
+
+impl DiscoverySyscallTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn record_statx(&self) {
+        self.statx_count.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+
+    pub fn record_futex(&self) {
+        self.futex_count.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+
+    pub fn record_open(&self) {
+        self.open_count.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+
+    pub fn record_read(&self) {
+        self.read_count.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+
+    pub fn record_close(&self) {
+        self.close_count.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+
+    pub fn snapshot(&self) -> SyscallCounts {
+        SyscallCounts {
+            statx: self.statx_count.load(AtomicOrdering::Relaxed),
+            futex: self.futex_count.load(AtomicOrdering::Relaxed),
+            open: self.open_count.load(AtomicOrdering::Relaxed),
+            read: self.read_count.load(AtomicOrdering::Relaxed),
+            close: self.close_count.load(AtomicOrdering::Relaxed),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SyscallCounts {
+    pub statx: u64,
+    pub futex: u64,
+    pub open: u64,
+    pub read: u64,
+    pub close: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_discovery_syscall_tracker() {
+        let tracker = DiscoverySyscallTracker::new();
+        tracker.record_statx();
+        tracker.record_open();
+        tracker.record_read();
+        tracker.record_close();
+        tracker.record_futex();
+        let snap = tracker.snapshot();
+        assert_eq!(snap.statx, 1);
+        assert_eq!(snap.open, 1);
+        assert_eq!(snap.read, 1);
+        assert_eq!(snap.close, 1);
+        assert_eq!(snap.futex, 1);
+    }
 }

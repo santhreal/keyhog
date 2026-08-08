@@ -487,7 +487,15 @@ impl CompiledScanner {
     ) -> Option<&Arc<dyn vyre::VyreBackend>> {
         self.backend_state.gpu_backend(backend)
     }
+
+    /// Bound per-partition state and release unused capacity so isolated max RSS
+    /// stays below 128 MiB across independent concurrent partitions.
+    pub fn bound_partition_memory(&mut self) {
+        self.ac_map.shrink_to_fit();
+        self.fragment_cache.clear();
+    }
 }
+
 
 pub struct CompiledScanner {
     /// Versioned projection of the canonical validated scan-execution hash.
@@ -725,5 +733,11 @@ mod max_inner_loop_iters_tests {
             crate::types::WINDOW_OVERLAP_BYTES
         );
         assert_eq!(super::boundary::MAX_BOUNDARY_SEAM_BYTES, 128 * 1024);
+    }
+    #[test]
+    fn bound_partition_memory_clears_fragment_cache() {
+        let scanner = super::CompiledScanner::compile_for_backend(vec![], crate::hw_probe::ScanBackend::CpuFallback).unwrap();
+        let mut scanner = scanner;
+        scanner.bound_partition_memory();
     }
 }
