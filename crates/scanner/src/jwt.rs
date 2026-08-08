@@ -229,11 +229,43 @@ fn jwt_segments(s: &str) -> Option<(&str, &str, &str)> {
         && h.bytes().all(is_base64url_byte)
         && p.bytes().all(is_base64url_byte)
         && sig.bytes().all(is_base64url_byte)
+        && !is_degenerate_jwt_segment(h)
+        && !is_degenerate_jwt_segment(p)
+        && !is_degenerate_jwt_segment(sig)
     {
         Some((h, p, sig))
     } else {
         None
     }
+}
+
+fn is_degenerate_jwt_segment(seg: &str) -> bool {
+    if seg.len() < 8 {
+        return false;
+    }
+    let bytes = seg.as_bytes();
+    let first = bytes[0];
+    if bytes.iter().all(|&b| b == first) {
+        return true;
+    }
+    let mut max_run = 0usize;
+    let mut current_run = 0usize;
+    let mut last_b = 0u8;
+    for &b in bytes {
+        if b == last_b {
+            current_run += 1;
+        } else {
+            current_run = 1;
+            last_b = b;
+        }
+        if current_run > max_run {
+            max_run = current_run;
+        }
+    }
+    if max_run >= 8 && max_run * 2 >= bytes.len() {
+        return true;
+    }
+    false
 }
 
 /// Full structural analysis. Returns `None` if `s` is not a parseable JWT

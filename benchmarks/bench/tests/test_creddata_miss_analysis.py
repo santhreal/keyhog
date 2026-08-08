@@ -153,3 +153,20 @@ def test_decompose_is_a_registered_command():
     rc = cma.main(["decompose", "--root", "/nonexistent-corpus-xyz",
                    "--scanner-bin", "keyhog"])
     assert rc == 2
+
+def test_cluster_fn_misses_ranks_by_recoverable_f1_gain():
+    fn_items = [
+        {"detector": "github-classic-pat", "failed_gate": "un-generated_candidate"},
+        {"detector": "github-classic-pat", "failed_gate": "un-generated_candidate"},
+        {"detector": "aws-secret-access-key", "failed_gate": "suppressed_by_entropy_floor"},
+    ]
+    ranked = cma.cluster_fn_misses(fn_items, tp_count=10, total_positives=20, fp_count=2)
+    assert len(ranked) == 2
+    assert ranked[0]["detector"] == "github-classic-pat"
+    assert ranked[0]["fn_count"] == 2
+    assert ranked[0]["recoverable_f1_gain"] > ranked[1]["recoverable_f1_gain"]
+
+
+def test_cluster_is_a_registered_command():
+    rc = cma.main(["cluster", "--root", "/nonexistent-corpus-xyz", "--scanner-bin", "keyhog"])
+    assert rc == 2
