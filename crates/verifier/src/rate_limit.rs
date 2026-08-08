@@ -1,12 +1,13 @@
 //! Per-service rate limiting for verification requests.
 //!
-//! `RateLimiter` enforces a minimum inter-request interval per service
-//! (token-bucket-style with a 1-token bucket). Per-service entries can
-//! override the default interval via [`RateLimiter::update_limit`]; the
-//! default interval is hot-swappable at runtime via
-//! [`RateLimiter::set_default_rps`] so the CLI's `--verify-rate` flag
-//! can take effect after the global limiter has already been
-//! lazily initialised by an earlier call site.
+//! `RateLimiter::wait` enforces a one-token minimum inter-request interval.
+//! Bounded lifecycle callers may reserve a small token-bucket burst while the
+//! same virtual schedule preserves the configured sustained service rate.
+//! Per-service entries can override the default interval via
+//! [`RateLimiter::update_limit`]; the default interval is hot-swappable at
+//! runtime via [`RateLimiter::set_default_rps`] so the CLI's `--verify-rate`
+//! flag can take effect after the global limiter has already been lazily
+//! initialised by an earlier call site.
 use dashmap::DashMap;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -84,6 +85,14 @@ impl RateLimiter {
     }
 
     pub async fn wait(&self, service: &str) {
+        self.wait_with_burst(service, 1).await;
+    }
+
+    /// Reserve one request under a bounded token-bucket burst.
+    ///
+    /// The average rate remains the configured service rate. `burst` only
+    /// controls how many already-bounded lifecycle requests may start together.
+    pub(crate) async fn wait_with_burst(&self, service: &str, burst: usize) {
         let bp = if self.global_error_count.load(Ordering::Relaxed)
             > GLOBAL_BACKPRESSURE_ERROR_THRESHOLD
         {
@@ -95,7 +104,7 @@ impl RateLimiter {
             let default = self.default_interval();
             if let Some(entry) = self.services.get(service) {
                 let mut limit = entry.value().lock();
-                reserve_service_slot(&mut limit, Instant::now())
+                reserve_service_slot_with_burst(&mut limit, Instant::now(), burst)
             } else {
                 let inserted = self.services.entry(service.to_string()).or_insert_with(|| {
                     Mutex::new(ServiceLimit {
@@ -105,7 +114,7 @@ impl RateLimiter {
                     })
                 });
                 let mut limit = inserted.value().lock();
-                reserve_service_slot(&mut limit, Instant::now())
+                reserve_service_slot_with_burst(&mut limit, Instant::now(), burst)
             }
         };
         let delay = match wait_time {
@@ -215,33 +224,43 @@ pub(crate) fn initial_last_request(now: Instant, interval: Duration) -> Instant 
     now.checked_sub(interval).map_or(now, |instant| instant)
 }
 
-fn reserve_service_slot(limit: &mut ServiceLimit, now: Instant) -> Option<Duration> {
-    // `last_request` is the start of the most-recent SLOT (real or
-    // reserved-for-an-in-flight-waiter). The next legal slot is at
-    // `last_request + interval`.
-    //
-    // Earlier flow used `now.duration_since(last_request)` which
-    // saturates to zero when `last_request` is in the future (a
-    // previous caller reserved a slot we haven't reached yet).
-    // That made the second-and-onward queued caller wait `interval`
-    // from THEIR arrival instead of `interval` after the previous
-    // reserved slot - back-to-back arrivals therefore burst at
-    // close to 1 request per slot-arrival-rate, blowing past the
-    // configured per-service cap.
-    //
-    // Fix: always queue strictly after `last_request + interval`,
-    // computed from `last_request` (not `now`), and roll
-    // `last_request` forward by exactly one interval per queued
-    // caller so the next arrival queues after this one's slot.
+fn reserve_service_slot_with_burst(
+    limit: &mut ServiceLimit,
+    now: Instant,
+    burst: usize,
+) -> Option<Duration> {
+    // `last_request` is the start of the most-recent slot, including slots
+    // reserved by queued callers. A burst permits `burst` consecutive slots to
+    // begin together, then preserves one configured interval per later slot.
     let next_slot = limit.last_request + limit.interval;
-    if now >= next_slot {
-        limit.last_request = now;
+    let tolerance = limit
+        .interval
+        .saturating_mul(u32::try_from(burst.saturating_sub(1)).unwrap_or(u32::MAX));
+    let earliest = next_slot.checked_sub(tolerance).unwrap_or(now);
+    if now >= earliest {
+        limit.last_request = next_slot.max(now);
         None
     } else {
-        let wait = next_slot.saturating_duration_since(now);
+        let wait = earliest.saturating_duration_since(now);
         limit.last_request = next_slot;
         Some(wait)
     }
+}
+
+pub(crate) fn burst_reservation_waits_for_test(
+    interval: Duration,
+    burst: usize,
+    reservations: usize,
+) -> Vec<Option<Duration>> {
+    let now = Instant::now();
+    let mut limit = ServiceLimit {
+        last_request: initial_last_request(now, interval),
+        interval,
+        base_interval: interval,
+    };
+    (0..reservations)
+        .map(|_| reserve_service_slot_with_burst(&mut limit, now, burst))
+        .collect()
 }
 
 fn rps_to_nanos(rps: f64) -> u64 {

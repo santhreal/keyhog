@@ -335,6 +335,12 @@ pub mod testing {
     pub use crate::cache::oldest_eviction_batch;
     pub use crate::interpolate::{missing_companion_refs, MAX_TEMPLATE_TOKENS};
     pub use crate::oob::redact_interactsh_error;
+    pub fn prewarm_oob_key_for_test() -> Result<(bool, Vec<u8>), crate::oob::InteractshError> {
+        crate::oob::prewarm_key_generation();
+        let pending = crate::oob::prewarmed_key_pending_for_test();
+        let modulus = crate::oob::consume_prewarmed_key_for_test()?;
+        Ok((pending, modulus))
+    }
 
     /// Exercise the real `cache::evict_oldest_dashmap_entries` primitive (the
     /// shared oldest-first bounded-cache eviction used by the DNS-resolution and
@@ -718,6 +724,7 @@ pub mod testing {
         );
         fn oob_session_waiter_count(&self, session: &crate::oob::OobSession) -> usize;
         fn oob_session_active_waiter_count(&self, session: &crate::oob::OobSession) -> usize;
+        fn oob_session_poll_generation(&self, session: &crate::oob::OobSession) -> u64;
         fn oob_session_abort_poller_for_drop(&self, session: &crate::oob::OobSession);
         fn decrypt_entry_for_test(
             &self,
@@ -745,6 +752,12 @@ pub mod testing {
             now: std::time::Instant,
             interval: Duration,
         ) -> std::time::Instant;
+        fn rate_limiter_burst_waits(
+            &self,
+            interval: Duration,
+            burst: usize,
+            reservations: usize,
+        ) -> Vec<Option<Duration>>;
         fn retry_loop_preserves_metadata_on_exhaustion(
             &self,
         ) -> impl std::future::Future<
@@ -1134,6 +1147,10 @@ pub mod testing {
             session.active_waiter_count_for_test()
         }
 
+        fn oob_session_poll_generation(&self, session: &crate::oob::OobSession) -> u64 {
+            session.poll_generation_for_test()
+        }
+
         fn oob_session_abort_poller_for_drop(&self, session: &crate::oob::OobSession) {
             session.abort_poller_for_drop();
         }
@@ -1169,6 +1186,15 @@ pub mod testing {
             interval: Duration,
         ) -> std::time::Instant {
             crate::rate_limit::initial_last_request(now, interval)
+        }
+
+        fn rate_limiter_burst_waits(
+            &self,
+            interval: Duration,
+            burst: usize,
+            reservations: usize,
+        ) -> Vec<Option<Duration>> {
+            crate::rate_limit::burst_reservation_waits_for_test(interval, burst, reservations)
         }
 
         async fn retry_loop_preserves_metadata_on_exhaustion(

@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "CPU scans now share bounded line and documentation indexes across byte-identical passthrough payloads."
+crates = ["scanner"]

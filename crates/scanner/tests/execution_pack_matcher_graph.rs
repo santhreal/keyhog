@@ -5,7 +5,7 @@ use keyhog_core::{
 use keyhog_scanner::execution_pack::{
     compose_policy_execution_pack, BackendPlan, CanonicalDetectorExecutionIr,
     CompiledRouteMatcherSections, ExecutionPack, ExecutionPackBackend, ExecutionPackIdentity,
-    ExecutionPackPolicy, PolicyPlanSections, ScalarCpuExecutionProgram,
+    ExecutionPackPolicy, ExecutionPackSigningKey, PolicyPlanSections, ScalarCpuExecutionProgram,
 };
 use keyhog_scanner::CompiledScanner;
 
@@ -57,10 +57,10 @@ fn detectors() -> Vec<DetectorSpec> {
         detector(
             "c-phase2-route",
             PatternSpec {
-                regex: r"[A-Z0-9]{4}-ANCHORLESS-[A-Z0-9]{4}".to_owned(),
+                regex: r"[A-Z0-9]{4}-ANCHOR[_\-.]+LESS-[A-Z0-9]{4}".to_owned(),
                 ..Default::default()
             },
-            vec!["ANCHORLESS".to_owned()],
+            vec!["ANCHOR_LESS".to_owned()],
         ),
     ]
 }
@@ -112,7 +112,7 @@ fn packed_matcher_graph_rejects_version_backend_detector_count_and_index_corrupt
     let mut bad_version = sections(&detectors);
     replace_once(
         &mut bad_version.literal_index,
-        b"\"version\":3",
+        b"\"version\":5",
         b"\"version\":9",
     );
     assert!(bad_version
@@ -167,8 +167,8 @@ fn packed_matcher_graph_preserves_pattern_route_and_companion_findings() {
     let packed_scanner = CompiledScanner::compile_from_packed_matchers(detectors, &packed)
         .expect("compile packed scanner");
     for text in [
-        "account=tenant_7\ntoken=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHORLESS-CD34",
-        "token=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHORLESS-CD34",
+        "account=tenant_7\ntoken=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHOR__LESS-CD34",
+        "token=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHOR__LESS-CD34",
         "account=tenant_7\ntoken=REQ_AB12CD34\nvalue=AB12-NOTANCHOR-CD34",
     ] {
         let ordinary_findings = ordinary.scan(&chunk(text)).expect("ordinary scan");
@@ -206,6 +206,7 @@ fn packed_scanner_construction_bypasses_build_compile_state() {
 fn mapped_pack(
     detectors: &[DetectorSpec],
     backend_digest_override: Option<[u8; 32]>,
+    authenticated: bool,
 ) -> (tempfile::TempDir, ExecutionPack) {
     let ir = CanonicalDetectorExecutionIr::compile(detectors).expect("compile detector IR");
     let matchers = CompiledRouteMatcherSections::compile(&ir, ExecutionPackBackend::Cpu)
@@ -237,8 +238,79 @@ fn mapped_pack(
     let directory = tempfile::tempdir().expect("temporary pack directory");
     let path = directory.path().join("matcher-graph.khpack");
     std::fs::write(&path, compiled.as_bytes()).expect("write execution pack");
-    let pack = ExecutionPack::open(&path, identity).expect("map execution pack");
+    let pack = if authenticated {
+        let key = ExecutionPackSigningKey::from_bytes([0x5a; 32]).expect("fixture signing key");
+        let signature_path = directory.path().join("matcher-graph.sig");
+        std::fs::write(
+            &signature_path,
+            key.sign(&compiled)
+                .canonical_bytes()
+                .expect("encode execution pack signature"),
+        )
+        .expect("write execution pack signature");
+        ExecutionPack::open_authenticated(&path, &signature_path, identity, &key)
+            .expect("authenticate execution pack")
+    } else {
+        ExecutionPack::open(&path, identity).expect("map execution pack")
+    };
     (directory, pack)
+}
+
+/// WHY: whole-pack signature verification authenticates the exact immutable matcher bytes, so normal installed-pack hydration must not allocate and reserialize the complete matcher graph merely to prove canonical JSON a second time. Unsigned development packs retain that validation.
+#[test]
+fn authenticated_matcher_hydration_skips_canonical_reencoding() {
+    let detectors = detectors();
+    let (_signed_directory, signed_pack) = mapped_pack(&detectors, None, true);
+    let signed_before =
+        keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes();
+    let signed_companion_validations =
+        keyhog_scanner::execution_pack::matcher_sections::runtime_companion_validations();
+    let signed_scalar_reencodes = ScalarCpuExecutionProgram::runtime_canonical_reencodes();
+    CompiledScanner::compile_from_execution_pack(&signed_pack)
+        .expect("hydrate authenticated matcher graph");
+    assert_eq!(
+        keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes(),
+        signed_before,
+        "authenticated matcher hydration must trust install-time canonical encoding"
+    );
+    assert_eq!(
+        ScalarCpuExecutionProgram::runtime_canonical_reencodes(),
+        signed_scalar_reencodes,
+        "authenticated scalar hydration must trust install-time canonical encoding"
+    );
+    assert_eq!(
+        keyhog_scanner::execution_pack::matcher_sections::runtime_companion_validations(),
+        signed_companion_validations,
+        "authenticated matcher hydration must retain install-validated lazy companions"
+    );
+
+    let (_unsigned_directory, unsigned_pack) = mapped_pack(&detectors, None, false);
+    let unsigned_before =
+        keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes();
+    let unsigned_companion_validations =
+        keyhog_scanner::execution_pack::matcher_sections::runtime_companion_validations();
+    let unsigned_scalar_reencodes = ScalarCpuExecutionProgram::runtime_canonical_reencodes();
+    CompiledScanner::compile_from_execution_pack(&unsigned_pack)
+        .expect("hydrate unsigned matcher graph");
+    assert_eq!(
+        keyhog_scanner::execution_pack::matcher_sections::runtime_canonical_reencodes(),
+        unsigned_before + 3,
+        "unsigned matcher hydration must revalidate all three canonical sections"
+    );
+    assert_eq!(
+        ScalarCpuExecutionProgram::runtime_canonical_reencodes(),
+        unsigned_scalar_reencodes + 1,
+        "unsigned scalar hydration must revalidate canonical encoding"
+    );
+    assert_eq!(
+        keyhog_scanner::execution_pack::matcher_sections::runtime_companion_validations(),
+        unsigned_companion_validations
+            + detectors
+                .iter()
+                .map(|detector| detector.companions.len())
+                .sum::<usize>(),
+        "unsigned matcher hydration must validate every companion regex"
+    );
 }
 
 /// WHY: every packed scanner must own all runtime state after construction; keeping the authenticated mmap alive duplicates the selected policy and lets future borrowed-section dependencies hide until an installed long-lived process drops its source generation.
@@ -246,11 +318,18 @@ fn mapped_pack(
 fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     let detectors = detectors();
     let ordinary = CompiledScanner::compile(detectors.clone()).expect("compile ordinary scanner");
-    let (directory, pack) = mapped_pack(&detectors, None);
+    let (directory, pack) = mapped_pack(&detectors, None, false);
     let schema_reconstructions_before =
         keyhog_scanner::execution_pack::detector_plan::detector_spec_schema_reconstructions();
+    let localization_fallbacks_before =
+        keyhog_scanner::execution_pack::matcher_sections::runtime_localization_hint_fallbacks();
     let direct = CompiledScanner::compile_from_execution_pack(&pack)
         .expect("stream detector plan directly from mapped execution pack");
+    assert_eq!(
+        keyhog_scanner::execution_pack::matcher_sections::runtime_localization_hint_fallbacks(),
+        localization_fallbacks_before,
+        "normal installed-pack hydration must consume persisted localization hints"
+    );
     assert_eq!(
         keyhog_scanner::execution_pack::detector_plan::detector_spec_schema_reconstructions(),
         schema_reconstructions_before,
@@ -347,7 +426,7 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     drop(pack);
     drop(directory);
     let input = chunk(
-        "account=tenant_7\ntoken=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHORLESS-CD34",
+        "account=tenant_7\ntoken=REQ_AB12CD34\nprefix=PREFIX_Z9Y8X7W6\nvalue=AB12-ANCHOR__LESS-CD34",
     );
     assert_eq!(
         packed.scan(&input).expect("scan packed route"),
@@ -373,7 +452,7 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
 #[test]
 fn mapped_execution_pack_rejects_backend_program_identity_corruption() {
     let detectors = detectors();
-    let (_directory, pack) = mapped_pack(&detectors, Some([0x99; 32]));
+    let (_directory, pack) = mapped_pack(&detectors, Some([0x99; 32]), false);
     let error = match CompiledScanner::compile_from_execution_pack(&pack) {
         Ok(_) => panic!("backend identity drift must fail"),
         Err(error) => error,

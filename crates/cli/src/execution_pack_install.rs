@@ -76,7 +76,7 @@ pub(crate) fn current_binary_digest() -> Result<[u8; 32]> {
 }
 
 pub(crate) fn current_target_digest() -> [u8; 32] {
-    let hardware = keyhog_scanner::probe_hardware();
+    let hardware = keyhog_scanner::hw_probe::probe_host_hardware();
     let physical_cores = hardware.physical_cores.to_le_bytes();
     let logical_cores = hardware.logical_cores.to_le_bytes();
     let feature_flags = [

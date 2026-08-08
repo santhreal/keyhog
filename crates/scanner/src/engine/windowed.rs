@@ -160,6 +160,8 @@ impl CompiledScanner {
                             prepared,
                             triggered_patterns,
                             deadline,
+                            false,
+                            false,
                             phase2_keyword_hints,
                             phase2_always_evidence,
                             confirmed_anchor_matches,

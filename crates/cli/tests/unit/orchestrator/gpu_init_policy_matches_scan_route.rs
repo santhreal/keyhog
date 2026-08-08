@@ -3,7 +3,7 @@ use clap::{CommandFactory, Parser};
 use keyhog::args::{ScanArgs, WatchArgs};
 use keyhog::testing::{CliTestApi as _, API};
 use keyhog_scanner::hw_probe::{parse_backend_str, BACKEND_OVERRIDE_VALUES};
-use keyhog_scanner::GpuInitPolicy;
+use keyhog_scanner::{gpu::GpuRuntimePolicy, GpuInitPolicy, ScanBackend};
 
 fn scan_args(args: &[&str]) -> ScanArgs {
     ScanArgs::try_parse_from(args).expect("parse scan args")
@@ -20,9 +20,48 @@ fn explicit_simd_backend_skips_gpu_compile() {
         let args = scan_args(&["scan", "--backend", "simd", "--path", "."]);
         assert_eq!(
             API.gpu_init_policy_for_args_for_test(&args),
-            GpuInitPolicy::ForceDisabled
+            GpuInitPolicy::SelectedBackend(keyhog_scanner::ScanBackend::SimdCpu)
         );
     });
+}
+
+/// WHY: explicit host routes must not initialize WGPU or native GPU drivers;
+/// persistent CPU/SIMD processes otherwise retain the full accelerator stack.
+#[test]
+fn explicit_host_backends_keep_router_gpu_probe_closed() {
+    let host_backends: Vec<_> = BACKEND_OVERRIDE_VALUES
+        .iter()
+        .filter_map(|value| parse_backend_str(value))
+        .filter(|backend| !backend.is_gpu())
+        .collect();
+    assert!(
+        !host_backends.is_empty(),
+        "the advertised backend registry must retain at least one host route"
+    );
+    for backend in host_backends {
+        for policy in [GpuRuntimePolicy::Auto, GpuRuntimePolicy::Required] {
+            assert!(
+                !API.router_gpu_participates_for_test(Some(backend), policy),
+                "{} under {policy:?} admitted a GPU census",
+                backend.label()
+            );
+        }
+    }
+    assert!(!API.router_uses_gpu_probe_for_test(false));
+}
+
+#[test]
+fn autoroute_and_explicit_gpu_routes_keep_gpu_probe_open() {
+    assert!(API.router_gpu_participates_for_test(None, GpuRuntimePolicy::Auto));
+    assert!(!API.router_gpu_participates_for_test(None, GpuRuntimePolicy::Disabled));
+    for backend in [
+        ScanBackend::GpuCuda,
+        ScanBackend::GpuMetal,
+        ScanBackend::GpuWgpu,
+    ] {
+        assert!(API.router_gpu_participates_for_test(Some(backend), GpuRuntimePolicy::Auto));
+    }
+    assert!(API.router_uses_gpu_probe_for_test(true));
 }
 
 #[test]
@@ -31,7 +70,7 @@ fn explicit_gpu_backend_forces_gpu_compile() {
         let args = scan_args(&["scan", "--backend", "gpu-wgpu", "--path", "."]);
         assert_eq!(
             API.gpu_init_policy_for_args_for_test(&args),
-            GpuInitPolicy::ForceEnabled
+            GpuInitPolicy::SelectedBackend(keyhog_scanner::ScanBackend::GpuWgpu)
         );
     });
 }
@@ -135,7 +174,7 @@ fn backend_flag_gpu_overrides_filesystem_auto_skip() {
         let args = scan_args(&["scan", "--backend", "gpu-cuda", "--path", "."]);
         assert_eq!(
             API.gpu_init_policy_for_args_for_test(&args),
-            GpuInitPolicy::ForceEnabled
+            GpuInitPolicy::SelectedBackend(keyhog_scanner::ScanBackend::GpuCuda)
         );
     });
 }

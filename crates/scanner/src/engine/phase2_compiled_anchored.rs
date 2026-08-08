@@ -151,8 +151,8 @@ impl CompiledScanner {
         // `cursor_range` for whole-chunk phase-2 extraction: restrict match
         // STARTS to the focus window (matches still extend right freely).
         let cursor = focus;
-        // Keyword AC seeds from normalized full text; only the always-active
-        // prefilter text is windowed under decode focus.
+        // The keyword index seeds from normalized full text; only the
+        // always-active prefilter text is windowed under decode focus.
         self.with_active_phase2_scratch(
             &preprocessed.text,
             scan_text,

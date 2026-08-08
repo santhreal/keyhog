@@ -50,6 +50,17 @@ pub(crate) struct ConfirmedAnchorIndex {
 
 impl ConfirmedAnchorIndex {
     pub(crate) fn build(ac_map: &[CompiledPattern]) -> Option<Self> {
+        Self::build_with_hints(ac_map, None)
+    }
+
+    pub(crate) fn build_with_hints(
+        ac_map: &[CompiledPattern],
+        localization_hints: Option<Vec<Option<Vec<String>>>>,
+    ) -> Option<Self> {
+        if localization_hints.is_none() {
+            crate::execution_pack::matcher_sections::record_runtime_localization_hint_fallback();
+        }
+        let mut localization_hints = localization_hints.map(Vec::into_iter);
         let mut literal_ids: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
         let mut literals: Vec<String> = Vec::new();
@@ -58,13 +69,17 @@ impl ConfirmedAnchorIndex {
         let mut anchored: Vec<Option<AnchoredRegex>> = (0..ac_map.len()).map(|_| None).collect();
 
         for (idx, pattern) in ac_map.iter().enumerate() {
-            let ci = pattern.regex.is_case_insensitive();
-            let Some(pattern_literals) = required_prefix_literals_with_cap(
-                pattern.regex.as_str(),
-                CONFIRMED_MAX_LITERALS_PER_PATTERN,
-            ) else {
+            let pattern_literals = match localization_hints.as_mut() {
+                Some(hints) => hints.next().unwrap_or(None),
+                None => required_prefix_literals_with_cap(
+                    pattern.regex.as_str(),
+                    CONFIRMED_MAX_LITERALS_PER_PATTERN,
+                ),
+            };
+            let Some(pattern_literals) = pattern_literals else {
                 continue;
             };
+            let ci = pattern.regex.is_case_insensitive();
             for lit in &pattern_literals {
                 let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
                     literals.push(lit.clone());

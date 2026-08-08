@@ -5,6 +5,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 const MAGIC: &[u8; 8] = b"KHSIMD\0\x03";
 pub const HYPERSCAN_SIMD_PROGRAM_VERSION: u16 = 3;
+#[cfg(debug_assertions)]
+static VERIFIED_SHARD_BYTES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum SerializedHyperscanShardStorage {
     Owned(std::sync::Arc<[u8]>),
@@ -347,7 +350,7 @@ impl HyperscanSimdExecutionProgram {
 
     #[cfg(feature = "simd")]
     pub fn decode(bytes: &[u8], expected_ir_digest: [u8; 32]) -> Result<Self, ExecutionPackError> {
-        Self::decode_with_storage(bytes, expected_ir_digest, |_| Ok(None), |_| Ok(()))
+        Self::decode_with_storage(bytes, expected_ir_digest, |_| Ok(None), |_| Ok(()), true)
     }
 
     #[cfg(feature = "simd")]
@@ -356,7 +359,7 @@ impl HyperscanSimdExecutionProgram {
         expected_ir_digest: [u8; 32],
         release: impl FnMut(&[u8]) -> Result<(), ExecutionPackError>,
     ) -> Result<Self, ExecutionPackError> {
-        Self::decode_with_storage(bytes, expected_ir_digest, |_| Ok(None), release)
+        Self::decode_with_storage(bytes, expected_ir_digest, |_| Ok(None), release, true)
     }
 
     #[cfg(feature = "simd")]
@@ -374,6 +377,28 @@ impl HyperscanSimdExecutionProgram {
             expected_ir_digest,
             |bytes| mapped(bytes).map(Some),
             release,
+            true,
+        )
+    }
+
+    /// Decode native shards whose exact framing and bytes were already covered
+    /// by the installation signature, without hashing the full payload again.
+    #[cfg(feature = "simd")]
+    pub(crate) fn decode_authenticated_mapped_with_release(
+        bytes: &[u8],
+        expected_ir_digest: [u8; 32],
+        mut mapped: impl FnMut(
+            &[u8],
+        )
+            -> Result<super::runtime::ExecutionPackMappedBytes, ExecutionPackError>,
+        release: impl FnMut(&[u8]) -> Result<(), ExecutionPackError>,
+    ) -> Result<Self, ExecutionPackError> {
+        Self::decode_with_storage(
+            bytes,
+            expected_ir_digest,
+            |bytes| mapped(bytes).map(Some),
+            release,
+            false,
         )
     }
 
@@ -388,6 +413,7 @@ impl HyperscanSimdExecutionProgram {
             ExecutionPackError,
         >,
         mut release: impl FnMut(&[u8]) -> Result<(), ExecutionPackError>,
+        verify_shard_digests: bool,
     ) -> Result<Self, ExecutionPackError> {
         let mut cursor = Cursor::new(bytes);
         if cursor.take(8)? != MAGIC {
@@ -462,6 +488,7 @@ impl HyperscanSimdExecutionProgram {
                 &mut shard_interner,
                 &mut mapped,
                 &mut release,
+                verify_shard_digests,
             )?);
         }
         let mut phase2_scopes = Vec::with_capacity(phase2_scope_count);
@@ -482,10 +509,20 @@ impl HyperscanSimdExecutionProgram {
                 ));
             }
             let pattern_indices = cursor.indices("Hyperscan phase-two scope mapping")?;
-            let full =
-                read_phase2_database(&mut cursor, &mut shard_interner, &mut mapped, &mut release)?;
-            let ascii_lean =
-                read_phase2_database(&mut cursor, &mut shard_interner, &mut mapped, &mut release)?;
+            let full = read_phase2_database(
+                &mut cursor,
+                &mut shard_interner,
+                &mut mapped,
+                &mut release,
+                verify_shard_digests,
+            )?;
+            let ascii_lean = read_phase2_database(
+                &mut cursor,
+                &mut shard_interner,
+                &mut mapped,
+                &mut release,
+                verify_shard_digests,
+            )?;
             phase2_scopes.push(HyperscanPhase2ScopeProgram {
                 scope,
                 pattern_indices,
@@ -622,6 +659,12 @@ impl HyperscanSimdExecutionProgram {
     pub fn compile_with_opts_invocations() -> usize {
         crate::simd::backend::HsScanner::compile_with_opts_invocations()
     }
+
+    #[doc(hidden)]
+    #[cfg(all(feature = "simd", debug_assertions))]
+    pub fn verified_shard_bytes() -> usize {
+        VERIFIED_SHARD_BYTES.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 fn validate_phase2_database(
@@ -719,9 +762,31 @@ fn read_shared_shard(
         ExecutionPackError,
     >,
     release: &mut impl FnMut(&[u8]) -> Result<(), ExecutionPackError>,
+    verify_digest: bool,
 ) -> Result<SerializedHyperscanShard, ExecutionPackError> {
     let expected_digest: [u8; 32] = cursor.take(32)?.try_into().expect("fixed digest");
     let bytes = cursor.bytes()?;
+    if !verify_digest {
+        if let Some(shared) = interner.get(&expected_digest) {
+            if shared.len() != bytes.len() {
+                return Err(ExecutionPackError::InvalidPack(format!(
+                    "{label} shard {index} repeats a signed digest with a different length"
+                )));
+            }
+            release(bytes)?;
+            return Ok(shared.clone());
+        }
+        let shared = if let Some(mapped) = mapped(bytes)? {
+            SerializedHyperscanShard::from_mapped(mapped)
+        } else {
+            SerializedHyperscanShard::from(bytes)
+        };
+        release(bytes)?;
+        interner.insert(expected_digest, shared.clone());
+        return Ok(shared);
+    }
+    #[cfg(debug_assertions)]
+    VERIFIED_SHARD_BYTES.fetch_add(bytes.len(), std::sync::atomic::Ordering::Relaxed);
     let mut hasher = blake3::Hasher::new();
     let shared = if let Some(shared) = interner.get(&expected_digest) {
         let mut exact_match = shared.len() == bytes.len();
@@ -804,6 +869,7 @@ fn read_phase2_database(
         ExecutionPackError,
     >,
     release: &mut impl FnMut(&[u8]) -> Result<(), ExecutionPackError>,
+    verify_shard_digests: bool,
 ) -> Result<Option<HyperscanPhase2DatabaseProgram>, ExecutionPackError> {
     match cursor.take(1)?[0] {
         0 => Ok(None),
@@ -820,6 +886,7 @@ fn read_phase2_database(
                     interner,
                     mapped,
                     release,
+                    verify_shard_digests,
                 )?);
             }
             Ok(Some(HyperscanPhase2DatabaseProgram {

@@ -173,75 +173,93 @@ static HW_PROBE: OnceLock<HardwareCaps> = OnceLock::new();
 
 /// Probe hardware once and cache the result.
 pub fn probe_hardware() -> &'static HardwareCaps {
-    HW_PROBE.get_or_init(|| {
-        let logical_cores = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1); // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-        let physical_cores = platform::physical_core_count().unwrap_or(logical_cores); // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
+    HW_PROBE.get_or_init(|| detect_hardware(true))
+}
 
-        #[cfg(target_arch = "x86_64")]
-        let (has_avx2, has_avx512, has_neon) = (
-            std::arch::is_x86_feature_detected!("avx2"),
-            std::arch::is_x86_feature_detected!("avx512f"),
-            false,
-        );
-        #[cfg(target_arch = "aarch64")]
-        let (has_avx2, has_avx512, has_neon) = (false, false, true);
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-        let (has_avx2, has_avx512, has_neon) = (false, false, false);
+/// Probe host CPU and memory capabilities without loading a GPU runtime.
+///
+/// Explicit CPU and SIMD routes do not admit a GPU peer, so initializing WGPU
+/// or a native driver would only inflate startup latency and resident memory.
+#[must_use]
+pub fn probe_host_hardware() -> HardwareCaps {
+    detect_hardware(false)
+}
 
-        let gpu_probe = crate::gpu::gpu_probe();
-        let gpu_available = gpu_probe.available;
-        let gpu_name = gpu_probe.name;
-        let gpu_vram_mb = gpu_probe.buffer_limit_mb;
-        let gpu_runtime_identity = gpu_probe.runtime_identity;
-        let gpu_is_software = gpu_probe.is_software;
-        if gpu_is_software {
-            tracing::warn!(
-                gpu = ?gpu_name,
-                "Software GPU detected: GPU scanning disabled (slower than CPU)"
-            );
-        }
+fn detect_hardware(include_gpu: bool) -> HardwareCaps {
+    let logical_cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1); // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
+    let physical_cores = platform::physical_core_count().unwrap_or(logical_cores); // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
 
-        let hyperscan_available = cfg!(feature = "simd");
-        let hyperscan_runtime_identity = hyperscan_available
-            .then(hyperscan_runtime_identity)
-            .flatten();
-        let total_memory_mb = platform::detect_total_memory_mb();
-        let io_uring_available = platform::detect_io_uring();
+    #[cfg(target_arch = "x86_64")]
+    let (has_avx2, has_avx512, has_neon) = (
+        std::arch::is_x86_feature_detected!("avx2"),
+        std::arch::is_x86_feature_detected!("avx512f"),
+        false,
+    );
+    #[cfg(target_arch = "aarch64")]
+    let (has_avx2, has_avx512, has_neon) = (false, false, true);
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    let (has_avx2, has_avx512, has_neon) = (false, false, false);
 
-        let caps = HardwareCaps {
-            physical_cores,
-            logical_cores,
-            has_avx2,
-            has_avx512,
-            has_neon,
-            gpu_available,
-            gpu_name: gpu_name.clone(),
-            gpu_vram_mb,
-            gpu_runtime_identity,
-            gpu_is_software,
-            total_memory_mb,
-            io_uring_available,
-            hyperscan_available,
-            hyperscan_runtime_identity,
+    let (gpu_available, gpu_name, gpu_vram_mb, gpu_runtime_identity, gpu_is_software) =
+        if include_gpu {
+            let gpu_probe = crate::gpu::gpu_probe();
+            (
+                gpu_probe.available,
+                gpu_probe.name,
+                gpu_probe.buffer_limit_mb,
+                gpu_probe.runtime_identity,
+                gpu_probe.is_software,
+            )
+        } else {
+            (false, None, None, None, false)
         };
-
-        tracing::info!(
-            physical_cores,
-            logical_cores,
-            gpu_available,
-            gpu_name = ?gpu_name,
-            has_avx512 = caps.has_avx512,
-            has_avx2 = caps.has_avx2,
-            has_neon = caps.has_neon,
-            hyperscan = hyperscan_available,
-            io_uring = io_uring_available,
-            "hardware probe complete"
+    if gpu_is_software {
+        tracing::warn!(
+            gpu = ?gpu_name,
+            "Software GPU detected: GPU scanning disabled (slower than CPU)"
         );
+    }
 
-        caps
-    })
+    let hyperscan_available = cfg!(feature = "simd");
+    let hyperscan_runtime_identity = hyperscan_available
+        .then(hyperscan_runtime_identity)
+        .flatten();
+    let total_memory_mb = platform::detect_total_memory_mb();
+    let io_uring_available = platform::detect_io_uring();
+
+    let caps = HardwareCaps {
+        physical_cores,
+        logical_cores,
+        has_avx2,
+        has_avx512,
+        has_neon,
+        gpu_available,
+        gpu_name: gpu_name.clone(),
+        gpu_vram_mb,
+        gpu_runtime_identity,
+        gpu_is_software,
+        total_memory_mb,
+        io_uring_available,
+        hyperscan_available,
+        hyperscan_runtime_identity,
+    };
+
+    tracing::info!(
+        physical_cores,
+        logical_cores,
+        gpu_available,
+        gpu_name = ?gpu_name,
+        has_avx512 = caps.has_avx512,
+        has_avx2 = caps.has_avx2,
+        has_neon = caps.has_neon,
+        hyperscan = hyperscan_available,
+        io_uring = io_uring_available,
+        "hardware probe complete"
+    );
+
+    caps
 }
 
 #[cfg(test)]

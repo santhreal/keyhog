@@ -998,6 +998,72 @@ impl CompiledScanner {
         admission: Option<crate::engine::Phase1Admission>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
+        self.scan_with_deadline_and_backend_admission_route_and_hints(
+            chunk,
+            deadline,
+            selected_backend,
+            admission,
+            false,
+            false,
+            None,
+            false,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            route,
+        )
+    }
+
+    pub(crate) fn scan_proven_direct_absence(
+        &self,
+        chunk: &Chunk,
+        deadline: Option<std::time::Instant>,
+        route: crate::ScanExecutionRoute,
+        decoder_absence: bool,
+    ) -> crate::error::Result<Vec<RawMatch>> {
+        crate::telemetry::record_file_scanned(chunk.data.len());
+        self.record_decode_size_decline(chunk);
+        #[cfg(debug_assertions)]
+        self.direct_scan_absence_skipped_bytes.fetch_add(
+            u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        let mut matches = Vec::new();
+        self.post_process_matches_with_decoder_absence(
+            chunk,
+            &mut matches,
+            deadline,
+            route,
+            decoder_absence,
+        )?;
+        Ok(matches)
+    }
+
+    pub(crate) fn scan_with_deadline_and_backend_admission_route_and_hints(
+        &self,
+        chunk: &Chunk,
+        deadline: Option<std::time::Instant>,
+        selected_backend: crate::hw_probe::ScanBackend,
+        admission: Option<crate::engine::Phase1Admission>,
+        normalization_passthrough: bool,
+        multiline_absence: bool,
+        line_context_index: Option<&std::sync::Arc<crate::context::LineContextIndex>>,
+        confirmed_patterns_absence: bool,
+        entropy_absence: bool,
+        decoder_absence: bool,
+        direct_scan_absence: bool,
+        cpu_trigger_hints: Option<&[u64]>,
+        phase2_keyword_hints: Option<&[u32]>,
+        phase2_always_active_evidence: Option<
+            crate::engine::phase2::Phase2AlwaysActiveGpuEvidence<'_>,
+        >,
+        generic_keyword_positions: Option<&[u32]>,
+        route: crate::ScanExecutionRoute,
+    ) -> crate::error::Result<Vec<RawMatch>> {
         if scan_deadline_expired(deadline) {
             return Ok(Vec::new());
         }
@@ -1013,35 +1079,62 @@ impl CompiledScanner {
         // traffic keeps the fast skip.
         // LAW10: recall-preserving; `None` computes the identical admission predicate once rather than changing routes or findings.
         let admission = admission.unwrap_or_else(|| self.phase1_admission(chunk.data.as_bytes()));
+        if admission == Phase1Admission::Admitted
+            && direct_scan_absence
+            && crate::structured::preprocessing_is_impossible_for_path(
+                chunk.metadata.path.as_deref(),
+            )
+        {
+            return self.scan_proven_direct_absence(chunk, deadline, route, decoder_absence);
+        }
         if admission != Phase1Admission::Admitted {
             if self.should_scan_no_hit_chunk(chunk, route) {
-                let prepared = self.prepare_chunk(chunk);
+                let prepared = self.prepare_chunk_with_normalization_passthrough(
+                    chunk,
+                    normalization_passthrough,
+                    multiline_absence,
+                    line_context_index,
+                );
                 let mut matches = self.scan_prepared_with_triggered(
                     prepared,
                     &[],
                     deadline,
+                    false,
+                    entropy_absence,
+                    phase2_keyword_hints,
+                    phase2_always_active_evidence,
                     None,
-                    None,
-                    None,
-                    None,
+                    generic_keyword_positions,
                     route,
                 )?;
                 if scan_deadline_expired(deadline) {
                     return Ok(matches);
                 }
-                self.post_process_matches(chunk, &mut matches, deadline, route)?;
+                self.post_process_matches_with_decoder_absence(
+                    chunk,
+                    &mut matches,
+                    deadline,
+                    route,
+                    decoder_absence,
+                )?;
                 if scan_deadline_expired(deadline) {
                     return Ok(matches);
                 }
                 return Ok(matches);
             }
 
-            if self.chunk_needs_decode_postprocess(chunk) {
+            if self.chunk_needs_decode_postprocess_with_absence(chunk, decoder_absence) {
                 if scan_deadline_expired(deadline) {
                     return Ok(Vec::new());
                 }
                 let mut matches = Vec::new();
-                self.post_process_matches(chunk, &mut matches, deadline, route)?;
+                self.post_process_matches_with_decoder_absence(
+                    chunk,
+                    &mut matches,
+                    deadline,
+                    route,
+                    decoder_absence,
+                )?;
                 if scan_deadline_expired(deadline) {
                     return Ok(matches);
                 }
@@ -1061,13 +1154,33 @@ impl CompiledScanner {
         let mut matches = if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
             self.scan_windowed(chunk, selected_backend, deadline, route)?
         } else {
-            self.scan_inner(chunk, selected_backend, deadline, route)?
+            self.scan_inner_with_admission_hints(
+                chunk,
+                selected_backend,
+                deadline,
+                normalization_passthrough,
+                multiline_absence,
+                line_context_index,
+                confirmed_patterns_absence,
+                entropy_absence,
+                cpu_trigger_hints,
+                phase2_keyword_hints,
+                phase2_always_active_evidence,
+                generic_keyword_positions,
+                route,
+            )?
         };
 
         if scan_deadline_expired(deadline) {
             return Ok(matches);
         }
-        self.post_process_matches(chunk, &mut matches, deadline, route)?;
+        self.post_process_matches_with_decoder_absence(
+            chunk,
+            &mut matches,
+            deadline,
+            route,
+            decoder_absence,
+        )?;
         if scan_deadline_expired(deadline) {
             return Ok(matches);
         }

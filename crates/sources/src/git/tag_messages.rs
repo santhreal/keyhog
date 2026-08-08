@@ -79,68 +79,58 @@ pub(crate) fn collect_reachable_tag_messages(
     Ok(tags)
 }
 
-pub(crate) fn decode_unreachable_tag_message_chunks(
+pub(crate) fn decode_next_unreachable_tag_message(
     repo: &gix::Repository,
     tags: &mut VecDeque<gix::ObjectId>,
     limits: crate::SourceLimits,
     total_bytes: &mut usize,
     chunk_count: &mut usize,
     errors: &mut VecDeque<SourceError>,
-) -> VecDeque<Chunk> {
-    let mut chunks = VecDeque::new();
+) -> Option<Chunk> {
     while super::git_history_cap_status(*total_bytes, *chunk_count, limits).is_none() {
-        let Some(oid) = tags.pop_front() else {
-            break;
-        };
+        let oid = tags.pop_front()?;
         let tag_ref = GitTagMessageRef {
             oid,
             path: format!(".git/unreachable/{oid}"),
             source_type: "git/unreachable",
         };
-        let chunk = match decode_tag_message_chunk(repo, tag_ref, limits) {
-            Ok(Some(chunk)) => chunk,
-            Ok(None) => continue,
-            Err(error) => {
-                errors.push_back(error);
-                continue;
+        match decode_tag_message(repo, tag_ref, limits) {
+            Ok(Some(chunk)) => {
+                *total_bytes = total_bytes.saturating_add(chunk.data.len());
+                *chunk_count += 1;
+                return Some(chunk);
             }
-        };
-        *total_bytes = total_bytes.saturating_add(chunk.data.len());
-        *chunk_count += 1;
-        chunks.push_back(chunk);
+            Ok(None) => {}
+            Err(error) => errors.push_back(error),
+        }
     }
-    chunks
+    None
 }
 
-pub(crate) fn decode_tag_message_chunks(
+pub(crate) fn decode_next_tag_message(
     repo: &gix::Repository,
     tags: &mut VecDeque<GitTagMessageRef>,
     limits: crate::SourceLimits,
     total_bytes: &mut usize,
     chunk_count: &mut usize,
     errors: &mut VecDeque<SourceError>,
-) -> VecDeque<Chunk> {
-    let mut chunks = VecDeque::new();
+) -> Option<Chunk> {
     while super::git_history_cap_status(*total_bytes, *chunk_count, limits).is_none() {
-        let Some(tag_ref) = tags.pop_front() else {
-            break;
-        };
-        let chunk = match decode_tag_message_chunk(repo, tag_ref, limits) {
-            Ok(Some(chunk)) => chunk,
-            Ok(None) => continue,
-            Err(error) => {
-                errors.push_back(error);
-                continue;
+        let tag_ref = tags.pop_front()?;
+        match decode_tag_message(repo, tag_ref, limits) {
+            Ok(Some(chunk)) => {
+                *total_bytes = total_bytes.saturating_add(chunk.data.len());
+                *chunk_count += 1;
+                return Some(chunk);
             }
-        };
-        *total_bytes = total_bytes.saturating_add(chunk.data.len());
-        *chunk_count += 1;
-        chunks.push_back(chunk);
+            Ok(None) => {}
+            Err(error) => errors.push_back(error),
+        }
     }
-    chunks
+    None
 }
 
-fn decode_tag_message_chunk(
+fn decode_tag_message(
     repo: &gix::Repository,
     tag_ref: GitTagMessageRef,
     limits: crate::SourceLimits,

@@ -28,10 +28,10 @@ pub(crate) use crate::tuning::*;
 
 pub(crate) const MIN_PREFIX_BYTES: usize = 3;
 
-/// GPU evidence for the two disjoint always-active phase-2 families. An outer
-/// `Option` at call sites means fused anchor evidence is unavailable; the
-/// prefixless completeness bit independently prevents partial proof from
-/// becoming a skip.
+/// Exact evidence for the two disjoint always-active phase-2 families. GPU
+/// region receipts populate positive and negative state; CPU autoroute may
+/// persist only a complete negative proof for byte-identical representatives.
+/// An outer `Option` means no complete evidence is available.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Phase2AlwaysActiveGpuEvidence<'a> {
     pub(crate) prefixless_admitted: bool,
@@ -44,6 +44,16 @@ pub(crate) struct Phase2AlwaysActiveGpuEvidence<'a> {
 }
 
 impl Phase2AlwaysActiveGpuEvidence<'_> {
+    #[inline]
+    pub(crate) const fn exact_absence() -> Phase2AlwaysActiveGpuEvidence<'static> {
+        Phase2AlwaysActiveGpuEvidence {
+            prefixless_admitted: false,
+            prefixless_complete: true,
+            anchor_present: false,
+            anchor_literal_matches: Some(&[]),
+        }
+    }
+
     #[inline]
     pub(crate) const fn prefixless_absence_proven(self) -> bool {
         self.prefixless_complete && !self.prefixless_admitted

@@ -184,7 +184,7 @@ def test_one_long_line_fixture_is_one_line_with_a_delimited_canary(
     assert payload.startswith(f"GITHUB_TOKEN={CANARY} ".encode())
     assert b"\n" not in payload
     assert receipt.expected_findings == 1
-    assert receipt.expected_coverage_gap is True
+    assert receipt.expected_coverage_gap is False
 
 def test_fixture_oracles_require_expected_coverage_gaps(
     tmp_path: pathlib.Path,
@@ -193,8 +193,6 @@ def test_fixture_oracles_require_expected_coverage_gaps(
     catalog = load_workload_catalog(CATALOG_PATH)
     gap_ids = {
         "filesystem-empty-directory",
-        "filesystem-single-large-file",
-        "filesystem-one-long-line",
         "filesystem-sparse-files",
         "stdin-empty",
         "stdin-large-bounded",
@@ -209,14 +207,20 @@ def test_fixture_oracles_require_expected_coverage_gaps(
             0.001
             if workload_id
             in {
-                "filesystem-single-large-file",
-                "filesystem-one-long-line",
                 "filesystem-sparse-files",
             }
             else 1.0
         )
         receipt = materialize_fixture(workload, tmp_path, scale=scale)
         assert receipt.expected_coverage_gap is True
+    large = next(
+        item for item in catalog.workloads
+        if item.workload_id == "filesystem-single-large-file"
+    )
+    assert (
+        materialize_fixture(large, tmp_path, scale=0.001).expected_coverage_gap
+        is False
+    )
     changing = next(
         item for item in catalog.workloads if item.workload_id == "filesystem-changing-size"
     )

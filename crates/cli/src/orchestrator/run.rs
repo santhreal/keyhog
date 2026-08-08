@@ -19,7 +19,7 @@ use std::io::{IsTerminal, Read};
 use std::time::Instant;
 
 #[cfg(feature = "mimalloc")]
-pub(super) fn release_allocator_arenas_after_construction() {
+pub(super) fn release_current_allocator_arena() {
     extern "C" {
         fn mi_collect(force: bool);
     }
@@ -29,25 +29,34 @@ pub(super) fn release_allocator_arenas_after_construction() {
     // type through its global allocator declaration.
     let allocator_link = mimalloc::MiMalloc;
     std::hint::black_box(&allocator_link);
-
-    // Regex and matcher compilation runs on Rayon workers. Collect each
-    // thread-local mimalloc heap, then the caller heap, so compiler pages do
-    // not remain resident throughout a tiny scan.
-    rayon::broadcast(|_| {
-        // SAFETY: the mimalloc feature links the process allocator that exports
-        // `mi_collect`; the function has no pointer arguments or preconditions.
-        unsafe { mi_collect(true) };
-    });
-    // SAFETY: same linked allocator contract as the worker calls above.
+    // SAFETY: the mimalloc feature links the process allocator that exports
+    // `mi_collect`; the function has no pointer arguments or preconditions.
     unsafe { mi_collect(true) };
 }
 
-#[cfg(all(not(feature = "mimalloc"), target_os = "linux", target_env = "gnu"))]
+#[cfg(feature = "mimalloc")]
 pub(super) fn release_allocator_arenas_after_construction() {
+    // Regex and matcher compilation runs on Rayon workers. Collect each
+    // thread-local mimalloc heap, then the caller heap, so compiler pages do
+    // not remain resident throughout a tiny scan.
+    rayon::broadcast(|_| release_current_allocator_arena());
+    release_current_allocator_arena();
+}
+
+#[cfg(all(not(feature = "mimalloc"), target_os = "linux", target_env = "gnu"))]
+pub(super) fn release_current_allocator_arena() {
     // SAFETY: glibc's process-wide trim takes no pointers and tolerates
     // concurrent allocator users.
     let _ = unsafe { libc::malloc_trim(0) };
 }
+
+#[cfg(all(not(feature = "mimalloc"), target_os = "linux", target_env = "gnu"))]
+pub(super) fn release_allocator_arenas_after_construction() {
+    release_current_allocator_arena();
+}
+
+#[cfg(not(any(feature = "mimalloc", all(target_os = "linux", target_env = "gnu"))))]
+pub(super) fn release_current_allocator_arena() {}
 
 #[cfg(not(any(feature = "mimalloc", all(target_os = "linux", target_env = "gnu"))))]
 pub(super) fn release_allocator_arenas_after_construction() {}
@@ -1244,6 +1253,10 @@ impl ScanOrchestrator {
                      simultaneously, the largest detection blind spot we ship)."
                 );
             }
+        }
+        #[cfg(feature = "verify")]
+        if self.effective_config.verify.oob.enabled {
+            keyhog_verifier::oob::prewarm_key_generation();
         }
 
         let hw = keyhog_scanner::hw_probe::probe_hardware();

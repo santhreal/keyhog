@@ -52,21 +52,25 @@ pub(crate) const CONFIRMED_MAX_LITERALS_PER_PATTERN: usize = 8;
 struct LazyAnchorAc {
     literals: Mutex<Option<Box<[Arc<str>]>>>,
     ascii_case_insensitive: bool,
-    label: &'static str,
-    cell: OnceLock<AhoCorasick>,
+    failure_message: &'static str,
+    cell: OnceLock<Option<AhoCorasick>>,
 }
 
 impl LazyAnchorAc {
-    fn new(literals: Vec<Arc<str>>, ascii_case_insensitive: bool, label: &'static str) -> Self {
+    fn new(
+        literals: Vec<Arc<str>>,
+        ascii_case_insensitive: bool,
+        failure_message: &'static str,
+    ) -> Self {
         Self {
             literals: Mutex::new(Some(literals.into_boxed_slice())),
             ascii_case_insensitive,
-            label,
+            failure_message,
             cell: OnceLock::new(),
         }
     }
 
-    fn get(&self) -> (&AhoCorasick, bool) {
+    fn get(&self) -> (Option<&AhoCorasick>, bool) {
         let already_initialized = self.cell.get().is_some();
         let anchor = self.cell.get_or_init(|| {
             let literals = self
@@ -75,18 +79,28 @@ impl LazyAnchorAc {
                 .unwrap_or_else(|error| error.into_inner())
                 .take()
                 .expect("lazy phase-2 anchor literals must exist before initialization");
-            AhoCorasickBuilder::new()
+            match AhoCorasickBuilder::new()
                 .match_kind(MatchKind::Standard)
                 .ascii_case_insensitive(self.ascii_case_insensitive)
                 .build(literals.iter().map(|literal| literal.as_bytes()))
-                .unwrap_or_else(|error| {
-                    panic!(
-                        "BUILD-INVARIANT VIOLATION: {} Aho-Corasick failed to compile: {error}",
-                        self.label
-                    )
-                })
+            {
+                Ok(anchor) => Some(anchor),
+                Err(error) => {
+                    tracing::warn!(
+                        literals = literals.len(),
+                        %error,
+                        "{}",
+                        self.failure_message
+                    );
+                    None
+                }
+            }
         });
-        (anchor, !already_initialized)
+        (anchor.as_ref(), !already_initialized)
+    }
+
+    fn is_available(&self) -> bool {
+        !matches!(self.cell.get(), Some(None))
     }
 }
 
@@ -156,6 +170,25 @@ pub(crate) struct Phase2AnchorIndex {
     plain_always_mark: Vec<u32>,
 }
 
+pub(crate) fn compile_localization_hint(
+    pattern: &CompiledPattern,
+) -> crate::compiler::compiler_build::Phase2LocalizationHint {
+    use crate::compiler::compiler_build::Phase2LocalizationHint;
+
+    let source = pattern.regex.as_str();
+    if let Some(literals) = required_prefix_literals(source) {
+        return Phase2LocalizationHint::Prefix { literals };
+    }
+    if pattern.regex.is_case_insensitive() {
+        return Phase2LocalizationHint::None;
+    }
+    let folded_regex = ascii_fold_regex_src(source);
+    Phase2LocalizationHint::Plain {
+        literals: leading_literals_of_folded(&folded_regex),
+        folded_regex,
+    }
+}
+
 impl Phase2AnchorIndex {
     pub(crate) fn eligible_count(&self) -> usize {
         self.eligible_count
@@ -176,7 +209,11 @@ impl Phase2AnchorIndex {
 
     #[inline]
     pub(crate) fn is_eligible(&self, phase2_idx: usize) -> bool {
-        if self.anchor_ac.is_none() {
+        if !self
+            .anchor_ac
+            .as_ref()
+            .is_some_and(LazyAnchorAc::is_available)
+        {
             return false;
         }
         matches!(self.eligible.get(phase2_idx), Some(true)) // LAW10: pattern not anchor-eligible => caller runs whole-chunk; anchor is a prefilter opt, recall-preserving
@@ -205,6 +242,32 @@ impl Phase2AnchorIndex {
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         always_active_indices: &[usize],
     ) -> Option<Self> {
+        Self::build_with_hints(phase2_patterns, always_active_indices, None)
+    }
+
+    pub(crate) fn build_with_hints(
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        always_active_indices: &[usize],
+        localization_hints: Option<Vec<crate::compiler::compiler_build::Phase2LocalizationHint>>,
+    ) -> Option<Self> {
+        if localization_hints.is_none() {
+            crate::execution_pack::matcher_sections::record_runtime_localization_hint_fallback();
+        }
+        let mut localization_hints = localization_hints.map(Vec::into_iter);
+        Self::build_from_hints(
+            phase2_patterns,
+            always_active_indices,
+            &mut localization_hints,
+        )
+    }
+
+    fn build_from_hints(
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        always_active_indices: &[usize],
+        localization_hints: &mut Option<
+            std::vec::IntoIter<crate::compiler::compiler_build::Phase2LocalizationHint>,
+        >,
+    ) -> Option<Self> {
         let mut eligible = vec![false; phase2_patterns.len()];
         let mut anchored: Vec<Option<AnchoredRegex>> =
             (0..phase2_patterns.len()).map(|_| None).collect();
@@ -221,45 +284,44 @@ impl Phase2AnchorIndex {
         let mut plain_always_mark: Vec<u32> = Vec::new();
 
         for (idx, (pattern, _keywords)) in phase2_patterns.iter().enumerate() {
-            let ci = pattern.regex.is_case_insensitive();
-            if let Some(pattern_literals) = required_prefix_literals(pattern.regex.as_str()) {
-                // Register every literal and map it back to this pattern.
-                for lit in &pattern_literals {
-                    let id = intern_anchor_literal(&mut literal_ids, &mut literals, lit);
-                    literal_pattern_pairs.push((id, idx));
-                }
-                eligible[idx] = true;
-                anchored[idx] = Some(AnchoredRegex::new(pattern.regex.as_str(), ci));
-                continue;
-            }
-            // Not eligible via the unicode prefix (homoglyph cross-products go
-            // infinite). For PLAIN (homoglyph) patterns, drive the ASCII chunk
-            // path from the FOLDED leading literals instead.
-            if !ci {
-                // Fold out non-ASCII ONCE: the same fold drives the leading
-                // -literal AC and the anchored verify regex. Shared
-                // `ascii_fold_regex_src` so this matches the prefilter's fold.
-                let folded_src = ascii_fold_regex_src(pattern.regex.as_str());
-                match leading_literals_of_folded(&folded_src) {
-                    Some(lits) => {
-                        for lit in &lits {
-                            let id = intern_anchor_literal(
-                                &mut plain_literal_ids,
-                                &mut plain_literals,
-                                lit,
-                            );
-                            plain_literal_pattern_pairs.push((id, idx));
-                        }
-                        // Verify with the FOLDED (ASCII) regex `\A(?:fold)`, not
-                        // the unicode one: on the ASCII chunks where this path
-                        // runs it is match-equivalent but its DFA is far simpler
-                        // (ASCII classes), so each candidate verify, dominated
-                        // by quick-fails at common-keyword positions, is much
-                        // cheaper. Case-sensitive (the fold carries the case).
-                        anchored[idx] = Some(AnchoredRegex::new(&folded_src, false));
+            use crate::compiler::compiler_build::Phase2LocalizationHint;
+
+            let hint = localization_hints
+                .as_mut()
+                .and_then(Iterator::next)
+                .unwrap_or_else(|| compile_localization_hint(pattern));
+            match hint {
+                Phase2LocalizationHint::Prefix {
+                    literals: pattern_literals,
+                } => {
+                    for literal in &pattern_literals {
+                        let id = intern_anchor_literal(&mut literal_ids, &mut literals, literal);
+                        literal_pattern_pairs.push((id, idx));
                     }
-                    None => plain_always_mark.push(idx as u32),
+                    eligible[idx] = true;
+                    anchored[idx] = Some(AnchoredRegex::new(
+                        pattern.regex.as_str(),
+                        pattern.regex.is_case_insensitive(),
+                    ));
                 }
+                Phase2LocalizationHint::Plain {
+                    folded_regex,
+                    literals: Some(pattern_literals),
+                } => {
+                    for literal in &pattern_literals {
+                        let id = intern_anchor_literal(
+                            &mut plain_literal_ids,
+                            &mut plain_literals,
+                            literal,
+                        );
+                        plain_literal_pattern_pairs.push((id, idx));
+                    }
+                    anchored[idx] = Some(AnchoredRegex::new(&folded_regex, false));
+                }
+                Phase2LocalizationHint::Plain { literals: None, .. } => {
+                    plain_always_mark.push(idx as u32);
+                }
+                Phase2LocalizationHint::None => {}
             }
         }
         // Drop compiler lookup tables before CSR and automaton construction;
@@ -309,8 +371,13 @@ impl Phase2AnchorIndex {
         let anchor_first_bigram = (!literals.is_empty()).then(|| {
             FirstBigramSet::from_literals(literals.iter().map(|literal| literal.as_bytes()), true)
         });
-        let anchor_ac = (!literals.is_empty())
-            .then(|| LazyAnchorAc::new(literals, true, "phase-2 shared-anchor"));
+        let anchor_ac = (!literals.is_empty()).then(|| {
+            LazyAnchorAc::new(
+                literals,
+                true,
+                "phase-2 shared-anchor Aho-Corasick build failed; keyword-triggered anchored patterns stay on the whole-chunk path (recall preserved)",
+            )
+        });
         let always_anchor_first_bigram = (!always_literals.is_empty()).then(|| {
             FirstBigramSet::from_literals(always_literals.iter().map(String::as_bytes), true)
         });
@@ -342,8 +409,13 @@ impl Phase2AnchorIndex {
                 false,
             )
         });
-        let plain_anchor_ac = (!plain_literals.is_empty())
-            .then(|| LazyAnchorAc::new(plain_literals, false, "phase-2 plain-anchor"));
+        let plain_anchor_ac = (!plain_literals.is_empty()).then(|| {
+            LazyAnchorAc::new(
+                plain_literals,
+                false,
+                "phase-2 plain-anchor Aho-Corasick build failed; plain patterns stay on the folded RegexSet path (recall preserved)",
+            )
+        });
 
         Some(Self {
             anchor_ac,
@@ -390,7 +462,7 @@ impl Phase2AnchorIndex {
         {
             return;
         }
-        let Some(ac) = self.anchor_ac.as_ref().map(|anchor| anchor.get().0) else {
+        let Some(ac) = self.anchor_ac.as_ref().and_then(|anchor| anchor.get().0) else {
             return;
         };
         for m in ac.find_overlapping_iter(text) {
@@ -484,7 +556,10 @@ impl Phase2AnchorIndex {
         if !phase2_plain_localizer {
             return false;
         }
-        self.plain_anchor_ac.is_some() || !self.plain_always_mark.is_empty()
+        self.plain_anchor_ac
+            .as_ref()
+            .is_some_and(LazyAnchorAc::is_available)
+            || (!self.plain_always_mark.is_empty() && self.plain_anchor_ac.is_none())
     }
 
     /// Plain patterns with no folded leading literal (run whole-chunk on ASCII).
@@ -510,7 +585,11 @@ impl Phase2AnchorIndex {
         {
             return;
         }
-        let Some(ac) = self.plain_anchor_ac.as_ref().map(|anchor| anchor.get().0) else {
+        let Some(ac) = self
+            .plain_anchor_ac
+            .as_ref()
+            .and_then(|anchor| anchor.get().0)
+        else {
             return;
         };
         for m in ac.find_overlapping_iter(text) {

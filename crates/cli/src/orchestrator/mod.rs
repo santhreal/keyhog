@@ -358,17 +358,56 @@ pub(crate) fn autoroute_default_config_identity() -> String {
     )
 }
 
+fn router_gpu_participates(
+    backend_override: Option<keyhog_scanner::ScanBackend>,
+    runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
+) -> bool {
+    backend_override.map_or_else(
+        || runtime_policy != keyhog_scanner::gpu::GpuRuntimePolicy::Disabled,
+        keyhog_scanner::ScanBackend::is_gpu,
+    )
+}
+
+fn select_router_hardware<T>(
+    gpu_participates: bool,
+    probe_gpu: impl FnOnce() -> T,
+    probe_host: impl FnOnce() -> T,
+) -> T {
+    if gpu_participates {
+        probe_gpu()
+    } else {
+        probe_host()
+    }
+}
+
+fn probe_router_hardware(gpu_participates: bool) -> keyhog_scanner::hw_probe::HardwareCaps {
+    select_router_hardware(
+        gpu_participates,
+        || keyhog_scanner::hw_probe::probe_hardware().clone(),
+        keyhog_scanner::hw_probe::probe_host_hardware,
+    )
+}
+
+pub(crate) fn probe_route_hardware(
+    backend_override: Option<keyhog_scanner::ScanBackend>,
+    runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
+) -> keyhog_scanner::hw_probe::HardwareCaps {
+    probe_router_hardware(router_gpu_participates(backend_override, runtime_policy))
+}
+
 pub(crate) fn cached_autoroute_router_for_default_config(
     scanner: &CompiledScanner,
     detectors: &[DetectorSpec],
+    backend_override: Option<keyhog_scanner::ScanBackend>,
 ) -> CachedBackendRouter {
     let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(detectors));
     let resolved = resolved_default_autoroute_config();
+    let gpu_participates = router_gpu_participates(backend_override, resolved.gpu_runtime_policy);
     cached_autoroute_router(
         scanner,
         rules_digest,
         autoroute_config_digest(&resolved),
-        resolved.gpu_runtime_policy != keyhog_scanner::gpu::GpuRuntimePolicy::Disabled,
+        gpu_participates,
         crate::autoroute_cache_path::resolve_autoroute_cache_path(None),
     )
 }
@@ -380,7 +419,7 @@ fn cached_autoroute_router(
     gpu_participates: bool,
     autoroute_cache_path: Result<Option<std::path::PathBuf>, String>,
 ) -> CachedBackendRouter {
-    let hw_caps = keyhog_scanner::hw_probe::probe_hardware().clone();
+    let hw_caps = probe_router_hardware(gpu_participates);
     let pattern_count = scanner.runtime_status().pattern_count;
     CachedBackendRouter::new(
         hw_caps,
@@ -456,9 +495,14 @@ pub(crate) struct DefaultScanRuntime {
 }
 
 impl DefaultScanRuntime {
-    pub(crate) fn new(scanner: Arc<CompiledScanner>, detectors: &[DetectorSpec]) -> Self {
-        let router = cached_autoroute_router_for_default_config(&scanner, detectors);
-        Self::new_with_router(scanner, detectors, router)
+    pub(crate) fn new(
+        scanner: Arc<CompiledScanner>,
+        detectors: &[DetectorSpec],
+        backend_override: Option<keyhog_scanner::ScanBackend>,
+    ) -> Self {
+        let router =
+            cached_autoroute_router_for_default_config(&scanner, detectors, backend_override);
+        Self::new_with_router(scanner, detectors, router).with_backend_override(backend_override)
     }
 
     fn new_with_router(
@@ -743,7 +787,11 @@ pub(crate) fn compile_default_scan_runtime(
         )
         .map_err(|error| map_compile_error(&error))?,
     );
-    Ok(DefaultScanRuntime::new(scanner, &detectors))
+    Ok(DefaultScanRuntime::new(
+        scanner,
+        &detectors,
+        backend_override,
+    ))
 }
 
 /// Build the compile-once/scan-many runtime shared by `keyhog watch` and
@@ -953,11 +1001,15 @@ fn setup_default_scan_runtime_with_rayon_policy(
         .with_tuning_config(effective_config.scanner_tuning.clone()),
     );
 
+    let gpu_participates = router_gpu_participates(
+        effective_config.backend_override,
+        effective_config.gpu_runtime_policy,
+    );
     let router = cached_autoroute_router(
         &scanner,
         rules_digest,
         autoroute_config_digest(&effective_config),
-        effective_config.gpu_runtime_policy != keyhog_scanner::gpu::GpuRuntimePolicy::Disabled,
+        gpu_participates,
         Ok(effective_config.autoroute_cache_path.clone()),
     );
     let mut scan_runtime = DefaultScanRuntime::new_with_router(scanner, &detectors, router)
@@ -995,6 +1047,19 @@ fn setup_default_scan_runtime_with_rayon_policy(
         scan_runtime.warm();
     }
     Ok(scan_runtime)
+}
+
+#[doc(hidden)]
+pub(crate) fn router_gpu_participates_for_test(
+    backend_override: Option<keyhog_scanner::ScanBackend>,
+    runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
+) -> bool {
+    router_gpu_participates(backend_override, runtime_policy)
+}
+
+#[doc(hidden)]
+pub(crate) fn router_uses_gpu_probe_for_test(gpu_participates: bool) -> bool {
+    select_router_hardware(gpu_participates, || true, || false)
 }
 
 #[doc(hidden)]

@@ -234,7 +234,7 @@
     },
     {
       "answer_sha256": "7bea8767ec901d5be3b7bcda1a269d7faea1082eb0efd8ec8a3d6b723974684a",
-      "expected_coverage_gap": true,
+      "expected_coverage_gap": false,
       "expected_findings": 1,
       "input_bytes": 52428800,
       "input_files": 1,
@@ -254,7 +254,7 @@
     },
     {
       "answer_sha256": "2972b7a1281f6d01f59088ce825373d5a106ad5fee35427cd39710ef066d1b05",
-      "expected_coverage_gap": true,
+      "expected_coverage_gap": false,
       "expected_findings": 1,
       "input_bytes": 314572800,
       "input_files": 1,

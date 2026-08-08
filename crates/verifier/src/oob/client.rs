@@ -15,7 +15,7 @@
 //! - We never log credentials, public keys, or decrypted payloads. Errors
 //!   carry stable strings - useful for support, opaque to leaks.
 
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
@@ -35,6 +35,7 @@ use tracing::{debug, warn};
 /// budget covers all configured collectors collectively - the limit is
 /// about our own machine not blasting traffic, not about per-host fairness.
 const OOB_SERVICE: &str = "oob.interactsh";
+const OOB_LIFECYCLE_BURST: usize = 3;
 const DNS_TOKEN_ALPHABET: &[u8; 36] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 const CORRELATION_ID_LEN: usize = 24;
 const UNIQUE_SUFFIX_LEN: usize = 24;
@@ -134,6 +135,71 @@ pub struct InteractshClient {
 /// (`for_test` is test-only), so it costs nothing there.
 static TEST_RSA_KEY: LazyLock<Result<RsaPrivateKey, String>> =
     LazyLock::new(|| RsaPrivateKey::new(&mut OsRng, 2048).map_err(|e| e.to_string()));
+type GeneratedPrivateKey = Result<RsaPrivateKey, String>;
+
+static PREWARMED_RSA_KEY: LazyLock<Mutex<Option<std::thread::JoinHandle<GeneratedPrivateKey>>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+/// Start the OOB session key generation before findings reach verification.
+///
+/// Registration consumes this one-shot key. A second registration still
+/// generates a fresh key, preserving the session-key isolation contract.
+pub fn prewarm_key_generation() {
+    let mut slot = PREWARMED_RSA_KEY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if slot.is_some() {
+        return;
+    }
+    match std::thread::Builder::new()
+        .name("keyhog-oob-keygen".to_owned())
+        .spawn(generate_private_key)
+    {
+        Ok(handle) => *slot = Some(handle),
+        Err(error) => {
+            debug!(target: "keyhog::oob", %error, "could not prewarm OOB key generation");
+        }
+    }
+}
+
+fn generate_private_key() -> GeneratedPrivateKey {
+    RsaPrivateKey::new(&mut OsRng, 2048).map_err(|error| error.to_string())
+}
+
+fn take_or_generate_private_key() -> Result<RsaPrivateKey, InteractshError> {
+    let prewarmed = PREWARMED_RSA_KEY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take();
+    let generated = match prewarmed {
+        Some(handle) => handle
+            .join()
+            .map_err(|_| InteractshError::KeyGen("prewarm thread panicked".to_owned()))?,
+        None => generate_private_key(),
+    };
+    generated.map_err(InteractshError::KeyGen)
+}
+pub(crate) fn prewarmed_key_pending_for_test() -> bool {
+    PREWARMED_RSA_KEY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .is_some()
+}
+
+pub(crate) fn consume_prewarmed_key_for_test() -> Result<Vec<u8>, InteractshError> {
+    use rsa::traits::PublicKeyParts;
+
+    let prewarmed = PREWARMED_RSA_KEY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
+        .ok_or_else(|| InteractshError::KeyGen("prewarmed key missing".to_owned()))?;
+    let key = prewarmed
+        .join()
+        .map_err(|_| InteractshError::KeyGen("prewarm thread panicked".to_owned()))?
+        .map_err(InteractshError::KeyGen)?;
+    Ok(key.n().to_bytes_be())
+}
 
 impl InteractshClient {
     /// Test-only constructor without network registration. Returns
@@ -255,13 +321,11 @@ impl InteractshClient {
         proxy_in_use: bool,
         insecure_tls: bool,
     ) -> Result<Self, InteractshError> {
-        // RSA-2048 keygen happens on a blocking thread - it's CPU-bound for
-        // ~100ms and would otherwise stall the runtime.
-        let private_key = tokio::task::spawn_blocking(|| {
-            RsaPrivateKey::new(&mut OsRng, 2048).map_err(|e| InteractshError::KeyGen(e.to_string()))
-        })
-        .await
-        .map_err(|e| InteractshError::KeyGen(format!("join error: {e}")))??;
+        // RSA-2048 keygen runs before verification when the CLI can overlap it
+        // with scanning. Direct library callers retain the blocking-pool path.
+        let private_key = tokio::task::spawn_blocking(take_or_generate_private_key)
+            .await
+            .map_err(|error| InteractshError::KeyGen(format!("join error: {error}")))??;
 
         let public_key = RsaPublicKey::from(&private_key);
         let pem = public_key
@@ -285,16 +349,12 @@ impl InteractshClient {
             secret_key: &secret_key,
             correlation_id: &correlation_id,
         };
-        // SECURITY/POLITENESS: kimi verifier audit LOW finding. Every OOB
-        // request - register, poll, deregister - shares the same upstream
-        // interactsh collector. Without rate limiting, a scan that fires
-        // 200 detector-verify subscriptions in parallel would hammer the
-        // collector with 200 register calls in flight at once, get IP-banned,
-        // and silently lose all OOB observability for the rest of the run.
-        // We bucket every OOB call under a single service id so the global
-        // limiter (default 5 rps) governs the aggregate.
+        // One OOB session has a bounded three-request lifecycle: register,
+        // poll, and deregister. A three-token burst avoids serial startup
+        // sleeps while the shared bucket still enforces the configured
+        // sustained collector rate for every later poll.
         crate::rate_limit::get_rate_limiter()
-            .wait(OOB_SERVICE)
+            .wait_with_burst(OOB_SERVICE, OOB_LIFECYCLE_BURST)
             .await;
         let resp = collector_http
             .post(format!("{server}/register"))
@@ -344,10 +404,10 @@ impl InteractshClient {
     /// Poll once. Returns every interaction the collector has buffered for
     /// this correlation id since the last poll.
     pub async fn poll(&self) -> Result<Vec<Interaction>, InteractshError> {
-        // See `register` for the rate-limiter rationale - same bucket so all
-        // OOB traffic to the collector aggregates under one budget.
+        // The bounded lifecycle burst is shared with register and deregister;
+        // subsequent polls remain spaced at the configured sustained rate.
         crate::rate_limit::get_rate_limiter()
-            .wait(OOB_SERVICE)
+            .wait_with_burst(OOB_SERVICE, OOB_LIFECYCLE_BURST)
             .await;
         let resp = self
             .http
@@ -409,9 +469,9 @@ impl InteractshClient {
             #[serde(rename = "secret-key")]
             secret_key: &'a str,
         }
-        // See `register` for the rate-limiter rationale.
+        // See `register` for the bounded lifecycle-burst rationale.
         crate::rate_limit::get_rate_limiter()
-            .wait(OOB_SERVICE)
+            .wait_with_burst(OOB_SERVICE, OOB_LIFECYCLE_BURST)
             .await;
         let resp = self
             .http

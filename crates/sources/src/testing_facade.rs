@@ -1088,6 +1088,16 @@ pub mod testing {
                 .max_commits
         }
 
+        #[cfg(all(feature = "git", debug_assertions))]
+        pub fn reset_max_buffered_git_blob_chunks(&self) {
+            crate::git::reset_max_buffered_git_blob_chunks();
+        }
+
+        #[cfg(all(feature = "git", debug_assertions))]
+        pub fn max_buffered_git_blob_chunks(&self) -> usize {
+            crate::git::max_buffered_git_blob_chunks()
+        }
+
         #[cfg(feature = "web")]
         pub fn redact_url(&self, url: &str) -> String {
             crate::web::redact_url(url).into_owned()

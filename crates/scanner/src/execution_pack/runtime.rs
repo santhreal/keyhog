@@ -117,6 +117,7 @@ pub struct ExecutionPack {
     identity: ExecutionPackIdentity,
     content_digest: [u8; 32],
     sections: Vec<SectionEntry>,
+    signature_authenticated: bool,
 }
 
 impl ExecutionPack {
@@ -161,8 +162,9 @@ impl ExecutionPack {
                 path: path.to_path_buf(),
                 source,
             })?;
-        let pack = Self::from_mapping(mapping, path.to_path_buf(), expected, false)?;
+        let mut pack = Self::from_mapping(mapping, path.to_path_buf(), expected, false)?;
         authenticate_pack_signature(&pack, signature_path.as_ref(), signing_key)?;
+        pack.signature_authenticated = true;
         pack.release_resident_pages()?;
         Ok(pack)
     }
@@ -187,8 +189,9 @@ impl ExecutionPack {
                 source,
             })?;
         let expected = decode_identity_header(mapping.as_ref(), path)?;
-        let pack = Self::from_mapping(mapping, path.to_path_buf(), expected, false)?;
+        let mut pack = Self::from_mapping(mapping, path.to_path_buf(), expected, false)?;
         authenticate_pack_signature(&pack, signature_path.as_ref(), signing_key)?;
+        pack.signature_authenticated = true;
         pack.release_resident_pages()?;
         Ok(pack)
     }
@@ -269,6 +272,11 @@ impl ExecutionPack {
 
     pub const fn content_digest(&self) -> [u8; 32] {
         self.content_digest
+    }
+
+    /// The full immutable mapping has already matched its installation signature.
+    pub(crate) const fn signature_authenticated(&self) -> bool {
+        self.signature_authenticated
     }
 
     pub fn path(&self) -> &Path {
@@ -509,6 +517,7 @@ impl ExecutionPack {
             path,
             identity,
             content_digest,
+            signature_authenticated: false,
             sections,
         })
     }

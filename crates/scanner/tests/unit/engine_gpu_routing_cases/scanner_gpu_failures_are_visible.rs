@@ -236,11 +236,11 @@ fn core_src(name: &str) -> String {
 }
 
 #[test]
-fn phase2_keyword_ac_build_failure_warns() {
+fn phase2_keyword_index_build_failure_warns() {
     let src = scanner_src("compiler/compiler_compile.rs");
     assert!(
-        src.contains("phase-2 keyword Aho-Corasick build failed"),
-        "phase-2 keyword AC build failure must warn"
+        src.contains("keyword-gate optimization disabled (recall preserved)"),
+        "phase-2 keyword index build failure must warn and preserve recall"
     );
     assert!(
         src.contains("tracing::warn!"),

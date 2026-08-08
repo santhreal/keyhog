@@ -3,7 +3,7 @@
 //! filesystem source; the pure helper ([`slice_into_windows`]) is the
 //! unit-testable boundary arithmetic the mmap path delegates to.
 
-use keyhog_core::SourceError;
+use keyhog_core::{SensitiveString, SourceError};
 use memmap2::MmapOptions;
 use std::fs::File;
 use std::path::Path;
@@ -12,10 +12,8 @@ use super::raw::open_file_safe;
 use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
 
 /// One scanning window over a large file: an absolute byte offset into
-/// the original file plus the lossy-UTF-8 view of those bytes. The
-/// orchestrator's match locations are translated through `offset` so
-/// findings reference the right place in the source even though we
-/// scanned a slice.
+/// the original file plus the lossy-UTF-8 view of those bytes. Repeated
+/// byte-identical windows share one owned text allocation.
 pub(in crate::filesystem) struct FileWindow {
     pub offset: usize,
     /// Number of newlines in `bytes[0..offset]` - the count of lines that
@@ -23,7 +21,71 @@ pub(in crate::filesystem) struct FileWindow {
     /// window-local line number so findings report the absolute file
     /// line, not the per-window one (the line analog of `offset`).
     pub base_line: usize,
-    pub text: String,
+    pub text: SensitiveString,
+}
+
+const WINDOW_TEXT_CACHE_CAP: usize = 8;
+
+struct WindowTextCacheEntry {
+    fingerprint: [u8; 32],
+    text: SensitiveString,
+}
+
+struct WindowTextCache {
+    entries: std::collections::VecDeque<WindowTextCacheEntry>,
+}
+
+impl WindowTextCache {
+    fn new() -> Self {
+        Self {
+            entries: std::collections::VecDeque::with_capacity(WINDOW_TEXT_CACHE_CAP),
+        }
+    }
+
+    fn text(&mut self, bytes: &[u8]) -> SensitiveString {
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return String::from_utf8_lossy(bytes).into_owned().into();
+        };
+        let fingerprint = window_fingerprint(bytes);
+        if let Some(position) = self
+            .entries
+            .iter()
+            .position(|entry| entry.fingerprint == fingerprint && entry.text.as_bytes() == bytes)
+        {
+            if let Some(entry) = self.entries.remove(position) {
+                let text = entry.text.clone();
+                self.entries.push_back(entry);
+                return text;
+            }
+        }
+        let text: SensitiveString = text.to_owned().into();
+        if self.entries.len() == WINDOW_TEXT_CACHE_CAP {
+            self.entries.pop_front();
+        }
+        self.entries.push_back(WindowTextCacheEntry {
+            fingerprint,
+            text: text.clone(),
+        });
+        text
+    }
+}
+
+fn window_fingerprint(bytes: &[u8]) -> [u8; 32] {
+    const SAMPLE_COUNT: usize = 8;
+    const SAMPLE_BYTES: usize = 64;
+
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&(bytes.len() as u64).to_le_bytes());
+    if bytes.len() <= SAMPLE_COUNT * SAMPLE_BYTES {
+        hasher.update(bytes);
+    } else {
+        let max_start = bytes.len() - SAMPLE_BYTES;
+        for sample in 0..SAMPLE_COUNT {
+            let start = max_start * sample / (SAMPLE_COUNT - 1);
+            hasher.update(&bytes[start..start + SAMPLE_BYTES]);
+        }
+    }
+    *hasher.finalize().as_bytes()
 }
 
 pub(in crate::filesystem) enum WindowedMmapOutcome {
@@ -273,10 +335,11 @@ fn for_each_sparse_window(
             } else {
                 bytecount_newlines(&bytes[..stride])
             };
-            let text = match String::from_utf8(bytes) {
+            let text: SensitiveString = match String::from_utf8(bytes) {
                 Ok(text) => text,
                 Err(error) => String::from_utf8_lossy(error.as_bytes()).into_owned(),
-            };
+            }
+            .into();
             emitted = true;
             if !emit(FileWindow {
                 offset: absolute_offset,
@@ -683,16 +746,13 @@ fn for_each_window(
     // whole slice is scanned for `\n` a single time across all windows
     // (no per-window re-count). This is the window's absolute base line.
     let mut base_line = 0usize;
+    let mut text_cache = WindowTextCache::new();
     while offset < total {
         let end = (offset + window_size).min(total);
         let slice = &bytes[offset..end];
-        // `from_utf8_lossy` returns Cow::Borrowed when the slice is
-        // valid UTF-8; we still own the result via `into_owned` because
-        // SensitiveString needs ownership. The lossy fallback is what
-        // makes us robust to partial multi-byte sequences at window
-        // boundaries (an emoji split across two windows survives via
-        // `U+FFFD` rather than failing the decode).
-        let text = String::from_utf8_lossy(slice).into_owned();
+        // Valid UTF-8 windows reuse a byte-identical allocation from the
+        // bounded cache. Invalid boundary slices retain the lossy fallback.
+        let text = text_cache.text(slice);
         if !emit(FileWindow {
             offset,
             base_line,

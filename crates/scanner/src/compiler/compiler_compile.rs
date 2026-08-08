@@ -23,9 +23,8 @@ pub(crate) fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCora
     // `AKia`) that the SimdCpu backend finds, producing per-backend
     // finding divergence visible in proptest gpu_proptest_invariants
     // P1b. Detector keywords also rely on caseless matching for env-var
-    // shapes like `AWS_KEY_ID` vs `aws_key_id` - the existing
-    // phase2_keyword_ac at build_phase2_keyword_ac (this file)
-    // already uses ascii_case_insensitive(true) for the same reason.
+    // shapes like `AWS_KEY_ID` vs `aws_key_id`; the phase-two keyword index
+    // applies identical ASCII-insensitive comparison.
     Ok(Some(
         AhoCorasickBuilder::new()
             .ascii_case_insensitive(true)
@@ -121,10 +120,134 @@ pub(crate) fn build_prefix_propagation(literals: &[String]) -> crate::engine::Cs
     )
 }
 
-pub(crate) fn build_phase2_keyword_ac<'a>(
+const PHASE2_KEYWORD_BUCKET_COUNT: usize = 1 << 16;
+
+#[inline]
+fn phase2_keyword_prefix(bytes: &[u8]) -> u16 {
+    u16::from_be_bytes([bytes[0].to_ascii_lowercase(), bytes[1].to_ascii_lowercase()])
+}
+
+/// Compact exact ASCII-insensitive keyword index.
+///
+/// Every phase-two keyword has at least two bytes. A direct 16-bit prefix table
+/// rejects almost every haystack position with one bounded lookup; only rows
+/// sharing that prefix perform full byte comparison. This avoids rebuilding a
+/// multi-megabyte Aho-Corasick automaton during every installed process start.
+pub(crate) struct Phase2KeywordIndex {
+    bucket_offsets: Box<[u32]>,
+    bucket_keyword_ids: Box<[u32]>,
+    keywords: Box<[Box<[u8]>]>,
+}
+
+pub(crate) struct Phase2KeywordMatches<'a> {
+    index: &'a Phase2KeywordIndex,
+    haystack: &'a [u8],
+    next_position: usize,
+}
+
+impl Phase2KeywordIndex {
+    fn build(keywords: &[Cow<'_, str>]) -> Option<Self> {
+        if keywords.iter().any(|keyword| keyword.len() < 2) {
+            tracing::warn!(
+                "phase-2 keyword index received a sub-bigram literal; keyword-gate optimization disabled (recall preserved)"
+            );
+            return None;
+        }
+        let mut rows = Vec::with_capacity(keywords.len());
+        for (keyword_id, keyword) in keywords.iter().enumerate() {
+            let Ok(keyword_id) = u32::try_from(keyword_id) else {
+                tracing::warn!(
+                    keywords = keywords.len(),
+                    "phase-2 keyword index exceeds u32 rows; keyword-gate optimization disabled (recall preserved)"
+                );
+                return None;
+            };
+            rows.push((phase2_keyword_prefix(keyword.as_bytes()), keyword_id));
+        }
+        rows.sort_unstable();
+
+        let mut bucket_offsets = vec![0u32; PHASE2_KEYWORD_BUCKET_COUNT + 1];
+        let mut cursor = 0usize;
+        for (bucket, offset) in bucket_offsets
+            .iter_mut()
+            .take(PHASE2_KEYWORD_BUCKET_COUNT)
+            .enumerate()
+        {
+            *offset = u32::try_from(cursor).expect("keyword rows were bounded to u32");
+            while rows
+                .get(cursor)
+                .is_some_and(|(prefix, _)| usize::from(*prefix) == bucket)
+            {
+                cursor += 1;
+            }
+        }
+        bucket_offsets[PHASE2_KEYWORD_BUCKET_COUNT] =
+            u32::try_from(cursor).expect("keyword rows were bounded to u32");
+
+        Some(Self {
+            bucket_offsets: bucket_offsets.into_boxed_slice(),
+            bucket_keyword_ids: rows.into_iter().map(|(_, keyword_id)| keyword_id).collect(),
+            keywords: keywords
+                .iter()
+                .map(|keyword| Box::<[u8]>::from(keyword.as_bytes()))
+                .collect(),
+        })
+    }
+
+    #[inline]
+    pub(crate) fn find_iter<'a>(&'a self, haystack: &'a str) -> Phase2KeywordMatches<'a> {
+        Phase2KeywordMatches {
+            index: self,
+            haystack: haystack.as_bytes(),
+            next_position: 0,
+        }
+    }
+}
+
+impl Iterator for Phase2KeywordMatches<'_> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut best: Option<(usize, usize)> = None;
+        let mut position = self.next_position;
+        while position + 1 < self.haystack.len() && best.is_none_or(|(end, _)| position + 2 <= end)
+        {
+            let prefix = usize::from(phase2_keyword_prefix(&self.haystack[position..]));
+            let candidate_start = self.index.bucket_offsets[prefix] as usize;
+            let candidate_end = self.index.bucket_offsets[prefix + 1] as usize;
+            for &keyword_id in &self.index.bucket_keyword_ids[candidate_start..candidate_end] {
+                let keyword_id = keyword_id as usize;
+                let keyword = &self.index.keywords[keyword_id];
+                let remaining = &self.haystack[position..];
+                if remaining.len() >= keyword.len()
+                    && remaining[..keyword.len()].eq_ignore_ascii_case(keyword)
+                {
+                    let candidate = (position + keyword.len(), keyword_id);
+                    if best.is_none_or(|current| candidate < current) {
+                        best = Some(candidate);
+                    }
+                }
+            }
+            position += 1;
+        }
+
+        match best {
+            Some((end, keyword_id)) => {
+                self.next_position = end;
+                Some(keyword_id)
+            }
+            None => {
+                self.next_position = self.haystack.len();
+                None
+            }
+        }
+    }
+}
+
+pub(crate) fn build_phase2_keyword_index<'a>(
     phase2_patterns: &'a [(CompiledPattern, Vec<String>)],
 ) -> (
-    Option<AhoCorasick>,
+    Option<Phase2KeywordIndex>,
     crate::engine::CsrU32,
     Vec<Cow<'a, str>>,
 ) {
@@ -149,30 +272,16 @@ pub(crate) fn build_phase2_keyword_ac<'a>(
     };
 
     for (pattern_idx, (pattern, keywords)) in phase2_patterns.iter().enumerate() {
-        let allows_repeated_separator =
-            regex_allows_repeated_compound_keyword_separator(pattern.regex.as_str());
-        for kw in keywords {
-            // The ordinary raw-keyword floor stays at 4: lowering it to 3 to admit
-            // mailchimp's `-us`/`-eu`/`-uk` and openai/anthropic's
-            // `sk-`/`sk-ant-`/`pk-` measured a NET F1 regression
-            // (-67 TP, +28 FP) on SecretBench-medium 15k seed-0
-            // because (a) too-broad phase-2 detectors like
-            // helicone-api-key `sk-[a-zA-Z0-9]{20,}` fired
-            // wrongly on neighboring lines and (b) the recall
-            // gain on mailchimp was small. The right fix for
-            // those detectors is per-detector keyword tightening,
-            // not a global threshold change.
-            if kw.len() >= 4 {
-                add_candidate(Cow::Borrowed(kw.as_str()), pattern_idx);
+        let allows_repeated_separator = pattern.allows_repeated_keyword_separator;
+        for keyword in keywords {
+            // Raw detector keywords retain the measured four-byte floor.
+            if keyword.len() >= 4 {
+                add_candidate(Cow::Borrowed(keyword.as_str()), pattern_idx);
             }
-            // When the detector-authored regex accepts repeated separators
-            // (`SA__API__KEY`), its joined TOML keyword cannot admit every
-            // spelling through AC. Derive that fact from the parsed expression,
-            // then add one detector-scoped stem. The full regex still confirms
-            // the match; this is routing only, not a second detection rule.
+            // Repeated-separator regexes also admit their detector-scoped stem.
             if allows_repeated_separator {
-                if let Some(stem) = longest_compound_keyword_segment(kw) {
-                    if stem.len() >= 2 && stem != *kw {
+                if let Some(stem) = longest_compound_keyword_segment(keyword) {
+                    if stem.len() >= 2 && stem != *keyword {
                         add_candidate(Cow::Owned(stem), pattern_idx);
                     }
                 }
@@ -188,24 +297,9 @@ pub(crate) fn build_phase2_keyword_ac<'a>(
         );
     }
 
-    let keyword_count = all_keywords.len();
-    let ac = match AhoCorasickBuilder::new()
-        .ascii_case_insensitive(true)
-        .build(all_keywords.iter().map(|keyword| keyword.as_bytes()))
-    {
-        Ok(ac) => Some(ac),
-        Err(error) => {
-            tracing::warn!(
-                keywords = keyword_count,
-                %error,
-                "phase-2 keyword Aho-Corasick build failed; keyword-gate optimization disabled (recall preserved)"
-            );
-            None
-        }
-    };
-
+    let index = Phase2KeywordIndex::build(&all_keywords);
     (
-        ac,
+        index,
         crate::engine::CsrU32::from_pairs(all_keywords.len(), keyword_pattern_pairs),
         all_keywords,
     )
@@ -375,6 +469,9 @@ pub(crate) fn compile_pattern(
         match_proves_keyword_nearby: match_proves_keyword_nearby(
             spec.regex.as_str(),
             detector_keywords,
+        ),
+        allows_repeated_keyword_separator: regex_allows_repeated_compound_keyword_separator(
+            spec.regex.as_str(),
         ),
         homoglyph_variant: false,
     })
@@ -565,7 +662,7 @@ mod phase2_keyword_storage_tests {
             pattern(r"SERVICE_API_KEY[:=][A-Z0-9]{16}", &keywords),
             keywords,
         )];
-        let (_, mapping, stored) = build_phase2_keyword_ac(&phase2);
+        let (_, mapping, stored) = build_phase2_keyword_index(&phase2);
 
         assert_eq!(mapping.iter().collect::<Vec<_>>(), vec![&[0][..]]);
         let Cow::Borrowed(borrowed) = &stored[0] else {
@@ -585,10 +682,108 @@ mod phase2_keyword_storage_tests {
             pattern(r"SERVICE[_\-.]+API[_\-.]+KEY[:=][A-Z0-9]{16}", &keywords),
             keywords,
         )];
-        let (_, mapping, stored) = build_phase2_keyword_ac(&phase2);
+        let (_, mapping, stored) = build_phase2_keyword_index(&phase2);
 
         assert_eq!(mapping.iter().collect::<Vec<_>>(), vec![&[0][..], &[0][..]]);
         assert!(matches!(&stored[0], Cow::Borrowed("SERVICE_API_KEY")));
         assert!(matches!(&stored[1], Cow::Owned(stem) if stem == "service"));
+    }
+
+    /// WHY: the compact prefix table replaces the phase-two Aho-Corasick gate,
+    /// so it must preserve ASCII-insensitive substring admission across rows
+    /// that share the same two-byte bucket.
+    #[test]
+    fn compact_phase2_keyword_index_finds_casefolded_shared_prefixes() {
+        let first_keywords = vec!["TOKEN_A".to_owned()];
+        let second_keywords = vec!["TOKEN_B".to_owned()];
+        let phase2 = vec![
+            (
+                pattern(r"TOKEN_A=[A-Z0-9]{16}", &first_keywords),
+                first_keywords,
+            ),
+            (
+                pattern(r"TOKEN_B=[A-Z0-9]{16}", &second_keywords),
+                second_keywords,
+            ),
+        ];
+        let (index, _, _) = build_phase2_keyword_index(&phase2);
+        let matches = index
+            .expect("keyword index")
+            .find_iter("prefix token_b suffix TOKEN_A")
+            .collect::<Vec<_>>();
+
+        assert_eq!(matches, vec![1, 0]);
+    }
+
+    /// WHY: phase-two activation and autoroute evidence require the same
+    /// earliest-end, non-overlapping match selection as the replaced standard
+    /// Aho-Corasick iterator when one keyword prefixes another.
+    #[test]
+    fn compact_phase2_keyword_index_preserves_standard_match_selection() {
+        let first_keywords = vec!["TOKEN".to_owned()];
+        let second_keywords = vec!["TOKEN_VALUE".to_owned()];
+        let phase2 = vec![
+            (
+                pattern(r"TOKEN=[A-Z0-9]{16}", &first_keywords),
+                first_keywords,
+            ),
+            (
+                pattern(r"TOKEN_VALUE=[A-Z0-9]{16}", &second_keywords),
+                second_keywords,
+            ),
+        ];
+        let (index, _, _) = build_phase2_keyword_index(&phase2);
+        let matches = index
+            .expect("keyword index")
+            .find_iter("prefix token_value suffix TOKEN")
+            .collect::<Vec<_>>();
+
+        assert_eq!(matches, vec![0, 0]);
+    }
+
+    /// WHY: the replacement index must retain the standard Aho-Corasick
+    /// iterator's exact earliest-end and non-overlap semantics across shared
+    /// prefixes, repeated matches, case folds, and later-starting short rows.
+    #[test]
+    fn compact_phase2_keyword_index_matches_reference_aho_semantics() {
+        let keywords = [
+            Cow::Borrowed("TOKEN"),
+            Cow::Borrowed("TOKEN_VALUE"),
+            Cow::Borrowed("VALUE"),
+            Cow::Borrowed("AB"),
+            Cow::Borrowed("ABC"),
+        ];
+        let index = Phase2KeywordIndex::build(&keywords).expect("keyword index");
+        let reference = AhoCorasickBuilder::new()
+            .ascii_case_insensitive(true)
+            .build(keywords.iter().map(|keyword| keyword.as_bytes()))
+            .expect("reference automaton");
+
+        for haystack in [
+            "",
+            "x",
+            "token_value",
+            "xxTOKEN_VALUEyy token",
+            "zabcab",
+            "zzzzabTOKENvalue",
+            "unicode-λ-token-value",
+        ] {
+            let expected = reference
+                .find_iter(haystack)
+                .map(|matched| matched.pattern().as_usize())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                index.find_iter(haystack).collect::<Vec<_>>(),
+                expected,
+                "haystack: {haystack:?}"
+            );
+        }
+    }
+
+    /// WHY: an unindexable short literal must disable keyword gating rather
+    /// than disappear from admission and silently suppress its detector.
+    #[test]
+    fn compact_phase2_keyword_index_fails_open_for_short_literals() {
+        assert!(Phase2KeywordIndex::build(&[Cow::Borrowed("x")]).is_none());
     }
 }

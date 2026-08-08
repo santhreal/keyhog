@@ -13,15 +13,47 @@ impl CompiledScanner {
 
     #[cfg(feature = "decode")]
     #[inline]
+    pub(crate) fn decoder_admission_context_key(&self, chunk: &keyhog_core::Chunk) -> Option<u8> {
+        self.detector_plans
+            .decoder_plan()
+            .admission_context_key(chunk)
+    }
+
+    #[cfg(not(feature = "decode"))]
+    #[inline]
+    pub(crate) fn decoder_admission_context_key(&self, _chunk: &keyhog_core::Chunk) -> Option<u8> {
+        None
+    }
+
+    #[cfg(feature = "decode")]
+    #[inline]
     pub(crate) fn chunk_needs_decode_postprocess(&self, chunk: &keyhog_core::Chunk) -> bool {
+        self.chunk_needs_decode_postprocess_with_absence(chunk, false)
+    }
+
+    #[cfg(feature = "decode")]
+    #[inline]
+    pub(crate) fn chunk_needs_decode_postprocess_with_absence(
+        &self,
+        chunk: &keyhog_core::Chunk,
+        decoder_absence: bool,
+    ) -> bool {
         self.config.max_decode_depth > 0
             && (chunk.data.len() <= self.config.max_decode_bytes
                 || self.chunk_uses_bounded_decode_windows(chunk))
-            && crate::decode::decoder_admission(
-                chunk,
-                self.detector_plans.decode_transforms(),
-                self.detector_plans.decoder_plan(),
-            ) != crate::decode::DecodeAdmission::Impossible
+            && !decoder_absence
+            && {
+                #[cfg(debug_assertions)]
+                self.decoder_admission_scanned_bytes.fetch_add(
+                    u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                crate::decode::decoder_admission(
+                    chunk,
+                    self.detector_plans.decode_transforms(),
+                    self.detector_plans.decoder_plan(),
+                ) != crate::decode::DecodeAdmission::Impossible
+            }
     }
 
     #[cfg(feature = "decode")]
@@ -37,6 +69,89 @@ impl CompiledScanner {
     pub(crate) fn chunk_needs_decode_postprocess(&self, _chunk: &keyhog_core::Chunk) -> bool {
         false
     }
+
+    #[cfg(not(feature = "decode"))]
+    #[inline]
+    pub(crate) fn chunk_needs_decode_postprocess_with_absence(
+        &self,
+        _chunk: &keyhog_core::Chunk,
+        _decoder_absence: bool,
+    ) -> bool {
+        false
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_decoder_admission_scanned_bytes_for_diagnostics(&self) {
+        self.decoder_admission_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn decoder_admission_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.decoder_admission_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_direct_scan_absence_skipped_bytes_for_diagnostics(&self) {
+        self.direct_scan_absence_skipped_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn direct_scan_absence_skipped_bytes_for_diagnostics(&self) -> u64 {
+        self.direct_scan_absence_skipped_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_direct_scan_absence_batches_for_diagnostics(&self) {
+        self.direct_scan_absence_batches
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn direct_scan_absence_batches_for_diagnostics(&self) -> u64 {
+        self.direct_scan_absence_batches
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_simd_phase2_tail_absence_skipped_bytes_for_diagnostics(&self) {
+        self.simd_phase2_tail_absence_skipped_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn simd_phase2_tail_absence_skipped_bytes_for_diagnostics(&self) -> u64 {
+        self.simd_phase2_tail_absence_skipped_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[doc(hidden)]
+    #[cfg(all(debug_assertions, feature = "simd"))]
+    pub fn reset_reusable_simd_trigger_hits_for_diagnostics(&self) {
+        self.reusable_simd_triggers.lock().reset_hits();
+    }
+
+    #[doc(hidden)]
+    #[cfg(all(debug_assertions, feature = "simd"))]
+    #[must_use]
+    pub fn reusable_simd_trigger_hits_for_diagnostics(&self) -> u64 {
+        self.reusable_simd_triggers.lock().hits()
+    }
+
     /// Surface a decode-through pass declined because its source cannot use
     /// bounded decode windows and exceeds `max_decode_bytes`.
     ///
@@ -80,13 +195,35 @@ impl CompiledScanner {
 
     #[cfg(not(feature = "decode"))]
     #[inline]
-    fn record_decode_size_decline(&self, _chunk: &Chunk) {}
+    pub(crate) fn record_decode_size_decline(&self, _chunk: &Chunk) {}
 
     pub(crate) fn scan_inner(
         &self,
         chunk: &Chunk,
         backend: crate::hw_probe::ScanBackend,
         deadline: Option<std::time::Instant>,
+        route: crate::ScanExecutionRoute,
+    ) -> crate::error::Result<Vec<RawMatch>> {
+        self.scan_inner_with_admission_hints(
+            chunk, backend, deadline, false, false, None, false, false, None, None, None, None,
+            route,
+        )
+    }
+
+    pub(crate) fn scan_inner_with_admission_hints(
+        &self,
+        chunk: &Chunk,
+        backend: crate::hw_probe::ScanBackend,
+        deadline: Option<std::time::Instant>,
+        normalization_passthrough: bool,
+        multiline_absence: bool,
+        line_context_index: Option<&std::sync::Arc<crate::context::LineContextIndex>>,
+        confirmed_patterns_absence: bool,
+        entropy_absence: bool,
+        cpu_trigger_hints: Option<&[u64]>,
+        phase2_keyword_hints: Option<&[u32]>,
+        phase2_always_active_evidence: Option<super::phase2::Phase2AlwaysActiveGpuEvidence<'_>>,
+        generic_keyword_positions: Option<&[u32]>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
         if crate::deadline::expired(deadline) {
@@ -100,16 +237,35 @@ impl CompiledScanner {
         }
         // prepare_chunk and phase-1 timing are owned by the unified profiler's
         // Preprocess / Phase1Triggers leaf spans (opened inside those calls).
-        let prepared = self.prepare_chunk(chunk);
+        let prepared = self.prepare_chunk_with_normalization_passthrough(
+            chunk,
+            normalization_passthrough,
+            multiline_absence,
+            line_context_index,
+        );
         if crate::deadline::expired(deadline) {
             return Ok(Vec::new());
         }
-        let triggered = self.collect_triggered_patterns_for_backend(&chunk.data, backend)?;
+        let triggered = match cpu_trigger_hints {
+            Some(hints) => std::borrow::Cow::Borrowed(hints),
+            None => std::borrow::Cow::Owned(
+                self.collect_triggered_patterns_for_backend(&chunk.data, backend)?,
+            ),
+        };
         if crate::deadline::expired(deadline) {
             return Ok(Vec::new());
         }
         self.scan_prepared_with_triggered(
-            prepared, &triggered, deadline, None, None, None, None, route,
+            prepared,
+            &triggered,
+            deadline,
+            confirmed_patterns_absence,
+            entropy_absence,
+            phase2_keyword_hints,
+            phase2_always_active_evidence,
+            None,
+            generic_keyword_positions,
+            route,
         )
     }
 }

@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "entropy")]
 impl CompiledScanner {
-    fn keyword_free_entropy_threshold(&self, sensitive_path: bool) -> Option<f64> {
+    pub(crate) fn keyword_free_entropy_threshold(&self, sensitive_path: bool) -> Option<f64> {
         self.detector_plans
             .generic_ownership()
             .keyword_free_owner_index()

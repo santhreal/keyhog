@@ -1,7 +1,6 @@
 //! Filesystem source: recursively walks a directory tree, skips binary files,
 //! respects `.gitignore`, and yields chunks for scanning.
 
-use codewalk::CodeWalker;
 use keyhog_core::MerkleIndex;
 use keyhog_core::{Chunk, Source, SourceError};
 use std::num::NonZeroUsize;
@@ -24,7 +23,7 @@ pub(crate) mod special_file_test_support;
 
 pub(crate) use extract::extraction_total_budget;
 pub(crate) use extract::validate_scan_archive_entry_name;
-use filter::walker_config;
+use filter::{walker_config, FilesystemWalkConfig};
 pub(crate) use path::display_path;
 pub(crate) use read::decode_text_file;
 pub(crate) use read::open_file_safe;
@@ -261,17 +260,6 @@ fn archive_symlink_error(path: &Path) -> SourceError {
     SourceError::Other(message)
 }
 
-/// Worker threads for the parallel directory walk. Enumeration is metadata-bound
-/// (`readdir` + `stat` + gitignore matching), so it scales with cores well past
-/// the point where reads saturate the device. Capped so a many-core host does
-/// not spawn a walker thread per core for a tiny tree.
-fn walk_thread_count() -> usize {
-    std::thread::available_parallelism()
-        .map(NonZeroUsize::get)
-        .unwrap_or(1)
-        .clamp(1, 8)
-}
-
 fn collect_walk_archive_symlink_errors(
     root: &Path,
     respect_default_excludes: bool,
@@ -460,16 +448,17 @@ fn collect_descriptor_archive_symlink_errors(
             };
             if is_expandable_path(&entry.path) || is_expandable_path(&resolved_target) {
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                errors.push(archive_symlink_error(&entry.path));
+                errors.push((entry.path.clone(), archive_symlink_error(&entry.path)));
             }
         }
         Ok(true)
     });
     if let Err(error) = result {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        errors.push(error);
+        errors.push((root.to_path_buf(), error));
     }
-    errors
+    errors.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    errors.into_iter().map(|(_, error)| error).collect()
 }
 
 fn archive_walk_entry_path(
@@ -935,7 +924,8 @@ impl Source for FilesystemSource {
         // so one unreadable sibling cannot turn a partial scan into a clean
         // result.
         fn sorted_entries(
-            walker: CodeWalker,
+            root: &Path,
+            config: &FilesystemWalkConfig,
             discovery_budget: &mut Option<u64>,
             discovery_limit_reached: &AtomicBool,
         ) -> (Vec<codewalk::FileEntry>, Vec<SourceError>) {
@@ -943,11 +933,9 @@ impl Source for FilesystemSource {
             let _walk = crate::profile::walk_span();
             let mut source_errors = Vec::new();
             let mut entries = Vec::new();
-            // Read before `admit` takes a unique borrow of the budget.
-            let budgeted = discovery_budget.is_some();
             // Returns false once discovery has admitted the first over-budget
             // entry, which is the signal to stop walking.
-            let mut admit = |result: codewalk::error::Result<codewalk::FileEntry>| -> bool {
+            let mut admit = |result: Result<codewalk::FileEntry, String>| -> bool {
                 match result {
                     Ok(entry) => {
                         if let Some(remaining) = discovery_budget {
@@ -977,25 +965,9 @@ impl Source for FilesystemSource {
                     }
                 }
             };
-            // A discovery budget is charged in ARRIVAL order and stops the walk
-            // at the first entry that crosses it, so which files are admitted
-            // is only well defined for a deterministic arrival order. A
-            // parallel walk would admit a different subset on every run of the
-            // same bounded scan. Budgeted discovery therefore stays serial; the
-            // unbounded walk, which is every ordinary scan, goes wide.
-            if budgeted {
-                for result in walker.walk_iter() {
-                    if !admit(result) {
-                        break;
-                    }
-                }
-            } else {
-                for result in walker.walk_parallel(walk_thread_count()) {
-                    if !admit(result) {
-                        break;
-                    }
-                }
-            }
+            // A discovery budget is charged in arrival order and stops at the
+            // first crossing entry, so bounded discovery remains serial.
+            discovery::walk_metadata(root, config, &mut admit);
             entries.sort_by(|left, right| left.path.cmp(&right.path));
             (entries, source_errors)
         }
@@ -1094,9 +1066,9 @@ impl Source for FilesystemSource {
             let mut include_entries = Vec::new();
             for path in allowed {
                 if path.is_dir() {
-                    let sub_walker = CodeWalker::new(&path, config.clone());
                     let (sub_entries, sub_errors) = sorted_entries(
-                        sub_walker,
+                        &path,
+                        &config,
                         &mut discovery_budget,
                         &self.discovery_limit_reached,
                     );
@@ -1167,15 +1139,18 @@ impl Source for FilesystemSource {
             );
             Box::new(include_entries.into_iter())
         } else {
-            let walker = CodeWalker::new(&self.root, config);
             source_errors.extend(collect_walk_archive_symlink_errors(
                 &self.root,
                 self.respect_default_excludes,
                 self.discovery_byte_limit,
             ));
             if self.discovery_byte_limit.is_some() {
-                let (walk_entries, walk_errors) =
-                    sorted_entries(walker, &mut discovery_budget, &self.discovery_limit_reached);
+                let (walk_entries, walk_errors) = sorted_entries(
+                    &self.root,
+                    &config,
+                    &mut discovery_budget,
+                    &self.discovery_limit_reached,
+                );
                 source_errors.extend(walk_errors);
                 crate::profile::add_input_units(walk_entries.len() as u64);
                 crate::profile::add_input_bytes(
@@ -1185,10 +1160,8 @@ impl Source for FilesystemSource {
             } else {
                 let (walk_entries, walk_errors, input_units, input_bytes) =
                     discovery::collect_unbounded_sorted(
-                        walker,
                         &self.root,
-                        walk_thread_count(),
-                        self.respect_gitignore,
+                        &config,
                         !self.ignore_paths.is_empty(),
                     );
                 source_errors.extend(walk_errors);

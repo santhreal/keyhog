@@ -66,16 +66,122 @@ impl CompiledScanner {
         let telemetry = crate::telemetry::capture_scan_telemetry();
         let recovery_receipts = crate::gpu::capture_recovery_receipts();
         let profile_runtime = keyhog_profile::current_runtime();
+        let entropy_config_digest = self.entropy_evidence_config_digest();
+        if backend == ScanBackend::CpuFallback {
+            if let Some(plan) = admission_plan {
+                let all_proven_absent = chunks.iter().enumerate().all(|(index, chunk)| {
+                    plan.admission_for(index) == Some(Phase1Admission::Admitted)
+                        && plan
+                            .direct_scan_absence_for(
+                                index,
+                                self.config.unicode_normalization,
+                                entropy_config_digest,
+                                self.decoder_admission_context_key(chunk),
+                            )
+                            .unwrap_or(false)
+                        && crate::structured::preprocessing_is_impossible_for_path(
+                            chunk.metadata.path.as_deref(),
+                        )
+                });
+                if all_proven_absent {
+                    #[cfg(debug_assertions)]
+                    self.direct_scan_absence_batches
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let mut results = Vec::with_capacity(chunks.len());
+                    for chunk in chunks {
+                        results.push(self.scan_proven_direct_absence(
+                            chunk,
+                            self.config.per_chunk_deadline(),
+                            route,
+                            true,
+                        )?);
+                    }
+                    super::boundary::scan_chunk_boundaries_with_route(
+                        self,
+                        chunks,
+                        &mut results,
+                        route,
+                    )?;
+                    return Ok(results);
+                }
+            }
+        }
         let scan_one = |index: usize, chunk: &Chunk| {
             let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
             crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
                 crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
                     let admission = admission_plan.and_then(|plan| plan.admission_for(index));
-                    self.scan_with_deadline_and_backend_admission_and_route(
+                    let cpu_trigger_hints = match backend {
+                        ScanBackend::CpuFallback => {
+                            admission_plan.and_then(|plan| plan.cpu_trigger_hints_for(index))
+                        }
+                        _ => None,
+                    };
+                    let normalization_passthrough = admission_plan
+                        .and_then(|plan| {
+                            plan.normalization_passthrough_for(
+                                index,
+                                self.config.unicode_normalization,
+                            )
+                        })
+                        .unwrap_or(false);
+                    let multiline_absence = normalization_passthrough
+                        && admission_plan
+                            .and_then(|plan| {
+                                plan.multiline_absence_for(index, entropy_config_digest)
+                            })
+                            .unwrap_or(false);
+                    let line_context_index = normalization_passthrough
+                        .then(|| admission_plan.and_then(|plan| plan.line_context_index_for(index)))
+                        .flatten();
+                    let phase2_keyword_hints =
+                        admission_plan.and_then(|plan| plan.phase2_keyword_hints_for(index));
+                    let generic_keyword_positions =
+                        admission_plan.and_then(|plan| plan.generic_keyword_positions_for(index));
+                    let phase2_always_active_evidence = admission_plan
+                        .and_then(|plan| plan.phase2_always_active_absence_for(index))
+                        .and_then(|absence| {
+                            absence.then_some(
+                                super::phase2::Phase2AlwaysActiveGpuEvidence::exact_absence(),
+                            )
+                        });
+                    let confirmed_patterns_absence = admission_plan
+                        .and_then(|plan| plan.confirmed_patterns_absence_for(index))
+                        .unwrap_or(false);
+                    let entropy_absence = admission_plan
+                        .and_then(|plan| plan.entropy_absence_for(index, entropy_config_digest))
+                        .unwrap_or(false);
+                    let decoder_admission_context = self.decoder_admission_context_key(chunk);
+                    let decoder_absence = admission_plan
+                        .and_then(|plan| plan.decoder_absence_for(index, decoder_admission_context))
+                        .unwrap_or(false);
+                    let direct_scan_absence = matches!(backend, ScanBackend::CpuFallback)
+                        && admission_plan
+                            .and_then(|plan| {
+                                plan.direct_scan_absence_for(
+                                    index,
+                                    self.config.unicode_normalization,
+                                    entropy_config_digest,
+                                    decoder_admission_context,
+                                )
+                            })
+                            .unwrap_or(false);
+                    self.scan_with_deadline_and_backend_admission_route_and_hints(
                         chunk,
                         self.config.per_chunk_deadline(),
                         backend,
                         admission,
+                        normalization_passthrough,
+                        multiline_absence,
+                        line_context_index,
+                        confirmed_patterns_absence,
+                        entropy_absence,
+                        decoder_absence,
+                        direct_scan_absence,
+                        cpu_trigger_hints,
+                        phase2_keyword_hints,
+                        phase2_always_active_evidence,
+                        generic_keyword_positions,
                         route,
                     )
                 })
@@ -108,7 +214,17 @@ impl CompiledScanner {
         Ok(results)
     }
 
-    pub(crate) fn prepare_chunk<'a>(&self, chunk: &'a Chunk) -> PreparedChunk<'a> {
+    pub(crate) fn prepare_chunk<'a>(&'a self, chunk: &'a Chunk) -> PreparedChunk<'a> {
+        self.prepare_chunk_with_normalization_passthrough(chunk, false, false, None)
+    }
+
+    pub(crate) fn prepare_chunk_with_normalization_passthrough<'a>(
+        &'a self,
+        chunk: &'a Chunk,
+        normalization_passthrough: bool,
+        multiline_absence: bool,
+        line_context_index: Option<&std::sync::Arc<crate::context::LineContextIndex>>,
+    ) -> PreparedChunk<'a> {
         let _g = super::profile::span(keyhog_profile::Stage::Preprocess);
         // Note: non-ASCII normalization used to swap `chunk` to an
         // owned `Chunk` via `normalize_scannable_chunk`. That path
@@ -132,7 +248,16 @@ impl CompiledScanner {
         // call inside `PreparedChunk<'a>`. We therefore chain the two
         // normalization stages explicitly: a stage that rewrites bytes yields
         // `Cow::Owned`; a no-op stage preserves the `&'a chunk.data` borrow.
-        let data_to_pp: std::borrow::Cow<'a, str> = if self.config.unicode_normalization {
+        #[cfg(debug_assertions)]
+        if self.config.unicode_normalization && !normalization_passthrough {
+            self.normalization_scanned_bytes.fetch_add(
+                u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
+        let data_to_pp: std::borrow::Cow<'a, str> = if normalization_passthrough {
+            std::borrow::Cow::Borrowed(&chunk.data)
+        } else if self.config.unicode_normalization {
             match crate::unicode_hardening::normalize_homoglyphs(&chunk.data) {
                 // Homoglyph stage rewrote the bytes: the owned String is the
                 // canonical text. The interior-control strip then operates on
@@ -173,8 +298,15 @@ impl CompiledScanner {
         } else {
             #[cfg(feature = "multiline")]
             {
-                let has_multiline_candidate =
-                    crate::multiline::config::has_concatenation_indicators_with_keyword_gate(
+                #[cfg(debug_assertions)]
+                if !multiline_absence {
+                    self.multiline_admission_scanned_bytes.fetch_add(
+                        u64::try_from(data_to_pp.len()).unwrap_or(u64::MAX),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
+                let has_multiline_candidate = !multiline_absence
+                    && crate::multiline::config::has_concatenation_indicators_with_keyword_gate(
                         &data_to_pp,
                         |bytes| {
                             let matcher = self
@@ -203,10 +335,65 @@ impl CompiledScanner {
             ScannerPreprocessedText::passthrough(data_to_pp)
         };
 
+        let line_index = line_context_index
+            .filter(|_| {
+                preprocessed.text.as_ptr() == chunk.data.as_ptr()
+                    && preprocessed.text.len() == chunk.data.len()
+            })
+            .map_or_else(std::sync::OnceLock::new, |index| {
+                std::sync::OnceLock::from(std::sync::Arc::clone(index))
+            });
         PreparedChunk {
             chunk,
             preprocessed,
-            line_index: std::sync::OnceLock::new(),
+            line_index,
+            #[cfg(debug_assertions)]
+            line_index_scanned_bytes: Some(&self.line_index_scanned_bytes),
         }
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_normalization_scanned_bytes_for_diagnostics(&self) {
+        self.normalization_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn normalization_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.normalization_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_line_index_scanned_bytes_for_diagnostics(&self) {
+        self.line_index_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn line_index_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.line_index_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_multiline_admission_scanned_bytes_for_diagnostics(&self) {
+        self.multiline_admission_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn multiline_admission_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.multiline_admission_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }

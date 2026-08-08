@@ -2,9 +2,12 @@
 //! predicate and the `find_*_strings` scanners that locate embedded base64/hex
 //! runs in free text (the front door of the decode-and-rescan pipeline).
 
+use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::decode::{
     base64_decode, find_base64_strings, find_hex_strings, hex_decode, is_base64_candidate_byte,
 };
+use keyhog_scanner::testing::decode_admission_sketch_with_custom_unknown;
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 
 #[test]
 fn base64_candidate_byte_accepts_the_full_alphabet_and_rejects_others() {
@@ -75,4 +78,59 @@ fn find_hex_strings_locates_an_embedded_token_that_round_trips() {
 fn find_strings_return_nothing_for_text_without_encoded_runs() {
     assert!(find_base64_strings("just some plain english words here", 16).is_empty());
     assert!(find_hex_strings("no hex digits in this sentence!!", 16).is_empty());
+}
+
+fn ordinary_assignment_chunk(bytes: usize, source_type: &'static str) -> Chunk {
+    let seed = "ordinary source\nconst ordinary_value = 1234567890;\n";
+    let mut text = seed.repeat(bytes.div_ceil(seed.len()));
+    text.truncate(bytes);
+    Chunk {
+        data: text.into(),
+        metadata: ChunkMetadata {
+            source_type: source_type.into(),
+            path: Some("ordinary.txt".into()),
+            ..ChunkMetadata::default()
+        },
+    }
+}
+
+/// WHY: repeated ordinary assignments must not enter every decoder merely
+/// because the chunk contains printable source text.
+#[test]
+fn ordinary_assignment_corpus_has_no_builtin_decode_candidates() {
+    let chunk = ordinary_assignment_chunk(100 * 1024, "filesystem");
+
+    let sketch = decode_admission_sketch_with_custom_unknown(&chunk);
+    assert_eq!(
+        sketch.kind_mask(),
+        0,
+        "built-in decoders admitted ordinary assignment text"
+    );
+    assert!(sketch.has_unknown(), "custom decoder must remain fail-open");
+}
+
+/// WHY: a negative admission proof must prevent decode generation, not merely
+/// prevent decoder output after the pipeline rescans the full parent chunk.
+#[test]
+fn ordinary_assignment_corpus_skips_decode_generation() {
+    let scanner = CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
+        .expect("compile embedded detector corpus");
+    let chunks = [
+        ordinary_assignment_chunk(100 * 1024, "filesystem"),
+        ordinary_assignment_chunk(1024 * 1024, "filesystem/windowed"),
+    ];
+    let runtime = keyhog_profile::Runtime::new();
+    runtime.scope(|| {
+        scanner
+            .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+            .expect("ordinary assignment scans succeed");
+        let decode_calls = keyhog_profile::take_stage_measurements()
+            .iter()
+            .find(|measurement| measurement.stage == keyhog_profile::Stage::Decode)
+            .map_or(0, |measurement| measurement.calls);
+        assert_eq!(
+            decode_calls, 0,
+            "decoder generation ran despite an impossible built-in admission sketch"
+        );
+    });
 }

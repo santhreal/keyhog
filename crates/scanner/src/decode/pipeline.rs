@@ -111,7 +111,10 @@ fn decode_chunk_with_decoders(
         // proofs and the decoders that survive them reuse the same candidates.
         // This avoids invoking every decoder when only one representation is
         // present without adding another extraction pass.
-        extractor::prime_shared_candidates(&current.data);
+        extractor::prime_shared_candidates(
+            &current.data,
+            decoder_plan.is_some_and(registry::CompiledDecoderPlan::uses_only_default_decoders),
+        );
         let prof_dec = registry::profile_enabled();
         for (dec_i, decoder) in decoders.iter().enumerate() {
             // Re-check the caller deadline BEFORE each decoder's
@@ -373,6 +376,7 @@ pub(crate) use extractor::with_extracted_value_spans;
 #[cfg(feature = "decode")]
 pub(crate) use extractor::{extract_profile_from_typed, format_extract_profile};
 pub(super) use extractor::{hash_fast, ExtractedValue};
+pub(crate) use registry::decoder_profile_dump;
 #[cfg(feature = "decode")]
 pub(crate) use registry::default_decoder_names;
 pub(crate) use registry::CompiledDecoderPlan;
@@ -380,7 +384,6 @@ pub(crate) use registry::CompiledDecoderPlan;
 pub(crate) use registry::{
     active_decoder_admission_sketch, decoder_admission, decoder_admission_sketch,
 };
-pub(crate) use registry::decoder_profile_dump;
 pub use registry::{register_decoder, try_register_decoder, DecoderRegistrationError};
 #[cfg(test)]
 pub(crate) use registry::{register_thread_decoder, ScopedDecoderRegistration};

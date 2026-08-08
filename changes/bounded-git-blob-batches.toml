@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "Git history scans now yield each bounded decoded-blob batch and annotated-tag message before loading the next payload instead of retaining whole commits or tag sets."
+crates = ["sources"]

@@ -57,6 +57,8 @@ pub use staged::GitStagedSource;
 
 pub(crate) use diff_parser::{trim_diff_line_bytes, UnifiedDiffEvent, UnifiedDiffParser};
 pub(crate) use source::max_commits_limit;
+#[cfg(debug_assertions)]
+pub(crate) use source::{max_buffered_git_blob_chunks, reset_max_buffered_git_blob_chunks};
 
 /// Byte cap for a single line of git plumbing output read through
 /// [`read_capped_line`].
@@ -664,10 +666,7 @@ mod capped_line_tests {
             "no delimiter to discount at end of stream"
         );
         assert_eq!(&buf[..], b"abc");
-        assert_eq!(
-            read_capped_line(&mut r, &mut buf, 100).unwrap().consumed,
-            0
-        );
+        assert_eq!(read_capped_line(&mut r, &mut buf, 100).unwrap().consumed, 0);
     }
 
     #[test]

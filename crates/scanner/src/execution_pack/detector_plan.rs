@@ -95,6 +95,23 @@ pub(crate) struct DetectorPlanRecord {
     pub required_companion: bool,
 }
 
+#[derive(Deserialize)]
+pub(crate) struct DetectorPlanPreludeRecord<'a> {
+    pub(crate) id: &'a str,
+    pub(crate) name: &'a str,
+    pub(crate) service: &'a str,
+    pub(crate) companion_names: Vec<&'a str>,
+    #[serde(borrow)]
+    pub(crate) entropy_fallback: Option<DetectorPlanPreludeEntropyFallback<'a>>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DetectorPlanPreludeEntropyFallback<'a> {
+    pub(crate) id: &'a str,
+    pub(crate) name: &'a str,
+    pub(crate) service: &'a str,
+}
+
 impl DetectorPlanRecord {
     pub(crate) fn compile(spec: &keyhog_core::DetectorSpec) -> Self {
         Self {
@@ -339,13 +356,13 @@ impl CompiledDetectorPlanSection {
         &self.bytes
     }
 
-    pub(crate) fn stream_records<F>(
+    fn stream_payloads<F>(
         bytes: &[u8],
         expected_detector_ir_digest: [u8; 32],
         mut visit: F,
     ) -> Result<HydratedDetectorPlanHeader, ExecutionPackError>
     where
-        F: FnMut(usize, DetectorPlanRecord) -> Result<(), ExecutionPackError>,
+        F: FnMut(usize, &[u8]) -> Result<Arc<str>, ExecutionPackError>,
     {
         if bytes.len() > MAX_SECTION_BYTES {
             return Err(ExecutionPackError::InvalidPack(format!(
@@ -437,7 +454,7 @@ impl CompiledDetectorPlanSection {
                 .map_err(|error| ExecutionPackError::Incompatible(error.to_string()))?;
 
         let mut order_hasher = detector_order_hasher();
-        let mut previous_id: Option<String> = None;
+        let mut previous_id: Option<Arc<str>> = None;
         for index in 0..detector_count {
             let length_bytes = take(bytes, &mut cursor, 4, "detector record length")?;
             payload_hasher.update(length_bytes);
@@ -453,29 +470,18 @@ impl CompiledDetectorPlanSection {
             }
             let payload = take(bytes, &mut cursor, payload_len, "detector record payload")?;
             payload_hasher.update(payload);
-            let record: DetectorPlanRecord = serde_json::from_slice(payload).map_err(|error| {
-                ExecutionPackError::InvalidPack(format!(
-                    "detector-plan record {index} is invalid or truncated: {error}"
-                ))
-            })?;
-            if canonical_json(&record, "re-serialize detector-plan record")? != payload {
-                return Err(ExecutionPackError::InvalidPack(format!(
-                    "detector-plan record {index} is not canonical JSON"
-                )));
-            }
-            if record.id.is_empty()
+            let record_id = visit(index, payload)?;
+            if record_id.is_empty()
                 || previous_id
                     .as_deref()
-                    .is_some_and(|previous| previous >= record.id.as_str())
+                    .is_some_and(|previous| previous >= record_id.as_ref())
             {
                 return Err(ExecutionPackError::InvalidPack(format!(
                     "detector-plan record {index} has an empty, duplicate, or noncanonical detector ID"
                 )));
             }
-            update_detector_order_hasher(&mut order_hasher, &record.id);
-            previous_id = Some(record.id.clone());
-            let _residency = WireRowResidency::enter();
-            visit(index, record)?;
+            update_detector_order_hasher(&mut order_hasher, record_id.as_ref());
+            previous_id = Some(record_id);
         }
         if cursor != bytes.len() {
             return Err(ExecutionPackError::InvalidPack(format!(
@@ -498,6 +504,53 @@ impl CompiledDetectorPlanSection {
             detector_ir_digest,
             compiled_plan_digest,
             detector_count,
+        })
+    }
+
+    pub(crate) fn stream_prelude_records<F>(
+        bytes: &[u8],
+        expected_detector_ir_digest: [u8; 32],
+        mut visit: F,
+    ) -> Result<HydratedDetectorPlanHeader, ExecutionPackError>
+    where
+        F: for<'row> FnMut(
+            usize,
+            DetectorPlanPreludeRecord<'row>,
+        ) -> Result<Arc<str>, ExecutionPackError>,
+    {
+        Self::stream_payloads(bytes, expected_detector_ir_digest, |index, payload| {
+            let record: DetectorPlanPreludeRecord<'_> =
+                serde_json::from_slice(payload).map_err(|error| {
+                    ExecutionPackError::InvalidPack(format!(
+                        "detector-plan prelude record {index} is invalid or truncated: {error}"
+                    ))
+                })?;
+            let _residency = WireRowResidency::enter();
+            visit(index, record)
+        })
+    }
+
+    pub(crate) fn stream_records<F>(
+        bytes: &[u8],
+        expected_detector_ir_digest: [u8; 32],
+        mut visit: F,
+    ) -> Result<HydratedDetectorPlanHeader, ExecutionPackError>
+    where
+        F: FnMut(usize, DetectorPlanRecord) -> Result<(), ExecutionPackError>,
+    {
+        Self::stream_payloads(bytes, expected_detector_ir_digest, |index, payload| {
+            let record: DetectorPlanRecord = serde_json::from_slice(payload).map_err(|error| {
+                ExecutionPackError::InvalidPack(format!(
+                    "detector-plan record {index} is invalid or truncated: {error}"
+                ))
+            })?;
+            // Install-time compilation owns canonical JSON encoding. Runtime
+            // authentication binds these exact framed bytes, so hydration only
+            // needs the typed decode instead of serializing every row again.
+            let record_id = Arc::<str>::from(record.id.as_str());
+            let _residency = WireRowResidency::enter();
+            visit(index, record)?;
+            Ok(record_id)
         })
     }
 

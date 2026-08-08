@@ -7,6 +7,7 @@ const MAX_CONTEXT_WINDOW_BYTES: usize = 8 * 1024;
 pub(crate) struct LineIndexOverflow;
 
 /// Compact line starts and documentation classification for one preprocessed chunk.
+#[derive(Debug)]
 pub(crate) struct LineContextIndex {
     starts: Box<[u32]>,
     line_count: u32,
@@ -115,7 +116,6 @@ impl LineContextIndex {
         &text[start..end]
     }
 
-    #[cfg(test)]
     pub(crate) fn storage_bytes(&self) -> usize {
         self.starts.len() * std::mem::size_of::<u32>()
             + self.documentation.len() * std::mem::size_of::<u64>()

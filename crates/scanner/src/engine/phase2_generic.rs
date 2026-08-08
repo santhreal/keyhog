@@ -57,6 +57,21 @@ pub(crate) fn retained_keyword_line_bytes_after_for_test(requested_bytes: usize)
 }
 
 impl CompiledScanner {
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_generic_keyword_scanned_bytes_for_diagnostics(&self) {
+        self.generic_keyword_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn generic_keyword_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.generic_keyword_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Scans generic assignments after keyword, entropy, and placeholder admission.
     /// Named and generic evidence is reconciled by the shared resolution pass.
     pub(crate) fn scan_generic_assignments(
@@ -98,6 +113,11 @@ impl CompiledScanner {
                 &mut lines_with_keyword,
             );
         } else {
+            #[cfg(debug_assertions)]
+            self.generic_keyword_scanned_bytes.fetch_add(
+                u64::try_from(scan_text.len()).unwrap_or(u64::MAX),
+                std::sync::atomic::Ordering::Relaxed,
+            );
             collect_generic_keyword_lines_with(
                 generic_keyword_stems,
                 scan_text,
@@ -146,6 +166,11 @@ impl CompiledScanner {
                 normalized_line = crate::unicode_hardening::normalize_homoglyphs(raw_line);
                 &normalized_line
             };
+            if generic_keyword_positions.is_some()
+                && !generic_keyword_stems.has_assignment_delimiter_after_stem(line.as_bytes())
+            {
+                continue;
+            }
             let mut covered_until = 0;
 
             for (capture_iter, caps) in generic_re.captures_iter(line).enumerate() {

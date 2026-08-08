@@ -13,17 +13,31 @@ pub(crate) struct PreparedChunk<'a> {
     /// passthrough common path, no per-chunk full-body copy, and owns a
     /// synthesized `String` only on the structured/multiline-join paths.
     pub(crate) preprocessed: ScannerPreprocessedText<'a>,
-    /// Lazily built compact line starts and documentation classification for
-    /// `preprocessed.text`.
-    pub(crate) line_index: std::sync::OnceLock<crate::context::LineContextIndex>,
+    /// Lazily built or admission-shared compact line starts and documentation
+    /// classification for `preprocessed.text`.
+    pub(crate) line_index: std::sync::OnceLock<std::sync::Arc<crate::context::LineContextIndex>>,
+    #[cfg(debug_assertions)]
+    pub(crate) line_index_scanned_bytes: Option<&'a std::sync::atomic::AtomicU64>,
 }
 
 impl<'a> PreparedChunk<'a> {
     pub(crate) fn line_index(&self) -> &crate::context::LineContextIndex {
-        self.line_index.get_or_init(|| {
-            crate::context::LineContextIndex::try_new(&self.preprocessed.text)
-                .expect("preprocessed chunk length exceeds the checked u32 line-index boundary")
-        })
+        self.line_index
+            .get_or_init(|| {
+                #[cfg(debug_assertions)]
+                if let Some(scanned_bytes) = self.line_index_scanned_bytes {
+                    scanned_bytes.fetch_add(
+                        u64::try_from(self.preprocessed.text.len()).unwrap_or(u64::MAX),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
+                std::sync::Arc::new(
+                    crate::context::LineContextIndex::try_new(&self.preprocessed.text).expect(
+                        "preprocessed chunk length exceeds the checked u32 line-index boundary",
+                    ),
+                )
+            })
+            .as_ref()
     }
 }
 
@@ -343,7 +357,7 @@ impl SimdPhase1CompilePlan {
 mod line_index_tests {
     use super::*;
     use keyhog_core::Chunk;
-    use std::sync::OnceLock;
+    use std::sync::{Arc, OnceLock};
 
     /// WHY: line context must use the rewritten preprocessed bytes whose offsets
     /// locate matches, never the differently shaped raw chunk.
@@ -355,7 +369,9 @@ mod line_index_tests {
         let prepared = PreparedChunk {
             chunk: &chunk,
             preprocessed: ScannerPreprocessedText::passthrough(preprocessed_text),
-            line_index: OnceLock::new(),
+            line_index: OnceLock::<Arc<_>>::new(),
+            #[cfg(debug_assertions)]
+            line_index_scanned_bytes: None,
         };
 
         let lines: Vec<_> = prepared
@@ -374,7 +390,9 @@ mod line_index_tests {
         let prepared = PreparedChunk {
             chunk: &chunk,
             preprocessed: ScannerPreprocessedText::passthrough(text),
-            line_index: OnceLock::new(),
+            line_index: OnceLock::<Arc<_>>::new(),
+            #[cfg(debug_assertions)]
+            line_index_scanned_bytes: None,
         };
         assert_eq!(
             prepared
@@ -399,6 +417,7 @@ mod simd_literal_ownership_tests {
             weak_anchor: false,
             structural_password_slot: false,
             match_proves_keyword_nearby: false,
+            allows_repeated_keyword_separator: false,
             homoglyph_variant: false,
         }
     }

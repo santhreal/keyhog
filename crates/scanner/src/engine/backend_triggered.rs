@@ -9,6 +9,8 @@ impl CompiledScanner {
         prepared: PreparedChunk<'_>,
         triggered_patterns: &[u64],
         deadline: Option<std::time::Instant>,
+        confirmed_patterns_absence: bool,
+        entropy_absence: bool,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
@@ -19,6 +21,8 @@ impl CompiledScanner {
             prepared,
             triggered_patterns,
             deadline,
+            confirmed_patterns_absence,
+            entropy_absence,
             phase2_keyword_hints,
             phase2_always_active_gpu_evidence,
             confirmed_anchor_literal_matches,
@@ -45,6 +49,8 @@ impl CompiledScanner {
         prepared: PreparedChunk<'_>,
         triggered_patterns: &[u64],
         deadline: Option<std::time::Instant>,
+        confirmed_patterns_absence: bool,
+        entropy_absence: bool,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
@@ -108,6 +114,8 @@ impl CompiledScanner {
         let confirmed_anchor_literal_matches =
             confirmed_anchor_literal_matches.filter(|_| raw_text_unchanged);
         let generic_keyword_positions = generic_keyword_positions.filter(|_| raw_text_unchanged);
+        let confirmed_patterns_absence = confirmed_patterns_absence && raw_text_unchanged;
+        let entropy_absence = entropy_absence && raw_text_unchanged;
 
         // No-trigger fast path: when no AC pattern fired, the entire
         // confirmed-pattern extraction pipeline is dead work. Skip
@@ -130,8 +138,13 @@ impl CompiledScanner {
         // corpus (the `confirmed_focus_parity` differential rejected M=256). It
         // holds for phase-2 capture because those detectors are self-contained at the
         // decoded credential itself.
-        if expanded_patterns.iter().any(|&w| w != 0) {
+        if !confirmed_patterns_absence && expanded_patterns.iter().any(|&w| w != 0) {
             let _g = profile::span(keyhog_profile::Stage::ConfirmedPatterns);
+            #[cfg(debug_assertions)]
+            self.confirmed_pattern_scanned_bytes.fetch_add(
+                u64::try_from(prepared.preprocessed.text.len()).unwrap_or(u64::MAX),
+                std::sync::atomic::Ordering::Relaxed,
+            );
             // Walk only set bits instead of testing every pattern slot.
             let set_bits: usize = expanded_patterns
                 .iter()
@@ -154,6 +167,7 @@ impl CompiledScanner {
                 confirmed_anchor_literal_matches,
             );
         }
+
         if crate::deadline::expired(deadline) {
             return scan_state;
         }
@@ -226,8 +240,13 @@ impl CompiledScanner {
         }
 
         #[cfg(feature = "entropy")]
-        {
+        if !entropy_absence {
             let _g = profile::span(keyhog_profile::Stage::Entropy);
+            #[cfg(debug_assertions)]
+            self.entropy_scanned_bytes.fetch_add(
+                u64::try_from(prepared.preprocessed.text.len()).unwrap_or(u64::MAX),
+                std::sync::atomic::Ordering::Relaxed,
+            );
             self.scan_entropy_fallback(
                 &prepared.preprocessed,
                 line_index,
@@ -380,6 +399,11 @@ impl CompiledScanner {
     }
 
     pub(crate) fn collect_triggered_patterns_cpu_bytes(&self, bytes: &[u8]) -> Vec<u64> {
+        #[cfg(debug_assertions)]
+        self.phase1_trigger_scanned_bytes.fetch_add(
+            u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let mut triggered_patterns = super::trigger_bitmap::new_trigger_bitmap(self.ac_map.len());
         if let Some(ac) = &self.ac {
             // OVERLAPPING iteration, not leftmost `find_iter`: a non-overlapping
@@ -402,6 +426,21 @@ impl CompiledScanner {
             }
         }
         triggered_patterns
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_phase1_trigger_scanned_bytes_for_diagnostics(&self) {
+        self.phase1_trigger_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn phase1_trigger_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.phase1_trigger_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Number of rows in the fused GPU literal matcher. Presence bits exist for
@@ -528,5 +567,35 @@ impl CompiledScanner {
                 }
             }
         }
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_confirmed_pattern_scanned_bytes_for_diagnostics(&self) {
+        self.confirmed_pattern_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn confirmed_pattern_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.confirmed_pattern_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_entropy_scanned_bytes_for_diagnostics(&self) {
+        self.entropy_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn entropy_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.entropy_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }

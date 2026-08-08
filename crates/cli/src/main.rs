@@ -26,6 +26,7 @@ fn configure_allocator_memory_policy() {
     const MI_OPTION_EAGER_COMMIT: std::ffi::c_int = 3;
     const MI_OPTION_ARENA_EAGER_COMMIT: std::ffi::c_int = 4;
     const MI_OPTION_PURGE_DELAY: std::ffi::c_int = 15;
+    const MI_OPTION_GENERIC_COLLECT: std::ffi::c_int = 36;
     unsafe extern "C" {
         fn mi_option_set(option: std::ffi::c_int, value: i64);
     }
@@ -35,6 +36,7 @@ fn configure_allocator_memory_policy() {
         mi_option_set(MI_OPTION_EAGER_COMMIT, 0);
         mi_option_set(MI_OPTION_ARENA_EAGER_COMMIT, 0);
         mi_option_set(MI_OPTION_PURGE_DELAY, 0);
+        mi_option_set(MI_OPTION_GENERIC_COLLECT, 1024);
     }
 }
 

@@ -42,6 +42,158 @@ impl ActiveBackendRouter {
 
 const STDIN_FUSED_BATCH_BYTES: usize = 2 * 1024 * 1024;
 
+const REPEATED_WINDOW_CACHE_CAP: usize = 8;
+
+struct RepeatedWindowCacheEntry {
+    fingerprint: [u8; 32],
+    data: keyhog_core::SensitiveString,
+    metadata: keyhog_core::ChunkMetadata,
+    findings: Vec<RawMatch>,
+}
+
+struct RepeatedWindowCache {
+    entries: std::collections::VecDeque<RepeatedWindowCacheEntry>,
+}
+
+impl RepeatedWindowCache {
+    fn new() -> Self {
+        Self {
+            entries: std::collections::VecDeque::with_capacity(REPEATED_WINDOW_CACHE_CAP),
+        }
+    }
+
+    fn lookup(
+        &mut self,
+        batch: &[keyhog_core::Chunk],
+        fingerprint: [u8; 32],
+    ) -> Option<Vec<RawMatch>> {
+        let chunk = repeated_window_chunk(batch)?;
+        let position = self.entries.iter().position(|entry| {
+            entry.fingerprint == fingerprint
+                && repeated_window_metadata_matches(&entry.metadata, &chunk.metadata)
+                && entry.data.as_bytes() == chunk.data.as_bytes()
+        })?;
+        let entry = self.entries.remove(position)?;
+        let replay =
+            rebase_repeated_window_findings(&entry.findings, &entry.metadata, &chunk.metadata);
+        self.entries.push_back(entry);
+        replay
+    }
+
+    fn insert(&mut self, chunk: keyhog_core::Chunk, fingerprint: [u8; 32], findings: &[RawMatch]) {
+        if chunk.metadata.source_type.as_ref() != "filesystem/windowed" {
+            return;
+        }
+        if let Some(position) = self.entries.iter().position(|entry| {
+            entry.fingerprint == fingerprint
+                && repeated_window_metadata_matches(&entry.metadata, &chunk.metadata)
+                && entry.data.as_bytes() == chunk.data.as_bytes()
+        }) {
+            self.entries.remove(position);
+        } else if self.entries.len() == REPEATED_WINDOW_CACHE_CAP {
+            self.entries.pop_front();
+        }
+        self.entries.push_back(RepeatedWindowCacheEntry {
+            fingerprint,
+            data: chunk.data,
+            metadata: chunk.metadata,
+            findings: findings.to_vec(),
+        });
+    }
+}
+
+fn repeated_window_chunk(batch: &[keyhog_core::Chunk]) -> Option<&keyhog_core::Chunk> {
+    let [chunk] = batch else {
+        return None;
+    };
+    (chunk.metadata.source_type.as_ref() == "filesystem/windowed").then_some(chunk)
+}
+
+fn repeated_window_fingerprint(batch: &[keyhog_core::Chunk]) -> Option<[u8; 32]> {
+    const SAMPLE_COUNT: usize = 8;
+    const SAMPLE_BYTES: usize = 64;
+
+    let data = repeated_window_chunk(batch)?.data.as_bytes();
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&(data.len() as u64).to_le_bytes());
+    if data.len() <= SAMPLE_COUNT * SAMPLE_BYTES {
+        hasher.update(data);
+    } else {
+        let max_start = data.len() - SAMPLE_BYTES;
+        for sample in 0..SAMPLE_COUNT {
+            let start = max_start * sample / (SAMPLE_COUNT - 1);
+            hasher.update(&data[start..start + SAMPLE_BYTES]);
+        }
+    }
+    Some(*hasher.finalize().as_bytes())
+}
+
+fn repeated_window_batches_match(
+    left: &[keyhog_core::Chunk],
+    right: &[keyhog_core::Chunk],
+) -> bool {
+    let (Some(left), Some(right)) = (repeated_window_chunk(left), repeated_window_chunk(right))
+    else {
+        return false;
+    };
+    repeated_window_metadata_matches(&left.metadata, &right.metadata)
+        && left.data.as_bytes() == right.data.as_bytes()
+}
+
+fn repeated_window_metadata_matches(
+    left: &keyhog_core::ChunkMetadata,
+    right: &keyhog_core::ChunkMetadata,
+) -> bool {
+    left.source_type == right.source_type
+        && left.path == right.path
+        && left.commit == right.commit
+        && left.author == right.author
+        && left.date == right.date
+        && left.mtime_ns == right.mtime_ns
+        && left.size_bytes == right.size_bytes
+        && left.decoded_span == right.decoded_span
+}
+
+fn rebase_repeated_window_findings(
+    findings: &[RawMatch],
+    from: &keyhog_core::ChunkMetadata,
+    to: &keyhog_core::ChunkMetadata,
+) -> Option<Vec<RawMatch>> {
+    findings
+        .iter()
+        .cloned()
+        .map(|mut finding| {
+            let relative_offset = finding.location.offset.checked_sub(from.base_offset)?;
+            finding.location.offset = to.base_offset.checked_add(relative_offset)?;
+            if let Some(line) = finding.location.line {
+                let relative_line = line.checked_sub(from.base_line)?;
+                finding.location.line = Some(to.base_line.checked_add(relative_line)?);
+            }
+            finding.location.source = Arc::clone(&to.source_type);
+            finding.location.file_path = to.path.clone();
+            finding.location.commit = to.commit.clone();
+            finding.location.author = to.author.clone();
+            finding.location.date = to.date.clone();
+            Some(finding)
+        })
+        .collect()
+}
+
+fn record_repeated_window_replay(batch: &[keyhog_core::Chunk], findings: &[RawMatch]) {
+    use std::sync::atomic::Ordering;
+
+    crate::TOTAL_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
+    crate::SCANNED_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
+    crate::SCANNED_BYTES.fetch_add(
+        batch
+            .iter()
+            .map(|chunk| chunk.data.len() as u64)
+            .sum::<u64>(),
+        Ordering::Relaxed,
+    );
+    crate::FINDINGS_COUNT.fetch_add(findings.len(), Ordering::Relaxed);
+}
+
 fn is_stdin_source(source: &dyn Source) -> bool {
     let source = source.as_any();
     source.is::<keyhog_sources::StdinSource>()
@@ -126,10 +278,10 @@ impl ScanOrchestrator {
         (hw_caps, pattern_count, rules_digest, config_digest)
     }
 
-    /// Fused parallel read+scan: a dedicated reader fills one bounded batch
-    /// while `scan_coalesced` spreads the active batch over the global Rayon
-    /// pool. Source I/O and scanning overlap without retaining one source batch
-    /// per worker.
+    /// Fused bounded read+scan: a dedicated reader emits 1 MiB batches.
+    /// Explicit CPU and SIMD routes let Rayon workers retire independent
+    /// batches concurrently; automatic and GPU-capable routing keeps one active
+    /// batch so resident accelerator state is never oversubscribed.
     pub(super) fn scan_sources_fused(
         &self,
         sources: Vec<Box<dyn Source>>,
@@ -137,6 +289,7 @@ impl ScanOrchestrator {
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
         incremental_path: Option<std::path::PathBuf>,
     ) -> Result<Vec<RawMatch>> {
+        use rayon::prelude::*;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
         keyhog_sources::reset_skipped_over_max_size();
@@ -173,11 +326,10 @@ impl ScanOrchestrator {
 
         let skipped_unchanged = Arc::new(AtomicUsize::new(0));
 
-        // Bridge the source's `!Send` chunk iterator into one bounded queued
-        // batch. `scan_coalesced` already parallelizes both scan phases across
-        // the global worker pool, so consuming batches serially preserves full
-        // inner parallelism without nested `par_bridge` workers each retaining
-        // another source batch and its scan scratch.
+        // Bridge the source's `!Send` chunk iterator into a bounded queue.
+        // The consumer retires explicit CPU/SIMD batches in a separate bounded
+        // wave: at most four 1 MiB filesystem batches are resident there, while
+        // the rendezvous channel prevents another completed batch from queuing.
         //
         // The count and byte ceilings trade fork/join amortization against
         // resident source bytes. Explicit CLI/TOML config owns the count and
@@ -227,6 +379,7 @@ impl ScanOrchestrator {
                     let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceWalk);
                     source.chunks()
                 };
+                super::super::run::release_current_allocator_arena();
                 loop {
                     let chunk_result = {
                         let _profile_span = keyhog_profile::span(keyhog_profile::Stage::SourceRead);
@@ -302,165 +455,52 @@ impl ScanOrchestrator {
         let scanner_ref = scanner.as_ref();
         let routing_error_ref = Arc::clone(&routing_error);
 
-        let findings: Vec<RawMatch> = rx
-            .into_iter()
-            .flat_map(|batch| {
-                let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
-                let route_failed = match routing_error_ref.lock() {
-                    Ok(guard) => guard.is_some(),
-                    Err(poisoned) => poisoned.into_inner().is_some(),
-                };
-                if route_failed {
-                    return Vec::new();
-                }
+        let scan_batch = |batch: Vec<keyhog_core::Chunk>| {
+            let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+            let route_failed = match routing_error_ref.lock() {
+                Ok(guard) => guard.is_some(),
+                Err(poisoned) => poisoned.into_inner().is_some(),
+            };
+            if route_failed {
+                return Vec::new();
+            }
 
-                // Incremental skip (parallel across batches): hash each chunk
-                // and drop the ones the merkle index already has unchanged.
-                // Mirrors the coalesced batch producer: record metadata for every chunk
-                // seen (changed or not); `finalize_incremental` later forgets
-                // any path that produced a finding.
-                let batch: Vec<keyhog_core::Chunk> = if let Some(idx) = merkle_ref {
-                    batch
-                        .into_iter()
-                        .filter(|c| {
-                            let Some(path_str) = c.metadata.path.as_deref() else {
-                                return true;
-                            };
-                            let _profile_span =
-                                keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
-                            let unchanged = idx.record_chunk_path_at_offset_and_check_unchanged(
-                                std::path::Path::new(path_str),
-                                c.metadata.base_offset as u64,
-                                c.metadata.mtime_ns.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
-                                c.metadata.size_bytes.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
-                                c.data.as_bytes(),
-                            );
-                            if unchanged {
-                                skipped_ref.fetch_add(1, Ordering::Relaxed);
-                            }
-                            !unchanged
-                        })
-                        .collect()
-                } else {
-                    batch
-                };
-                if batch.is_empty() {
-                    return Vec::new();
-                }
-                crate::TOTAL_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
-                if super::batch_has_no_scan_bytes(&batch) {
-                    crate::SCANNED_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
-                    crate::SCANNED_BYTES.fetch_add(
-                        batch
-                            .iter()
-                            .map(|chunk| chunk.data.len() as u64)
-                            .sum::<u64>(),
-                        Ordering::Relaxed,
-                    );
-                    return Vec::new();
-                }
-
-                // Normal fused filesystem scanning is cache-only: no probes,
-                // no guesses. In explicit calibration mode it uses the measured
-                // router on the SAME fused batch shape normal scans request, so
-                // persisted decisions cover the production runtime key.
-                let backend_select_span =
-                    keyhog_profile::span(keyhog_profile::Stage::BackendSelect);
-                let selected = match &active_router {
-                    ActiveBackendRouter::Explicit(backend) => {
-                        Ok(super::backend::BackendSelection {
-                            backend: *backend,
-                            phase1_plan: (!backend.is_gpu())
-                                .then(|| scanner_ref.phase1_admission_plan(&batch)),
-                            execution_route: scanner_ref.execution_route_for_backend(*backend),
-                            recovery_plan: None,
-                            runtime_route: None,
-                            autoroute_recovery: None,
-                        })
-                    }
-                    ActiveBackendRouter::Measured(router) => {
-                        let mut router = match router.lock() {
-                            Ok(guard) => guard,
-                            Err(poisoned) => poisoned.into_inner(),
+            // Incremental skip (parallel across batches): hash each chunk
+            // and drop the ones the merkle index already has unchanged.
+            // Mirrors the coalesced batch producer: record metadata for every chunk
+            // seen (changed or not); `finalize_incremental` later forgets
+            // any path that produced a finding.
+            let batch: Vec<keyhog_core::Chunk> = if let Some(idx) = merkle_ref {
+                batch
+                    .into_iter()
+                    .filter(|c| {
+                        let Some(path_str) = c.metadata.path.as_deref() else {
+                            return true;
                         };
-                        router.choose_with_plan(scanner_ref, None, &batch)
-                    }
-                    ActiveBackendRouter::Cached(router) => {
-                        router.choose_with_plan(scanner_ref, None, &batch)
-                    }
-                };
-                drop(backend_select_span);
-
-                let selection = match selected {
-                    Ok(selection) => selection,
-                    Err(error) => {
-                        record_routing_error(&routing_error_ref, error);
-                        return Vec::new();
-                    }
-                };
-                let backend = selection.backend;
-                let scanned_count = batch.len();
-                // The shared selected-batch outcome distinguishes real GPU
-                // execution from a route completed by another calibrated peer.
-                match backend {
-                    keyhog_scanner::hw_probe::ScanBackend::GpuCuda
-                    | keyhog_scanner::hw_probe::ScanBackend::GpuMetal
-                    | keyhog_scanner::hw_probe::ScanBackend::GpuWgpu => {
-                        tracing::debug!(
-                            target: "keyhog::routing",
-                            backend = backend.label(),
-                            batch_bytes = batch.iter().map(|c| c.data.len() as u64).sum::<u64>(),
-                            chunks = scanned_count,
-                            "fused batch dispatched to GPU region presence",
+                        let _profile_span =
+                            keyhog_profile::span(keyhog_profile::Stage::IncrementalLookup);
+                        let unchanged = idx.record_chunk_path_at_offset_and_check_unchanged(
+                            std::path::Path::new(path_str),
+                            c.metadata.base_offset as u64,
+                            c.metadata.mtime_ns.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
+                            c.metadata.size_bytes.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
+                            c.data.as_bytes(),
                         );
-                    }
-                    keyhog_scanner::hw_probe::ScanBackend::CpuFallback
-                    | keyhog_scanner::hw_probe::ScanBackend::SimdCpu => {}
-                    backend => {
-                        record_routing_error(
-                            &routing_error_ref,
-                            AutorouteRoutingError::unsupported_backend(backend),
-                        );
-                        return Vec::new();
-                    }
-                }
-                let outcome = match super::scan_selected_batch(
-                    scanner_ref,
-                    &batch,
-                    backend,
-                    selection.phase1_plan.as_ref(),
-                    selection.execution_route,
-                    selection
-                        .recovery_plan
-                        .filter(|_| recover_automatic_backend_faults),
-                ) {
-                    Ok(outcome) => outcome,
-                    Err(error) => {
-                        record_routing_error(
-                            &routing_error_ref,
-                            AutorouteRoutingError::selected_backend_dispatch_failed(backend, error),
-                        );
-                        return Vec::new();
-                    }
-                };
-                super::record_profiled_batch_route(
-                    &batch,
-                    explicit_backend.map_or("auto", keyhog_scanner::ScanBackend::label),
-                    &selection,
-                    &outcome,
-                );
-                if let Some(recovery) = outcome.recovery.as_ref() {
-                    if let Err(error) =
-                        active_router.quarantine_recovered_route(&selection, recovery)
-                    {
-                        record_routing_error(&routing_error_ref, error);
-                        return Vec::new();
-                    }
-                }
-                if let Some(recovery) = selection.autoroute_recovery.as_ref() {
-                    super::record_completed_autoroute_state_recovery(&batch, backend, recovery);
-                }
-                crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                        if unchanged {
+                            skipped_ref.fetch_add(1, Ordering::Relaxed);
+                        }
+                        !unchanged
+                    })
+                    .collect()
+            } else {
+                batch
+            };
+            if batch.is_empty() {
+                return Vec::new();
+            }
+            crate::TOTAL_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
+            if super::batch_has_no_scan_bytes(&batch) {
+                crate::SCANNED_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
                 crate::SCANNED_BYTES.fetch_add(
                     batch
                         .iter()
@@ -468,35 +508,233 @@ impl ScanOrchestrator {
                         .sum::<u64>(),
                     Ordering::Relaxed,
                 );
-                // Count only a selected GPU dispatch that completed without a
-                // degradation record. Degraded batches return a routing error
-                // above and never contribute findings or GPU telemetry.
-                if backend.is_gpu() && !outcome.recovered {
-                    crate::GPU_SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                return Vec::new();
+            }
+
+            // Normal fused filesystem scanning is cache-only: no probes,
+            // no guesses. In explicit calibration mode it uses the measured
+            // router on the SAME fused batch shape normal scans request, so
+            // persisted decisions cover the production runtime key.
+            let backend_select_span = keyhog_profile::span(keyhog_profile::Stage::BackendSelect);
+            let selected = match &active_router {
+                ActiveBackendRouter::Explicit(backend) => Ok(super::backend::BackendSelection {
+                    backend: *backend,
+                    phase1_plan: (!backend.is_gpu())
+                        .then(|| scanner_ref.phase1_admission_plan(&batch)),
+                    execution_route: scanner_ref.execution_route_for_backend(*backend),
+                    recovery_plan: None,
+                    runtime_route: None,
+                    autoroute_recovery: None,
+                }),
+                ActiveBackendRouter::Measured(router) => {
+                    let mut router = match router.lock() {
+                        Ok(guard) => guard,
+                        Err(poisoned) => poisoned.into_inner(),
+                    };
+                    router.choose_with_plan(scanner_ref, None, &batch)
                 }
+                ActiveBackendRouter::Cached(router) => {
+                    router.choose_with_plan(scanner_ref, None, &batch)
+                }
+            };
+            drop(backend_select_span);
 
-                let out = {
-                    let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
-                    let mut per_chunk = outcome.per_chunk;
-                    crate::inline_suppression::attach_inline_suppression_context(
-                        &batch,
-                        &mut per_chunk,
+            let selection = match selected {
+                Ok(selection) => selection,
+                Err(error) => {
+                    record_routing_error(&routing_error_ref, error);
+                    return Vec::new();
+                }
+            };
+            let backend = selection.backend;
+            let scanned_count = batch.len();
+            // The shared selected-batch outcome distinguishes real GPU
+            // execution from a route completed by another calibrated peer.
+            match backend {
+                keyhog_scanner::hw_probe::ScanBackend::GpuCuda
+                | keyhog_scanner::hw_probe::ScanBackend::GpuMetal
+                | keyhog_scanner::hw_probe::ScanBackend::GpuWgpu => {
+                    tracing::debug!(
+                        target: "keyhog::routing",
+                        backend = backend.label(),
+                        batch_bytes = batch.iter().map(|c| c.data.len() as u64).sum::<u64>(),
+                        chunks = scanned_count,
+                        "fused batch dispatched to GPU region presence",
                     );
+                }
+                keyhog_scanner::hw_probe::ScanBackend::CpuFallback
+                | keyhog_scanner::hw_probe::ScanBackend::SimdCpu => {}
+                backend => {
+                    record_routing_error(
+                        &routing_error_ref,
+                        AutorouteRoutingError::unsupported_backend(backend),
+                    );
+                    return Vec::new();
+                }
+            }
+            let outcome = match super::scan_selected_batch(
+                scanner_ref,
+                &batch,
+                backend,
+                selection.phase1_plan.as_ref(),
+                selection.execution_route,
+                selection
+                    .recovery_plan
+                    .filter(|_| recover_automatic_backend_faults),
+            ) {
+                Ok(outcome) => outcome,
+                Err(error) => {
+                    record_routing_error(
+                        &routing_error_ref,
+                        AutorouteRoutingError::selected_backend_dispatch_failed(backend, error),
+                    );
+                    return Vec::new();
+                }
+            };
+            super::record_profiled_batch_route(
+                &batch,
+                explicit_backend.map_or("auto", keyhog_scanner::ScanBackend::label),
+                &selection,
+                &outcome,
+            );
+            if let Some(recovery) = outcome.recovery.as_ref() {
+                if let Err(error) = active_router.quarantine_recovered_route(&selection, recovery) {
+                    record_routing_error(&routing_error_ref, error);
+                    return Vec::new();
+                }
+            }
+            if let Some(recovery) = selection.autoroute_recovery.as_ref() {
+                super::record_completed_autoroute_state_recovery(&batch, backend, recovery);
+            }
+            crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+            crate::SCANNED_BYTES.fetch_add(
+                batch
+                    .iter()
+                    .map(|chunk| chunk.data.len() as u64)
+                    .sum::<u64>(),
+                Ordering::Relaxed,
+            );
+            // Count only a selected GPU dispatch that completed without a
+            // degradation record. Degraded batches return a routing error
+            // above and never contribute findings or GPU telemetry.
+            if backend.is_gpu() && !outcome.recovered {
+                crate::GPU_SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+            }
 
-                    let mut out: Vec<RawMatch> = Vec::new();
-                    let mut batch_findings = 0usize;
-                    for chunk_findings in per_chunk {
-                        batch_findings += chunk_findings.len();
-                        out.extend(chunk_findings);
-                    }
-                    if batch_findings > 0 {
-                        crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
-                    }
-                    out
-                };
+            let out = {
+                let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ResultMerge);
+                let mut per_chunk = outcome.per_chunk;
+                crate::inline_suppression::attach_inline_suppression_context(
+                    &batch,
+                    &mut per_chunk,
+                );
+
+                let mut out: Vec<RawMatch> = Vec::new();
+                let mut batch_findings = 0usize;
+                for chunk_findings in per_chunk {
+                    batch_findings += chunk_findings.len();
+                    out.extend(chunk_findings);
+                }
+                if batch_findings > 0 {
+                    crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
+                }
                 out
-            })
-            .collect();
+            };
+            out
+        };
+        let findings: Vec<RawMatch> = if matches!(
+            explicit_backend,
+            Some(
+                keyhog_scanner::hw_probe::ScanBackend::CpuFallback
+                    | keyhog_scanner::hw_probe::ScanBackend::SimdCpu
+            )
+        ) {
+            let lane_width =
+                crate::orchestrator_config::fused_cpu_wave_width(rayon::current_num_threads());
+            let mut batches = rx.into_iter();
+            let mut findings = Vec::new();
+            let mut repeated_windows = merkle_ref.is_none().then(RepeatedWindowCache::new);
+            loop {
+                let wave: Vec<_> = batches.by_ref().take(lane_width).collect();
+                if wave.is_empty() {
+                    break;
+                }
+                let mut wave_findings: Vec<Option<Vec<RawMatch>>> =
+                    (0..wave.len()).map(|_| None).collect();
+                let mut misses: Vec<(
+                    usize,
+                    Vec<keyhog_core::Chunk>,
+                    Option<[u8; 32]>,
+                    Vec<(usize, Vec<keyhog_core::Chunk>)>,
+                )> = Vec::with_capacity(wave.len());
+                for (index, batch) in wave.into_iter().enumerate() {
+                    let fingerprint = repeated_windows
+                        .as_ref()
+                        .and_then(|_| repeated_window_fingerprint(&batch));
+                    let replay = match (repeated_windows.as_mut(), fingerprint) {
+                        (Some(cache), Some(fingerprint)) => cache.lookup(&batch, fingerprint),
+                        _ => None,
+                    };
+                    if let Some(replay) = replay {
+                        record_repeated_window_replay(&batch, &replay);
+                        wave_findings[index] = Some(replay);
+                        continue;
+                    }
+                    if let Some(fingerprint) = fingerprint {
+                        if let Some((_, _, _, duplicates)) =
+                            misses.iter_mut().find(|(_, representative, candidate, _)| {
+                                *candidate == Some(fingerprint)
+                                    && repeated_window_batches_match(representative, &batch)
+                            })
+                        {
+                            duplicates.push((index, batch));
+                            continue;
+                        }
+                    }
+                    misses.push((index, batch, fingerprint, Vec::new()));
+                }
+                let scanned: Vec<_> = misses
+                    .into_par_iter()
+                    .map(|(index, batch, fingerprint, duplicates)| {
+                        let cache_anchor = repeated_window_chunk(&batch).cloned();
+                        (
+                            index,
+                            cache_anchor,
+                            fingerprint,
+                            duplicates,
+                            scan_batch(batch),
+                        )
+                    })
+                    .collect();
+                for (index, cache_anchor, fingerprint, duplicates, batch_findings) in scanned {
+                    if let (Some(cache), Some(anchor), Some(fingerprint)) =
+                        (repeated_windows.as_mut(), cache_anchor, fingerprint)
+                    {
+                        cache.insert(anchor, fingerprint, &batch_findings);
+                    }
+                    wave_findings[index] = Some(batch_findings);
+                    for (duplicate_index, duplicate) in duplicates {
+                        let replay = match (repeated_windows.as_mut(), fingerprint) {
+                            (Some(cache), Some(fingerprint)) => {
+                                cache.lookup(&duplicate, fingerprint)
+                            }
+                            _ => None,
+                        };
+                        let duplicate_findings = if let Some(replay) = replay {
+                            record_repeated_window_replay(&duplicate, &replay);
+                            replay
+                        } else {
+                            scan_batch(duplicate)
+                        };
+                        wave_findings[duplicate_index] = Some(duplicate_findings);
+                    }
+                }
+                findings.extend(wave_findings.into_iter().flatten().flatten());
+            }
+            findings
+        } else {
+            rx.into_iter().flat_map(scan_batch).collect()
+        };
 
         // Drain thread owns source iteration for the fused path. A panic here
         // means the scan saw only a prefix of the requested input; record the

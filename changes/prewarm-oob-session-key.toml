@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "Out-of-band verification now overlaps its one-shot RSA session-key generation with scanning before collector registration."
+crates = ["cli", "verifier"]

@@ -128,10 +128,12 @@ mod recovery;
 pub use recovery::{BackendRecoveryReceipt, CoalescedScanOutcome, RecoveredInputRange};
 mod scan;
 mod scan_coalesced;
+#[cfg(feature = "simd")]
+pub(crate) use scan_coalesced::ReusableSimdTriggerCache;
 pub(crate) mod scan_filters;
 pub(crate) mod scan_postprocess;
 pub(crate) use scan_postprocess::{
-    build_confirmed_suffix_gate, confirmed_anchor::ConfirmedAnchorIndex,
+    build_confirmed_suffix_gate_with_hints, confirmed_anchor::ConfirmedAnchorIndex,
 };
 #[path = "scan_postprocess/confirmed_extract.rs"]
 mod scan_postprocess_confirmed_extract;
@@ -491,6 +493,8 @@ pub struct CompiledScanner {
     /// Complete BLAKE3 identity for the compiled detector and decoder execution plan.
     pub(crate) compiled_plan_digest: [u8; 32],
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,
+    pub(crate) reusable_phase1_evidence:
+        parking_lot::Mutex<phase1_admission::ReusablePhase1EvidenceCache>,
     pub(crate) ac: Option<AhoCorasick>,
     /// Exact selected route or the temporary all-peer calibration census.
     pub(crate) backend_state: ScannerBackendState,
@@ -614,6 +618,35 @@ pub struct CompiledScanner {
     /// compile-time corpus error and is never replaced with a guessed label.
     pub config: ScannerConfig,
     pub(crate) route_classification: Arc<phase1_admission::RouteClassificationPlan>,
+    #[cfg(debug_assertions)]
+    pub(crate) phase2_keyword_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) generic_keyword_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) phase2_prefilter_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) phase1_trigger_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) normalization_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) confirmed_pattern_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) entropy_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) multiline_admission_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) line_index_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) decoder_admission_scanned_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) direct_scan_absence_skipped_bytes: std::sync::atomic::AtomicU64,
+    #[cfg(debug_assertions)]
+    pub(crate) direct_scan_absence_batches: std::sync::atomic::AtomicU64,
+    #[cfg(feature = "simd")]
+    pub(crate) reusable_simd_triggers:
+        parking_lot::Mutex<scan_coalesced::ReusableSimdTriggerCache>,
+    #[cfg(debug_assertions)]
+    pub(crate) simd_phase2_tail_absence_skipped_bytes: std::sync::atomic::AtomicU64,
 }
 
 impl CompiledScanner {

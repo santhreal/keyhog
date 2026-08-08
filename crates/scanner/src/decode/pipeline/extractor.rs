@@ -75,8 +75,8 @@ thread_local! {
 /// Pre-compute and cache the whole-chunk extraction for reuse by this BFS item's
 /// decoders. Call once per item before the decoder loop; pair with
 /// [`clear_shared_candidates`] after.
-pub(super) fn prime_shared_candidates(text: &str) {
-    let cands = extract_encoded_value_spans_raw(text);
+pub(super) fn prime_shared_candidates(text: &str, prune_default_impossible: bool) {
+    let cands = extract_encoded_value_spans_raw(text, prune_default_impossible);
     SHARED_CANDIDATES.with(|c| {
         *c.borrow_mut() = Some((text.as_ptr() as usize, text.len(), cands));
     });
@@ -101,7 +101,7 @@ pub(crate) fn with_extracted_value_spans<R>(
         }
         drop(borrowed);
 
-        let cands = extract_encoded_value_spans_raw(text);
+        let cands = extract_encoded_value_spans_raw(text, false);
         f(&cands)
     })
 }
@@ -113,7 +113,10 @@ pub(crate) fn with_extracted_value_spans<R>(
 /// has one owner (sibling of [`MIN_EXTRACTED_VALUE_LEN`]).
 const MIN_B64_BLOCK_LEN: usize = 16;
 
-fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
+fn extract_encoded_value_spans_raw(
+    text: &str,
+    prune_default_impossible: bool,
+) -> Vec<ExtractedValue> {
     // Minimum length for a quoted-string or assignment value to be worth keeping
     // as a decode candidate. Both extraction paths apply the same floor; one
     // owner so they can never drift to different cutoffs.
@@ -340,7 +343,6 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
             while chars.peek().is_some_and(|&(_, c)| c.is_ascii_whitespace()) {
                 chars.next();
             }
-            let mut cleaned = String::with_capacity(32);
             let mut value_start: Option<usize> = None;
             let mut value_end = idx + ch.len_utf8();
             while let Some(&(current_idx, c)) = chars.peek() {
@@ -355,13 +357,16 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
                 }
                 value_start.get_or_insert(current_idx);
                 value_end = current_idx + c.len_utf8();
-                cleaned.push(c);
                 chars.next();
             }
-            if cleaned.len() >= MIN_EXTRACTED_VALUE_LEN {
-                if let Some(start) = value_start {
+            if let Some(start) = value_start {
+                let value = &text[start..value_end];
+                let default_impossible = prune_default_impossible
+                    && value.len() < super::super::limits::MIN_BASE64_CANDIDATE_LEN
+                    && value.bytes().all(|byte| byte.is_ascii_alphanumeric());
+                if value.len() >= MIN_EXTRACTED_VALUE_LEN && !default_impossible {
                     push_b64_subruns(&mut values, text, start, value_end);
-                    values.push(ExtractedValue::new(cleaned, start, value_end));
+                    values.push(ExtractedValue::new(value.to_owned(), start, value_end));
                 }
             }
             continue;

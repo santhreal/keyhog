@@ -32,24 +32,7 @@ pub(super) fn walk_descriptor_relative(
         })?;
 
         loop {
-            let mut child_directories = Vec::new();
-            for entry in read_directory(&directory, root, &relative)? {
-                let descend = visit(&entry)?;
-                if descend && matches!(entry.kind, DescriptorEntryKind::Directory) {
-                    let name = entry
-                        .path
-                        .file_name()
-                        .ok_or_else(|| {
-                            SourceError::Other(format!(
-                                "descriptor-relative walker produced a directory without a final component: '{}'",
-                                entry.path.display()
-                            ))
-                        })?
-                        .to_os_string();
-                    child_directories.push(name);
-                }
-            }
-
+            let mut child_directories = visit_directory(&directory, root, &relative, &mut visit)?;
             if child_directories.len() == 1 {
                 let Some(child) = child_directories.pop() else {
                     return Err(SourceError::Other(
@@ -117,28 +100,30 @@ fn open_child_directory(parent: &File, name: &OsString) -> std::io::Result<File>
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
-fn read_directory(
+fn visit_directory(
     directory: &File,
     root: &Path,
     relative: &[OsString],
-) -> Result<Vec<DescriptorEntry>, SourceError> {
+    visit: &mut impl FnMut(&DescriptorEntry) -> Result<bool, SourceError>,
+) -> Result<Vec<OsString>, SourceError> {
     let proc_path = PathBuf::from(format!("/proc/self/fd/{}", directory.as_raw_fd()));
+    let logical_dir = root.join(relative.iter().collect::<PathBuf>());
     let entries = std::fs::read_dir(&proc_path).map_err(|error| {
         SourceError::Other(format!(
             "failed to enumerate descriptor-relative filesystem directory '{}': {error}; directory was not scanned",
-            root.join(relative.iter().collect::<PathBuf>()).display()
+            logical_dir.display()
         ))
     })?;
-    let mut rows = Vec::new();
+    let mut child_directories = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|error| {
             SourceError::Other(format!(
                 "failed to enumerate an entry below descriptor-relative directory '{}': {error}; entry was not scanned",
-                root.join(relative.iter().collect::<PathBuf>()).display()
+                logical_dir.display()
             ))
         })?;
         let name = entry.file_name();
-        let logical_path = root.join(relative.iter().collect::<PathBuf>()).join(&name);
+        let logical_path = logical_dir.join(&name);
         let file_type = entry.file_type().map_err(|error| {
             SourceError::Other(format!(
                 "failed to classify descriptor-relative filesystem entry '{}': {error}; entry was not scanned",
@@ -146,12 +131,15 @@ fn read_directory(
             ))
         })?;
         let kind = if file_type.is_file() {
-            let size = entry.metadata().map_err(|error| {
-                SourceError::Other(format!(
-                    "failed to stat descriptor-relative filesystem file '{}': {error}; file was not scanned",
-                    logical_path.display()
-                ))
-            })?.len();
+            let size = entry
+                .metadata()
+                .map_err(|error| {
+                    SourceError::Other(format!(
+                        "failed to stat descriptor-relative filesystem file '{}': {error}; file was not scanned",
+                        logical_path.display()
+                    ))
+                })?
+                .len();
             DescriptorEntryKind::File { size }
         } else if file_type.is_dir() {
             DescriptorEntryKind::Directory
@@ -166,16 +154,18 @@ fn read_directory(
         } else {
             DescriptorEntryKind::Other
         };
-        rows.push(DescriptorEntry {
+        let row = DescriptorEntry {
             path: logical_path,
             kind,
-        });
+        };
+        if visit(&row)? && matches!(row.kind, DescriptorEntryKind::Directory) {
+            child_directories.push(name);
+        }
     }
-    rows.sort_unstable_by(|left, right| {
-        left.path
-            .as_os_str()
+    child_directories.sort_unstable_by(|left, right| {
+        left.as_os_str()
             .as_bytes()
-            .cmp(right.path.as_os_str().as_bytes())
+            .cmp(right.as_os_str().as_bytes())
     });
-    Ok(rows)
+    Ok(child_directories)
 }
