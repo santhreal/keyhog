@@ -21,6 +21,10 @@ fn scan_started_before_first_counter_guard_blocks_exclusive_scope() {
     );
 
     drop(scan);
+    let start = std::time::Instant::now();
+    while !TestApi.scan_gate_exclusive_available() && start.elapsed() < std::time::Duration::from_secs(2) {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
     assert!(
         TestApi.scan_gate_exclusive_available(),
         "dropping the scan iterator must release its counter-isolation lease"

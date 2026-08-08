@@ -5,6 +5,8 @@ fn filesystem_no_unwrap_expect() {
     let mut offenders: Vec<(String, usize, String)> = Vec::new();
     for rel in [
         "src/filesystem.rs",
+        "src/filesystem/descriptor_walk.rs",
+        "src/filesystem/discovery.rs",
         "src/filesystem/extract.rs",
         "src/filesystem/filter.rs",
     ] {

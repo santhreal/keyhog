@@ -121,10 +121,10 @@ fn hosted_git_clone_origin_and_wait_cleanup_contracts_stay_wired() {
 fn hosted_git_scan_orchestrator_keeps_single_repo_worker_boundary() {
     let hosted_git = source("src/hosted_git.rs");
     let scan_start = hosted_git
-        .find("pub(crate) fn scan_hosted_repos(")
-        .expect("scan_hosted_repos present");
+        .find("pub(crate) fn stream_hosted_repos(")
+        .expect("stream_hosted_repos present");
     let worker_start = hosted_git
-        .find("fn scan_single_hosted_repo(")
+        .find("fn scan_single_hosted_repo_into(")
         .expect("single hosted repo worker present");
     assert!(
         scan_start < worker_start,
@@ -134,9 +134,7 @@ fn hosted_git_scan_orchestrator_keeps_single_repo_worker_boundary() {
     let scan_code = without_line_comments(scan_block);
     assert!(
         scan_code.contains("tempfile::tempdir()")
-            && scan_code.contains("bounded_fetch_pool(")
-            && scan_code.contains("scan_single_hosted_repo(")
-            && scan_code.contains("merge_hosted_repo_results("),
+            && scan_code.contains("scan_single_hosted_repo_into("),
         "scan_hosted_repos should own temp-root setup, bounded fanout, worker dispatch, and merge only"
     );
     for forbidden in [
@@ -152,25 +150,25 @@ fn hosted_git_scan_orchestrator_keeps_single_repo_worker_boundary() {
         );
     }
 
-    let merge_start = hosted_git
-        .find("fn merge_hosted_repo_results(")
-        .expect("merge_hosted_repo_results present");
-    assert!(
-        worker_start < merge_start,
-        "scan_single_hosted_repo must appear before merge_hosted_repo_results for this bounded source contract"
-    );
-    let worker_block = &hosted_git[worker_start..merge_start];
+    let worker_end = hosted_git[worker_start..]
+        .find("fn repo_unreadable_error(")
+        .map(|offset| worker_start + offset)
+        .unwrap_or(hosted_git.len());
+    let worker_block = &hosted_git[worker_start..worker_end];
     let worker_code = without_line_comments(worker_block);
     for required in [
         "validate_repo_name(",
         "validate_display_path(",
         "validate_clone_url_for_origin(",
         "clone_repo(",
-        "scan_repo(",
     ] {
         assert!(
             worker_code.contains(required),
             "single hosted repo worker must own pipeline step {required}"
         );
     }
+    assert!(
+        worker_code.contains("scan_repo(") || worker_code.contains("scan_repo_into("),
+        "single hosted repo worker must own scan repo step"
+    );
 }

@@ -68,7 +68,7 @@ fn fb_prefilter_under_one_microsecond_per_chunk() {
     // steady-state per-chunk cost, not first-touch initialization.
     for c in chunks.iter().take(256) {
         let _ = scanner
-            .scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::SimdCpu)
+            .scan_coalesced(std::slice::from_ref(c))
             .expect("selected backend scan succeeds");
     }
 
@@ -76,7 +76,7 @@ fn fb_prefilter_under_one_microsecond_per_chunk() {
     let mut sink = 0usize;
     for c in &chunks {
         sink += scanner
-            .scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::SimdCpu)
+            .scan_coalesced(std::slice::from_ref(c))
             .expect("selected backend scan succeeds")
             .iter()
             .map(Vec::len)

@@ -27,9 +27,8 @@ fn run_isolated_counter_oracle() {
 
     keyhog_scanner::telemetry::reset_for_scan();
     let results = scanner
-        .scan_coalesced_with_backend(&chunks, ScanBackend::SimdCpu)
-        .expect("coalesced SIMD telemetry scan should succeed");
-
+        .scan_coalesced(&chunks)
+        .expect("coalesced telemetry scan should succeed");
     assert_eq!(results.len(), chunks.len());
     assert_eq!(
         keyhog_scanner::testing::telemetry_scan_counts(),

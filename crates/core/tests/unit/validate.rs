@@ -1228,7 +1228,11 @@ fn regex_validator_uses_one_iterative_ast_walk() {
 
 #[test]
 fn literal_specificity_uses_ast_not_raw_regex_scans() {
-    let source = keyhog_core::testing::read_crate_source("src/spec/validate.rs");
+    let source = format!(
+        "{}\n{}",
+        keyhog_core::testing::read_crate_source("src/spec/validate.rs"),
+        keyhog_core::testing::read_crate_source("src/spec/validate/regex_ast.rs")
+    );
 
     assert!(source.contains("fn ast_literal_runs("));
     assert!(source.contains("enum LiteralFrame"));
@@ -1260,7 +1264,11 @@ fn regex_validation_uses_typed_kinds_not_string_labels() {
 
 #[test]
 fn pattern_group_bounds_are_validated_before_scanner_compile() {
-    let source = keyhog_core::testing::read_crate_source("src/spec/validate.rs");
+    let source = format!(
+        "{}\n{}",
+        keyhog_core::testing::read_crate_source("src/spec/validate.rs"),
+        keyhog_core::testing::read_crate_source("src/spec/validate/regex_ast.rs")
+    );
 
     assert!(source.contains("fn validate_pattern_groups<'a>("));
     assert!(source.contains("fn ast_captures_len(ast: &ast::Ast) -> usize"));
@@ -1274,7 +1282,11 @@ fn pattern_group_bounds_are_validated_before_scanner_compile() {
 
 #[test]
 fn spec_field_bounds_are_named_and_validated() {
-    let source = keyhog_core::testing::read_crate_source("src/spec/validate.rs");
+    let source = format!(
+        "{}\n{}",
+        keyhog_core::testing::read_crate_source("src/spec/validate.rs"),
+        keyhog_core::testing::read_crate_source("src/spec/validate/verify.rs")
+    );
 
     assert!(source.contains("const MAX_COMPANION_WITHIN_LINES: usize = 100;"));
     assert!(source.contains("const MIN_HTTP_STATUS: u16 = 100;"));

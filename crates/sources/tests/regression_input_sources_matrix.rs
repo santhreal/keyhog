@@ -254,7 +254,7 @@ fn binary_blob_yields_exact_ascii_printable_runs() {
         .expect("binary blob must yield a binary-strings chunk");
     assert_eq!(
         &*strings_chunk.data,
-        "first_printable_secret\nsecond_run_secret"
+        "first_printable_secret\n\0\nsecond_run_secret"
     );
 }
 

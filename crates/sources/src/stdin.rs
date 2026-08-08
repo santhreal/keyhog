@@ -132,6 +132,8 @@ fn buffered_chunks_with_limit(
     bytes: std::sync::Arc<[u8]>,
     max_bytes: usize,
 ) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>>> {
+    let _acquire = crate::profile::acquire_span();
+    let _buffering = crate::profile::read_span();
     if bytes.len() > max_bytes {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Box::new(std::iter::once(Err(SourceError::Io(
