@@ -269,6 +269,39 @@ fn stream_layer_records_git_lfs_pointer_for_skip_extension() {
     );
 }
 
+/// Image skip-extensions that are really Git-LFS pointers must record
+/// GitLfsPointer (process_entry order), not fall through to Binary/metadata.
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_records_git_lfs_pointer_for_image_skip_extension() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let oid = "b".repeat(64);
+    let pointer =
+        format!("version https://git-lfs.github.com/spec/v1\noid sha256:{oid}\nsize 999\n");
+    let layer = layer_tar_with_entries(
+        dir.path(),
+        "layer.tar",
+        &[("assets/logo.png", pointer.as_bytes())],
+    );
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream image lfs pointer");
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().all(|chunk| !chunk.data.contains("sha256:")),
+        "image LFS pointer must not be scanned as text/metadata, got {:?}",
+        chunks
+            .iter()
+            .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
+    );
+}
+
 #[cfg(feature = "docker")]
 #[test]
 fn stream_layer_skips_extensionless_elf_without_string_mining() {

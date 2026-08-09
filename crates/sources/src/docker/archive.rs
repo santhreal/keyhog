@@ -333,13 +333,12 @@ fn stream_layer_tar_reader(
             .unwrap_or("");
         let skip_extension = !ext.is_empty() && crate::filesystem::is_default_skip_extension(ext);
         let may_image = layer_member_may_carry_image_metadata(ext);
-        // Non-image skip-extensions match FilesystemSource: normally Binary and
-        // unread. Pointer-sized skip-extension bodies may be Git-LFS placeholders
-        // that kept the asset extension (`model.bin`); probe those so the skip
-        // is GitLfsPointer (remedy: git lfs pull) instead of a generic Binary.
-        // Image extensions still need their bytes for metadata.
-        if skip_extension && !may_image {
-            const GIT_LFS_POINTER_MAX_BYTES: u64 = 1024;
+        // process_entry probes Git-LFS for EVERY skip-extension first (including
+        // logo.png placeholders), then only non-pointers may take image metadata
+        // or Binary skip. Match that order here.
+        let mut prebuffered: Option<Vec<u8>> = None;
+        const GIT_LFS_POINTER_MAX_BYTES: u64 = 1024;
+        if skip_extension {
             if size <= GIT_LFS_POINTER_MAX_BYTES {
                 let mut bytes = vec![0_u8; size as usize];
                 if size > 0 {
@@ -349,11 +348,17 @@ fn stream_layer_tar_reader(
                     let _event = crate::record_skip_event(crate::SourceSkipEvent::GitLfsPointer);
                     continue;
                 }
+                if !may_image {
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                    continue;
+                }
+                // Image-shaped skip-extension that is not an LFS pointer: reuse
+                // the already-read bytes for metadata extraction below.
+                prebuffered = Some(bytes);
+            } else if !may_image {
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
                 continue;
             }
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-            continue;
         }
 
         // Large plain members: stream ~1 MiB windows from the tar entry instead
@@ -367,7 +372,6 @@ fn stream_layer_tar_reader(
         // be discarded as Binary. Containers still need a full buffer.
         // Keep parity with FilesystemSource process_entry (extract.rs = 512).
         const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 512;
-        let mut prebuffered: Option<Vec<u8>> = None;
         if ext.is_empty() {
             let prefix_len = std::cmp::min(
                 EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES as u64,
