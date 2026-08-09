@@ -753,18 +753,38 @@ fn load_commit_blob_set(
 
     let mut blob_metadata = Vec::new();
     let mut errors = Vec::new();
-    collect_tree_blobs_metadata(
-        repo,
-        &tree,
-        seen_blob_paths,
-        walked_trees,
-        None,
-        &mut blob_metadata,
-        b"",
-        &mut errors,
-        respect_default_excludes,
-    );
-    // Memoize the root tree only when its walk recorded no error, so a
+    // Prefer parent-tree diffs over full tree rewalks. Flat histories (one new
+    // root entry per commit) otherwise re-scan O(n) entries per commit → O(n²)
+    // object-header traffic. Diffs emit only added/changed paths; deletions'
+    // old blob sides are kept so newest-first `git log` order still recalls
+    // credentials that were removed later. Root commits and unreadable parents
+    // fall back to a full walk (recall-safe).
+    let parent_ids: Vec<gix::ObjectId> = commit.parent_ids().map(|id| id.detach()).collect();
+    if parent_ids.is_empty() {
+        collect_tree_blobs_metadata(
+            repo,
+            &tree,
+            seen_blob_paths,
+            walked_trees,
+            None,
+            &mut blob_metadata,
+            b"",
+            &mut errors,
+            respect_default_excludes,
+        );
+    } else {
+        collect_commit_blobs_via_parent_diffs(
+            repo,
+            &tree,
+            &parent_ids,
+            seen_blob_paths,
+            walked_trees,
+            &mut blob_metadata,
+            &mut errors,
+            respect_default_excludes,
+        );
+    }
+    // Memoize the root tree only when its walk/diff recorded no error, so a
     // corrupt subtree keeps re-reporting (and re-attempting) on later commits
     // exactly as before.
     if errors.is_empty() {
@@ -1377,6 +1397,206 @@ fn commit_author_name(commit: &gix::Commit<'_>, commit_id: &str) -> Result<Strin
         Ok("unknown".to_string())
     } else {
         Ok(name)
+    }
+}
+
+fn collect_commit_blobs_via_parent_diffs(
+    repo: &gix::Repository,
+    tree: &gix::Tree<'_>,
+    parent_ids: &[gix::ObjectId],
+    seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    walked_trees: &mut HashSet<gix::ObjectId>,
+    blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
+    errors: &mut Vec<SourceError>,
+    respect_default_excludes: bool,
+) {
+    let mut diff_state = gix::diff::tree::State::default();
+    let mut records = Vec::new();
+    for parent_id in parent_ids {
+        let Some(parent_tree) = load_commit_tree_for_diff(repo, *parent_id) else {
+            // Unreadable parent: fall back to a full walk so this commit's
+            // blobs cannot be dropped. The parent commit's own visit already
+            // recorded the coverage gap; do not emit a second error here.
+            collect_tree_blobs_metadata(
+                repo,
+                tree,
+                seen_blob_paths,
+                walked_trees,
+                None,
+                blob_metadata,
+                b"",
+                errors,
+                respect_default_excludes,
+            );
+            return;
+        };
+        if parent_tree.id == tree.id {
+            continue;
+        }
+        let mut recorder = gix::diff::tree::Recorder::default().track_location(Some(
+            gix::diff::tree::recorder::Location::Path,
+        ));
+        if let Err(error) = gix::diff::tree(
+            gix::objs::TreeRefIter::from_bytes(&parent_tree.data),
+            gix::objs::TreeRefIter::from_bytes(&tree.data),
+            &mut diff_state,
+            &repo.objects,
+            &mut recorder,
+        ) {
+            tracing::warn!(
+                %error,
+                parent = %parent_id,
+                "git parent-tree diff failed; falling back to a full tree walk for recall"
+            );
+            collect_tree_blobs_metadata(
+                repo,
+                tree,
+                seen_blob_paths,
+                walked_trees,
+                None,
+                blob_metadata,
+                b"",
+                errors,
+                respect_default_excludes,
+            );
+            return;
+        }
+        records.extend(recorder.records);
+    }
+    absorb_tree_diff_blob_records(
+        records,
+        seen_blob_paths,
+        blob_metadata,
+        respect_default_excludes,
+    );
+}
+
+fn load_commit_tree_for_diff<'a>(
+    repo: &'a gix::Repository,
+    parent_id: gix::ObjectId,
+) -> Option<gix::Tree<'a>> {
+    let obj = match repo.find_object(parent_id) {
+        Ok(obj) => obj,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                parent = %parent_id,
+                "git parent commit object unreadable during tree diff"
+            );
+            return None;
+        }
+    };
+    let commit = match obj.try_into_commit() {
+        Ok(commit) => commit,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                parent = %parent_id,
+                "git parent object is not a commit during tree diff"
+            );
+            return None;
+        }
+    };
+    match commit.tree() {
+        Ok(tree) => Some(tree),
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                parent = %parent_id,
+                "git parent commit tree unreadable during tree diff"
+            );
+            None
+        }
+    }
+}
+
+fn absorb_tree_diff_blob_records(
+    records: Vec<gix::diff::tree::recorder::Change>,
+    seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
+    respect_default_excludes: bool,
+) {
+    for change in records {
+        match change {
+            gix::diff::tree::recorder::Change::Addition {
+                entry_mode,
+                oid,
+                path,
+                ..
+            } => {
+                consider_diff_blob_path(
+                    oid,
+                    path.as_ref(),
+                    entry_mode,
+                    seen_blob_paths,
+                    blob_metadata,
+                    respect_default_excludes,
+                );
+            }
+            gix::diff::tree::recorder::Change::Deletion {
+                entry_mode,
+                oid,
+                path,
+                ..
+            } => {
+                // Newest-first history: a deletion is often the first time this
+                // scan observes a historical blob that no longer exists in
+                // newer trees. Keep the deleted blob side for recall.
+                consider_diff_blob_path(
+                    oid,
+                    path.as_ref(),
+                    entry_mode,
+                    seen_blob_paths,
+                    blob_metadata,
+                    respect_default_excludes,
+                );
+            }
+            gix::diff::tree::recorder::Change::Modification {
+                previous_entry_mode,
+                previous_oid,
+                entry_mode,
+                oid,
+                path,
+            } => {
+                consider_diff_blob_path(
+                    oid,
+                    path.as_ref(),
+                    entry_mode,
+                    seen_blob_paths,
+                    blob_metadata,
+                    respect_default_excludes,
+                );
+                consider_diff_blob_path(
+                    previous_oid,
+                    path.as_ref(),
+                    previous_entry_mode,
+                    seen_blob_paths,
+                    blob_metadata,
+                    respect_default_excludes,
+                );
+            }
+        }
+    }
+}
+
+fn consider_diff_blob_path(
+    oid: gix::ObjectId,
+    path: &[u8],
+    entry_mode: gix::objs::tree::EntryMode,
+    seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
+    respect_default_excludes: bool,
+) {
+    if !entry_mode.is_blob() {
+        return;
+    }
+    if respect_default_excludes && crate::filesystem::is_default_excluded_path_bytes(path) {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+        return;
+    }
+    let filepath = path.to_vec();
+    if seen_blob_paths.insert((oid, filepath.clone())) {
+        blob_metadata.push((oid, filepath));
     }
 }
 
