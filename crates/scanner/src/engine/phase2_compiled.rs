@@ -242,7 +242,7 @@ impl CompiledScanner {
     ) -> R {
         ACTIVE_PATTERNS_POOL.with(|cell| {
             let mut scratch = cell.borrow_mut();
-            scratch.begin(self.phase2_patterns.len());
+            let _ = scratch.begin(self.phase2_patterns.len());
             // anchor_mode = false: the legacy whole-chunk path has no AC gating,
             // so every always-active pattern must be marked for recall.
             self.populate_active_phase2(
@@ -336,7 +336,7 @@ impl CompiledScanner {
             // admission; see `phase2_always_active_sparse`).
             None => ACTIVE_PATTERNS_POOL.with(|cell| {
                 let mut scratch = cell.borrow_mut();
-                scratch.begin(self.phase2_patterns.len());
+                let _ = scratch.begin(self.phase2_patterns.len());
                 self.populate_active_phase2(data, data, &mut scratch, false, None, false, route);
                 !scratch.active.is_empty()
             }),

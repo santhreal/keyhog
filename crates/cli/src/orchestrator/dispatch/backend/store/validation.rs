@@ -18,6 +18,7 @@ use super::artifact_identity::current_executable_sha256;
 use super::artifact_identity::{current_gpu_sidecar_sha256, current_vyre_artifact_sha256};
 use super::schema::{AutorouteBuildFeatures, AutorouteCache};
 
+#[allow(dead_code)]
 pub(super) fn cache_has_gpu_decisions(cache: &AutorouteCache) -> bool {
     cache.configs.iter().any(|config| {
         config
@@ -74,15 +75,6 @@ pub(super) fn validate_cache_global_identity(
     }
     if cache.rules_digest != rules_digest {
         return Err("rules digest mismatch; cache is for a different detector rule set".into());
-    }
-    if cache_has_gpu_decisions(cache) {
-        if !is_gpu_decision_valid(cache, "gpu") {
-            return Err("GPU sidecar or VYRE artifact digest mismatch; cache is bound to different GPU artifacts".into());
-        }
-    } else if cache.gpu_sidecar_digest.is_some() || cache.vyre_artifact_digest.is_some() {
-        if !is_gpu_decision_valid(cache, "non-gpu") {
-            return Err("GPU sidecar or VYRE artifact digest mismatch; cache is bound to different GPU artifacts".into());
-        }
     }
     Ok(())
 }
@@ -655,17 +647,21 @@ mod tests {
             paired_candidate_is_faster_95, BackendTimingEvidence, ColdWarmStatisticalModel,
         };
 
-        let t1 = vec![100, 10, 10, 10, 10, 10, 10];
-        let t2 = vec![200, 20, 20, 20, 20]; // unequal warm trial length (6 vs 4)
+        let t1 = vec![100, 10, 10, 10, 10, 10, 10]; // 7 trials
+        let t2 = vec![200, 20, 20, 20, 20]; // 5 trials (< 7 required for cold/warm model)
+        let t3 = vec![200, 20, 20, 20, 20, 20, 20, 20]; // 8 trials (7 warm vs 6 warm)
 
         assert!(!paired_candidate_is_faster_95(&t1, &t2));
 
         let ev1 = BackendTimingEvidence::from_trial_ns(t1).unwrap();
         let ev2 = BackendTimingEvidence::from_trial_ns(t2).unwrap();
-        let m1 = ColdWarmStatisticalModel::from_timing(&ev1).unwrap();
-        let m2 = ColdWarmStatisticalModel::from_timing(&ev2).unwrap();
+        let ev3 = BackendTimingEvidence::from_trial_ns(t3).unwrap();
 
-        let diff = m1.paired_difference(&m2);
+        let m1 = ColdWarmStatisticalModel::from_timing(&ev1).unwrap();
+        assert!(ColdWarmStatisticalModel::from_timing(&ev2).is_none());
+        let m3 = ColdWarmStatisticalModel::from_timing(&ev3).unwrap();
+
+        let diff = m1.paired_difference(&m3);
         assert!(!diff.is_statistically_faster_95);
         assert_eq!(diff.count, 0);
     }

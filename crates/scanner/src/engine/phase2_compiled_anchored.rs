@@ -24,7 +24,7 @@ impl CompiledScanner {
     ) -> R {
         ACTIVE_PATTERNS_POOL.with(|cell| {
             let mut scratch = cell.borrow_mut();
-            scratch.begin(self.phase2_patterns.len());
+            let _ = scratch.begin(self.phase2_patterns.len());
             // anchor_mode = true: this method only runs on the shared-anchor
             // path, where eligible always-active patterns are gated by the AC.
             self.populate_active_phase2(

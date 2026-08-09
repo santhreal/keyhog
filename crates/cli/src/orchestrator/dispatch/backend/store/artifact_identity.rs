@@ -2,7 +2,39 @@
 
 use sha2::{Digest, Sha256};
 use std::io::Read;
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock};
+
+static GPU_SIDECAR_DIGEST: LazyLock<Option<String>> = LazyLock::new(|| {
+    let cache_dir = keyhog_scanner::gpu_literal_artifact_cache_dir().ok()?;
+    let entries = std::fs::read_dir(&cache_dir).ok()?;
+    let mut bin_files = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "bin") {
+            bin_files.push(path);
+        }
+    }
+    if bin_files.is_empty() {
+        return None;
+    }
+    bin_files.sort();
+    let mut hasher = Sha256::new();
+    hasher.update(b"gpu_sidecar:");
+    let mut buffer = [0u8; 64 * 1024];
+    for path in bin_files {
+        let filename = path.file_name()?.to_string_lossy();
+        hasher.update(filename.as_bytes());
+        let mut file = std::fs::File::open(&path).ok()?;
+        loop {
+            let read = file.read(&mut buffer).ok()?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+        }
+    }
+    Some(format!("{:x}", hasher.finalize()))
+});
 
 pub(super) fn current_executable_sha256(
 ) -> Result<&'static str, Box<dyn std::error::Error + Send + Sync>> {
@@ -38,65 +70,9 @@ pub(super) fn current_executable_sha256(
         .map_err(|error| error.clone().into())
 }
 pub(super) fn current_gpu_sidecar_sha256() -> Option<String> {
-    let cache_dir = keyhog_scanner::gpu_literal_artifact_cache_dir().ok()?;
-    let entries = std::fs::read_dir(&cache_dir).ok()?;
-    let mut bin_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|ext| ext == "bin") {
-            bin_files.push(path);
-        }
-    }
-    if bin_files.is_empty() {
-        return None;
-    }
-    bin_files.sort();
-    let mut hasher = Sha256::new();
-    hasher.update(b"gpu_sidecar:");
-    let mut buffer = [0u8; 64 * 1024];
-    for path in bin_files {
-        let filename = path.file_name()?.to_string_lossy();
-        hasher.update(filename.as_bytes());
-        let mut file = std::fs::File::open(&path).ok()?;
-        loop {
-            let read = file.read(&mut buffer).ok()?;
-            if read == 0 {
-                break;
-            }
-            hasher.update(&buffer[..read]);
-        }
-    }
-    Some(format!("{:x}", hasher.finalize()))
+    GPU_SIDECAR_DIGEST.clone()
 }
 
 pub(super) fn current_vyre_artifact_sha256() -> Option<String> {
-    let cache_dir = keyhog_scanner::gpu_literal_artifact_cache_dir().ok()?;
-    let entries = std::fs::read_dir(&cache_dir).ok()?;
-    let mut bin_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|ext| ext == "bin") {
-            bin_files.push(path);
-        }
-    }
-    if bin_files.is_empty() {
-        return None;
-    }
-    bin_files.sort();
-    let mut hasher = Sha256::new();
-    hasher.update(b"vyre_artifact:");
-    let mut buffer = [0u8; 64 * 1024];
-    for path in bin_files {
-        let filename = path.file_name()?.to_string_lossy();
-        hasher.update(filename.as_bytes());
-        let mut file = std::fs::File::open(&path).ok()?;
-        loop {
-            let read = file.read(&mut buffer).ok()?;
-            if read == 0 {
-                break;
-            }
-            hasher.update(&buffer[..read]);
-        }
-    }
-    Some(format!("{:x}", hasher.finalize()))
+    current_gpu_sidecar_sha256()
 }

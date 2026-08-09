@@ -58,19 +58,6 @@ fn paired_route_trials_are_faster(selected: &[u128], competitor: &[u128]) -> boo
     if selected.len() != competitor.len() || selected.is_empty() {
         return false;
     }
-    if let (Some(selected_ev), Some(competitor_ev)) = (
-        BackendTimingEvidence::from_trial_ns(selected.to_vec()),
-        BackendTimingEvidence::from_trial_ns(competitor.to_vec()),
-    ) {
-        if let (Some(selected_model), Some(competitor_model)) = (
-            ColdWarmStatisticalModel::from_timing(&selected_ev),
-            ColdWarmStatisticalModel::from_timing(&competitor_ev),
-        ) {
-            return selected_model
-                .paired_difference(&competitor_model)
-                .is_statistically_faster_95;
-        }
-    }
     timing::paired_candidate_is_faster_95(selected, competitor)
 }
 

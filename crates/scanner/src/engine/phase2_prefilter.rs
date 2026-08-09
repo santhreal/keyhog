@@ -257,7 +257,7 @@ impl Phase2AlwaysActivePrefilter {
                         None
                     }
                 },
-                None => Phase2HsEngine::build(phase2_patterns, self.indices_for(scope)),
+                None => Phase2HsEngine::build(phase2_patterns, self.indices_for(scope)).ok().flatten(),
             }
         })
         .as_ref()

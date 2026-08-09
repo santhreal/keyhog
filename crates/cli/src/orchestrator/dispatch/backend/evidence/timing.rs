@@ -7,8 +7,6 @@ use std::time::Duration;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct BackendTimingEvidence {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) cold_trial_ns: Option<u128>,
     pub(crate) trials_ns: Vec<u128>,
 }
 
@@ -16,9 +14,6 @@ impl BackendTimingEvidence {
     pub(crate) fn add_to_first_trial(mut self, overhead_ns: u128) -> Self {
         if let Some(first) = self.trials_ns.first_mut() {
             *first = first.saturating_add(overhead_ns);
-        }
-        if let Some(cold) = self.cold_trial_ns.as_mut() {
-            *cold = cold.saturating_add(overhead_ns);
         }
         self
     }
@@ -41,15 +36,7 @@ impl BackendTimingEvidence {
         if trials_ns.is_empty() {
             return None;
         }
-        let cold_trial_ns = if trials_ns.len() >= 7 {
-            Some(trials_ns[0])
-        } else {
-            None
-        };
-        Some(Self {
-            cold_trial_ns,
-            trials_ns,
-        })
+        Some(Self { trials_ns })
     }
 
     pub(crate) fn median_ns(&self) -> u128 {
@@ -84,6 +71,7 @@ pub(crate) struct ColdWarmStatisticalModel {
     pub(crate) warm_ci: TimingConfidenceInterval,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PairedDifferenceDistribution {
@@ -96,23 +84,13 @@ pub(crate) struct PairedDifferenceDistribution {
 
 impl ColdWarmStatisticalModel {
     pub(crate) fn from_timing(timing: &BackendTimingEvidence) -> Option<Self> {
-        if timing.trials_ns.is_empty() {
+        if timing.trials_ns.len()
+            < crate::orchestrator::dispatch::backend::AUTOROUTE_CALIBRATION_TRIALS
+        {
             return None;
         }
-        let (cold_one_shot_ns, warm_trials) = if timing.trials_ns.len() >= 7 {
-            (
-                timing.cold_trial_ns.unwrap_or(timing.trials_ns[0]),
-                &timing.trials_ns[1..],
-            )
-        } else {
-            (
-                timing.cold_trial_ns.unwrap_or(timing.trials_ns[0]),
-                &timing.trials_ns[..],
-            )
-        };
-        if warm_trials.is_empty() {
-            return None;
-        }
+        let cold_one_shot_ns = timing.trials_ns[0];
+        let warm_trials = &timing.trials_ns[1..];
         let warm_timing = BackendTimingEvidence::from_trial_ns(warm_trials.to_vec())?;
         let warm_median_ns = warm_timing.median_ns();
         let warm_ci = warm_timing.confidence_interval_95_ns();
@@ -124,6 +102,7 @@ impl ColdWarmStatisticalModel {
         })
     }
 
+    #[allow(dead_code)]
     pub(crate) fn paired_difference(
         &self,
         competitor: &ColdWarmStatisticalModel,
