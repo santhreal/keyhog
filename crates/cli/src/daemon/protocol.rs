@@ -69,8 +69,14 @@ use std::collections::BTreeMap;
 ///   handling is unchanged: the Hello handshake compares `WIRE_VERSION` on
 ///   both ends and a mismatched peer is refused before any scan traffic, so a
 ///   v11 client never parses a v12 frame (and vice versa).
-
-pub(crate) const WIRE_VERSION: u32 = 12;
+/// * v13 - adds the guard commit transaction: `GuardCommitBegin`,
+///   `GuardCommitPlan`, `GuardCommitBlob`, `GuardCommitFinish`, and
+///   `GuardCommitReceipt` frames for exact staged-object authorization,
+///   plus `GuardAdd`, `GuardRemove`, `GuardStatus`, and `GuardReconcile`
+///   root control frames. The client validates conservation of object
+///   count and bytes and reacquires the index fingerprint before
+///   accepting the receipt.
+pub(crate) const WIRE_VERSION: u32 = 13;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -210,6 +216,69 @@ pub(crate) enum Request {
     /// Graceful shutdown - daemon flushes in-flight scans, drops the
     /// socket, exits. The client side is `keyhog daemon stop`.
     Shutdown,
+    // ── Guard commit transaction ──────────────────────────────────────
+    /// Begin a guard commit transaction. The server checks the staged
+    /// manifest against the clean attestation cache and returns a plan
+    /// naming which blobs need payload streaming.
+    GuardCommitBegin {
+        /// Repository identity (worktree root path).
+        repo_path: String,
+        /// Index fingerprint from the staged manifest.
+        index_fingerprint: String,
+        /// Git hash algorithm.
+        hash_algorithm: String,
+        /// Staged manifest entries (path, OID, size, kind, mode).
+        entries: Vec<GuardWireManifestEntry>,
+    },
+    /// Stream one blob payload for a previously planned transaction.
+    /// Only blobs the server named in `GuardCommitPlan::required_blob_oids`
+    /// are sent; clean-hit blobs are never transmitted.
+    GuardCommitBlob {
+        /// Transaction ID from the plan.
+        transaction_id: u64,
+        /// Blob object ID (hex).
+        blob_oid: String,
+        /// Object size in bytes.
+        object_size: u64,
+        /// Payload bytes (bounded by MAX_FRAME_BYTES).
+        #[serde(with = "protected_chunks")]
+        payload: Vec<keyhog_core::Chunk>,
+    },
+    /// Finish the transaction. The server validates conservation and
+    /// reacquires the index fingerprint, then returns the receipt.
+    GuardCommitFinish {
+        /// Transaction ID from the plan.
+        transaction_id: u64,
+        /// Total objects the client streamed.
+        client_objects_streamed: u64,
+        /// Total bytes the client streamed.
+        client_bytes_streamed: u64,
+    },
+    // ── Guard root control ─────────────────────────────────────────────
+    /// Register a root for continuous guard protection.
+    GuardAdd {
+        /// Canonical root path.
+        root: String,
+        /// Repository or filesystem mode.
+        mode: String,
+    },
+    /// Remove a root from guard protection and delete its persisted state.
+    GuardRemove {
+        /// Canonical root path.
+        root: String,
+    },
+    /// Query the current status of a guarded root.
+    GuardStatus {
+        /// Canonical root path.
+        root: String,
+    },
+    /// Force a full reconciliation of a guarded root.
+    GuardReconcile {
+        /// Canonical root path.
+        root: String,
+    },
+    /// List all registered guard roots.
+    GuardList,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -312,6 +381,128 @@ pub(crate) enum Response {
     /// Acknowledgement for `Shutdown`. The daemon closes the socket
     /// after sending this; the client should not write again.
     Shutdown,
+    // ── Guard commit transaction ──────────────────────────────────────
+    /// Plan for a guard commit transaction: which blobs are clean hits
+    /// (no payload needed) and which need streaming.
+    GuardCommitPlan {
+        /// Server-assigned transaction ID.
+        transaction_id: u64,
+        /// Object OIDs that are clean hits (no payload streaming needed).
+        clean_hits: Vec<String>,
+        /// Object OIDs that need payload streaming.
+        required_blob_oids: Vec<String>,
+        /// Maximum bytes per blob frame.
+        max_blob_bytes: u64,
+    },
+    /// Terminal receipt for a guard commit transaction. The client
+    /// validates conservation and reacquires the index fingerprint
+    /// before accepting this receipt.
+    GuardCommitReceipt {
+        /// Objects requested in the transaction.
+        objects_requested: u64,
+        /// Objects served from the clean attestation cache.
+        objects_hit: u64,
+        /// Objects scanned.
+        objects_scanned: u64,
+        /// Objects skipped (deletions, symlinks, submodules).
+        objects_skipped: u64,
+        /// Total bytes requested.
+        bytes_requested: u64,
+        /// Total bytes served from cache.
+        bytes_hit: u64,
+        /// Total bytes scanned.
+        bytes_scanned: u64,
+        /// Number of unsuppressed findings (without secret values).
+        findings_count: u64,
+        /// Number of coverage gaps.
+        coverage_gaps: u64,
+        /// Terminal root state label.
+        terminal_state: String,
+        /// Terminal event sequence.
+        terminal_sequence: u64,
+    },
+    // ── Guard root control ─────────────────────────────────────────────
+    /// Root registered successfully after initial reconciliation.
+    GuardAdded {
+        /// Canonical root path.
+        root: String,
+        /// Terminal root state label.
+        state: String,
+        /// Terminal event sequence.
+        terminal_sequence: u64,
+    },
+    /// Root removed from guard protection.
+    GuardRemoved,
+    /// Current status of a guarded root.
+    GuardStatusResult {
+        /// Canonical root path.
+        root: String,
+        /// Mode label (repo or filesystem).
+        mode: String,
+        /// Current state label.
+        state: String,
+        /// Terminal event sequence.
+        terminal_sequence: u64,
+        /// Pending event count.
+        pending_events: u64,
+        /// Files scanned in the current receipt.
+        files_scanned: u64,
+        /// Bytes scanned in the current receipt.
+        bytes_scanned: u64,
+        /// Clean attestation hits.
+        attestation_hits: u64,
+        /// Clean attestation misses.
+        attestation_misses: u64,
+        /// Findings count (without secret values).
+        findings_count: u64,
+        /// Coverage gaps count.
+        coverage_gaps: u64,
+        /// Scanner residency label.
+        scanner_residency: String,
+        /// Exact repair command.
+        repair_command: String,
+    },
+    /// Reconciliation started for a guarded root.
+    GuardReconcileStarted {
+        /// Canonical root path.
+        root: String,
+    },
+    /// List of all registered guard roots with their states.
+    GuardListResult {
+        /// All registered roots, each with path, mode, and state.
+        roots: Vec<GuardListEntry>,
+    },
+}
+
+/// One entry in the staged manifest sent over the wire in
+/// `GuardCommitBegin`. Carries no payload bytes, only identity metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GuardWireManifestEntry {
+    /// Path bytes as hex-encoded UTF-8 (non-UTF-8 paths are hex-escaped).
+    pub path: String,
+    /// Entry kind label: "file", "symlink", "submodule", "deletion".
+    pub kind: String,
+    /// Staged blob object ID (hex). Empty for deletions.
+    pub object_oid: String,
+    /// Exact object size in bytes.
+    pub object_size: u64,
+    /// Raw file mode from the index.
+    pub raw_mode: u32,
+}
+
+/// One root entry in a `GuardListResult`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GuardListEntry {
+    /// Canonical root path.
+    pub root: String,
+    /// Mode label: "repo" or "filesystem".
+    pub mode: String,
+    /// Current state label.
+    pub state: String,
+    /// Terminal event sequence.
+    pub terminal_sequence: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -670,9 +861,16 @@ pub(crate) fn request_kind(request: &Request) -> &'static str {
         Request::MassEnd => "MassEnd",
         Request::Health => "Health",
         Request::Shutdown => "Shutdown",
+        Request::GuardCommitBegin { .. } => "GuardCommitBegin",
+        Request::GuardCommitBlob { .. } => "GuardCommitBlob",
+        Request::GuardCommitFinish { .. } => "GuardCommitFinish",
+        Request::GuardAdd { .. } => "GuardAdd",
+        Request::GuardRemove { .. } => "GuardRemove",
+        Request::GuardStatus { .. } => "GuardStatus",
+        Request::GuardReconcile { .. } => "GuardReconcile",
+        Request::GuardList => "GuardList",
     }
 }
-
 /// One-word kind label for a daemon [`Response`]. Use this in user-facing
 /// protocol errors instead of `Debug`: response payloads can contain scanner
 /// results and therefore credential-shaped data.
@@ -687,5 +885,12 @@ pub(crate) fn response_kind(response: &Response) -> &'static str {
         Response::MassComplete { .. } => "MassComplete",
         Response::Shutdown => "Shutdown",
         Response::Error { .. } => "Error",
+        Response::GuardCommitPlan { .. } => "GuardCommitPlan",
+        Response::GuardCommitReceipt { .. } => "GuardCommitReceipt",
+        Response::GuardAdded { .. } => "GuardAdded",
+        Response::GuardRemoved => "GuardRemoved",
+        Response::GuardStatusResult { .. } => "GuardStatusResult",
+        Response::GuardReconcileStarted { .. } => "GuardReconcileStarted",
+        Response::GuardListResult { .. } => "GuardListResult",
     }
 }

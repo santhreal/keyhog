@@ -248,6 +248,10 @@ struct ServerState {
     // Work requests currently between dispatch and a written response. Separate
     // from `active_scans`, which covers scanner execution only.
     active_requests: AtomicU32,
+    /// Guard runtime: root registry, attestation index, policy identity.
+    guard: Arc<crate::daemon::guard_runtime::GuardRuntime>,
+    /// Guard filesystem watcher: native watchers for all guard roots.
+    guard_watcher: Arc<parking_lot::Mutex<crate::daemon::guard_watcher::GuardWatcher>>,
 }
 
 impl ServerState {
@@ -260,6 +264,7 @@ impl ServerState {
         options: ServerOptions,
         backend_override: Option<ScanBackend>,
         warm_backend: WarmBackendReadiness,
+        guard_hot_index_budget: Option<usize>,
     ) -> Self {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -288,6 +293,19 @@ impl ServerState {
             draining: AtomicBool::new(false),
             scans_drained: Notify::new(),
             active_requests: AtomicU32::new(0),
+            guard: Arc::new(match guard_hot_index_budget {
+                Some(budget) => crate::daemon::guard_runtime::GuardRuntime::with_hot_index_budget(budget),
+                None => crate::daemon::guard_runtime::GuardRuntime::new(),
+            }),
+            guard_watcher: Arc::new(parking_lot::Mutex::new(
+                crate::daemon::guard_watcher::GuardWatcher::new(
+                    keyhog_sources::guard::GuardReconciliationConfig::default(),
+                )
+                .unwrap_or_else(|e| {
+                    tracing::warn!("daemon: guard watcher disabled: {}", e);
+                    crate::daemon::guard_watcher::GuardWatcher::new_disabled()
+                }),
+            )),
         }
     }
 
@@ -428,6 +446,7 @@ pub(crate) async fn run_with_backend_override(
     detector_rules_digest: String,
     options: ServerOptions,
     backend_override: Option<ScanBackend>,
+    guard_hot_index_budget: Option<usize>,
 ) -> Result<()> {
     ignore_sigpipe_while_serving();
     // Tell the operator the daemon is working before scanner compile and warmup.
@@ -446,14 +465,31 @@ pub(crate) async fn run_with_backend_override(
         router,
         shutdown.clone(),
         detector_count,
-        detector_rules_digest,
+        detector_rules_digest.clone(),
         options,
         backend_override,
         warm_backend,
+        guard_hot_index_budget,
     ));
+
+    // Set the guard policy identity from the daemon's scanner and build
+    // identity. This binds clean attestations to the exact detector corpus,
+    // suppression, and configuration the daemon was started with.
+    state.guard.set_policy_identity(keyhog_core::guard_state::GuardPolicyIdentity {
+        build_identity: KEYHOG_VERSION.to_string(),
+        detector_digest: detector_rules_digest.clone(),
+        suppression_digest: String::new(),
+        keyhogignore_digest: String::new(),
+        config_digest: String::new(),
+        decode_policy_version: 1,
+        source_policy_digest: String::new(),
+        guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
+        report_semantics_version: 1,
+    });
 
     announce_daemon_ready(&socket_path, detector_count, &state.warm_backend_status());
     let accept_task = spawn_accept_loop(listener, state.clone());
+    let watcher_task = spawn_guard_watcher_loop(state.clone());
 
     finish_daemon_service(&socket_path, accept_task).await
 }
@@ -570,6 +606,67 @@ fn spawn_accept_loop(
     state: Arc<ServerState>,
 ) -> tokio::task::JoinHandle<std::result::Result<(), DaemonServiceFailure>> {
     tokio::spawn(run_accept_loop(listener, state))
+}
+
+/// Spawn a background task that polls the guard filesystem watcher and
+/// processes events through the guard state machine. Events are
+/// coalesced within a short window before applying transitions.
+fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let coalesce_window = std::time::Duration::from_millis(
+            keyhog_sources::guard::GuardReconciliationConfig::default().coalesce_window_ms,
+        );
+        loop {
+            tokio::select! {
+                _ = state.shutdown.notified() => return,
+                _ = tokio::time::sleep(coalesce_window) => {
+                    let events = state.guard_watcher.lock().poll_events();
+                    for (root, evts) in events {
+                        process_guard_events(&state, &root, evts);
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// Process a batch of guard events for one root. Applies the guard
+/// state machine transition based on the event classification.
+fn process_guard_events(state: &ServerState, root: &Path, events: Vec<keyhog_sources::guard::GuardEvent>) {
+    use keyhog_core::guard_state::{GuardTransition, GuardRootState};
+    use keyhog_sources::guard::GuardEvent;
+
+    let root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(root.as_os_str());
+    let has_findings = false; // Advisory events do not prove findings;
+                              // only a commit transaction does.
+    let has_degradation = events.iter().any(|e| matches!(e, GuardEvent::ReconcileSubtree(_)));
+
+    let transition = if has_degradation {
+        GuardTransition::EventsDegraded
+    } else if has_findings {
+        GuardTransition::EventsFindings
+    } else {
+        GuardTransition::EventsClean
+    };
+
+    match state.guard.transition_root(root_bytes, &transition) {
+        Ok(new_state) => {
+            if new_state == GuardRootState::Degraded {
+                tracing::warn!(
+                    "daemon: guard root {} degraded after {} events",
+                    root.display(),
+                    events.len()
+                );
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                "daemon: guard transition failed for {}: {}",
+                root.display(),
+                e
+            );
+        }
+    }
 }
 
 async fn run_accept_loop(
@@ -1089,6 +1186,11 @@ fn is_work_request(request: &Request) -> bool {
             | Request::MassFilesystemBegin { .. }
             | Request::MassFilesystemNext
             | Request::MassEnd
+            | Request::GuardCommitBegin { .. }
+            | Request::GuardCommitBlob { .. }
+            | Request::GuardCommitFinish { .. }
+            | Request::GuardAdd { .. }
+            | Request::GuardReconcile { .. }
     )
 }
 
@@ -1214,6 +1316,463 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
         | Request::MassEnd => Response::Error {
             message: "daemon: mass transaction request reached invalid dispatch state".to_string(),
         },
+        Request::GuardCommitBegin {
+            repo_path,
+            index_fingerprint,
+            hash_algorithm,
+            entries,
+        } => {
+            // Parse the hash algorithm.
+            let git_hash = match hash_algorithm.as_str() {
+                "sha1" => keyhog_core::guard_state::GitHashAlgorithm::Sha1,
+                "sha256" => keyhog_core::guard_state::GitHashAlgorithm::Sha256,
+                other => {
+                    return Response::Error {
+                        message: format!("daemon: guard commit: unsupported hash algorithm '{}'", other),
+                    };
+                }
+            };
+            // Get the policy identity for attestation lookup.
+            let identity = match state.guard.policy_identity() {
+                Some(id) => id,
+                None => {
+                    return Response::Error {
+                        message: "daemon: guard commit: policy identity not yet established".to_string(),
+                    };
+                }
+            };
+            let policy_short = match identity.short_digest() {
+                Ok(d) => d,
+                Err(e) => {
+                    return Response::Error {
+                        message: format!("daemon: guard commit: policy digest error: {}", e),
+                    };
+                }
+            };
+            // Classify entries: skip deletions/symlinks/submodules,
+            // look up file blobs in the clean attestation cache.
+            let mut clean_hits = Vec::new();
+            let mut required_blob_oids = Vec::new();
+            let mut objects_skipped = 0u64;
+            let mut bytes_requested = 0u64;
+            let mut bytes_hit = 0u64;
+            for entry in &entries {
+                if entry.kind != "file" {
+                    objects_skipped += 1;
+                    continue;
+                }
+                if entry.object_oid.is_empty() {
+                    objects_skipped += 1;
+                    continue;
+                }
+                bytes_requested += entry.object_size;
+                if let Some(_att) = state.guard.lookup_attestation(
+                    git_hash,
+                    &entry.object_oid,
+                    &policy_short,
+                ) {
+                    clean_hits.push(entry.object_oid.clone());
+                    bytes_hit += entry.object_size;
+                } else {
+                    required_blob_oids.push(entry.object_oid.clone());
+                }
+            }
+            let txn_id = state.guard.next_transaction_id();
+            let txn = crate::daemon::guard_runtime::GuardTransaction {
+                transaction_id: txn_id,
+                repo_path: repo_path.clone(),
+                index_fingerprint: index_fingerprint.clone(),
+                hash_algorithm: git_hash,
+                clean_hits: clean_hits.clone(),
+                required_blob_oids: required_blob_oids.clone(),
+                scanned_oids: Vec::new(),
+                bytes_scanned: 0,
+                bytes_requested,
+                bytes_hit,
+                findings_count: 0,
+                coverage_gaps: 0,
+                objects_skipped,
+                started_at: Instant::now(),
+                policy_short_digest: policy_short,
+            };
+            state.guard.begin_transaction(txn);
+            Response::GuardCommitPlan {
+                transaction_id: txn_id,
+                clean_hits,
+                required_blob_oids,
+                max_blob_bytes: 8 * 1024 * 1024,
+            }
+        }
+        Request::GuardCommitBlob {
+            transaction_id,
+            blob_oid,
+            object_size,
+            payload,
+        } => {
+            // Verify the transaction exists and this blob is expected.
+            let txn = match state.guard.get_transaction(transaction_id) {
+                Some(t) => t,
+                None => {
+                    return Response::Error {
+                        message: format!("daemon: guard commit blob: transaction {} not found", transaction_id),
+                    };
+                }
+            };
+            if !txn.required_blob_oids.contains(&blob_oid) {
+                return Response::Error {
+                    message: format!(
+                        "daemon: guard commit blob: OID {} not in required set for transaction {}",
+                        blob_oid, transaction_id
+                    ),
+                };
+            }
+            // Scan the blob payload using the existing scanner.
+            let scanner = state.scanner.clone();
+            let router = state.router.clone();
+            let backend_override = state.backend_override;
+            let recover_automatic_backend_faults = crate::orchestrator::automatic_backend_recovery_allowed(
+                backend_override,
+                false,
+                keyhog_scanner::gpu::gpu_runtime_policy(),
+            );
+            let fragment_scan_lock = state.fragment_scan_lock.clone();
+            let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+            let txn_id = transaction_id;
+            let oid = blob_oid.clone();
+            let _fragment_guard = fragment_scan_lock.lock_owned().await;
+            scanner.clear_fragment_cache();
+            let bytes_scanned: u64 = payload.iter().map(|c| c.data.len() as u64).sum();
+            let scan_result = tokio::task::spawn_blocking(move || -> Result<usize> {
+                let count = keyhog_scanner::telemetry::with_scan_telemetry(
+                    &telemetry,
+                    || -> Result<usize> {
+                        scanner.clear_fragment_cache();
+                        let total_bytes: usize = payload.iter().map(|c| c.data.len()).sum();
+                        keyhog_profile::add_input_units(1);
+                        keyhog_profile::add_input_bytes(total_bytes as u64);
+                        if payload.is_empty() {
+                            scanner.clear_fragment_cache();
+                            return Ok(0);
+                        }
+                        let selection = router.choose_with_plan(
+                            scanner.as_ref(),
+                            backend_override,
+                            &payload,
+                        )?;
+                        let outcome = crate::orchestrator::scan_selected_batch(
+                            scanner.as_ref(),
+                            &payload,
+                            selection.backend,
+                            selection.phase1_plan.as_ref(),
+                            selection.execution_route,
+                            selection
+                                .recovery_plan
+                                .filter(|_| recover_automatic_backend_faults),
+                        )
+                        .with_context(|| {
+                            format!(
+                                "selected backend {} failed during guard blob scan",
+                                selection.backend.label()
+                            )
+                        })?;
+                        let total: usize = outcome.per_chunk.iter().map(|v| v.len()).sum();
+                        Ok(total)
+                    },
+                )?;
+                Ok(count)
+            })
+            .await;
+            let findings = match scan_result {
+                Ok(Ok(count)) => count,
+                Ok(Err(e)) => {
+                    // Scan failed: record as coverage gap, not clean.
+                    if let Err(msg) = state.guard.record_scanned_blob(txn_id, &oid, object_size, 0) {
+                        return Response::Error { message: msg };
+                    }
+                    return Response::Error {
+                        message: format!("daemon: guard commit blob: scan failed for {}: {}", oid, e),
+                    };
+                }
+                Err(e) => {
+                    return Response::Error {
+                        message: format!("daemon: guard commit blob: task panicked for {}: {}", oid, e),
+                    };
+                }
+            };
+            if let Err(msg) = state.guard.record_scanned_blob(txn_id, &oid, bytes_scanned, findings as u64) {
+                return Response::Error { message: msg };
+            }
+            // If clean (zero findings), insert attestation for reuse.
+            if findings == 0 {
+                let identity = state.guard.policy_identity();
+                if let Some(id) = identity {
+                    let att = keyhog_core::guard_state::GitCleanAttestation {
+                        hash_algorithm: txn.hash_algorithm,
+                        blob_oid: oid.clone(),
+                        object_size,
+                        policy_identity: id,
+                        last_seen_sequence: 0,
+                    };
+                    state.guard.insert_attestation(att);
+                }
+            }
+            // Acknowledge the blob was scanned.
+            Response::GuardCommitPlan {
+                transaction_id: txn_id,
+                clean_hits: Vec::new(),
+                required_blob_oids: Vec::new(),
+                max_blob_bytes: 8 * 1024 * 1024,
+            }
+        }
+        Request::GuardCommitFinish {
+            transaction_id,
+            client_objects_streamed,
+            client_bytes_streamed,
+        } => {
+            let txn = match state.guard.finish_transaction(transaction_id) {
+                Some(t) => t,
+                None => {
+                    return Response::Error {
+                        message: format!("daemon: guard commit finish: transaction {} not found", transaction_id),
+                    };
+                }
+            };
+            // Validate conservation: client must have streamed all required blobs.
+            let required_count = txn.required_blob_oids.len() as u64;
+            if client_objects_streamed != required_count {
+                return Response::Error {
+                    message: format!(
+                        "daemon: guard commit: object count mismatch: client streamed {}, required {}",
+                        client_objects_streamed, required_count
+                    ),
+                };
+            }
+            let total_objects = txn.clean_hits.len() as u64 + txn.scanned_oids.len() as u64 + txn.objects_skipped;
+            let objects_hit = txn.clean_hits.len() as u64;
+            let objects_scanned = txn.scanned_oids.len() as u64;
+            let bytes_hit = txn.bytes_hit;
+            let terminal_state = if txn.findings_count > 0 {
+                keyhog_core::guard_state::GuardRootState::Blocked
+            } else if txn.coverage_gaps > 0 {
+                keyhog_core::guard_state::GuardRootState::Degraded
+            } else {
+                keyhog_core::guard_state::GuardRootState::Current
+            };
+            let identity = state.guard.policy_identity();
+            let receipt = keyhog_core::guard_state::GuardReceipt {
+                objects_requested: total_objects,
+                objects_hit,
+                objects_scanned,
+                objects_skipped: txn.objects_skipped,
+                bytes_requested: txn.bytes_requested,
+                bytes_hit,
+                bytes_scanned: txn.bytes_scanned,
+                findings_count: txn.findings_count,
+                coverage_gaps: txn.coverage_gaps,
+                terminal_state,
+                policy_identity: identity.clone().unwrap_or_else(|| keyhog_core::guard_state::GuardPolicyIdentity {
+                    build_identity: String::new(),
+                    detector_digest: String::new(),
+                    suppression_digest: String::new(),
+                    keyhogignore_digest: String::new(),
+                    config_digest: String::new(),
+                    decode_policy_version: 0,
+                    source_policy_digest: String::new(),
+                    guard_schema_version: 0,
+                    report_semantics_version: 0,
+                }),
+                terminal_sequence: 0,
+            };
+            // Update the root record with the receipt. Log errors
+            // so a failed update is visible to the operator.
+            if let Err(e) = state.guard.update_root_after_commit(txn.repo_path.as_bytes(), receipt) {
+                tracing::warn!(
+                    "daemon: guard commit finish: failed to update root {}: {}",
+                    txn.repo_path,
+                    e
+                );
+            }
+            Response::GuardCommitReceipt {
+                objects_requested: total_objects,
+                objects_hit,
+                objects_scanned,
+                objects_skipped: txn.objects_skipped,
+                bytes_requested: txn.bytes_requested,
+                bytes_hit,
+                bytes_scanned: txn.bytes_scanned,
+                findings_count: txn.findings_count,
+                coverage_gaps: txn.coverage_gaps,
+                terminal_state: terminal_state.label().to_string(),
+                terminal_sequence: 0,
+            }
+        }
+        Request::GuardAdd { root, mode } => {
+            let guard_mode = match mode.as_str() {
+                "repo" => keyhog_core::guard_state::GuardRootMode::Repo,
+                "filesystem" => keyhog_core::guard_state::GuardRootMode::Filesystem,
+                other => {
+                    return Response::Error {
+                        message: format!("daemon: invalid guard mode '{}': expected 'repo' or 'filesystem'", other),
+                    }
+                }
+            };
+            // The client canonicalizes the path before sending. The daemon
+            // must not re-resolve it against its own working directory.
+            let canonical = root;
+            let canonical_path = std::path::PathBuf::from(&canonical);
+            if !canonical_path.is_absolute() {
+                return Response::Error {
+                    message: format!("daemon: guard add: path must be absolute and canonical: {}", canonical),
+                };
+            }
+            // Use symlink_metadata to avoid following symlinks. The design
+            // contract requires roots be validated without following symlinks.
+            let meta = match std::fs::symlink_metadata(&canonical_path) {
+                Ok(m) => m,
+                Err(e) => {
+                    return Response::Error {
+                        message: format!("daemon: guard add: path does not exist: {}: {}", canonical, e),
+                    };
+                }
+            };
+            if !meta.is_dir() {
+                return Response::Error {
+                    message: format!("daemon: guard add: path is not a directory: {}", canonical),
+                };
+            }
+            let fs_identity = filesystem_identity(&canonical_path);
+            match state.guard.add_root(canonical.as_bytes().to_vec(), fs_identity, guard_mode) {
+                Ok(record) => {
+                    // Register the root with the filesystem watcher.
+                    // Subscribe-first: the watcher starts before any
+                    // baseline walk so events during the walk are
+                    // captured.
+                    if let Err(e) = state.guard_watcher.lock().add_root(canonical_path.clone()) {
+                        tracing::warn!(
+                            "daemon: guard watcher failed to register {}: {}",
+                            canonical,
+                            e
+                        );
+                    }
+                    Response::GuardAdded {
+                        root: canonical.clone(),
+                        state: record.state.label().to_string(),
+                        terminal_sequence: record.terminal_sequence,
+                    }
+                }
+                Err(msg) => Response::Error { message: format!("daemon: guard add failed: {}", msg) },
+            }
+        }
+        Request::GuardRemove { root } => {
+            match state.guard.remove_root(root.as_bytes()) {
+                Some(_) => {
+                    state.guard_watcher.lock().remove_root(std::path::Path::new(&root));
+                    Response::GuardRemoved
+                }
+                None => Response::Error {
+                    message: format!("daemon: guard root not registered: {}", root),
+                },
+            }
+        }
+        Request::GuardStatus { root } => {
+            match state.guard.root_record(root.as_bytes()) {
+                Some(record) => {
+                    let (files_scanned, bytes_scanned, attestation_hits, attestation_misses, findings_count, coverage_gaps) =
+                        if let Some(ref receipt) = record.last_receipt {
+                            (
+                                receipt.objects_scanned,
+                                receipt.bytes_scanned,
+                                receipt.objects_hit,
+                                receipt.objects_requested - receipt.objects_hit - receipt.objects_skipped,
+                                receipt.findings_count,
+                                receipt.coverage_gaps,
+                            )
+                        } else {
+                            (0, 0, 0, 0, 0, 0)
+                        };
+                    Response::GuardStatusResult {
+                        root: root.clone(),
+                        mode: record.mode.label().to_string(),
+                        state: record.state.label().to_string(),
+                        terminal_sequence: record.terminal_sequence,
+                        pending_events: state.guard_watcher.lock().pending_event_count(std::path::Path::new(&root)) as u64,
+                        files_scanned,
+                        bytes_scanned,
+                        attestation_hits,
+                        attestation_misses,
+                        findings_count,
+                        coverage_gaps,
+                        scanner_residency: state.guard.scanner_residency().to_string(),
+                        repair_command: format!("keyhog guard reconcile {}", root),
+                    }
+                }
+                None => Response::Error {
+                    message: format!("daemon: guard root not registered: {}", root),
+                },
+            }
+        }
+        Request::GuardReconcile { root } => {
+            let current_state = match state.guard.root_state(root.as_bytes()) {
+                Some(s) => s,
+                None => {
+                    return Response::Error {
+                        message: format!("daemon: guard root not registered: {}", root),
+                    };
+                }
+            };
+            // Choose the correct transition based on current state.
+            // Stopped -> ReconciliationStarted -> Indexing.
+            // Degraded/StalePolicy -> RepairStarted -> Indexing.
+            // Current/Dirty/Blocked -> Stopped -> ReconciliationStarted.
+            let transition = match current_state {
+                keyhog_core::guard_state::GuardRootState::Stopped => {
+                    keyhog_core::guard_state::GuardTransition::ReconciliationStarted
+                }
+                keyhog_core::guard_state::GuardRootState::Degraded
+                | keyhog_core::guard_state::GuardRootState::StalePolicy => {
+                    keyhog_core::guard_state::GuardTransition::RepairStarted
+                }
+                keyhog_core::guard_state::GuardRootState::Current
+                | keyhog_core::guard_state::GuardRootState::Dirty
+                | keyhog_core::guard_state::GuardRootState::Blocked => {
+                    // Stop first, then start reconciliation. The stop
+                    // transition is always legal from active states.
+                    match state.guard.transition_root(root.as_bytes(), &keyhog_core::guard_state::GuardTransition::Stopped) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            return Response::Error {
+                                message: format!("daemon: guard reconcile: stop failed: {}", e),
+                            };
+                        }
+                    }
+                    keyhog_core::guard_state::GuardTransition::ReconciliationStarted
+                }
+                keyhog_core::guard_state::GuardRootState::Indexing => {
+                    // Already indexing; report started without a transition.
+                    return Response::GuardReconcileStarted { root: root.clone() };
+                }
+            };
+            match state.guard.transition_root(root.as_bytes(), &transition) {
+                Ok(_) => Response::GuardReconcileStarted { root: root.clone() },
+                Err(e) => Response::Error {
+                    message: format!("daemon: guard reconcile failed: {}", e),
+                },
+            }
+        }
+        Request::GuardList => {
+            let roots: Vec<crate::daemon::protocol::GuardListEntry> = state
+                .guard
+                .list_roots()
+                .into_iter()
+                .map(|r| crate::daemon::protocol::GuardListEntry {
+                    root: String::from_utf8_lossy(&r.canonical_path).into_owned(),
+                    mode: r.mode.label().to_string(),
+                    state: r.state.label().to_string(),
+                    terminal_sequence: r.terminal_sequence,
+                })
+                .collect();
+            Response::GuardListResult { roots }
+        }
         // The wire contract says Shutdown flushes in-flight scans. Refuse new
         // work, wait for the running scans, and only then acknowledge, so a
         // client whose scan is mid-flight gets its results instead of a dropped
@@ -1906,6 +2465,23 @@ fn file_type_label(file_type: &std::fs::FileType) -> &'static str {
         "a character device"
     } else {
         "not a regular file"
+    }
+}
+
+/// Get the filesystem identity (device + inode) for a path. Returns
+/// zeros if the path cannot be stat'd, which is sufficient for
+/// registration — the root existence check happens separately.
+fn filesystem_identity(path: &std::path::Path) -> keyhog_core::guard_state::FilesystemIdentity {
+    use std::os::unix::fs::MetadataExt;
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) => keyhog_core::guard_state::FilesystemIdentity {
+            device: meta.dev(),
+            inode: meta.ino(),
+        },
+        Err(_) => keyhog_core::guard_state::FilesystemIdentity {
+            device: 0,
+            inode: 0,
+        },
     }
 }
 

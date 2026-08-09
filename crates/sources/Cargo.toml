@@ -125,6 +125,7 @@ sevenz-rust2 = { workspace = true }
 tar = { workspace = true }
 blake3 = { workspace = true }
 sha2 = { workspace = true }
+hex = { workspace = true }
 # Binary analysis dependencies
 goblin = { workspace = true, optional = true }
 glob = { workspace = true, optional = true }

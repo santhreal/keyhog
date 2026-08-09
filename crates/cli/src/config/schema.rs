@@ -4,7 +4,7 @@ use std::path::PathBuf;
 /// flags override the corresponding file value.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct ConfigFile {
+pub(crate) struct ConfigFile {
     /// Path to detector TOMLs directory.
     pub detectors: Option<String>,
     /// Composition policy for an explicitly selected detector directory.
@@ -71,6 +71,8 @@ pub(super) struct ConfigFile {
     pub aws: Option<AwsSection>,
     /// `[tuning]` - recall-equivalent scanner route tuning.
     pub tuning: Option<TuningSection>,
+    /// `[guard]` - perpetual repository and filesystem guard settings.
+    pub guard: Option<GuardSection>,
 }
 
 /// Canonical `[scan]` table. Scan-policy keys have one on-disk owner here.
@@ -211,4 +213,31 @@ pub(super) struct TuningSection {
     pub no_candidate_gate: Option<bool>,
     pub fallback_localizer: Option<bool>,
     pub gpu_recall_floor: Option<bool>,
+}
+
+/// `[guard]` perpetual repository and filesystem guard settings.
+///
+/// Every persisted configuration shape is versioned. Changing its semantics
+/// requires a version bump and a stale-copy rejection test.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub(crate) struct GuardSection {
+    /// Hot clean attestation index memory budget (e.g. "64MiB").
+    pub hot_index_memory: Option<String>,
+    /// Maximum queued events per root.
+    pub max_pending_events_per_root: Option<usize>,
+    /// Maximum total queued events across all roots.
+    pub max_pending_events_total: Option<usize>,
+    /// Coalescing window (e.g. "100ms").
+    pub coalesce_window: Option<String>,
+    /// Scanner residency: "warm" or "idle-unload".
+    pub scanner_residency: Option<String>,
+    /// Scanner idle-unload timeout (e.g. "5m").
+    pub scanner_idle_timeout: Option<String>,
+    /// Periodic scrub interval (e.g. "24h").
+    pub scrub_interval: Option<String>,
+    /// Maximum files for one subtree reconciliation.
+    pub subtree_max_files: Option<usize>,
+    /// Maximum depth for one subtree reconciliation.
+    pub subtree_max_depth: Option<usize>,
 }
