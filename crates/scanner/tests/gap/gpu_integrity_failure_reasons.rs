@@ -56,7 +56,7 @@ fn degenerate_match_ranges_are_rejected_not_silently_attributed() {
 /// two consolidated dispatch sites that replaced `gpu_ac_phase1.rs`.
 #[test]
 fn gpu_dispatch_failures_preserve_operator_visible_reasons() {
-    let dispatch = engine_src("src/engine/gpu_region_dispatch.rs");
+    let dispatch = engine_src("src/engine/gpu_region_dispatch/mod.rs");
     let trigger = engine_src("src/engine/backend_triggered.rs");
     for needle in [
         "gpu literal matcher not built for coalesced region scan",

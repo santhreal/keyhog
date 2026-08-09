@@ -689,7 +689,11 @@ fn engine_boundary_error() {
 #[test]
 fn engine_hot_patterns_happy() {
     use keyhog_scanner::hw_probe::testing::ScanBackend;
-    let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
+    let scanner = CompiledScanner::compile_for_backend(
+        vec![demo_detector("abc", "abc")],
+        ScanBackend::SimdCpu,
+    )
+    .unwrap();
     assert!(scanner.warm_backend(ScanBackend::SimdCpu));
 }
 #[test]
