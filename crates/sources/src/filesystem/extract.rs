@@ -287,10 +287,11 @@ fn emit_archive_leaf_member(
     // Mirror FilesystemSource's large-file windowing so a buffered archive/layer
     // member does not decode into one multi-hundred-MiB String (and a second
     // owned chunk) when the disk path would have streamed ~1 MiB windows.
-    // Binary members must NOT take the lossy-window path: that tags them
-    // `.../windowed` and bypasses the archive-binary / binary-strings noise
-    // gate. Classify with the same decoder the small-member path uses; only
-    // confirmed text is windowed.
+    // Binary members must NOT take the lossy-window path: that bypasses the
+    // archive-binary / binary-strings noise gate. Classify with the same decoder
+    // the small-member path uses; only confirmed text is windowed. Keep the
+    // archive text_source_type on each window so reports/baselines keyed on
+    // archive identity do not silently move to filesystem/windowed.
     let window_size = super::reader::DEFAULT_WINDOW_SIZE;
     let window_overlap = super::reader::DEFAULT_WINDOW_OVERLAP;
     if content.len() > window_size && provenance.is_none() {
@@ -314,7 +315,7 @@ fn emit_archive_leaf_member(
                         emit(Ok(Chunk {
                             data: window.text,
                             metadata: ChunkMetadata {
-                                source_type: "filesystem/windowed".into(),
+                                source_type: text_source_type.into(),
                                 path: Some(member_display.to_owned().into()),
                                 base_offset: window.offset,
                                 base_line: window.base_line,

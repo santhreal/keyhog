@@ -13,7 +13,7 @@ even when a later layer deletes the file, because every layer is scanned
 independently: whiteout and opaque-dir markers are ordinary members, not a
 reason to hide earlier-layer content.
 
-Nested members keep the same coverage as an unpack-then-walk scan: gzip/zip/tar/compressed payloads descend in memory, `.7z`/`.rar` use the shared path extractors (staged from the already-buffered member), and `.har` expands through the HAR decoder. Large text members emit as `filesystem/windowed` chunks, matching ordinary large-file scanning.
+Nested members keep the same coverage as an unpack-then-walk scan: gzip/zip/tar/compressed payloads descend in memory, `.7z`/`.rar` use the shared path extractors (staged from the already-buffered member), and `.har` expands through the HAR decoder. Large text members are windowed for memory bounds but keep the `filesystem/archive` source identity.
 
 ## What you need
 
