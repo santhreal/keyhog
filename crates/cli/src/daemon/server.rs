@@ -1237,13 +1237,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     }
                 }
             };
-            let canonical = std::fs::canonicalize(&root)
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| root.clone());
-            let fs_identity = keyhog_core::guard_state::FilesystemIdentity {
-                device: 0,
-                inode: 0,
-            };
+            let canonical_path = std::fs::canonicalize(&root)
+                .unwrap_or_else(|_| std::path::PathBuf::from(&root));
+            let canonical = canonical_path.to_string_lossy().into_owned();
+            let fs_identity = filesystem_identity(&canonical_path);
             match state.guard.add_root(canonical.as_bytes().to_vec(), fs_identity, guard_mode) {
                 Ok(record) => Response::GuardAdded {
                     root: canonical.clone(),
@@ -2011,6 +2008,23 @@ fn file_type_label(file_type: &std::fs::FileType) -> &'static str {
         "a character device"
     } else {
         "not a regular file"
+    }
+}
+
+/// Get the filesystem identity (device + inode) for a path. Returns
+/// zeros if the path cannot be stat'd, which is sufficient for
+/// registration — the root existence check happens separately.
+fn filesystem_identity(path: &std::path::Path) -> keyhog_core::guard_state::FilesystemIdentity {
+    use std::os::unix::fs::MetadataExt;
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) => keyhog_core::guard_state::FilesystemIdentity {
+            device: meta.dev(),
+            inode: meta.ino(),
+        },
+        Err(_) => keyhog_core::guard_state::FilesystemIdentity {
+            device: 0,
+            inode: 0,
+        },
     }
 }
 
