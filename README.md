@@ -276,9 +276,10 @@ archives, URLs, GitHub collaboration content, and cloud sources.
 
 ### Speed and concurrency without guesswork
 
-Start with the defaults. A verified installation calibrates every policy for
-the current host, binary, detector corpus, and workload classes. Recalibrate
-after any of those identities changes:
+Start with the defaults. The historical verified binary-asset installer runs
+calibration itself. Cargo cannot execute KeyHog after `cargo install`, so run
+the commands below once after installing a multi-backend Cargo build and again
+after the host, binary, detector corpus, driver, or workload classes change:
 
 ```sh
 keyhog calibrate-autoroute --policy all
