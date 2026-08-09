@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import unittest
 
 from scripts.gates import workflow_docs_boundaries
@@ -145,6 +146,47 @@ class WorkflowDocumentationBoundaryTests(unittest.TestCase):
             "release: guide still requires a long-lived crates.io token instead of trusted publishing",
             issues,
         )
+
+    def test_every_required_usage_decision_turns_the_gate_red_when_removed(self) -> None:
+        """Every maintained workflow/profile/coverage decision must fail closed on drift."""
+        for document, required in workflow_docs_boundaries.REQUIRED_TEXT.items():
+            for route in required:
+                with self.subTest(document=document, route=route):
+                    broken = dict(self.texts)
+                    pattern = r"\s+".join(re.escape(part) for part in route.split())
+                    broken[document] = re.sub(
+                        pattern,
+                        "missing-route",
+                        broken[document],
+                    )
+
+                    issues = workflow_docs_boundaries.boundary_issues(broken)
+
+                    self.assertTrue(
+                        any(
+                            issue.startswith(
+                                f"{document}: missing canonical workflow route"
+                            )
+                            and route in issue
+                            for issue in issues
+                        ),
+                        issues,
+                    )
+
+    def test_every_known_stale_usage_claim_is_rejected(self) -> None:
+        """Wrong install paths, feature profiles, and false-clean claims stay banned."""
+        for document, forbidden in workflow_docs_boundaries.FORBIDDEN_TEXT.items():
+            for claim in forbidden:
+                with self.subTest(document=document, claim=claim):
+                    broken = dict(self.texts)
+                    broken[document] += f"\n{claim}\n"
+
+                    issues = workflow_docs_boundaries.boundary_issues(broken)
+
+                    self.assertIn(
+                        f"{document}: stale or unsafe workflow claim {claim!r}",
+                        issues,
+                    )
 
     def test_action_guide_cannot_absorb_provider_specific_ci_recipes(self) -> None:
         """GitLab or Jenkins recipes in the Action guide would recreate two conflicting CI manuals."""

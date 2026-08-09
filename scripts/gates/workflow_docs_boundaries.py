@@ -20,6 +20,10 @@ PATHS = {
     "daemon": REPO / "docs" / "src" / "workflows" / "daemon.md",
     "backends": REPO / "docs" / "src" / "backends.md",
     "install": REPO / "docs" / "src" / "install.md",
+    "introduction": REPO / "docs" / "src" / "introduction.md",
+    "workloads": REPO / "docs" / "src" / "workloads.md",
+    "coverage": REPO / "docs" / "src" / "reference" / "coverage-truth.md",
+    "file_shapes": REPO / "docs" / "src" / "guides" / "file-shapes.md",
 }
 
 PUBLISH_SCRIPT = REPO / "scripts" / "publish.sh"
@@ -56,6 +60,8 @@ REQUIRED_TEXT = {
         "[Your first scan](./first-scan.md)",
         "[Daemon and warm scans](./workflows/daemon.md)",
         "[System-wide triage](./guides/system-wide-triage.md)",
+        "repository object database",
+        "containing only skipped binaries exits `13`",
     ),
     "recipes": (
         "## Find the right recipe",
@@ -69,6 +75,9 @@ REQUIRED_TEXT = {
         "## Sweep an entire machine",
         "## Confirm a finding is a live credential",
         "## Emit for any pipeline or SIEM",
+        "bounded by max_commits",
+        "eligible mounts and discovered Git history",
+        "advisory skip gaps",
     ),
     "release": (
         "## Release a push",
@@ -82,10 +91,15 @@ REQUIRED_TEXT = {
         "[CI integration guide](./ci.md)",
         "[mass-scanning guide](../guides/mass-scanning.md)",
         "one checked-out repository path",
+        "published Action ref installs its exact KeyHog crate with the lean `ci` feature",
+        "branch or commit ref builds the checked-out portable source profile",
     ),
     "ci": (
         "[GitHub Action guide](./github-action.md)",
         "[mass-scanning guide](../guides/mass-scanning.md)",
+        "published refs install the lean `ci` feature",
+        "output-path failure exits `2`",
+        "Repository object database",
     ),
     "mass": (
         "[GitHub Action guide](../workflows/github-action.md)",
@@ -97,6 +111,7 @@ REQUIRED_TEXT = {
         "--mass-gpu-primary",
         "gpu-metal-region-presence",
         "without copying payload bytes through IPC",
+        "until a configured page, object, byte, or source limit binds",
     ),
     "daemon": (
         "## GPU-backed mass worker",
@@ -122,12 +137,49 @@ REQUIRED_TEXT = {
         "historical binary-asset channel",
         "does not publish binary release assets or installer bundles",
     ),
+    "introduction": (
+        "sample below comes from a `portable,simd` build",
+        "default crates.io install reports the pure-Rust CPU route",
+        "No hosted scanning agent",
+    ),
+    "workloads": (
+        "Required build",
+        "portable` or `ci,git",
+        "--no-default-excludes",
+        "`keyhog scan --help` is authoritative",
+        "Advisory skips can leave",
+    ),
+    "coverage": (
+        "read-nothing scan exits `13`",
+        "directory containing only skipped binaries",
+        "mixed tree can exit `0` with this advisory row",
+        "unwritable output path exits `2`",
+    ),
+    "file_shapes": (
+        "keyhog scan dist/app.min.js",
+        "keyhog scan dist/ --no-default-excludes",
+        "explicit file request is not removed",
+    ),
 }
 
 FORBIDDEN_HEADINGS = {
     "action": re.compile(r"^## (?:GitLab CI|CircleCI|Jenkins|Buildkite|Mass scanning)$", re.M),
     "ci": re.compile(r"^## (?:Inputs|Outputs|Scan a monorepo|Adopt KeyHog without blocking existing findings)$", re.M),
     "mass": re.compile(r"^## (?:Inputs|Outputs|Pin Action code and scanner releases|GitHub Actions)$", re.M),
+}
+
+FORBIDDEN_TEXT = {
+    "action": (
+        "installs an authenticated KeyHog release",
+    ),
+    "ci": (
+        "~/.local/bin/keyhog",
+        "Published Action refs install KeyHog from crates.io and build the full default feature set",
+    ),
+    "coverage": (
+        "all-binary directory reports a clean scan it never performed",
+        "output-path failure, which exits `3`",
+    ),
 }
 
 
@@ -155,6 +207,11 @@ def boundary_issues(texts: dict[str, str]) -> list[str]:
         text = texts.get(name, "")
         if match := pattern.search(text):
             issues.append(f"{name}: heading belongs to another workflow: {match.group(0)!r}")
+    for name, forbidden in FORBIDDEN_TEXT.items():
+        text = texts.get(name, "")
+        for needle in forbidden:
+            if needle in text:
+                issues.append(f"{name}: stale or unsafe workflow claim {needle!r}")
     release = texts.get("release", "")
     crates = published_crates()
     if not crates:

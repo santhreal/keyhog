@@ -41,7 +41,7 @@ keyhog scan . --lockdown                  # Linux; requires sufficient memlock
 ```bash
 keyhog scan --git-staged                  # pre-commit: only staged blobs
 keyhog scan --git-diff main               # only files changed since a base ref
-keyhog scan --git-history .               # every added line in commits reachable from HEAD
+keyhog scan --git-history .               # added lines from reachable commits, bounded by max_commits
 keyhog scan --git-history . --max-commits 500
 ```
 
@@ -66,8 +66,10 @@ jobs:
 ```
 
 Findings upload to the GitHub Security tab as SARIF. Commit a baseline first so
-CI fails only on NEW secrets (see [adopt on a noisy repo](#adopt-on-a-legacy-or-noisy-repo)).
-See [CI integration](./workflows/ci.md).
+CI fails only on new secrets. See [Adopt on a noisy
+repo](#adopt-on-a-legacy-or-noisy-repo), the [GitHub Action
+guide](./workflows/github-action.md), and the [direct CI
+guide](./workflows/ci.md).
 
 ## Scan an entire GitHub organization
 
@@ -76,8 +78,9 @@ export KEYHOG_GITHUB_TOKEN="$GH_PAT"
 keyhog scan --github-org acme --format json-envelope --output acme.json
 ```
 
-One command walks every repository in the org. The envelope report records
-source identity and coverage. See [mass scanning](./guides/mass-scanning.md).
+The command traverses the organization until the configured page, repository,
+and byte limits bind. The envelope records source identity and any remaining
+inventory as coverage gaps. See [mass scanning](./guides/mass-scanning.md).
 
 ## Scan a single repo's collaboration surfaces
 
@@ -145,7 +148,7 @@ producer's own exit code. See
 ## Sweep an entire machine
 
 ```bash
-keyhog scan-system --space 50G            # every drive, every git history
+keyhog scan-system --space 50G            # eligible mounts and discovered Git history, bounded at 50 GiB
 ```
 
 See [system-wide triage](./guides/system-wide-triage.md).
@@ -252,6 +255,10 @@ keyhog scan . --min-confidence 0.5        # raise the reporting confidence floor
 keyhog scan . --exclude-paths vendor,node_modules
 ```
 
-Exit `0` clean, `1` findings above the floor, `10` live credentials found (with
-`--verify`), `13` scan completed with coverage gaps. Full list in
+Exit `0` means no findings and no failing source gap. It can still accompany
+advisory skip gaps and `scan_status: partial`, so it is not proof that skipped
+content was clean. Exit `1` means findings above the floor; `10` means at least
+one live credential under `--verify`; and `13` means failing source or coverage
+gaps when no finding outcome took precedence. Findings can therefore exit `1`
+or `10` while `scan_status` remains `partial`. See the full precedence table in
 [exit codes](./reference/exit-codes.md).
