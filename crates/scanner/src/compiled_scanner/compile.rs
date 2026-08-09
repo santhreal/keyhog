@@ -157,6 +157,7 @@ impl CompiledScanner {
             None,
             None,
             None,
+            true,
         )
     }
 
@@ -180,6 +181,7 @@ impl CompiledScanner {
             None,
             None,
             None,
+            true,
         )
     }
 
@@ -214,6 +216,7 @@ impl CompiledScanner {
             None,
             None,
             None,
+            false,
         )
     }
 
@@ -539,6 +542,7 @@ impl CompiledScanner {
             packed_vyre_program,
             decoder_plan,
             packed_detector_plan,
+            false,
         )
     }
 
@@ -551,10 +555,13 @@ impl CompiledScanner {
         packed_vyre_program: Option<PackedVyreProgramSource<'_>>,
         packed_decoder_plan: Option<(Arc<crate::decode::CompiledDecoderPlan>, [u8; 32])>,
         mut packed_detector_plan: Option<PackedDetectorPlanPrelude<'_>>,
+        validate_live_detector_corpus: bool,
     ) -> Result<Self> {
-        if packed_detector_plan.is_none() {
-            // Always validate detector quality/ids, including MatcherArtifact /
-            // execution-pack hydration paths that supply a packed CompileState.
+        // Fresh compiles and MatcherArtifact hydration supply full live
+        // DetectorSpecs (including companion regexes). Authenticated
+        // execution-pack schema reconstruction only fills companion names, so
+        // the corpus quality gate must stay skipped there.
+        if packed_detector_plan.is_none() && validate_live_detector_corpus {
             super::validation::validate_detector_corpus(&detectors)
                 .map_err(crate::error::ScanError::Config)?;
             crate::entropy::policy::validate_feature_compatibility(&detectors)

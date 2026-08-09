@@ -196,3 +196,23 @@ fn matcher_artifact_without_magic_is_lockdown_violation() {
         );
     });
 }
+
+#[test]
+fn matcher_artifact_under_keyhog_root_is_lockdown_violation() {
+    with_xdg_cache_home(|cache_home| {
+        let keyhog_cache = cache_home.path().join("keyhog");
+        std::fs::create_dir_all(&keyhog_cache).expect("create cache dir");
+        let name = format!("matcher-{}.khm", "d".repeat(64));
+        let mut bytes = b"KHMA".to_vec();
+        bytes.extend_from_slice(&4u32.to_le_bytes());
+        std::fs::write(keyhog_cache.join(name), bytes).expect("write khm under keyhog");
+        let hits = keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+            &keyhog_core::testing::TestApi,
+        );
+        assert_eq!(
+            hits.is_empty(),
+            false,
+            "matcher .khm under keyhog/ must violate lockdown: {hits:?}"
+        );
+    });
+}

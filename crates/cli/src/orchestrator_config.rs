@@ -200,9 +200,13 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
     // Lockdown forbids reading detector graphs from unsigned on-disk caches.
     if args.lockdown && matcher_cache_path.is_some() {
         tracing::warn!("lockdown mode: MatcherArtifact cache disabled");
-        eprintln!(
-            "warning: MatcherArtifact cache disabled because --lockdown forbids unsigned on-disk detector/matcher caches"
-        );
+        // Only surface stderr when the operator explicitly configured the
+        // cache; default-on resolution must not spam --lockdown/--quiet CI.
+        if runtime_input.matcher_cache.is_some() {
+            eprintln!(
+                "warning: MatcherArtifact cache disabled because --lockdown forbids unsigned on-disk detector/matcher caches"
+            );
+        }
         matcher_cache_path = None;
     }
     configure_matcher_artifact_cache_dir(matcher_cache_path.clone())?;

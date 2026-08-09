@@ -384,39 +384,61 @@ where
 }
 
 fn trusted_compiled_pattern_cache_entry(entry: &std::fs::DirEntry) -> std::io::Result<bool> {
-    if !compiled_pattern_cache_filename(&entry.file_name()) {
+    let name = entry.file_name();
+    let is_matcher = matcher_artifact_cache_filename(&name);
+    let is_hyperscan = hyperscan_compiled_cache_filename(&name);
+    if !is_matcher && !is_hyperscan {
         return Ok(false);
     }
     if !entry.file_type()?.is_file() {
         return Ok(false);
     }
+    // MatcherArtifact .khm files are only trusted under the dedicated sibling
+    // root. The same filename under `<cache>/keyhog` must still fail closed so
+    // a findings-bearing file cannot hide behind a KHMA prefix.
+    if is_matcher {
+        let path = entry.path();
+        let parent_name = path
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .and_then(|name| name.to_str());
+        if parent_name != Some(crate::KEYHOG_MATCHER_ARTIFACTS_SUBDIR) {
+            return Ok(false);
+        }
+    }
     compiled_pattern_cache_header_is_valid(&entry.path())
 }
 
-fn compiled_pattern_cache_filename(name: &OsStr) -> bool {
+fn hyperscan_compiled_cache_filename(name: &OsStr) -> bool {
     let Some(name) = name.to_str() else {
         return false;
     };
-    if let Some(digest) = name
+    let Some(digest) = name
         .strip_prefix(HYPERSCAN_CACHE_PREFIX)
         .and_then(|s| s.strip_suffix(HYPERSCAN_CACHE_SUFFIX))
-    {
-        return digest.len() == crate::git_lfs::SHA256_HEX_LEN
-            && digest
-                .bytes()
-                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
-    }
-    // MatcherArtifact: matcher-<64 hex>.khm
-    if let Some(digest) = name
+    else {
+        return false;
+    };
+    digest.len() == crate::git_lfs::SHA256_HEX_LEN
+        && digest
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+fn matcher_artifact_cache_filename(name: &OsStr) -> bool {
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+    let Some(digest) = name
         .strip_prefix("matcher-")
         .and_then(|s| s.strip_suffix(".khm"))
-    {
-        return digest.len() == crate::git_lfs::SHA256_HEX_LEN
-            && digest
-                .bytes()
-                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
-    }
-    false
+    else {
+        return false;
+    };
+    digest.len() == crate::git_lfs::SHA256_HEX_LEN
+        && digest
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 fn compiled_pattern_cache_header_is_valid(path: &Path) -> std::io::Result<bool> {
