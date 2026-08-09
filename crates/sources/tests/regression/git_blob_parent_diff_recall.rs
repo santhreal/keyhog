@@ -229,3 +229,71 @@ fn git_blobs_recall_side_branch_tip_under_max_commits() {
         chunks.len()
     );
 }
+
+#[test]
+fn git_blobs_recall_detached_head_tip_under_max_commits() {
+    let repo = tempfile::tempdir().expect("create git fixture");
+    git(repo.path(), &["init", "--quiet", "-b", "main"]);
+
+    const SECRET: &str =
+        "GITHUB_TOKEN=ghp_parentDiffDetachedHeadTipFixture000001\n";
+    std::fs::write(repo.path().join("keep.env"), SECRET).expect("write secret");
+    git(repo.path(), &["add", "keep.env"]);
+    git(repo.path(), &["commit", "--quiet", "-m", "add keep secret"]);
+    let tip = String::from_utf8(
+        std::process::Command::new("git")
+            .args(["-C", repo.path().to_str().expect("utf8 path"), "rev-parse", "HEAD"])
+            .output()
+            .expect("rev-parse tip")
+            .stdout,
+    )
+    .expect("utf8 tip")
+    .trim()
+    .to_string();
+
+    for index in 0..5 {
+        std::fs::write(
+            repo.path().join(format!("later-{index}.txt")),
+            format!("later row {index}\n"),
+        )
+        .expect("write later blob");
+        git(repo.path(), &["add", &format!("later-{index}.txt")]);
+        git(
+            repo.path(),
+            &["commit", "--quiet", "-m", &format!("later {index}")],
+        );
+    }
+
+    // Detach onto the introducing tip so HEAD is not a named branch tip.
+    git(repo.path(), &["checkout", "--quiet", "--detach", &tip]);
+    for index in 0..4 {
+        std::fs::write(
+            repo.path().join(format!("detached-{index}.txt")),
+            format!("detached row {index}\n"),
+        )
+        .expect("write detached blob");
+        git(repo.path(), &["add", &format!("detached-{index}.txt")]);
+        git(
+            repo.path(),
+            &["commit", "--quiet", "-m", &format!("detached {index}")],
+        );
+    }
+
+    let rows = GitSource::new(repo.path().to_path_buf())
+        .with_max_commits(4)
+        .chunks()
+        .collect::<Vec<_>>();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    assert!(
+        errors.is_empty(),
+        "complete fixture history must scan without gaps: {errors:?}"
+    );
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("ghp_parentDiffDetachedHeadTipFixture")),
+        "detached HEAD tip full-walk must emit untouched keep.env; got {} chunks",
+        chunks.len()
+    );
+}

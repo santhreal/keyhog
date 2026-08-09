@@ -498,9 +498,10 @@ fn stream_git_blobs(
     // recur across commits (most of a tree is untouched by any one commit),
     // so memoizing them prunes nearly all repeated descents.
     let mut walked_trees: HashSet<gix::ObjectId> = HashSet::new();
-    // Every ref tip must be fully enumerated once so `--max-commits` still
-    // covers untouched blobs on each tip tree (including non-HEAD branches).
-    // Non-tip commits use parent-tree diffs for O(changed) work.
+    // Every named ref tip plus HEAD must be fully enumerated once so
+    // `--max-commits` still covers untouched blobs on each tip tree
+    // (including side branches and detached CI checkouts). Non-tip commits
+    // use parent-tree diffs for O(changed) work.
     let ref_tip_oids = collect_ref_tip_oids(&repo_arg)?;
     let mut unreachable_objects: Option<UnreachableGitObjects> = None;
     let mut pending_blob_decode: Option<PendingGitBlobDecode> = None;
@@ -1383,9 +1384,16 @@ fn collect_commit_blobs_via_parent_diffs(
     let mut records = Vec::new();
     for parent_id in parent_ids {
         let Some(parent_tree) = load_commit_tree_for_diff(repo, *parent_id) else {
-            // Unreadable parent: fall back to a full walk so this commit's
-            // blobs cannot be dropped. The parent commit's own visit already
-            // recorded the coverage gap; do not emit a second error here.
+            // Unreadable parent: keep already-collected deletion/previous sides
+            // from earlier parents, then full-walk the current tree. The parent
+            // commit's own visit already recorded the coverage gap.
+            absorb_tree_diff_blob_records(
+                std::mem::take(&mut records),
+                seen_blob_paths,
+                blob_metadata,
+                errors,
+                respect_default_excludes,
+            );
             collect_tree_blobs_metadata(
                 repo,
                 tree,
@@ -1416,6 +1424,13 @@ fn collect_commit_blobs_via_parent_diffs(
                 %error,
                 parent = %parent_id,
                 "git parent-tree diff failed; falling back to a full tree walk for recall"
+            );
+            absorb_tree_diff_blob_records(
+                std::mem::take(&mut records),
+                seen_blob_paths,
+                blob_metadata,
+                errors,
+                respect_default_excludes,
             );
             collect_tree_blobs_metadata(
                 repo,
@@ -1678,6 +1693,43 @@ fn collect_ref_tip_oids(repo_arg: &str) -> Result<HashSet<gix::ObjectId>, Source
         }
     }
     super::wait_for_git_child(&mut child, "git for-each-ref", "enumerating ref tips")?;
+
+    // Detached HEAD (common in CI) is enumerated by `git log --all` but is not
+    // listed under refs/heads. Union the peeled HEAD tip so --max-commits still
+    // full-walks the checked-out commit's untouched blobs.
+    let mut head_cmd = super::git_command()?;
+    head_cmd.args(["-C", repo_arg, "rev-parse", "--verify", "HEAD"]);
+    head_cmd.stdout(std::process::Stdio::piped());
+    head_cmd.stderr(std::process::Stdio::piped());
+    match super::spawn_git_child(head_cmd) {
+        Ok(mut head_child) => {
+            if let Some(stdout) = head_child.take_stdout() {
+                let mut reader = std::io::BufReader::new(stdout);
+                let mut line_buf = Vec::new();
+                if let Ok(record) = super::read_capped_line(
+                    &mut reader,
+                    &mut line_buf,
+                    super::GIT_PLUMBING_LINE_BYTES,
+                ) {
+                    if record.consumed > 0
+                        && record.content <= super::GIT_PLUMBING_LINE_BYTES
+                    {
+                        let line = String::from_utf8_lossy(&line_buf);
+                        let line = line.trim_end_matches('\n').trim_end_matches('\r');
+                        if let Some(id) = parse_git_object_id_line(line, "HEAD tip") {
+                            tips.insert(id);
+                        }
+                    }
+                }
+            }
+            // Unborn/empty repos fail rev-parse; tip set simply stays without HEAD.
+            let _ = super::wait_for_git_child(&mut head_child, "git rev-parse", "resolving HEAD tip");
+        }
+        Err(error) => {
+            tracing::warn!(%error, "git HEAD tip could not be resolved; detached checkout may miss untouched blobs under --max-commits");
+        }
+    }
+
     Ok(tips)
 }
 
