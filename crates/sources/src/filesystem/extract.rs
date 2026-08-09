@@ -296,28 +296,33 @@ fn emit_archive_leaf_member(
     if content.len() > window_size && provenance.is_none() {
         match read::decode_text_file_owned_or_bytes(content) {
             Ok(text) => {
+                // Stream one window at a time (same shape as mmap windowing) so
+                // peak RAM stays ~decoded member + one window, not member + every
+                // window text held simultaneously.
                 let file_size = text.len() as u64;
                 let bytes = text.into_bytes();
-                for window in read::slice_into_windows(&bytes, window_size, window_overlap) {
-                    if window.text.is_empty() {
-                        continue;
-                    }
-                    if !emit(Ok(Chunk {
-                        data: window.text,
-                        metadata: ChunkMetadata {
-                            source_type: format!("{text_source_type}/windowed").into(),
-                            path: Some(member_display.to_owned().into()),
-                            base_offset: window.offset,
-                            base_line: window.base_line,
-                            size_bytes: Some(file_size),
-                            decoded_span: None,
-                            ..Default::default()
-                        },
-                    })) {
-                        return false;
-                    }
-                }
-                return true;
+                return read::for_each_slice_window(
+                    &bytes,
+                    window_size,
+                    window_overlap,
+                    |window| {
+                        if window.text.is_empty() {
+                            return true;
+                        }
+                        emit(Ok(Chunk {
+                            data: window.text,
+                            metadata: ChunkMetadata {
+                                source_type: format!("{text_source_type}/windowed").into(),
+                                path: Some(member_display.to_owned().into()),
+                                base_offset: window.offset,
+                                base_line: window.base_line,
+                                size_bytes: Some(file_size),
+                                decoded_span: None,
+                                ..Default::default()
+                            },
+                        }))
+                    },
+                );
             }
             Err(bytes) => {
                 match chunk_from_extracted_entry(
@@ -489,7 +494,151 @@ fn emit_archive_member_with_tex_provenance(
         );
     }
 
+    // Path-backed extractors (7z/RAR) and structured HAR expansion used to run
+    // only after a layer was spilled to disk. Keep that coverage on the
+    // streaming/in-memory dispatcher so container findings stay complete.
+    let ext = std::path::Path::new(entry_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    if ext.eq_ignore_ascii_case("har") {
+        let _decode = crate::profile::decode_span();
+        match crate::har::try_expand_har(&content, member_display, max_size) {
+            Some(har_chunks) => {
+                let mut derived_bytes = 0_u64;
+                for chunk in har_chunks {
+                    if let Ok(chunk_ok) = &chunk {
+                        derived_bytes =
+                            derived_bytes.saturating_add(chunk_ok.data.len() as u64);
+                    }
+                    if !emit(chunk) {
+                        crate::profile::add_derived_bytes(derived_bytes);
+                        return false;
+                    }
+                }
+                crate::profile::add_derived_bytes(derived_bytes);
+                return true;
+            }
+            None => {
+                tracing::info!(
+                    path = __veyyon_magic("", "member_display,")
+                    "HAR parse failed; scanning as plain archive member"
+                );
+            }
+        }
+    } else if ext.eq_ignore_ascii_case("7z") || ext.eq_ignore_ascii_case("rar") {
+        return emit_path_backed_archive_bytes(
+            ext,
+            content,
+            member_display,
+            max_size,
+            respect_default_excludes,
+            emit,
+        );
+    }
+
     emit_archive_leaf_member(content, member_display, provenance, emit)
+}
+
+fn emit_path_backed_archive_bytes(
+    ext: &str,
+    content: Vec<u8>,
+    member_display: &str,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    use std::io::Write;
+
+    let suffix = if ext.eq_ignore_ascii_case("7z") {
+        ".7z"
+    } else {
+        ".rar"
+    };
+    let mut tmp = match tempfile::Builder::new()
+        .prefix("keyhog-mem-arch-")
+        .suffix(suffix)
+        .tempfile()
+    {
+        Ok(tmp) => tmp,
+        Err(error) => {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return emit(Err(SourceError::Other(format!(
+                "failed to scan embedded {ext} container '{member_display}': cannot create temp extract staging ({error}); container was not scanned"
+            ))));
+        }
+    };
+    if let Err(error) = tmp.write_all(&content).and_then(|_| tmp.flush()) {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        return emit(Err(SourceError::Other(format!(
+            "failed to scan embedded {ext} container '{member_display}': cannot stage bytes for extract ({error}); container was not scanned"
+        ))));
+    }
+
+    // Preserve the logical member path in findings by extracting against a
+    // display-aware wrapper once path extractors gain from_bytes helpers. Until
+    // then, stage on disk (bytes already buffered) and rewrite emitted paths.
+    let staged_path = tmp.path().to_path_buf();
+    let staged_display = display_path(&staged_path);
+    let mut keep_going = true;
+    run_derived_extractor(
+        |counted| {
+            if ext.eq_ignore_ascii_case("7z") {
+                seven_zip::extract_seven_zip_chunks(
+                    &staged_path,
+                    max_size,
+                    respect_default_excludes,
+                    counted,
+                );
+            } else {
+                rar::extract_rar_chunks(
+                    &staged_path,
+                    max_size,
+                    respect_default_excludes,
+                    counted,
+                );
+            }
+        },
+        &mut |chunk| {
+            let chunk = match chunk {
+                Ok(mut chunk) => {
+                    if let Some(path) = chunk.metadata.path.as_mut() {
+                        let path_str = path.as_str();
+                        if let Some(rest) = path_str.strip_prefix(&staged_display) {
+                            let rewritten = if rest.is_empty() {
+                                member_display.to_owned()
+                            } else {
+                                format!("{member_display}{rest}")
+                            };
+                            *path = rewritten.into();
+                        }
+                    }
+                    Ok(chunk)
+                }
+                Err(err) => Err(rewrite_staged_archive_error(
+                    err,
+                    &staged_display,
+                    member_display,
+                )),
+            };
+            keep_going = emit(chunk);
+            keep_going
+        },
+    );
+    keep_going
+}
+
+fn rewrite_staged_archive_error(
+    err: SourceError,
+    staged_display: &str,
+    member_display: &str,
+) -> SourceError {
+    match err {
+        SourceError::Other(message) => {
+            SourceError::Other(message.replace(staged_display, member_display))
+        }
+        other => other,
+    }
 }
 
 pub(crate) fn try_emit_image_metadata_member(

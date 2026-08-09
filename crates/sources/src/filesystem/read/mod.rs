@@ -93,6 +93,15 @@ pub(in crate::filesystem) fn slice_into_windows(
     window::slice_into_windows(bytes, window_size, overlap)
 }
 
+pub(in crate::filesystem) fn for_each_slice_window(
+    bytes: &[u8],
+    window_size: usize,
+    overlap: usize,
+    emit: impl FnMut(window::FileWindow) -> bool,
+) -> bool {
+    window::for_each_window(bytes, window_size, overlap, emit, |_| {})
+}
+
 pub(crate) fn slice_into_windows_for_test(
     bytes: &[u8],
     window_size: usize,

@@ -402,24 +402,9 @@ fn stream_layer_tar_reader(
             continue;
         }
 
-        // 7z/RAR have no in-memory extractor on this path; record the coverage gap
-        // the way emit_archive_leaf_member does for magic-matched containers so the
-        // miss cannot read as a silent clean.
-        if ext.eq_ignore_ascii_case("7z") || ext.eq_ignore_ascii_case("rar") {
-            let format = if ext.eq_ignore_ascii_case("7z") {
-                "7z"
-            } else {
-                "RAR"
-            };
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            if !emit(Err(SourceError::Other(format!(
-                "embedded {format} container '{entry_name}' has no in-memory extractor; its entries were not scanned"
-            )))) {
-                return Ok(false);
-            }
-            continue;
-        }
-
+        // Nested 7z/RAR/HAR members are handled inside emit_in_memory_member
+        // (temp-staged path extractors / HAR expansion) so streaming keeps
+        // filesystem-unpack finding parity without materializing the whole layer.
         if !crate::filesystem::emit_in_memory_member(
             &entry_name,
             read.bytes,
