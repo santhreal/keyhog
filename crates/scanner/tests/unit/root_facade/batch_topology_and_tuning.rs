@@ -1,5 +1,4 @@
-use keyhog_core::{Chunk, CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity};
-use keyhog_scanner::testing::named_detector_fixture_defaults;
+use keyhog_core::{CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity};
 use keyhog_scanner::CompiledScanner;
 use std::sync::Arc;
 

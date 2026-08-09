@@ -203,10 +203,9 @@ fn oracle_contains_any(context: &str) -> bool {
 
 #[test]
 fn context_probe_matches_naive_substring_oracle_differentially() {
-    let sample = service_vocabulary()
+    let sample = *service_vocabulary()
         .first()
-        .expect("live service vocabulary is non-empty")
-        .clone();
+        .expect("live service vocabulary is non-empty");
 
     let cases = [
         String::new(),
@@ -229,10 +228,9 @@ fn context_probe_matches_naive_substring_oracle_differentially() {
 
 #[test]
 fn context_probe_is_case_insensitive_on_a_real_service_name() {
-    let sample = service_vocabulary()
+    let sample = *service_vocabulary()
         .first()
-        .expect("live service vocabulary is non-empty")
-        .clone();
+        .expect("live service vocabulary is non-empty");
     assert!(context_names_service(sample.as_bytes()));
     assert!(context_names_service(sample.to_uppercase().as_bytes()));
 }
