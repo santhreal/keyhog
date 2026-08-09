@@ -191,7 +191,7 @@ fn rewrite_chunk(
     Ok(chunk)
 }
 
-fn rewrite_streamed_chunk(
+pub(super) fn rewrite_streamed_chunk(
     mut chunk: Chunk,
     image: &str,
     layer_name: &str,
@@ -204,6 +204,14 @@ fn rewrite_streamed_chunk(
     let relative_path = normalize_streamed_layer_path(source_path)?;
     apply_docker_chunk_identity(&mut chunk, image, layer_name, &relative_path);
     Ok(chunk)
+}
+
+pub(super) fn rewrite_streamed_chunk_for_test(
+    chunk: Chunk,
+    image: &str,
+    layer_name: &str,
+) -> Result<Chunk, SourceError> {
+    rewrite_streamed_chunk(chunk, image, layer_name)
 }
 
 fn apply_docker_chunk_identity(
@@ -273,8 +281,16 @@ fn normalize_streamed_layer_path(path: &str) -> Result<String, SourceError> {
             "docker layer chunk has an empty member path".into(),
         ));
     }
+    // HAR expansion labels chunks `{member}#{url}`. Peel the opaque URL BEFORE
+    // splitting nested-archive `//` separators — otherwise `https://...` in the
+    // captured URL becomes a false nested member and `/../` segments refuse the
+    // whole request/response body.
+    let (path_body, har_url) = match path.split_once('#') {
+        Some((body, url)) => (body, Some(url)),
+        None => (path, None),
+    };
     let mut normalized = Vec::new();
-    for member in path.split("//") {
+    for member in path_body.split("//") {
         // GNU/BSD tar often records `./etc/creds.env`. `Component::CurDir` is
         // safe and must not become a false path-traversal refusal after the
         // archive-level validator already admitted the entry.
@@ -303,7 +319,11 @@ fn normalize_streamed_layer_path(path: &str) -> Result<String, SourceError> {
         validate_virtual_member_path(&cleaned)?;
         normalized.push(cleaned);
     }
-    Ok(normalized.join("//"))
+    let joined = normalized.join("//");
+    Ok(match har_url {
+        Some(url) => format!("{joined}#{url}"),
+        None => joined,
+    })
 }
 
 fn validate_virtual_member_path(member: &str) -> Result<(), SourceError> {

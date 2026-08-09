@@ -269,8 +269,9 @@ fn stream_layer_skips_extensionless_elf_without_string_mining() {
 
 /// Extensionless text whose *prefix* is ordinary source must still be scanned
 /// even when a NUL run appears later in the member. `looks_binary_prefix` trips
-/// on any 4-byte NUL run in the slice it is given; the streaming path must sniff
-/// only the opening 1024 bytes (same as FilesystemSource), not the whole member.
+/// on any 4-byte NUL run in the slice it is given; the Docker streaming path
+/// sniffs only the opening 1024 bytes (not the whole member). FilesystemSource
+/// keeps its historical 512-byte extensionless sniff.
 #[cfg(feature = "docker")]
 #[test]
 fn stream_layer_scans_extensionless_text_with_late_nul_run() {
@@ -298,6 +299,88 @@ fn stream_layer_scans_extensionless_text_with_late_nul_run() {
         chunks
             .iter()
             .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Large extensionless UTF-16 (BOM) must whole-member decode, not lossy plain
+/// windows — otherwise every other byte is garbled and secrets are missed.
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_scans_large_extensionless_utf16_le() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let secret = "AWS_ACCESS_KEY_ID=AKIA0PERF2UTF16LESCAN01";
+    let mut payload = vec![0xFF, 0xFE]; // UTF-16 LE BOM
+    for unit in secret.encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    // Pad past the 1 MiB plain-window threshold with UTF-16 LE 'a' (0x61 0x00).
+    while payload.len() < 1024 * 1024 + 64 {
+        payload.extend_from_slice(&[0x61, 0x00]);
+    }
+    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/appconfig", &payload)]);
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream utf16 layer member");
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().any(|chunk| chunk.data.contains(secret)),
+        "large extensionless UTF-16 LE must decode, got {:?}",
+        chunks
+            .iter()
+            .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
+    );
+}
+
+/// HAR request URLs are opaque provenance (`member#url`). A `/../` segment in
+/// the captured URL must not fail streamed path normalization.
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_har_url_with_parent_segments_still_scans() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let secret = "HAR_STREAM_SECRET=ghp_HarParentSegToken0000000000001";
+    let har = format!(
+        r#"{{"log":{{"version":"1.2","entries":[{{"request":{{"method":"GET","url":"https://example.invalid/api/../token","headers":[],"queryString":[],"headersSize":-1,"bodySize":0}},"response":{{"status":200,"statusText":"OK","headers":[],"content":{{"size":{size},"mimeType":"text/plain","text":"{secret}"}},"headersSize":-1,"bodySize":{size}}}}}]}}}}"#,
+        size=secret.len(),
+        secret=secret,
+    );
+    let layer = layer_tar_with_entries(
+        dir.path(),
+        "layer.tar",
+        &[("var/log/session.har", har.as_bytes())],
+    );
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream har layer member");
+    let rewritten: Vec<_> = rows
+        .into_iter()
+        .map(|row| match row {
+            Ok(chunk) => TestApi.rewrite_streamed_docker_layer_chunk(chunk, "img", "layer.tar"),
+            Err(error) => Err(error),
+        })
+        .collect();
+    assert!(
+        rewritten.iter().all(|row| row.is_ok()),
+        "HAR #url with /../ must not become unsafe-path errors: {rewritten:?}"
+    );
+    let chunks: Vec<_> = rewritten.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().any(|chunk| chunk.data.contains(secret)),
+        "HAR response body must remain scannable after rewrite, got {:?}",
+        chunks
+            .iter()
+            .map(|c| (c.metadata.source_type.as_ref(), c.metadata.path.as_deref()))
             .collect::<Vec<_>>()
     );
 }

@@ -384,6 +384,32 @@ fn stream_layer_tar_reader(
                     continue;
                 }
                 prebuffered = Some(bytes);
+            } else if crate::filesystem::has_utf16_bom_prefix(&prefix) {
+                // looks_binary_prefix deliberately admits UTF-16 BOM text. Large
+                // extensionless UTF-16 must whole-member decode (emit_archive_leaf
+                // path); lossy plain windows would garble every other byte and
+                // miss secrets.
+                let mut bytes = prefix;
+                let room = member_scan_cap.saturating_sub(bytes.len() as u64);
+                let to_take = after_prefix.min(room);
+                if to_take > 0 {
+                    let mut take = Read::take(&mut entry, to_take);
+                    take.read_to_end(&mut bytes).map_err(SourceError::Io)?;
+                }
+                let leftover = after_prefix.saturating_sub(to_take);
+                if leftover > 0 {
+                    drain_layer_member_remainder(&mut entry, leftover)?;
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                    if !emit(Err(docker_archive_entry_over_entry_cap_error(
+                        &path,
+                        size,
+                        member_scan_cap,
+                    ))) {
+                        return Ok(false);
+                    }
+                    continue;
+                }
+                prebuffered = Some(bytes);
             } else if crate::filesystem::looks_binary_prefix(&prefix) {
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
                 drain_layer_member_remainder(&mut entry, after_prefix)?;

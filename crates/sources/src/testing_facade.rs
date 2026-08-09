@@ -1034,6 +1034,16 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
+        pub fn rewrite_streamed_docker_layer_chunk(
+            &self,
+            chunk: keyhog_core::Chunk,
+            image: &str,
+            layer_name: &str,
+        ) -> Result<keyhog_core::Chunk, keyhog_core::SourceError> {
+            crate::docker::rewrite_streamed_layer_chunk_for_test(chunk, image, layer_name)
+        }
+
+        #[cfg(feature = "docker")]
         pub fn docker_rewrite_layer_chunks<I>(
             &self,
             chunks: I,

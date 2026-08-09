@@ -702,6 +702,10 @@ pub(crate) fn looks_binary_prefix_for_test(bytes: &[u8]) -> bool {
     read::looks_binary_prefix_for_test(bytes)
 }
 
+pub(crate) fn has_utf16_bom_prefix(bytes: &[u8]) -> bool {
+    read::has_utf16_bom_prefix(bytes)
+}
+
 pub(crate) fn looks_binary_prefix(bytes: &[u8]) -> bool {
     read::looks_binary_prefix_for_test(bytes)
 }

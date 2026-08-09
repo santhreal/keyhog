@@ -31,7 +31,7 @@ pub(crate) use archive::validate_scan_archive_entry_name;
 pub(super) const UNCAPPED_ARCHIVE_BUDGET: u64 = 1024 * 1024 * 1024;
 // 512 covers zip/ELF/PE magic and tar's ustar marker at offset 257 without
 // reading a full KiB on every unclassifiable name.
-const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
+const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 512;
 
 /// Upper bound on a Git-LFS pointer file's size. A canonical pointer is the
 /// three short lines `version …` / `oid sha256:…` / `size …` (~130 bytes; a few

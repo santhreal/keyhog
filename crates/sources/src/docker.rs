@@ -611,6 +611,14 @@ pub(crate) fn stream_layers_with_shared_budget_for_test(
     Ok(rows)
 }
 
+pub(crate) fn rewrite_streamed_layer_chunk_for_test(
+    chunk: Chunk,
+    image: &str,
+    layer_name: &str,
+) -> Result<Chunk, SourceError> {
+    layer::rewrite_streamed_chunk_for_test(chunk, image, layer_name)
+}
+
 pub(crate) fn rewrite_layer_chunks_for_test<I>(
     chunks: I,
     image: &str,
