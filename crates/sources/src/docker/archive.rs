@@ -363,53 +363,21 @@ fn stream_layer_tar_reader(
             }
             let after_prefix = size.saturating_sub(prefix_len as u64);
             if layer_member_looks_like_container(&prefix) {
-                let mut bytes = prefix;
-                let room = member_scan_cap.saturating_sub(bytes.len() as u64);
-                let to_take = after_prefix.min(room);
-                if to_take > 0 {
-                    let mut take = Read::take(&mut entry, to_take);
-                    take.read_to_end(&mut bytes).map_err(SourceError::Io)?;
-                }
-                let leftover = after_prefix.saturating_sub(to_take);
-                if leftover > 0 {
-                    drain_layer_member_remainder(&mut entry, leftover)?;
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-                    if !emit(Err(docker_archive_entry_over_entry_cap_error(
-                        &path,
-                        size,
-                        member_scan_cap,
-                    ))) {
-                        return Ok(false);
-                    }
-                    continue;
-                }
-                prebuffered = Some(bytes);
+                prebuffered = Some(finish_buffered_layer_member(
+                    &mut entry,
+                    prefix,
+                    after_prefix,
+                )?);
             } else if crate::filesystem::has_utf16_bom_prefix(&prefix) {
                 // looks_binary_prefix deliberately admits UTF-16 BOM text. Large
                 // extensionless UTF-16 must whole-member decode (emit_archive_leaf
                 // path); lossy plain windows would garble every other byte and
                 // miss secrets.
-                let mut bytes = prefix;
-                let room = member_scan_cap.saturating_sub(bytes.len() as u64);
-                let to_take = after_prefix.min(room);
-                if to_take > 0 {
-                    let mut take = Read::take(&mut entry, to_take);
-                    take.read_to_end(&mut bytes).map_err(SourceError::Io)?;
-                }
-                let leftover = after_prefix.saturating_sub(to_take);
-                if leftover > 0 {
-                    drain_layer_member_remainder(&mut entry, leftover)?;
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-                    if !emit(Err(docker_archive_entry_over_entry_cap_error(
-                        &path,
-                        size,
-                        member_scan_cap,
-                    ))) {
-                        return Ok(false);
-                    }
-                    continue;
-                }
-                prebuffered = Some(bytes);
+                prebuffered = Some(finish_buffered_layer_member(
+                    &mut entry,
+                    prefix,
+                    after_prefix,
+                )?);
             } else if crate::filesystem::looks_binary_prefix(&prefix) {
                 // Magic/NUL-run extensionless binaries match process_entry: Binary
                 // skip (no printable-string mining of ELF/PE payloads).
@@ -420,27 +388,11 @@ fn stream_layer_tar_reader(
                 // C0-density binary without a confident magic/NUL prefix: buffer
                 // for archive-binary / printable-strings. Do NOT lossy-window as
                 // text (junk matches); this matches the extensioned sniff arm.
-                let mut bytes = prefix;
-                let room = member_scan_cap.saturating_sub(bytes.len() as u64);
-                let to_take = after_prefix.min(room);
-                if to_take > 0 {
-                    let mut take = Read::take(&mut entry, to_take);
-                    take.read_to_end(&mut bytes).map_err(SourceError::Io)?;
-                }
-                let leftover = after_prefix.saturating_sub(to_take);
-                if leftover > 0 {
-                    drain_layer_member_remainder(&mut entry, leftover)?;
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-                    if !emit(Err(docker_archive_entry_over_entry_cap_error(
-                        &path,
-                        size,
-                        member_scan_cap,
-                    ))) {
-                        return Ok(false);
-                    }
-                    continue;
-                }
-                prebuffered = Some(bytes);
+                prebuffered = Some(finish_buffered_layer_member(
+                    &mut entry,
+                    prefix,
+                    after_prefix,
+                )?);
             } else if size > window_size as u64 {
                 let stream_size = size.min(member_scan_cap);
                 if !stream_plain_layer_member_windows(
@@ -468,12 +420,11 @@ fn stream_layer_tar_reader(
                 }
                 continue;
             } else {
-                let mut bytes = prefix;
-                if after_prefix > 0 {
-                    let mut take = Read::take(&mut entry, after_prefix);
-                    take.read_to_end(&mut bytes).map_err(SourceError::Io)?;
-                }
-                prebuffered = Some(bytes);
+                prebuffered = Some(finish_buffered_layer_member(
+                    &mut entry,
+                    prefix,
+                    after_prefix,
+                )?);
             }
         }
 
@@ -496,27 +447,11 @@ fn stream_layer_tar_reader(
             if crate::filesystem::looks_binary_prefix(&prefix)
                 || crate::filesystem::looks_binary(&prefix)
             {
-                let mut bytes = prefix;
-                let room = member_scan_cap.saturating_sub(bytes.len() as u64);
-                let to_take = after_prefix.min(room);
-                if to_take > 0 {
-                    let mut take = Read::take(&mut entry, to_take);
-                    take.read_to_end(&mut bytes).map_err(SourceError::Io)?;
-                }
-                let leftover = after_prefix.saturating_sub(to_take);
-                if leftover > 0 {
-                    drain_layer_member_remainder(&mut entry, leftover)?;
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-                    if !emit(Err(docker_archive_entry_over_entry_cap_error(
-                        &path,
-                        size,
-                        member_scan_cap,
-                    ))) {
-                        return Ok(false);
-                    }
-                    continue;
-                }
-                prebuffered = Some(bytes);
+                prebuffered = Some(finish_buffered_layer_member(
+                    &mut entry,
+                    prefix,
+                    after_prefix,
+                )?);
             } else {
                 let stream_size = size.min(member_scan_cap);
                 if !stream_plain_layer_member_windows(
@@ -732,6 +667,22 @@ fn layer_member_requires_full_buffer(ext: &str) -> bool {
 
 /// Stream a large plain UTF-8 layer member in ~1 MiB windows from the tar entry
 /// so peak RAM stays near one window instead of the full member-scan cap.
+/// Finish buffering a layer member after a prefix sniff.
+///
+/// Callers only reach this after the `size > member_scan_cap` admit guard, so
+/// the unread remainder always fits in the scan cap (no leftover drain).
+fn finish_buffered_layer_member<R: Read>(
+    entry: &mut R,
+    mut bytes: Vec<u8>,
+    after_prefix: u64,
+) -> Result<Vec<u8>, SourceError> {
+    if after_prefix > 0 {
+        let mut take = Read::take(entry, after_prefix);
+        take.read_to_end(&mut bytes).map_err(SourceError::Io)?;
+    }
+    Ok(bytes)
+}
+
 fn stream_plain_layer_member_windows<R: Read>(
     entry: &mut R,
     size: u64,
@@ -776,8 +727,10 @@ fn stream_plain_layer_member_windows<R: Read>(
             }
             buf.truncate(start + got);
             if got < to_read {
+                // Real EOF before declared size (truncated layer). Do not re-emit
+                // a carry-only overlap window; only emit when new bytes arrived.
                 remaining = 0;
-                if got == 0 && start == 0 {
+                if got == 0 {
                     return Ok(true);
                 }
             } else {
