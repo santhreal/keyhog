@@ -164,8 +164,8 @@ fn compiled_matcher_artifact_file_is_not_lockdown_violation() {
         let root = cache_home.path().join("keyhog-matcher-artifacts");
         std::fs::create_dir_all(&root).expect("matcher artifacts dir");
         let name = format!("matcher-{}.khm", "b".repeat(64));
-        let mut bytes = b"KHMA".to_vec();
-        bytes.extend_from_slice(&4u32.to_le_bytes());
+        let mut bytes = keyhog_core::MATCHER_ARTIFACT_MAGIC.to_vec();
+        bytes.extend_from_slice(&keyhog_core::MATCHER_ARTIFACT_FORMAT_VERSION.to_le_bytes());
         bytes.extend_from_slice(&[0u8; 64]);
         std::fs::write(root.join(name), bytes).expect("write khm");
         let hits = keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
@@ -218,7 +218,7 @@ fn matcher_artifact_under_keyhog_root_is_lockdown_violation() {
 }
 
 #[test]
-fn matcher_artifact_inflight_tmp_is_not_lockdown_violation() {
+fn matcher_artifact_tmp_named_file_is_lockdown_violation() {
     with_xdg_cache_home(|cache_home| {
         let root = cache_home.path().join("keyhog-matcher-artifacts");
         std::fs::create_dir_all(&root).expect("matcher artifacts dir");
@@ -226,6 +226,10 @@ fn matcher_artifact_inflight_tmp_is_not_lockdown_violation() {
         let hits = keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
             &keyhog_core::testing::TestApi,
         );
-        assert_eq!(hits, Vec::<std::path::PathBuf>::new(), "in-flight .tmp under matcher-artifacts must not violate lockdown");
+        assert_eq!(
+            hits.is_empty(),
+            false,
+            "non-khm names under matcher-artifacts must violate lockdown: {hits:?}"
+        );
     });
 }

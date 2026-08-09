@@ -138,6 +138,8 @@ pub const MATCHER_ARTIFACT_MAGIC: &[u8; 4] = b"KHMA";
 pub const MATCHER_ARTIFACT_FILENAME_PREFIX: &str = "matcher-";
 /// Filename suffix for MatcherArtifact cache files.
 pub const MATCHER_ARTIFACT_SUFFIX: &str = ".khm";
+/// MatcherArtifact on-disk envelope version shared with lockdown header checks.
+pub const MATCHER_ARTIFACT_FORMAT_VERSION: u32 = 4;
 
 /// Absolute path of keyhog's per-user cache root (`<os-cache>/keyhog`), or
 /// `None` when the platform exposes no cache directory.

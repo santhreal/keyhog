@@ -354,10 +354,6 @@ fn keyhog_cache_contains_findings<I>(keyhog_root: &Path, entries: I) -> bool
 where
     I: IntoIterator<Item = std::io::Result<std::fs::DirEntry>>,
 {
-    let matcher_artifacts_root = keyhog_root
-        .file_name()
-        .and_then(|name| name.to_str())
-        == Some(crate::KEYHOG_MATCHER_ARTIFACTS_SUBDIR);
     for entry in entries {
         let entry = match entry {
             Ok(entry) => entry,
@@ -369,12 +365,6 @@ where
                 return true;
             }
         };
-        // MatcherArtifact writes use NamedTempFile in-dir (typically `.tmp…`).
-        // Those are not findings-bearing and must not fail lockdown mid-write;
-        // unknown non-temp names still fail closed.
-        if matcher_artifacts_root && is_matcher_artifact_inflight_temp(&entry.file_name()) {
-            continue;
-        }
         match trusted_compiled_pattern_cache_entry(&entry) {
             Ok(true) => {}
             Ok(false) => return true,
@@ -389,14 +379,6 @@ where
         }
     }
     false
-}
-
-fn is_matcher_artifact_inflight_temp(name: &OsStr) -> bool {
-    let Some(name) = name.to_str() else {
-        return false;
-    };
-    // tempfile::NamedTempFile::new_in names files like `.tmpXXXXXXXX`.
-    name.starts_with(".tmp")
 }
 
 fn trusted_compiled_pattern_cache_entry(entry: &std::fs::DirEntry) -> std::io::Result<bool> {
@@ -464,9 +446,14 @@ fn compiled_pattern_cache_header_is_valid(path: &Path) -> std::io::Result<bool> 
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext == crate::MATCHER_ARTIFACT_SUFFIX.trim_start_matches('.'))
     {
-        let mut magic = [0_u8; 4];
-        match file.read_exact(&mut magic) {
-            Ok(()) => Ok(&magic == crate::MATCHER_ARTIFACT_MAGIC),
+        // Magic + format version (same width class as Hyperscan's header check).
+        let mut header = [0_u8; 8];
+        match file.read_exact(&mut header) {
+            Ok(()) => {
+                let magic_ok = &header[..4] == crate::MATCHER_ARTIFACT_MAGIC;
+                let version = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
+                Ok(magic_ok && version == crate::MATCHER_ARTIFACT_FORMAT_VERSION)
+            }
             Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
             Err(error) => Err(error),
         }

@@ -28,17 +28,10 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
+/// Cache format version. Bump when the envelope layout changes.
+pub use keyhog_core::MATCHER_ARTIFACT_FORMAT_VERSION as MATCHER_ARTIFACT_VERSION;
 /// On-disk magic for MatcherArtifact cache files.
 pub use keyhog_core::MATCHER_ARTIFACT_MAGIC;
-/// Cache format version. Bump when the envelope layout changes.
-///
-/// v1 used a JSON body that expanded section blobs into number arrays and made
-/// second-run deserialize dominate tiny-file CPU. v2 stores raw section bytes.
-/// v3 appended canonical detector-IR bytes for self-description, but the hit
-/// path never consumed them and paid multi-MiB read/copy on every reuse.
-/// v4 stores section blobs only; detector identity remains the live IR digest
-/// in the outer identity header and inside each section envelope.
-pub const MATCHER_ARTIFACT_VERSION: u32 = 4;
 /// Filename suffix for MatcherArtifact cache files.
 pub use keyhog_core::MATCHER_ARTIFACT_SUFFIX;
 /// Hard cap for one MatcherArtifact cache file, including header.
@@ -666,18 +659,24 @@ fn evict_old_matcher_artifacts(cache_dir: &Path) {
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(parent)?;
-    let tmp = tempfile::NamedTempFile::new_in(parent)?;
-    {
-        let mut file = tmp.reopen()?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
     }
-    tmp.persist(path).map(drop).map_err(|error| error.error)
+    // Create the scratch file outside the MatcherArtifact cache root so an
+    // in-flight `.tmp*` cannot trip lockdown's past-findings audit of that
+    // directory. Fall back to copy when rename crosses filesystems.
+    let mut tmp = tempfile::NamedTempFile::new()?;
+    {
+        tmp.write_all(bytes)?;
+        tmp.as_file().sync_all()?;
+    }
+    match tmp.persist(path) {
+        Ok(_) => Ok(()),
+        Err(error) => {
+            std::fs::copy(error.file.path(), path)?;
+            Ok(())
+        }
+    }
 }
 
 fn record_outcome(outcome: &MatcherArtifactCacheOutcome) {
@@ -770,6 +769,10 @@ pub fn compile_shared_with_matcher_artifact_cache(
     };
 
     let path = cache_dir.join(identity.cache_filename());
+    // When a structurally intact entry is not reusable for this live corpus
+    // (hydrate/compile failure after a successful load), do not immediately
+    // rewrite the same identity — that would delete+recreate forever.
+    let mut allow_store = true;
     let rebuild_outcome = match load_matcher_artifact_with_ir(cache_dir, &identity) {
         Ok(loaded) => {
             match hydrate_matcher_artifact_state(&loaded.sections, detector_digest, sorted.as_ref())
@@ -802,6 +805,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
                                     remove_error
                                 );
                             }
+                            allow_store = false;
                             MatcherArtifactCacheOutcome::Invalidated { reason }
                         }
                     }
@@ -822,6 +826,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
                             remove_error
                         );
                     }
+                    allow_store = false;
                     MatcherArtifactCacheOutcome::Invalidated { reason }
                 }
             }
@@ -862,11 +867,19 @@ pub fn compile_shared_with_matcher_artifact_cache(
             );
         }
     };
-    if let Err(store_error) = store_matcher_artifact(cache_dir, &identity, &sections) {
+    if allow_store {
+        if let Err(store_error) = store_matcher_artifact(cache_dir, &identity, &sections) {
+            tracing::warn!(
+                target: "keyhog::matcher_artifact_cache",
+                "failed to persist matcher artifact cache entry: {}",
+                store_error
+            );
+        }
+    } else {
         tracing::warn!(
             target: "keyhog::matcher_artifact_cache",
-            "failed to persist matcher artifact cache entry: {}",
-            store_error
+            "skipping matcher artifact rewrite after deterministic reuse failure for {}",
+            path.display()
         );
     }
     match CompiledScanner::compile_shared_from_compile_state(
