@@ -150,7 +150,7 @@ pub(crate) fn keyhog_cache_root() -> Option<std::path::PathBuf> {
 /// Absolute path of the MatcherArtifact cache root
 /// (`<os-cache>/keyhog-matcher-artifacts`), or `None` when the platform exposes
 /// no cache directory.
-pub(crate) fn keyhog_matcher_artifacts_root() -> Option<std::path::PathBuf> {
+pub fn keyhog_matcher_artifacts_root() -> Option<std::path::PathBuf> {
     dirs::cache_dir().map(|dir| dir.join(KEYHOG_MATCHER_ARTIFACTS_SUBDIR))
 }
 
@@ -274,6 +274,45 @@ pub fn detector_spec_by_id(id: &str) -> Option<&'static DetectorSpec> {
 pub fn git_hash() -> &'static str {
     env!("GIT_HASH")
 }
+
+/// SHA-256 hex digest of the currently running executable, memoized once per process.
+///
+/// Shared by MatcherArtifact identity and autoroute calibration so a scan does
+/// not read and hash the binary twice.
+pub fn current_executable_sha256() -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    use std::sync::OnceLock;
+    static DIGEST: OnceLock<Result<String, String>> = OnceLock::new();
+    DIGEST
+        .get_or_init(|| {
+            let path = std::env::current_exe()
+                .map_err(|error| format!("locate running executable: {error}"))?;
+            let mut file = std::fs::File::open(&path).map_err(|error| {
+                format!(
+                    "open running executable {} for identity: {error}",
+                    path.display()
+                )
+            })?;
+            let mut hasher = Sha256::new();
+            let mut buffer = [0u8; 128 * 1024];
+            loop {
+                let read = file.read(&mut buffer).map_err(|error| {
+                    format!(
+                        "read running executable {} for identity: {error}",
+                        path.display()
+                    )
+                })?;
+                if read == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..read]);
+            }
+            Ok(format!("{:x}", hasher.finalize()))
+        })
+        .clone()
+}
+
 
 /// Effective digest identifying the EXACT embedded detector set and the
 /// directory-scoped `corpus.toml` schema contract compiled into this binary

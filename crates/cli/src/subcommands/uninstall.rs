@@ -76,6 +76,14 @@ fn print_integration_hints(exe: &Path, palette: &Palette) {
             );
         }
     }
+    if let Some(matcher_cache) = keyhog_core::keyhog_matcher_artifacts_root() {
+        if matcher_cache.is_dir() {
+            println!(
+                "  {dim}- the MatcherArtifact cache at {} (compiled matcher graphs; safe to delete, a reinstall rebuilds it){reset}",
+                matcher_cache.display()
+            );
+        }
+    }
 }
 
 #[cfg(unix)]

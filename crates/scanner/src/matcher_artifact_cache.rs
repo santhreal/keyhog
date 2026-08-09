@@ -24,7 +24,7 @@ use crate::execution_pack::{CanonicalDetectorExecutionIr, ExecutionPackBackend};
 use crate::hw_probe::ScanBackend;
 use crate::types::ScannerTuningConfig;
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -338,37 +338,9 @@ pub fn matcher_backend_for_gpu_policy(policy: GpuInitPolicy) -> Option<Execution
 }
 
 fn current_executable_sha256() -> std::result::Result<String, String> {
-    static DIGEST: OnceLock<std::result::Result<String, String>> = OnceLock::new();
-    DIGEST
-        .get_or_init(|| {
-            use sha2::{Digest, Sha256};
-            let path = std::env::current_exe().map_err(|error| {
-                format!("locate running executable for matcher identity: {error}")
-            })?;
-            let mut file = std::fs::File::open(&path).map_err(|error| {
-                format!(
-                    "open running executable {} for matcher identity: {error}",
-                    path.display()
-                )
-            })?;
-            let mut hasher = Sha256::new();
-            let mut buffer = [0u8; 128 * 1024];
-            loop {
-                let read = file.read(&mut buffer).map_err(|error| {
-                    format!(
-                        "read running executable {} for matcher identity: {error}",
-                        path.display()
-                    )
-                })?;
-                if read == 0 {
-                    break;
-                }
-                hasher.update(&buffer[..read]);
-            }
-            Ok(format!("{:x}", hasher.finalize()))
-        })
-        .clone()
+    keyhog_core::current_executable_sha256()
 }
+
 
 /// MatcherArtifact v3 body layout (after the 8-byte magic/version header):
 /// `identity_json_len:u32` + identity JSON + `identity_digest:[u8;32]` +
@@ -677,8 +649,21 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         Ok(_) => Ok(()),
         Err(error) => {
             // Cross-filesystem rename is the common case (`/tmp` vs `$HOME`).
-            // Create the destination already owner-only so there is no
+            // Refuse a symlink at the destination (same rule as the load path)
+            // and create the destination already owner-only so there is no
             // umask-0644 window before a later chmod.
+            match std::fs::symlink_metadata(path) {
+                Ok(meta) if meta.file_type().is_symlink() => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::AlreadyExists,
+                        format!(
+                            "matcher artifact {} is a symlink; refusing to overwrite",
+                            path.display()
+                        ),
+                    ));
+                }
+                Ok(_) | Err(_) => {}
+            }
             let mut options = std::fs::OpenOptions::new();
             options.create(true).write(true).truncate(true);
             #[cfg(unix)]
