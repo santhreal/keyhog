@@ -2608,6 +2608,16 @@ pub fn companion_arms_for_test(src: &str) -> Vec<Vec<String>> {
 pub fn companions_allow_for_test(src: &str, text: &str) -> bool {
     crate::engine::companions_allow(src, text)
 }
+
+/// Deny-callback companion gate used by the presence-scratch growth regression.
+pub fn companions_deny_absent_for_test(
+    detector_digest: u64,
+    patterns: &[(usize, &str)],
+    text: &str,
+    deny: impl FnMut(usize),
+) {
+    crate::engine::companions_deny_absent(detector_digest, patterns, text, deny)
+}
 pub fn new_trigger_bitmap_for_test(n_patterns: usize) -> Vec<u64> {
     crate::engine::trigger_bitmap::new_trigger_bitmap(n_patterns)
 }
