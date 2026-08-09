@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Daemon wire e2e helpers now start the daemon on the embedded detector corpus so warm identity matches the client's embedded detector-digest stamp."
+crates = ["cli"]

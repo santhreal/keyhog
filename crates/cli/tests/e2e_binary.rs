@@ -863,12 +863,6 @@ fn scan_comments_flag_surfaces_credentials_in_comments() {
     );
 }
 
-fn workspace_detectors() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../detectors")
-        .canonicalize()
-        .expect("workspace detectors dir")
-}
 
 #[cfg(feature = "git")]
 fn init_git_repo(repo_path: &std::path::Path) {
@@ -1115,7 +1109,11 @@ fn start_daemon() -> (
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let runtime = TempDir::new().expect("runtime dir");
-    let detectors = workspace_detectors();
+    // Use the embedded corpus (no `--detectors`) so daemon warm identity's
+    // detector-rules digest matches the client's `keyhog_core::detector_digest()`
+    // stamp. Passing workspace detectors made the daemon advertise
+    // `compute_spec_hash` while `keyhog scan --daemon` expected the embedded
+    // `<count>-<fnv>` stamp, failing every wire e2e with identity mismatch.
     let mut daemon = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
         .args([
@@ -1123,8 +1121,6 @@ fn start_daemon() -> (
             "start",
             "--backend",
             FUNCTIONAL_E2E_BACKEND,
-            "--detectors",
-            detectors.to_str().unwrap(),
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
