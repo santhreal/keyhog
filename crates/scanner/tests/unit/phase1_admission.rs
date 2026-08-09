@@ -2,27 +2,30 @@ use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 
 fn scanner() -> CompiledScanner {
-    CompiledScanner::compile_with_gpu_policy(vec![DetectorSpec {
-        tests: Vec::new(),
-        id: "phase1-admission-token".into(),
-        name: "Phase 1 admission token".into(),
-        service: "unit".into(),
-        severity: Severity::High,
-        patterns: vec![PatternSpec {
-            regex: r"ghp_[A-Za-z0-9]{8}".into(),
-            description: None,
-            group: None,
-            required_literals: Vec::new(),
-            client_safe: false,
-            weak_anchor: false,
-            structural_password_slot: false,
+    CompiledScanner::compile_with_gpu_policy(
+        vec![DetectorSpec {
+            tests: Vec::new(),
+            id: "phase1-admission-token".into(),
+            name: "Phase 1 admission token".into(),
+            service: "unit".into(),
+            severity: Severity::High,
+            patterns: vec![PatternSpec {
+                regex: r"ghp_[A-Za-z0-9]{8}".into(),
+                description: None,
+                group: None,
+                required_literals: Vec::new(),
+                client_safe: false,
+                weak_anchor: false,
+                structural_password_slot: false,
+            }],
+            keywords: vec!["ghp_".into()],
+            min_confidence: Some(0.0),
+            match_confidence: keyhog_core::detector_spec_by_id("github-classic-pat")
+                .and_then(|detector| detector.match_confidence),
+            ..Default::default()
         }],
-        keywords: vec!["ghp_".into()],
-        min_confidence: Some(0.0),
-        match_confidence: keyhog_core::detector_spec_by_id("github-classic-pat")
-            .and_then(|detector| detector.match_confidence),
-        ..Default::default()
-    }], keyhog_scanner::GpuInitPolicy::FromRuntimePolicy)
+        keyhog_scanner::GpuInitPolicy::FromRuntimePolicy,
+    )
     .expect("phase-1 admission scanner compiles")
 }
 

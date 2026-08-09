@@ -473,9 +473,7 @@ pub(crate) fn find_classified_entropy_secrets_with_precomputed_keywords_and_poli
     );
     let keyword_line_ids: Vec<u32> = keyword_lines
         .iter()
-        .filter_map(|(line_idx, _)| {
-            u32::try_from(*line_idx).ok()
-        })
+        .filter_map(|(line_idx, _)| u32::try_from(*line_idx).ok())
         .collect();
     find_classified_entropy_secrets_from_lines(
         &BorrowedEntropyLines {

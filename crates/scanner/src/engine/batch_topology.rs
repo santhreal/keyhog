@@ -2,13 +2,8 @@ use keyhog_core::Chunk;
 
 pub(crate) const SMALL_CHUNK_MAX_BYTES: usize = 64 * 1024;
 #[allow(dead_code)]
-pub(super) const CANDIDATE_LANE_THRESHOLDS: &[usize] = &[
-    16 * 1024,
-    32 * 1024,
-    64 * 1024,
-    128 * 1024,
-    256 * 1024,
-];
+pub(super) const CANDIDATE_LANE_THRESHOLDS: &[usize] =
+    &[16 * 1024, 32 * 1024, 64 * 1024, 128 * 1024, 256 * 1024];
 
 /// Groups tiny chunks into one sequential lane per worker while preserving
 /// per-chunk result order. Large chunks remain independently scheduled so a

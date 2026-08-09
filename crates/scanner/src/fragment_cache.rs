@@ -119,8 +119,7 @@ pub(crate) struct FragmentCache {
 impl FragmentCache {
     pub(crate) fn new(capacity: usize) -> Self {
         let max_per_shard = (capacity / SHARD_COUNT).max(MIN_SHARD_CAPACITY);
-        let initial = NonZeroUsize::new(MIN_SHARD_CAPACITY)
-            .unwrap_or(NonZeroUsize::MIN);
+        let initial = NonZeroUsize::new(MIN_SHARD_CAPACITY).unwrap_or(NonZeroUsize::MIN);
         Self {
             shards: std::array::from_fn(|_| Mutex::new(LruCache::new(initial))),
             max_per_shard,
@@ -272,8 +271,7 @@ impl FragmentCache {
     }
 
     pub(crate) fn clear(&self) {
-        let minimum = NonZeroUsize::new(MIN_SHARD_CAPACITY)
-            .unwrap_or(NonZeroUsize::MIN);
+        let minimum = NonZeroUsize::new(MIN_SHARD_CAPACITY).unwrap_or(NonZeroUsize::MIN);
         for shard in &self.shards {
             let mut shard = shard.lock();
             shard.clear();

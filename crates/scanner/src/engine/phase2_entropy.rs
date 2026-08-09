@@ -112,7 +112,8 @@ impl CompiledScanner {
         }
 
         // Avoid entropy duplicates on lines already claimed by named detectors.
-        let mut skip_lines_owned = SkipLinesGuard(ENTROPY_SKIP_LINES_SCRATCH.with(|cell| cell.take()));
+        let mut skip_lines_owned =
+            SkipLinesGuard(ENTROPY_SKIP_LINES_SCRATCH.with(|cell| cell.take()));
         skip_lines_owned.0.clear();
         let skip_lines = &mut skip_lines_owned.0;
         if !scan_state.matches.is_empty() {
