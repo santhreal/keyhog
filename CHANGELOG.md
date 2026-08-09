@@ -4,6 +4,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [Unreleased]
 
+- Docker image scans stream each layer's tar members through the in-memory archive scanner instead of unpacking layer files to disk and re-walking them. Gzip/zstd layers are inflated once. Image-scoped unpack budgets and per-entry caps still fail closed with coverage gaps. Whiteout and opaque-dir markers remain ordinary members and do not hide credentials from earlier layers. Large already-UTF-8 plain layer members stream in ~1 MiB windows while keeping the `filesystem/archive` source identity on the shared archive leaf path; UTF-16 and formats that need a full member (archives, PDF, images, HAR, lz4/sz) still buffer up to the scan cap. Nested `.7z`/`.rar` use the shared path extractors; layer `.har` expands at the Docker boundary with `wire:har` labels.
+
 - Filesystem discovery prunes default-excluded directories (for example
   `node_modules/`) during the walk and counts each pruned directory once in the
   Excluded coverage signal. Linux unbounded walks abort at the first
