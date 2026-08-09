@@ -717,7 +717,7 @@ pub(super) fn validate_detector_match(
 /// Occupancy state of a resident GPU slot in the two-slot batch pipeline.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GpuSlotOccupancy {
+pub enum GpuSlotOccupancy {
     Idle,
     Uploading,
     Computing,
@@ -728,7 +728,7 @@ pub(crate) enum GpuSlotOccupancy {
 /// resident resources or changing batch output order.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct GpuPipelineOverlapTrace {
+pub struct GpuPipelineOverlapTrace {
     pub slot0_state: GpuSlotOccupancy,
     pub slot1_state: GpuSlotOccupancy,
     pub overlap_active: bool,
@@ -737,11 +737,7 @@ pub(crate) struct GpuPipelineOverlapTrace {
 
 #[allow(dead_code)]
 impl GpuPipelineOverlapTrace {
-    pub(crate) fn record(
-        slot0: GpuSlotOccupancy,
-        slot1: GpuSlotOccupancy,
-        order_preserved: bool,
-    ) -> Self {
+    pub fn record(slot0: GpuSlotOccupancy, slot1: GpuSlotOccupancy, order_preserved: bool) -> Self {
         let overlap = (slot0 != GpuSlotOccupancy::Idle) && (slot1 != GpuSlotOccupancy::Idle);
         Self {
             slot0_state: slot0,

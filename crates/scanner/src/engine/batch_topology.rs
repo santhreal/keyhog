@@ -76,10 +76,9 @@ impl BatchTopology {
             raw_lane_width
         };
 
-        let lane_width = if evidence.large_chunks > 0 && evidence.small_chunks > 0 {
-            // Skewed batch: coalesce small chunks up to bytes_bounded_width
-            raw_lane_width.min(bytes_bounded_width).max(1)
-        } else if evidence.large_chunks == evidence.total_chunks {
+        let lane_width = if evidence.large_chunks > 0 {
+            // Any oversized chunk keeps per-chunk scheduling so a slow file
+            // cannot strand otherwise-idle workers and memory remains bounded.
             1
         } else {
             raw_lane_width.min(bytes_bounded_width).max(1)

@@ -80,3 +80,17 @@ fn test_fused_waves_ceiling_division_non_multiple() {
         evidence.total_chunks.div_ceil(topology.lane_width)
     );
 }
+
+#[test]
+fn test_mixed_batch_with_adjacent_large_chunks() {
+    let evidence = BatchEvidence {
+        total_chunks: 10,
+        small_chunks: 8,
+        large_chunks: 2,
+        total_bytes: 400_000,
+        max_chunk_bytes: 150_000,
+    };
+    let topology = BatchTopology::select(&evidence, 4);
+    assert_eq!(topology.lane_width, 1);
+    assert_eq!(topology.max_memory_per_lane_bytes, 150_000);
+}

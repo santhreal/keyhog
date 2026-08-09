@@ -740,12 +740,37 @@ mod max_inner_loop_iters_tests {
     }
     #[test]
     fn bound_partition_memory_clears_fragment_cache() {
-        let scanner = super::CompiledScanner::compile_for_backend(
+        let mut scanner = super::CompiledScanner::compile_for_backend(
             vec![],
             crate::hw_probe::ScanBackend::CpuFallback,
         )
         .unwrap();
-        let mut scanner = scanner;
+
+        scanner
+            .fragment_cache
+            .record_and_reassemble(crate::fragment_cache::SecretFragment {
+                prefix: "AKIA".to_string(),
+                var_name: "AWS_ACCESS_KEY_ID".to_string(),
+                value: zeroize::Zeroizing::new("1234567890123456".to_string()),
+                line: 42,
+                path: Some("src/main.rs".into()),
+            });
+        let (len_before, _, _) = scanner.fragment_cache.storage_for_test();
+        assert!(
+            len_before > 0,
+            "fragment cache should contain recorded fragment before bounding"
+        );
+
         scanner.bound_partition_memory();
+
+        let (len_after, _, _) = scanner.fragment_cache.storage_for_test();
+        assert_eq!(
+            len_after, 0,
+            "bound_partition_memory must clear fragment cache"
+        );
+        assert!(
+            scanner.reusable_phase1_evidence.get_mut().is_empty(),
+            "bound_partition_memory must clear phase1 evidence cache"
+        );
     }
 }

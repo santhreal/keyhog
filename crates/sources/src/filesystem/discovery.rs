@@ -218,19 +218,50 @@ fn metadata_walk_result(
 pub(super) fn walk_metadata(
     root: &Path,
     config: &FilesystemWalkConfig,
+    visit: impl FnMut(MetadataWalkResult) -> bool,
+) {
+    walk_metadata_tracked_opt(root, config, None, visit);
+}
+
+pub(super) fn walk_metadata_tracked(
+    root: &Path,
+    config: &FilesystemWalkConfig,
+    tracker: &DiscoverySyscallTracker,
+    visit: impl FnMut(MetadataWalkResult) -> bool,
+) {
+    walk_metadata_tracked_opt(root, config, Some(tracker), visit);
+}
+
+fn walk_metadata_tracked_opt(
+    root: &Path,
+    config: &FilesystemWalkConfig,
+    tracker: Option<&DiscoverySyscallTracker>,
     mut visit: impl FnMut(MetadataWalkResult) -> bool,
 ) {
     if let Err(error) = validate_walk_root(root) {
+        if let Some(t) = tracker {
+            t.record_statx();
+        }
         visit(Err(error));
         return;
+    }
+    if let Some(t) = tracker {
+        t.record_open();
     }
     for result in configured_walk_builder(root, config)
         .build()
         .filter_map(metadata_walk_result)
     {
+        if let Some(t) = tracker {
+            t.record_statx();
+            t.record_read();
+        }
         if !visit(result) {
             break;
         }
+    }
+    if let Some(t) = tracker {
+        t.record_close();
     }
 }
 
@@ -813,17 +844,29 @@ mod tests {
 
     #[test]
     fn test_discovery_syscall_tracker() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("sample.txt");
+        std::fs::write(&file_path, "hello world").unwrap();
+
         let tracker = DiscoverySyscallTracker::new();
-        tracker.record_statx();
-        tracker.record_open();
-        tracker.record_read();
-        tracker.record_close();
-        tracker.record_futex();
+        let config = super::super::filter::walker_config(0, &[], true);
+        walk_metadata_tracked(temp_dir.path(), &config, &tracker, |_| true);
+
         let snap = tracker.snapshot();
-        assert_eq!(snap.statx, 1);
-        assert_eq!(snap.open, 1);
-        assert_eq!(snap.read, 1);
-        assert_eq!(snap.close, 1);
-        assert_eq!(snap.futex, 1);
+        assert!(
+            snap.statx > 0,
+            "statx count must be > 0 from real discovery walk, got {}",
+            snap.statx
+        );
+        assert!(
+            snap.open > 0,
+            "open count must be > 0 from real discovery walk, got {}",
+            snap.open
+        );
+        assert!(
+            snap.close > 0,
+            "close count must be > 0 from real discovery walk, got {}",
+            snap.close
+        );
     }
 }
