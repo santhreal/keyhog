@@ -13,6 +13,7 @@ from bench.trials import (
 )
 
 def _prober(*, governor="performance", freq=4200.0, load=0.5):
+    """Test helper / contract verification."""
     return NoiseProber(
         affinity=lambda: (True, 16),
         governor=lambda: (governor, freq),
@@ -26,6 +27,7 @@ def _executor(walls):
     walls_iter = iter(walls)
 
     def run(state, index):
+        """Test helper / contract verification."""
         calls.append((state, index))
         return TrialOutcome(wall_ms=next(walls_iter))
 
@@ -190,6 +192,7 @@ def test_trial_set_digest_binds_content(monkeypatch):
     monkeypatch.setattr("bench.trials.apply_affinity", lambda: (True, 16))
 
     def build():
+        """Test helper / contract verification."""
         return run_trials(
             workload="mirror", role="control",
             executor=_executor([10.0, 11.0]),

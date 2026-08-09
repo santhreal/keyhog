@@ -33,6 +33,7 @@ HOST = Host(
 
 
 def _config(config_id: str) -> ScannerConfig:
+    """Test helper / contract verification."""
     parts = config_id.rsplit("-", 3)
     backend = parts[0]
     cache = "on" if parts[1] == "cache" else "off"
@@ -41,6 +42,7 @@ def _config(config_id: str) -> ScannerConfig:
 
 
 def _row(config_id: str, corpus: CorpusInfo) -> RunResult:
+    """Test helper / contract verification."""
     cfg = _config(config_id)
     return RunResult(
         generated_at="2026-07-28T12:00:00Z",
@@ -72,6 +74,7 @@ def _row(config_id: str, corpus: CorpusInfo) -> RunResult:
 
 
 def _write_rows(path, config_ids: set[str], corpus: CorpusInfo) -> None:
+    """Test helper / contract verification."""
     path.mkdir()
     for config_id in sorted(config_ids):
         row = _row(config_id, corpus)
@@ -82,6 +85,7 @@ def _write_rows(path, config_ids: set[str], corpus: CorpusInfo) -> None:
 
 
 def _matrix_fixture(tmp_path):
+    """Test helper / contract verification."""
     config_results = tmp_path / "config"
     daemon_results = tmp_path / "daemon"
     daemon_corpus = tmp_path / "daemon.txt"

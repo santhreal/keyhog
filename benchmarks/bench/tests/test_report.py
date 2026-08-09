@@ -9,6 +9,7 @@ from bench.schema import ScannerConfig, Speed, StaticRecoveryMetrics
 
 
 def _result(scanner: str, hits: int, wall_ms: float) -> RunResult:
+    """Test helper / contract verification."""
     overall = Outcome(tp=hits, fp=0, fn=5 - hits)
     per_category = (
         {"generic": Outcome(tp=hits, fp=0, fn=5 - hits)}
@@ -33,6 +34,7 @@ def _result(scanner: str, hits: int, wall_ms: float) -> RunResult:
     )
 
 def _bloom_evidence() -> BloomEvidence:
+    """Test helper / contract verification."""
     return BloomEvidence(
         schema_version="bloom-evidence-v1",
         corpus_name="samsung-creddata-fx-record-spans-v1",
@@ -65,6 +67,7 @@ def _bloom_evidence() -> BloomEvidence:
 
 
 def _run_set(result: RunResult, path: str = "selected.json") -> report.RunSet:
+    """Test helper / contract verification."""
     if not result.scanner.executable_sha256:
         result.scanner.executable_sha256 = "a" * 64
     declaration = report.RunDeclaration(
@@ -82,6 +85,7 @@ def _run_set(result: RunResult, path: str = "selected.json") -> report.RunSet:
 
 
 def test_report_renders_keyhog_leaderboard_row():
+    """Test helper / contract verification."""
     text = report.render_leaderboard(
         [_result("betterleaks", 2, 10.0), _result("keyhog", 5, 20.0)],
         "mirror",
@@ -375,6 +379,7 @@ def test_undeclared_duplicate_default_results_are_ambiguous():
 
 @pytest.mark.parametrize("observed", [None, "bench-v999"])
 def test_load_results_rejects_incompatible_result_schema(tmp_path, observed):
+    """Test helper / contract verification."""
     payload = _result("keyhog", 5, 20.0).to_json()
     if observed is None:
         payload.pop("schema_version")
@@ -393,6 +398,7 @@ def test_load_results_rejects_incompatible_result_schema(tmp_path, observed):
 
 
 def test_static_recovery_report_renders_exact_counts_and_sorted_reasons():
+    """Test helper / contract verification."""
     result = _result("keyhog", 5, 20.0)
     result.static_recovery = StaticRecoveryMetrics(
         supported=4,
@@ -417,6 +423,7 @@ def test_static_recovery_report_renders_exact_counts_and_sorted_reasons():
 
 
 def test_static_recovery_report_renders_exact_zero():
+    """Test helper / contract verification."""
     rendered = report.render_static_recovery([_result("keyhog", 5, 20.0)], "mirror")
 
     assert "| Supported | 0 |" in rendered
@@ -426,6 +433,7 @@ def test_static_recovery_report_renders_exact_zero():
 
 
 def test_static_recovery_report_marks_legacy_artifact_without_fake_zeroes():
+    """Test helper / contract verification."""
     result = _result("keyhog", 5, 20.0)
     result.schema_version = "bench-v3"
     result.static_recovery = None
@@ -438,6 +446,7 @@ def test_static_recovery_report_marks_legacy_artifact_without_fake_zeroes():
 
 
 def test_bloom_report_renders_real_rejection_identity_and_parity() -> None:
+    """Test helper / contract verification."""
     result = _result("keyhog", 5, 20.0)
     result.bloom = _bloom_evidence()
 
@@ -452,6 +461,7 @@ def test_bloom_report_renders_real_rejection_identity_and_parity() -> None:
 
 
 def test_bloom_report_never_infers_missing_evidence_as_zero() -> None:
+    """Test helper / contract verification."""
     rendered = report.render_bloom_evidence(
         [_result("keyhog", 5, 20.0)],
         "mirror",
@@ -463,6 +473,7 @@ def test_bloom_report_never_infers_missing_evidence_as_zero() -> None:
 
 
 def test_report_inject_replaces_marker_body():
+    """Test helper / contract verification."""
     original = "a\n<!-- BENCH:perf:start -->\nold\n<!-- BENCH:perf:end -->\nz"
 
     updated = report.inject(original, "perf", "new")
@@ -475,6 +486,7 @@ def test_written_reports_are_never_reported_stale(tmp_path):
     # report_files(), so anything just written must NOT be flagged stale. This
     # fails if the two ever diverge (the byte-identical-dict drift risk removed
     # by factoring report_files).
+    """Test helper / contract verification."""
     result = _result("keyhog", 5, 20.0)
     reports_dir = tmp_path / "reports"
 
@@ -491,6 +503,7 @@ def test_written_reports_are_never_reported_stale(tmp_path):
 
 
 def test_report_check_does_not_write_stale_reports(tmp_path, capsys):
+    """Test helper / contract verification."""
     result = _result("keyhog", 5, 20.0)
     results_dir = tmp_path / "results"
     reports_dir = tmp_path / "reports"
@@ -539,6 +552,7 @@ def test_report_check_does_not_write_stale_reports(tmp_path, capsys):
 
 
 def test_gap_report_shows_category_recall_gap_dashboard():
+    """Test helper / contract verification."""
     keyhog = _result("keyhog", 3, 20.0)
     keyhog.detection.per_category = {"generic": Outcome(tp=1, fp=0, fn=2)}
     noisy = _result("betterleaks", 2, 10.0)
@@ -568,6 +582,7 @@ def test_category_recall_gap_does_not_claim_overall_competitor_superiority():
 
 
 def test_primary_category_collapses_composite_labels_to_last_atom():
+    """Test helper / contract verification."""
     assert report.primary_category("API:Anthropic API Key:Key") == "Key"
     assert report.primary_category("Token:UUID") == "UUID"
     assert report.primary_category("Password") == "Password"
@@ -576,6 +591,7 @@ def test_primary_category_collapses_composite_labels_to_last_atom():
 
 
 def test_collapse_per_category_sums_fragmented_cells_into_primary():
+    """Test helper / contract verification."""
     per_cat = {
         "API:Anthropic API Key:Key": Outcome(tp=1, fp=2, fn=3),
         "AWS:Key": Outcome(tp=4, fp=0, fn=5),
@@ -589,6 +605,7 @@ def test_collapse_per_category_sums_fragmented_cells_into_primary():
 
 
 def test_category_recall_dashboard_ranks_by_miss_count():
+    """Test helper / contract verification."""
     keyhog = _result("keyhog", 3, 20.0)
     keyhog.corpus.name = "creddata"
     keyhog.detection.per_category = {
@@ -615,6 +632,7 @@ def test_category_recall_dashboard_ranks_by_miss_count():
 
 
 def test_class_recall_differential_requires_full_scanner_set():
+    """Test helper / contract verification."""
     keyhog = _result("keyhog", 3, 20.0)
     keyhog.detection.per_category = {"generic": Outcome(tp=1, fp=0, fn=2)}
     better = _result("betterleaks", 2, 10.0)
@@ -629,6 +647,7 @@ def test_class_recall_differential_requires_full_scanner_set():
 
 
 def test_class_recall_differential_records_competitor_map():
+    """Test helper / contract verification."""
     rows = []
     for name, tp in [
         ("keyhog", 1),

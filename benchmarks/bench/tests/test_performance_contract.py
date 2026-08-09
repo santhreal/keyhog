@@ -13,6 +13,7 @@ CATALOG = load_workload_catalog(pathlib.Path(__file__).resolve().parents[2] / "w
 
 
 def _row(workload_id: str, *, wall: float, rss: int, parity: bool = True) -> dict[str, object]:
+    """Test helper / contract verification."""
     return {
         "workload_id": workload_id,
         "fixture_input_sha256": "a" * 64,
@@ -30,6 +31,7 @@ def _row(workload_id: str, *, wall: float, rss: int, parity: bool = True) -> dic
 
 
 def _evidence(*, backend: str = "cpu", speedup: float = 2.0, rss_ratio: float = 0.25):
+    """Test helper / contract verification."""
     baseline = {
         "backend": backend,
         "workloads": [_row(workload.workload_id, wall=100.0, rss=400_000) for workload in CATALOG.workloads],

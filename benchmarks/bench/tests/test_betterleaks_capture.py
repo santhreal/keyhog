@@ -13,6 +13,7 @@ from bench.measurement import RunStats
 
 
 def _stats(*, exit_code: int = 0) -> RunStats:
+    """Test helper / contract verification."""
     return RunStats(
         wall_ms=12.5,
         peak_rss_kb=4096,
@@ -72,6 +73,7 @@ def test_betterleaks_shared_workloads_contract_evaluation():
     assert len(shared_workloads) == 18
 
     def _row(workload_id: str, wall: float, rss: int) -> dict[str, object]:
+        """Test helper / contract verification."""
         return {
             "workload_id": workload_id,
             "fixture_input_sha256": "a" * 64,

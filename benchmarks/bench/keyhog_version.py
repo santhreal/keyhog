@@ -116,6 +116,7 @@ def _tracked_status_paths(raw: bytes) -> set[pathlib.PurePosixPath]:
 
 
 def _is_generated_evidence_path(path: pathlib.PurePosixPath) -> bool:
+    """Return whether path matches a release-generated report or matrix output location."""
     return path in _GENERATED_EVIDENCE_EXACT_PATHS or (
         _GENERATED_EVIDENCE_DIRECTORY in path.parents
     )
@@ -332,6 +333,7 @@ def detector_corpus_sha256(detector_dir: pathlib.Path) -> str:
 
 
 def workspace_detector_corpus_sha256(repo_root: pathlib.Path = _REPO_ROOT) -> str:
+    """Return the SHA-256 digest of the workspace detectors directory."""
     return detector_corpus_sha256(repo_root / "detectors")
 
 
@@ -374,6 +376,7 @@ def assert_reported_identity_matches_workspace(
 
 
 def assert_keyhog_binary_current(binary: str, *, pass_fds: tuple[int, ...] = ()) -> str:
+    """Verify that candidate binary --version matches current workspace version and commit."""
     popen_kwargs = {"pass_fds": pass_fds} if pass_fds else {}
     proc = subprocess.run(
         [binary, "--version"],

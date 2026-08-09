@@ -22,6 +22,7 @@ def _isolate_dirty_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _version_output(*, commit: str, detector_digest: str) -> str:
+    """Test helper / contract verification."""
     return (
         f"KeyHog v{keyhog_version.workspace_keyhog_version()}\n"
         f"Commit: {commit}\n"
@@ -139,6 +140,7 @@ def test_source_rename_into_report_directory_cannot_evade_freshness_gate(tmp_pat
 
 
 def test_workspace_detector_digest_matches_build_rs_on_current_tree():
+    """Test helper / contract verification."""
     repo_root = pathlib.Path(__file__).resolve().parents[3]
     detector_dir = repo_root / "detectors"
 
@@ -156,6 +158,7 @@ def test_workspace_detector_digest_matches_build_rs_on_current_tree():
 
 
 def test_report_identity_rejects_pre_manifest_fix_digest():
+    """Test helper / contract verification."""
     repo_root = pathlib.Path(__file__).resolve().parents[3]
     commit = keyhog_version.workspace_git_hash()
     authoritative = _build_rs_detector_digest(repo_root / "detectors")
@@ -178,6 +181,7 @@ def test_report_identity_rejects_pre_manifest_fix_digest():
 
 
 def test_workspace_detector_digest_requires_corpus_manifest(tmp_path):
+    """Test helper / contract verification."""
     detector_dir = tmp_path / "detectors"
     detector_dir.mkdir()
     (detector_dir / "a.toml").write_text("id = 'a'\n", encoding="utf-8")
@@ -192,6 +196,7 @@ def test_workspace_detector_digest_requires_corpus_manifest(tmp_path):
 
 
 def test_workspace_detector_digest_binds_manifest_content_after_detectors(tmp_path):
+    """Test helper / contract verification."""
     detector_dir = tmp_path / "detectors"
     detector_dir.mkdir()
     (detector_dir / "z.toml").write_text(
@@ -217,6 +222,7 @@ def test_workspace_detector_digest_binds_manifest_content_after_detectors(tmp_pa
 
 
 def test_detector_corpus_sha256_binds_filenames_and_bytes(tmp_path):
+    """Test helper / contract verification."""
     first = tmp_path / "a.toml"
     second = tmp_path / "b.toml"
     first.write_text("[detector]\nid = 'a'\n", encoding="utf-8")
@@ -235,6 +241,7 @@ def test_detector_corpus_sha256_binds_filenames_and_bytes(tmp_path):
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permits non-UTF-8 filenames")
 def test_detector_corpus_sha256_accepts_non_utf8_filenames(tmp_path):
+    """Test helper / contract verification."""
     name = os.fsdecode(b"detector-\xff.toml")
     (tmp_path / name).write_bytes(b"[detector]\nid = 'raw-name'\n")
 
@@ -244,6 +251,7 @@ def test_detector_corpus_sha256_accepts_non_utf8_filenames(tmp_path):
 
 
 def test_binary_freshness_rejects_same_version_from_an_older_commit(monkeypatch):
+    """Test helper / contract verification."""
     current = "a" * 40
     output = _version_output(commit="b" * 40, detector_digest="1-0000000000000001")
     monkeypatch.setattr(
@@ -261,6 +269,7 @@ def test_binary_freshness_rejects_same_version_from_an_older_commit(monkeypatch)
 
 
 def test_binary_freshness_rejects_stale_embedded_detector_set(monkeypatch):
+    """Test helper / contract verification."""
     current = "a" * 40
     output = _version_output(commit=current, detector_digest="1-0000000000000001")
     monkeypatch.setattr(
@@ -278,6 +287,7 @@ def test_binary_freshness_rejects_stale_embedded_detector_set(monkeypatch):
 
 
 def test_binary_freshness_accepts_exact_commit_and_detector_set(monkeypatch):
+    """Test helper / contract verification."""
     current = "a" * 40
     digest = "1-0000000000000001"
     output = _version_output(commit=current, detector_digest=digest)
@@ -294,6 +304,7 @@ def test_binary_freshness_accepts_exact_commit_and_detector_set(monkeypatch):
 
 
 def test_workspace_cleanliness_rejects_unstaged_and_staged_tracked_edits(tmp_path):
+    """Test helper / contract verification."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     scanner = tmp_path / "crates/scanner/src/lib.rs"
     scanner.parent.mkdir(parents=True)
@@ -443,6 +454,7 @@ def test_generated_evidence_scope_rejects_renamed_report(
 
 @pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
 def test_workspace_cleanliness_rejects_hidden_index_flags(tmp_path, flag):
+    """Test helper / contract verification."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     scanner = tmp_path / "crates/scanner/src/lib.rs"
     scanner.parent.mkdir(parents=True)
@@ -467,6 +479,7 @@ def test_workspace_cleanliness_rejects_hidden_index_flags(tmp_path, flag):
 
 
 def test_binary_freshness_rejects_dirty_tracked_workspace(monkeypatch):
+    """Test helper / contract verification."""
     current = "a" * 40
     digest = "1-0000000000000001"
     output = _version_output(commit=current, detector_digest=digest)
@@ -490,6 +503,7 @@ def test_binary_freshness_rejects_dirty_tracked_workspace(monkeypatch):
 
 
 def test_binary_freshness_accepts_matching_sha256_commit_identity(monkeypatch):
+    """Test helper / contract verification."""
     current = "a" * 64
     digest = "1-0000000000000001"
     output = _version_output(commit=current, detector_digest=digest)
@@ -506,6 +520,7 @@ def test_binary_freshness_accepts_matching_sha256_commit_identity(monkeypatch):
 
 
 def test_workspace_git_hash_accepts_sha256_repository(tmp_path):
+    """Test helper / contract verification."""
     initialized = subprocess.run(
         ["git", "init", "-q", "--object-format=sha256", str(tmp_path)],
         capture_output=True,

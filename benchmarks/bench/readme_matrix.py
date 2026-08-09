@@ -93,6 +93,7 @@ def generate_daemon_corpus(path: pathlib.Path, size: int = DAEMON_CORPUS_BYTES) 
 
 
 def _index_results(path: pathlib.Path) -> dict[str, Any]:
+    """Index KeyHog result rows by configuration ID."""
     rows = load_results(path)
     selected: dict[str, Any] = {}
     for row in rows:
@@ -106,6 +107,7 @@ def _index_results(path: pathlib.Path) -> dict[str, Any]:
 
 
 def _select(index: dict[str, Any], required: set[str], label: str) -> list[Any]:
+    """Select and validate required configuration result rows from index."""
     missing = sorted(required.difference(index))
     if missing:
         raise MatrixError(f"{label} results lack required configs: {', '.join(missing)}")
@@ -119,6 +121,7 @@ def _select(index: dict[str, Any], required: set[str], label: str) -> list[Any]:
 
 
 def _assert_common_identity(config_rows: list[Any], daemon_rows: list[Any]) -> None:
+    """Verify that all configuration and daemon rows share an identical host and binary."""
     rows = [*config_rows, *daemon_rows]
     expected_version = f"KeyHog v{workspace_version()}"
     versions = {row.scanner.version.splitlines()[0] for row in rows}
@@ -148,6 +151,7 @@ def _assert_common_identity(config_rows: list[Any], daemon_rows: list[Any]) -> N
 
 
 def _snapshot_row(row: Any) -> dict[str, Any]:
+    """Extract JSON-serializable snapshot row dictionary from result."""
     overall = row.detection.overall
     return {
         "generated_at": row.generated_at,
@@ -236,6 +240,7 @@ def load_snapshot(path: pathlib.Path) -> dict[str, Any]:
 
 
 def _rows_by_config(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Index snapshot rows by configuration ID."""
     indexed: dict[str, dict[str, Any]] = {}
     for row in rows:
         config_id = row.get("scanner", {}).get("config_id", "")
@@ -246,14 +251,17 @@ def _rows_by_config(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 
 def _fmt_time(wall_ms: float) -> str:
+    """Format millisecond wall duration for Markdown tables."""
     return f"{wall_ms:.0f} ms" if wall_ms < 1000 else f"{wall_ms / 1000:.2f} s"
 
 
 def _fmt_rss(peak_rss_kb: int) -> str:
+    """Format peak RSS in megabytes for Markdown tables."""
     return f"{peak_rss_kb / 1024:.0f} MiB"
 
 
 def _context(snapshot: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Extract common host and scanner metadata from snapshot."""
     rows = snapshot["configuration_rows"]
     if not rows:
         raise MatrixError("snapshot contains no configuration rows")
@@ -262,6 +270,7 @@ def _context(snapshot: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def _qualification(snapshot: dict[str, Any], scanner: dict[str, Any]) -> str:
+    """Format source cleanliness qualification text for reports."""
     if snapshot["source_state"] == "clean":
         return "The tracked source tree was clean."
     version = scanner["version"].splitlines()[0]
@@ -462,7 +471,8 @@ def render_sections(snapshot: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def write_reports(sections: dict[str, str], reports: pathlib.Path) -> None:
+def _write_reports(sections: dict[str, str], reports: pathlib.Path) -> None:
+    """Write rendered Markdown report files to target directory."""
     reports.mkdir(parents=True, exist_ok=True)
     (reports / "accuracy-matrix.md").write_text(
         "# KeyHog accuracy matrix\n\n" + sections["accuracy"] + "\n",
@@ -495,6 +505,7 @@ def update_readme(readme: pathlib.Path, sections: dict[str, str], check: bool) -
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse command line arguments for README matrix renderer."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--generate-daemon-corpus", type=pathlib.Path)
     parser.add_argument("--config-results", type=pathlib.Path)
@@ -510,6 +521,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Main CLI entry point for README matrix capture and rendering."""
     args = parse_args(argv)
     try:
         if args.generate_daemon_corpus is not None:

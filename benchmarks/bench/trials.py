@@ -70,6 +70,7 @@ class NoiseReceipt:
         return out
 
     def to_json(self) -> dict:
+        """Serialize NoiseReceipt to JSON dictionary."""
         return {
             "affinity_requested": self.affinity_requested,
             "affinity_applied": self.affinity_applied,
@@ -83,6 +84,7 @@ class NoiseReceipt:
 
     @classmethod
     def from_json(cls, value: object) -> "NoiseReceipt":
+        """Deserialize NoiseReceipt from JSON dictionary."""
         if not isinstance(value, dict):
             raise ValueError("noise receipt must be an object")
         required = set(cls.__dataclass_fields__)
@@ -123,9 +125,11 @@ class Trial:
 
     @property
     def valid(self) -> bool:
+        """Return True if trial was not invalidated by noise or control failures."""
         return not self.invalid_reasons
 
     def to_json(self) -> dict:
+        """Serialize Trial to JSON dictionary."""
         return {
             "index": self.index,
             "cache_state": self.cache_state,
@@ -137,6 +141,7 @@ class Trial:
 
     @classmethod
     def from_json(cls, value: object) -> "Trial":
+        """Deserialize Trial from JSON dictionary."""
         if not isinstance(value, dict):
             raise ValueError("trial must be an object")
         raw_profile = value.get("profile")
@@ -164,6 +169,7 @@ class TrialSet:
     trials: tuple[Trial, ...]
 
     def __post_init__(self) -> None:
+        """Validate TrialSet schema version and role invariants."""
         if self.schema_version != TRIAL_SET_SCHEMA_VERSION:
             raise ValueError(
                 f"trial set schema_version must be {TRIAL_SET_SCHEMA_VERSION!r}, "
@@ -182,6 +188,7 @@ class TrialSet:
         ]
 
     def canonical_json(self) -> str:
+        """Return deterministic compact JSON representation for hashing."""
         return json.dumps(self.to_json(), sort_keys=True, separators=(",", ":"))
 
     def digest(self) -> str:
@@ -189,6 +196,7 @@ class TrialSet:
         return hashlib.sha256(self.canonical_json().encode("utf-8")).hexdigest()
 
     def to_json(self) -> dict:
+        """Serialize TrialSet to JSON dictionary."""
         return {
             "schema_version": self.schema_version,
             "workload": self.workload,
@@ -198,6 +206,7 @@ class TrialSet:
 
     @classmethod
     def from_json(cls, value: object) -> "TrialSet":
+        """Deserialize TrialSet from JSON dictionary."""
         if not isinstance(value, dict):
             raise ValueError("trial set must be an object")
         return cls(
@@ -230,6 +239,7 @@ class NoiseProber:
 
 
 def _probe_affinity() -> tuple[bool, int]:
+    """Probe current process CPU affinity settings."""
     try:
         cpus = os.sched_getaffinity(0)
     except (AttributeError, OSError):
@@ -240,6 +250,7 @@ def _probe_affinity() -> tuple[bool, int]:
 def _probe_governor(
     cpufreq: pathlib.Path = pathlib.Path("/sys/devices/system/cpu/cpu0/cpufreq"),
 ) -> tuple[str, float]:
+    """Probe current CPU scaling governor and operating frequency."""
     try:
         governor = (cpufreq / "scaling_governor").read_text().strip()
     except OSError:
@@ -310,6 +321,7 @@ def run_trials(
     index = 0
 
     def record(state: CacheState) -> None:
+        """Execute trial under state and record noise and measurement results."""
         nonlocal index
         invalid: list[str] = []
         if pin_affinity and not affinity_applied:

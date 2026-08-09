@@ -294,6 +294,7 @@ def _load_execution_pack_manifest(
 
 @contextlib.contextmanager
 def _execution_pack_capture(manifest_path: pathlib.Path | None):
+    """Benchmark fixture component or validation handler."""
     global _active_pack_observations
     if manifest_path is None:
         yield None
@@ -319,6 +320,7 @@ def _execution_pack_capture(manifest_path: pathlib.Path | None):
 
 
 def _observe_execution_pack_metadata(envelope: dict[str, object]) -> None:
+    """Benchmark fixture component or validation handler."""
     if _active_pack_observations is None:
         return
     metadata = envelope.get("metadata")
@@ -340,6 +342,7 @@ def _observe_execution_pack_metadata(envelope: dict[str, object]) -> None:
 
 
 def _filesystem_scan_roots(workload: Workload, fixture_root: pathlib.Path) -> list[str]:
+    """Benchmark fixture component or validation handler."""
     input_root = fixture_root / "input"
     if workload.workload_id == "filesystem-multiple-roots":
         return [str(input_root / f"root-{index}") for index in range(3)]
@@ -444,6 +447,7 @@ def runtime_fixture_state(fixture_root: pathlib.Path):
             path.chmod(mode)
 
 def _parse_trial(output: pathlib.Path, stats: RunStats) -> BaselineTrial:
+    """Benchmark fixture component or validation handler."""
     if stats.timed_out or stats.exit_code not in SUCCESS_EXIT_CODES:
         raise BaselineCaptureError(
             f"baseline command exited {stats.exit_code}, timed_out={stats.timed_out}"
@@ -489,6 +493,7 @@ def _parse_trial(output: pathlib.Path, stats: RunStats) -> BaselineTrial:
 
 
 def _fixture_expectation(fixture_root: pathlib.Path) -> tuple[tuple[str, ...], bool]:
+    """Benchmark fixture component or validation handler."""
     receipt = json.loads((fixture_root / "fixture.json").read_text(encoding="utf-8"))
     answers = json.loads((fixture_root / "answers.json").read_text(encoding="utf-8"))
     expected_hashes = tuple(sorted(answer["credential_sha256"] for answer in answers))
@@ -601,6 +606,7 @@ def capture_stdin_baseline(
 
 
 def _git_run(repository: pathlib.Path, *args: str) -> None:
+    """Benchmark fixture component or validation handler."""
     env = dict(os.environ)
     env.update({
         "GIT_AUTHOR_NAME": "KeyHog Benchmark", "GIT_AUTHOR_EMAIL": "benchmark@invalid",
@@ -1033,6 +1039,7 @@ def container_command(
     workload: Workload, *, binary: pathlib.Path, detectors: pathlib.Path,
     image: str, output: pathlib.Path, backend: str,
 ) -> list[str]:
+    """Benchmark fixture component or validation handler."""
     if workload.family != "container":
         raise BaselineCaptureError(f"{workload.workload_id} is not container")
     return [
@@ -1079,6 +1086,7 @@ def capture_container_baseline(
     fixture_root: str | pathlib.Path, fixture_receipt: dict[str, object],
     backend: str, repetitions: int = MIN_TRIALS, runner: TrialRunner = lambda command: run_measured(list(command)),
 ) -> BaselineSummary:
+    """Benchmark fixture component or validation handler."""
     if repetitions < MIN_TRIALS:
         raise BaselineCaptureError(f"baseline repetitions must be at least {MIN_TRIALS}, got {repetitions}")
     binary_path = pathlib.Path(binary).resolve(strict=True)
@@ -1175,6 +1183,7 @@ def cloud_command(
     workload: Workload, *, binary: pathlib.Path, detectors: pathlib.Path,
     endpoint: str, output: pathlib.Path, backend: str,
 ) -> list[str]:
+    """Benchmark fixture component or validation handler."""
     command = [
         str(binary), "scan", "--no-config", *_detector_args(detectors),
         "--backend", backend, "--no-gpu", "--daemon=off",
@@ -1198,6 +1207,7 @@ def capture_cloud_baseline(
     fixture_root: str | pathlib.Path, fixture_receipt: dict[str, object],
     backend: str, repetitions: int = MIN_TRIALS, runner: TrialRunner = lambda command: run_measured(list(command)),
 ) -> BaselineSummary:
+    """Benchmark fixture component or validation handler."""
     if workload.workload_id not in {
         "cloud-s3-bucket", "cloud-gcs-bucket", "cloud-azure-container",
     }:
@@ -1228,6 +1238,7 @@ def capture_cloud_baseline(
 
 
 def _proc_peak_rss_kb(pid: int) -> int:
+    """Benchmark fixture component or validation handler."""
     for line in pathlib.Path(f"/proc/{pid}/status").read_text().splitlines():
         if line.startswith("VmHWM:"):
             return int(line.split()[1])
@@ -1235,11 +1246,13 @@ def _proc_peak_rss_kb(pid: int) -> int:
 
 
 def _drain_text_pipe(pipe, sink: list[str]) -> None:
+    """Benchmark fixture component or validation handler."""
     for line in iter(pipe.readline, ""):
         sink.append(line)
 
 
 def _watch_finding_hashes(lines: Sequence[str], event_name: str) -> tuple[str, ...]:
+    """Benchmark fixture component or validation handler."""
     hashes: list[str] = []
     for line in lines:
         if event_name not in line:
@@ -1366,11 +1379,13 @@ def fixture_github_collaboration_server(fixture_root: pathlib.Path, workload_id:
 
 
 def system_command(workload:Workload,*,binary:pathlib.Path,detectors:pathlib.Path,fixture_root:pathlib.Path,output:pathlib.Path,backend:str)->list[str]:
+    """Benchmark fixture component or validation handler."""
     if workload.workload_id!="system-mounted-drives": raise BaselineCaptureError(f"unsupported system workload {workload.workload_id!r}")
     return [str(binary),"scan-system","--root",str(fixture_root/"input/mounts/home"),"--space","1M","--no-git-history",*_detector_args(detectors),"--backend",backend,"--output",str(output)]
 
 
 def _parse_system_trial(output:pathlib.Path,stats:RunStats)->BaselineTrial:
+    """Benchmark fixture component or validation handler."""
     if stats.timed_out or stats.exit_code not in SUCCESS_EXIT_CODES: raise BaselineCaptureError(f"scan-system exited {stats.exit_code}, timed_out={stats.timed_out}")
     findings=json.loads(output.read_text());
     if not isinstance(findings,list): raise BaselineCaptureError("scan-system report is not a finding array")
@@ -1383,6 +1398,7 @@ def _parse_system_trial(output:pathlib.Path,stats:RunStats)->BaselineTrial:
 
 
 def capture_system_baseline(workload:Workload,*,binary:str|pathlib.Path,detectors:str|pathlib.Path,fixture_root:str|pathlib.Path,fixture_receipt:dict[str,object],backend:str,repetitions:int=MIN_TRIALS,runner:TrialRunner=lambda command:run_measured(list(command))):
+    """Benchmark fixture component or validation handler."""
     if repetitions<MIN_TRIALS: raise BaselineCaptureError(f"baseline repetitions must be at least {MIN_TRIALS}")
     binary_path=pathlib.Path(binary).resolve(strict=True); detector_path = _resolve_detectors(detectors); fixture_path=pathlib.Path(fixture_root).resolve(strict=True); expected_hashes,expected_gap=_fixture_expectation(fixture_path); trials=[]
     with tempfile.TemporaryDirectory(prefix="keyhog-system-") as raw:
@@ -1515,6 +1531,7 @@ def prepare_verification_detectors(destination:pathlib.Path)->pathlib.Path:
 
 
 def verification_command(workload:Workload,*,binary:pathlib.Path,detectors:pathlib.Path|None,fixture_root:pathlib.Path,proxy:str,output:pathlib.Path,backend:str)->list[str]:
+    """Benchmark fixture component or validation handler."""
     command=[str(binary),"scan","--no-config",*_detector_args(detectors),"--backend",backend,"--no-gpu","--daemon=off","--format","json-envelope","--show-secrets","--no-suppress-test-fixtures","--dedup","file","--quiet","--output",str(output),"--proxy",proxy,"--insecure","--verify"]
     if workload.workload_id=="verification-batched-service": command.append("--verify-batch")
     elif workload.workload_id=="verification-out-of-band": command.extend(["--verify-oob","--oob-server","oast.fun","--oob-timeout","3"])
@@ -1523,6 +1540,7 @@ def verification_command(workload:Workload,*,binary:pathlib.Path,detectors:pathl
 
 
 def capture_verification_baseline(workload:Workload,*,binary:str|pathlib.Path,detectors:str|pathlib.Path,fixture_root:str|pathlib.Path,fixture_receipt:dict[str,object],backend:str,repetitions:int=MIN_TRIALS,runner:TrialRunner=lambda command:run_measured(list(command))):
+    """Benchmark fixture component or validation handler."""
     if repetitions<MIN_TRIALS: raise BaselineCaptureError(f"baseline repetitions must be at least {MIN_TRIALS}")
     binary_path=pathlib.Path(binary).resolve(strict=True); fixture_path=pathlib.Path(fixture_root).resolve(strict=True); expected_hashes,expected_gap=_fixture_expectation(fixture_path); trials=[]
     with tempfile.TemporaryDirectory(prefix="keyhog-verify-") as raw:
@@ -1580,6 +1598,7 @@ def fixture_hosted_group_server(fixture_root: pathlib.Path, destination: pathlib
 
 
 def hosted_group_command(workload: Workload, *, binary:pathlib.Path, detectors:pathlib.Path|None, endpoint:str, output:pathlib.Path, backend:str)->list[str]:
+    """Benchmark fixture component or validation handler."""
     base=[str(binary),"scan","--no-config",*_detector_args(detectors),"--backend",backend,"--no-gpu","--daemon=off","--allow-private-cloud-endpoint","--format","json-envelope","--show-secrets","--no-suppress-test-fixtures","--dedup","file","--quiet","--output",str(output)]
     if workload.family=="gitlab": return base+["--gitlab-group","acme","--gitlab-token","benchmark-token","--gitlab-endpoint",endpoint]
     if workload.family=="bitbucket": return base+["--bitbucket-workspace","acme","--bitbucket-username","benchmark-user","--bitbucket-token","benchmark-token","--bitbucket-endpoint",endpoint+"/2.0"]
@@ -1587,6 +1606,7 @@ def hosted_group_command(workload: Workload, *, binary:pathlib.Path, detectors:p
 
 
 def capture_hosted_group_baseline(workload: Workload, *, binary:str|pathlib.Path, detectors:str|pathlib.Path, fixture_root:str|pathlib.Path, fixture_receipt:dict[str,object], backend:str, repetitions:int=MIN_TRIALS, runner:TrialRunner=lambda command:run_measured(list(command))):
+    """Benchmark fixture component or validation handler."""
     if repetitions<MIN_TRIALS: raise BaselineCaptureError(f"baseline repetitions must be at least {MIN_TRIALS}")
     binary_path=pathlib.Path(binary).resolve(strict=True); detector_path = _resolve_detectors(detectors); fixture_path=pathlib.Path(fixture_root).resolve(strict=True); expected_hashes,expected_gap=_fixture_expectation(fixture_path); trials=[]
     with tempfile.TemporaryDirectory(prefix=f"keyhog-{workload.family}-") as raw:
@@ -1638,6 +1658,7 @@ def fixture_github_org_server(fixture_root: pathlib.Path, destination: pathlib.P
 
 
 def github_org_command(*,binary:pathlib.Path,detectors:pathlib.Path|None,endpoint:str,output:pathlib.Path,backend:str)->list[str]:
+    """Benchmark fixture component or validation handler."""
     return [str(binary),"scan","--no-config",*_detector_args(detectors),"--backend",backend,"--no-gpu","--daemon=off","--allow-private-cloud-endpoint","--format","json-envelope","--show-secrets","--no-suppress-test-fixtures","--dedup","file","--quiet","--output",str(output),"--github-org","acme","--github-token","benchmark-token","--github-api-endpoint",endpoint]
 
 
@@ -1659,6 +1680,7 @@ def fixture_git_http_server(repository: pathlib.Path, destination: pathlib.Path)
 
 
 def github_collaboration_command(workload: Workload, *, binary: pathlib.Path, detectors: pathlib.Path, endpoint: str, output: pathlib.Path, backend: str, wiki_url: str | None = None) -> list[str]:
+    """Benchmark fixture component or validation handler."""
     surface={"github-collaboration-issues":"issues","github-collaboration-pull-requests":"pull-requests","github-collaboration-discussions":"discussions","github-collaboration-gists":"gists","github-collaboration-releases":"releases","github-collaboration-wiki":"wiki"}.get(workload.workload_id)
     if surface is None: raise BaselineCaptureError(f"GitHub collaboration workload {workload.workload_id!r} lacks an API driver")
     command=[str(binary),"scan","--no-config",*_detector_args(detectors),"--backend",backend,"--no-gpu","--daemon=off","--allow-private-cloud-endpoint","--format","json-envelope","--show-secrets","--no-suppress-test-fixtures","--dedup","file","--quiet","--output",str(output),"--github-collaboration","acme/rocket","--github-token","benchmark-token","--github-api-endpoint",endpoint,f"--github-{surface}"]
@@ -1669,6 +1691,7 @@ def github_collaboration_command(workload: Workload, *, binary: pathlib.Path, de
 
 
 def capture_github_baseline(workload: Workload, *, binary: str | pathlib.Path, detectors: str | pathlib.Path, fixture_root: str | pathlib.Path, fixture_receipt: dict[str, object], backend: str, repetitions: int = MIN_TRIALS, runner: TrialRunner = lambda command: run_measured(list(command))):
+    """Benchmark fixture component or validation handler."""
     if repetitions < MIN_TRIALS: raise BaselineCaptureError(f"baseline repetitions must be at least {MIN_TRIALS}")
     binary_path=pathlib.Path(binary).resolve(strict=True); detector_path = _resolve_detectors(detectors); fixture_path=pathlib.Path(fixture_root).resolve(strict=True)
     expected_hashes,expected_gap=_fixture_expectation(fixture_path); trials=[]
@@ -1730,6 +1753,7 @@ def capture_slack_baseline(
     fixture_root: str | pathlib.Path, fixture_receipt: dict[str, object],
     backend: str, repetitions: int = MIN_TRIALS, runner: TrialRunner = lambda command: run_measured(list(command)),
 ) -> BaselineSummary:
+    """Benchmark fixture component or validation handler."""
     if repetitions < MIN_TRIALS:
         raise BaselineCaptureError(f"baseline repetitions must be at least {MIN_TRIALS}, got {repetitions}")
     binary_path = pathlib.Path(binary).resolve(strict=True); detector_path = _resolve_detectors(detectors)
@@ -2325,6 +2349,7 @@ def exclusive_capture_lock(target_id: str):
 
 
 def _main() -> int:
+    """Benchmark fixture component or validation handler."""
     parser = argparse.ArgumentParser(description="Capture canonical KeyHog baselines")
     parser.add_argument("--catalog", default="workload-catalog.toml")
     parser.add_argument("--fixture-lock", default="workload-fixtures.lock.json")

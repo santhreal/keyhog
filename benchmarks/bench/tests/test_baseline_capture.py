@@ -69,6 +69,7 @@ TARGET_PATH = pathlib.Path(__file__).resolve().parents[2] / "target-matrix.toml"
 
 
 def _test_host_evidence(_target) -> dict[str, object]:
+    """Test helper / contract verification."""
     return {
         "os": "linux", "arch": "x86_64",
         "cpu": "AMD Ryzen 9 9950X 16-Core Processor", "logical_cores": 32,
@@ -78,11 +79,13 @@ def _test_host_evidence(_target) -> dict[str, object]:
     }
 
 def _workload(workload_id: str):
+    """Test helper / contract verification."""
     catalog = load_workload_catalog(CATALOG_PATH)
     return next(item for item in catalog.workloads if item.workload_id == workload_id)
 
 
 def _trial(wall: float, rss: int, hashes: tuple[str, ...], gaps: int = 0) -> BaselineTrial:
+    """Test helper / contract verification."""
     return BaselineTrial(
         wall_ms=wall,
         peak_rss_kb=rss,
@@ -206,6 +209,7 @@ def test_capture_runs_five_complete_process_trials_and_binds_binary(
     commands: list[list[str]] = []
 
     def fake_runner(command):
+        """Test helper / contract verification."""
         command = list(command)
         commands.append(command)
         output = pathlib.Path(command[command.index("--output") + 1])
@@ -298,6 +302,7 @@ def test_missing_envelope_remains_a_timed_broken_baseline(tmp_path: pathlib.Path
     detectors.mkdir()
 
     def missing_report_runner(_command):
+        """Test helper / contract verification."""
         return "", "", RunStats(wall_ms=12.5, peak_rss_kb=4321, exit_code=13, timed_out=False)
 
     receipt = json.loads((fixture.root / "fixture.json").read_text(encoding="utf-8"))
@@ -342,6 +347,7 @@ def test_stdin_capture_feeds_exact_canonical_bytes_for_all_trials(
     observed_sizes: list[int] = []
 
     def fake_runner(command, source):
+        """Test helper / contract verification."""
         observed_sizes.append(source.stat().st_size)
         output = pathlib.Path(command[command.index("--output") + 1])
         output.write_text(json.dumps({
@@ -787,6 +793,7 @@ def test_default_capture_scope_includes_non_filesystem_families(monkeypatch,tmp_
     """WHY: omitting --family previously captured only filesystem while producing a valid-looking artifact; the safe default must include every catalog family."""
     binary=tmp_path/"keyhog"; binary.write_bytes(b"candidate"); calls=[]
     def fake_capture(workload,**kwargs):
+        """Test helper / contract verification."""
         calls.append(workload.workload_id); receipt=kwargs["fixture_receipt"]; trials=[_trial(wall,1000+wall,tuple()) for wall in (10,20,30,40,50)]
         return summarize_trials(workload.workload_id,kwargs["backend"],receipt["input_sha256"],receipt["answer_sha256"],sha256_file(binary),trials,tuple(),False)
     monkeypatch.setattr(baseline_capture_module,"capture_slack_baseline",fake_capture)
@@ -889,6 +896,7 @@ def test_execution_pack_capture_binds_manifest_and_scan_metadata(
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     def fake_capture(workload, **kwargs):
+        """Test helper / contract verification."""
         assert kwargs["detectors"] is None
         assert baseline_capture_module.os.environ["KEYHOG_REQUIRE_EXECUTION_PACKS"] == "1"
         assert baseline_capture_module.os.environ["XDG_CACHE_HOME"] == str(tmp_path / "cache")
@@ -1012,6 +1020,7 @@ def test_execution_pack_capture_rejects_generation_drift(tmp_path: pathlib.Path)
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     def drift_manifest(_target):
+        """Test helper / contract verification."""
         manifest["fixture_digest"] = "2" * 64
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         return _test_host_evidence(_target)
