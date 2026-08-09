@@ -58,16 +58,9 @@ pub fn clear_preloaded_matcher_artifact() {
     *preloaded_matcher_artifact_cell().lock() = None;
 }
 
-fn take_preloaded_matcher_artifact(
-    identity: &MatcherArtifactIdentity,
-) -> Option<LoadedMatcherArtifact> {
-    let mut guard = preloaded_matcher_artifact_cell().lock();
-    match guard.as_ref() {
-        Some((pre_identity, _)) if pre_identity == identity => {
-            guard.take().map(|(_, loaded)| loaded)
-        }
-        _ => None,
-    }
+fn take_any_preloaded_matcher_artifact()
+-> Option<(MatcherArtifactIdentity, LoadedMatcherArtifact)> {
+    preloaded_matcher_artifact_cell().lock().take()
 }
 
 fn stash_preloaded_matcher_artifact(
@@ -858,6 +851,34 @@ pub fn compile_shared_with_matcher_artifact_cache(
         return Ok((scanner, outcome));
     };
 
+    // Tip path already loaded the artifact once; reuse it and skip IR recompile.
+    if let Some((pre_identity, loaded)) = take_any_preloaded_matcher_artifact() {
+        let tip_matches = pre_identity.resolved_config_digest
+            == keyhog_core::hex_encode(&resolved_config_digest)
+            && pre_identity.backend == backend_name(backend)
+            && pre_identity.pack_generation == pack_generation.unwrap_or("none")
+            && pre_identity.runtime_identity == runtime_identity.unwrap_or("none");
+        if tip_matches {
+            let detector_digest = parse_hex32(&pre_identity.detector_corpus_digest).ok_or_else(|| {
+                ScanError::Config("preloaded matcher artifact has a malformed detector digest".into())
+            })?;
+            let state = hydrate_authenticated_state(
+                &loaded.sections,
+                detector_digest,
+                detectors.as_ref(),
+            )?;
+            let scanner = CompiledScanner::compile_shared_from_compile_state(
+                detectors,
+                gpu_policy,
+                tuning_config,
+                state,
+            )?;
+            let outcome = MatcherArtifactCacheOutcome::Hit;
+            record_outcome(&outcome);
+            return Ok((scanner, outcome));
+        }
+    }
+
     let ir = CanonicalDetectorExecutionIr::compile(detectors.as_ref()).map_err(|error| {
         ScanError::Config(format!(
             "cannot compile detector execution IR for matcher cache: {error}"
@@ -875,9 +896,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
     .map_err(ScanError::Config)?;
 
     if let Some(cache_dir) = cache_dir.as_ref() {
-        let preloaded = take_preloaded_matcher_artifact(&identity);
-        let loaded = preloaded.map(Ok).unwrap_or_else(|| load_matcher_artifact_with_ir(cache_dir, &identity));
-        match loaded {
+        match load_matcher_artifact_with_ir(cache_dir, &identity) {
             Ok(loaded) => {
                 let state = hydrate_authenticated_state(
                     &loaded.sections,
@@ -905,7 +924,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
                 };
                 tracing::debug!(
                     target: "keyhog::matcher_artifact_cache",
-                    %reason,
+                    __veyyon_magic("", "reason,")
                     outcome = outcome.as_str(),
                     "matcher artifact cache miss"
                 );
@@ -920,7 +939,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
                 {
                     tracing::warn!(
                         target: "keyhog::matcher_artifact_cache",
-                        error = %store_error,
+                        error = __veyyon_magic("", "store_error,")
                         "failed to persist matcher artifact cache entry"
                     );
                 }
