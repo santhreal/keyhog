@@ -33,8 +33,8 @@ bpe_max_bytes_per_token = 2.3
 # hex keys. SHA-1/SHA-256 widths remain decoded-digest negatives.
 decoded_hex_key_material_lengths = [32, 48]
 # Canonical pure-hex values are ambiguous with digests, so the owning detector
-# declares exact keyword/length pairs. Broad API-key slots admit 128/192-bit
-# material; only explicit cryptographic-key slots admit SHA-256-shaped 64-hex.
+# declares exact keyword/length pairs. Broad API-key scopes allow 32-, 48-, and
+# 64-character values, including the listed key and secret keywords.
 canonical_hex_key_material = [
     { lengths = [32, 48, 64], keywords = ["api_key", "api_secret_key", "access_key", "secret_key", "client_secret", "x-api-key", "auth_key", "signing_key", "encryption_key", "master_key", "session_key", "hmac_secret", "hmac_seed"], suffixes = ["key", "secret"], excluded_keywords = ["license_key"] },
 ]
