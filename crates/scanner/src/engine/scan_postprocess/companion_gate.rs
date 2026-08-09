@@ -18,9 +18,11 @@
 //! dominated confirmed time on large inert lorem).
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind};
+use lru::LruCache;
 use regex_syntax::ast::{parse::Parser, Ast};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use super::phase2_first_bigram::FirstBigramSet;
@@ -30,23 +32,33 @@ use super::phase2_first_bigram::FirstBigramSet;
 pub(crate) const MIN_COMPANION_BYTES: usize = 3;
 
 struct CompanionDerived {
-    /// Owning scanner identity: indices alone are scanner-local.
-    detector_digest: u64,
-    /// Active pattern indices that contributed companion arms (cache key).
-    pattern_key: Vec<usize>,
     literals: Vec<String>,
     armed: Vec<(usize, Vec<Vec<usize>>)>,
     bigrams: FirstBigramSet,
     ac: AhoCorasick,
 }
 
+/// Bound per-thread parsed-arm memo so heterogeneous repos cannot grow it without
+/// limit across distinct regex sources.
+const COMPANION_ARMS_CACHE_CAP: usize = 1024;
+/// Bound per-thread derived AC tables. A single slot thrashes when consecutive
+/// chunks trigger different detectors; a small LRU keeps recent sets hot.
+const COMPANION_DERIVED_CACHE_CAP: usize = 16;
+
 thread_local! {
-    static COMPANION_ARMS_CACHE: RefCell<HashMap<String, Arc<Vec<Vec<String>>>>> =
-        RefCell::new(HashMap::new());
-    /// Reuse derived companion gate structures across consecutive chunks that
-    /// share the same active pattern set (common on multi-window scans).
-    static COMPANION_DERIVED_CACHE: RefCell<Option<CompanionDerived>> =
-        const { RefCell::new(None) };
+    static COMPANION_ARMS_CACHE: RefCell<LruCache<String, Arc<Vec<Vec<String>>>>> =
+        RefCell::new(LruCache::new(
+            // LAW10: NonZeroUsize::new never fails for positive CAP constants.
+            NonZeroUsize::new(COMPANION_ARMS_CACHE_CAP).expect("companion arms cache cap is non-zero"),
+        ));
+    /// Reuse derived companion gate structures across chunks that share an
+    /// active pattern set (multi-window scans and recurring trigger mixes).
+    static COMPANION_DERIVED_CACHE: RefCell<LruCache<(u64, Vec<usize>), CompanionDerived>> =
+        RefCell::new(LruCache::new(
+            // LAW10: NonZeroUsize::new never fails for positive CAP constants.
+            NonZeroUsize::new(COMPANION_DERIVED_CACHE_CAP)
+                .expect("companion derived cache cap is non-zero"),
+        ));
     /// Reusable presence bitset for the companion AC walk.
     static COMPANION_PRESENT_SCRATCH: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
 }
@@ -59,7 +71,7 @@ pub(crate) fn companion_arms(src: &str) -> Arc<Vec<Vec<String>>> {
             return Arc::clone(arms);
         }
         let arms = Arc::new(compute_companion_arms(src));
-        cache.insert(src.to_string(), Arc::clone(&arms));
+        cache.put(src.to_string(), Arc::clone(&arms));
         arms
     })
 }
@@ -140,12 +152,10 @@ pub(crate) fn companions_deny_absent(
     }
 
     let pattern_key: Vec<usize> = patterns.iter().map(|(idx, _)| *idx).collect();
+    let cache_key = (detector_digest, pattern_key);
     COMPANION_DERIVED_CACHE.with(|cell| {
-        let mut slot = cell.borrow_mut();
-        let needs_rebuild = slot.as_ref().is_none_or(|cached| {
-            cached.detector_digest != detector_digest || cached.pattern_key != pattern_key
-        });
-        if needs_rebuild {
+        let mut cache = cell.borrow_mut();
+        if !cache.contains(&cache_key) {
             let mut literal_ids: HashMap<String, usize> = HashMap::new();
             let mut literals: Vec<String> = Vec::new();
             let mut armed: Vec<(usize, Vec<Vec<usize>>)> = Vec::with_capacity(patterns.len());
@@ -171,7 +181,6 @@ pub(crate) fn companions_deny_absent(
             }
 
             if literals.is_empty() || armed.is_empty() {
-                *slot = None;
                 return;
             }
 
@@ -184,20 +193,20 @@ pub(crate) fn companions_deny_absent(
                 .build(&literals)
             else {
                 // Fail-open: keep every pattern allowed.
-                *slot = None;
                 return;
             };
-            *slot = Some(CompanionDerived {
-                detector_digest,
-                pattern_key,
-                literals,
-                armed,
-                bigrams,
-                ac,
-            });
+            cache.put(
+                cache_key.clone(),
+                CompanionDerived {
+                    literals,
+                    armed,
+                    bigrams,
+                    ac,
+                },
+            );
         }
 
-        let Some(derived) = slot.as_ref() else {
+        let Some(derived) = cache.get(&cache_key) else {
             return;
         };
 

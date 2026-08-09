@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "Companion-gate derived AC/literal tables use a bounded per-thread LRU keyed by detector digest + active pattern set, and parsed-arm memo is capacity-capped, so heterogeneous trigger mixes do not rebuild from a single-slot thrash or grow unbounded."
+crates = ["scanner"]
