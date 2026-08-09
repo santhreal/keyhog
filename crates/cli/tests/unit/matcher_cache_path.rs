@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 #[path = "../../src/matcher_cache_path.rs"]
 mod matcher_cache_path;
 

@@ -1,3 +1,3 @@
 category = "Changed"
 summary = "Cold one-shot and incremental scans now reuse a persisted MatcherArtifact of the eager compiled matcher graph across process invocations (format v4), with CacheId hit/miss/invalidation in profile output, fail-closed identity checks, soft-fail when cache prep fails, and --lockdown disabling the cache."
-crates = ["scanner", "cli"]
+crates = ["core", "scanner", "cli"]
