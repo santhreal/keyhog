@@ -6,6 +6,7 @@ use super::{
     record_default_excluded_archive_entry,
 };
 use keyhog_core::{Chunk, SourceError};
+use std::io::Read;
 use std::path::Path;
 
 /// The single-stream compression format of a `.gz` / `.zst` / `.lz4` / `.sz` /
@@ -207,7 +208,30 @@ pub(super) fn emit_tar_entries_with_state(
     {
         return;
     }
-    let mut archive = tar::Archive::new(std::io::Cursor::new(tar_bytes));
+    emit_tar_entries_from_reader(
+        std::io::Cursor::new(tar_bytes),
+        container_display,
+        max_size,
+        total_uncompressed,
+        nested_depth,
+        respect_default_excludes,
+        tex_package,
+        emit,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_tar_entries_from_reader<R: Read>(
+    reader: R,
+    container_display: &str,
+    max_size: u64,
+    total_uncompressed: &mut u64,
+    nested_depth: usize,
+    respect_default_excludes: bool,
+    tex_package: super::tex_package::TexPackageAnalysis,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) {
+    let mut archive = tar::Archive::new(reader);
     let entries = match archive.entries() {
         Ok(e) => e,
         Err(error) => {
@@ -425,7 +449,10 @@ pub(super) fn emit_tar_entries_with_state(
 }
 
 fn analyze_tex_package(tar_bytes: &[u8]) -> super::tex_package::TexPackageAnalysis {
-    if !super::tex_package::bytes_might_contain_source_extension(tar_bytes) {
+    // Gate on HEADER NAMES only (zip already does this via file_names()). A
+    // payload scan false-triggered TeX analysis when nested compressed bytes
+    // happened to contain `.tex` / `.sty` sequences.
+    if !super::tex_package::tar_header_names_might_need_tex(tar_bytes) {
         return super::tex_package::TexPackageAnalysis::default();
     }
     let mut builder = super::tex_package::TexPackageBuilder::default();
@@ -541,6 +568,23 @@ pub(super) fn emit_decompressed_member(
     respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
+    let budget_u64 = extraction_total_budget(max_size);
+
+    // Stream compressed→tar for nested members. Avoids retaining the full
+    // decompressed nested tarball.
+    if try_emit_streaming_nested_tar(
+        format,
+        content,
+        nested_display,
+        max_size,
+        total_uncompressed,
+        nested_depth,
+        respect_default_excludes,
+        emit,
+    ) {
+        return true;
+    }
+
     let budget = extraction_total_budget_usize(max_size);
     let decompressed = match decompress_to_bytes(format, content, budget) {
         Some(d) => d,
@@ -577,12 +621,11 @@ pub(super) fn emit_decompressed_member(
         }
     }
     *total_uncompressed = (*total_uncompressed).saturating_add(decompressed.len() as u64);
-    let total_budget = extraction_total_budget(max_size);
-    if total_budget > 0 && *total_uncompressed > total_budget {
+    if budget_u64 > 0 && *total_uncompressed > budget_u64 {
         // Law 10: the cumulative tar/zip-bomb budget is exhausted; surface the
         // partial-coverage abort (counted by report_archive_truncation).
         let error =
-            super::report_archive_truncation(nested_display, *total_uncompressed, total_budget);
+            super::report_archive_truncation(nested_display, *total_uncompressed, budget_u64);
         return emit(Err(error));
     }
 
@@ -612,6 +655,51 @@ pub(super) fn emit_decompressed_member(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn try_emit_streaming_nested_tar(
+    format: CompressedFormat,
+    content: &[u8],
+    nested_display: &str,
+    max_size: u64,
+    total_uncompressed: &mut u64,
+    nested_depth: usize,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let budget = extraction_total_budget(max_size);
+    let Some(mut peek) = open_format_decoder(format, content, budget) else {
+        return false;
+    };
+    let mut head = [0u8; 512];
+    let Ok(peeked) = peek.read(&mut head) else {
+        return false;
+    };
+    if peeked < 512 || !looks_like_tar(&head[..peeked]) {
+        return false;
+    }
+    // Single decompress stream: do not probe TeX with a second full inflate.
+    // Uncompressed `.tar` still runs provenance via emit_tar_entries_with_state;
+    // zip uses the central directory. Compressed-tar members keep every regular
+    // member scannable without retaining the full decompressed image.
+    let Some(reader) = open_format_decoder(format, content, budget) else {
+        return false;
+    };
+    // Per-entry reads enforce the per-member and aggregate caps inside
+    // emit_tar_entries_from_reader.
+    emit_tar_entries_from_reader(
+        reader,
+        nested_display,
+        max_size,
+        total_uncompressed,
+        nested_depth + 1,
+        respect_default_excludes,
+        super::tex_package::TexPackageAnalysis::default(),
+        emit,
+    );
+    true
+}
+
+
 fn emit_tar_entry_error(
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
     container_display: &str,
@@ -621,6 +709,102 @@ fn emit_tar_entry_error(
     emit(Err(SourceError::Other(format!(
         "failed to scan tar entry '{container_display}//{entry_name}': {reason}"
     ))))
+}
+
+
+/// True when the on-disk name is a gzipped tarball (`.tar.gz` / `.tgz` / …).
+///
+/// `Path::extension` for `bundle.tar.gz` is only `gz`, so the compressed-file
+/// branch must also inspect the full file name to choose the streaming tar
+/// path without first retaining a full decompressed image.
+fn path_looks_like_compressed_tar(path: &Path, ext: &str) -> bool {
+    if is_tgz_ext(ext) {
+        return true;
+    }
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            let lower = name.to_ascii_lowercase();
+            lower.ends_with(".tar.gz")
+                || lower.ends_with(".tar.gzip")
+                || lower.ends_with(".tar.bz2")
+                || lower.ends_with(".tar.xz")
+                || lower.ends_with(".tar.zst")
+                || lower.ends_with(".tar.lz4")
+                || lower.ends_with(".tar.sz")
+                || lower.ends_with(".tgz")
+        })
+}
+
+fn open_format_decoder<'a>(
+    format: CompressedFormat,
+    compressed: &'a [u8],
+    budget: u64,
+) -> Option<Box<dyn Read + 'a>> {
+    match format {
+        CompressedFormat::Gzip => Some(Box::new(flate2::read::MultiGzDecoder::new(compressed))),
+        CompressedFormat::Zstd => {
+            let mut dec = zstd::stream::read::Decoder::new(compressed).ok()?;
+            dec.window_log_max(crate::compression_limits::zstd_window_log_max_for_budget(budget))
+                .ok()?;
+            Some(Box::new(dec))
+        }
+        CompressedFormat::Lz4 => Some(Box::new(lz4_flex::frame::FrameDecoder::new(compressed))),
+        CompressedFormat::Snappy => Some(Box::new(snap::read::FrameDecoder::new(compressed))),
+        CompressedFormat::Bzip2 => Some(Box::new(bzip2::read::MultiBzDecoder::new(compressed))),
+        CompressedFormat::Xz => {
+            let stream = xz2::stream::Stream::new_stream_decoder(budget, 0).ok()?;
+            Some(Box::new(xz2::read::XzDecoder::new_stream(compressed, stream)))
+        }
+    }
+}
+
+/// Stream a compressed tarball into the shared tar entry emitter without
+/// retaining the full decompressed image. Returns `true` when the stream path
+/// handled the input (including loud failure rows). Returns `false` when the
+/// bytes are not a tar so the caller should fall through to the single-file
+/// decompress path.
+fn try_emit_streaming_compressed_tar(
+    format: CompressedFormat,
+    compressed: &[u8],
+    container_display: &str,
+    max_size: u64,
+    respect_default_excludes: bool,
+    force_tar: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let budget = extraction_total_budget(max_size);
+    let Some(mut peek) = open_format_decoder(format, compressed, budget) else {
+        return false;
+    };
+    let mut head = [0u8; 512];
+    let peeked = match peek.read(&mut head) {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+    if !force_tar && (peeked < 512 || !looks_like_tar(&head[..peeked])) {
+        return false;
+    }
+
+    // Stream once: one entry buffer at a time, never the full tar image, and
+    // never a second inflate solely to decide TeX provenance. Uncompressed tar
+    // and zip keep role annotations; compressed-tar scans still emit every
+    // readable member.
+    let Some(reader) = open_format_decoder(format, compressed, budget) else {
+        return false;
+    };
+    let mut total_uncompressed = 0u64;
+    emit_tar_entries_from_reader(
+        reader,
+        container_display,
+        max_size,
+        &mut total_uncompressed,
+        0,
+        respect_default_excludes,
+        super::tex_package::TexPackageAnalysis::default(),
+        emit,
+    );
+    true
 }
 
 /// Decompress a `.gz` / `.zst` / `.lz4` / `.sz` / `.bz2` / `.xz` / `.tgz` file
@@ -675,6 +859,24 @@ pub(super) fn extract_compressed_chunks(
     };
     let compressed = file_bytes.as_slice();
     let budget = extraction_total_budget_usize(max_size);
+    let path_display = display_path(path);
+    let force_tar = path_looks_like_compressed_tar(path, ext);
+
+    // Prefer streaming compressed→tar so the decompressed tarball is never
+    // retained as one contiguous allocation (nested members still recurse under
+    // the shared depth/bomb budget). Falls through when the stream is not a tar
+    // or when the decoder cannot be constructed.
+    if try_emit_streaming_compressed_tar(
+        format,
+        compressed,
+        &path_display,
+        max_size,
+        respect_default_excludes,
+        force_tar,
+        emit,
+    ) {
+        return;
+    }
 
     let decompressed = match decompress_to_bytes(format, compressed, budget) {
         Some(d) => d,
@@ -683,7 +885,6 @@ pub(super) fn extract_compressed_chunks(
             // was NOT scanned. Count it as unreadable so the drop is surfaced.
             tracing::warn!(path = %path.display(), "failed to decompress file; skipping");
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            let path_display = display_path(path);
             if !emit(Err(SourceError::Other(format!(
                 "failed to scan compressed file '{path_display}': failed to decompress file; compressed file was not scanned"
             )))) {
@@ -706,11 +907,9 @@ pub(super) fn extract_compressed_chunks(
         }
     }
 
-    let path_display = display_path(path);
-
-    // `.tgz` is unconditionally a tarball; for the other extensions sniff the
-    // decompressed bytes (a `foo.tar.gz` arrives as ext `gz`).
-    if is_tgz_ext(ext) || looks_like_tar(&decompressed) {
+    // `.tgz` / `*.tar.gz` are unconditionally tarballs; for other compressed
+    // names sniff the decompressed bytes (a misnamed single-file `.gz`).
+    if force_tar || looks_like_tar(&decompressed) {
         emit_tar_entries(
             &decompressed,
             &path_display,

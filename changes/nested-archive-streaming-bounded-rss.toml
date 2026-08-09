@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "Nested archive scans stream compressed tarballs member-by-member with a single inflate, instead of retaining each full decompressed image or paying a second inflate for TeX probing. TeX provenance continues to gate on tar header names for buffered uncompressed tar, and on zip central-directory names."
+crates = ["sources"]
