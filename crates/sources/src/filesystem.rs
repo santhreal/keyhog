@@ -435,10 +435,15 @@ fn collect_descriptor_archive_symlink_errors(
 
     let mut errors = Vec::new();
     let result = walk_descriptor_relative(root, |entry| {
-        if respect_default_excludes
-            && filter::is_default_excluded_bytes(entry.path.as_os_str().as_bytes())
-        {
-            return Ok(false);
+        if respect_default_excludes {
+            let relative = entry
+                .path
+                .strip_prefix(root)
+                .unwrap_or(entry.path.as_path());
+            if filter::is_default_excluded_bytes(relative.as_os_str().as_bytes()) {
+                // Prune default-excluded directories; skip excluded non-dirs.
+                return Ok(false);
+            }
         }
         if let DescriptorEntryKind::Symlink { target } = &entry.kind {
             let resolved_target = if target.is_absolute() {
