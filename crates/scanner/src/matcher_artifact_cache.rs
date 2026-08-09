@@ -727,12 +727,22 @@ pub fn compile_shared_with_matcher_artifact_cache(
 ) -> Result<(CompiledScanner, MatcherArtifactCacheOutcome)> {
     let cache_dir = configured_matcher_artifact_cache_dir();
     let Some(backend) = matcher_backend_for_gpu_policy(gpu_policy) else {
-        return compile_without_matcher_artifact_cache(detectors, gpu_policy, tuning_config);
+        return compile_without_matcher_artifact_cache(
+            normalize_detectors_for_matcher_compile(detectors),
+            gpu_policy,
+            tuning_config,
+        );
     };
 
-    // Cache disabled: keep the historical compile cost (no IR round-trip).
+    // Cache disabled: skip IR/cache I/O, but still normalize the detector list the
+    // same way the cache-enabled path does so enabling the cache cannot change
+    // scanner assembly ordering.
     if cache_dir.is_none() {
-        return compile_without_matcher_artifact_cache(detectors, gpu_policy, tuning_config);
+        return compile_without_matcher_artifact_cache(
+            normalize_detectors_for_matcher_compile(detectors),
+            gpu_policy,
+            tuning_config,
+        );
     }
 
     // Identity keys on the canonical detector-IR digest (same digest packs use).
@@ -748,7 +758,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
                 "matcher artifact cache unavailable ({error}); compiling without cache"
             );
             return compile_with_matcher_artifact_outcome(
-                detectors,
+                normalize_detectors_for_matcher_compile(detectors),
                 gpu_policy,
                 tuning_config,
                 MatcherArtifactCacheOutcome::Miss,
@@ -938,6 +948,18 @@ pub fn compile_shared_with_matcher_artifact_cache(
             )
         }
     }
+}
+
+
+fn normalize_detectors_for_matcher_compile(
+    detectors: Arc<[keyhog_core::DetectorSpec]>,
+) -> Arc<[keyhog_core::DetectorSpec]> {
+    let mut normalized = detectors.to_vec();
+    normalized.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+    for detector in &mut normalized {
+        detector.tests.clear();
+    }
+    normalized.into()
 }
 
 fn compile_without_matcher_artifact_cache(
