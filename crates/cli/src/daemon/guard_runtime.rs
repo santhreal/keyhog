@@ -64,7 +64,12 @@ pub struct GuardRuntime {
     next_transaction_id: Mutex<u64>,
     /// In-flight transactions: transaction_id -> transaction state.
     transactions: Mutex<HashMap<u64, GuardTransaction>>,
+    /// Last time any guard activity occurred (commit, event, root change).
+    last_activity: Mutex<Instant>,
 }
+
+/// Seconds of guard inactivity before the scanner is considered idle-unloaded.
+const SCANNER_IDLE_UNLOAD_SECS: u64 = 300;
 
 impl GuardRuntime {
     /// Create a new empty guard runtime.
@@ -75,6 +80,7 @@ impl GuardRuntime {
             current_identity: RwLock::new(None),
             next_transaction_id: Mutex::new(1),
             transactions: Mutex::new(HashMap::new()),
+            last_activity: Mutex::new(Instant::now()),
         }
     }
 
@@ -86,6 +92,7 @@ impl GuardRuntime {
             current_identity: RwLock::new(None),
             next_transaction_id: Mutex::new(1),
             transactions: Mutex::new(HashMap::new()),
+            last_activity: Mutex::new(Instant::now()),
         }
     }
 
@@ -141,12 +148,18 @@ impl GuardRuntime {
                 String::from_utf8_lossy(&canonical_path)
             ));
         }
-        Ok(roots.register(canonical_path, filesystem_identity, mode))
+        let record = roots.register(canonical_path, filesystem_identity, mode);
+        self.touch_activity();
+        Ok(record)
     }
 
     /// Remove a root from the registry.
     pub fn remove_root(&self, canonical_path: &[u8]) -> Option<GuardRootRecord> {
-        self.roots.write().remove(canonical_path)
+        let removed = self.roots.write().remove(canonical_path);
+        if removed.is_some() {
+            self.touch_activity();
+        }
+        removed
     }
 
     /// Get the current state of a root.
@@ -183,6 +196,7 @@ impl GuardRuntime {
         {
             record.terminal_sequence = record.terminal_sequence.saturating_add(1);
         }
+        self.touch_activity();
         Ok(new_state)
     }
 
@@ -214,6 +228,7 @@ impl GuardRuntime {
     pub fn begin_transaction(&self, txn: GuardTransaction) -> u64 {
         let id = txn.transaction_id;
         self.transactions.lock().insert(id, txn);
+        self.touch_activity();
         id
     }
 
@@ -261,8 +276,8 @@ impl GuardRuntime {
             ));
         }
         txn.scanned_oids.push(oid.to_string());
-        txn.bytes_scanned += bytes;
         txn.findings_count += findings;
+        self.touch_activity();
         Ok(())
     }
 
@@ -335,6 +350,32 @@ impl GuardRuntime {
     /// Whether the guard runtime has any registered roots.
     pub fn is_empty(&self) -> bool {
         self.roots.read().is_empty()
+    }
+
+    /// Record that guard activity occurred. Called on every guard
+    /// operation (commit transaction, event processing, root change).
+    pub fn touch_activity(&self) {
+        *self.last_activity.lock() = Instant::now();
+    }
+
+    /// Scanner residency label for GuardStatus. The scanner is always
+    /// in memory in the daemon process; this label reports whether the
+    /// guard is actively using it or has been idle past the unload
+    /// threshold.
+    ///
+    /// - "active" — in-flight commit transactions right now
+    /// - "resident" — recent guard activity within the idle threshold
+    /// - "idle-unload" — no guard activity for longer than the threshold
+    pub fn scanner_residency(&self) -> &'static str {
+        if !self.transactions.lock().is_empty() {
+            return "active";
+        }
+        let elapsed = self.last_activity.lock().elapsed();
+        if elapsed.as_secs() < SCANNER_IDLE_UNLOAD_SECS {
+            "resident"
+        } else {
+            "idle-unload"
+        }
     }
 }
 
@@ -507,5 +548,50 @@ mod tests {
 
         let list = rt.list_roots();
         assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn scanner_residency_is_resident_after_activity() {
+        let rt = GuardRuntime::new();
+        rt.add_root(b"/work/project".to_vec(), test_fs_identity(), GuardRootMode::Repo)
+            .unwrap();
+        // add_root calls touch_activity, so residency should be "resident".
+        assert_eq!(rt.scanner_residency(), "resident");
+    }
+
+    #[test]
+    fn scanner_residency_is_active_during_transaction() {
+        let rt = GuardRuntime::new();
+        rt.add_root(b"/work/project".to_vec(), test_fs_identity(), GuardRootMode::Repo)
+            .unwrap();
+        let txn = GuardTransaction {
+            transaction_id: rt.next_transaction_id(),
+            repo_path: "/work/project".to_string(),
+            index_fingerprint: "abc".to_string(),
+            hash_algorithm: GitHashAlgorithm::Sha1,
+            clean_hits: Vec::new(),
+            required_blob_oids: vec!["oid1".to_string()],
+            scanned_oids: Vec::new(),
+            bytes_scanned: 0,
+            findings_count: 0,
+            coverage_gaps: 0,
+            objects_skipped: 0,
+            started_at: Instant::now(),
+            policy_short_digest: "abc".to_string(),
+        };
+        rt.begin_transaction(txn);
+        assert_eq!(rt.scanner_residency(), "active");
+        rt.finish_transaction(1);
+        assert_eq!(rt.scanner_residency(), "resident");
+    }
+
+    #[test]
+    fn touch_activity_updates_residency() {
+        let rt = GuardRuntime::new();
+        // New runtime was just created, so it should be "resident".
+        assert_eq!(rt.scanner_residency(), "resident");
+        // touch_activity is called by all guard operations.
+        rt.touch_activity();
+        assert_eq!(rt.scanner_residency(), "resident");
     }
 }

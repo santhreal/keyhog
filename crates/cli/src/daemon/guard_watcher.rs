@@ -168,6 +168,14 @@ impl GuardWatcher {
         self.roots.is_empty()
     }
 
+    /// Number of pending events in the buffer for a root.
+    pub fn pending_event_count(&self, root: &std::path::Path) -> usize {
+        self.roots
+            .get(root)
+            .map(|r| r.buffer.lock().len())
+            .unwrap_or(0)
+    }
+
 }
 
 /// Convert a notify::Event into normalized GuardEvent(s).

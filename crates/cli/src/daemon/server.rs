@@ -1680,14 +1680,14 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         mode: record.mode.label().to_string(),
                         state: record.state.label().to_string(),
                         terminal_sequence: record.terminal_sequence,
-                        pending_events: 0,
+                        pending_events: state.guard_watcher.lock().pending_event_count(std::path::Path::new(&root)) as u64,
                         files_scanned,
                         bytes_scanned,
                         attestation_hits,
                         attestation_misses,
                         findings_count,
                         coverage_gaps,
-                        scanner_residency: "idle-unload".to_string(),
+                        scanner_residency: state.guard.scanner_residency().to_string(),
                         repair_command: format!("keyhog guard reconcile {}", root),
                     }
                 }
