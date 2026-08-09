@@ -1579,6 +1579,12 @@ fn consider_diff_blob_path(
     errors: &mut Vec<SourceError>,
     respect_default_excludes: bool,
 ) {
+    // Match full-walk ordering: default excludes win before unsupported-mode
+    // coverage gaps, so excluded symlinks/gitlinks never flip scan status.
+    if respect_default_excludes && crate::filesystem::is_default_excluded_path_bytes(path) {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+        return;
+    }
     if entry_mode.is_tree() {
         return;
     }
@@ -1595,10 +1601,6 @@ fn consider_diff_blob_path(
         errors.push(git_unscanned_object_error(format!(
             "git tree entry '{path_display}' has unsupported mode {mode}; referenced content was not scanned"
         )));
-        return;
-    }
-    if respect_default_excludes && crate::filesystem::is_default_excluded_path_bytes(path) {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
         return;
     }
     let filepath = path.to_vec();

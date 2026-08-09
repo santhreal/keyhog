@@ -297,3 +297,36 @@ fn git_blobs_recall_detached_head_tip_under_max_commits() {
         chunks.len()
     );
 }
+
+
+#[test]
+fn git_blobs_skip_excluded_unsupported_diff_entries() {
+    // Parent-diff collection must honor default excludes before unsupported-mode
+    // coverage gaps, matching the full tree walk. A symlink under node_modules/
+    // must not flip the scan to partial coverage.
+    let repo = tempfile::tempdir().expect("create git fixture");
+    git(repo.path(), &["init", "--quiet", "-b", "main"]);
+    std::fs::write(repo.path().join("keep.txt"), "ok\n").expect("write keep");
+    git(repo.path(), &["add", "keep.txt"]);
+    git(repo.path(), &["commit", "--quiet", "-m", "seed"]);
+
+    std::fs::create_dir_all(repo.path().join("node_modules")).expect("mkdir node_modules");
+    std::os::unix::fs::symlink("../keep.txt", repo.path().join("node_modules/link"))
+        .expect("symlink under node_modules");
+    git(repo.path(), &["add", "node_modules/link"]);
+    git(repo.path(), &["commit", "--quiet", "-m", "add excluded symlink"]);
+
+    let rows = GitSource::new(repo.path().to_path_buf())
+        .chunks()
+        .collect::<Vec<_>>();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    assert!(
+        errors.is_empty(),
+        "excluded unsupported diff entries must not become coverage gaps: {errors:?}"
+    );
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().any(|chunk| chunk.data.contains("ok")),
+        "seed blob should still be scanned"
+    );
+}
