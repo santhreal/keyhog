@@ -317,10 +317,33 @@ fn is_default_excluded_segment(segment: &[u8]) -> bool {
         .any(|skip| segment.eq_ignore_ascii_case(skip.as_bytes()))
 }
 
+/// True when a single path component is a default-excluded directory name.
+/// Discovery uses this to prune descent into vendored/build trees.
+pub(super) fn is_default_excluded_dir_name(name: &std::ffi::OsStr) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        return is_default_excluded_segment(name.as_bytes());
+    }
+    #[cfg(not(unix))]
+    {
+        let Some(text) = name.to_str() else {
+            return false;
+        };
+        is_default_excluded_segment(text.as_bytes())
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct FilesystemWalkConfig {
     pub(super) respect_gitignore: bool,
     pub(super) ignore_overrides: Vec<String>,
+    /// When true, discovery prunes default-excluded directory names and does
+    /// not admit default-excluded file paths into the reader pool. Each prune
+    /// or file skip records one `SourceSkipEvent::Excluded` so coverage stays
+    /// operator-visible. File-level checks in `process_entry` remain as a
+    /// backstop for explicit includes and `--no-default-excludes`.
+    pub(super) respect_default_excludes: bool,
 }
 
 impl FilesystemWalkConfig {
@@ -346,14 +369,15 @@ pub(super) fn walker_config(
         })
         .collect();
 
-    // Discovery owns metadata only. Size caps, binary/container classification,
-    // and default excludes stay in `extract::process_entry`, where each skip is
-    // visible and the no-follow content reader validates the opened object.
+    // Size caps and binary/container classification stay in extraction. Default
+    // excludes are applied during discovery so vendored trees are not
+    // enumerated into the reader pool; extraction still re-checks for explicit
+    // includes and non-walk admissions.
     let _ = max_file_size; // LAW10: cfg-independent unused-parameter binding; extraction enforces the size cap and records every skip.
-    let _ = respect_default_excludes; // LAW10: cfg-independent unused-parameter binding; extraction owns and visibly records default-exclude skips.
 
     FilesystemWalkConfig {
         respect_gitignore: true,
         ignore_overrides,
+        respect_default_excludes,
     }
 }

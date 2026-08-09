@@ -1109,8 +1109,10 @@ impl CoverageGapKind {
                  scanned as text."
             ),
             Self::Excluded => format!(
-                "{n} file(s) skipped by the DEFAULT exclusion policy (lock files, \
-                 minified/bundled assets, vendored and build-output trees). Pass \
+                "{n} path(s) skipped by the DEFAULT exclusion policy (lock files, \
+                 minified/bundled assets, vendored and build-output trees). \
+                 Default-excluded directories are pruned during discovery and counted \
+                 once each; nested files under them are not enumerated. Pass \
                  `--no-default-excludes` to scan them. Files removed by your own \
                  `.keyhogignore` or `--exclude-paths` are not counted in this number."
             ),
