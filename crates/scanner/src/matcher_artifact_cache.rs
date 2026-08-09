@@ -76,7 +76,7 @@ pub fn default_matcher_artifact_cache_dir_from_base(
          --matcher-cache <DIR|off> or [system].matcher_cache"
             .to_owned()
     })?;
-    Ok(base.join("keyhog-matcher-artifacts"))
+    Ok(base.join(keyhog_core::KEYHOG_MATCHER_ARTIFACTS_SUBDIR))
 }
 
 /// Validate an explicit MatcherArtifact cache directory.

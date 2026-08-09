@@ -216,3 +216,16 @@ fn matcher_artifact_under_keyhog_root_is_lockdown_violation() {
         );
     });
 }
+
+#[test]
+fn matcher_artifact_inflight_tmp_is_not_lockdown_violation() {
+    with_xdg_cache_home(|cache_home| {
+        let root = cache_home.path().join("keyhog-matcher-artifacts");
+        std::fs::create_dir_all(&root).expect("matcher artifacts dir");
+        std::fs::write(root.join(".tmpABCDEFGH"), b"in-flight").expect("write tmp");
+        let hits = keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+            &keyhog_core::testing::TestApi,
+        );
+        assert_eq!(hits, Vec::<std::path::PathBuf>::new(), "in-flight .tmp under matcher-artifacts must not violate lockdown");
+    });
+}

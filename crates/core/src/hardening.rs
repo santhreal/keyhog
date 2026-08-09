@@ -354,25 +354,33 @@ fn keyhog_cache_contains_findings<I>(keyhog_root: &Path, entries: I) -> bool
 where
     I: IntoIterator<Item = std::io::Result<std::fs::DirEntry>>,
 {
+    let matcher_artifacts_root = keyhog_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        == Some(crate::KEYHOG_MATCHER_ARTIFACTS_SUBDIR);
     for entry in entries {
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
                 eprintln!(
-                    "keyhog: cannot inspect an entry in cache dir '{}' for past-findings \
-                     artifacts: {error}; refusing lockdown (fail-closed)",
+                    "keyhog: cannot inspect an entry in cache dir '{}' for past-findings                      artifacts: {error}; refusing lockdown (fail-closed)",
                     keyhog_root.display()
                 );
                 return true;
             }
         };
+        // MatcherArtifact writes use NamedTempFile in-dir (typically `.tmp…`).
+        // Those are not findings-bearing and must not fail lockdown mid-write;
+        // unknown non-temp names still fail closed.
+        if matcher_artifacts_root && is_matcher_artifact_inflight_temp(&entry.file_name()) {
+            continue;
+        }
         match trusted_compiled_pattern_cache_entry(&entry) {
             Ok(true) => {}
             Ok(false) => return true,
             Err(error) => {
                 eprintln!(
-                    "keyhog: cannot inspect candidate compiled-pattern cache entry '{}' in '{}' \
-                     for past-findings artifacts: {error}; refusing lockdown (fail-closed)",
+                    "keyhog: cannot inspect candidate compiled-pattern cache entry '{}' in '{}'                      for past-findings artifacts: {error}; refusing lockdown (fail-closed)",
                     entry.file_name().to_string_lossy(),
                     keyhog_root.display()
                 );
@@ -381,6 +389,14 @@ where
         }
     }
     false
+}
+
+fn is_matcher_artifact_inflight_temp(name: &OsStr) -> bool {
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+    // tempfile::NamedTempFile::new_in names files like `.tmpXXXXXXXX`.
+    name.starts_with(".tmp")
 }
 
 fn trusted_compiled_pattern_cache_entry(entry: &std::fs::DirEntry) -> std::io::Result<bool> {
