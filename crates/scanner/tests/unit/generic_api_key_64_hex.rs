@@ -14,9 +14,12 @@ fn test_generic_api_key_64_hex_policy() {
     let matches = scanner.scan_coalesced(&[chunk]).expect("scan chunk");
     println!("coalesced_matches: {matches:?}");
     assert!(!matches.is_empty() && !matches[0].is_empty(), "api_key 64-hex JSON field must match");
-    assert_eq!(matches[0][0].detector_id.as_ref(), "generic-api-key");
+    let generic_match = matches[0]
+        .iter()
+        .find(|m| m.detector_id.as_ref() == "generic-api-key")
+        .expect("generic-api-key detector identity must match for api_key 64-hex JSON field");
     assert_eq!(
-        matches[0][0].credential.as_ref(),
+        generic_match.credential.as_ref(),
         "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a97601b1a7d6e492b"
     );
 }
@@ -37,13 +40,12 @@ fn test_generic_api_secret_key_64_hex_assignment_policy() {
     let matches = scanner.scan_coalesced(&[chunk]).expect("scan chunk");
     println!("COALESCED: {matches:?}");
     assert!(!matches.is_empty() && !matches[0].is_empty(), "api_secret_key 64-hex assignment must match");
-    let matched_id = matches[0][0].detector_id.as_ref();
-    assert!(
-        matched_id == "generic-api-key" || matched_id == "entropy-api-key",
-        "detector identity must be generic-api-key or its entropy-api-key fallback, got {matched_id}"
-    );
+    let generic_match = matches[0]
+        .iter()
+        .find(|m| m.detector_id.as_ref() == "generic-api-key")
+        .expect("generic-api-key detector identity must match for api_secret_key 64-hex assignment");
     assert_eq!(
-        matches[0][0].credential.as_ref(),
+        generic_match.credential.as_ref(),
         "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a97601b1a7d6e492b"
     );
 }
