@@ -11,16 +11,15 @@
 //! - `misnamed_targz_single_compressed_file_scanned`
 //! - `nested_archive_streaming_rss`
 
+mod support;
+
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use keyhog_core::Source;
 use keyhog_sources::testing::TestApi;
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::io::Write;
-
-mod support {
-    pub use keyhog_sources::testing::split_chunk_results;
-}
+use support::split_chunk_results;
 
 fn gzip(bytes: &[u8]) -> Vec<u8> {
     let mut enc = GzEncoder::new(Vec::new(), Compression::fast());
@@ -38,7 +37,7 @@ fn tar_gz(members: &[(&str, &[u8])]) -> Vec<u8> {
             header.set_size(data.len() as u64);
             header.set_mode(0o644);
             header.set_cksum();
-            archive.append(header, *data).unwrap();
+            archive.append(&header, *data).unwrap();
         }
         archive.finish().unwrap();
     }
@@ -55,7 +54,7 @@ fn nested_compressed_tar_finds_inner_secret() {
 
     let source = FilesystemSource::new(dir.path().to_path_buf());
     let rows: Vec<_> = source.chunks().collect();
-    let (chunks, errors) = support::split_chunk_results(&rows);
+    let (chunks, errors) = split_chunk_results(&rows);
     assert!(
         errors.iter().all(|error| {
             let msg = error.to_string();
@@ -79,25 +78,17 @@ fn streaming_targz_bomb_budget_fail_closed() {
     let dir = tempfile::tempdir().unwrap();
     const MAX: u64 = 8 * 1024;
     let member = vec![0u8; (MAX as usize) + 1];
-    let mut members = Vec::new();
-    for i in 0..32 {
-        members.push((format!("pad{i:02}.bin"), member.clone()));
-    }
-    let member_refs: Vec<(&str, &[u8])> = members
-        .iter()
-        .map(|(name, data)| (name.as_str(), data.as_slice()))
-        .collect();
-    // Build via owned helper inline to keep this binary self-contained.
     let mut raw = Vec::new();
     {
         let mut archive = tar::Builder::new(&mut raw);
-        for (name, data) in &member_refs {
+        for i in 0..32 {
+            let name = format!("pad{i:02}.bin");
             let mut header = tar::Header::new_gnu();
-            header.set_path(*name).unwrap();
-            header.set_size(data.len() as u64);
+            header.set_path(&name).unwrap();
+            header.set_size(member.len() as u64);
             header.set_mode(0o644);
             header.set_cksum();
-            archive.append(&header, *data).unwrap();
+            archive.append(&header, member.as_slice()).unwrap();
         }
         archive.finish().unwrap();
     }
@@ -106,7 +97,7 @@ fn streaming_targz_bomb_budget_fail_closed() {
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(MAX);
     let rows: Vec<_> = source.chunks().collect();
-    let (_chunks, errors) = support::split_chunk_results(&rows);
+    let (_chunks, errors) = split_chunk_results(&rows);
     assert!(
         skip_counts().archive_truncated >= 1,
         "streaming oversized members must trip the decompressed-byte / archive-bomb ceiling"
@@ -130,7 +121,7 @@ fn misnamed_targz_single_file_secret_survives() {
 
     let source = FilesystemSource::new(dir.path().to_path_buf());
     let rows: Vec<_> = source.chunks().collect();
-    let (chunks, errors) = support::split_chunk_results(&rows);
+    let (chunks, errors) = split_chunk_results(&rows);
     assert!(
         chunks
             .iter()
