@@ -283,6 +283,36 @@ fn emit_archive_leaf_member(
         Some(tex_package::TexMemberRole::Orphaned) => "filesystem/archive-binary/tex-orphaned",
         None => "filesystem/archive-binary",
     };
+
+    // Mirror FilesystemSource's large-file windowing so a buffered archive/layer
+    // member does not decode into one multi-hundred-MiB String (and a second
+    // owned chunk) when the disk path would have streamed ~1 MiB windows.
+    let window_size = super::reader::DEFAULT_WINDOW_SIZE;
+    let window_overlap = super::reader::DEFAULT_WINDOW_OVERLAP;
+    if content.len() > window_size && provenance.is_none() {
+        let file_size = content.len() as u64;
+        for window in read::slice_into_windows(&content, window_size, window_overlap) {
+            if window.text.is_empty() {
+                continue;
+            }
+            if !emit(Ok(Chunk {
+                data: window.text,
+                metadata: ChunkMetadata {
+                    source_type: format!("{text_source_type}/windowed").into(),
+                    path: Some(member_display.to_owned().into()),
+                    base_offset: window.offset,
+                    base_line: window.base_line,
+                    size_bytes: Some(file_size),
+                    decoded_span: None,
+                    ..Default::default()
+                },
+            })) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     match chunk_from_extracted_entry(
         content,
         member_display.to_string(),

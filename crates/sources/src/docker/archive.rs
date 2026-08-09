@@ -299,12 +299,19 @@ fn stream_layer_tar_reader(
             continue;
         }
 
-        if docker_archive_entry_exceeds_scan_cap(file_type, size, limits) {
+        // Keep the streaming path's effective per-file ceiling aligned with
+        // FilesystemSource (`DEFAULT_MAX_FILE_SIZE_BYTES`, 100 MiB) even when the
+        // docker tar entry bomb cap is higher (128 MiB). Otherwise large members
+        // that the unpack+walk path refused are buffered whole into RAM here.
+        let member_scan_cap = limits
+            .docker_tar_entry_bytes
+            .min(keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES);
+        if file_type.is_file() && size > member_scan_cap {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             if !emit(Err(docker_archive_entry_over_entry_cap_error(
                 &path,
                 size,
-                limits.docker_tar_entry_bytes,
+                member_scan_cap,
             ))) {
                 return Ok(false);
             }
@@ -336,15 +343,14 @@ fn stream_layer_tar_reader(
             continue;
         }
 
-        let read =
-            crate::capped_read::read_to_cap(&mut entry, limits.docker_tar_entry_bytes, Some(size))
-                .map_err(SourceError::Io)?;
+        let read = crate::capped_read::read_to_cap(&mut entry, member_scan_cap, Some(size))
+            .map_err(SourceError::Io)?;
         if read.truncated {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             if !emit(Err(docker_archive_entry_over_entry_cap_error(
                 &path,
-                size.max(limits.docker_tar_entry_bytes.saturating_add(1)),
-                limits.docker_tar_entry_bytes,
+                size.max(member_scan_cap.saturating_add(1)),
+                member_scan_cap,
             ))) {
                 return Ok(false);
             }
