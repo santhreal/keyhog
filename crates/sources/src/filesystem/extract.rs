@@ -535,13 +535,12 @@ fn emit_archive_member_with_tex_provenance(
                 );
             }
         }
-    } else if ext.eq_ignore_ascii_case("7z") || ext.eq_ignore_ascii_case("rar") {
-        if nested_depth >= MAX_NESTED_ARCHIVE_DEPTH {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return emit(Err(SourceError::Other(format!(
-                "failed to scan embedded archive '{member_display}': maximum nested archive depth {MAX_NESTED_ARCHIVE_DEPTH} exceeded; embedded archive was not scanned"
-            ))));
-        }
+    } else if (ext.eq_ignore_ascii_case("7z") || ext.eq_ignore_ascii_case("rar"))
+        && nested_depth == 0
+    {
+        // Top-level members only (Docker layer / filesystem process_entry parity).
+        // Nested 7z/RAR inside zip/tar keep the prior leaf+coverage-gap behavior so
+        // they cannot open a fresh decompression-bomb budget per hop.
         return emit_path_backed_archive_bytes(
             ext,
             content,
@@ -565,14 +564,12 @@ fn emit_path_backed_archive_bytes(
     nested_depth: usize,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
-    use std::io::Write;
-
-    // Prefer in-memory extractors so attacker-controlled member bytes never land
-    // in the shared system temp directory outside the scan's private workspace.
-    if ext.eq_ignore_ascii_case("7z") {
-        let mut keep_going = true;
-        run_derived_extractor(
-            |counted| {
+    // Both extractors now accept already-buffered bytes, so attacker-controlled
+    // member payloads never land in the process-wide temp directory.
+    let mut keep_going = true;
+    run_derived_extractor(
+        |counted| {
+            if ext.eq_ignore_ascii_case("7z") {
                 seven_zip::extract_seven_zip_chunks_from_bytes(
                     &content,
                     member_display,
@@ -581,96 +578,18 @@ fn emit_path_backed_archive_bytes(
                     nested_depth,
                     counted,
                 );
-            },
-            &mut |chunk| {
-                keep_going = emit(chunk);
-                keep_going
-            },
-        );
-        return keep_going;
-    }
-
-    // RAR still needs a path today; stage under a private 0o700 directory rather
-    // than the process-wide temp root.
-    let staging_dir = match tempfile::Builder::new()
-        .prefix("keyhog-mem-arch-")
-        .tempdir()
-    {
-        Ok(dir) => dir,
-        Err(error) => {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return emit(Err(SourceError::Other(format!(
-                "failed to scan embedded {ext} container '{member_display}': cannot create private extract staging ({error}); container was not scanned"
-            ))));
-        }
-    };
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Err(error) =
-            std::fs::set_permissions(staging_dir.path(), std::fs::Permissions::from_mode(0o700))
-        {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return emit(Err(SourceError::Other(format!(
-                "failed to scan embedded {ext} container '{member_display}': cannot harden extract staging ({error}); container was not scanned"
-            ))));
-        }
-    }
-    let mut tmp = match tempfile::Builder::new()
-        .prefix("member-")
-        .suffix(".rar")
-        .tempfile_in(staging_dir.path())
-    {
-        Ok(tmp) => tmp,
-        Err(error) => {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return emit(Err(SourceError::Other(format!(
-                "failed to scan embedded {ext} container '{member_display}': cannot create temp extract staging ({error}); container was not scanned"
-            ))));
-        }
-    };
-    if let Err(error) = tmp.write_all(&content).and_then(|_| tmp.flush()) {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        return emit(Err(SourceError::Other(format!(
-            "failed to scan embedded {ext} container '{member_display}': cannot stage bytes for extract ({error}); container was not scanned"
-        ))));
-    }
-
-    let staged_path = tmp.path().to_path_buf();
-    let staged_display = display_path(&staged_path);
-    let mut keep_going = true;
-    run_derived_extractor(
-        |counted| {
-            rar::extract_rar_chunks(
-                &staged_path,
-                max_size,
-                respect_default_excludes,
-                nested_depth,
-                counted,
-            );
+            } else {
+                rar::extract_rar_chunks_from_bytes(
+                    &content,
+                    member_display.to_owned(),
+                    max_size,
+                    respect_default_excludes,
+                    nested_depth,
+                    counted,
+                );
+            }
         },
         &mut |chunk| {
-            let chunk = match chunk {
-                Ok(mut chunk) => {
-                    if let Some(path) = chunk.metadata.path.as_mut() {
-                        let path_str: &str = path.as_ref();
-                        if let Some(rest) = path_str.strip_prefix(&staged_display) {
-                            let rewritten = if rest.is_empty() {
-                                member_display.to_owned()
-                            } else {
-                                format!("{member_display}{rest}")
-                            };
-                            *path = rewritten.into();
-                        }
-                    }
-                    Ok(chunk)
-                }
-                Err(err) => Err(rewrite_staged_archive_error(
-                    err,
-                    &staged_display,
-                    member_display,
-                )),
-            };
             keep_going = emit(chunk);
             keep_going
         },
@@ -678,18 +597,6 @@ fn emit_path_backed_archive_bytes(
     keep_going
 }
 
-fn rewrite_staged_archive_error(
-    err: SourceError,
-    staged_display: &str,
-    member_display: &str,
-) -> SourceError {
-    match err {
-        SourceError::Other(message) => {
-            SourceError::Other(message.replace(staged_display, member_display))
-        }
-        other => other,
-    }
-}
 
 pub(crate) fn try_emit_image_metadata_member(
     entry_name: &str,

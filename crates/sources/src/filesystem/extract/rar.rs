@@ -45,24 +45,42 @@ pub(super) fn extract_rar_chunks(
             return;
         }
     };
-    let archive = match ArchiveReader::read(file_bytes.as_slice()) {
+    extract_rar_chunks_from_bytes(
+        file_bytes.as_slice(),
+        display_path(path),
+        max_size,
+        respect_default_excludes,
+        nested_depth,
+        emit,
+    );
+}
+
+pub(super) fn extract_rar_chunks_from_bytes(
+    file_bytes: &[u8],
+    archive_display: String,
+    max_size: u64,
+    respect_default_excludes: bool,
+    nested_depth: usize,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) {
+    let archive = match ArchiveReader::read(file_bytes) {
         Ok(archive) => archive,
         Err(error) => {
             tracing::warn!(
-                archive = %path.display(),
+                archive = %archive_display,
                 %error,
                 "cannot open RAR archive; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             emit(Err(SourceError::Other(format!(
                 "failed to scan RAR archive '{}': cannot open archive ({error}); archive was not scanned",
-                path.display()
+                archive_display
             ))));
             return;
         }
     };
 
-    let mut state = RarExtractionState::new(path, max_size, respect_default_excludes, nested_depth);
+    let mut state = RarExtractionState::new(archive_display.clone(), max_size, respect_default_excludes, nested_depth);
     match &archive {
         Archive::Rar13(archive) => {
             for entry in &archive.entries {
@@ -207,13 +225,13 @@ pub(super) fn extract_rar_chunks(
         }
         _ => {
             tracing::warn!(
-                archive = %path.display(),
+                archive = %archive_display,
                 "unsupported RAR archive family; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             emit(Err(SourceError::Other(format!(
                 "failed to scan RAR archive '{}': unsupported RAR archive family; archive was not scanned",
-                path.display()
+                archive_display
             ))));
         }
     }
@@ -240,7 +258,7 @@ fn rar_unix_attr_is_special(host_os: u64, attr: u64) -> bool {
 
 fn extract_rar15_40_solid_planned_chunks(
     archive: &rars::rar15_40::Archive,
-    state: &mut RarExtractionState<'_>,
+    state: &mut RarExtractionState,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
     let files: Vec<_> = archive.files().collect();
@@ -275,7 +293,7 @@ fn extract_rar15_40_solid_planned_chunks(
 
 fn extract_rar50_solid_planned_chunks(
     archive: &rars::rar50::Archive,
-    state: &mut RarExtractionState<'_>,
+    state: &mut RarExtractionState,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
     let files: Vec<_> = archive.files().collect();
@@ -316,7 +334,7 @@ fn extract_rar50_solid_planned_chunks(
 
 fn plan_rar15_40_solid_entries(
     files: &[&rars::rar15_40::FileHeader],
-    state: &mut RarExtractionState<'_>,
+    state: &mut RarExtractionState,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> VecDeque<SolidRarEntryPlan> {
     let mut planned_scan_total = state.total_uncompressed;
@@ -346,7 +364,7 @@ fn plan_rar15_40_solid_entries(
 
 fn plan_rar50_solid_entries(
     files: &[&rars::rar50::FileHeader],
-    state: &mut RarExtractionState<'_>,
+    state: &mut RarExtractionState,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> VecDeque<SolidRarEntryPlan> {
     let mut planned_scan_total = state.total_uncompressed;
@@ -377,7 +395,7 @@ fn plan_rar50_solid_entries(
 }
 
 fn extract_solid_planned_entries<F>(
-    state: &mut RarExtractionState<'_>,
+    state: &mut RarExtractionState,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
     plans: VecDeque<SolidRarEntryPlan>,
     extract: F,
@@ -473,8 +491,7 @@ fn solid_rar_writer_for_next_plan(
     }
 }
 
-struct RarExtractionState<'a> {
-    archive_path: &'a Path,
+struct RarExtractionState {
     archive_display: String,
     per_entry_cap: u64,
     total_budget: u64,
@@ -485,16 +502,15 @@ struct RarExtractionState<'a> {
     nested_depth: usize,
 }
 
-impl<'a> RarExtractionState<'a> {
+impl RarExtractionState {
     fn new(
-        archive_path: &'a Path,
+        archive_display: String,
         max_size: u64,
         respect_default_excludes: bool,
         nested_depth: usize,
     ) -> Self {
         Self {
-            archive_path,
-            archive_display: display_path(archive_path),
+            archive_display,
             per_entry_cap: if max_size == 0 { u64::MAX } else { max_size },
             total_budget: extraction_total_budget(max_size),
             total_uncompressed: 0,
@@ -521,7 +537,7 @@ impl<'a> RarExtractionState<'a> {
         }
         if let Err(reason) = validate_scan_archive_entry_name(entry_name) {
             tracing::warn!(
-                archive = %self.archive_path.display(),
+                archive = %self.archive_display,
                 entry = %entry_name,
                 reason,
                 "skipping unsafe RAR entry name"
@@ -531,7 +547,7 @@ impl<'a> RarExtractionState<'a> {
         }
         if entry_size > self.per_entry_cap {
             tracing::warn!(
-                archive = %self.archive_path.display(),
+                archive = %self.archive_display,
                 entry = %entry_name,
                 size = entry_size,
                 "skipping RAR entry: uncompressed size exceeds per-file cap"
@@ -571,7 +587,7 @@ impl<'a> RarExtractionState<'a> {
         }
         if let Err(reason) = validate_scan_archive_entry_name(entry_name) {
             tracing::warn!(
-                archive = %self.archive_path.display(),
+                archive = %self.archive_display,
                 entry = %entry_name,
                 reason,
                 "skipping unsafe RAR entry name"
@@ -595,7 +611,7 @@ impl<'a> RarExtractionState<'a> {
         }
         if entry_size > self.per_entry_cap {
             tracing::warn!(
-                archive = %self.archive_path.display(),
+                archive = %self.archive_display,
                 entry = %entry_name,
                 size = entry_size,
                 "skipping RAR entry: uncompressed size exceeds per-file cap"
@@ -622,7 +638,7 @@ impl<'a> RarExtractionState<'a> {
         emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
     ) {
         tracing::warn!(
-            archive = %self.archive_path.display(),
+            archive = %self.archive_display,
             entry = %entry_name,
             reason,
             "skipping RAR entry"
@@ -664,7 +680,7 @@ impl<'a> RarExtractionState<'a> {
                 self.report_archive_truncation(self.total_budget.saturating_add(1), emit);
             } else {
                 tracing::warn!(
-                    archive = %self.archive_path.display(),
+                    archive = %self.archive_display,
                     entry = %entry_name,
                     cap = self.per_entry_cap,
                     "skipping RAR entry: decoded size exceeds per-file cap"
@@ -680,7 +696,7 @@ impl<'a> RarExtractionState<'a> {
             return;
         }
         tracing::warn!(
-            archive = %self.archive_path.display(),
+            archive = %self.archive_display,
             entry = %entry_name,
             %error,
             "cannot read RAR entry; skipping"
@@ -713,7 +729,7 @@ impl<'a> RarExtractionState<'a> {
         let actual_uncompressed = sink.content.len() as u64;
         if actual_uncompressed > self.per_entry_cap {
             tracing::warn!(
-                archive = %self.archive_path.display(),
+                archive = %self.archive_display,
                 entry = %sink.entry_name,
                 size = actual_uncompressed,
                 "skipping RAR entry: decoded size exceeds per-file cap"
@@ -769,7 +785,7 @@ impl<'a> RarExtractionState<'a> {
         emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
     ) {
         tracing::warn!(
-            archive = %self.archive_path.display(),
+            archive = %self.archive_display,
             %archive_kind,
             %error,
             "cannot read solid RAR archive; skipping"
@@ -788,7 +804,7 @@ impl<'a> RarExtractionState<'a> {
         emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
     ) {
         tracing::warn!(
-            archive = %self.archive_path.display(),
+            archive = %self.archive_display,
             %archive_kind,
             error,
             "RAR solid archive metadata did not match extraction plan"
