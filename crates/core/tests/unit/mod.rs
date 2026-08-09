@@ -1,5 +1,4 @@
 pub static SAFE_BIN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-pub mod retry;
 
 pub mod allowlist;
 pub mod allowlist_bare_globs_parse_gitignore_style;

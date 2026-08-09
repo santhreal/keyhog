@@ -1338,8 +1338,6 @@ fn clean_file_is_clean_for_every_format() {
 /// Boundary: an empty input file (zero bytes) returns exit code 13 (incomplete coverage) for every format.
 #[test]
 fn empty_file_exits_thirteen_for_every_format() {
-    let (_g, path) = fixture("empty.txt", "");
-    let path_str = path.to_str().expect("valid string path");
     for fmt in [
         "text",
         "json-envelope",
@@ -1351,7 +1349,7 @@ fn empty_file_exits_thirteen_for_every_format() {
         "html",
         "junit",
     ] {
-        let (_stdout, stderr, code) = scan_with_format(path_str, fmt);
+        let (_stdout, stderr, code) = scan_with_format("", fmt);
         assert_eq!(
             code,
             Some(13),

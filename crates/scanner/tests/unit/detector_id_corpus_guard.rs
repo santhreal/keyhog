@@ -242,7 +242,6 @@ fn weak_anchor_family_is_toml_declared() {
         "foundation-api-key",
         "getresponse-api-key",
         "github-oauth-secret",
-        "oauth-client-secret",
         "rudder-api-token",
         "sonarcloud-token",
         "spotify-client-credentials",

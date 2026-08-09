@@ -32,10 +32,6 @@ fn scanner_for_backend(backend: ScanBackend) -> CompiledScanner {
     try_scanner_for_backend(backend).expect("phase-1 admission scanner compiles")
 }
 
-fn scanner() -> CompiledScanner {
-    scanner_for_backend(ScanBackend::SimdCpu)
-}
-
 fn chunk(data: String) -> Chunk {
     Chunk {
         data: data.into(),
@@ -113,12 +109,12 @@ fn phase1_summary_distinguishes_equal_size_admission_classes() {
     ];
     let plan = scanner.phase1_admission_plan(&planned);
     assert_eq!(
-        canonical_result(scanner_for_backend(ScanBackend::CpuFallback).scan_coalesced_with_backend_and_admission(
+        canonical_result(scanner.scan_coalesced_with_backend_and_admission(
             &planned,
             ScanBackend::CpuFallback,
             Some(&plan),
         )),
-        canonical_result(scanner_for_backend(ScanBackend::CpuFallback).scan_coalesced_with_backend(&planned, ScanBackend::CpuFallback),),
+        canonical_result(scanner.scan_coalesced_with_backend(&planned, ScanBackend::CpuFallback),),
         "reusing the route admission plan must preserve scalar findings"
     );
 }
@@ -174,10 +170,8 @@ fn phase1_admission_classes_preserve_backend_findings_at_eight_mib() {
         chunk(admitted),
     ];
 
-    let cpu_scanner = scanner_for_backend(ScanBackend::CpuFallback);
-    let simd_scanner = scanner_for_backend(ScanBackend::SimdCpu);
     let reference =
-        canonical_result(cpu_scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
+        canonical_result(scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
     assert_eq!(
         reference,
         vec![
@@ -278,10 +272,8 @@ fn oversized_window_reduction_preserves_mixed_logical_rows() {
         chunk(oversized),
         chunk("ghp_Z9y8X7w6!".into()),
     ];
-    let cpu_scanner = scanner_for_backend(ScanBackend::CpuFallback);
-    let simd_scanner = scanner_for_backend(ScanBackend::SimdCpu);
     let reference =
-        canonical_result(cpu_scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
+        canonical_result(scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
     assert_eq!(
         reference.len(),
         3,
