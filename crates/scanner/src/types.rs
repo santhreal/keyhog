@@ -152,6 +152,9 @@ impl<'a> PreprocessedText<'a> {
     /// Map a preprocessed-text offset back to an original line number.
     /// Binary search; same monotonic-mappings invariant as the
     /// multiline variant - see that doc for the analysis.
+    pub(crate) fn transport_decoded_for_offset(&self, offset: usize) -> bool {
+        transport_decoded_for_offset(&self.mappings, offset)
+    }
     pub(crate) fn line_for_offset(&self, offset: usize) -> Option<usize> {
         let idx = self.mappings.partition_point(|m| m.start_offset <= offset);
         if idx == 0 {
@@ -209,6 +212,7 @@ impl<'a> PreprocessedText<'a> {
                 start_offset: offset,
                 end_offset: end + 1,
                 original_start_offset: offset,
+                transport_decoded: false,
             });
             offset = end + 1;
         }
