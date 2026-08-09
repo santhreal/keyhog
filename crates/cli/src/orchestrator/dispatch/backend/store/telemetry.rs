@@ -300,6 +300,7 @@ pub(crate) fn render_missing_buckets(stats: &AutorouteCacheStats) -> Vec<String>
 #[cfg(test)]
 pub(crate) fn reset_for_test() {
     HITS.store(0, Ordering::Relaxed);
+    CALIBRATION_REUSES.store(0, Ordering::Relaxed);
     for cause in AutorouteCacheMiss::ALL {
         cause.counter().store(0, Ordering::Relaxed);
     }
