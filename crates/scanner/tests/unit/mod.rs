@@ -154,8 +154,8 @@ pub mod phase2_entropy_helpers;
 pub mod phase2_generic_bridge;
 #[cfg(feature = "multiline")]
 pub mod pipeline;
-pub mod postgresql_host_credential_span;
 pub mod placeholder_suppression_boundaries;
+pub mod postgresql_host_credential_span;
 pub mod prefix_trie;
 pub mod prefix_trie_extended;
 pub mod profile_extraction;

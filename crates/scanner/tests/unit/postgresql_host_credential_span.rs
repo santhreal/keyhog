@@ -1,6 +1,6 @@
-use keyhog_core::Chunk;
 use crate::testing::named_detector_fixture_defaults;
 use crate::CompiledScanner;
+use keyhog_core::Chunk;
 
 #[test]
 fn test_postgresql_connection_string_host_credential_span() {
@@ -20,7 +20,10 @@ fn test_postgresql_connection_string_host_credential_span() {
     let chunk = Chunk::from("pg-url: postgres://user:secret_pass_12345@db.internal.example.com:5432/app_db?sslmode=require");
     let matches = scanner.scan_coalesced(&[chunk]).expect("scan chunk");
 
-    assert!(!matches.is_empty() && !matches[0].is_empty(), "postgres url pattern must match");
+    assert!(
+        !matches.is_empty() && !matches[0].is_empty(),
+        "postgres url pattern must match"
+    );
     let matched_cred = matches[0][0].credential.as_ref();
     assert_eq!(
         matched_cred,

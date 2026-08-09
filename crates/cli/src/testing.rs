@@ -1306,7 +1306,8 @@ impl CliTestApi for TestApi {
             None,
             scanner.execution_route_for_backend(keyhog_scanner::ScanBackend::GpuWgpu),
             recover_automatic_backend_faults.then_some({
-                let recovery_backend = if scanner.warm_backend(keyhog_scanner::ScanBackend::SimdCpu) {
+                let recovery_backend = if scanner.warm_backend(keyhog_scanner::ScanBackend::SimdCpu)
+                {
                     keyhog_scanner::ScanBackend::SimdCpu
                 } else {
                     keyhog_scanner::ScanBackend::CpuFallback
