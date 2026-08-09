@@ -15,6 +15,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 - **A missing execution-pack generation no longer makes a valid binary unusable.** Local and air-gapped installs can legitimately ship only the binary; when no generation directory exists, scans now compile the authenticated embedded detector corpus and `keyhog doctor` reports a warning instead of failing health checks. A present but invalid generation still fails closed rather than falling back.
+- **The generic OAuth `client_secret` detector no longer reports canonical UUID identifiers.** Its detector-owned value policy now rejects the exact UUID shape while preserving opaque, base64, and canonical-hex client secrets. Scanner integration contracts now construct the exact CPU, SIMD, or GPU route they exercise, and shared-state counter and IaC tests are isolated from parallel-suite interference.
 
 - **Explicit private-endpoint consent now reaches WebSource.** `--allow-private-cloud-endpoint` and `[http].allow_private_endpoint = true` were passed into the shared HTTP configuration but WebSource ignored them and rejected every private, loopback, and on-premises URL before HTTP. Web scans now honor the explicit opt-in across initial requests and redirects. The default remains fail-closed, and the narrow autoroute loopback exception still cannot follow redirects to unrelated private or metadata endpoints.
 

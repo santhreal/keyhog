@@ -105,9 +105,9 @@ fn reverse_base64_program() -> (String, String) {
     (source, encoded)
 }
 
-fn scanner(config: ScannerConfig) -> CompiledScanner {
-    CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
-        .expect("compile embedded detector corpus")
+fn scanner(config: ScannerConfig, backend: ScanBackend) -> CompiledScanner {
+    CompiledScanner::compile_for_backend(keyhog_core::embedded_detector_specs().to_vec(), backend)
+        .expect("compile embedded detector corpus for selected backend")
         .with_config(config)
 }
 
@@ -153,7 +153,7 @@ fn credential_found(matches: &[RawMatch], credential: &str) -> bool {
 
 #[test]
 fn deep_scan_recovers_every_supported_static_program_shape() {
-    let scanner = scanner(ScannerConfig::thorough());
+    let scanner = scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback);
     for source in [
         XOR_LITERAL,
         XOR_HEX_LITERAL,
@@ -173,7 +173,7 @@ fn deep_scan_recovers_every_supported_static_program_shape() {
 
 #[test]
 fn base64_json_array_recovery_accepts_node_utf8_defaults_and_case() {
-    let scanner = scanner(ScannerConfig::thorough());
+    let scanner = scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback);
     for spelling in [".toString()", ".toString('UTF8')"] {
         let source = XOR_BASE64_ARRAYS.replace(".toString('utf8')", spelling);
         let matches = scan(&scanner, &source, ScanBackend::CpuFallback);
@@ -191,7 +191,7 @@ fn base64_json_array_recovery_accepts_node_utf8_defaults_and_case() {
 
 #[test]
 fn xor_recovery_accepts_only_a_literal_modulo_equal_to_key_length() {
-    let scanner = scanner(ScannerConfig::thorough());
+    let scanner = scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback);
     let exact = XOR_BASE64_ARRAYS.replace("i % _k.length", "i % 8");
     assert!(
         exact_target_found(&scan(&scanner, &exact, ScanBackend::CpuFallback)),
@@ -209,7 +209,7 @@ fn xor_recovery_accepts_only_a_literal_modulo_equal_to_key_length() {
 
 #[test]
 fn cryptojs_recovery_preserves_assignment_anchor_for_unprefixed_secret() {
-    let scanner = scanner(ScannerConfig::thorough());
+    let scanner = scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback);
     let matches = scan(
         &scanner,
         CRYPTOJS_ANCHORED_ASSIGNMENT,
@@ -235,7 +235,7 @@ fn xor_recovery_preserves_assignment_anchor_for_unprefixed_secret() {
          String.fromCharCode(...data.map((b, i) => b ^ key[i % key.length]));"
     );
     let matches = scan(
-        &scanner(ScannerConfig::thorough()),
+        &scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback),
         &source,
         ScanBackend::CpuFallback,
     );
@@ -260,7 +260,7 @@ fn xor_recovery_preserves_assignment_anchor_for_unprefixed_secret() {
 
 #[test]
 fn node_aes_recovery_preserves_assignment_anchor_for_unprefixed_secret() {
-    let scanner = scanner(ScannerConfig::thorough());
+    let scanner = scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback);
     let renamed_known_prefix = AES_BOUND_BUFFERS.replace("payload", "api_key");
     let renamed_matches = scan(&scanner, &renamed_known_prefix, ScanBackend::CpuFallback);
     assert!(
@@ -291,7 +291,7 @@ fn node_aes_recovery_preserves_assignment_anchor_for_unprefixed_secret() {
 
 #[test]
 fn xor_and_node_aes_recovery_preserve_exact_source_provenance() {
-    let scanner = scanner(ScannerConfig::thorough());
+    let scanner = scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback);
     let base_offset = 4096;
     for (source, source_start) in [
         (
@@ -327,7 +327,7 @@ fn xor_and_node_aes_recovery_preserve_exact_source_provenance() {
 
 #[test]
 fn reverse_base64_recovery_preserves_exact_source_provenance() {
-    let scanner = scanner(ScannerConfig::thorough());
+    let scanner = scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback);
     let (source, encoded) = reverse_base64_program();
     let matches = scan(&scanner, &source, ScanBackend::CpuFallback);
     let finding = matches
@@ -352,10 +352,11 @@ fn reverse_base64_recovery_preserves_exact_source_provenance() {
 #[cfg(feature = "simd")]
 #[test]
 fn reverse_base64_recovery_has_exact_simd_cpu_parity() {
-    let scanner = scanner(ScannerConfig::thorough());
+    let cpu_scanner = scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback);
+    let simd_scanner = scanner(ScannerConfig::thorough(), ScanBackend::SimdCpu);
     let (source, _) = reverse_base64_program();
-    let mut cpu = scan(&scanner, &source, ScanBackend::CpuFallback);
-    let mut simd = scan(&scanner, &source, ScanBackend::SimdCpu);
+    let mut cpu = scan(&cpu_scanner, &source, ScanBackend::CpuFallback);
+    let mut simd = scan(&simd_scanner, &source, ScanBackend::SimdCpu);
     cpu.sort();
     simd.sort();
     assert_eq!(simd, cpu);
@@ -365,10 +366,11 @@ fn reverse_base64_recovery_has_exact_simd_cpu_parity() {
 #[cfg(feature = "gpu")]
 #[test]
 fn reverse_base64_recovery_has_exact_gpu_cpu_parity() {
-    let scanner = scanner(ScannerConfig::thorough());
+    let cpu_scanner = scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback);
+    let gpu_scanner = scanner(ScannerConfig::thorough(), ScanBackend::GpuWgpu);
     let (source, _) = reverse_base64_program();
-    let mut cpu = scan(&scanner, &source, ScanBackend::CpuFallback);
-    let mut gpu = scan(&scanner, &source, ScanBackend::GpuWgpu);
+    let mut cpu = scan(&cpu_scanner, &source, ScanBackend::CpuFallback);
+    let mut gpu = scan(&gpu_scanner, &source, ScanBackend::GpuWgpu);
     cpu.sort();
     gpu.sort();
     assert_eq!(gpu, cpu);
@@ -378,7 +380,8 @@ fn reverse_base64_recovery_has_exact_gpu_cpu_parity() {
 #[cfg(feature = "simd")]
 #[test]
 fn simd_scan_recovers_every_supported_static_program_shape() {
-    let scanner = scanner(ScannerConfig::thorough());
+    let cpu_scanner = scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback);
+    let simd_scanner = scanner(ScannerConfig::thorough(), ScanBackend::SimdCpu);
     for source in [
         XOR_LITERAL,
         XOR_HEX_LITERAL,
@@ -390,8 +393,8 @@ fn simd_scan_recovers_every_supported_static_program_shape() {
         CRYPTOJS_RENAMED,
         CRYPTOJS_ANCHORED_ASSIGNMENT,
     ] {
-        let mut cpu = scan(&scanner, source, ScanBackend::CpuFallback);
-        let mut simd = scan(&scanner, source, ScanBackend::SimdCpu);
+        let mut cpu = scan(&cpu_scanner, source, ScanBackend::CpuFallback);
+        let mut simd = scan(&simd_scanner, source, ScanBackend::SimdCpu);
         cpu.sort();
         simd.sort();
         assert_eq!(
@@ -408,7 +411,8 @@ fn simd_scan_recovers_every_supported_static_program_shape() {
 #[cfg(feature = "gpu")]
 #[test]
 fn static_recovery_has_exact_gpu_cpu_parity() {
-    let scanner = scanner(ScannerConfig::thorough());
+    let cpu_scanner = scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback);
+    let gpu_scanner = scanner(ScannerConfig::thorough(), ScanBackend::GpuWgpu);
     for source in [
         XOR_LITERAL,
         XOR_HEX_LITERAL,
@@ -420,8 +424,8 @@ fn static_recovery_has_exact_gpu_cpu_parity() {
         CRYPTOJS_RENAMED,
         CRYPTOJS_ANCHORED_ASSIGNMENT,
     ] {
-        let mut cpu = scan(&scanner, source, ScanBackend::CpuFallback);
-        let mut gpu = scan(&scanner, source, ScanBackend::GpuWgpu);
+        let mut cpu = scan(&cpu_scanner, source, ScanBackend::CpuFallback);
+        let mut gpu = scan(&gpu_scanner, source, ScanBackend::GpuWgpu);
         cpu.sort();
         gpu.sort();
         assert_eq!(gpu, cpu, "static recovery must be backend-neutral");
@@ -434,7 +438,7 @@ fn static_recovery_has_exact_gpu_cpu_parity() {
 
 #[test]
 fn fast_scan_does_not_run_static_program_recovery() {
-    let scanner = scanner(ScannerConfig::fast());
+    let scanner = scanner(ScannerConfig::fast(), ScanBackend::CpuFallback);
     for source in [XOR_LITERAL, AES_BOUND_BUFFERS, CRYPTOJS_PASSPHRASE] {
         let matches = scan(&scanner, source, ScanBackend::CpuFallback);
         assert!(

@@ -3,9 +3,9 @@ use keyhog_scanner::telemetry::{self, DogfoodEvent, ScanTelemetry};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 use std::sync::{Arc, Barrier};
 
-fn scanner() -> CompiledScanner {
-    CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
-        .expect("compile embedded detector corpus")
+fn scanner(backend: ScanBackend) -> CompiledScanner {
+    CompiledScanner::compile_for_backend(keyhog_core::embedded_detector_specs().to_vec(), backend)
+        .expect("compile embedded detector corpus for selected backend")
         .with_config(ScannerConfig::thorough())
 }
 
@@ -65,7 +65,10 @@ fn scoped_parallel_counts(scanner: &CompiledScanner, chunks: &[Chunk]) -> Scoped
 
 #[test]
 fn concurrent_request_scopes_propagate_to_rayon_workers_without_leakage() {
-    let per_chunk = scoped_parallel_counts(&scanner(), &example_chunks(1, "baseline"));
+    let per_chunk = scoped_parallel_counts(
+        &scanner(ScanBackend::CpuFallback),
+        &example_chunks(1, "baseline"),
+    );
     assert!(
         per_chunk.suppressions > 0,
         "baseline suppression must be counted"
@@ -76,14 +79,14 @@ fn concurrent_request_scopes_propagate_to_rayon_workers_without_leakage() {
     let barrier = Arc::new(Barrier::new(3));
     let first_barrier = Arc::clone(&barrier);
     let first = std::thread::spawn(move || {
-        let scanner = scanner();
+        let scanner = scanner(ScanBackend::CpuFallback);
         let chunks = example_chunks(5, "first");
         first_barrier.wait();
         scoped_parallel_counts(&scanner, &chunks)
     });
     let second_barrier = Arc::clone(&barrier);
     let second = std::thread::spawn(move || {
-        let scanner = scanner();
+        let scanner = scanner(ScanBackend::CpuFallback);
         let chunks = example_chunks(9, "second");
         second_barrier.wait();
         scoped_parallel_counts(&scanner, &chunks)
@@ -129,7 +132,7 @@ fn dogfood_detail_budget_keeps_exact_static_recovery_aggregates() {
     let trace = Arc::new(ScanTelemetry::new());
     trace.enable_dogfood();
     telemetry::with_scan_telemetry(&trace, || {
-        let findings = scanner()
+        let findings = scanner(ScanBackend::CpuFallback)
             .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
             .expect("selected backend scan succeeds");
         assert!(findings.iter().all(Vec::is_empty));
@@ -173,7 +176,7 @@ fn oversized_coalesced_window_workers_inherit_the_request_scope() {
             ..Default::default()
         },
     };
-    let scanner = scanner();
+    let scanner = scanner(ScanBackend::SimdCpu);
     let trace = Arc::new(ScanTelemetry::new());
     trace.enable_dogfood();
     telemetry::with_scan_telemetry(&trace, || {
@@ -196,7 +199,7 @@ fn oversized_coalesced_window_workers_inherit_the_request_scope() {
 #[cfg(feature = "simd")]
 #[test]
 fn coalesced_simd_phase_two_workers_inherit_the_request_scope() {
-    let scanner = scanner();
+    let scanner = scanner(ScanBackend::SimdCpu);
     let chunks = example_chunks(6, "simd-phase-two");
     let trace = Arc::new(ScanTelemetry::new());
     trace.enable_dogfood();
