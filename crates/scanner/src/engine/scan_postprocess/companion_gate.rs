@@ -23,6 +23,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::phase2_first_bigram::FirstBigramSet;
+
 /// Minimum literal-run length worth gating on. Shorter runs (`ip`, `ps`) are
 /// too common in ordinary text to reject work on their own.
 pub(crate) const MIN_COMPANION_BYTES: usize = 3;
@@ -30,6 +32,10 @@ pub(crate) const MIN_COMPANION_BYTES: usize = 3;
 thread_local! {
     static COMPANION_ARMS_CACHE: RefCell<HashMap<String, Arc<Vec<Vec<String>>>>> =
         RefCell::new(HashMap::new());
+    /// Reuse the per-chunk companion AC when consecutive chunks share the same
+    /// literal set (common on multi-window scans of one large file).
+    static COMPANION_AC_CACHE: RefCell<Option<(Vec<String>, AhoCorasick)>> =
+        const { RefCell::new(None) };
 }
 
 /// OR-of-AND companion arms for `src`. Empty means "no gate" (fail-open).
@@ -151,12 +157,17 @@ pub(crate) fn companions_deny_absent(
         return;
     }
 
-    let Ok(ac) = AhoCorasickBuilder::new()
-        .match_kind(MatchKind::Standard)
-        .kind(Some(AhoCorasickKind::ContiguousNFA))
-        .ascii_case_insensitive(true)
-        .build(&literals)
-    else {
+    // Exact first-bigram absence => no companion literal can match. Deny every
+    // gated pattern without building or walking the Aho-Corasick.
+    let bigrams = FirstBigramSet::from_literals(literals.iter().map(String::as_bytes), true);
+    if !bigrams.may_have_match(text) {
+        for (pat_idx, _) in &armed {
+            deny(*pat_idx);
+        }
+        return;
+    }
+
+    let Some(ac) = companion_ac_cached(&literals) else {
         return;
     };
 
@@ -173,6 +184,25 @@ pub(crate) fn companions_deny_absent(
             deny(pat_idx);
         }
     }
+}
+
+fn companion_ac_cached(literals: &[String]) -> Option<AhoCorasick> {
+    COMPANION_AC_CACHE.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if let Some((cached, ac)) = slot.as_ref() {
+            if cached.as_slice() == literals {
+                return Some(ac.clone());
+            }
+        }
+        let ac = AhoCorasickBuilder::new()
+            .match_kind(MatchKind::Standard)
+            .kind(Some(AhoCorasickKind::ContiguousNFA))
+            .ascii_case_insensitive(true)
+            .build(literals)
+            .ok()?;
+        *slot = Some((literals.to_vec(), ac.clone()));
+        Some(ac)
+    })
 }
 
 /// True when the pattern may still match: no gate, or at least one arm has
