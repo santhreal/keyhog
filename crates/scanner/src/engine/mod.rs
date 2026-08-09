@@ -127,7 +127,7 @@ pub(crate) use crate::scan_profile as profile;
 mod recovery;
 pub use recovery::{BackendRecoveryReceipt, CoalescedScanOutcome, RecoveredInputRange};
 mod scan;
-pub(crate) use scan::{clear_vocab_stage_absence_cache_for_diagnostics, vocab_path_class, vocab_previously_clean};
+pub(crate) use scan::{clear_vocab_stage_absence_cache_for_diagnostics, text_is_dense_markerless_single_line, vocab_path_class, vocab_previously_clean};
 mod scan_coalesced;
 #[cfg(feature = "simd")]
 pub(crate) use scan_coalesced::ReusableSimdTriggerCache;
@@ -505,6 +505,9 @@ pub struct CompiledScanner {
         crate::engine::scan::VocabStageAbsence,
         ahash::RandomState,
     >,
+    /// Cached [`Self::entropy_evidence_config_digest`] — config keywords are
+    /// hashed once per scanner until `with_config` clears the cache.
+    pub(crate) entropy_config_digest_cache: parking_lot::Mutex<Option<[u8; 32]>>,
     /// Complete BLAKE3 identity for the compiled detector and decoder execution plan.
     pub(crate) compiled_plan_digest: [u8; 32],
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,

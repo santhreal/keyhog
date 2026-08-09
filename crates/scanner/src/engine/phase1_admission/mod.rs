@@ -885,8 +885,11 @@ impl CompiledScanner {
     }
 
     pub(crate) fn entropy_evidence_config_digest(&self) -> [u8; 32] {
-        // Recomputed from live config: tests and callers may mutate entropy
-        // thresholds after compile, and absence keys must track that policy.
+        // Cached on the scanner; `with_config` clears it. Callers that mutate
+        // `config` in place without `with_config` must not rely on stale keys.
+        if let Some(cached) = *self.entropy_config_digest_cache.lock() {
+            return cached;
+        }
         fn update_strings(hasher: &mut blake3::Hasher, values: &[String]) {
             hasher.update(&(values.len() as u64).to_le_bytes());
             for value in values {
@@ -903,7 +906,9 @@ impl CompiledScanner {
         update_strings(&mut hasher, &self.config.secret_keywords);
         update_strings(&mut hasher, &self.config.test_keywords);
         update_strings(&mut hasher, &self.config.placeholder_keywords);
-        *hasher.finalize().as_bytes()
+        let digest = *hasher.finalize().as_bytes();
+        *self.entropy_config_digest_cache.lock() = Some(digest);
+        digest
     }
 
     #[cfg(feature = "entropy")]

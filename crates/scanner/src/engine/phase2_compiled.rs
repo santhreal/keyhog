@@ -320,7 +320,7 @@ impl CompiledScanner {
         // run always-active presence scans: every opaque alphanumeric token
         // looks like a candidate and the non-anchorable set over-admits. Keyword
         // hits above still admit; Stripe-style anchored secrets keep working.
-        if super::scan::text_is_markerless_single_line(data) {
+        if super::scan::text_is_dense_markerless_single_line(data) {
             return false;
         }
         let _g = super::profile::span(keyhog_profile::Stage::Phase2Prefilter);

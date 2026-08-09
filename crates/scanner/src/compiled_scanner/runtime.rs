@@ -1123,11 +1123,10 @@ impl CompiledScanner {
             // `should_scan_no_hit_chunk` on every one_long_line window.
             let markerless_no_hit_skip = {
                 let bytes = chunk.data.as_bytes();
-                let markerless = !bytes.is_empty()
-                    && !bytes.contains(&b'\n')
-                    && !bytes.iter().any(|&byte| {
-                        matches!(byte, b'+' | b'/' | b'=' | b'%' | b'\\')
-                    });
+                // Dense markerless only: short unterminated lines still reach
+                // keyword-free entropy / always-active no-hit admission.
+                let markerless =
+                    crate::engine::text_is_dense_markerless_single_line(&chunk.data);
                 // Homoglyph-obfuscated keywords need `should_scan_no_hit_chunk`'s
                 // normalize-and-recheck path; never take the fast skip when the
                 // raw window still carries evasion characters.

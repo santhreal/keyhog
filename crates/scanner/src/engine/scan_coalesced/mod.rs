@@ -688,7 +688,7 @@ impl CompiledScanner {
         // always-active phase-2 is already skipped for this shape, and the
         // remaining entropy-only no-hit lane over-admits opaque JSON tokens.
         // Keep keyword hits above; skip the entropy storm on one_long_line.
-        if super::scan::text_is_markerless_single_line(text) {
+        if super::scan::text_is_dense_markerless_single_line(text) {
             return false;
         }
         #[cfg(feature = "entropy")]

@@ -332,6 +332,18 @@ pub(crate) fn text_is_markerless_single_line(text: &str) -> bool {
         .any(|&byte| matches!(byte, b'+' | b'/' | b'=' | b'%' | b'\\'))
 }
 
+/// Minimum size before markerless single-line no-hit / always-active skips engage.
+/// Short unterminated lines (bare high-entropy tokens) still reach the keyword-free
+/// entropy lane; dense minified JSON (one_long_line) stays skipped.
+pub(crate) const MARKERLESS_NO_HIT_MIN_BYTES: usize = 64 * 1024;
+
+/// Dense markerless single-line: same shape as [`text_is_markerless_single_line`]
+/// but only for large windows where the entropy-only no-hit storm dominates.
+#[inline]
+pub(crate) fn text_is_dense_markerless_single_line(text: &str) -> bool {
+    text.len() >= MARKERLESS_NO_HIT_MIN_BYTES && text_is_markerless_single_line(text)
+}
+
 /// Cap on unique lines participating in a decode-vocab fingerprint. Above this,
 /// the window is too diverse for cross-window empty-decode memoization to help,
 /// and hashing every distinct line would dominate the skip check.

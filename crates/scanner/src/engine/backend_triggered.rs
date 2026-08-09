@@ -66,12 +66,16 @@ impl CompiledScanner {
             prepared.chunk.metadata.source_type.as_ref(),
             prepared.chunk.metadata.path.as_deref(),
         );
-        let vocab_cfg = self.entropy_evidence_config_digest();
+        let windowed_parent = prepared.chunk.metadata.decoded_span.is_none()
+            && prepared.chunk.metadata.source_type.as_ref() == "filesystem/windowed";
+        // Digest is cached on the scanner; still skip the call for non-windowed.
+        let vocab_cfg = windowed_parent
+            .then(|| self.entropy_evidence_config_digest())
+            .unwrap_or([0u8; 32]);
 
         // Parent windows only: decode sub-chunks create new adjacencies and must
         // not inherit a parent vocabulary clean proof.
-        if prepared.chunk.metadata.decoded_span.is_none()
-            && prepared.chunk.metadata.source_type.as_ref() == "filesystem/windowed"
+        if windowed_parent
             && super::scan::vocab_previously_clean(&self.vocab_stage_absence_cache, self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data)
         {
             return scan_state;
@@ -133,7 +137,7 @@ impl CompiledScanner {
         // Repetitive multi-line corpora share a stable unique-line vocabulary across
         // overlapping windows. After the first window proves confirmed/entropy
         // absence for that vocabulary, later windows skip those stages.
-        let vocab_absence = raw_text_unchanged
+        let vocab_absence = (raw_text_unchanged && windowed_parent)
             .then(|| super::scan::vocab_stage_absence(&self.vocab_stage_absence_cache, self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data))
             .flatten();
         let confirmed_patterns_absence = confirmed_patterns_absence
@@ -199,8 +203,13 @@ impl CompiledScanner {
             let confirmed_empty = scan_state.accepted_match_events == accepts_before;
             #[cfg(feature = "ml")]
             let confirmed_empty = confirmed_empty && scan_state.accepted_ml_events == ml_before;
+            // Do not record absence when the heap is at capacity: a rejected
+            // candidate leaves accepted_match_events unchanged and must not
+            // poison later overlapping windows.
             if confirmed_empty
                 && raw_text_unchanged
+                && windowed_parent
+                && scan_state.matches.len() < self.config.max_matches_per_chunk
                 && !crate::deadline::expired(deadline)
             {
                 super::scan::mark_vocab_confirmed_absent(&self.vocab_stage_absence_cache, self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data);
@@ -301,6 +310,8 @@ impl CompiledScanner {
             let entropy_empty = entropy_empty && scan_state.accepted_ml_events == ml_before;
             if entropy_empty
                 && raw_text_unchanged
+                && windowed_parent
+                && scan_state.matches.len() < self.config.max_matches_per_chunk
                 && !crate::deadline::expired(deadline)
             {
                 super::scan::mark_vocab_entropy_absent(&self.vocab_stage_absence_cache, self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data);
