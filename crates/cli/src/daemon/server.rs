@@ -1583,8 +1583,15 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 }),
                 terminal_sequence: 0,
             };
-            // Update the root record with the receipt.
-            let _ = state.guard.update_root_after_commit(txn.repo_path.as_bytes(), receipt);
+            // Update the root record with the receipt. Log errors
+            // so a failed update is visible to the operator.
+            if let Err(e) = state.guard.update_root_after_commit(txn.repo_path.as_bytes(), receipt) {
+                tracing::warn!(
+                    "daemon: guard commit finish: failed to update root {}: {}",
+                    txn.repo_path,
+                    e
+                );
+            }
             Response::GuardCommitReceipt {
                 objects_requested: total_objects,
                 objects_hit,
