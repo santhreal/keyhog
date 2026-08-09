@@ -164,7 +164,7 @@ fn stream_layers_preserve_independent_whiteout_semantics() {
             .is_some_and(|p| p.contains(".wh."))
     });
     assert!(
-        whiteout_chunk == false,
+        !whiteout_chunk,
         "whiteout/opaque marker paths must not produce text chunks: {chunks:?}"
     );
 }
