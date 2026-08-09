@@ -417,8 +417,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Composite Action report handling now binds exact flushed report bytes to a
   source-emitted seven-field receipt and a hidden KeyHog verifier, copies them
   to a mode-`0400` unpredictable snapshot inside a unique mode-`0700`
-  `RUNNER_TEMP` runtime, and makes that receipt-bound job-lifetime snapshot—not
-  the now-untrusted workspace copy—the public report output and
+  `RUNNER_TEMP` runtime, and makes that receipt-bound job-lifetime snapshot-not
+  the now-untrusted workspace copy-the public report output and
   SARIF/artifact upload authority. Internal uploads recheck its SHA-256 at use;
   publication does not claim immutability against the same runner UID.
 - Composite Action publication now has a fail-closed Marketplace listing
@@ -2380,9 +2380,9 @@ These component sections enumerate the full shipped delta. They retain API, sche
   access-key, and client-secret fields stay with their detector-local phase-2
   TOMLs instead of being relabeled as passwords when the GPU trigger set was a
   strict superset. The detector-owned 20-byte broad keyword-free minimum also
-  retains narrow 16–19-byte exceptions for shape-proven symbolic credentials
+  retains narrow 16-19-byte exceptions for shape-proven symbolic credentials
   and four-group app passwords, with positive and negative no-hit coverage.
-  Carbon Black's vendor-specific anchors now admit its documented 20–32-byte
+  Carbon Black's vendor-specific anchors now admit its documented 20-32-byte
   hex key family while the detector TOML explicitly excludes all-zero masks.
 
 - **Prerelease benchmarks now prove the candidate artifact.** The gate builds

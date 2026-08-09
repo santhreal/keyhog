@@ -1525,9 +1525,6 @@ impl ScanOrchestrator {
 
         let scanner = {
             let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
-            let pack_generation = detector_execution_pack
-                .as_ref()
-                .map(|pack| keyhog_core::hex_encode(&pack.identity().digest()));
             let compiled = if disabled_detectors.is_empty() {
                 match detector_execution_pack.as_ref() {
                     Some(pack) => {
@@ -1547,12 +1544,13 @@ impl ScanOrchestrator {
                         let detectors = detectors.as_ref().context(
                             "embedded/debug scanner construction requires detector schemas",
                         )?;
+                        // No installed pack on this path; pack generation is "none".
                         keyhog_scanner::compile_shared_with_matcher_artifact_cache(
                             Arc::clone(detectors),
                             gpu_init_policy,
                             &effective_config.scanner_tuning,
                             resolved_config_digest,
-                            pack_generation.as_deref(),
+                            None,
                             runtime_identity.as_deref(),
                         )
                         .map(|(scanner, outcome)| {

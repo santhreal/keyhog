@@ -674,6 +674,8 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         Ok(_) => Ok(()),
         Err(error) => {
             std::fs::copy(error.file.path(), path)?;
+            let file = std::fs::File::open(path)?;
+            file.sync_all()?;
             Ok(())
         }
     }
@@ -771,7 +773,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
     let path = cache_dir.join(identity.cache_filename());
     // When a structurally intact entry is not reusable for this live corpus
     // (hydrate/compile failure after a successful load), do not immediately
-    // rewrite the same identity — that would delete+recreate forever.
+    // rewrite the same identity - that would delete+recreate forever.
     let mut allow_store = true;
     let rebuild_outcome = match load_matcher_artifact_with_ir(cache_dir, &identity) {
         Ok(loaded) => {
@@ -868,12 +870,29 @@ pub fn compile_shared_with_matcher_artifact_cache(
         }
     };
     if allow_store {
-        if let Err(store_error) = store_matcher_artifact(cache_dir, &identity, &sections) {
-            tracing::warn!(
-                target: "keyhog::matcher_artifact_cache",
-                "failed to persist matcher artifact cache entry: {}",
-                store_error
-            );
+        // Only persist envelopes that survive the same hydrate path a later
+        // process will use. Otherwise a miss would rewrite an unrehydratable
+        // artifact every other scan forever.
+        match hydrate_matcher_artifact_state(&sections, detector_digest, sorted.as_ref()) {
+            Ok(_) => {
+                if let Err(store_error) =
+                    store_matcher_artifact(cache_dir, &identity, &sections)
+                {
+                    tracing::warn!(
+                        target: "keyhog::matcher_artifact_cache",
+                        "failed to persist matcher artifact cache entry: {}",
+                        store_error
+                    );
+                }
+            }
+            Err(error) => {
+                tracing::warn!(
+                    target: "keyhog::matcher_artifact_cache",
+                    "skipping matcher artifact persist; freshly compiled envelopes fail hydrate ({}): {}",
+                    path.display(),
+                    error
+                );
+            }
         }
     } else {
         tracing::warn!(

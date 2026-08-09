@@ -140,7 +140,7 @@ pub(crate) fn detect_unicode_attacks(text: &str) -> Vec<EvasionMatch> {
             continue;
         }
 
-        // ASCII evasion controls (C0 U+0000–001F + DEL U+007F, minus the
+        // ASCII evasion controls (C0 U+0000-001F + DEL U+007F, minus the
         // structural whitespace \n/\r/\t). `normalize_homoglyphs` DROPS these
         // (via `is_ascii_evasion_control`), so the detector must report the SAME
         // chars, leaving them out is exactly the detect/normalize desync class
@@ -264,7 +264,7 @@ fn ascii_normalization_scan(bytes: &[u8]) -> AsciiNormalizationScan {
 }
 
 /// True for an ASCII control byte an attacker can splice into a credential body
-/// to break its byte sequence, every C0 control (U+0000–001F) **and DEL
+/// to break its byte sequence, every C0 control (U+0000-001F) **and DEL
 /// (U+007F)**, EXCEPT the structural whitespace `\n`/`\r`/`\t`. Newlines, CR,
 /// and tabs are legitimate layout (TSV columns, indentation, CRLF line ends);
 /// dropping them would corrupt offsets and mangle ordinary text, so they are
@@ -557,12 +557,12 @@ pub(crate) fn greek_to_latin(ch: char) -> Option<char> {
 /// [`fullwidth_to_ascii`]).
 ///
 /// The surrounding Halfwidth-and-Fullwidth-Forms block (U+FF00..=U+FFEF) also
-/// holds halfwidth katakana (U+FF61–FF9F), halfwidth hangul, fullwidth white
-/// brackets (U+FF5F–FF60), and CJK currency signs (U+FFE0–FFE6). NONE of which
+/// holds halfwidth katakana (U+FF61-FF9F), halfwidth hangul, fullwidth white
+/// brackets (U+FF5F-FF60), and CJK currency signs (U+FFE0-FFE6). NONE of which
 /// are ASCII variants. Matching the whole block falsely flagged legitimate CJK
 /// text as "fullwidth evasion" and pushed it onto the slow normalization path
 /// with a `Replace(self)` no-op rebuild allocation. Every fullwidth form of the
-/// credential charset (A–Z, a–z, 0–9, `_ + / = . -`) lives in U+FF01–FF5E, so
+/// credential charset (A-Z, a-z, 0-9, `_ + / = . -`) lives in U+FF01-FF5E, so
 /// narrowing to it preserves all credential normalization while keeping real
 /// CJK text on the zero-allocation fast path.
 pub(crate) fn is_fullwidth(ch: char) -> bool {
@@ -595,7 +595,7 @@ pub(crate) fn is_evasion_char(ch: char) -> bool {
 /// This is a **curated** set of `General_Category=Cf` (plus soft hyphen)
 /// codepoints that render to nothing, NOT a blanket `Cf` drop: some format
 /// chars carry meaning and a visible/structural effect, the Arabic number
-/// signs (U+0600–0605), Syriac abbreviation mark (U+070F), Kaithi number sign
+/// signs (U+0600-0605), Syriac abbreviation mark (U+070F), Kaithi number sign
 /// (U+110BD), etc., and dropping those would corrupt legitimate text. Only
 /// codepoints that are genuinely invisible AND have no legitimate role inside a
 /// credential token belong here. (Variation selectors and other combining marks
@@ -605,8 +605,8 @@ pub(crate) fn is_evasion_char(ch: char) -> bool {
 /// (DerivedCoreProperties) intersected with "renders to nothing AND has no
 /// legitimate role inside a credential token", MINUS the codepoints already
 /// owned by [`is_combining_mark`] (the `Mark`-category members: CGJ U+034F,
-/// variation selectors U+FE00–FE0F / U+E0100–E01EF, Khmer inherent vowels
-/// U+17B4–17B5) and [`is_rtl_override`] (bidi embeddings/overrides U+202A–202E).
+/// variation selectors U+FE00-FE0F / U+E0100-E01EF, Khmer inherent vowels
+/// U+17B4-17B5) and [`is_rtl_override`] (bidi embeddings/overrides U+202A-202E).
 /// A few `Mark`-category Mongolian selectors are ALSO listed explicitly below
 /// see the note there for why that intentional overlap is a robustness guard,
 /// not a duplication bug.
@@ -620,7 +620,7 @@ pub(crate) fn is_zero_width(ch: char) -> bool {
         '\u{2060}'..='\u{2064}' | // Word Joiner + invisible operators (function application/times/separator/plus)
         '\u{2065}' | // Reserved, Default_Ignorable (invisible; strip so an attacker can't splice it)
         '\u{180E}' | // Mongolian Vowel Separator (Cf)
-        // Mongolian Free Variation Selectors 1–4. FVS1–3 (U+180B–180D) and FVS4
+        // Mongolian Free Variation Selectors 1-4. FVS1-3 (U+180B-180D) and FVS4
         // (U+180F) are General_Category=Mn, so `is_combining_mark` also catches
         // them WHEN the linked unicode-normalization tables are new enough (FVS4
         // was added in Unicode 14.0). Listing them here makes the invisible-strip
@@ -670,15 +670,15 @@ fn is_unicode_separator_evasion(ch: char) -> bool {
 }
 
 /// True for any Unicode combining mark, the full `Grapheme_Extend` set
-/// (general categories Mn/Mc/Me), not just the U+0300–U+036F Combining
+/// (general categories Mn/Mc/Me), not just the U+0300-U+036F Combining
 /// Diacritical Marks block.
 ///
 /// Restricting to one block was an evasion hole: a combining mark spliced
 /// between credential bytes makes the underlying char sequence stop matching a
 /// detector regex (`g\u{1DC0}hp_…` no longer matches `ghp_`), and NFC does not
 /// rescue it (a mark with no precomposed base, e.g. U+1DC0, survives `nfc()`).
-/// Any block other than U+0300–036F. Supplement (U+1AB0–1AFF), Extended
-/// (U+1DC0–1DFF), for-Symbols (U+20D0–20FF), Half Marks (U+FE20–FE2F), or the
+/// Any block other than U+0300-036F. Supplement (U+1AB0-1AFF), Extended
+/// (U+1DC0-1DFF), for-Symbols (U+20D0-20FF), Half Marks (U+FE20-FE2F), or the
 /// Cyrillic/Hebrew/Arabic marks (therefore slipped past the strip).
 ///
 /// Delegating to `unicode-normalization` (already a dependency) keeps this in
