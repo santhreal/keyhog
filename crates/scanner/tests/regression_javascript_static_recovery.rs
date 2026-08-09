@@ -456,7 +456,7 @@ fn fast_scan_does_not_run_static_program_recovery() {
 
 #[test]
 fn ast_holdout_recovery_grammars_must_pass_every_supported_mechanism() {
-    let scanner = scanner(ScannerConfig::thorough());
+    let scanner = scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback);
 
     let xor_arrow_holdout = concat!(
         "const data = [177,109,7,171,232,62,227,128,231,103,67,151,186,98,183,212,",
