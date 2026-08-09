@@ -1280,6 +1280,9 @@ impl ScanOrchestrator {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
             if !detectors_path.exists() && requested_detector_mode.is_none() {
                 let policy = execution_pack_policy_for_args(&args);
+                let execution_pack_directory =
+                    crate::execution_pack_install::installed_execution_pack_directory()
+                        .context("resolving the installed execution-pack directory")?;
                 let installed = match effective_config.backend_override {
                     Some(backend) => {
                         let pack_backend = match backend {
@@ -1313,10 +1316,10 @@ impl ScanOrchestrator {
                 };
                 match installed {
                     Ok(pack) => (None, Some(pack)),
-                    Err(error) if cfg!(debug_assertions) => {
+                    Err(error) if !execution_pack_directory.exists() => {
                         tracing::warn!(
                             error = %error,
-                            "debug build has no matching installed execution pack; parsing embedded detectors for development only"
+                            "no installed execution-pack generation; parsing embedded detectors"
                         );
                         (
                             Some(
