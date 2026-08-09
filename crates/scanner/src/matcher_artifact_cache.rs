@@ -677,9 +677,12 @@ fn record_outcome(outcome: &MatcherArtifactCacheOutcome) {
 /// Compile a scanner, consulting the MatcherArtifact cache when configured.
 ///
 /// On hit, eager `build_compile_state` is skipped and the persisted matcher
-/// graph is hydrated through the canonical section decoder. On miss/invalidation the corpus is compiled once, stored
-/// when a cache directory is configured, then hydrated from that artifact so the
-/// miss path does not compile twice.
+/// graph is hydrated through the local digest-checked section decoder. On miss
+/// or invalidation the corpus is compiled once via
+/// [`CompiledRouteMatcherSections::compile_with_state`]; the live
+/// [`CompileState`] is reused for the scanner while the envelopes are stored
+/// when a cache directory is writable. Damaged on-disk entries are removed and
+/// reported as `Invalidated`, not `Disabled`.
 pub fn compile_shared_with_matcher_artifact_cache(
     detectors: Arc<[keyhog_core::DetectorSpec]>,
     gpu_policy: GpuInitPolicy,
@@ -736,7 +739,8 @@ pub fn compile_shared_with_matcher_artifact_cache(
         return compile_without_matcher_artifact_cache(sorted, gpu_policy, tuning_config);
     };
 
-    match load_matcher_artifact_with_ir(cache_dir, &identity) {
+    let path = cache_dir.join(identity.cache_filename());
+    let rebuild_outcome = match load_matcher_artifact_with_ir(cache_dir, &identity) {
         Ok(loaded) => {
             match hydrate_matcher_artifact_state(&loaded.sections, detector_digest, sorted.as_ref())
             {
@@ -752,16 +756,26 @@ pub fn compile_shared_with_matcher_artifact_cache(
                     return Ok((scanner, outcome));
                 }
                 Err(error) => {
+                    let reason = format!("hydrate failed: {error}");
                     tracing::warn!(
                         target: "keyhog::matcher_artifact_cache",
-                        error = %error,
-                        "matcher artifact hydrate failed; rebuilding without cached graph"
+                        "matcher artifact hydrate failed ({}); removing entry {} and rebuilding",
+                        error,
+                        path.display()
                     );
+                    if let Err(remove_error) = std::fs::remove_file(&path) {
+                        tracing::warn!(
+                            target: "keyhog::matcher_artifact_cache",
+                            "failed to remove unusable matcher artifact entry {}: {}",
+                            path.display(),
+                            remove_error
+                        );
+                    }
+                    MatcherArtifactCacheOutcome::Invalidated { reason }
                 }
             }
         }
         Err(reason) => {
-            let path = cache_dir.join(identity.cache_filename());
             let outcome = if path.exists() {
                 MatcherArtifactCacheOutcome::Invalidated {
                     reason: reason.clone(),
@@ -771,62 +785,42 @@ pub fn compile_shared_with_matcher_artifact_cache(
             };
             tracing::debug!(
                 target: "keyhog::matcher_artifact_cache",
-                %reason,
-                outcome = outcome.as_str(),
-                "matcher artifact cache miss"
+                "matcher artifact cache miss ({}); outcome={}",
+                reason,
+                outcome.as_str()
             );
-            let sections = match CompiledRouteMatcherSections::compile(&ir, backend) {
-                Ok(sections) => sections,
-                Err(error) => {
-                    tracing::warn!(
-                        target: "keyhog::matcher_artifact_cache",
-                        error = %error,
-                        "matcher artifact section compile failed; compiling without cache"
-                    );
-                    return compile_without_matcher_artifact_cache(
-                        sorted,
-                        gpu_policy,
-                        tuning_config,
-                    );
-                }
-            };
-            if let Err(store_error) = store_matcher_artifact(cache_dir, &identity, &sections) {
-                tracing::warn!(
-                    target: "keyhog::matcher_artifact_cache",
-                    error = %store_error,
-                    "failed to persist matcher artifact cache entry"
-                );
-            }
-            match hydrate_matcher_artifact_state(&sections, detector_digest, sorted.as_ref()) {
-                Ok(state) => {
-                    let scanner = CompiledScanner::compile_shared_from_compile_state(
-                        sorted,
-                        gpu_policy,
-                        tuning_config,
-                        state,
-                    )?;
-                    record_outcome(&outcome);
-                    return Ok((scanner, outcome));
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        target: "keyhog::matcher_artifact_cache",
-                        error = %error,
-                        "matcher artifact hydrate failed after miss; compiling without cache"
-                    );
-                    return compile_without_matcher_artifact_cache(
-                        sorted,
-                        gpu_policy,
-                        tuning_config,
-                    );
-                }
-            }
+            outcome
         }
-    }
+    };
 
-    // Hit-path hydrate failed above: fall back to an ordinary compile so the
-    // scan still succeeds even when a cache entry is unusable.
-    compile_without_matcher_artifact_cache(sorted, gpu_policy, tuning_config)
+    // Miss / invalidated rebuild: compile sections once, keep the live
+    // CompileState, and persist the envelopes without a serialize/hydrate tax.
+    let (sections, state) = match CompiledRouteMatcherSections::compile_with_state(&ir, backend) {
+        Ok(pair) => pair,
+        Err(error) => {
+            tracing::warn!(
+                target: "keyhog::matcher_artifact_cache",
+                "matcher artifact section compile failed ({}); compiling without cache",
+                error
+            );
+            return compile_without_matcher_artifact_cache(sorted, gpu_policy, tuning_config);
+        }
+    };
+    if let Err(store_error) = store_matcher_artifact(cache_dir, &identity, &sections) {
+        tracing::warn!(
+            target: "keyhog::matcher_artifact_cache",
+            "failed to persist matcher artifact cache entry: {}",
+            store_error
+        );
+    }
+    let scanner = CompiledScanner::compile_shared_from_compile_state(
+        sorted,
+        gpu_policy,
+        tuning_config,
+        state,
+    )?;
+    record_outcome(&rebuild_outcome);
+    Ok((scanner, rebuild_outcome))
 }
 
 fn compile_without_matcher_artifact_cache(

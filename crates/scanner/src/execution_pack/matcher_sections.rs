@@ -142,6 +142,19 @@ impl CompiledRouteMatcherSections {
         ir: &CanonicalDetectorExecutionIr,
         backend: ExecutionPackBackend,
     ) -> Result<Self, ExecutionPackError> {
+        Ok(Self::compile_with_state(ir, backend)?.0)
+    }
+
+    /// Compile route-matcher sections and retain the live [`CompileState`].
+    ///
+    /// Pack builders that only need the serialized envelopes can keep calling
+    /// [`Self::compile`]. MatcherArtifact miss/rebuild paths use this variant so
+    /// they can persist the envelopes without throwing away the just-built state
+    /// and paying a serialize/hydrate round-trip on the same process.
+    pub(crate) fn compile_with_state(
+        ir: &CanonicalDetectorExecutionIr,
+        backend: ExecutionPackBackend,
+    ) -> Result<(Self, CompileState), ExecutionPackError> {
         let state = build_compile_state(ir.detectors()).map_err(|error| {
             ExecutionPackError::InvalidCompilerInput(format!(
                 "cannot compile canonical route matcher graph: {error}"
@@ -239,7 +252,7 @@ impl CompiledRouteMatcherSections {
             backend: backend_name.clone(),
             detector_ir_digest: ir.digest(),
             detector_count,
-            ac_literals: state.ac_literals,
+            ac_literals: state.ac_literals.clone(),
         })?;
         let regex_programs = canonical_json(&RegexEnvelope {
             version: ROUTE_MATCHER_SECTION_VERSION,
@@ -249,7 +262,7 @@ impl CompiledRouteMatcherSections {
             ac_patterns,
             phase2_patterns,
             companions,
-            quality_warnings: state.quality_warnings,
+            quality_warnings: state.quality_warnings.clone(),
             localization_hints,
         })?;
         let suppression_policy = canonical_json(&SuppressionEnvelope {
@@ -258,12 +271,15 @@ impl CompiledRouteMatcherSections {
             detector_ir_digest: ir.digest(),
             detector_count,
         })?;
-        Ok(Self {
-            backend,
-            literal_index,
-            regex_programs,
-            suppression_policy,
-        })
+        Ok((
+            Self {
+                backend,
+                literal_index,
+                regex_programs,
+                suppression_policy,
+            },
+            state,
+        ))
     }
 
     pub fn content_digest(&self) -> [u8; 32] {
