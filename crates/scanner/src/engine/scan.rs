@@ -54,15 +54,21 @@ impl CompiledScanner {
             // Repetitive multi-line corpora (one_large) share a tiny line
             // vocabulary across overlapping windows. Once a vocab has been
             // decode-through'd to an empty child set, later windows with the
-            // same unique-line fingerprint skip decode-through entirely.
-            && !decode_vocab_previously_empty(&self.vocab_stage_absence_cache, self.detector_digest,
-                self.entropy_evidence_config_digest(),
-                vocab_path_class(
-                    chunk.metadata.source_type.as_ref(),
-                    chunk.metadata.path.as_deref(),
-                ),
-                &chunk.data,
-            )
+            // same ordered-line fingerprint skip decode-through entirely.
+            // Only consult the memo for parent filesystem/windowed slices —
+            // other sources would pay a full content fingerprint for a miss.
+            && !(chunk.metadata.decoded_span.is_none()
+                && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
+                && decode_vocab_previously_empty(
+                    &self.vocab_stage_absence_cache,
+                    self.detector_digest,
+                    self.entropy_evidence_config_digest(),
+                    vocab_path_class(
+                        chunk.metadata.source_type.as_ref(),
+                        chunk.metadata.path.as_deref(),
+                    ),
+                    &chunk.data,
+                ))
             && {
                 #[cfg(debug_assertions)]
                 self.decoder_admission_scanned_bytes.fetch_add(
@@ -349,11 +355,13 @@ pub(crate) struct VocabAbsenceKey {
     pub(crate) vocab_fp: [u8; 16],
 }
 
-/// Order-independent fingerprint of the unique-line vocabulary in `text`.
+/// Order- and multiplicity-sensitive fingerprint of the line sequence in `text`.
 ///
-/// Every unique line participates, including first/last lines, so a one-off
-/// secret on an edge line cannot alias onto a previously proven-clean filler
-/// vocabulary. Returns `None` when the text is empty or too diverse to memoize.
+/// Lines are hashed in encounter order, and repeated lines contribute repeatedly,
+/// so PEM-style multiline secrets and cross-line decode candidates cannot alias
+/// onto a differently ordered or differently repeated arrangement of the same
+/// distinct lines. Returns `None` when the text is empty or has too many lines to
+/// memoize.
 ///
 /// Clean short-circuits that consume this fingerprint are limited to
 /// `filesystem/windowed` parent windows and are path-scoped, so a reordering on
@@ -364,22 +372,18 @@ pub(crate) fn decode_vocab_fingerprint(text: &str) -> Option<[u8; 16]> {
     if text.is_empty() {
         return None;
     }
-    let mut unique: ahash::AHashSet<&str> = ahash::AHashSet::with_capacity(16);
+    let mut hasher = blake3::Hasher::new();
+    let mut line_count = 0usize;
     for line in text.lines() {
-        if unique.len() >= DECODE_VOCAB_FINGERPRINT_MAX_UNIQUE_LINES && !unique.contains(line) {
+        line_count = line_count.saturating_add(1);
+        if line_count > DECODE_VOCAB_FINGERPRINT_MAX_UNIQUE_LINES {
             return None;
         }
-        unique.insert(line);
-    }
-    if unique.is_empty() {
-        return None;
-    }
-    let mut lines: Vec<&str> = unique.into_iter().collect();
-    lines.sort_unstable();
-    let mut hasher = blake3::Hasher::new();
-    for line in &lines {
         hasher.update(line.as_bytes());
         hasher.update(&[0]);
+    }
+    if line_count == 0 {
+        return None;
     }
     let full = hasher.finalize();
     let mut out = [0u8; 16];
@@ -446,8 +450,10 @@ fn mark_vocab_stage_absence(
     let Some(key) = vocab_absence_key(detector_digest, entropy_config_digest, path_class, text) else {
         return;
     };
+    // Bound growth without wiping unrelated clean/confirmed/entropy proofs.
+    // Dropping a new key at capacity keeps existing stage proofs intact.
     if cache.len() >= DECODE_VOCAB_EMPTY_CACHE_CAP && !cache.contains_key(&key) {
-        cache.clear();
+        return;
     }
     let mut entry = cache.entry(key).or_default();
     update(entry.value_mut());

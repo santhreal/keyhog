@@ -92,7 +92,12 @@ impl CompiledScanner {
                 }
                 // Empty decode-through on this line vocabulary: later windows
                 // with the same unique-line fingerprint can skip the pipeline.
-                if decoded_chunks.is_empty() {
+                // Only record proofs for parent filesystem/windowed slices so
+                // unrelated sources cannot fill/clear the shared memo.
+                if decoded_chunks.is_empty()
+                    && chunk.metadata.decoded_span.is_none()
+                    && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
+                {
                     super::scan::mark_decode_vocab_empty(&self.vocab_stage_absence_cache, self.detector_digest,
                         self.entropy_evidence_config_digest(),
                         super::scan::vocab_path_class(
