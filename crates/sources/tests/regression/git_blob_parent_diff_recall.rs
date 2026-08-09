@@ -210,7 +210,7 @@ fn git_blobs_recall_side_branch_tip_under_max_commits() {
 
     // Newest commits are on main; the side tip is still inside the window but
     // older than main tip. Parent-diff on the side tip alone would only see
-    // side-noise.txt — full-walking every ref tip must still emit the secret.
+    // side-noise.txt; full-walking every ref tip must still emit the secret.
     let rows = GitSource::new(repo.path().to_path_buf())
         .with_max_commits(8)
         .chunks()
@@ -328,5 +328,74 @@ fn git_blobs_skip_excluded_unsupported_diff_entries() {
     assert!(
         chunks.iter().any(|chunk| chunk.data.contains("ok")),
         "seed blob should still be scanned"
+    );
+}
+
+
+
+#[test]
+fn git_blobs_recall_custom_ref_tip_under_max_commits() {
+    // Same shape as the side-branch tip test, but the tip lives only under
+    // refs/pull (outside heads/tags/remotes/stash) so for-each-ref must cover
+    // every refs/ namespace.
+    let repo = tempfile::tempdir().expect("create git fixture");
+    git(repo.path(), &["init", "--quiet", "-b", "main"]);
+
+    std::fs::write(repo.path().join("base.txt"), "base\n").expect("write base");
+    git(repo.path(), &["add", "base.txt"]);
+    git(repo.path(), &["commit", "--quiet", "-m", "base"]);
+
+    git(repo.path(), &["checkout", "--quiet", "-b", "side"]);
+    const SECRET: &str = "GITHUB_TOKEN=ghp_customRefTipFixture000000000000001\n";
+    std::fs::write(repo.path().join("side-secret.env"), SECRET).expect("write side secret");
+    git(repo.path(), &["add", "side-secret.env"]);
+    git(repo.path(), &["commit", "--quiet", "-m", "add side secret"]);
+    std::fs::write(repo.path().join("side-noise.txt"), "noise\n").expect("write side noise");
+    git(repo.path(), &["add", "side-noise.txt"]);
+    git(repo.path(), &["commit", "--quiet", "-m", "side noise tip"]);
+    let tip = String::from_utf8(
+        std::process::Command::new("git")
+            .args(["-C", repo.path().to_str().unwrap(), "rev-parse", "HEAD"])
+            .output()
+            .expect("rev-parse")
+            .stdout,
+    )
+    .expect("utf8")
+    .trim()
+    .to_string();
+    git(repo.path(), &["update-ref", "refs/pull/1/head", &tip]);
+    // Drop the heads ref so only the custom namespace keeps the tip alive.
+    git(repo.path(), &["checkout", "--quiet", "main"]);
+    git(repo.path(), &["branch", "--quiet", "-D", "side"]);
+
+    for index in 0..6 {
+        std::fs::write(
+            repo.path().join(format!("main-{index}.txt")),
+            format!("main row {index}\n"),
+        )
+        .expect("write main blob");
+        git(repo.path(), &["add", &format!("main-{index}.txt")]);
+        git(
+            repo.path(),
+            &["commit", "--quiet", "-m", &format!("main {index}")],
+        );
+    }
+
+    let rows = GitSource::new(repo.path().to_path_buf())
+        .with_max_commits(8)
+        .chunks()
+        .collect::<Vec<_>>();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    assert!(
+        errors.is_empty(),
+        "complete fixture history must scan without gaps: {errors:?}"
+    );
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("ghp_customRefTipFixture")),
+        "custom refs/pull tip full-walk must emit untouched side-secret.env; got {} chunks",
+        chunks.len()
     );
 }

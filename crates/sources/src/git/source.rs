@@ -498,9 +498,9 @@ fn stream_git_blobs(
     // recur across commits (most of a tree is untouched by any one commit),
     // so memoizing them prunes nearly all repeated descents.
     let mut walked_trees: HashSet<gix::ObjectId> = HashSet::new();
-    // Every named ref tip plus HEAD must be fully enumerated once so
+    // Every ref tip under refs/ plus HEAD must be fully enumerated once so
     // `--max-commits` still covers untouched blobs on each tip tree
-    // (including side branches and detached CI checkouts). Non-tip commits
+    // (including custom ref namespaces and detached CI checkouts). Non-tip commits
     // use parent-tree diffs for O(changed) work.
     let ref_tip_oids = collect_ref_tip_oids(&repo_arg)?;
     let mut unreachable_objects: Option<UnreachableGitObjects> = None;
@@ -1643,16 +1643,15 @@ fn collect_tree_blobs_metadata(
 
 fn collect_ref_tip_oids(repo_arg: &str) -> Result<HashSet<gix::ObjectId>, SourceError> {
     let mut cmd = super::git_command()?;
+    // Enumerate every ref under refs/ (notes, pull, replace, custom namespaces,
+    // ...) so --max-commits still full-walks untouched tip blobs for tips that
+    // `git log --all` can select. HEAD is unioned separately for detached CI.
     cmd.args([
         "-C",
         repo_arg,
         "for-each-ref",
         "--format=%(objectname) %(*objectname)",
         "--end-of-options",
-        "refs/heads",
-        "refs/tags",
-        "refs/remotes",
-        "refs/stash",
     ]);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
