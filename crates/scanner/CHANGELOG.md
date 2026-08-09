@@ -22,7 +22,7 @@
 - After autoroute selects CpuFallback, fill deferred CPU trigger-hint rows on the route-neutral phase-1 plan so the scalar hot lane reuses them (production automatic route, not only `--backend cpu`).
 - Fill those CPU trigger hints before autoroute calibration timing so measured CpuFallback matches the executed production plan.
 - Bound markerless no-hit / always-active skips to dense windows (≥64 KiB) so short unterminated bare secrets still reach keyword-free entropy admission.
-- Cache `entropy_evidence_config_digest` on the scanner (cleared by `with_config` and `clear_fragment_cache`) and avoid hashing it for non-windowed prepared scans.
+- Avoid hashing `entropy_evidence_config_digest` on non-windowed prepared scans (digest still tracks live public `config` mutations).
 - Do not record vocab confirmed/entropy absence when the per-chunk match heap is already at capacity (rejected candidates must not forge empty proofs).
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.

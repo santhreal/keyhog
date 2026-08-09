@@ -505,9 +505,6 @@ pub struct CompiledScanner {
         crate::engine::scan::VocabStageAbsence,
         ahash::RandomState,
     >,
-    /// Cached [`Self::entropy_evidence_config_digest`] — config keywords are
-    /// hashed once per scanner until `with_config` clears the cache.
-    pub(crate) entropy_config_digest_cache: parking_lot::Mutex<Option<[u8; 32]>>,
     /// Complete BLAKE3 identity for the compiled detector and decoder execution plan.
     pub(crate) compiled_plan_digest: [u8; 32],
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,
