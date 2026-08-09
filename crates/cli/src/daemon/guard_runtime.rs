@@ -1,15 +1,16 @@
-//! Guard runtime: root registry, state transitions, and attestation lookup.
+//! Guard runtime: root registry, state transitions, attestation lookup, and
+//! commit transaction tracking.
 //!
 //! This module holds the live guard state inside the daemon process. It
 //! owns:
 //! - the root registry (which roots are registered, their states)
 //! - the hot attestation index (clean blob cache)
 //! - guard state transitions (applying events to root states)
+//! - in-flight commit transactions (Begin -> Plan -> Blob* -> Finish)
 //!
-//! It does NOT own scanner execution, watcher registration, or durable
-//! persistence. Those are wired in later lanes. This module is the
-//! in-process state the daemon's dispatch function talks to when a guard
-//! request arrives.
+//! It does NOT own watcher registration or durable persistence. Those are
+//! wired in later lanes. This module is the in-process state the daemon's
+//! dispatch function talks to when a guard request arrives.
 
 use keyhog_core::guard_state::{
     GitCleanAttestation, GitHashAlgorithm, GuardPolicyIdentity, GuardRootMode,
@@ -17,6 +18,38 @@ use keyhog_core::guard_state::{
 };
 use keyhog_core::guard_store::{HotAttestationIndex, RootRegistry};
 use parking_lot::{Mutex, RwLock};
+use std::collections::HashMap;
+use std::time::Instant;
+
+/// One in-flight guard commit transaction.
+pub struct GuardTransaction {
+    /// Server-assigned transaction ID.
+    pub transaction_id: u64,
+    /// Repository path (canonical, from the client).
+    pub repo_path: String,
+    /// Index fingerprint captured at Begin time.
+    pub index_fingerprint: String,
+    /// Git hash algorithm.
+    pub hash_algorithm: GitHashAlgorithm,
+    /// Object OIDs that were clean hits (no payload needed).
+    pub clean_hits: Vec<String>,
+    /// Object OIDs that need payload streaming and scanning.
+    pub required_blob_oids: Vec<String>,
+    /// OIDs received and scanned so far.
+    pub scanned_oids: Vec<String>,
+    /// Bytes scanned so far.
+    pub bytes_scanned: u64,
+    /// Findings count across all scanned blobs.
+    pub findings_count: u64,
+    /// Coverage gaps count.
+    pub coverage_gaps: u64,
+    /// Objects skipped (deletions, symlinks, submodules).
+    pub objects_skipped: u64,
+    /// When the transaction started.
+    pub started_at: Instant,
+    /// Policy identity short digest used for attestation lookup.
+    pub policy_short_digest: String,
+}
 
 /// Live guard runtime state held by the daemon.
 pub struct GuardRuntime {
@@ -29,6 +62,8 @@ pub struct GuardRuntime {
     current_identity: RwLock<Option<GuardPolicyIdentity>>,
     /// Transaction ID counter for guard commit transactions.
     next_transaction_id: Mutex<u64>,
+    /// In-flight transactions: transaction_id -> transaction state.
+    transactions: Mutex<HashMap<u64, GuardTransaction>>,
 }
 
 impl GuardRuntime {
@@ -38,7 +73,8 @@ impl GuardRuntime {
             roots: RwLock::new(RootRegistry::new()),
             attestations: HotAttestationIndex::new(),
             current_identity: RwLock::new(None),
-            next_transaction_id: parking_lot::Mutex::new(1),
+            next_transaction_id: Mutex::new(1),
+            transactions: Mutex::new(HashMap::new()),
         }
     }
 
@@ -48,9 +84,11 @@ impl GuardRuntime {
             roots: RwLock::new(RootRegistry::new()),
             attestations: HotAttestationIndex::with_budget(budget),
             current_identity: RwLock::new(None),
-            next_transaction_id: parking_lot::Mutex::new(1),
+            next_transaction_id: Mutex::new(1),
+            transactions: Mutex::new(HashMap::new()),
         }
     }
+
 
     /// Set the current policy identity. When it changes, all existing
     /// attestations are invalidated and roots transition to stale-policy.
@@ -170,6 +208,78 @@ impl GuardRuntime {
         let id = *counter;
         *counter += 1;
         id
+    }
+
+    /// Start a new commit transaction. Returns the transaction ID.
+    pub fn begin_transaction(&self, txn: GuardTransaction) -> u64 {
+        let id = txn.transaction_id;
+        self.transactions.lock().insert(id, txn);
+        id
+    }
+
+    /// Get a reference to an in-flight transaction.
+    pub fn get_transaction(&self, id: u64) -> Option<GuardTransaction> {
+        self.transactions.lock().get(&id).map(|t| GuardTransaction {
+            transaction_id: t.transaction_id,
+            repo_path: t.repo_path.clone(),
+            index_fingerprint: t.index_fingerprint.clone(),
+            hash_algorithm: t.hash_algorithm,
+            clean_hits: t.clean_hits.clone(),
+            required_blob_oids: t.required_blob_oids.clone(),
+            scanned_oids: t.scanned_oids.clone(),
+            bytes_scanned: t.bytes_scanned,
+            findings_count: t.findings_count,
+            coverage_gaps: t.coverage_gaps,
+            objects_skipped: t.objects_skipped,
+            started_at: t.started_at,
+            policy_short_digest: t.policy_short_digest.clone(),
+        })
+    }
+
+    /// Record a scanned blob result in a transaction.
+    pub fn record_scanned_blob(
+        &self,
+        txn_id: u64,
+        oid: &str,
+        bytes: u64,
+        findings: u64,
+    ) -> Result<(), String> {
+        let mut txns = self.transactions.lock();
+        let txn = txns
+            .get_mut(&txn_id)
+            .ok_or_else(|| format!("transaction {} not found", txn_id))?;
+        if !txn.required_blob_oids.contains(&oid.to_string()) {
+            return Err(format!(
+                "transaction {}: blob {} was not in the required set",
+                txn_id, oid
+            ));
+        }
+        if txn.scanned_oids.contains(&oid.to_string()) {
+            return Err(format!(
+                "transaction {}: blob {} already scanned",
+                txn_id, oid
+            ));
+        }
+        txn.scanned_oids.push(oid.to_string());
+        txn.bytes_scanned += bytes;
+        txn.findings_count += findings;
+        Ok(())
+    }
+
+    /// Finish a transaction and return its final state. Removes it
+    /// from the in-flight map.
+    pub fn finish_transaction(&self, txn_id: u64) -> Option<GuardTransaction> {
+        self.transactions.lock().remove(&txn_id)
+    }
+
+    /// Number of in-flight transactions.
+    pub fn active_transaction_count(&self) -> usize {
+        self.transactions.lock().len()
+    }
+
+    /// Get the current policy identity, if set.
+    pub fn policy_identity(&self) -> Option<GuardPolicyIdentity> {
+        self.current_identity.read().clone()
     }
 
     /// Number of registered roots.

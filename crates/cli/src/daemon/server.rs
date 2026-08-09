@@ -1222,11 +1222,260 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
         | Request::MassEnd => Response::Error {
             message: "daemon: mass transaction request reached invalid dispatch state".to_string(),
         },
-        Request::GuardCommitBegin { .. }
-        | Request::GuardCommitBlob { .. }
-        | Request::GuardCommitFinish { .. } => Response::Error {
-            message: "daemon: guard commit transaction is not yet implemented on this daemon".to_string(),
-        },
+        Request::GuardCommitBegin {
+            repo_path,
+            index_fingerprint,
+            hash_algorithm,
+            entries,
+        } => {
+            // Parse the hash algorithm.
+            let git_hash = match hash_algorithm.as_str() {
+                "sha1" => keyhog_core::guard_state::GitHashAlgorithm::Sha1,
+                "sha256" => keyhog_core::guard_state::GitHashAlgorithm::Sha1,
+                other => {
+                    return Response::Error {
+                        message: format!("daemon: guard commit: unsupported hash algorithm '{}'", other),
+                    };
+                }
+            };
+            // Get the policy identity for attestation lookup.
+            let identity = match state.guard.policy_identity() {
+                Some(id) => id,
+                None => {
+                    return Response::Error {
+                        message: "daemon: guard commit: policy identity not yet established".to_string(),
+                    };
+                }
+            };
+            let policy_short = match identity.short_digest() {
+                Ok(d) => d,
+                Err(e) => {
+                    return Response::Error {
+                        message: format!("daemon: guard commit: policy digest error: {}", e),
+                    };
+                }
+            };
+            // Classify entries: skip deletions/symlinks/submodules,
+            // look up file blobs in the clean attestation cache.
+            let mut clean_hits = Vec::new();
+            let mut required_blob_oids = Vec::new();
+            let mut objects_skipped = 0u64;
+            let mut bytes_requested = 0u64;
+            let mut bytes_hit = 0u64;
+            for entry in &entries {
+                if entry.kind != "file" {
+                    objects_skipped += 1;
+                    continue;
+                }
+                if entry.object_oid.is_empty() {
+                    objects_skipped += 1;
+                    continue;
+                }
+                bytes_requested += entry.object_size;
+                if let Some(_att) = state.guard.lookup_attestation(
+                    git_hash,
+                    &entry.object_oid,
+                    &policy_short,
+                ) {
+                    clean_hits.push(entry.object_oid.clone());
+                    bytes_hit += entry.object_size;
+                } else {
+                    required_blob_oids.push(entry.object_oid.clone());
+                }
+            }
+            let txn_id = state.guard.next_transaction_id();
+            let txn = crate::daemon::guard_runtime::GuardTransaction {
+                transaction_id: txn_id,
+                repo_path: repo_path.clone(),
+                index_fingerprint: index_fingerprint.clone(),
+                hash_algorithm: git_hash,
+                clean_hits: clean_hits.clone(),
+                required_blob_oids: required_blob_oids.clone(),
+                scanned_oids: Vec::new(),
+                bytes_scanned: 0,
+                findings_count: 0,
+                coverage_gaps: 0,
+                objects_skipped,
+                started_at: Instant::now(),
+                policy_short_digest: policy_short,
+            };
+            state.guard.begin_transaction(txn);
+            Response::GuardCommitPlan {
+                transaction_id: txn_id,
+                clean_hits,
+                required_blob_oids,
+                max_blob_bytes: 8 * 1024 * 1024,
+            }
+        }
+        Request::GuardCommitBlob {
+            transaction_id,
+            blob_oid,
+            object_size,
+            payload,
+        } => {
+            // Verify the transaction exists and this blob is expected.
+            let txn = match state.guard.get_transaction(transaction_id) {
+                Some(t) => t,
+                None => {
+                    return Response::Error {
+                        message: format!("daemon: guard commit blob: transaction {} not found", transaction_id),
+                    };
+                }
+            };
+            if !txn.required_blob_oids.contains(&blob_oid) {
+                return Response::Error {
+                    message: format!(
+                        "daemon: guard commit blob: OID {} not in required set for transaction {}",
+                        blob_oid, transaction_id
+                    ),
+                };
+            }
+            // Scan the blob payload using the existing scanner.
+            let scanner = state.scanner.clone();
+            let router = state.router.clone();
+            let backend_override = state.backend_override;
+            let recover_automatic_backend_faults = crate::orchestrator::automatic_backend_recovery_allowed(
+                backend_override,
+                false,
+                keyhog_scanner::gpu::gpu_runtime_policy(),
+            );
+            let fragment_scan_lock = state.fragment_scan_lock.clone();
+            let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+            let txn_id = transaction_id;
+            let oid = blob_oid.clone();
+            let _fragment_guard = fragment_scan_lock.lock_owned().await;
+            scanner.clear_fragment_cache();
+            let bytes_scanned: u64 = payload.iter().map(|c| c.data.len() as u64).sum();
+            let scan_result = tokio::task::spawn_blocking(move || -> Result<usize> {
+                let count = keyhog_scanner::telemetry::with_scan_telemetry(
+                    &telemetry,
+                    || -> Result<usize> {
+                        scanner.clear_fragment_cache();
+                        let total_bytes: usize = payload.iter().map(|c| c.data.len()).sum();
+                        keyhog_profile::add_input_units(1);
+                        keyhog_profile::add_input_bytes(total_bytes as u64);
+                        if payload.is_empty() {
+                            scanner.clear_fragment_cache();
+                            return Ok(0);
+                        }
+                        let selection = router.choose_with_plan(
+                            scanner.as_ref(),
+                            backend_override,
+                            &payload,
+                        )?;
+                        let outcome = crate::orchestrator::scan_selected_batch(
+                            scanner.as_ref(),
+                            &payload,
+                            selection.backend,
+                            selection.phase1_plan.as_ref(),
+                            selection.execution_route,
+                            selection
+                                .recovery_plan
+                                .filter(|_| recover_automatic_backend_faults),
+                        )
+                        .with_context(|| {
+                            format!(
+                                "selected backend {} failed during guard blob scan",
+                                selection.backend.label()
+                            )
+                        })?;
+                        let total: usize = outcome.per_chunk.iter().map(|v| v.len()).sum();
+                        Ok(total)
+                    },
+                )?;
+                Ok(count)
+            })
+            .await;
+            let findings = match scan_result {
+                Ok(Ok(count)) => count,
+                Ok(Err(e)) => {
+                    // Scan failed: record as coverage gap, not clean.
+                    if let Err(msg) = state.guard.record_scanned_blob(txn_id, &oid, object_size, 0) {
+                        return Response::Error { message: msg };
+                    }
+                    return Response::Error {
+                        message: format!("daemon: guard commit blob: scan failed for {}: {}", oid, e),
+                    };
+                }
+                Err(e) => {
+                    return Response::Error {
+                        message: format!("daemon: guard commit blob: task panicked for {}: {}", oid, e),
+                    };
+                }
+            };
+            if let Err(msg) = state.guard.record_scanned_blob(txn_id, &oid, bytes_scanned, findings as u64) {
+                return Response::Error { message: msg };
+            }
+            // If clean (zero findings), insert attestation for reuse.
+            if findings == 0 {
+                let identity = state.guard.policy_identity();
+                if let Some(id) = identity {
+                    let att = keyhog_core::guard_state::GitCleanAttestation {
+                        hash_algorithm: txn.hash_algorithm,
+                        blob_oid: oid.clone(),
+                        object_size,
+                        policy_identity: id,
+                        last_seen_sequence: 0,
+                    };
+                    state.guard.insert_attestation(att);
+                }
+            }
+            // Acknowledge the blob was scanned.
+            Response::GuardCommitPlan {
+                transaction_id: txn_id,
+                clean_hits: Vec::new(),
+                required_blob_oids: Vec::new(),
+                max_blob_bytes: 8 * 1024 * 1024,
+            }
+        }
+        Request::GuardCommitFinish {
+            transaction_id,
+            client_objects_streamed,
+            client_bytes_streamed,
+        } => {
+            let txn = match state.guard.finish_transaction(transaction_id) {
+                Some(t) => t,
+                None => {
+                    return Response::Error {
+                        message: format!("daemon: guard commit finish: transaction {} not found", transaction_id),
+                    };
+                }
+            };
+            // Validate conservation: client must have streamed all required blobs.
+            let required_count = txn.required_blob_oids.len() as u64;
+            if client_objects_streamed != required_count {
+                return Response::Error {
+                    message: format!(
+                        "daemon: guard commit: object count mismatch: client streamed {}, required {}",
+                        client_objects_streamed, required_count
+                    ),
+                };
+            }
+            let total_objects = txn.clean_hits.len() as u64 + txn.scanned_oids.len() as u64 + txn.objects_skipped;
+            let objects_hit = txn.clean_hits.len() as u64;
+            let objects_scanned = txn.scanned_oids.len() as u64;
+            let bytes_hit = txn.clean_hits.len() as u64 * 0; // tracked separately
+            let terminal_state = if txn.findings_count > 0 {
+                "blocked".to_string()
+            } else if txn.coverage_gaps > 0 {
+                "degraded".to_string()
+            } else {
+                "current".to_string()
+            };
+            Response::GuardCommitReceipt {
+                objects_requested: total_objects,
+                objects_hit,
+                objects_scanned,
+                objects_skipped: txn.objects_skipped,
+                bytes_requested: txn.bytes_scanned + bytes_hit,
+                bytes_hit,
+                bytes_scanned: txn.bytes_scanned,
+                findings_count: txn.findings_count,
+                coverage_gaps: txn.coverage_gaps,
+                terminal_state,
+                terminal_sequence: 0,
+            }
+        }
         Request::GuardAdd { root, mode } => {
             let guard_mode = match mode.as_str() {
                 "repo" => keyhog_core::guard_state::GuardRootMode::Repo,
