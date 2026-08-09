@@ -20,24 +20,47 @@ use super::support;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::collections::BTreeSet;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 const DETECTOR_IDS: &[&str] = &["aws-access-key", "github-classic-pat", "stripe-secret-key"];
 
+static SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
+    let mut detectors =
+        keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
+    detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
+    for id in DETECTOR_IDS {
+        assert!(
+            detectors.iter().any(|detector| detector.id == *id),
+            "API consistency detector subset missing shipped detector {id}"
+        );
+    }
+    CompiledScanner::compile(detectors).expect("compile")
+});
+
+static SCANNER_SIMD: LazyLock<CompiledScanner> = LazyLock::new(|| {
+    let mut detectors =
+        keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
+    detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
+    CompiledScanner::compile_for_backend(detectors, ScanBackend::SimdCpu).expect("compile SIMD")
+});
+
+static SCANNER_CPU: LazyLock<CompiledScanner> = LazyLock::new(|| {
+    let mut detectors =
+        keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
+    detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
+    CompiledScanner::compile_for_backend(detectors, ScanBackend::CpuFallback).expect("compile CPU")
+});
+
 fn scanner() -> &'static CompiledScanner {
-    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
-    SCANNER.get_or_init(|| {
-        let mut detectors =
-            keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
-        detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
-        for id in DETECTOR_IDS {
-            assert!(
-                detectors.iter().any(|detector| detector.id == *id),
-                "API consistency detector subset missing shipped detector {id}"
-            );
-        }
-        CompiledScanner::compile(detectors).expect("compile")
-    })
+    &SCANNER
+}
+
+fn scanner_for_backend(backend: ScanBackend) -> &'static CompiledScanner {
+    match backend {
+        ScanBackend::SimdCpu => &SCANNER_SIMD,
+        ScanBackend::CpuFallback => &SCANNER_CPU,
+        _ => &SCANNER,
+    }
 }
 
 fn make_chunk(text: &str, path: &str) -> Chunk {
@@ -98,8 +121,6 @@ fn key_chunks(per_chunk: &[Vec<keyhog_core::RawMatch>]) -> BTreeSet<FindingKey> 
 #[test]
 fn daemon_style_stdin_aws_chunk_reports_named_detector() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let scanner = scanner();
-    scanner.clear_fragment_cache();
     let chunk = Chunk {
         data: "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n".into(),
         metadata: ChunkMetadata {
@@ -110,6 +131,8 @@ fn daemon_style_stdin_aws_chunk_reports_named_detector() {
         },
     };
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
+        let scanner = scanner_for_backend(backend);
+        scanner.clear_fragment_cache();
         let matches = scanner
             .scan_with_backend(&chunk, backend)
             .expect("selected backend scan succeeds");
@@ -148,13 +171,13 @@ fn scan_and_scan_with_deadline_none_agree() {
 #[test]
 fn scan_with_backend_each_matches_scan_chunks_with_backend() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let scanner = scanner();
-    scanner.clear_fragment_cache();
     let chunk = make_chunk(
         "auth: \"sk_live_4eC39HqLyjWDarjtT1zdp7dc\"\npayload: \"AKIAQYLPMN5HFIQR7BBB\"\n",
         "fixtures/stripe_aws.yml",
     );
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
+        let scanner = scanner_for_backend(backend);
+        scanner.clear_fragment_cache();
         let single = key(&scanner
             .scan_with_backend(&chunk, backend)
             .expect("selected backend scan succeeds"));
@@ -195,7 +218,7 @@ fn scan_repeated_invocations_produce_identical_findings() {
 #[test]
 fn empty_chunks_slice_returns_empty_results() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let scanner = scanner();
+    let scanner = scanner_for_backend(ScanBackend::SimdCpu);
     scanner.clear_fragment_cache();
     let r = scanner
         .scan_chunks_with_backend(&[], ScanBackend::SimdCpu)
@@ -209,7 +232,7 @@ fn empty_chunks_slice_returns_empty_results() {
 #[test]
 fn multi_chunk_input_preserves_per_chunk_attribution() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let scanner = scanner();
+    let scanner = scanner_for_backend(ScanBackend::SimdCpu);
     scanner.clear_fragment_cache();
     let chunks = vec![
         make_chunk("noise\n", "a.txt"),
