@@ -476,20 +476,12 @@ fn collect_descriptor_entries(
         let name = entry.path.file_name();
         match &entry.kind {
             DescriptorEntryKind::Directory => {
-                if entry.path.as_path() != root {
-                    if let Some(dir_name) = name {
-                        if config.respect_default_excludes
-                            && super::filter::is_default_excluded_dir_name(dir_name)
-                        {
-                            let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
-                            return Ok(false);
-                        }
-                    }
-                }
                 let name_str = name.and_then(OsStr::to_str);
-                // When gitignore handling is disabled, nested .git / ignore
-                // directories do not affect scan semantics, so keep the fast
-                // descriptor path. .keyhogignore is only meaningful as a file.
+                // Refuse before default-exclude prune: `.git` is itself a default
+                // excluded dir name, and pruning it would silently bypass nested
+                // repo ignore semantics on the descriptor rebuild path.
+                // When gitignore handling is disabled, nested VCS metadata does
+                // not affect scan semantics, so keep the fast descriptor path.
                 if config.respect_gitignore
                     && matches!(
                         name_str,
@@ -501,15 +493,28 @@ fn collect_descriptor_entries(
                         entry.path.display()
                     )));
                 }
+                if entry.path.as_path() != root {
+                    if let Some(dir_name) = name {
+                        if config.respect_default_excludes
+                            && super::filter::is_default_excluded_dir_name(dir_name)
+                        {
+                            let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+                            return Ok(false);
+                        }
+                    }
+                }
                 Ok(true)
             }
             DescriptorEntryKind::File { size } => {
                 let name_str = name.and_then(OsStr::to_str);
-                // .keyhogignore always blocks the rebuild; VCS ignore files only
-                // matter when gitignore handling is enabled for this scan.
+                // .keyhogignore always blocks the rebuild; VCS ignore / gitlink
+                // markers only matter when gitignore handling is enabled.
                 let blocks_ignore_proof = name_str == Some(".keyhogignore")
                     || (config.respect_gitignore
-                        && matches!(name_str, Some(".gitignore") | Some(".ignore")));
+                        && matches!(
+                            name_str,
+                            Some(".git") | Some(".gitignore") | Some(".ignore")
+                        ));
                 if blocks_ignore_proof {
                     return Err(SourceError::Other(format!(
                         "descriptor-relative discovery encountered ignore metadata at '{}'; refusing to bypass ignore semantics for a path beyond the platform pathname limit",
