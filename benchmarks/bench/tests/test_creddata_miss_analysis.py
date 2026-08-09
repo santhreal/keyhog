@@ -190,3 +190,14 @@ def test_cluster_fn_misses_recomputes_precision_with_fp_count():
 def test_cluster_is_a_registered_command():
     rc = cma.main(["cluster", "--root", "/nonexistent-corpus-xyz", "--scanner-bin", "keyhog"])
     assert rc == 2
+def test_cmd_cluster_near_miss_fallback_attributes_detector():
+    # If a finding is not byte-identical but overlaps the ground-truth value,
+    # the fallback attributes the owning detector rather than unmapped_detector.
+    pos = [("src/config.py", "secret_value_12345")]
+    finds = {"src/config.py": [("secret_value", "my-custom-detector")]}
+    # For a FN with no exact match and no suppression, overlap finding attributes detector
+    rel, val = pos[0]
+    matched_find = [det for (c, det) in finds.get(rel, []) if val == c]
+    assert not matched_find
+    matched_finds = [det for (c, det) in finds.get(rel, []) if (c in val or val in c)]
+    assert matched_finds == ["my-custom-detector"]

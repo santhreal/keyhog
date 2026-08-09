@@ -626,7 +626,7 @@ def cmd_cluster(root: pathlib.Path, scanner_bin: str, backend: str = "simd") -> 
             gates = sorted({r for (r, d) in matched_supp if r})
             gate = ",".join(gates) if gates else "un-generated_candidate"
         else:
-            matched_finds = [det for (c, det) in finds.get(rel, []) if c == val]
+            matched_finds = [det for (c, det) in finds.get(rel, []) if (c in val or val in c)]
             if matched_finds:
                 dets = sorted({d for d in matched_finds if d})
                 det = f"ambiguous:{','.join(dets)}" if len(dets) > 1 else (dets[0] if dets else "unmapped_detector")
