@@ -745,15 +745,36 @@ pub fn compile_shared_with_matcher_artifact_cache(
             match hydrate_matcher_artifact_state(&loaded.sections, detector_digest, sorted.as_ref())
             {
                 Ok(state) => {
-                    let scanner = CompiledScanner::compile_shared_from_compile_state(
+                    match CompiledScanner::compile_shared_from_compile_state(
                         Arc::clone(&sorted),
                         gpu_policy,
                         tuning_config,
                         state,
-                    )?;
-                    let outcome = MatcherArtifactCacheOutcome::Hit;
-                    record_outcome(&outcome);
-                    return Ok((scanner, outcome));
+                    ) {
+                        Ok(scanner) => {
+                            let outcome = MatcherArtifactCacheOutcome::Hit;
+                            record_outcome(&outcome);
+                            return Ok((scanner, outcome));
+                        }
+                        Err(error) => {
+                            let reason = format!("compile from hydrated state failed: {error}");
+                            tracing::warn!(
+                                target: "keyhog::matcher_artifact_cache",
+                                "matcher artifact hit unusable ({}); removing entry {} and rebuilding",
+                                error,
+                                path.display()
+                            );
+                            if let Err(remove_error) = std::fs::remove_file(&path) {
+                                tracing::warn!(
+                                    target: "keyhog::matcher_artifact_cache",
+                                    "failed to remove unusable matcher artifact entry {}: {}",
+                                    path.display(),
+                                    remove_error
+                                );
+                            }
+                            MatcherArtifactCacheOutcome::Invalidated { reason }
+                        }
+                    }
                 }
                 Err(error) => {
                     let reason = format!("hydrate failed: {error}");

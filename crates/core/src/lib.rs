@@ -130,11 +130,20 @@ pub(crate) const STALE_TMP_CUTOFF_SECS: u64 = 60 * 60;
 /// lockdown past-findings gate, a rename here moves all three together so the
 /// lockdown scan can never desynchronize from where scan artifacts actually land.
 pub(crate) const KEYHOG_CACHE_SUBDIR: &str = "keyhog";
+/// Sibling of [`KEYHOG_CACHE_SUBDIR`] used for MatcherArtifact `.khm` files.
+pub(crate) const KEYHOG_MATCHER_ARTIFACTS_SUBDIR: &str = "keyhog-matcher-artifacts";
 
 /// Absolute path of keyhog's per-user cache root (`<os-cache>/keyhog`), or
 /// `None` when the platform exposes no cache directory.
 pub(crate) fn keyhog_cache_root() -> Option<std::path::PathBuf> {
     dirs::cache_dir().map(|dir| dir.join(KEYHOG_CACHE_SUBDIR))
+}
+
+/// Absolute path of the MatcherArtifact cache root
+/// (`<os-cache>/keyhog-matcher-artifacts`), or `None` when the platform exposes
+/// no cache directory.
+pub(crate) fn keyhog_matcher_artifacts_root() -> Option<std::path::PathBuf> {
+    dirs::cache_dir().map(|dir| dir.join(KEYHOG_MATCHER_ARTIFACTS_SUBDIR))
 }
 
 /// Parse the embedded detector corpus, FAILING CLOSED on any malformed TOML.

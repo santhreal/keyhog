@@ -260,8 +260,9 @@ fn apply_lockdown_protections() -> HardeningReport {
 /// Only files with keyhog's exact `hs-<sha256>.db` shard name and `KHHS` cache
 /// header are trusted as compiled-pattern caches; everything else is a
 /// potential findings-bearing cache and therefore a lockdown violation.
-/// MatcherArtifact files live under `keyhog-matcher-artifacts/` (sibling of
-/// `keyhog/`), outside this inspected root.
+/// MatcherArtifact `.khm` files live under `keyhog-matcher-artifacts/` (sibling
+/// of `keyhog/`). That sibling is inspected with the same fail-closed rules:
+/// only files with a trusted compiled-pattern header are allowed.
 #[must_use]
 pub(crate) fn lockdown_disk_cache_violations() -> Vec<PathBuf> {
     lockdown_disk_cache_violations_for_paths(std::iter::empty::<PathBuf>())
@@ -269,9 +270,9 @@ pub(crate) fn lockdown_disk_cache_violations() -> Vec<PathBuf> {
 
 /// Return persisted keyhog cache artifacts that violate lockdown mode.
 ///
-/// The default keyhog cache root is always checked. `persistence_paths` lets
-/// callers pass resolved custom Merkle/incremental cache paths that may live
-/// outside the default root.
+/// The default keyhog cache root and the MatcherArtifact sibling root are
+/// always checked. `persistence_paths` lets callers pass resolved custom
+/// Merkle/incremental cache paths that may live outside those defaults.
 #[must_use]
 pub(crate) fn lockdown_disk_cache_violations_for_paths<I, P>(persistence_paths: I) -> Vec<PathBuf>
 where
@@ -279,9 +280,15 @@ where
     P: AsRef<Path>,
 {
     let mut hits = Vec::new();
-    if let Some(keyhog_root) = crate::keyhog_cache_root() {
-        let has_findings_cache = match std::fs::read_dir(&keyhog_root) {
-            Ok(entries) => keyhog_cache_contains_findings(&keyhog_root, entries),
+    for root in [
+        crate::keyhog_cache_root(),
+        crate::keyhog_matcher_artifacts_root(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let has_findings_cache = match std::fs::read_dir(&root) {
+            Ok(entries) => keyhog_cache_contains_findings(&root, entries),
             // The cache dir simply not existing is the genuinely-clean case:
             // there is no past-findings artifact to leak.
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
@@ -292,15 +299,14 @@ where
             // so lockdown refuses to start rather than silently passing.
             Err(e) => {
                 eprintln!(
-                    "keyhog: cannot inspect cache dir '{}' for past-findings artifacts: {e}; \
-                     refusing lockdown (fail-closed)",
-                    keyhog_root.display()
+                    "keyhog: cannot inspect cache dir '{}' for past-findings artifacts: {e};                      refusing lockdown (fail-closed)",
+                    root.display()
                 );
                 true
             }
         };
         if has_findings_cache {
-            hits.push(keyhog_root);
+            hits.push(root);
         }
     }
     for path in persistence_paths {
@@ -391,25 +397,48 @@ fn compiled_pattern_cache_filename(name: &OsStr) -> bool {
     let Some(name) = name.to_str() else {
         return false;
     };
-    let Some(digest) = name
+    if let Some(digest) = name
         .strip_prefix(HYPERSCAN_CACHE_PREFIX)
         .and_then(|s| s.strip_suffix(HYPERSCAN_CACHE_SUFFIX))
-    else {
-        return false;
-    };
-    digest.len() == crate::git_lfs::SHA256_HEX_LEN
-        && digest
-            .bytes()
-            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return digest.len() == crate::git_lfs::SHA256_HEX_LEN
+            && digest
+                .bytes()
+                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    }
+    // MatcherArtifact: matcher-<64 hex>.khm
+    if let Some(digest) = name
+        .strip_prefix("matcher-")
+        .and_then(|s| s.strip_suffix(".khm"))
+    {
+        return digest.len() == crate::git_lfs::SHA256_HEX_LEN
+            && digest
+                .bytes()
+                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    }
+    false
 }
 
 fn compiled_pattern_cache_header_is_valid(path: &Path) -> std::io::Result<bool> {
     let mut file = std::fs::File::open(path)?;
-    let mut header = [0_u8; crate::HYPERSCAN_CACHE_HEADER_LEN];
-    match file.read_exact(&mut header) {
-        Ok(()) => Ok(crate::hyperscan_cache_header_is_valid(&header)),
-        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
-        Err(error) => Err(error),
+    if path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext == "khm")
+    {
+        let mut magic = [0_u8; 4];
+        match file.read_exact(&mut magic) {
+            Ok(()) => Ok(&magic == b"KHMA"),
+            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+            Err(error) => Err(error),
+        }
+    } else {
+        let mut header = [0_u8; crate::HYPERSCAN_CACHE_HEADER_LEN];
+        match file.read_exact(&mut header) {
+            Ok(()) => Ok(crate::hyperscan_cache_header_is_valid(&header)),
+            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 }
 
