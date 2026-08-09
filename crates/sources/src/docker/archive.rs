@@ -355,7 +355,6 @@ fn stream_layer_tar_reader(
                 &entry_name,
                 window_size,
                 window_overlap,
-                respect_default_excludes,
                 emit,
             )? {
                 return Ok(false);
@@ -572,7 +571,6 @@ fn stream_plain_layer_member_windows<R: Read>(
     entry_name: &str,
     window_size: usize,
     window_overlap: usize,
-    respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<keyhog_core::Chunk, SourceError>) -> bool,
 ) -> Result<bool, SourceError> {
     use keyhog_core::{Chunk, ChunkMetadata};
@@ -594,27 +592,13 @@ fn stream_plain_layer_member_windows<R: Read>(
         if buf.is_empty() {
             return Ok(true);
         }
-        let Ok(text) = std::str::from_utf8(&buf) else {
-            // Non-UTF-8 on the plain-stream path: drain remainder and leaf-scan
-            // the prefix we already hold plus the drained tail (capped).
-            let mut rest = Vec::new();
-            if remaining > 0 {
-                let mut take = entry.take(remaining);
-                take.read_to_end(&mut rest).map_err(SourceError::Io)?;
-            }
-            buf.extend_from_slice(&rest);
-            return Ok(crate::filesystem::emit_in_memory_member(
-                entry_name,
-                buf,
-                entry_name,
-                keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
-                respect_default_excludes,
-                emit,
-            ));
-        };
+        // Lossy decode matches the filesystem window path: a multi-byte UTF-8
+        // sequence split across a window boundary must not abandon streaming or
+        // reset base_offset/base_line via emit_in_memory_member.
+        let text = String::from_utf8_lossy(&buf);
         if !text.is_empty()
             && !emit(Ok(Chunk {
-                data: text.to_owned().into(),
+                data: text.into_owned().into(),
                 metadata: ChunkMetadata {
                     source_type: "filesystem/archive".into(),
                     path: Some(entry_name.to_owned().into()),
