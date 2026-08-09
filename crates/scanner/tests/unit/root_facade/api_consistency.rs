@@ -20,24 +20,42 @@ use super::support;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::collections::BTreeSet;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 const DETECTOR_IDS: &[&str] = &["aws-access-key", "github-classic-pat", "stripe-secret-key"];
 
+fn load_test_detectors() -> Vec<keyhog_core::DetectorSpec> {
+    let mut detectors =
+        keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
+    detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
+    for id in DETECTOR_IDS {
+        assert!(
+            detectors.iter().any(|detector| detector.id == *id),
+            "API consistency detector subset missing shipped detector {id}"
+        );
+    }
+    detectors
+}
+
+static SCANNER_SIMD: LazyLock<CompiledScanner> = LazyLock::new(|| {
+    CompiledScanner::compile_for_backend(load_test_detectors(), ScanBackend::SimdCpu)
+        .expect("compile simd scanner")
+});
+
+static SCANNER_CPU: LazyLock<CompiledScanner> = LazyLock::new(|| {
+    CompiledScanner::compile_for_backend(load_test_detectors(), ScanBackend::CpuFallback)
+        .expect("compile cpu scanner")
+});
+
+fn scanner_for_backend(backend: ScanBackend) -> &'static CompiledScanner {
+    match backend {
+        ScanBackend::SimdCpu => &SCANNER_SIMD,
+        _ => &SCANNER_CPU,
+    }
+}
+
 fn scanner() -> &'static CompiledScanner {
-    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
-    SCANNER.get_or_init(|| {
-        let mut detectors =
-            keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
-        detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
-        for id in DETECTOR_IDS {
-            assert!(
-                detectors.iter().any(|detector| detector.id == *id),
-                "API consistency detector subset missing shipped detector {id}"
-            );
-        }
-        CompiledScanner::compile(detectors).expect("compile")
-    })
+    &SCANNER_SIMD
 }
 
 fn make_chunk(text: &str, path: &str) -> Chunk {
@@ -98,7 +116,7 @@ fn key_chunks(per_chunk: &[Vec<keyhog_core::RawMatch>]) -> BTreeSet<FindingKey> 
 #[test]
 fn daemon_style_stdin_aws_chunk_reports_named_detector() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let scanner = scanner();
+    let scanner = scanner_for_backend(ScanBackend::SimdCpu);
     scanner.clear_fragment_cache();
     let chunk = Chunk {
         data: "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n".into(),
@@ -110,6 +128,8 @@ fn daemon_style_stdin_aws_chunk_reports_named_detector() {
         },
     };
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
+        let scanner = scanner_for_backend(backend);
+        scanner.clear_fragment_cache();
         let matches = scanner
             .scan_with_backend(&chunk, backend)
             .expect("selected backend scan succeeds");
@@ -148,13 +168,15 @@ fn scan_and_scan_with_deadline_none_agree() {
 #[test]
 fn scan_with_backend_each_matches_scan_chunks_with_backend() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let scanner = scanner();
+    let scanner = scanner_for_backend(ScanBackend::SimdCpu);
     scanner.clear_fragment_cache();
     let chunk = make_chunk(
         "auth: \"sk_live_4eC39HqLyjWDarjtT1zdp7dc\"\npayload: \"AKIAQYLPMN5HFIQR7BBB\"\n",
         "fixtures/stripe_aws.yml",
     );
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
+        let scanner = scanner_for_backend(backend);
+        scanner.clear_fragment_cache();
         let single = key(&scanner
             .scan_with_backend(&chunk, backend)
             .expect("selected backend scan succeeds"));

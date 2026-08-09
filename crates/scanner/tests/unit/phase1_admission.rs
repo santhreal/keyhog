@@ -1,8 +1,8 @@
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 
-fn scanner() -> CompiledScanner {
-    CompiledScanner::compile(vec![DetectorSpec {
+fn scanner_for_backend(backend: ScanBackend) -> CompiledScanner {
+    CompiledScanner::compile_for_backend(vec![DetectorSpec {
         tests: Vec::new(),
         id: "phase1-admission-token".into(),
         name: "Phase 1 admission token".into(),
@@ -22,8 +22,12 @@ fn scanner() -> CompiledScanner {
         match_confidence: keyhog_core::detector_spec_by_id("github-classic-pat")
             .and_then(|detector| detector.match_confidence),
         ..Default::default()
-    }])
+    }], backend)
     .expect("phase-1 admission scanner compiles")
+}
+
+fn scanner() -> CompiledScanner {
+    scanner_for_backend(ScanBackend::SimdCpu)
 }
 
 fn chunk(data: String) -> Chunk {
@@ -103,12 +107,12 @@ fn phase1_summary_distinguishes_equal_size_admission_classes() {
     ];
     let plan = scanner.phase1_admission_plan(&planned);
     assert_eq!(
-        canonical_result(scanner.scan_coalesced_with_backend_and_admission(
+        canonical_result(scanner_for_backend(ScanBackend::CpuFallback).scan_coalesced_with_backend_and_admission(
             &planned,
             ScanBackend::CpuFallback,
             Some(&plan),
         )),
-        canonical_result(scanner.scan_coalesced_with_backend(&planned, ScanBackend::CpuFallback),),
+        canonical_result(scanner_for_backend(ScanBackend::CpuFallback).scan_coalesced_with_backend(&planned, ScanBackend::CpuFallback),),
         "reusing the route admission plan must preserve scalar findings"
     );
 }
@@ -164,8 +168,10 @@ fn phase1_admission_classes_preserve_backend_findings_at_eight_mib() {
         chunk(admitted),
     ];
 
+    let cpu_scanner = scanner_for_backend(ScanBackend::CpuFallback);
+    let simd_scanner = scanner_for_backend(ScanBackend::SimdCpu);
     let reference =
-        canonical_result(scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
+        canonical_result(cpu_scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
     assert_eq!(
         reference,
         vec![
@@ -185,7 +191,7 @@ fn phase1_admission_classes_preserve_backend_findings_at_eight_mib() {
         "the fixture must prove exact seam and tail findings after two rejected phase-one classes"
     );
     assert_eq!(
-        canonical_result(scanner.scan_coalesced_with_backend(&batch, ScanBackend::SimdCpu)),
+        canonical_result(simd_scanner.scan_coalesced_with_backend(&batch, ScanBackend::SimdCpu)),
         reference,
         "Hyperscan/SIMD must preserve scalar findings across phase-one admission classes"
     );
@@ -255,8 +261,10 @@ fn oversized_window_reduction_preserves_mixed_logical_rows() {
         chunk(oversized),
         chunk("ghp_Z9y8X7w6!".into()),
     ];
+    let cpu_scanner = scanner_for_backend(ScanBackend::CpuFallback);
+    let simd_scanner = scanner_for_backend(ScanBackend::SimdCpu);
     let reference =
-        canonical_result(scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
+        canonical_result(cpu_scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
     assert_eq!(
         reference.len(),
         3,
@@ -268,7 +276,7 @@ fn oversized_window_reduction_preserves_mixed_logical_rows() {
     );
     assert_eq!(reference[1].2, seam_start);
     assert_eq!(
-        canonical_result(scanner.scan_coalesced_with_backend(&batch, ScanBackend::SimdCpu)),
+        canonical_result(simd_scanner.scan_coalesced_with_backend(&batch, ScanBackend::SimdCpu)),
         reference
     );
 
@@ -299,7 +307,7 @@ fn oversized_prefixless_phase2_row_keeps_cpu_admission_authoritative() {
     let generic = keyhog_core::detector_spec_by_id("generic-secret")
         .expect("embedded generic assignment detector")
         .clone();
-    let scanner = CompiledScanner::compile(vec![generic])
+    let scanner = CompiledScanner::compile_for_backend(vec![generic], ScanBackend::CpuFallback)
         .expect("compile detector-owned generic plan")
         .with_config(config);
     let mut data = "x".repeat(BYTES);

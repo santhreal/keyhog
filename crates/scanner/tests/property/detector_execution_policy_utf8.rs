@@ -9,7 +9,7 @@ const LIVE_POSITIVE: &str = "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\n";
 const LIVE_CREDENTIAL: &str = "AKIAQYLPMN5HFIQR7XYA";
 
 static SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
-    CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
+    CompiledScanner::compile_for_backend(keyhog_core::embedded_detector_specs().to_vec(), ScanBackend::SimdCpu)
         .expect("embedded detector corpus compiles")
 });
 
