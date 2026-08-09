@@ -111,6 +111,70 @@ pub(crate) fn companions_allow_batch(
     }
 }
 
+/// Like [`companions_allow_batch`], but only reports denials through `deny`
+/// (patterns that stay allowed never touch the callback). Starts from an
+/// all-allowed bitset owned by the caller.
+pub(crate) fn companions_deny_absent(
+    patterns: &[(usize, &str)],
+    text: &str,
+    mut deny: impl FnMut(usize),
+) {
+    if patterns.is_empty() {
+        return;
+    }
+
+    let mut literal_ids: HashMap<String, usize> = HashMap::new();
+    let mut literals: Vec<String> = Vec::new();
+    let mut armed: Vec<(usize, Vec<Vec<usize>>)> = Vec::with_capacity(patterns.len());
+
+    for &(pat_idx, src) in patterns {
+        let arms = companion_arms(src);
+        if arms.is_empty() {
+            continue;
+        }
+        let mut id_arms: Vec<Vec<usize>> = Vec::with_capacity(arms.len());
+        for conj in arms.iter() {
+            let mut ids = Vec::with_capacity(conj.len());
+            for lit in conj {
+                let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
+                    literals.push(lit.clone());
+                    literals.len() - 1
+                });
+                ids.push(id);
+            }
+            id_arms.push(ids);
+        }
+        armed.push((pat_idx, id_arms));
+    }
+
+    if literals.is_empty() || armed.is_empty() {
+        return;
+    }
+
+    let Ok(ac) = AhoCorasickBuilder::new()
+        .match_kind(MatchKind::Standard)
+        .kind(Some(AhoCorasickKind::ContiguousNFA))
+        .ascii_case_insensitive(true)
+        .build(&literals)
+    else {
+        return;
+    };
+
+    let mut present = vec![false; literals.len()];
+    for mat in ac.find_overlapping_iter(text) {
+        present[mat.pattern().as_usize()] = true;
+    }
+
+    for (pat_idx, id_arms) in armed {
+        let allow = id_arms
+            .iter()
+            .any(|conj| conj.iter().all(|&id| present[id]));
+        if !allow {
+            deny(pat_idx);
+        }
+    }
+}
+
 /// True when the pattern may still match: no gate, or at least one arm has
 /// every required companion literal present in `text` (ASCII case-insensitive).
 #[cfg(test)]

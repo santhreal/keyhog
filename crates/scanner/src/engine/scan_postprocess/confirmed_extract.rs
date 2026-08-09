@@ -33,6 +33,9 @@ struct ConfirmedScratch {
     /// One bit per `suffix_gate_ac` literal id, set when that literal occurs in
     /// this chunk.
     suffix: Vec<u64>,
+    /// One bit per `ac_map` index, set when the companion gate still allows the
+    /// pattern. Replaces a per-chunk `vec![true; ac_map.len()]`.
+    companion: Vec<u64>,
 }
 
 impl ConfirmedScratch {
@@ -74,6 +77,27 @@ impl ConfirmedScratch {
         self.suffix
             .get(literal_id / 64)
             .is_some_and(|word| word & (1u64 << (literal_id % 64)) != 0)
+    }
+
+    /// Allow every pattern (companion fail-open default), then denials clear bits.
+    fn reset_companion_allow_all(&mut self, pattern_count: usize) {
+        let words = crate::engine::trigger_bitmap::words_for(pattern_count);
+        self.companion.clear();
+        self.companion.resize(words, u64::MAX);
+    }
+
+    #[inline]
+    fn deny_companion(&mut self, pat_idx: usize) {
+        if let Some(slot) = self.companion.get_mut(pat_idx / 64) {
+            *slot &= !(1u64 << (pat_idx % 64));
+        }
+    }
+
+    #[inline]
+    fn companion_allows(&self, pat_idx: usize) -> bool {
+        self.companion
+            .get(pat_idx / 64)
+            .is_some_and(|word| word & (1u64 << (pat_idx % 64)) != 0)
     }
 }
 
@@ -134,7 +158,7 @@ impl CompiledScanner {
         // Companion gate: skip patterns whose required mid-literals are all
         // absent (short phase-1 triggers like "123"/"ip" on inert padding).
         let companion_t0 = prof.then(std::time::Instant::now);
-        let mut companion_ok = vec![true; self.ac_map.len()];
+        scratch_owned.reset_companion_allow_all(self.ac_map.len());
         let companion_patterns: Vec<(usize, &str)> = confirmed_patterns
             .iter()
             .filter_map(|&pat_idx| {
@@ -143,10 +167,10 @@ impl CompiledScanner {
                     .map(|entry| (pat_idx, entry.regex.as_str()))
             })
             .collect();
-        super::scan_postprocess_companion_gate::companions_allow_batch(
+        super::scan_postprocess_companion_gate::companions_deny_absent(
             &companion_patterns,
             &preprocessed.text,
-            &mut companion_ok,
+            |pat_idx| scratch_owned.deny_companion(pat_idx),
         );
         if let Some(companion_t0) = companion_t0 {
             scan_postprocess_profile::confirmed_prof_record(
@@ -158,7 +182,7 @@ impl CompiledScanner {
         // read, so the closures share one immutable borrow.
         let scratch = &scratch_owned;
         let pattern_allows = |pat_idx: usize| -> bool {
-            if companion_ok.get(pat_idx).copied() != Some(true) {
+            if !scratch.companion_allows(pat_idx) {
                 return false;
             }
             if suffix_gate_active == false {
