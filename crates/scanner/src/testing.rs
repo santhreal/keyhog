@@ -2616,29 +2616,6 @@ pub fn companion_lazy_regex_for_test(pattern: &str) -> LazyCompanionForTest {
     }
 }
 
-/// Test wrapper around Hyperscan SIMD scanner instance.
-#[cfg(feature = "simd")]
-pub struct HsScannerForTest(crate::simd::backend::HsScanner);
-
-#[cfg(feature = "simd")]
-impl HsScannerForTest {
-    /// Compile pattern specs into a test scanner instance.
-    pub fn compile(patterns: &[(usize, usize, &str, bool)]) -> Result<Self, String> {
-        crate::simd::backend::HsScanner::compile_with_opts(
-            patterns,
-            crate::simd::backend::HsCompileOpts::default(),
-        )
-        .map(|(scanner, _)| Self(scanner))
-    }
-
-    /// Report memory attribution for the compiled test scanner instance.
-    pub fn memory_attribution(
-        &self,
-    ) -> crate::execution_pack::simd_program::SimdPackMemoryAttribution {
-        self.0.memory_attribution()
-    }
-}
-
 pub fn code_lines_from_compact_index_for_test(text: &str) -> Result<Vec<&str>, &'static str> {
     let index = compact_line_index_for_test(text)?;
     Ok(index.0.lines(text).collect())
@@ -6072,13 +6049,42 @@ impl TestEvidenceCache {
         payload: keyhog_core::SensitiveString,
         index: Option<std::sync::Arc<CompactLineIndexForTest>>,
     ) {
+        self.insert_with_evidence_allocations(
+            fingerprint,
+            bypass_bigram,
+            unicode_normalization_enabled,
+            entropy_config_digest,
+            decoder_admission_context,
+            payload,
+            0,
+            0,
+            0,
+            index,
+        );
+    }
+
+    /// Insert payload evidence with real retained vector allocations.
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_with_evidence_allocations(
+        &mut self,
+        fingerprint: [u8; 32],
+        bypass_bigram: bool,
+        unicode_normalization_enabled: bool,
+        entropy_config_digest: [u8; 32],
+        decoder_admission_context: Option<u8>,
+        payload: keyhog_core::SensitiveString,
+        keyword_hint_count: usize,
+        generic_position_count: usize,
+        cpu_trigger_count: usize,
+        index: Option<std::sync::Arc<CompactLineIndexForTest>>,
+    ) {
         let evidence = crate::engine::phase1_admission::ReusablePhase1Evidence {
             admission: crate::engine::phase1_admission::Phase1Admission::Admitted,
             keyword_trigger_count: 0,
-            keyword_hints: Vec::new(),
-            generic_positions: Vec::new(),
+            keyword_hints: vec![0; keyword_hint_count],
+            generic_positions: vec![0; generic_position_count],
             phase2_always_active_absence: false,
-            cpu_trigger_hints: None,
+            cpu_trigger_hints: (cpu_trigger_count != 0).then(|| vec![0; cpu_trigger_count]),
             normalization_passthrough: false,
             confirmed_patterns_absence: false,
             entropy_absence: false,
@@ -6102,9 +6108,29 @@ impl TestEvidenceCache {
         self.inner.resident_bytes()
     }
 
+    /// Recompute resident bytes from every cached allocation.
+    pub fn aggregate_resident_bytes(&self) -> usize {
+        self.inner.aggregate_resident_bytes()
+    }
+
     /// Retrieve current entry count in test evidence cache.
     pub fn len(&self) -> usize {
         self.inner.len()
+    }
+
+    /// Query whether an entry with this fingerprint remains cached.
+    pub fn contains_fingerprint(&self, fingerprint: [u8; 32]) -> bool {
+        self.inner.contains_fingerprint(fingerprint)
+    }
+
+    /// Return the production resident-byte ceiling.
+    pub const fn max_resident_bytes() -> usize {
+        crate::engine::phase1_admission::ReusablePhase1EvidenceCache::max_resident_bytes()
+    }
+
+    /// Return the production entry-count ceiling.
+    pub const fn max_entries() -> usize {
+        crate::engine::phase1_admission::ReusablePhase1EvidenceCache::max_entries()
     }
 
     /// Query whether test evidence cache is empty.

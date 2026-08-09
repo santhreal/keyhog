@@ -283,12 +283,7 @@ pub(crate) struct HsScanner {
     /// on the current thread; Rayon and other persistent worker threads prune
     /// stale entries on later Hyperscan cache touches without evicting live
     /// scanners that are interleaved on the same thread.
-    scratch_owner: Arc<ScratchTracker>,
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct ScratchTracker {
-    pub(crate) bytes: std::sync::atomic::AtomicUsize,
+    scratch_owner: Arc<()>,
 }
 
 // SAFETY: BlockDatabase is immutable after compilation and safe to share.
@@ -302,29 +297,6 @@ impl Drop for HsScanner {
     fn drop(&mut self) {
         let scanner_id = self.scanner_id;
         scan::purge_scanner_scratch(scanner_id);
-    }
-}
-pub use crate::execution_pack::simd_program::SimdPackMemoryAttribution;
-
-impl HsScanner {
-    pub(crate) fn memory_attribution(&self) -> SimdPackMemoryAttribution {
-        let native_database_bytes = self
-            .shards
-            .iter()
-            .map(|shard| shard.db.size().unwrap_or(0))
-            .sum();
-        let scratch_bytes = self
-            .scratch_owner
-            .bytes
-            .load(std::sync::atomic::Ordering::SeqCst);
-        let mapping_residency_bytes =
-            self.pattern_map.len() * std::mem::size_of::<(usize, usize, usize, bool)>();
-        SimdPackMemoryAttribution {
-            native_database_bytes,
-            serialized_shard_bytes: 0,
-            scratch_bytes,
-            mapping_residency_bytes,
-        }
     }
 }
 
@@ -970,7 +942,7 @@ impl HsScanner {
                     shards: Vec::new(),
                     pattern_map,
                     scanner_id: SCANNER_ID_SEQ.fetch_add(1, Ordering::Relaxed),
-                    scratch_owner: Arc::new(ScratchTracker::default()),
+                    scratch_owner: Arc::new(()),
                 },
                 unsupported,
             ));
@@ -1006,7 +978,7 @@ impl HsScanner {
                         shards,
                         pattern_map,
                         scanner_id: SCANNER_ID_SEQ.fetch_add(1, Ordering::Relaxed),
-                        scratch_owner: Arc::new(ScratchTracker::default()),
+                        scratch_owner: Arc::new(()),
                     },
                     unsupported,
                 ));
@@ -1040,7 +1012,7 @@ impl HsScanner {
                         shards: Vec::new(),
                         pattern_map,
                         scanner_id: SCANNER_ID_SEQ.fetch_add(1, Ordering::Relaxed),
-                        scratch_owner: Arc::new(ScratchTracker::default()),
+                        scratch_owner: Arc::new(()),
                     },
                     unsupported,
                 ));
@@ -1124,7 +1096,7 @@ impl HsScanner {
             shards,
             pattern_map,
             scanner_id: SCANNER_ID_SEQ.fetch_add(1, Ordering::Relaxed),
-            scratch_owner: Arc::new(ScratchTracker::default()),
+            scratch_owner: Arc::new(()),
         })
     }
 

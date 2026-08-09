@@ -104,6 +104,27 @@ pub(crate) struct ReusablePhase1Evidence {
     pub(crate) decoder_absence: bool,
 }
 
+impl ReusablePhase1Evidence {
+    fn resident_bytes(&self) -> usize {
+        self.keyword_hints
+            .capacity()
+            .saturating_mul(std::mem::size_of::<u32>())
+            .saturating_add(
+                self.generic_positions
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<u32>()),
+            )
+            .saturating_add(self.cpu_trigger_hints.as_ref().map_or(0, |hints| {
+                hints.capacity().saturating_mul(std::mem::size_of::<u64>())
+            }))
+            .saturating_add(
+                self.line_context_index
+                    .as_ref()
+                    .map_or(0, |index| index.storage_bytes()),
+            )
+    }
+}
+
 #[derive(Debug)]
 struct CachedReusablePhase1Evidence {
     fingerprint: [u8; 32],
@@ -117,12 +138,9 @@ struct CachedReusablePhase1Evidence {
 
 impl CachedReusablePhase1Evidence {
     fn resident_bytes(&self) -> usize {
-        self.payload.len().saturating_add(
-            self.evidence
-                .line_context_index
-                .as_ref()
-                .map_or(0, |index| index.storage_bytes()),
-        )
+        self.payload
+            .len()
+            .saturating_add(self.evidence.resident_bytes())
     }
 }
 
@@ -141,6 +159,26 @@ impl ReusablePhase1EvidenceCache {
 
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    pub(crate) fn aggregate_resident_bytes(&self) -> usize {
+        self.entries.iter().fold(0, |total, entry| {
+            total.saturating_add(entry.resident_bytes())
+        })
+    }
+
+    pub(crate) fn contains_fingerprint(&self, fingerprint: [u8; 32]) -> bool {
+        self.entries
+            .iter()
+            .any(|entry| entry.fingerprint == fingerprint)
+    }
+
+    pub(crate) const fn max_resident_bytes() -> usize {
+        REUSABLE_EVIDENCE_MAX_BYTES
+    }
+
+    pub(crate) const fn max_entries() -> usize {
+        REUSABLE_EVIDENCE_MAX_ENTRIES
     }
 
     fn get(
@@ -183,12 +221,7 @@ impl ReusablePhase1EvidenceCache {
         payload: SensitiveString,
         evidence: ReusablePhase1Evidence,
     ) {
-        let resident_bytes = payload.len().saturating_add(
-            evidence
-                .line_context_index
-                .as_ref()
-                .map_or(0, |index| index.storage_bytes()),
-        );
+        let resident_bytes = payload.len().saturating_add(evidence.resident_bytes());
         if let Some(position) = self.entries.iter().position(|entry| {
             entry.fingerprint == fingerprint
                 && entry.bypass_bigram == bypass_bigram

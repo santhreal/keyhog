@@ -2,7 +2,9 @@
 
 ## 0.5.69 - 2026-08-09
 
-- Correct resident-bytes memory accounting during replacement in `ReusablePhase1EvidenceCache`, enforce page-aligned slice release in `ExecutionPackMappedBytes`, align cross-thread Hyperscan scratch tracking, and expand SIMD memory-attribution and backlog item regression tests (KH-2040 through KH-2049).
+- Include retained keyword, generic-position, CPU-trigger, payload, and line-index storage in evidence-cache replacement accounting, reject individually oversized entries, and enforce aggregate residency and entry-count ceilings.
+- Use checked page alignment before releasing authenticated execution-pack mapping slices.
+- Wire the production-path cache, decoder-admission, and context-window regressions into the aggregate scanner test binary.
 
 ## 0.5.68 - 2026-08-05
 

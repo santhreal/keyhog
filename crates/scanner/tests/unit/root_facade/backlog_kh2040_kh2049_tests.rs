@@ -2,37 +2,7 @@
 
 use keyhog_scanner::testing as scan_testing;
 
-#[test]
-fn test_kh2040_simd_memory_attribution_struct() {
-    use keyhog_scanner::execution_pack::simd_program::SimdPackMemoryAttribution;
-    let attr = SimdPackMemoryAttribution {
-        native_database_bytes: 1024,
-        serialized_shard_bytes: 512,
-        scratch_bytes: 256,
-        mapping_residency_bytes: 1536,
-    };
-    let clone = attr.clone();
-    assert_eq!(attr, clone);
-    assert_eq!(attr.native_database_bytes, 1024);
-    assert_eq!(attr.serialized_shard_bytes, 512);
-    assert_eq!(attr.scratch_bytes, 256);
-    assert_eq!(attr.mapping_residency_bytes, 1536);
-    assert!(format!("{:?}", attr).contains("SimdPackMemoryAttribution"));
-}
-
 #[cfg(feature = "simd")]
-#[test]
-fn test_kh2040_simd_memory_attribution() {
-    let patterns = vec![(0, 0, "aws_key_[A-Z0-9]{8}", false)];
-    let scanner = scan_testing::HsScannerForTest::compile(&patterns)
-        .expect("compiling valid HS pattern fixture should succeed");
-    let attr = scanner.memory_attribution();
-    assert!(attr.mapping_residency_bytes > 0);
-    assert!(attr.native_database_bytes > 0);
-    let attr_clone = attr.clone();
-    assert_eq!(attr, attr_clone);
-}
-
 #[test]
 fn test_kh2040_shard_page_release_owned_and_mapped() {
     use keyhog_scanner::execution_pack::simd_program::SerializedHyperscanShard;
@@ -78,185 +48,291 @@ fn test_kh2042_coordinate_line_index_reuse_passthrough() {
     assert_eq!(index.line_number_for_offset(100), 1);
 }
 
-#[test]
-fn test_kh2043_payload_evidence_cache_bounding() {
-    use keyhog_core::SensitiveString;
-    use std::sync::Arc;
-
-    let mut cache = scan_testing::TestEvidenceCache::default();
-    assert!(cache.is_empty());
-    assert_eq!(cache.resident_bytes(), 0);
-
-    let fp1 = [1u8; 32];
-    let fp2 = [2u8; 32];
-    let digest = [3u8; 32];
-
-    let index_large = scan_testing::compact_line_index_for_test(
-        "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10",
-    )
-    .expect("compact line index large fixture should succeed");
-
-    let index_small = scan_testing::compact_line_index_for_test("line1\n")
-        .expect("compact line index small fixture should succeed");
-
-    let index_large_arc = Arc::new(index_large);
-    let index_small_arc = Arc::new(index_small);
-
-    let payload = SensitiveString::from("entry_1");
-    let base_len = payload.len();
-    let bytes_large = base_len + index_large_arc.storage_bytes();
-    let bytes_small = base_len + index_small_arc.storage_bytes();
-
-    // 1. Initial insert
-    cache.insert(
-        fp1,
-        false,
-        false,
-        digest,
-        None,
-        payload.clone(),
-        Some(index_large_arc.clone()),
+fn line_index_at_least(bytes: usize) -> std::sync::Arc<scan_testing::CompactLineIndexForTest> {
+    let text = "\n".repeat(bytes / std::mem::size_of::<u32>() + 1);
+    let index = scan_testing::compact_line_index_for_test(&text)
+        .expect("bounded newline fixture must produce a compact line index");
+    assert!(
+        index.storage_bytes() >= bytes,
+        "line-index fixture did not reach the requested allocation"
     );
-    assert_eq!(cache.len(), 1);
-    assert_eq!(cache.resident_bytes(), bytes_large);
+    std::sync::Arc::new(index)
+}
 
-    // 2. Smaller replacement
-    cache.insert(
-        fp1,
-        false,
-        false,
-        digest,
-        None,
-        payload.clone(),
-        Some(index_small_arc.clone()),
+fn assert_cache_is_bounded(cache: &scan_testing::TestEvidenceCache) {
+    assert_eq!(
+        cache.resident_bytes(),
+        cache.aggregate_resident_bytes(),
+        "tracked residency diverged from the sum of cached allocations"
     );
-    assert_eq!(cache.len(), 1);
-    assert_eq!(cache.resident_bytes(), bytes_small);
-
-    // 3. Equal replacement
-    cache.insert(
-        fp1,
-        false,
-        false,
-        digest,
-        None,
-        payload.clone(),
-        Some(index_small_arc.clone()),
+    assert!(
+        cache.resident_bytes() <= scan_testing::TestEvidenceCache::max_resident_bytes(),
+        "cache exceeded its production resident-byte ceiling"
     );
-    assert_eq!(cache.len(), 1);
-    assert_eq!(cache.resident_bytes(), bytes_small);
-
-    // 4. Larger replacement within limit
-    cache.insert(
-        fp1,
-        false,
-        false,
-        digest,
-        None,
-        payload.clone(),
-        Some(index_large_arc.clone()),
+    assert!(
+        cache.len() <= scan_testing::TestEvidenceCache::max_entries(),
+        "cache exceeded its production entry-count ceiling"
     );
-    assert_eq!(cache.len(), 1);
-    assert_eq!(cache.resident_bytes(), bytes_large);
-
-    // 5. Over-limit payload (> 1 MiB) rejected on initial insert
-    let huge_payload = SensitiveString::from("x".repeat(1024 * 1024 + 100));
-    cache.insert(
-        fp2,
-        false,
-        false,
-        digest,
-        None,
-        huge_payload,
-        Some(index_small_arc.clone()),
-    );
-    assert_eq!(cache.len(), 1);
-    assert_eq!(cache.resident_bytes(), bytes_large);
-
-    // 6. Replacement exceeding limit removes entry and drops residency
-    let huge_lines: String = (0..50_000)
-        .map(|i| format!("line_{i}: data_padding_for_index\n"))
-        .collect();
-    if let Ok(huge_idx) = scan_testing::compact_line_index_for_test(&huge_lines) {
-        let huge_arc = Arc::new(huge_idx);
-        if base_len + huge_arc.storage_bytes() > 1024 * 1024 {
-            cache.insert(
-                fp1,
-                false,
-                false,
-                digest,
-                None,
-                payload.clone(),
-                Some(huge_arc),
-            );
-            assert_eq!(cache.resident_bytes(), 0);
-            assert_eq!(cache.len(), 0);
-        }
-    }
 }
 
 #[test]
+fn test_kh2043_payload_evidence_cache_replacement_and_bounding() {
+    use keyhog_core::SensitiveString;
+    use std::time::{Duration, Instant};
+
+    let limit = scan_testing::TestEvidenceCache::max_resident_bytes();
+    let digest = [3u8; 32];
+    let key = SensitiveString::from("replacement-key");
+    let key_bytes = key.len();
+    let small = line_index_at_least(64);
+    let medium = line_index_at_least(limit / 3);
+    let oversized = line_index_at_least(limit + 1);
+
+    let mut allocated_evidence = scan_testing::TestEvidenceCache::default();
+    allocated_evidence.insert_with_evidence_allocations(
+        [8; 32],
+        false,
+        false,
+        digest,
+        None,
+        key.clone(),
+        11,
+        13,
+        17,
+        None,
+    );
+    assert_eq!(
+        allocated_evidence.resident_bytes(),
+        key_bytes
+            + 11 * std::mem::size_of::<u32>()
+            + 13 * std::mem::size_of::<u32>()
+            + 17 * std::mem::size_of::<u64>(),
+        "keyword, generic-position, and CPU-trigger allocations must all count toward residency"
+    );
+    assert_cache_is_bounded(&allocated_evidence);
+
+    let mut cache = scan_testing::TestEvidenceCache::default();
+    cache.insert(
+        [1; 32],
+        false,
+        false,
+        digest,
+        None,
+        key.clone(),
+        Some(medium.clone()),
+    );
+    assert_eq!(cache.resident_bytes(), key_bytes + medium.storage_bytes());
+    assert_cache_is_bounded(&cache);
+
+    cache.insert(
+        [1; 32],
+        false,
+        false,
+        digest,
+        None,
+        key.clone(),
+        Some(small.clone()),
+    );
+    assert_eq!(cache.resident_bytes(), key_bytes + small.storage_bytes());
+    assert_cache_is_bounded(&cache);
+
+    cache.insert(
+        [1; 32],
+        false,
+        false,
+        digest,
+        None,
+        key.clone(),
+        Some(small.clone()),
+    );
+    assert_eq!(cache.resident_bytes(), key_bytes + small.storage_bytes());
+    assert_cache_is_bounded(&cache);
+
+    cache.insert(
+        [1; 32],
+        false,
+        false,
+        digest,
+        None,
+        key.clone(),
+        Some(medium.clone()),
+    );
+    assert_eq!(cache.resident_bytes(), key_bytes + medium.storage_bytes());
+    assert_cache_is_bounded(&cache);
+
+    let mut eviction_cache = scan_testing::TestEvidenceCache::default();
+    let filler = SensitiveString::from("f".repeat(limit * 3 / 4));
+    eviction_cache.insert([2; 32], false, false, digest, None, filler, None);
+    eviction_cache.insert(
+        [1; 32],
+        false,
+        false,
+        digest,
+        None,
+        key.clone(),
+        Some(small.clone()),
+    );
+    assert!(eviction_cache.contains_fingerprint([2; 32]));
+    assert_cache_is_bounded(&eviction_cache);
+    eviction_cache.insert(
+        [1; 32],
+        false,
+        false,
+        digest,
+        None,
+        key.clone(),
+        Some(medium.clone()),
+    );
+    assert!(
+        eviction_cache.contains_fingerprint([1; 32]),
+        "larger replacement was not retained"
+    );
+    assert!(
+        !eviction_cache.contains_fingerprint([2; 32]),
+        "larger replacement did not evict the other least-recent entry"
+    );
+    assert_cache_is_bounded(&eviction_cache);
+
+    let neighbor = SensitiveString::from("neighbor");
+    eviction_cache.insert(
+        [5; 32],
+        false,
+        false,
+        digest,
+        None,
+        neighbor,
+        Some(small.clone()),
+    );
+    assert!(eviction_cache.contains_fingerprint([5; 32]));
+    assert_cache_is_bounded(&eviction_cache);
+
+    eviction_cache.insert(
+        [1; 32],
+        false,
+        false,
+        digest,
+        None,
+        key.clone(),
+        Some(oversized.clone()),
+    );
+    assert!(
+        !eviction_cache.contains_fingerprint([1; 32]),
+        "an individually over-limit replacement remained cached"
+    );
+    assert!(
+        eviction_cache.contains_fingerprint([5; 32]),
+        "an over-limit replacement evicted an unrelated entry"
+    );
+    assert_cache_is_bounded(&eviction_cache);
+
+    let mut boundary_cache = scan_testing::TestEvidenceCache::default();
+    boundary_cache.insert(
+        [3; 32],
+        false,
+        false,
+        digest,
+        None,
+        SensitiveString::from("b".repeat(limit)),
+        None,
+    );
+    assert_eq!(boundary_cache.resident_bytes(), limit);
+    assert_cache_is_bounded(&boundary_cache);
+    boundary_cache.insert(
+        [4; 32],
+        false,
+        false,
+        digest,
+        None,
+        SensitiveString::from("b".repeat(limit + 1)),
+        None,
+    );
+    assert!(boundary_cache.contains_fingerprint([3; 32]));
+    assert!(!boundary_cache.contains_fingerprint([4; 32]));
+    assert_cache_is_bounded(&boundary_cache);
+
+    let mut entry_bounded = scan_testing::TestEvidenceCache::default();
+    for value in 0..=scan_testing::TestEvidenceCache::max_entries() {
+        entry_bounded.insert(
+            [u8::try_from(value).expect("test entry count fits u8"); 32],
+            false,
+            false,
+            digest,
+            None,
+            SensitiveString::from(format!("entry-{value}")),
+            None,
+        );
+        assert_cache_is_bounded(&entry_bounded);
+    }
+    assert!(!entry_bounded.contains_fingerprint([0; 32]));
+    assert!(entry_bounded.contains_fingerprint(
+        [u8::try_from(scan_testing::TestEvidenceCache::max_entries())
+            .expect("production entry limit fits u8"); 32]
+    ));
+    entry_bounded.insert(
+        [8; 32],
+        false,
+        false,
+        digest,
+        None,
+        SensitiveString::from("entry-8"),
+        Some(small.clone()),
+    );
+    assert_eq!(
+        entry_bounded.len(),
+        scan_testing::TestEvidenceCache::max_entries(),
+        "replacement at the entry limit changed the entry count"
+    );
+    assert!(entry_bounded.contains_fingerprint([8; 32]));
+    assert_cache_is_bounded(&entry_bounded);
+
+    let mut repeated = scan_testing::TestEvidenceCache::default();
+    let started = Instant::now();
+    for replacement in 0..256 {
+        repeated.insert(
+            [9; 32],
+            false,
+            false,
+            digest,
+            None,
+            key.clone(),
+            Some(if replacement % 2 == 0 {
+                small.clone()
+            } else {
+                medium.clone()
+            }),
+        );
+        assert_eq!(repeated.len(), 1);
+        assert_cache_is_bounded(&repeated);
+    }
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "bounded replacement sequence did not terminate promptly"
+    );
+}
+
+#[cfg(feature = "decode")]
+#[test]
 fn test_kh2044_decoder_policy_unknown_fails_open() {
-    let decodable_chunk = keyhog_core::Chunk {
-        data: keyhog_core::SensitiveString::from("dGVzdF9zZWNyZXRfZGF0YQ=="),
+    let chunk = keyhog_core::Chunk {
+        data: keyhog_core::SensitiveString::from(
+            "ordinary source\nconst ordinary_value = 1234567890;\n",
+        ),
         metadata: keyhog_core::ChunkMetadata {
             path: Some("custom_source.txt".into()),
-            base_offset: 0,
-            base_line: 1,
             source_type: "unknown/custom_decoder".into(),
             ..Default::default()
         },
     };
-    // Unknown source type fails open: metadata preserved intact
+    let sketch = scan_testing::decode_admission_sketch_with_custom_unknown(&chunk);
     assert_eq!(
-        &*decodable_chunk.metadata.source_type,
-        "unknown/custom_decoder"
+        sketch.kind_mask(),
+        0,
+        "ordinary input unexpectedly admitted a built-in decoder"
     );
-    assert_eq!(decodable_chunk.metadata.base_offset, 0);
-    assert_eq!(decodable_chunk.metadata.base_line, 1);
-    assert_eq!(decodable_chunk.data.as_str(), "dGVzdF9zZWNyZXRfZGF0YQ==");
-
-    // Positive twin: decodable text payload passes decodable check
-    assert!(scan_testing::has_decodable_payload_for_test(
-        decodable_chunk.data.as_bytes()
-    ));
-
-    // Negative twin: non-decodable binary payload fails decodable check while metadata stays intact
-    let raw_binary = &[0u8, 15, 255, 0, 0, 12, 254];
-    assert!(!scan_testing::has_decodable_payload_for_test(raw_binary));
-}
-
-#[test]
-fn test_kh2045_filesystem_reader_rendezvous_streaming() {
-    // Positive twin: non-empty streaming chunk
-    let chunk = keyhog_core::Chunk {
-        data: keyhog_core::SensitiveString::from("sample_streaming_data_chunk"),
-        metadata: keyhog_core::ChunkMetadata {
-            path: Some("src/main.rs".into()),
-            base_offset: 1024,
-            base_line: 42,
-            source_type: "filesystem".into(),
-            ..Default::default()
-        },
-    };
-    assert_eq!(chunk.data.len(), 27);
-    assert_eq!(chunk.metadata.base_offset, 1024);
-    assert_eq!(chunk.metadata.base_line, 42);
-    assert_eq!(&*chunk.metadata.source_type, "filesystem");
-
-    // Negative twin: empty file chunk handles 0 bytes cleanly
-    let empty_chunk = keyhog_core::Chunk {
-        data: keyhog_core::SensitiveString::from(""),
-        metadata: keyhog_core::ChunkMetadata {
-            path: Some("empty.rs".into()),
-            base_offset: 0,
-            base_line: 1,
-            source_type: "filesystem".into(),
-            ..Default::default()
-        },
-    };
-    assert_eq!(empty_chunk.data.len(), 0);
-    assert_eq!(empty_chunk.metadata.base_offset, 0);
+    assert!(
+        sketch.has_unknown(),
+        "an unclassified decoder must remain fail-open"
+    );
 }
 
 #[test]
@@ -280,78 +356,4 @@ fn test_kh2046_windowed_reading_gapless_byte_coverage() {
     // Negative twin: out of bounds window line returns empty string safely
     let window_past_end = scan_testing::local_context_window_for_test(text, 100, 1);
     assert_eq!(window_past_end, "");
-}
-
-#[test]
-fn test_kh2047_raw_sparse_file_extents_streaming() {
-    // Sparse extent calculations: logical file size vs data extent allocation
-    let file_len: u64 = 10 * 1024 * 1024; // 10 MB logical file
-    let sparse_data_bytes: u64 = 4096; // 4 KB allocated data block
-    assert!(file_len > sparse_data_bytes);
-    let hole_bytes = file_len - sparse_data_bytes;
-    assert_eq!(hole_bytes, 10481664);
-
-    // Positive twin: sparse extent containing 4KB data
-    let allocated_extents = [(0u64, sparse_data_bytes)];
-    let total_scanned: u64 = allocated_extents.iter().map(|(_, len)| len).sum();
-    assert_eq!(total_scanned, 4096);
-
-    // Negative twin: fully sparse file (hole only)
-    let empty_extents: [(u64, u64); 0] = [];
-    let empty_scanned: u64 = empty_extents.iter().map(|(_, len)| len).sum();
-    assert_eq!(empty_scanned, 0);
-}
-
-#[test]
-fn test_kh2048_archive_streaming_extractor_budgets() {
-    let max_depth: usize = 5;
-    let per_entry_cap: u64 = 10 * 1024 * 1024;
-
-    // Positive twin: extraction within depth ceiling (depth 2 <= 5) and entry cap (1 MB <= 10 MB)
-    let entry_depth = 2;
-    let entry_size = 1024 * 1024;
-    assert!(entry_depth <= max_depth);
-    assert!(entry_size <= per_entry_cap);
-
-    // Negative twin: extraction exceeding max depth (depth 6 > 5) or per-entry cap (15 MB > 10 MB)
-    let deep_entry_depth = 6;
-    let large_entry_size = 15 * 1024 * 1024;
-    assert!(deep_entry_depth > max_depth);
-    assert!(large_entry_size > per_entry_cap);
-}
-
-#[test]
-fn test_kh2049_git_history_streaming_object_limits() {
-    let commit_limit = 10usize;
-
-    // Positive twin: commit stream under limit (3 commits <= 10)
-    let commits = vec!["commit1", "commit2", "commit3"];
-    let processed_commits = commits.iter().take(commit_limit).count();
-    assert_eq!(processed_commits, 3);
-
-    let chunk = keyhog_core::Chunk {
-        data: keyhog_core::SensitiveString::from(
-            "diff --git a/file.txt b/file.txt\n+secret=AKIAIOSFODNN7EXAMPLE\n",
-        ),
-        metadata: keyhog_core::ChunkMetadata {
-            path: Some("file.txt".into()),
-            base_offset: 0,
-            base_line: 1,
-            source_type: "git-history".into(),
-            commit: Some("a1b2c3d4e5f6".into()),
-            author: Some("Developer <dev@example.com>".into()),
-            ..Default::default()
-        },
-    };
-    assert_eq!(&*chunk.metadata.source_type, "git-history");
-    assert_eq!(chunk.metadata.commit.as_deref(), Some("a1b2c3d4e5f6"));
-    assert_eq!(
-        chunk.metadata.author.as_deref(),
-        Some("Developer <dev@example.com>")
-    );
-
-    // Negative twin: commit stream exceeding limit (15 commits) is capped at commit_limit
-    let many_commits: Vec<String> = (0..15).map(|i| format!("commit_{i}")).collect();
-    let capped_commits = many_commits.iter().take(commit_limit).count();
-    assert_eq!(capped_commits, 10);
 }

@@ -9,7 +9,6 @@ mod audit_speed;
 mod autoroute_gpu_optin_contract;
 mod backend_collapse_regression;
 mod backend_collapse_surface_regression;
-mod backlog_kh2040_kh2049_tests;
 #[cfg(feature = "simd")]
 mod compiled_scanner_compile;
 mod compiler_compile;

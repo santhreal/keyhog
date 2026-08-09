@@ -667,7 +667,16 @@ fn release_mapping_slice(
         }
         let relative_start = range.start;
         let relative_end = range.end;
-        let aligned_start = relative_start.div_ceil(page).saturating_mul(page);
+        let aligned_start = relative_start
+            .checked_add(page - 1)
+            .and_then(|value| value.checked_div(page))
+            .and_then(|value| value.checked_mul(page))
+            .ok_or_else(|| {
+                ExecutionPackError::InvalidPack(format!(
+                    "{} mapped-page discard range overflows platform alignment; reinstall the execution pack",
+                    path.display()
+                ))
+            })?;
         let aligned_end = relative_end - (relative_end % page);
         if aligned_start < aligned_end {
             let result = unsafe {
