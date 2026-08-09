@@ -36,6 +36,20 @@ A 7z, RAR, or ar/deb member is different: it produces an explicit error row
 naming the family, because those formats need a seekable file and have no
 in-memory extractor.
 
+## Streaming nested archives
+
+KeyHog streams compressed tarballs (`.tar.gz`, `.tgz`, and nested compressed tar
+members) into the member scanner. It does not keep a full decompressed tarball
+resident while walking entries. Peak resident memory for archive extraction is
+bounded by the compressed input, decoder window state, and the largest single
+member under the active size caps, not by the sum of every decompressed layer.
+
+TeX role annotations need member source bytes up front. Uncompressed `.tar` and
+ZIP-family packages still run the buffered provenance pass when header/central
+directory names include TeX sources. Compressed tarballs stay on the single-pass
+streaming path so nested layers do not pay a second full inflate; members remain
+fully scannable, without TeX role annotations on that compressed-tar path.
+
 ## Archives reached through Git or a bucket
 
 Container expansion applies to files on disk and to the sources that expand
@@ -60,7 +74,7 @@ jq '{scan_status, coverage_gap_summary, findings: (.findings | length)}' \
 printf 'keyhog exit=%s\n' "$rc"
 ```
 
-KeyHog does not extract members into the filesystem or execute their contents.
+KeyHog does not extract members into the filesystem or execute their contents. Compressed tarballs are streamed member-by-member so nested layers do not each retain a full decompressed image in resident memory.
 It rejects archive paths that are absolute, contain traversal, use ambiguous
 encoding, or name a special file. It also refuses a top-level archive reached
 through a symbolic link. Decoded bytes per member, nested depth, and aggregate
