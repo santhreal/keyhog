@@ -341,7 +341,6 @@ fn current_executable_sha256() -> std::result::Result<String, String> {
     keyhog_core::current_executable_sha256()
 }
 
-
 /// MatcherArtifact v3 body layout (after the 8-byte magic/version header):
 /// `identity_json_len:u32` + identity JSON + `identity_digest:[u8;32]` +
 /// `content_digest:[u8;32]` + length-prefixed raw `literal_index` /
@@ -892,9 +891,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
         // artifact every other scan forever.
         match hydrate_matcher_artifact_state(&sections, detector_digest, sorted.as_ref()) {
             Ok(_) => {
-                if let Err(store_error) =
-                    store_matcher_artifact(cache_dir, &identity, &sections)
-                {
+                if let Err(store_error) = store_matcher_artifact(cache_dir, &identity, &sections) {
                     tracing::warn!(
                         target: "keyhog::matcher_artifact_cache",
                         "failed to persist matcher artifact cache entry: {}",
@@ -943,7 +940,6 @@ pub fn compile_shared_with_matcher_artifact_cache(
         }
     }
 }
-
 
 fn normalize_detectors_for_matcher_compile(
     detectors: Arc<[keyhog_core::DetectorSpec]>,

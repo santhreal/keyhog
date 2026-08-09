@@ -335,6 +335,63 @@ fn forced_daemon_rejects_backend_routing_flags() {
 }
 
 #[test]
+fn forced_daemon_rejects_matcher_cache_override() {
+    let work = TempDir::new().expect("work dir");
+    let path = work.path().join("leak.env");
+    std::fs::write(&path, aws_key_line()).expect("write fixture");
+    let runtime = TempDir::new().expect("isolated runtime");
+    let matcher_cache = TempDir::new().expect("matcher cache");
+    let matcher_cache_path = matcher_cache
+        .path()
+        .to_str()
+        .expect("utf8 matcher cache path")
+        .to_string();
+
+    let cases = [
+        vec![
+            "scan",
+            "--daemon=on",
+            "--matcher-cache",
+            "off",
+            "--format",
+            "json",
+        ],
+        vec![
+            "scan",
+            "--daemon=on",
+            "--matcher-cache",
+            matcher_cache_path.as_str(),
+            "--format",
+            "json",
+        ],
+    ];
+    for args in cases {
+        let out = Command::new(binary())
+            .env("XDG_RUNTIME_DIR", runtime.path())
+            .args(&args)
+            .arg(&path)
+            .output()
+            .expect("spawn keyhog scan");
+
+        let combined = combined_output(&out);
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "forced daemon with --matcher-cache must fail instead of ignoring it; output={combined}"
+        );
+        assert!(
+            combined.contains("--daemon=on cannot be honored")
+                && combined.contains("precompiled daemon scanner cannot honor"),
+            "forced-daemon rejection must name the matcher-cache mismatch; output={combined}"
+        );
+        assert!(
+            !combined.contains("aws-access-key"),
+            "forced daemon rejection must not scan after dropping matcher-cache; output={combined}"
+        );
+    }
+}
+
+#[test]
 fn explicit_auto_stale_daemon_socket_surfaces_in_process_route() {
     let work = TempDir::new().expect("work dir");
     let path = work.path().join("leak.env");

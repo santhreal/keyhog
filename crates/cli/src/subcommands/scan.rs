@@ -572,6 +572,9 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
         || args.regex_dfa_limit.is_some()
         || args.gpu_batch_input_limit.is_some()
         || args.cache_dir.is_some()
+        // MatcherArtifact cache path is compiled into the scanner; daemon
+        // cannot honor a per-request --matcher-cache / off override.
+        || args.matcher_cache.is_some()
         || args.ml_threshold.is_some()
         // Per-chunk timeout is compiled into the daemon's long-lived scanner
         // config. A daemon-served scan would silently run without the deadline

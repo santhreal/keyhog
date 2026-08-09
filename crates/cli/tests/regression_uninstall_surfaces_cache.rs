@@ -77,7 +77,6 @@ fn uninstall_dry_run_omits_cache_hint_when_absent() {
     );
 }
 
-
 #[test]
 fn uninstall_dry_run_names_the_matcher_artifact_cache_when_present() {
     let cache_home = TempDir::new().expect("tempdir");

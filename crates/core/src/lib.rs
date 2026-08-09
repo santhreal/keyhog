@@ -313,7 +313,6 @@ pub fn current_executable_sha256() -> Result<String, String> {
         .clone()
 }
 
-
 /// Effective digest identifying the EXACT embedded detector set and the
 /// directory-scoped `corpus.toml` schema contract compiled into this binary
 /// (`<detector-count>-<fnv1a_hex>`). Binding the manifest ensures caches,
