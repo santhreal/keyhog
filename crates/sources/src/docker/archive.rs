@@ -527,7 +527,8 @@ fn validate_docker_archive_plan<R: Read>(
         if cumulative_bytes > budget.remaining() {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
             return Err(SourceError::Other(format!(
-                "docker archive cumulative size exceeds {} bytes at entry '{}'                  (likely zip-bomb)",
+                "docker archive cumulative size exceeds {} bytes at entry '{}' \
+                 (likely zip-bomb)",
                 limits.docker_tar_total_bytes,
                 path.display(),
             )));

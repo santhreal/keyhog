@@ -287,30 +287,50 @@ fn emit_archive_leaf_member(
     // Mirror FilesystemSource's large-file windowing so a buffered archive/layer
     // member does not decode into one multi-hundred-MiB String (and a second
     // owned chunk) when the disk path would have streamed ~1 MiB windows.
+    // Binary members must NOT take the lossy-window path: that tags them
+    // `.../windowed` and bypasses the archive-binary / binary-strings noise
+    // gate. Classify with the same decoder the small-member path uses; only
+    // confirmed text is windowed.
     let window_size = super::reader::DEFAULT_WINDOW_SIZE;
     let window_overlap = super::reader::DEFAULT_WINDOW_OVERLAP;
     if content.len() > window_size && provenance.is_none() {
-        let file_size = content.len() as u64;
-        for window in read::slice_into_windows(&content, window_size, window_overlap) {
-            if window.text.is_empty() {
-                continue;
+        match read::decode_text_file_owned_or_bytes(content) {
+            Ok(text) => {
+                let file_size = text.len() as u64;
+                let bytes = text.into_bytes();
+                for window in read::slice_into_windows(&bytes, window_size, window_overlap) {
+                    if window.text.is_empty() {
+                        continue;
+                    }
+                    if !emit(Ok(Chunk {
+                        data: window.text,
+                        metadata: ChunkMetadata {
+                            source_type: format!("{text_source_type}/windowed").into(),
+                            path: Some(member_display.to_owned().into()),
+                            base_offset: window.offset,
+                            base_line: window.base_line,
+                            size_bytes: Some(file_size),
+                            decoded_span: None,
+                            ..Default::default()
+                        },
+                    })) {
+                        return false;
+                    }
+                }
+                return true;
             }
-            if !emit(Ok(Chunk {
-                data: window.text,
-                metadata: ChunkMetadata {
-                    source_type: format!("{text_source_type}/windowed").into(),
-                    path: Some(member_display.to_owned().into()),
-                    base_offset: window.offset,
-                    base_line: window.base_line,
-                    size_bytes: Some(file_size),
-                    decoded_span: None,
-                    ..Default::default()
-                },
-            })) {
-                return false;
+            Err(bytes) => {
+                match chunk_from_extracted_entry(
+                    bytes,
+                    member_display.to_string(),
+                    text_source_type,
+                    binary_source_type,
+                ) {
+                    Some(chunk) => return emit(chunk),
+                    None => return true,
+                }
             }
         }
-        return true;
     }
 
     match chunk_from_extracted_entry(
