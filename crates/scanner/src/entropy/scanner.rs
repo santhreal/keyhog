@@ -614,11 +614,7 @@ fn scan_keyword_contexts(
             let Ok(line_u32) = u32::try_from(line_idx) else {
                 continue;
             };
-            if line_idx != keyword_line_index
-                && keyword_line_ids
-                    .binary_search(&line_u32)
-                    .is_ok()
-            {
+            if line_idx != keyword_line_index && keyword_line_ids.binary_search(&line_u32).is_ok() {
                 continue;
             }
             if skip_lines.is_some_and(|skip| skip.contains(&line_idx)) {

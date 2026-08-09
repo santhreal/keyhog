@@ -181,7 +181,10 @@ fn try_reserve_inflight_slot(inflight_count: &AtomicUsize, max_inflight_keys: us
     }
 }
 
-async fn verify_group_task_safe(shared: Arc<VerifyTaskShared>, group: DedupedMatch) -> VerifiedFinding {
+async fn verify_group_task_safe(
+    shared: Arc<VerifyTaskShared>,
+    group: DedupedMatch,
+) -> VerifiedFinding {
     let group_for_error = group.clone();
     match std::panic::AssertUnwindSafe(verify_group_task(shared, group))
         .catch_unwind()

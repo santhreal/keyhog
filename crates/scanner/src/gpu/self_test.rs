@@ -290,9 +290,10 @@ pub fn verify_gpu_kernel_ownership_separation() -> Result<(), String> {
     }
     for symbol in &allowed_symbols {
         if !symbol.starts_with("vyre::") && !symbol.starts_with("vyre_driver_") {
-            return Err(format!("KeyHog owns non-VYRE GPU dispatch symbol: {symbol}"));
+            return Err(format!(
+                "KeyHog owns non-VYRE GPU dispatch symbol: {symbol}"
+            ));
         }
     }
     Ok(())
 }
-

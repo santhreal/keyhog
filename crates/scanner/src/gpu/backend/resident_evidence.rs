@@ -1165,7 +1165,10 @@ impl WgpuQueueOverlapProof {
     pub fn prove(slot0: bool, slot1: bool, parity: bool) -> Result<Self, String> {
         let overlap = slot0 && slot1;
         if !overlap {
-            return Err("WGPU native queue overlap not demonstrated: slots were not concurrently active".to_string());
+            return Err(
+                "WGPU native queue overlap not demonstrated: slots were not concurrently active"
+                    .to_string(),
+            );
         }
         if !parity {
             return Err("WGPU native queue overlap failed parity check".to_string());
@@ -1187,4 +1190,3 @@ impl WgpuQueueOverlapProof {
 #[allow(dead_code)]
 pub const METAL_ASYNC_UNPROVED_BOUNDARY_DOC: &str =
     "Metal async execution lacks live Apple hardware proof. Native overlap, parity, retirement, and memory evidence remain unproved on non-Apple targets.";
-

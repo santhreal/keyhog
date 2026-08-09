@@ -501,7 +501,6 @@ impl CompiledScanner {
     }
 }
 
-
 pub struct CompiledScanner {
     /// Versioned projection of the canonical validated scan-execution hash.
     /// Autoroute and runtime receipts consume this stored identity so every
@@ -741,7 +740,11 @@ mod max_inner_loop_iters_tests {
     }
     #[test]
     fn bound_partition_memory_clears_fragment_cache() {
-        let scanner = super::CompiledScanner::compile_for_backend(vec![], crate::hw_probe::ScanBackend::CpuFallback).unwrap();
+        let scanner = super::CompiledScanner::compile_for_backend(
+            vec![],
+            crate::hw_probe::ScanBackend::CpuFallback,
+        )
+        .unwrap();
         let mut scanner = scanner;
         scanner.bound_partition_memory();
     }

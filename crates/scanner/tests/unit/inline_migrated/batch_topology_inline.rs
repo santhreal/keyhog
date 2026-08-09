@@ -6,8 +6,14 @@ use keyhog_scanner::engine::batch_topology::{BatchEvidence, BatchTopology};
 #[test]
 fn test_batch_evidence_measurement() {
     let chunks = vec![
-        Chunk { data: keyhog_core::SensitiveString::from("a".repeat(100)), metadata: Default::default() },
-        Chunk { data: keyhog_core::SensitiveString::from("a".repeat(100_000)), metadata: Default::default() },
+        Chunk {
+            data: keyhog_core::SensitiveString::from("a".repeat(100)),
+            metadata: Default::default(),
+        },
+        Chunk {
+            data: keyhog_core::SensitiveString::from("a".repeat(100_000)),
+            metadata: Default::default(),
+        },
     ];
     let evidence = BatchEvidence::measure(&chunks);
     assert_eq!(evidence.total_chunks, 2);
@@ -69,5 +75,8 @@ fn test_fused_waves_ceiling_division_non_multiple() {
     };
     let topology = BatchTopology::select(&evidence, 1);
     assert!(topology.fused_waves >= 1);
-    assert_eq!(topology.fused_waves, evidence.total_chunks.div_ceil(topology.lane_width));
+    assert_eq!(
+        topology.fused_waves,
+        evidence.total_chunks.div_ceil(topology.lane_width)
+    );
 }

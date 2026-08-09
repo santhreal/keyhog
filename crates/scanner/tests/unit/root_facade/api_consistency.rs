@@ -39,9 +39,7 @@ fn detectors() -> Vec<keyhog_core::DetectorSpec> {
 
 fn scanner() -> &'static CompiledScanner {
     static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
-    SCANNER.get_or_init(|| {
-        CompiledScanner::compile(detectors()).expect("compile")
-    })
+    SCANNER.get_or_init(|| CompiledScanner::compile(detectors()).expect("compile"))
 }
 
 fn make_chunk(text: &str, path: &str) -> Chunk {

@@ -104,4 +104,3 @@ pub(crate) fn coalesced_lane_width(chunks: &[Chunk]) -> usize {
     let evidence = BatchEvidence::measure(chunks);
     BatchTopology::select(&evidence, workers).lane_width
 }
-
