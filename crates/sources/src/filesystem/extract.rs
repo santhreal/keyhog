@@ -629,6 +629,39 @@ pub(crate) fn try_emit_pdf_member(
 /// payloads take the shared Decode + derived-byte wrap that `process_entry`
 /// applies to top-level tar/zip/compressed files; plain leaf members stay
 /// outside Decode so profiles stay comparable with a filesystem walk.
+/// Scan a zip-family openpack member from buffered bytes using the EOCD-capable
+/// `ZipArchive` reader. Handles launcher-prefixed Spring Boot jars and
+/// self-extracting zips that do not begin with `PK\x03\x04`. CRX/Cr24 payloads
+/// that `ZipArchive` cannot open still surface as Unreadable coverage gaps.
+pub(crate) fn emit_in_memory_zip_member(
+    member_display: &str,
+    content: Vec<u8>,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let mut total_uncompressed = 0_u64;
+    let mut keep_going = true;
+    run_derived_extractor(
+        |counted| {
+            let _stopped = archive::emit_embedded_zip_member(
+                content,
+                member_display,
+                max_size,
+                &mut total_uncompressed,
+                0,
+                respect_default_excludes,
+                counted,
+            );
+        },
+        &mut |chunk| {
+            keep_going = emit(chunk);
+            keep_going
+        },
+    );
+    keep_going
+}
+
 pub(crate) fn emit_in_memory_member(
     entry_name: &str,
     content: Vec<u8>,

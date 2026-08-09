@@ -84,6 +84,22 @@ pub(crate) fn emit_top_level_seven_zip_or_rar_member(
     )
 }
 
+pub(crate) fn emit_in_memory_zip_member(
+    member_display: &str,
+    content: Vec<u8>,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    extract::emit_in_memory_zip_member(
+        member_display,
+        content,
+        max_size,
+        respect_default_excludes,
+        emit,
+    )
+}
+
 pub(crate) fn emit_in_memory_member(
     entry_name: &str,
     content: Vec<u8>,

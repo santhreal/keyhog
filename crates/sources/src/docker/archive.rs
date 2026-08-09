@@ -573,16 +573,18 @@ fn stream_layer_tar_reader(
             continue;
         }
 
-        // Openpack formats that are not plain zip (notably CRX/Cr24) need the
-        // path-backed openpack extractor. Count them as unreadable on the
-        // streaming path rather than silently leaf-scanning as clean.
-        if crate::filesystem::is_openpack_archive_ext(ext)
-            && !crate::magic::starts_with_zip_container_prefix(&read_bytes)
-        {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            if !emit(Err(SourceError::Other(format!(
-                "embedded openpack container '{entry_name}' has no in-memory extractor; its entries were not scanned"
-            )))) {
+        // Zip-family openpack (jar/zip/apk/…) uses the EOCD-capable in-memory
+        // ZipArchive reader so launcher-prefixed Spring Boot jars and SFX zips
+        // still unpack. CRX/Cr24 that ZipArchive cannot open fail closed as
+        // Unreadable coverage gaps (no in-memory openpack path yet).
+        if crate::filesystem::is_openpack_archive_ext(ext) {
+            if !crate::filesystem::emit_in_memory_zip_member(
+                &entry_name,
+                read_bytes,
+                keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
+                respect_default_excludes,
+                emit,
+            ) {
                 return Ok(false);
             }
             continue;

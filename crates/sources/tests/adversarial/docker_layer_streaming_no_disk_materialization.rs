@@ -890,3 +890,55 @@ fn stream_layer_plain_text_skips_derived_decode() {
     );
 }
 
+/// Launcher-prefixed Spring Boot / SFX zip-family members must still unpack on
+/// the streaming path (EOCD from end), not die on a PK-prefix-only gate.
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_scans_launcher_prefixed_jar() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let secret = "JAR_PREFIX_SECRET=ghp_JarPrefixedToken00000000000000001\n";
+    let zip_bytes =
+        crate::support::archive::zip_with_entries(&[("BOOT-INF/secret.txt", secret.as_bytes())]);
+    let mut prefixed = b"#!/bin/bash\necho spring-boot-launcher\n".to_vec();
+    prefixed.extend_from_slice(&zip_bytes);
+    assert!(
+        matches!(prefixed.starts_with(b"PK"), false),
+        "fixture must not begin with the zip local-file signature"
+    );
+    let layer =
+        layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/app.jar", &prefixed)]);
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream");
+    let mut saw_secret = false;
+    let mut saw_no_extractor_gap = false;
+    for row in rows {
+        match row {
+            Ok(chunk) => {
+                if chunk.data.contains("JAR_PREFIX_SECRET") {
+                    saw_secret = true;
+                }
+            }
+            Err(error) => {
+                if error.to_string().contains("no in-memory extractor") {
+                    saw_no_extractor_gap = true;
+                }
+            }
+        }
+    }
+    assert!(
+        saw_secret,
+        "launcher-prefixed jar members must scan on the streaming path"
+    );
+    assert!(
+        matches!(saw_no_extractor_gap, false),
+        "prefixed jar must not be reported as an unscannable openpack gap"
+    );
+}
+
+
