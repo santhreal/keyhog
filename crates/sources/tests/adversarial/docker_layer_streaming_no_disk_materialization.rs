@@ -247,11 +247,7 @@ fn stream_layer_scans_extensionless_text_with_late_nul_run() {
     payload.extend(vec![b'x'; 2048]);
     payload.extend_from_slice(&[0, 0, 0, 0]);
     payload.extend_from_slice(b"trailing\n");
-    let layer = layer_tar_with_entries(
-        dir.path(),
-        "layer.tar",
-        &[("opt/appconfig", &payload)],
-    );
+    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/appconfig", &payload)]);
     let rows = TestApi
         .stream_docker_layer_archive_chunks(
             &layer,

@@ -77,11 +77,8 @@ pub(super) fn extract_rar_chunks_from_bytes(
         }
     };
 
-    let mut state = RarExtractionState::new(
-        archive_display.clone(),
-        max_size,
-        respect_default_excludes,
-    );
+    let mut state =
+        RarExtractionState::new(archive_display.clone(), max_size, respect_default_excludes);
     match &archive {
         Archive::Rar13(archive) => {
             for entry in &archive.entries {
@@ -503,11 +500,7 @@ struct RarExtractionState {
 }
 
 impl RarExtractionState {
-    fn new(
-        archive_display: String,
-        max_size: u64,
-        respect_default_excludes: bool,
-    ) -> Self {
+    fn new(archive_display: String, max_size: u64, respect_default_excludes: bool) -> Self {
         Self {
             archive_display,
             per_entry_cap: if max_size == 0 { u64::MAX } else { max_size },
