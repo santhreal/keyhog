@@ -460,12 +460,17 @@ pub struct LoadedMatcherArtifact {
 }
 
 /// Tip that locates a MatcherArtifact without first loading the detector corpus.
+///
+/// Tips are an embedded-default-only shortcut. Custom `--detectors` / overlay
+/// corpora never publish tips (`write_embedded_tip = false`).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MatcherArtifactTip {
     /// Build-time embedded corpus stamp (`keyhog_core::detector_digest()`).
     /// Tips are only valid for the default embedded corpus of this binary.
     pub embedded_set: String,
+    /// Hex digest of the canonical detector execution IR stored in the artifact.
     pub detector_corpus_digest: String,
+    /// Hex digest of the full [`MatcherArtifactIdentity`] for the artifact.
     pub identity_digest: String,
 }
 
@@ -477,7 +482,7 @@ pub fn matcher_artifact_tip_filename(
     runtime_identity: Option<&str>,
 ) -> std::result::Result<String, String> {
     let mut hasher = blake3::Hasher::new();
-    update_tagged(&mut hasher, b"domain", b"keyhog-matcher-artifact-tip-v1");
+    update_tagged(&mut hasher, b"domain", b"keyhog-matcher-artifact-tip-v2");
     update_tagged(
         &mut hasher,
         b"version",
@@ -500,6 +505,15 @@ pub fn matcher_artifact_tip_filename(
         format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS).as_bytes(),
     );
     update_tagged(&mut hasher, b"features", scanner_feature_identity().as_bytes());
+    // Bind the build-time embedded detector set so a tip cannot be reused across
+    // binaries/stamps that share other identity fields. Detector IR digest stays
+    // out of the filename because tip lookup must run before corpus load; that
+    // digest is enforced from the tip body + artifact identity.
+    update_tagged(
+        &mut hasher,
+        b"embedded_set",
+        keyhog_core::detector_digest().as_bytes(),
+    );
     update_tagged(
         &mut hasher,
         b"resolved_config_digest",
