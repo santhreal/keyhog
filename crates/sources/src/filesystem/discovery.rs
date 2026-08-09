@@ -165,6 +165,14 @@ fn validate_walk_root(root: &Path) -> Result<(), String> {
     let mut current = PathBuf::new();
     for component in root.components() {
         current.push(component.as_os_str());
+        if matches!(
+            component,
+            std::path::Component::Prefix(_)
+                | std::path::Component::RootDir
+                | std::path::Component::CurDir
+        ) {
+            continue;
+        }
         let metadata = std::fs::symlink_metadata(&current).map_err(|error| {
             format!(
                 "failed to inspect filesystem root component '{}': {error}",
