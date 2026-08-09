@@ -17,7 +17,7 @@ fn test_postgresql_connection_string_host_credential_span() {
     };
 
     let scanner = CompiledScanner::compile(vec![spec]).expect("compile postgresql spec");
-    let chunk = Chunk::from("pg-url: postgres://user:secret_pass_12345@db.internal.example.com:5432/app_db?sslmode=require");
+    let chunk = Chunk::from("pg-url: postgres://user:secret_pass_12345@db.internal.example.com:5432/app_db?sslmode=require#readonly");
     let matches = scanner.scan_coalesced(&[chunk]).expect("scan chunk");
 
     assert!(

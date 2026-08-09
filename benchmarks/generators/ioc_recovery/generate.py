@@ -112,7 +112,7 @@ FAMILIES: tuple[dict[str, object], ...] = (
         "name": "url",
         "detector_family": "postgresql-connection-string",
         "variable": "DATABASE_URL",
-        "positive": lambda body: f"postgresql://svc_{body[:8]}:{body[8:32]}@db.internal",
+        "positive": lambda body: f"postgresql://svc_{body[:8]}:{body[8:32]}@db.internal:5432/app",
         "negative": lambda body: "postgresql://user:password@localhost:5432/postgres",
     },
     {

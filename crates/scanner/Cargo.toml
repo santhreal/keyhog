@@ -66,7 +66,6 @@ gpu = [
     "dep:vyre-runtime",
     "dep:vyre-driver-cuda",
     "dep:vyre-driver-metal",
-    "ml",
     # VYRE's region-presence and resident scan surfaces are part of the
     # driver's stable GPU API; no driver-local feature gate is required.
 ]
