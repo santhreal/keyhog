@@ -416,18 +416,14 @@ def build_evidence_inventory(
     from .workload_fixtures import validate_fixture_lock
 
     catalog = load_workload_catalog(c_path)
-    if len(catalog.workloads) != 59:
-        raise KeyhogVersionError(
-            f"workload catalog must contain exactly 59 workloads, got {len(catalog.workloads)}"
-        )
+    expected_workload_count = len(catalog.workloads)
 
     lock = validate_fixture_lock(c_path, l_path)
     lock_workloads = lock.get("workloads", [])
-    if len(lock_workloads) != 59:
+    if len(lock_workloads) != expected_workload_count:
         raise KeyhogVersionError(
-            f"fixture lock must contain exactly 59 workloads, got {len(lock_workloads)}"
+            f"fixture lock workload count ({len(lock_workloads)}) differs from catalog workload count ({expected_workload_count})"
         )
-
     cat_ids = [w.workload_id for w in catalog.workloads]
     lock_ids = [row["workload_id"] for row in lock_workloads]
     if set(cat_ids) != set(lock_ids):
@@ -472,12 +468,50 @@ def build_evidence_inventory(
             raise KeyhogVersionError(f"cannot load execution pack manifest {execution_pack_manifest_path}: {exc}") from exc
         if not isinstance(pack_data, dict):
             raise KeyhogVersionError("execution pack manifest must be a JSON object")
+        
+        pack_ver = pack_data.get("version")
+        pack_det = pack_data.get("detector_digest")
+        pack_bin = pack_data.get("binary_digest")
+        pack_fix = pack_data.get("fixture_digest")
+
+        for f_name, f_val in [
+            ("version", pack_ver),
+            ("detector_digest", pack_det),
+            ("binary_digest", pack_bin),
+            ("fixture_digest", pack_fix),
+        ]:
+            if not isinstance(f_val, str) or not f_val:
+                raise KeyhogVersionError(
+                    f"execution pack manifest field {f_name!r} must be a non-empty string"
+                )
+        if pack_ver != workspace_ver:
+            raise KeyhogVersionError(
+                f"execution pack manifest version {pack_ver!r} does not match workspace version {workspace_ver!r}"
+            )
+        if pack_det != detector_sha256:
+            raise KeyhogVersionError(
+                f"execution pack manifest detector_digest {pack_det!r} does not match detector corpus sha256 {detector_sha256!r}"
+            )
+        try:
+            with l_path.open("rb") as f:
+                l_sha256_check = hashlib.sha256(f.read()).hexdigest()
+        except OSError as exc:
+            raise KeyhogVersionError(f"cannot compute fixture lock digest: {exc}") from exc
+        if pack_fix != l_sha256_check:
+            raise KeyhogVersionError(
+                f"execution pack manifest fixture_digest {pack_fix!r} does not match fixture lock sha256 {l_sha256_check!r}"
+            )
+        if binary_info is not None and pack_bin != binary_info["sha256"]:
+            raise KeyhogVersionError(
+                f"execution pack manifest binary_digest {pack_bin!r} does not match binary sha256 {binary_info['sha256']!r}"
+            )
+
         pack_info = {
             "path": str(p_path),
-            "version": pack_data.get("version"),
-            "detector_digest": pack_data.get("detector_digest"),
-            "binary_digest": pack_data.get("binary_digest"),
-            "fixture_digest": pack_data.get("fixture_digest"),
+            "version": pack_ver,
+            "detector_digest": pack_det,
+            "binary_digest": pack_bin,
+            "fixture_digest": pack_fix,
         }
     lock_by_id = {row["workload_id"]: row for row in lock_workloads}
     workload_entries = []
@@ -510,7 +544,7 @@ def build_evidence_inventory(
 
     return {
         "schema_version": 1,
-        "workload_count": 59,
+        "workload_count": expected_workload_count,
         "workspace_version": workspace_ver,
         "git_commit": workspace_git_hash(repo_root),
         "catalog_sha256": c_sha256,

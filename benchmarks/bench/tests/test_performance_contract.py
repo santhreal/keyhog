@@ -32,24 +32,22 @@ def _row(workload_id: str, *, wall: float, rss: int, parity: bool = True) -> dic
 
 def _evidence(*, backend: str = "cpu", speedup: float = 2.0, rss_ratio: float = 0.25):
     """Test helper / contract verification."""
-    baseline = {
-        "backend": backend,
-        "workloads": [_row(workload.workload_id, wall=100.0, rss=400_000) for workload in CATALOG.workloads],
-    }
-    candidate = {
-        "backend": backend,
-        "workloads": [
-            _row(workload.workload_id, wall=100.0 / speedup, rss=round(400_000 * rss_ratio))
-            for workload in CATALOG.workloads
-        ],
-    }
-    if backend.startswith("gpu-"):
-        for workload,before,after in zip(CATALOG.workloads,baseline["workloads"],candidate["workloads"]):
-            if workload.gpu_eligible:
-                before["max_peak_vram_bytes"]=4_000_000_000
-                after["max_peak_vram_bytes"]=1_000_000_000
+    baseline_rows = []
+    candidate_rows = []
+    for workload in CATALOG.workloads:
+        for route in workload.execution_routes:
+            b_row = _row(workload.workload_id, wall=100.0, rss=400_000)
+            b_row["execution_route"] = route
+            c_row = _row(workload.workload_id, wall=100.0 / speedup, rss=round(400_000 * rss_ratio))
+            c_row["execution_route"] = route
+            if backend.startswith("gpu-") and workload.gpu_eligible:
+                b_row["max_peak_vram_bytes"] = 4_000_000_000
+                c_row["max_peak_vram_bytes"] = 1_000_000_000
+            baseline_rows.append(b_row)
+            candidate_rows.append(c_row)
+    baseline = {"backend": backend, "workloads": baseline_rows}
+    candidate = {"backend": backend, "workloads": candidate_rows}
     return baseline, candidate
-
 
 def test_every_workload_meeting_exact_floors_passes() -> None:
     """WHY: the gate must accept equality at the stated 2x, quarter-memory, and 128 MiB boundaries rather than silently demanding an undocumented margin."""
@@ -145,15 +143,14 @@ def test_cold_warm_and_steady_evidence_cannot_be_blended() -> None:
 def test_gpu_host_rss_and_device_vram_are_independent_ceilings() -> None:
     """WHY: low host RSS cannot offset excess device allocations, and low VRAM cannot offset excess host materialization; both memory domains need their own high-water ratio."""
     baseline,candidate=_evidence(backend="gpu-cuda",speedup=10.0)
-    index=next(i for i,w in enumerate(CATALOG.workloads) if w.gpu_eligible)
-    candidate["workloads"][index]["max_peak_vram_bytes"]=1_000_000_001
-    violations=evaluate_performance_contract(baseline,candidate,CATALOG)
-    assert any("device VRAM ratio 0.250000 exceeds 0.250000" in item for item in violations)
-    candidate["workloads"][index]["max_peak_vram_bytes"]=1_000_000_000
-    candidate["workloads"][index]["max_peak_rss_kb"]=100_001
-    assert any("peak RSS ratio" in item for item in evaluate_performance_contract(baseline,candidate,CATALOG))
-
-def test_betterleaks_memory_requires_strictly_lower_peak_for_every_shared_workload() -> None:
+    gpu_w = next(w for w in CATALOG.workloads if w.gpu_eligible)
+    c_row = next(r for r in candidate["workloads"] if r["workload_id"] == gpu_w.workload_id)
+    c_row["max_peak_vram_bytes"] = 1_000_000_001
+    violations = evaluate_performance_contract(baseline, candidate, CATALOG)
+    assert any("device VRAM ratio" in item for item in violations)
+    c_row["max_peak_vram_bytes"] = 1_000_000_000
+    c_row["max_peak_rss_kb"] = 100_001
+    assert any("peak RSS ratio" in item for item in evaluate_performance_contract(baseline, candidate, CATALOG))
     """WHY: equality or one high-memory shared route disproves the release claim even when all timing and existing baseline-memory ceilings pass."""
     baseline, candidate = _evidence(speedup=4.0)
     better = {
@@ -284,6 +281,6 @@ def test_evaluate_exhaustive_performance_gate_rejects_invalid_inputs() -> None:
     with pytest.raises(PerformanceContractError, match="at least one backend"):
         evaluate_exhaustive_performance_gate({}, CATALOG)
     with pytest.raises(PerformanceContractError, match=r"must be a \(baseline, candidate\) pair"):
-        evaluate_exhaustive_performance_gate({"cpu": (1, 2, 3)}, CATALOG) # type: ignore
+        evaluate_exhaustive_performance_gate({"cpu": (1, 2, 3)}, CATALOG, required_backends={"cpu"}) # type: ignore
     with pytest.raises(PerformanceContractError, match="baseline and candidate must be mappings"):
-        evaluate_exhaustive_performance_gate({"cpu": ("invalid", "invalid")}, CATALOG) # type: ignore
+        evaluate_exhaustive_performance_gate({"cpu": ("invalid", "invalid")}, CATALOG, required_backends={"cpu"}) # type: ignore

@@ -2257,9 +2257,15 @@ def validate_baseline_payload(
             raise BaselineCaptureError(f"baseline {workload_id} minor page faults are partially measured across trials")
         if 0 < len(measured_major) < len(trials):
             raise BaselineCaptureError(f"baseline {workload_id} major page faults are partially measured across trials")
-        if len(measured_minor) == 0 and ("p50_minor_page_faults" in row or "p95_minor_page_faults" in row):
+        if len(measured_minor) == 0 and any(
+            row.get(field) is not None
+            for field in ("p50_minor_page_faults", "p95_minor_page_faults")
+        ):
             raise BaselineCaptureError(f"baseline {workload_id} contains minor page fault summary metrics but trials have no minor page fault measurements")
-        if len(measured_major) == 0 and ("p50_major_page_faults" in row or "p95_major_page_faults" in row):
+        if len(measured_major) == 0 and any(
+            row.get(field) is not None
+            for field in ("p50_major_page_faults", "p95_major_page_faults")
+        ):
             raise BaselineCaptureError(f"baseline {workload_id} contains major page fault summary metrics but trials have no major page fault measurements")
         expected_stats = {
             "p50_wall_ms": statistics.median(walls),

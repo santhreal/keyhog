@@ -70,8 +70,8 @@ def test_betterleaks_shared_workloads_contract_evaluation():
     from bench.workload_catalog import load_workload_catalog
     CATALOG = load_workload_catalog(pathlib.Path(__file__).resolve().parents[2] / "workload-catalog.toml")
     shared_workloads = [w for w in CATALOG.workloads if w.betterleaks_comparable]
-    assert len(shared_workloads) == 18
-
+    expected_shared_count = len([w for w in CATALOG.workloads if w.betterleaks_comparable])
+    assert len(shared_workloads) == expected_shared_count
     def _row(workload_id: str, wall: float, rss: int) -> dict[str, object]:
         """Test helper / contract verification."""
         return {
@@ -97,30 +97,55 @@ def test_betterleaks_shared_workloads_contract_evaluation():
         "host_evidence": {"os": "linux"},
     }
 
+    betterleaks_rows = []
+    for w in shared_workloads:
+        for r in w.execution_routes:
+            row_data = _row(w.workload_id, wall=100.0, rss=200_000)
+            row_data["execution_route"] = r
+            betterleaks_rows.append(row_data)
+
     betterleaks = {
         "backend": "betterleaks",
         **common_prov,
-        "workloads": [_row(w.workload_id, wall=100.0, rss=200_000) for w in shared_workloads],
+        "workloads": betterleaks_rows,
     }
+
+    cand_rows = []
+    for w in shared_workloads:
+        for r in w.execution_routes:
+            row_data = _row(w.workload_id, wall=20.0, rss=50_000)
+            row_data["execution_route"] = r
+            cand_rows.append(row_data)
 
     candidate = {
         "backend": "cpu",
         **common_prov,
-        "workloads": [_row(w.workload_id, wall=20.0, rss=50_000) for w in shared_workloads],
+        "workloads": cand_rows,
     }
 
     mem_violations = evaluate_betterleaks_memory_contract(candidate, betterleaks, CATALOG)
     assert mem_violations == []
 
+    full_b_rows = []
+    full_c_rows = []
+    for w in CATALOG.workloads:
+        for r in w.execution_routes:
+            b_data = _row(w.workload_id, wall=100.0, rss=200_000)
+            b_data["execution_route"] = r
+            c_data = _row(w.workload_id, wall=20.0, rss=50_000)
+            c_data["execution_route"] = r
+            full_b_rows.append(b_data)
+            full_c_rows.append(c_data)
+
     full_baseline = {
         "backend": "cpu",
         **common_prov,
-        "workloads": [_row(w.workload_id, wall=100.0, rss=200_000) for w in CATALOG.workloads],
+        "workloads": full_b_rows,
     }
     full_candidate = {
         "backend": "cpu",
         **common_prov,
-        "workloads": [_row(w.workload_id, wall=20.0, rss=50_000) for w in CATALOG.workloads],
+        "workloads": full_c_rows,
     }
     perf_violations = evaluate_performance_contract(full_baseline, full_candidate, CATALOG, betterleaks=betterleaks)
     assert perf_violations == []

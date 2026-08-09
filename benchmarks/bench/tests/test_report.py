@@ -23,7 +23,13 @@ def _result(scanner: str, hits: int, wall_ms: float) -> RunResult:
             os="TestOS 1",
             cpu="Test CPU",
         ),
-        scanner=ScannerRecord(name=scanner, version="test", config=ScannerConfig()),
+        scanner=ScannerRecord(
+            name=scanner,
+            version="test",
+            config=ScannerConfig(),
+            detector_corpus_sha256="d" * 64,
+            executable_sha256="e" * 64,
+        ),
         corpus=CorpusInfo(name="mirror", fixture_count=10, labeled_positives=5, bytes=100),
         detection=Detection(overall=overall, per_category=per_category),
         speed=Speed(wall_ms=wall_ms, throughput_mb_s=1.0, peak_rss_kb=1024),
@@ -350,7 +356,7 @@ def test_select_declared_results_rejects_mixed_host_and_mixed_detector():
     # Fix host, vary detector
     res2.host.hostname_hash = "h11111111111"
     decl2_fixed = report.RunDeclaration("kingfisher", res2.scanner.config_id, "res2.json", res2.generated_at, res2.scanner.executable_sha256, "h11111111111", res2.corpus.fixture_count, res2.corpus.labeled_positives, res2.corpus.bytes)
-    res2.scanner.detector_corpus_sha256 = "different_detector"
+    res2.scanner.detector_corpus_sha256 = "a" * 64
     run_set_fixed = report.RunSet(corpus="mirror", runs=(decl1, decl2_fixed))
 
     with pytest.raises(report.ResultSelectionError, match="mixed-detector"):
@@ -358,7 +364,13 @@ def test_select_declared_results_rejects_mixed_host_and_mixed_detector():
     # Test mixing None detector corpus sha256 with non-None
     res2.scanner.detector_corpus_sha256 = None
     run_set_fixed = report.RunSet(corpus="mirror", runs=(decl1, decl2_fixed))
-    with pytest.raises(report.ResultSelectionError, match="mixed-detector"):
+    with pytest.raises(report.ResultSelectionError, match="detector corpus identity is missing"):
+        report.select_declared_results([res1, res2], "mirror", run_set_fixed)
+    # Test all None detector corpus sha256
+    res1.scanner.detector_corpus_sha256 = None
+    res2.scanner.detector_corpus_sha256 = None
+    run_set_fixed = report.RunSet(corpus="mirror", runs=(decl1, decl2_fixed))
+    with pytest.raises(report.ResultSelectionError, match="detector corpus identity is missing"):
         report.select_declared_results([res1, res2], "mirror", run_set_fixed)
 
 def test_undeclared_duplicate_default_results_are_ambiguous():
