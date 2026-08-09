@@ -365,6 +365,34 @@ fn default_excludes_apply_to_direct_include_paths_by_relative_path() {
 }
 
 #[test]
+fn default_excludes_prune_counts_directory_once() {
+    let _guard = counter_guard();
+    let dir = tempfile::tempdir().unwrap();
+    let excluded = dir.path().join("node_modules").join("pkg");
+    fs::create_dir_all(&excluded).unwrap();
+    for name in ["a.env", "b.env", "c.env"] {
+        fs::write(excluded.join(name), format!("TOKEN={SENTINEL}-{name}\n")).unwrap();
+    }
+    fs::write(dir.path().join("ok.env"), "API=always_scanned_marker\n").unwrap();
+
+    TestApi.reset_skip_counters();
+    let skipped = scan_dir(dir.path(), true);
+    assert!(
+        body_contains(&skipped, "always_scanned_marker"),
+        "non-excluded sibling must still scan"
+    );
+    assert!(
+        !body_contains(&skipped, SENTINEL),
+        "files under pruned node_modules must not scan"
+    );
+    assert_eq!(
+        skip_counts().excluded,
+        1,
+        "pruned node_modules must count as one Excluded path, not one per nested file"
+    );
+}
+
+#[test]
 fn default_excludes_apply_to_cache_directories() {
     let _guard = counter_guard();
     let dir = tempfile::tempdir().unwrap();
@@ -382,7 +410,7 @@ fn default_excludes_apply_to_cache_directories() {
     assert_eq!(
         skip_counts().excluded,
         1,
-        "walked default-excluded directories must count skipped files instead of disappearing in codewalk"
+        "walked default-excluded directories must count one Excluded path for the pruned directory"
     );
 
     TestApi.reset_skip_counters();

@@ -11,12 +11,19 @@ on:
 permissions:
   contents: read
 
+# Linux PR and main CI run on axiomexec self-hosted runners to bypass hosted
+# queue starvation. Tagged releases (`v*`) keep GitHub-hosted Linux for the
+# full release matrix. macOS/Windows stay on GitHub-hosted runners for all events.
 # Cancel older in-flight CI when a newer push lands on the same ref.
 # Without this a rapid succession of pushes stacks 5+ deep, each one
 # burning ~25 minutes of macOS + linux runner time on already-stale
 # code. Burned through that 5-deep queue 2026-05-23.
+# Temporarily unique per-SHA concurrency: GitHub left tip CI runs pending with
+# zero jobs after the Actions backlog; a sticky ref-level group prevented
+# redispatches from expanding. Restore ref-level cancel-in-progress once tip
+# CI forms jobs again.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 env:
@@ -32,7 +39,7 @@ env:
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -147,7 +154,7 @@ jobs:
   # long scanner binary no longer strands every other integration verdict.
   integration-core-scanner:
     name: Integration (core + scanner aggregators)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -179,7 +186,7 @@ jobs:
   # several assert process-global skip counters and cannot be co-scheduled.
   integration-sources:
     name: Integration (sources)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -201,7 +208,7 @@ jobs:
 
   integration-verifier:
     name: Integration (verifier)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -223,7 +230,7 @@ jobs:
 
   integration-cli:
     name: Integration (CLI)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -258,7 +265,7 @@ jobs:
 
   integration-detector-contracts:
     name: Integration (detector + recall contracts)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -311,7 +318,7 @@ jobs:
       - integration-verifier
       - integration-cli
       - integration-detector-contracts
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     permissions: {}
     env:
       KEYHOG_INTEGRATION_RESULTS: ${{ toJSON(needs) }}
@@ -367,7 +374,7 @@ jobs:
 
   feature-matrix:
     name: Feature matrix sanity check
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     # Cross-package feature combinations the release workflows and the
     # composite Action depend on. Anything anyone might `cargo install`
     # has to compile cleanly with the documented feature set.
@@ -471,7 +478,7 @@ jobs:
 
   clippy:
     name: Clippy (advisory)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     # Clippy is ADVISORY, not a gate. `-D warnings` made every stylistic lint a
     # release blocker, which pushed us toward churn-y renames and `#[allow]`
     # suppressions that obscured real code more than the lints helped. Clippy
@@ -502,7 +509,7 @@ jobs:
 
   install-scripts:
     name: Install scripts (install.sh edge cases)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install install-script linters
@@ -555,7 +562,7 @@ jobs:
 
   fuzz-smoke:
     name: Fuzz target smoke
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -586,7 +593,7 @@ jobs:
 
   fmt:
     name: Format
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -608,7 +615,7 @@ jobs:
 
   build:
     name: Build Release
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -695,7 +702,7 @@ jobs:
   # proves Marketplace users never need a mutable apt Hyperscan runtime.
   static-release-linkage:
     name: Static Hyperscan release linkage
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -751,7 +758,7 @@ jobs:
       - fmt
       - build
       - static-release-linkage
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     permissions: {}
     env:
       KEYHOG_BLOCKING_RESULTS: ${{ toJSON(needs) }}

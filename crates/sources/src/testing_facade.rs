@@ -154,7 +154,7 @@ pub mod testing {
         }
 
         pub fn set_skip_counts(&self, counts: crate::SkipCounts) {
-            crate::skip::set_skip_counts_for_test(counts);
+            crate::skip::store_skip_counts(counts);
         }
 
         pub fn reset_skip_counters(&self) {

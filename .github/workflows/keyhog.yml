@@ -21,7 +21,7 @@ concurrency:
 jobs:
   scan:
     name: keyhog scan
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     # Per-job permissions instead of workflow-level, some org/repo
     # policy configurations reject dispatch of any workflow that
