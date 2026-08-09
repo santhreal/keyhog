@@ -562,6 +562,10 @@ pub(crate) fn try_emit_image_metadata_member(
     Ok(Some(true))
 }
 
+pub(crate) fn is_openpack_archive_ext(ext: &str) -> bool {
+    archive::is_openpack_archive_ext(ext)
+}
+
 pub(crate) fn emit_top_level_seven_zip_or_rar_member(
     ext: &str,
     content: Vec<u8>,

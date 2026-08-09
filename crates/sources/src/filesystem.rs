@@ -56,6 +56,11 @@ pub(crate) fn container_extension_from_prefix(bytes: &[u8]) -> Option<&'static s
     extract::container_extension_from_prefix(bytes)
 }
 
+/// True when `ext` is an openpack-handled archive extension (zip/jar/apk/ipa/crx/…).
+pub(crate) fn is_openpack_archive_ext(ext: &str) -> bool {
+    extract::is_openpack_archive_ext(ext)
+}
+
 /// Scan one already-buffered archive/layer member through the shared in-memory
 /// dispatcher (nested tar/zip/compressed descent + leaf text/strings). Used by
 /// Docker layer streaming so a layer never has to hit the filesystem first.

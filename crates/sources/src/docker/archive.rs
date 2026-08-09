@@ -428,6 +428,21 @@ fn stream_layer_tar_reader(
             continue;
         }
 
+        // Openpack formats that are not plain zip (notably CRX/Cr24) need the
+        // path-backed openpack extractor. Count them as unreadable on the
+        // streaming path rather than silently leaf-scanning as clean.
+        if crate::filesystem::is_openpack_archive_ext(ext)
+            && !crate::magic::starts_with_zip_container_prefix(&read.bytes)
+        {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit(Err(SourceError::Other(format!(
+                "embedded openpack container '{entry_name}' has no in-memory extractor; its entries were not scanned"
+            )))) {
+                return Ok(false);
+            }
+            continue;
+        }
+
         if !crate::filesystem::emit_in_memory_member(
             &entry_name,
             read.bytes,
