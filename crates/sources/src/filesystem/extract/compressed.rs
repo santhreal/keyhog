@@ -307,7 +307,7 @@ fn emit_tar_entries_from_reader<R: Read>(
             ) {
                 return TarWalkOutcome::ConsumerStopped;
             }
-            return TarWalkOutcome::ConsumerStopped;
+            return TarWalkOutcome::Continue;
         }
     };
 
@@ -724,8 +724,23 @@ fn try_emit_streaming_nested_tar(
     respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> Option<bool> {
-    let budget = extraction_total_budget(max_size);
-    let Some(mut peek) = open_format_decoder(format, content, budget) else {
+    let total_budget = extraction_total_budget(max_size);
+    // Draw from the SHARED aggregate remaining budget, not a fresh full ceiling
+    // per nested member. Otherwise K nested bombs each get a full 4x allowance.
+    if total_budget > 0 && *total_uncompressed >= total_budget {
+        let error = super::report_archive_truncation(
+            nested_display,
+            *total_uncompressed,
+            total_budget,
+        );
+        return Some(emit(Err(error)));
+    }
+    let member_budget = if total_budget == 0 {
+        total_budget
+    } else {
+        total_budget.saturating_sub(*total_uncompressed)
+    };
+    let Some(mut peek) = open_format_decoder(format, content, member_budget) else {
         return None;
     };
     let mut head = [0u8; 512];
@@ -739,14 +754,11 @@ fn try_emit_streaming_nested_tar(
     // Uncompressed `.tar` still runs provenance via emit_tar_entries_with_state;
     // zip uses the central directory. Compressed-tar members keep every regular
     // member scannable without retaining the full decompressed image.
-    let Some(reader) = open_format_decoder(format, content, budget) else {
+    let Some(reader) = open_format_decoder(format, content, member_budget) else {
         return None;
     };
-    // Hard-cap total decompressed bytes at the same ceiling as decompress_to_bytes.
-    // Per-entry reads also enforce the per-member and aggregate caps inside
-    // emit_tar_entries_from_reader; skipped oversized bodies still cannot inflate
-    // past this reader wrap.
-    let mut reader = BudgetLimitedReader::new(reader, budget);
+    // Cap this member at the remaining aggregate allowance (+1 for hit detection).
+    let mut reader = BudgetLimitedReader::new(reader, member_budget);
     let outcome = emit_tar_entries_from_reader(
         &mut reader,
         nested_display,
@@ -757,15 +769,20 @@ fn try_emit_streaming_nested_tar(
         super::tex_package::TexPackageAnalysis::default(),
         emit,
     );
+    // Fold actual inflated bytes into the shared counter so skipped oversized
+    // bodies (inflated on Entry Drop) still draw down the aggregate budget.
+    *total_uncompressed = (*total_uncompressed).saturating_add(reader.bytes_read());
     let keep_going = match outcome {
         TarWalkOutcome::ConsumerStopped => false,
         TarWalkOutcome::Truncated { keep_going } => keep_going,
         TarWalkOutcome::Continue => {
-            if reader.exceeded_budget() {
+            if total_budget > 0
+                && (*total_uncompressed > total_budget || reader.exceeded_budget())
+            {
                 let error = super::report_archive_truncation(
                     nested_display,
-                    reader.bytes_read(),
-                    budget,
+                    *total_uncompressed,
+                    total_budget,
                 );
                 emit(Err(error))
             } else {
