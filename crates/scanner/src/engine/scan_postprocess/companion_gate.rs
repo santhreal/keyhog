@@ -216,10 +216,12 @@ pub(crate) fn companions_deny_absent(
             let mut present = present_cell.borrow_mut();
             if present.len() < derived.literals.len() {
                 present.resize(derived.literals.len(), false);
-            } else {
-                for bit in present.iter_mut().take(derived.literals.len()) {
-                    *bit = false;
-                }
+            }
+            // Always clear the active prefix. `resize` only initializes newly
+            // appended slots; stale true bits from a shorter prior literal set
+            // would otherwise over-admit on the first chunk after growth.
+            for bit in present.iter_mut().take(derived.literals.len()) {
+                *bit = false;
             }
             let present = &mut present[..derived.literals.len()];
             for mat in derived.ac.find_overlapping_iter(text) {

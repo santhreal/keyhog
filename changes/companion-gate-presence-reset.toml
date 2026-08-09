@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Companion-literal presence scratch now clears its active prefix on every chunk, including after the buffer grows, so leftover true bits cannot over-admit work from a prior literal set."
+crates = ["scanner"]
