@@ -282,6 +282,41 @@ impl GuardRuntime {
         self.current_identity.read().clone()
     }
 
+    /// Update a root's last receipt and terminal sequence after a
+    /// commit transaction completes. Also transitions the root state
+    /// based on the transaction outcome.
+    pub fn update_root_after_commit(
+        &self,
+        canonical_path: &[u8],
+        receipt: keyhog_core::guard_state::GuardReceipt,
+    ) -> Result<(), String> {
+        let mut roots = self.roots.write();
+        let record = roots
+            .get_mut(canonical_path)
+            .ok_or_else(|| format!("root not registered: {}", String::from_utf8_lossy(canonical_path)))?;
+        let new_state = match receipt.terminal_state {
+            keyhog_core::guard_state::GuardRootState::Blocked => {
+                record.state.transition(&GuardTransition::EventsFindings)
+            }
+            keyhog_core::guard_state::GuardRootState::Current => {
+                record.state.transition(&GuardTransition::EventsClean)
+            }
+            keyhog_core::guard_state::GuardRootState::Degraded => {
+                record.state.transition(&GuardTransition::EventsDegraded)
+            }
+            _ => Ok(receipt.terminal_state),
+        };
+        match new_state {
+            Ok(s) => {
+                record.state = s;
+                record.terminal_sequence = record.terminal_sequence.saturating_add(1);
+                record.last_receipt = Some(receipt);
+                Ok(())
+            }
+            Err(e) => Err(format!("state transition failed: {}", e)),
+        }
+    }
+
     /// Number of registered roots.
     pub fn root_count(&self) -> usize {
         self.roots.read().len()

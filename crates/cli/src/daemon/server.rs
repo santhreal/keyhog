@@ -1469,15 +1469,16 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let total_objects = txn.clean_hits.len() as u64 + txn.scanned_oids.len() as u64 + txn.objects_skipped;
             let objects_hit = txn.clean_hits.len() as u64;
             let objects_scanned = txn.scanned_oids.len() as u64;
-            let bytes_hit = txn.clean_hits.len() as u64 * 0; // tracked separately
+            let bytes_hit: u64 = 0; // clean hit bytes tracked separately
             let terminal_state = if txn.findings_count > 0 {
-                "blocked".to_string()
+                keyhog_core::guard_state::GuardRootState::Blocked
             } else if txn.coverage_gaps > 0 {
-                "degraded".to_string()
+                keyhog_core::guard_state::GuardRootState::Degraded
             } else {
-                "current".to_string()
+                keyhog_core::guard_state::GuardRootState::Current
             };
-            Response::GuardCommitReceipt {
+            let identity = state.guard.policy_identity();
+            let receipt = keyhog_core::guard_state::GuardReceipt {
                 objects_requested: total_objects,
                 objects_hit,
                 objects_scanned,
@@ -1488,6 +1489,32 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 findings_count: txn.findings_count,
                 coverage_gaps: txn.coverage_gaps,
                 terminal_state,
+                policy_identity: identity.clone().unwrap_or_else(|| keyhog_core::guard_state::GuardPolicyIdentity {
+                    build_identity: String::new(),
+                    detector_digest: String::new(),
+                    suppression_digest: String::new(),
+                    keyhogignore_digest: String::new(),
+                    config_digest: String::new(),
+                    decode_policy_version: 0,
+                    source_policy_digest: String::new(),
+                    guard_schema_version: 0,
+                    report_semantics_version: 0,
+                }),
+                terminal_sequence: 0,
+            };
+            // Update the root record with the receipt.
+            let _ = state.guard.update_root_after_commit(txn.repo_path.as_bytes(), receipt);
+            Response::GuardCommitReceipt {
+                objects_requested: total_objects,
+                objects_hit,
+                objects_scanned,
+                objects_skipped: txn.objects_skipped,
+                bytes_requested: txn.bytes_scanned + bytes_hit,
+                bytes_hit,
+                bytes_scanned: txn.bytes_scanned,
+                findings_count: txn.findings_count,
+                coverage_gaps: txn.coverage_gaps,
+                terminal_state: terminal_state.label().to_string(),
                 terminal_sequence: 0,
             }
         }
@@ -1545,21 +1572,36 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
         }
         Request::GuardStatus { root } => {
             match state.guard.root_record(root.as_bytes()) {
-                Some(record) => Response::GuardStatusResult {
-                    root: root.clone(),
-                    mode: record.mode.label().to_string(),
-                    state: record.state.label().to_string(),
-                    terminal_sequence: record.terminal_sequence,
-                    pending_events: 0,
-                    files_scanned: 0,
-                    bytes_scanned: 0,
-                    attestation_hits: 0,
-                    attestation_misses: 0,
-                    findings_count: 0,
-                    coverage_gaps: 0,
-                    scanner_residency: "idle-unload".to_string(),
-                    repair_command: format!("keyhog guard reconcile {}", root),
-                },
+                Some(record) => {
+                    let (files_scanned, bytes_scanned, attestation_hits, attestation_misses, findings_count, coverage_gaps) =
+                        if let Some(ref receipt) = record.last_receipt {
+                            (
+                                receipt.objects_scanned,
+                                receipt.bytes_scanned,
+                                receipt.objects_hit,
+                                receipt.objects_requested - receipt.objects_hit - receipt.objects_skipped,
+                                receipt.findings_count,
+                                receipt.coverage_gaps,
+                            )
+                        } else {
+                            (0, 0, 0, 0, 0, 0)
+                        };
+                    Response::GuardStatusResult {
+                        root: root.clone(),
+                        mode: record.mode.label().to_string(),
+                        state: record.state.label().to_string(),
+                        terminal_sequence: record.terminal_sequence,
+                        pending_events: 0,
+                        files_scanned,
+                        bytes_scanned,
+                        attestation_hits,
+                        attestation_misses,
+                        findings_count,
+                        coverage_gaps,
+                        scanner_residency: "idle-unload".to_string(),
+                        repair_command: format!("keyhog guard reconcile {}", root),
+                    }
+                }
                 None => Response::Error {
                     message: format!("daemon: guard root not registered: {}", root),
                 },
