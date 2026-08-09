@@ -271,6 +271,28 @@ fn stream_layer_records_git_lfs_pointer_for_skip_extension() {
 
 /// Image skip-extensions that are really Git-LFS pointers must record
 /// GitLfsPointer (process_entry order), not fall through to Binary/metadata.
+/// Oversized binary skip-extension members must Binary-skip quietly before the
+/// OverMaxSize coverage-gap row (process_entry order).
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_large_skip_extension_is_quiet_binary_not_over_cap_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let payload = vec![0u8; 2 * 1024 * 1024];
+    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("lib/libhuge.so", &payload)]);
+    let limits = keyhog_sources::SourceLimits {
+        docker_tar_entry_bytes: 1024 * 1024,
+        ..keyhog_sources::SourceLimits::default()
+    };
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(&layer, limits, limits.docker_tar_total_bytes, true)
+        .expect("stream large .so");
+    let errors: Vec<_> = rows.into_iter().filter_map(Result::err).collect();
+    assert!(
+        errors.is_empty(),
+        "large skip-extension must not emit OverMaxSize coverage-gap errors: {errors:?}"
+    );
+}
+
 #[cfg(feature = "docker")]
 #[test]
 fn stream_layer_records_git_lfs_pointer_for_image_skip_extension() {

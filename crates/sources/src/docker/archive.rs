@@ -304,23 +304,10 @@ fn stream_layer_tar_reader(
         let member_scan_cap = limits
             .docker_tar_entry_bytes
             .min(keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES);
-        if file_type.is_file() && size > member_scan_cap {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            if !emit(Err(docker_archive_entry_over_entry_cap_error(
-                &path,
-                size,
-                member_scan_cap,
-            ))) {
-                return Ok(false);
-            }
-            continue;
-        }
 
-        // Match FilesystemSource walk accounting: every admitted file member is an
-        // input unit even when a later Binary/image/PDF route skips emission.
-        crate::profile::add_input_units(1);
-        crate::profile::add_input_bytes(size);
-
+        // process_entry order: exclude + skip-extension/LFS before OverMaxSize so
+        // large vendored/binary members stay quiet Excluded/Binary skips instead
+        // of coverage-gap Err rows that flip the scan to partial.
         let entry_name = path.to_string_lossy().replace('\\', "/");
         if respect_default_excludes && crate::filesystem::is_default_excluded_path(&entry_name) {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
@@ -360,6 +347,23 @@ fn stream_layer_tar_reader(
                 continue;
             }
         }
+
+        if file_type.is_file() && size > member_scan_cap {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            if !emit(Err(docker_archive_entry_over_entry_cap_error(
+                &path,
+                size,
+                member_scan_cap,
+            ))) {
+                return Ok(false);
+            }
+            continue;
+        }
+
+        // Match FilesystemSource walk accounting: every admitted file member is an
+        // input unit even when a later Binary/image/PDF route skips emission.
+        crate::profile::add_input_units(1);
+        crate::profile::add_input_bytes(size);
 
         // Large plain members: stream ~1 MiB windows from the tar entry instead
         // of buffering up to the 100 MiB member-scan cap (restores near-window
