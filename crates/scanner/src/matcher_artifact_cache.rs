@@ -565,6 +565,9 @@ pub fn store_matcher_artifact(
         return Err("matcher artifact backend does not match identity".to_owned());
     }
     validate_matcher_artifact_cache_dir(cache_dir)?;
+    // Only tighten mode on directories we create. Do not chmod a pre-existing
+    // operator-supplied path (for example $HOME or $HOME/.cache).
+    let created_cache_dir = !cache_dir.exists();
     std::fs::create_dir_all(cache_dir).map_err(|error| {
         format!(
             "cannot create matcher-artifact cache dir {}: {error}",
@@ -572,7 +575,7 @@ pub fn store_matcher_artifact(
         )
     })?;
     #[cfg(unix)]
-    {
+    if created_cache_dir {
         use std::os::unix::fs::PermissionsExt;
         let mut perms = std::fs::metadata(cache_dir)
             .map_err(|error| {
@@ -674,6 +677,16 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         Ok(_) => Ok(()),
         Err(error) => {
             std::fs::copy(error.file.path(), path)?;
+            // `std::fs::copy` inherits the process umask (often 0644). Tighten
+            // to owner-only so the cross-filesystem fallback matches the
+            // NamedTempFile/persist 0600 path.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = std::fs::metadata(path)?.permissions();
+                perms.set_mode(0o600);
+                std::fs::set_permissions(path, perms)?;
+            }
             let file = std::fs::File::open(path)?;
             file.sync_all()?;
             Ok(())

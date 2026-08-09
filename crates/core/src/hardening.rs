@@ -299,7 +299,8 @@ where
             // so lockdown refuses to start rather than silently passing.
             Err(e) => {
                 eprintln!(
-                    "keyhog: cannot inspect cache dir '{}' for past-findings artifacts: {e};                      refusing lockdown (fail-closed)",
+                    "keyhog: cannot inspect cache dir '{}' for past-findings artifacts: {e}; \
+                     refusing lockdown (fail-closed)",
                     root.display()
                 );
                 true
@@ -359,7 +360,8 @@ where
             Ok(entry) => entry,
             Err(error) => {
                 eprintln!(
-                    "keyhog: cannot inspect an entry in cache dir '{}' for past-findings                      artifacts: {error}; refusing lockdown (fail-closed)",
+                    "keyhog: cannot inspect an entry in cache dir '{}' for past-findings \
+                     artifacts: {error}; refusing lockdown (fail-closed)",
                     keyhog_root.display()
                 );
                 return true;
@@ -370,7 +372,8 @@ where
             Ok(false) => return true,
             Err(error) => {
                 eprintln!(
-                    "keyhog: cannot inspect candidate compiled-pattern cache entry '{}' in '{}'                      for past-findings artifacts: {error}; refusing lockdown (fail-closed)",
+                    "keyhog: cannot inspect candidate compiled-pattern cache entry '{}' in '{}' \
+                     for past-findings artifacts: {error}; refusing lockdown (fail-closed)",
                     entry.file_name().to_string_lossy(),
                     keyhog_root.display()
                 );
