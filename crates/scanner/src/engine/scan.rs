@@ -42,6 +42,15 @@ impl CompiledScanner {
             && (chunk.data.len() <= self.config.max_decode_bytes
                 || self.chunk_uses_bounded_decode_windows(chunk))
             && !decoder_absence
+            // Single-line blobs without classical encode markers (`+`, `/`, `=`,
+            // `%`, `\`) are dominated by opaque alphanumeric JSON/minified
+            // tokens. Trial-decoding every repeated value is pure waste: the
+            // root plaintext scan already covers bare credentials, and nopad
+            // base64 without those markers is not distinguishable from ordinary
+            // identifiers at admission time. Skip decode-through on that shape
+            // so one_long_line residual stays bounded; windows that do carry a
+            // marker still decode normally.
+            && !chunk_is_markerless_single_line(chunk)
             && {
                 #[cfg(debug_assertions)]
                 self.decoder_admission_scanned_bytes.fetch_add(
@@ -269,4 +278,17 @@ impl CompiledScanner {
             route,
         )
     }
+}
+
+
+#[cfg(feature = "decode")]
+#[inline]
+pub(crate) fn chunk_is_markerless_single_line(chunk: &keyhog_core::Chunk) -> bool {
+    let bytes = chunk.data.as_bytes();
+    if bytes.is_empty() || bytes.contains(&b'\n') {
+        return false;
+    }
+    !bytes
+        .iter()
+        .any(|&byte| matches!(byte, b'+' | b'/' | b'=' | b'%' | b'\\'))
 }

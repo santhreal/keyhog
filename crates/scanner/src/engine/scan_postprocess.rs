@@ -212,7 +212,15 @@ impl CompiledScanner {
                     decode_parent(chunk, matches)?;
                 }
             } else if self.chunk_uses_bounded_decode_windows(chunk) {
+                // Parent may be a multi-megabyte single line that still carries a
+                // few encode markers somewhere. Gate each bounded window on its
+                // own marker surface so markerless windows skip decode-through.
+                let parent_single_line = !chunk.data.as_bytes().contains(&b'\n');
                 self.decode_source_windows(chunk, |window| {
+                    if parent_single_line && super::scan::chunk_is_markerless_single_line(window)
+                    {
+                        return Ok(());
+                    }
                     if self.chunk_needs_decode_postprocess(window) {
                         decode_parent(window, matches)
                     } else {
