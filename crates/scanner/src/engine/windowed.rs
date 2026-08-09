@@ -103,8 +103,22 @@ impl CompiledScanner {
                             return Ok((offset, window_len, Vec::new()));
                         }
                         let window_chunk = window_chunk(chunk, offset, end);
-                        if super::scan::vocab_previously_clean(&window_chunk.data) {
-                            return Ok((offset, window_len, Vec::new()));
+                        if super::scan::vocab_previously_clean(
+                            self.detector_digest,
+                            self.entropy_evidence_config_digest(),
+                            &window_chunk.data,
+                        ) {
+                            // Matcher proven empty for this vocab; still allow
+                            // decode-through on the window body.
+                            let mut matches = Vec::new();
+                            self.post_process_matches_with_decoder_absence(
+                                &window_chunk,
+                                &mut matches,
+                                deadline,
+                                route,
+                                false,
+                            )?;
+                            return Ok((offset, window_len, matches));
                         }
                         let prepared = self.prepare_chunk(&window_chunk);
                         let window_phase2_always_anchor_matches;

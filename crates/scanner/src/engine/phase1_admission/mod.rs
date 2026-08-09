@@ -763,7 +763,19 @@ impl CompiledScanner {
     /// Reuse avoids duplicate gates; malformed or mismatched identity is recomputed
     /// with an exact recovery receipt.
     pub fn phase1_admission_plan(&self, chunks: &[Chunk]) -> Phase1AdmissionPlan {
-        self.phase1_admission_plan_with_bigram_mode(chunks, false)
+        // Autoroute / route-neutral callers do not consume CPU trigger hints.
+        // Fused CPU dispatch uses `phase1_admission_plan_for_backend`.
+        self.phase1_admission_plan_with_bigram_mode(chunks, false, false)
+    }
+
+    pub fn phase1_admission_plan_for_backend(
+        &self,
+        chunks: &[Chunk],
+        backend: crate::hw_probe::ScanBackend,
+    ) -> Phase1AdmissionPlan {
+        let collect_cpu_trigger_hints =
+            matches!(backend, crate::hw_probe::ScanBackend::CpuFallback);
+        self.phase1_admission_plan_with_bigram_mode(chunks, false, collect_cpu_trigger_hints)
     }
 
     /// Build admission evidence with only the bigram gate bypassed.
@@ -776,7 +788,7 @@ impl CompiledScanner {
         &self,
         chunks: &[Chunk],
     ) -> Phase1AdmissionPlan {
-        self.phase1_admission_plan_with_bigram_mode(chunks, true)
+        self.phase1_admission_plan_with_bigram_mode(chunks, true, true)
     }
 
     fn phase2_always_active_absence(&self, data: &str) -> bool {
@@ -942,14 +954,21 @@ impl CompiledScanner {
         fingerprint: [u8; 32],
         bypass_bigram: bool,
         classify_reusable_evidence: bool,
+        collect_cpu_trigger_hints: bool,
         entropy_config_digest: [u8; 32],
         decoder_admission_context: Option<u8>,
     ) -> ReusablePhase1Evidence {
-        // Overlapping windows of a previously clean unique-line vocabulary need
-        // no phase-1 trigger/absence work; reject them like a bigram miss so the
-        // CPU lane can skip the matcher (one_large).
+        // Only windowed filesystem slices may inherit a prior clean proof at
+        // phase-1: overlapping 1 MiB windows share vocabulary, while ordinary
+        // path/source_type differences (structured formats, decoder context)
+        // must still classify fully.
         if chunk.metadata.decoded_span.is_none()
-            && super::scan::vocab_previously_clean(&chunk.data)
+            && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
+            && super::scan::vocab_previously_clean(
+                self.detector_digest,
+                self.entropy_evidence_config_digest(),
+                &chunk.data,
+            )
         {
             return ReusablePhase1Evidence {
                 admission: Phase1Admission::BigramRejected,
@@ -963,7 +982,7 @@ impl CompiledScanner {
                 entropy_absence: true,
                 multiline_absence: true,
                 line_context_index: None,
-                decoder_absence: true,
+                decoder_absence: false,
             };
         }
 
@@ -1007,8 +1026,12 @@ impl CompiledScanner {
         // work stay gated on classify_reusable_evidence: unique payloads must
         // not publish CPU-derived absence to SIMD/GPU routes that collect
         // their own triggers.
+        // Unique CPU windows need hints for the scalar lane. Repeated payloads
+        // still need them to prove confirmed/entropy absence for reuse. Unique
+        // SIMD/GPU windows pay neither.
         let cpu_trigger_hints =
-            admitted.then(|| self.collect_triggered_patterns_cpu(&chunk.data));
+            (admitted && (collect_cpu_trigger_hints || classify_reusable_evidence))
+                .then(|| self.collect_triggered_patterns_cpu(&chunk.data));
         let confirmed_patterns_absence = classify_reusable_evidence
             && cpu_trigger_hints
                 .as_deref()
@@ -1069,6 +1092,12 @@ impl CompiledScanner {
     }
 
     #[doc(hidden)]
+    pub fn clear_vocab_stage_absence_cache_for_diagnostics(&self) {
+        let _ = self;
+        super::scan::clear_vocab_stage_absence_cache_for_diagnostics();
+    }
+
+    #[doc(hidden)]
     #[cfg(debug_assertions)]
     #[must_use]
     pub fn reusable_phase1_evidence_hits_for_diagnostics(&self) -> u64 {
@@ -1079,6 +1108,7 @@ impl CompiledScanner {
         &self,
         chunks: &[Chunk],
         bypass_bigram: bool,
+        collect_cpu_trigger_hints: bool,
     ) -> Phase1AdmissionPlan {
         let entropy_config_digest = self.entropy_evidence_config_digest();
 
@@ -1087,10 +1117,12 @@ impl CompiledScanner {
         for (index, chunk) in chunks.iter().enumerate() {
             let data = chunk.data.as_bytes();
             let fingerprint = if chunk.metadata.decoded_span.is_none()
-                && super::scan::vocab_previously_clean(&chunk.data)
-            {
-                // Stable cheap key shared by clean windows of the same vocab;
-                // avoids blake3 over every 1 MiB window body on one_large.
+                && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
+                && super::scan::vocab_previously_clean(
+                    self.detector_digest,
+                    self.entropy_evidence_config_digest(),
+                    &chunk.data,
+                ) {
                 let mut fp = [0u8; 32];
                 if let Some(vocab) = super::scan::decode_vocab_fingerprint(&chunk.data) {
                     fp[..16].copy_from_slice(&vocab);
@@ -1148,6 +1180,7 @@ impl CompiledScanner {
                         *fingerprint,
                         bypass_bigram,
                         representative_counts[position] > 1,
+                        collect_cpu_trigger_hints,
                         entropy_config_digest,
                         representative_decoder_contexts[position],
                     )
@@ -1163,6 +1196,7 @@ impl CompiledScanner {
                         *fingerprint,
                         bypass_bigram,
                         representative_counts[position] > 1,
+                        collect_cpu_trigger_hints,
                         entropy_config_digest,
                         representative_decoder_contexts[position],
                     )

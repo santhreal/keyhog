@@ -1090,8 +1090,20 @@ impl CompiledScanner {
         }
         if admission != Phase1Admission::Admitted {
             if chunk.metadata.decoded_span.is_none()
-                && crate::engine::vocab_previously_clean(&chunk.data)
+                && crate::engine::vocab_previously_clean(self.detector_digest, self.entropy_evidence_config_digest(), &chunk.data)
             {
+                // Matcher stages are proven empty; still decode-through.
+                if self.chunk_needs_decode_postprocess_with_absence(chunk, decoder_absence) {
+                    let mut matches = Vec::new();
+                    self.post_process_matches_with_decoder_absence(
+                        chunk,
+                        &mut matches,
+                        deadline,
+                        route,
+                        decoder_absence,
+                    )?;
+                    return Ok(matches);
+                }
                 crate::telemetry::record_file_skipped();
                 return Ok(Vec::new());
             }

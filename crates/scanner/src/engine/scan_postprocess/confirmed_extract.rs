@@ -185,11 +185,11 @@ impl CompiledScanner {
             if !scratch.companion_allows(pat_idx) {
                 return false;
             }
-            if suffix_gate_active == false {
+            if !suffix_gate_active {
                 return true;
             }
             match self.ac_suffix_gate.get(pat_idx) {
-                Some(gate) if gate.is_empty() == false => {
+                Some(gate) if !gate.is_empty() => {
                     gate.iter().any(|id| scratch.contains_suffix(*id as usize))
                 }
                 _ => true,

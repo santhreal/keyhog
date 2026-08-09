@@ -220,7 +220,11 @@ fn compute_companion_arms(src: &str) -> Vec<Vec<String>> {
     };
     let mut arms = Vec::new();
     collect_arms(&ast, &mut arms);
-    arms.retain(|conj| conj.is_empty() == false);
+    // An arm with no gateable literal is trivially satisfied, so the whole
+    // gate must fail open rather than enforcing the other arms' literals.
+    if arms.iter().any(Vec::is_empty) {
+        return Vec::new();
+    }
     arms
 }
 
@@ -314,18 +318,18 @@ mod tests {
     fn formbuilder_requires_form_or_fused_token() {
         let src = r#"(?:123[_\-\s]*form[_\-\s]*builder|123FORMBUILDER)[_.\s]*(?:api[_\-\s]*key)"#;
         let arms = companion_arms(src);
-        assert!(arms.is_empty() == false, "expected companion arms for 123formbuilder");
+        assert!(!arms.is_empty(), "expected companion arms for 123formbuilder");
         let padding = "const ordinary_value = 1234567890;\n";
-        assert_eq!(companions_allow(src, padding), false);
-        assert_eq!(companions_allow(src, "123_form_builder_api_key=abcdef"), true);
-        assert_eq!(companions_allow(src, "123FORMBUILDER_api_key=abcdef"), true);
+        assert!(!companions_allow(src, padding));
+        assert!(companions_allow(src, "123_form_builder_api_key=abcdef"));
+        assert!(companions_allow(src, "123FORMBUILDER_api_key=abcdef"));
     }
 
     #[test]
     fn ip_api_requires_api_companion() {
         let src = r#"(?:IP[_\-\s]*API|ip[_\-\s]*api)(?:_KEY)?[=:\s"']+([a-zA-Z0-9_-]{10,})"#;
         let lorem = "lorem ipsum dolor sit amet, consectetur adipiscing elit.\n";
-        assert_eq!(companions_allow(src, lorem), false);
-        assert_eq!(companions_allow(src, "IPAPI_KEY=WnGcEBigw6"), true);
+        assert!(!companions_allow(src, lorem));
+        assert!(companions_allow(src, "IPAPI_KEY=WnGcEBigw6"));
     }
 }

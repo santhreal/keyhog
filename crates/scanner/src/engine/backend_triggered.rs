@@ -66,7 +66,7 @@ impl CompiledScanner {
         // Parent windows only: decode sub-chunks create new adjacencies and must
         // not inherit a parent vocabulary clean proof.
         if prepared.chunk.metadata.decoded_span.is_none()
-            && super::scan::vocab_previously_clean(&prepared.chunk.data)
+            && super::scan::vocab_previously_clean(self.detector_digest, self.entropy_evidence_config_digest(), &prepared.chunk.data)
         {
             return scan_state;
         }
@@ -128,7 +128,7 @@ impl CompiledScanner {
         // overlapping windows. After the first window proves confirmed/entropy
         // absence for that vocabulary, later windows skip those stages.
         let vocab_absence = raw_text_unchanged
-            .then(|| super::scan::vocab_stage_absence(&prepared.chunk.data))
+            .then(|| super::scan::vocab_stage_absence(self.detector_digest, self.entropy_evidence_config_digest(), &prepared.chunk.data))
             .flatten();
         let confirmed_patterns_absence = confirmed_patterns_absence
             || vocab_absence.is_some_and(|absence| absence.confirmed);
@@ -192,7 +192,7 @@ impl CompiledScanner {
             #[cfg(feature = "ml")]
             let confirmed_empty = confirmed_empty && scan_state.ml_pending.len() == ml_before;
             if confirmed_empty && raw_text_unchanged {
-                super::scan::mark_vocab_confirmed_absent(&prepared.chunk.data);
+                super::scan::mark_vocab_confirmed_absent(self.detector_digest, self.entropy_evidence_config_digest(), &prepared.chunk.data);
             }
         }
 
@@ -289,7 +289,7 @@ impl CompiledScanner {
             #[cfg(feature = "ml")]
             let entropy_empty = entropy_empty && scan_state.ml_pending.len() == ml_before;
             if entropy_empty && raw_text_unchanged {
-                super::scan::mark_vocab_entropy_absent(&prepared.chunk.data);
+                super::scan::mark_vocab_entropy_absent(self.detector_digest, self.entropy_evidence_config_digest(), &prepared.chunk.data);
             }
         }
         if crate::deadline::expired(deadline) {
@@ -303,7 +303,7 @@ impl CompiledScanner {
             && raw_text_unchanged
             && prepared.chunk.metadata.decoded_span.is_none()
         {
-            super::scan::mark_vocab_clean(&prepared.chunk.data);
+            super::scan::mark_vocab_clean(self.detector_digest, self.entropy_evidence_config_digest(), &prepared.chunk.data);
         }
 
         scan_state

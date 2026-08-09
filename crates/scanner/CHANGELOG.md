@@ -8,9 +8,9 @@
 - Speed the confirmed companion gate with a first-bigram absence prescreen and a thread-local Aho-Corasick cache for repeated active literal sets across windows.
 - Skip entropy-only no-hit admission on markerless single-line chunks after phase-2/generic keywords miss, so one_long_line windows rejected by the direct-literal bloom do not re-enter the entropy storm.
 - Collect phase-1 trigger/absence hints for every admitted unique window during admission planning, and tighten the selective-anchor bloom reject probe so multi-MiB window walks avoid per-window scratch copies.
-- Memoize empty decode-through outcomes by stable unique-line vocabulary (ignoring singleton window-edge truncations) so overlapping windows of repetitive multi-line corpora (one_large) do not re-run hex/base64 trial decode after the first empty result.
-- Memoize confirmed-pattern and entropy absence by the same stable unique-line vocabulary so later overlapping windows of repetitive multi-line corpora skip those stages after the first empty proof.
-- Short-circuit the prepared scan for vocabularies already proven clean (no matches) so later overlapping windows of repetitive multi-line corpora skip preprocess/phase2/hot-pattern work after the first empty proof.
+- Memoize empty decode-through outcomes by unique-line vocabulary (keyed by detector digest) so overlapping windows of repetitive multi-line corpora (one_large) do not re-run hex/base64 trial decode after the first empty result.
+- Memoize confirmed-pattern and entropy absence by the same detector-scoped unique-line vocabulary so later overlapping windows of repetitive multi-line corpora skip those stages after the first empty proof.
+- Short-circuit the prepared scan (and phase-1 classification) for detector-scoped vocabularies already proven clean so later overlapping windows of repetitive multi-line corpora skip preprocess/phase2/hot-pattern work after the first empty proof.
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.
 - Make scanner construction route-specific. The default library constructor owns only the scalar reference route, `compile_for_backend` owns one explicit route, and cross-route dispatch fails instead of materializing or substituting a backend.
