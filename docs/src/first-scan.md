@@ -51,14 +51,14 @@ returns exactly one process exit code:
 
 | Exit code | Meaning |
 |-----------|---------|
-| `0` | Scan completed with no reportable findings |
+| `0` | No reportable findings and no failing source-coverage condition. Advisory skip gaps can still make the structured report `partial`; inspect its reasons before claiming the skipped content was clean. |
 | `1` | Findings are present, but none were confirmed live; skipped, unverified, dead, and revoked credentials use this verdict |
 | `2` | User error, such as a bad flag or config, a missing or unreadable path, a missing baseline, detector-load failure, or invalid autoroute calibration |
 | `3` | Local system failure, such as low-level I/O, a fatal daemon failure, or an unavailable selected SIMD/Hyperscan backend |
 | `10` | At least one credential was confirmed live under `--verify` |
 | `11` | A scanner thread panicked; partial output is not a trustworthy clean verdict |
 | `12` | A required or explicitly selected GPU was unavailable |
-| `13` | A requested source failed or input coverage was incomplete |
+| `13` | A requested source failed or failing input coverage was incomplete, and no finding outcome took precedence. |
 | `130` | You interrupted the scan with Ctrl-C/SIGINT |
 
 `keyhog scan --help` prints the same canonical table. A scan with findings exits

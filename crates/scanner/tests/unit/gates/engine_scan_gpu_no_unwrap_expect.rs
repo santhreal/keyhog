@@ -24,7 +24,7 @@ const GPU_SCAN_SRCS: &[&str] = &[
 /// inline tests are the correct choice (same rationale as
 /// `no_inline_tests_in_src::INLINE_TEST_ALLOWLIST`):
 ///
-/// - `gpu_region_dispatch.rs`: contains crate-private region batching and
+/// - `gpu_region_dispatch/mod.rs`: contains crate-private region batching and
 ///   bounded-validation helpers. Keeping their white-box tests co-located avoids
 ///   widening the public scanner API for source-only assertions.
 const INLINE_TEST_ALLOWLIST: &[&str] = &["engine/gpu_region_dispatch/mod.rs"];

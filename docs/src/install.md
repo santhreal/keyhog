@@ -16,12 +16,24 @@ shell cannot find `keyhog`.
 
 ## Platform support
 
-`cargo install` builds KeyHog from source for the host you run it on. Every
-target your Rust toolchain can build is supported, including Linux arm64 and
-Windows arm64.
+`cargo install` is the current distribution path and builds KeyHog from source
+for the host that runs it. Hosted release CI proves this matrix:
 
-Prebuilt binary assets are a separate, older channel with a narrower matrix.
-That channel only ever published four assets:
+| OS | CI-proven architecture |
+|---|---|
+| Linux | x86_64 |
+| macOS | x86_64, arm64 |
+| Windows | x86_64 |
+
+Other Rust host targets are not part of the hosted release contract. Cargo may
+build them when KeyHog's dependencies support the target, but a successful local
+build is the evidence for that host. In particular, Linux arm64 and Windows
+arm64 do not have hosted release jobs.
+
+### Historical binary-asset channel
+
+Current automatic releases do not publish GitHub binary assets. Older releases
+published four platform assets:
 
 | OS | Architecture | Asset | Hyperscan | GPU |
 |---|---|---|---|---|
@@ -30,17 +42,16 @@ That channel only ever published four assets:
 | macOS | x86_64 | `keyhog-macos-x86_64` | no | yes |
 | Windows | x86_64 | `keyhog-windows-x86_64.exe` | no | yes |
 
-The assets do not all carry the same backends. Only the Linux asset links
-Hyperscan, and it links it dynamically, so that host needs the Hyperscan
-runtime package before the binary will start. `install.sh` names the package
-when the library is missing. The other three run the pure-Rust CPU scanner and
-need no native runtime. Findings do not depend on the backend, but the fastest
-route does, so a host without Hyperscan has fewer routes to choose from.
+Only the historical Linux asset links Hyperscan, and it links it dynamically,
+so that host needs the Hyperscan runtime package before the binary will start.
+The other three do not link a native CPU accelerator: they retain the pure-Rust
+CPU route and load their GPU peers through the host's runtime drivers.
 
-There is no Linux arm64 asset and no Windows arm64 asset, and none is planned.
-`install.sh`, `install.ps1`, `keyhog update`, and `keyhog repair` refuse those
-hosts by name rather than download a binary that cannot run. Use `cargo
-install` on an arm64 Linux or Windows host.
+`install.sh`, `install.ps1`, `keyhog update`, and `keyhog repair` operate only on
+that historical binary-asset channel. They select a release with a complete
+signed asset bundle; they do not update a Cargo installation to the current
+crates.io release. Use `cargo install --locked --force keyhog` for current
+updates and repairs.
 
 ## Install Rust
 
@@ -104,32 +115,37 @@ default install does not require `libhs`.
 
 ## Choose installation features
 
-The default install is the portable build. It keeps every source provider and
-the full detection policy while avoiding native accelerator build
-prerequisites:
+The profiles below serve different products. `ci` is the small user-facing CI
+build; `ci-lean` is a broad maintainer test closure and is not the lightweight
+edition.
+
+| Intent | Feature selection | Included surface | Additional requirement |
+|---|---|---|---|
+| General installation | default (`portable`) | Every documented source provider, binary scanning, and live verification; pure-Rust CPU route | None |
+| General installation with GPU peers | `portable,gpu` | `portable` plus CUDA, native Metal, and WGPU | Supported runtime driver |
+| General installation with SIMD peer | `portable,simd` | `portable` plus Hyperscan/Vectorscan | Development package and `libhs.pc` visible to `pkg-config` |
+| Small checkout-only CI scanner | `ci` | Filesystem, archives, stdin, and the full detection policy; no remote providers, verification, SIMD, or GPU | None |
+| Hosted maintainer test closure | `ci-lean` | Broad network providers, verification, Hyperscan/SIMD, and scanner data features; no GPU dispatch | Hyperscan/Vectorscan development package |
+
+Install the default portable build:
 
 ```sh
 cargo install --locked keyhog
 ```
 
-Enable CUDA, native Metal, and WGPU while keeping Hyperscan optional:
+Enable CUDA, native Metal, and WGPU:
 
 ```sh
 cargo install --locked keyhog --no-default-features --features portable,gpu
 ```
 
-The GPU drivers load supported accelerators at runtime. A host without an
-eligible adapter keeps the pure-Rust CPU route. Run `keyhog backend --self-test`
-to inspect exact acquisition state before calibration.
-
-Enable Hyperscan or Vectorscan only after installing its development package and
-making `libhs.pc` visible to `pkg-config`:
+Enable Hyperscan or Vectorscan:
 
 ```sh
 cargo install --locked keyhog --no-default-features --features portable,simd
 ```
 
-For a smaller checkout-only CI scanner, use the `ci` feature:
+Install the small checkout-only CI scanner:
 
 ```sh
 cargo install --locked keyhog \
@@ -137,8 +153,18 @@ cargo install --locked keyhog \
   --features ci
 ```
 
-The `ci` feature supports filesystem and standard-input scans. It omits remote
-source providers, live verification, and accelerator backends.
+Cargo does not execute the binary after installation. After installing a
+multi-backend `portable,gpu` or `portable,simd` build, acquire and calibrate the
+eligible peers explicitly:
+
+```sh
+keyhog backend --self-test
+keyhog calibrate-autoroute
+keyhog backend --autoroute
+```
+
+A scalar-only `portable` or `ci` build reports autoroute health as `direct`
+because it has no backend choice to calibrate.
 
 ## Which build your workload needs
 
@@ -197,13 +223,22 @@ branch or commit Action ref builds its checked-out source.
 
 ## Confirm the installation
 
-Run a health check before your first scan:
+Inspect the compiled capabilities and health before your first scan:
 
 ```sh
-keyhog --version
+keyhog --version --full
+keyhog scan --help
 keyhog doctor
+keyhog backend --self-test
+keyhog backend --autoroute
 keyhog scan .
 ```
+
+`scan --help` is the authoritative list of source flags compiled into this
+binary. `backend --self-test` executes available accelerator diagnostics and
+reports a successful `SKIP` when no physical GPU is present. `backend
+--autoroute` reports `direct` for a scalar-only build and `ready` for a valid
+multi-backend calibration.
 
 `keyhog doctor` exits `0` when the installed binary is healthy and `4` when a
 health check fails. `keyhog scan .` exits `0` for a clean scan and `1` when it
