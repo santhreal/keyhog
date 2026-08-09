@@ -769,6 +769,9 @@ impl CompiledScanner {
         self.phase1_admission_plan_with_bigram_mode(chunks, false, false)
     }
 
+    /// Build admission evidence for one known backend. CPU trigger hints are
+    /// collected only for [`ScanBackend::CpuFallback`], the sole route that
+    /// consumes them; other routes produce their own phase-1 triggers.
     pub fn phase1_admission_plan_for_backend(
         &self,
         chunks: &[Chunk],
@@ -1089,28 +1092,30 @@ impl CompiledScanner {
         // so one-off payloads do not clone multi-MiB chunk bodies into the
         // reuse map.
         let admitted = admission == Phase1Admission::Admitted;
-        // Collect CPU trigger hints for every admitted representative so the
-        // CPU scan lane can reuse them. Absence proofs that suppress later
-        // work stay gated on classify_reusable_evidence: unique payloads must
-        // not publish CPU-derived absence to SIMD/GPU routes that collect
-        // their own triggers.
-        // Unique CPU windows need hints for the scalar lane. Repeated payloads
-        // still need them to prove confirmed/entropy absence for reuse. Unique
-        // SIMD/GPU windows pay neither.
-        let cpu_trigger_hints = (admitted
-            && (collect_cpu_trigger_hints || classify_reusable_evidence))
+        // Rejected repeated payloads still take the no-hit lane and benefit from
+        // reusable absence — but only when classification is cheaper than the
+        // repeated work (many_small-sized chunks). Large rejected windows
+        // (one_long_line) must not build LineContextIndex / CPU triggers just to
+        // publish absence that a single-digit reuse count cannot amortize.
+        const REJECTED_REUSE_ABSENCE_MAX_BYTES: usize = 128 * 1024;
+        let reuse_nohit_absence = classify_reusable_evidence
+            && (admitted || chunk.data.len() <= REJECTED_REUSE_ABSENCE_MAX_BYTES);
+        // Unique admitted CPU windows need trigger hints for the scalar lane.
+        // Reusable no-hit absences need them to prove confirmed-pattern absence.
+        // Unique SIMD/GPU windows pay neither.
+        let cpu_trigger_hints = ((collect_cpu_trigger_hints && admitted) || reuse_nohit_absence)
             .then(|| self.collect_triggered_patterns_cpu(&chunk.data));
-        let confirmed_patterns_absence = classify_reusable_evidence
+        let confirmed_patterns_absence = reuse_nohit_absence
             && cpu_trigger_hints
                 .as_deref()
                 .is_some_and(|triggers| self.confirmed_patterns_absent(&chunk.data, triggers));
         let normalization_passthrough =
-            classify_reusable_evidence && admitted && self.normalization_passthrough(&chunk.data);
-        let built_line_context_index = (classify_reusable_evidence && admitted)
+            reuse_nohit_absence && self.normalization_passthrough(&chunk.data);
+        let built_line_context_index = reuse_nohit_absence
             .then(|| crate::context::LineContextIndex::try_new(&chunk.data).ok())
             .flatten()
             .map(Arc::new);
-        let entropy_absence = classify_reusable_evidence
+        let entropy_absence = reuse_nohit_absence
             && built_line_context_index
                 .as_deref()
                 .is_some_and(|index| self.entropy_absent(&chunk.data, index));
@@ -1122,18 +1127,14 @@ impl CompiledScanner {
             keyword_trigger_count,
             keyword_hints,
             generic_positions,
-            phase2_always_active_absence: classify_reusable_evidence
-                && admitted
+            phase2_always_active_absence: reuse_nohit_absence
                 && self.phase2_always_active_absence(&chunk.data),
             cpu_trigger_hints,
             normalization_passthrough,
             confirmed_patterns_absence,
             entropy_absence,
-            multiline_absence: classify_reusable_evidence
-                && admitted
-                && self.multiline_absent(&chunk.data),
-            decoder_absence: classify_reusable_evidence
-                && admitted
+            multiline_absence: reuse_nohit_absence && self.multiline_absent(&chunk.data),
+            decoder_absence: reuse_nohit_absence
                 && decoder_admission_context.is_some()
                 && self.decoder_admission_absent(chunk),
             line_context_index,

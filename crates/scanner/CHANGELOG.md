@@ -2,6 +2,8 @@
 
 ## 0.5.68 - 2026-08-05
 
+- Restore reusable phase-1 absence proofs for *small rejected* repeated payloads (≤128 KiB) so identical inert files do not redo no-hit analysis, without taxing large rejected windows on one_long_line.
+- Size-gate markerless bounded-window decode skips with `text_is_dense_markerless_single_line` so short trailing slices of a long single line still decode.
 - Expose `confirmed_companion_gate` on `[tuning]` / resolved config / autoroute identity (default on), matching the other recall-identical confirmed-pass gates.
 - Fix cfg(test) `scalar_overlaps_reference` to call `contains_anchor_ascii8` after the hot-path reject probe stopped exposing `contains_anchor`, so `cargo test -p keyhog-scanner --lib` compiles again (macOS CI).
 - Extract vocabulary-stage absence helpers into `engine/vocab_absence.rs` so `engine/scan.rs` stays under the STANDARD 500 LOC cap; register `companion_gate` in FILE_GATE_MATRIX and migrate its inline tests to `tests/unit`.

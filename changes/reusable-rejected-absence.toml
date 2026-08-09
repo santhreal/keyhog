@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "Restore reusable phase-1 absence proofs for small rejected repeated payloads (≤128 KiB), and size-gate markerless bounded-window decode skips so short trailing slices still decode."
+crates = ["scanner"]

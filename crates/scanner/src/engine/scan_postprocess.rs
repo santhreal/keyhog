@@ -236,7 +236,9 @@ impl CompiledScanner {
                 // own marker surface so markerless windows skip decode-through.
                 let parent_single_line = !chunk.data.as_bytes().contains(&b'\n');
                 self.decode_source_windows(chunk, |window| {
-                    if parent_single_line && super::scan::chunk_is_markerless_single_line(window) {
+                    if parent_single_line
+                        && super::scan::text_is_dense_markerless_single_line(&window.data)
+                    {
                         return Ok(());
                     }
                     if self.chunk_needs_decode_postprocess(window) {
