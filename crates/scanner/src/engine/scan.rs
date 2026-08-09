@@ -252,6 +252,11 @@ impl CompiledScanner {
         }
         // prepare_chunk and phase-1 timing are owned by the unified profiler's
         // Preprocess / Phase1Triggers leaf spans (opened inside those calls).
+        if chunk.metadata.decoded_span.is_none()
+            && vocab_previously_clean(&chunk.data)
+        {
+            return Ok(Vec::new());
+        }
         let prepared = self.prepare_chunk_with_normalization_passthrough(
             chunk,
             normalization_passthrough,
@@ -312,29 +317,81 @@ pub(crate) fn text_is_markerless_single_line(text: &str) -> bool {
 const DECODE_VOCAB_FINGERPRINT_MAX_UNIQUE_LINES: usize = 512;
 const DECODE_VOCAB_EMPTY_CACHE_CAP: usize = 1024;
 
-static DECODE_VOCAB_EMPTY_CACHE: std::sync::LazyLock<
-    std::sync::Mutex<std::collections::HashMap<[u8; 16], ()>>,
-> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+#[derive(Clone, Copy, Default)]
+pub(crate) struct VocabStageAbsence {
+    pub(crate) decode_empty: bool,
+    pub(crate) confirmed: bool,
+    pub(crate) entropy: bool,
+    /// Whole prepared-scan produced no matches for this vocabulary.
+    pub(crate) clean: bool,
+}
 
-/// Order-independent fingerprint of the unique line set in `text`.
+static VOCAB_STAGE_ABSENCE_CACHE: std::sync::LazyLock<
+    dashmap::DashMap<[u8; 16], VocabStageAbsence, ahash::RandomState>,
+> = std::sync::LazyLock::new(|| dashmap::DashMap::with_hasher(ahash::RandomState::new()));
+
+/// Order-independent fingerprint of the stable unique-line vocabulary in `text`.
+///
+/// Window-edge truncations (the first/last line when each appears only once) are
+/// excluded so overlapping 1 MiB windows of repetitive multi-line corpora share
+/// one fingerprint. Interior singletons still participate, so a unique encoded
+/// payload in the middle of a window keeps its own memo key.
 ///
 /// Returns `None` when the text is empty or too diverse to memoize. Used to
-/// skip decode-through on later windows that share the same line vocabulary as
-/// a window that already produced zero decoded children (one_large).
+/// skip decode-through / confirmed / entropy work on later windows that share
+/// the same line vocabulary as a window that already proved those stages empty.
 #[inline]
 pub(crate) fn decode_vocab_fingerprint(text: &str) -> Option<[u8; 16]> {
     if text.is_empty() {
         return None;
     }
-    // Cheap unique-line set first (one_large windows have ~5-6 unique lines
-    // across tens of thousands of repeats). Only blake3 the tiny unique set.
+    // Unique-line set (one_large: ~40k lines, ~5-6 unique). Count only the
+    // first/last edge lines so singleton window truncations can be dropped
+    // without a per-line counter map.
     let mut unique: ahash::AHashSet<&str> = ahash::AHashSet::with_capacity(16);
+    let mut first: Option<&str> = None;
+    let mut last: Option<&str> = None;
+    let mut first_count: u32 = 0;
     for line in text.lines() {
-        if unique.len() >= DECODE_VOCAB_FINGERPRINT_MAX_UNIQUE_LINES && !unique.contains(line)
-        {
+        if first.is_none() {
+            first = Some(line);
+        }
+        last = Some(line);
+        if first == Some(line) {
+            first_count = first_count.saturating_add(1);
+        }
+        if unique.len() >= DECODE_VOCAB_FINGERPRINT_MAX_UNIQUE_LINES && !unique.contains(line) {
             return None;
         }
         unique.insert(line);
+    }
+    let last_count = last.map_or(0, |edge| {
+        // Edge line is one of a handful of unique keys; recount from the set
+        // membership pass by scanning lines once more only when needed.
+        if first == last {
+            first_count
+        } else {
+            let mut n = 0u32;
+            for line in text.lines() {
+                if line == edge {
+                    n = n.saturating_add(1);
+                }
+            }
+            n
+        }
+    });
+    if unique.is_empty() {
+        return None;
+    }
+    if let Some(edge) = first {
+        if first_count == 1 {
+            unique.remove(edge);
+        }
+    }
+    if let Some(edge) = last {
+        if last_count == 1 {
+            unique.remove(edge);
+        }
     }
     if unique.is_empty() {
         return None;
@@ -352,27 +409,56 @@ pub(crate) fn decode_vocab_fingerprint(text: &str) -> Option<[u8; 16]> {
     Some(out)
 }
 
+pub(crate) fn vocab_stage_absence(text: &str) -> Option<VocabStageAbsence> {
+    let fp = decode_vocab_fingerprint(text)?;
+    VOCAB_STAGE_ABSENCE_CACHE.get(&fp).map(|entry| *entry)
+}
+
+#[inline]
+fn mark_vocab_stage_absence(text: &str, update: impl FnOnce(&mut VocabStageAbsence)) {
+    let Some(fp) = decode_vocab_fingerprint(text) else {
+        return;
+    };
+    if VOCAB_STAGE_ABSENCE_CACHE.len() >= DECODE_VOCAB_EMPTY_CACHE_CAP
+        && !VOCAB_STAGE_ABSENCE_CACHE.contains_key(&fp)
+    {
+        VOCAB_STAGE_ABSENCE_CACHE.clear();
+    }
+    let mut entry = VOCAB_STAGE_ABSENCE_CACHE.entry(fp).or_default();
+    update(entry.value_mut());
+}
+
 #[inline]
 pub(crate) fn decode_vocab_previously_empty(text: &str) -> bool {
-    let Some(fp) = decode_vocab_fingerprint(text) else {
-        return false;
-    };
-    DECODE_VOCAB_EMPTY_CACHE
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .contains_key(&fp)
+    vocab_stage_absence(text).is_some_and(|absence| absence.decode_empty)
 }
 
 #[inline]
 pub(crate) fn mark_decode_vocab_empty(text: &str) {
-    let Some(fp) = decode_vocab_fingerprint(text) else {
-        return;
-    };
-    let mut cache = DECODE_VOCAB_EMPTY_CACHE
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if cache.len() >= DECODE_VOCAB_EMPTY_CACHE_CAP {
-        cache.clear();
-    }
-    cache.insert(fp, ());
+    mark_vocab_stage_absence(text, |absence| absence.decode_empty = true);
+}
+
+#[inline]
+pub(crate) fn mark_vocab_confirmed_absent(text: &str) {
+    mark_vocab_stage_absence(text, |absence| absence.confirmed = true);
+}
+
+#[inline]
+pub(crate) fn mark_vocab_entropy_absent(text: &str) {
+    mark_vocab_stage_absence(text, |absence| absence.entropy = true);
+}
+
+#[inline]
+pub(crate) fn vocab_previously_clean(text: &str) -> bool {
+    vocab_stage_absence(text).is_some_and(|absence| absence.clean)
+}
+
+#[inline]
+pub(crate) fn mark_vocab_clean(text: &str) {
+    mark_vocab_stage_absence(text, |absence| {
+        absence.clean = true;
+        absence.decode_empty = true;
+        absence.confirmed = true;
+        absence.entropy = true;
+    });
 }

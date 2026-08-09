@@ -945,6 +945,28 @@ impl CompiledScanner {
         entropy_config_digest: [u8; 32],
         decoder_admission_context: Option<u8>,
     ) -> ReusablePhase1Evidence {
+        // Overlapping windows of a previously clean unique-line vocabulary need
+        // no phase-1 trigger/absence work; reject them like a bigram miss so the
+        // CPU lane can skip the matcher (one_large).
+        if chunk.metadata.decoded_span.is_none()
+            && super::scan::vocab_previously_clean(&chunk.data)
+        {
+            return ReusablePhase1Evidence {
+                admission: Phase1Admission::BigramRejected,
+                keyword_trigger_count: 0,
+                keyword_hints: Vec::new(),
+                generic_positions: Vec::new(),
+                phase2_always_active_absence: true,
+                cpu_trigger_hints: None,
+                normalization_passthrough: true,
+                confirmed_patterns_absence: true,
+                entropy_absence: true,
+                multiline_absence: true,
+                line_context_index: None,
+                decoder_absence: true,
+            };
+        }
+
         let mut reusable_cache =
             classify_reusable_evidence.then(|| self.reusable_phase1_evidence.lock());
         if let Some(evidence) = reusable_cache.as_mut().and_then(|cache| {
@@ -1064,7 +1086,20 @@ impl CompiledScanner {
         let mut representative_for = Vec::with_capacity(chunks.len());
         for (index, chunk) in chunks.iter().enumerate() {
             let data = chunk.data.as_bytes();
-            let fingerprint = phase1_payload_fingerprint(data);
+            let fingerprint = if chunk.metadata.decoded_span.is_none()
+                && super::scan::vocab_previously_clean(&chunk.data)
+            {
+                // Stable cheap key shared by clean windows of the same vocab;
+                // avoids blake3 over every 1 MiB window body on one_large.
+                let mut fp = [0u8; 32];
+                if let Some(vocab) = super::scan::decode_vocab_fingerprint(&chunk.data) {
+                    fp[..16].copy_from_slice(&vocab);
+                    fp[16] = 0xC1;
+                }
+                fp
+            } else {
+                phase1_payload_fingerprint(data)
+            };
             let mut representative_position = None;
             for (position, (candidate, representative_index)) in representatives.iter().enumerate()
             {

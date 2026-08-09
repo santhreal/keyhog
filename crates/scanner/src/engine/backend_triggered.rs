@@ -63,6 +63,14 @@ impl CompiledScanner {
         let line_index = prepared.line_index();
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
 
+        // Parent windows only: decode sub-chunks create new adjacencies and must
+        // not inherit a parent vocabulary clean proof.
+        if prepared.chunk.metadata.decoded_span.is_none()
+            && super::scan::vocab_previously_clean(&prepared.chunk.data)
+        {
+            return scan_state;
+        }
+
         // Unified profiler; phase-2 capture has its own internal sub-spans.
         {
             let _g = profile::span(keyhog_profile::Stage::HotPatterns);
@@ -116,6 +124,16 @@ impl CompiledScanner {
         let generic_keyword_positions = generic_keyword_positions.filter(|_| raw_text_unchanged);
         let confirmed_patterns_absence = confirmed_patterns_absence && raw_text_unchanged;
         let entropy_absence = entropy_absence && raw_text_unchanged;
+        // Repetitive multi-line corpora share a stable unique-line vocabulary across
+        // overlapping windows. After the first window proves confirmed/entropy
+        // absence for that vocabulary, later windows skip those stages.
+        let vocab_absence = raw_text_unchanged
+            .then(|| super::scan::vocab_stage_absence(&prepared.chunk.data))
+            .flatten();
+        let confirmed_patterns_absence = confirmed_patterns_absence
+            || vocab_absence.is_some_and(|absence| absence.confirmed);
+        let entropy_absence =
+            entropy_absence || vocab_absence.is_some_and(|absence| absence.entropy);
 
         // No-trigger fast path: when no AC pattern fired, the entire
         // confirmed-pattern extraction pipeline is dead work. Skip
@@ -158,6 +176,9 @@ impl CompiledScanner {
                 }
             });
 
+            let matches_before = scan_state.matches.len();
+            #[cfg(feature = "ml")]
+            let ml_before = scan_state.ml_pending.len();
             self.extract_confirmed_patterns(
                 &confirmed_patterns,
                 &prepared.preprocessed,
@@ -167,6 +188,12 @@ impl CompiledScanner {
                 deadline,
                 confirmed_anchor_literal_matches,
             );
+            let confirmed_empty = scan_state.matches.len() == matches_before;
+            #[cfg(feature = "ml")]
+            let confirmed_empty = confirmed_empty && scan_state.ml_pending.len() == ml_before;
+            if confirmed_empty && raw_text_unchanged {
+                super::scan::mark_vocab_confirmed_absent(&prepared.chunk.data);
+            }
         }
 
         if crate::deadline::expired(deadline) {
@@ -249,15 +276,34 @@ impl CompiledScanner {
                 u64::try_from(prepared.preprocessed.text.len()).unwrap_or(u64::MAX),
                 std::sync::atomic::Ordering::Relaxed,
             );
+            let matches_before = scan_state.matches.len();
+            #[cfg(feature = "ml")]
+            let ml_before = scan_state.ml_pending.len();
             self.scan_entropy_fallback(
                 &prepared.preprocessed,
                 line_index,
                 prepared.chunk,
                 &mut scan_state,
             );
+            let entropy_empty = scan_state.matches.len() == matches_before;
+            #[cfg(feature = "ml")]
+            let entropy_empty = entropy_empty && scan_state.ml_pending.len() == ml_before;
+            if entropy_empty && raw_text_unchanged {
+                super::scan::mark_vocab_entropy_absent(&prepared.chunk.data);
+            }
         }
         if crate::deadline::expired(deadline) {
             return scan_state;
+        }
+
+        let clean = scan_state.matches.is_empty();
+        #[cfg(feature = "ml")]
+        let clean = clean && scan_state.ml_pending.is_empty();
+        if clean
+            && raw_text_unchanged
+            && prepared.chunk.metadata.decoded_span.is_none()
+        {
+            super::scan::mark_vocab_clean(&prepared.chunk.data);
         }
 
         scan_state

@@ -127,6 +127,7 @@ pub(crate) use crate::scan_profile as profile;
 mod recovery;
 pub use recovery::{BackendRecoveryReceipt, CoalescedScanOutcome, RecoveredInputRange};
 mod scan;
+pub(crate) use scan::vocab_previously_clean;
 mod scan_coalesced;
 #[cfg(feature = "simd")]
 pub(crate) use scan_coalesced::ReusableSimdTriggerCache;

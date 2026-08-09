@@ -103,6 +103,9 @@ impl CompiledScanner {
                             return Ok((offset, window_len, Vec::new()));
                         }
                         let window_chunk = window_chunk(chunk, offset, end);
+                        if super::scan::vocab_previously_clean(&window_chunk.data) {
+                            return Ok((offset, window_len, Vec::new()));
+                        }
                         let prepared = self.prepare_chunk(&window_chunk);
                         let window_phase2_always_anchor_matches;
                         let phase2_always_evidence =

@@ -1089,6 +1089,12 @@ impl CompiledScanner {
             return self.scan_proven_direct_absence(chunk, deadline, route, decoder_absence);
         }
         if admission != Phase1Admission::Admitted {
+            if chunk.metadata.decoded_span.is_none()
+                && crate::engine::vocab_previously_clean(&chunk.data)
+            {
+                crate::telemetry::record_file_skipped();
+                return Ok(Vec::new());
+            }
             // Admission already ran the phase-2 keyword index. Markerless
             // single-line windows with no keyword/generic hints cannot host a
             // named plaintext credential the direct matchers missed, and the
