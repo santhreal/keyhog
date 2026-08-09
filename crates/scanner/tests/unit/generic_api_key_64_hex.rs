@@ -18,6 +18,7 @@ fn test_generic_api_key_64_hex_policy() {
         .iter()
         .find(|m| m.detector_id.as_ref() == "generic-api-key")
         .expect("generic-api-key detector identity must match for api_key 64-hex JSON field");
+    assert_eq!(generic_match.detector_id.as_ref(), "generic-api-key");
     assert_eq!(
         generic_match.credential.as_ref(),
         "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a97601b1a7d6e492b"
@@ -44,6 +45,7 @@ fn test_generic_api_secret_key_64_hex_assignment_policy() {
         .iter()
         .find(|m| m.detector_id.as_ref() == "generic-api-key")
         .expect("generic-api-key detector identity must match for api_secret_key 64-hex assignment");
+    assert_eq!(generic_match.detector_id.as_ref(), "generic-api-key");
     assert_eq!(
         generic_match.credential.as_ref(),
         "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a97601b1a7d6e492b"
