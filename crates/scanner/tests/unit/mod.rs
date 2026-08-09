@@ -1,4 +1,3 @@
-pub mod anchored_regex_cases;
 pub mod a3_decode;
 #[cfg(feature = "multiline")]
 pub mod a3_multiline;
@@ -6,6 +5,7 @@ pub mod a3_pipeline;
 pub mod a4_lr2;
 pub mod adjudicate;
 pub mod alphabet_filter;
+pub mod anchored_regex_cases;
 pub mod anchored_regex_cases;
 pub mod ascii_ci;
 pub mod base64_byte_predicates;

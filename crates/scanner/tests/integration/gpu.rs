@@ -60,7 +60,9 @@ fn gpu_batch_preserves_cross_chunk_reassembly() {
     let gpu_findings = match scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu) {
         Ok(f) => f,
         Err(e) => {
-            crate::support::gpu_gate::require_gpu_or_panic("gpu_batch_preserves_cross_chunk_reassembly");
+            crate::support::gpu_gate::require_gpu_or_panic(
+                "gpu_batch_preserves_cross_chunk_reassembly",
+            );
             eprintln!("gpu_batch_preserves_cross_chunk_reassembly: GPU scan unavailable: {e}");
             return;
         }
