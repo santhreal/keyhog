@@ -158,7 +158,7 @@ fn e2e_uuid_under_generic_keyword_stays_suppressed() {
     // A generic assignment cannot distinguish a UUID credential from a resource
     // identifier. Provider-specific UUID formats belong to detector TOMLs.
     let s = scanner();
-    for keyword in ["api_key", "client_secret"] {
+    for keyword in ["api_key", "secret_key"] {
         assert!(
             !caught(s, &format!("{keyword} = \"{UUID_SECRET}\""), UUID_SECRET),
             "UUID under generic `{keyword}=` must stay suppressed"

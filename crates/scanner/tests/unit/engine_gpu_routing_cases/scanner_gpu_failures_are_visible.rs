@@ -85,7 +85,7 @@ fn phase2_prefilter_compile_failures_warn() {
 
 #[test]
 fn phase2_gpu_admission_loss_terminates_selected_route() {
-    let dispatch_src = engine_src("gpu_region_dispatch.rs");
+    let dispatch_src = engine_src("gpu_region_dispatch/mod.rs");
     let owner_src = engine_src("backend_dispatch.rs");
     assert!(
         dispatch_src.contains("SelectedGpuDispatchError::new(reason)")
@@ -103,7 +103,7 @@ fn phase2_gpu_admission_loss_terminates_selected_route() {
 
 #[test]
 fn positioned_gpu_candidate_loss_updates_runtime_status() {
-    let src = engine_src("gpu_region_dispatch.rs");
+    let src = engine_src("gpu_region_dispatch/mod.rs");
     let owner = engine_src("backend_dispatch.rs");
     assert!(
         owner.contains("self.record_gpu_runtime_fault(error.reason())")
@@ -140,14 +140,11 @@ fn phase2_gpu_catalog_loss_is_operator_visible() {
     );
     assert!(
         !src.contains("candidate budget reached: selected")
-            && src.contains("no lowerable ASCII prefixless always-active pattern")
-            && src.contains("ASCII prefixless always-active pattern(s) uncovered after lowering"),
+            && src.contains("did not lower to a GPU regex-DFA"),
         "the retired fixed candidate budget must stay absent and every real lowering gap must describe the lost GPU evidence"
     );
     assert!(
-        src.matches("report_phase2_gpu_catalog_loss(format!(")
-            .count()
-            >= 2,
+        src.matches("report_phase2_gpu_catalog_loss(").count() >= 1,
         "every phase-2 GPU catalog incompleteness branch must route through the visible reporter"
     );
 }

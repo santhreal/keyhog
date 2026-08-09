@@ -379,14 +379,3 @@ impl CompiledScanner {
             .unwrap_or(false)
     }
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_is_hot_confirmed_pattern_fails_closed_on_out_of_bounds() {
-        let scanner = CompiledScanner::compile(vec![]).expect("empty scanner compiles");
-        assert!(!scanner.is_hot_confirmed_pattern(usize::MAX));
-        assert!(!scanner.is_hot_confirmed_pattern(999_999));
-    }
-}

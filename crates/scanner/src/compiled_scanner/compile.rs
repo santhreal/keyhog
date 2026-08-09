@@ -108,7 +108,7 @@ impl CompiledScanner {
     /// Compile the deterministic scalar library route. Hardware autoroute is an
     /// installer/runtime concern and must select a route before construction.
     pub fn compile(detectors: Vec<DetectorSpec>) -> Result<Self> {
-        Self::compile_for_backend(detectors, crate::hw_probe::ScanBackend::CpuFallback)
+        Self::compile_with_gpu_policy(detectors, GpuInitPolicy::FromRuntimePolicy)
     }
 
     /// Compile only the backend selected before scanner construction.

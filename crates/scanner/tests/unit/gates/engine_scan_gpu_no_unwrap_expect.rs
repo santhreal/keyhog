@@ -13,7 +13,7 @@ const GPU_SCAN_SRCS: &[&str] = &[
     "engine/gpu_literal_scratch.rs",
     "gpu_matcher_cache.rs",
     "engine/gpu_region_batch.rs",
-    "engine/gpu_region_dispatch.rs",
+    "engine/gpu_region_dispatch/mod.rs",
     "engine/gpu_region_dispatch_helpers.rs",
     "gpu/backend/resident_evidence.rs",
 ];
@@ -27,7 +27,7 @@ const GPU_SCAN_SRCS: &[&str] = &[
 /// - `gpu_region_dispatch.rs`: contains crate-private region batching and
 ///   bounded-validation helpers. Keeping their white-box tests co-located avoids
 ///   widening the public scanner API for source-only assertions.
-const INLINE_TEST_ALLOWLIST: &[&str] = &["engine/gpu_region_dispatch.rs"];
+const INLINE_TEST_ALLOWLIST: &[&str] = &["engine/gpu_region_dispatch/mod.rs"];
 
 /// Returns `true` when `line` starts a test-cfg annotation that gates an
 /// inline test module, either the plain `#[cfg(test)]` form or the

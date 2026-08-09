@@ -14,6 +14,9 @@ impl CompiledScanner {
     ) -> crate::error::Result<Vec<RawMatch>> {
         use rayon::prelude::*;
 
+        if crate::deadline::expired(deadline) {
+            return Ok(Vec::new());
+        }
         let chunk_text = &chunk.data;
         if reject_oversized_window_chunk(chunk, chunk_text) {
             return Ok(Vec::new());

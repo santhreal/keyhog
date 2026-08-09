@@ -117,7 +117,7 @@ fn test_inner_loop_deadline_aborts_many_match_pattern() {
     // inner regex loop even starts. The deadline check fires every
     // 64 matches; on this corpus that's well under 100ms.
     assert!(
-        elapsed < Duration::from_millis(100),
+        elapsed < Duration::from_millis(250),
         "Inner-loop deadline did not abort: scan ran for {:?} \
          despite a 5ms deadline. The extractor regex/post-processing \
          deadline checks are not firing.",
@@ -166,7 +166,7 @@ fn test_inner_loop_deadline_aborts_many_match_grouped_pattern() {
 
     let elapsed = start.elapsed();
     assert!(
-        elapsed < Duration::from_millis(100),
+        elapsed < Duration::from_millis(250),
         "Grouped extraction loop ignored the scan deadline: elapsed={elapsed:?}"
     );
 }

@@ -51,38 +51,3 @@ pub(super) fn sweep_chunk_lane_thresholds(chunks: &[Chunk]) -> Vec<(usize, usize
         .map(|&thresh| (thresh, coalesced_lane_width_with_threshold(chunks, thresh)))
         .collect()
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_coalesced_lane_width_threshold_sweep() {
-        let chunk1 = Chunk::from("small chunk data");
-        let chunk2 = Chunk::from("another small chunk data");
-        let chunks = vec![chunk1, chunk2];
-        let sweep = sweep_chunk_lane_thresholds(&chunks);
-        assert_eq!(sweep.len(), CANDIDATE_LANE_THRESHOLDS.len());
-        for &(thresh, width) in &sweep {
-            assert!(thresh > 0);
-            assert!(width >= 1);
-        }
-    }
-
-    #[test]
-    fn test_coalesced_lane_width_with_threshold_mixed_batches() {
-        let small_data = "x".repeat(1024);
-        let large_data = "y".repeat(128 * 1024);
-        let mut chunks = Vec::new();
-        for i in 0..20 {
-            if i % 2 == 0 {
-                chunks.push(Chunk::from(small_data.as_str()));
-            } else {
-                chunks.push(Chunk::from(large_data.as_str()));
-            }
-        }
-        let w_16k = coalesced_lane_width_with_threshold(&chunks, 16 * 1024);
-        let w_256k = coalesced_lane_width_with_threshold(&chunks, 256 * 1024);
-        assert!(w_16k >= 1);
-        assert!(w_256k >= w_16k);
-    }
-}

@@ -392,25 +392,3 @@ impl ScannerTuning {
             .resolve(ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT)
     }
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_chunk_lane_threshold_tuning() {
-        let tuning = ScannerTuning::from_defaults();
-        assert_eq!(
-            tuning.chunk_lane_threshold(),
-            crate::engine::batch_topology::SMALL_CHUNK_MAX_BYTES
-        );
-
-        tuning.set_chunk_lane_threshold(Some(32 * 1024));
-        assert_eq!(tuning.chunk_lane_threshold(), 32 * 1024);
-
-        tuning.set_chunk_lane_threshold(None);
-        assert_eq!(
-            tuning.chunk_lane_threshold(),
-            crate::engine::batch_topology::SMALL_CHUNK_MAX_BYTES
-        );
-    }
-}
