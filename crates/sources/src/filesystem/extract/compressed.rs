@@ -256,7 +256,7 @@ pub(super) fn emit_tar_entries_with_state(
     {
         return;
     }
-    emit_tar_entries_from_reader(
+    let _outcome = emit_tar_entries_from_reader(
         std::io::Cursor::new(tar_bytes),
         container_display,
         max_size,
@@ -266,6 +266,18 @@ pub(super) fn emit_tar_entries_with_state(
         tex_package,
         emit,
     );
+}
+
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TarWalkOutcome {
+    /// Finished walking; consumer still wants more rows.
+    Continue,
+    /// Consumer returned false from `emit`; outer loops must unwind.
+    ConsumerStopped,
+    /// Aggregate bomb budget tripped (truncation row already emitted).
+    /// `keep_going` is the emit callback's response to that row.
+    Truncated { keep_going: bool },
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -278,7 +290,7 @@ fn emit_tar_entries_from_reader<R: Read>(
     respect_default_excludes: bool,
     tex_package: super::tex_package::TexPackageAnalysis,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
-) -> bool {
+) -> TarWalkOutcome {
     let mut archive = tar::Archive::new(reader);
     let entries = match archive.entries() {
         Ok(e) => e,
@@ -293,9 +305,9 @@ fn emit_tar_entries_from_reader<R: Read>(
                 "failed to read tar entries",
                 error,
             ) {
-                return false;
+                return TarWalkOutcome::ConsumerStopped;
             }
-            return false;
+            return TarWalkOutcome::ConsumerStopped;
         }
     };
 
@@ -315,7 +327,7 @@ fn emit_tar_entries_from_reader<R: Read>(
                     "<tar-entry>",
                     format!("cannot read tar entry header ({error})"),
                 ) {
-                    return false;
+                    return TarWalkOutcome::ConsumerStopped;
                 }
                 continue;
             }
@@ -348,7 +360,7 @@ fn emit_tar_entries_from_reader<R: Read>(
                 &entry_name,
                 format!("non-regular tar entry type {entry_type:?}; entry was not scanned"),
             ) {
-                return false;
+                return TarWalkOutcome::ConsumerStopped;
             }
             continue;
         }
@@ -383,7 +395,7 @@ fn emit_tar_entries_from_reader<R: Read>(
                 &entry_name,
                 format!("{reason}; entry was not scanned"),
             ) {
-                return false;
+                return TarWalkOutcome::ConsumerStopped;
             }
             continue;
         }
@@ -409,7 +421,7 @@ fn emit_tar_entries_from_reader<R: Read>(
                     "uncompressed size {entry_size} exceeds per-file cap {max_size}; entry was not scanned"
                 ),
             ) {
-                return false;
+                return TarWalkOutcome::ConsumerStopped;
             }
             continue;
         }
@@ -424,8 +436,8 @@ fn emit_tar_entries_from_reader<R: Read>(
                 *total_uncompressed,
                 total_budget,
             );
-            let _keep_going = emit(Err(error));
-            return true;
+            let keep_going = emit(Err(error));
+            return TarWalkOutcome::Truncated { keep_going };
         }
 
         let read_cap = if max_size > 0 { max_size } else { u64::MAX };
@@ -442,7 +454,7 @@ fn emit_tar_entries_from_reader<R: Read>(
                     &entry_name,
                     format!("cannot read entry body ({error}); entry was not scanned"),
                 ) {
-                    return false;
+                    return TarWalkOutcome::ConsumerStopped;
                 }
                 continue;
             }
@@ -465,7 +477,7 @@ fn emit_tar_entries_from_reader<R: Read>(
                     "decoded size {observed_size} exceeds per-file cap {max_size}; entry was not scanned"
                 ),
             ) {
-                return false;
+                return TarWalkOutcome::ConsumerStopped;
             }
             continue;
         }
@@ -489,12 +501,11 @@ fn emit_tar_entries_from_reader<R: Read>(
             tex_package.get(&entry_name),
             emit,
         ) {
-            return false;
+            return TarWalkOutcome::ConsumerStopped;
         }
     }
-    false
+    TarWalkOutcome::Continue
 }
-
 fn analyze_tex_package(tar_bytes: &[u8]) -> super::tex_package::TexPackageAnalysis {
     // Gate on HEADER NAMES only (zip already does this via file_names()). A
     // payload scan false-triggered TeX analysis when nested compressed bytes
@@ -619,7 +630,7 @@ pub(super) fn emit_decompressed_member(
 
     // Stream compressed→tar for nested members. Avoids retaining the full
     // decompressed nested tarball.
-    if try_emit_streaming_nested_tar(
+    if let Some(keep_going) = try_emit_streaming_nested_tar(
         format,
         content,
         nested_display,
@@ -629,7 +640,7 @@ pub(super) fn emit_decompressed_member(
         respect_default_excludes,
         emit,
     ) {
-        return true;
+        return keep_going;
     }
 
     let budget = extraction_total_budget_usize(max_size);
@@ -712,31 +723,31 @@ fn try_emit_streaming_nested_tar(
     nested_depth: usize,
     respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
-) -> bool {
+) -> Option<bool> {
     let budget = extraction_total_budget(max_size);
     let Some(mut peek) = open_format_decoder(format, content, budget) else {
-        return false;
+        return None;
     };
     let mut head = [0u8; 512];
     let Ok(peeked) = peek.read(&mut head) else {
-        return false;
+        return None;
     };
     if peeked < 512 || !looks_like_tar(&head[..peeked]) {
-        return false;
+        return None;
     }
     // Single decompress stream: do not probe TeX with a second full inflate.
     // Uncompressed `.tar` still runs provenance via emit_tar_entries_with_state;
     // zip uses the central directory. Compressed-tar members keep every regular
     // member scannable without retaining the full decompressed image.
     let Some(reader) = open_format_decoder(format, content, budget) else {
-        return false;
+        return None;
     };
     // Hard-cap total decompressed bytes at the same ceiling as decompress_to_bytes.
     // Per-entry reads also enforce the per-member and aggregate caps inside
     // emit_tar_entries_from_reader; skipped oversized bodies still cannot inflate
     // past this reader wrap.
     let mut reader = BudgetLimitedReader::new(reader, budget);
-    let trunc_before = emit_tar_entries_from_reader(
+    let outcome = emit_tar_entries_from_reader(
         &mut reader,
         nested_display,
         max_size,
@@ -746,15 +757,23 @@ fn try_emit_streaming_nested_tar(
         super::tex_package::TexPackageAnalysis::default(),
         emit,
     );
-    if reader.exceeded_budget() && !trunc_before {
-        let error = super::report_archive_truncation(
-            nested_display,
-            reader.bytes_read(),
-            budget,
-        );
-        let _keep_going = emit(Err(error));
-    }
-    true
+    let keep_going = match outcome {
+        TarWalkOutcome::ConsumerStopped => false,
+        TarWalkOutcome::Truncated { keep_going } => keep_going,
+        TarWalkOutcome::Continue => {
+            if reader.exceeded_budget() {
+                let error = super::report_archive_truncation(
+                    nested_display,
+                    reader.bytes_read(),
+                    budget,
+                );
+                emit(Err(error))
+            } else {
+                true
+            }
+        }
+    };
+    Some(keep_going)
 }
 
 
@@ -835,7 +854,7 @@ fn try_emit_streaming_compressed_tar(
     };
     let mut reader = BudgetLimitedReader::new(reader, budget);
     let mut total_uncompressed = 0u64;
-    let trunc_before = emit_tar_entries_from_reader(
+    let outcome = emit_tar_entries_from_reader(
         &mut reader,
         container_display,
         max_size,
@@ -845,13 +864,19 @@ fn try_emit_streaming_compressed_tar(
         super::tex_package::TexPackageAnalysis::default(),
         emit,
     );
-    if reader.exceeded_budget() && !trunc_before {
-        let error = super::report_archive_truncation(
-            container_display,
-            reader.bytes_read(),
-            budget,
-        );
-        let _keep_going = emit(Err(error));
+    match outcome {
+        TarWalkOutcome::ConsumerStopped => {}
+        TarWalkOutcome::Truncated { .. } => {}
+        TarWalkOutcome::Continue => {
+            if reader.exceeded_budget() {
+                let error = super::report_archive_truncation(
+                    container_display,
+                    reader.bytes_read(),
+                    budget,
+                );
+                let _keep_going = emit(Err(error));
+            }
+        }
     }
     true
 }
