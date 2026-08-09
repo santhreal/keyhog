@@ -61,7 +61,7 @@ fn second_load_reuses_exact_matcher_bytes() {
         None,
     )
     .expect("identity");
-    store_matcher_artifact(dir.path(), &identity, &sections, ir.as_bytes(), true).expect("store");
+    store_matcher_artifact(dir.path(), &identity, &sections, ir.as_bytes()).expect("store");
     let loaded = load_matcher_artifact(dir.path(), &identity).expect("load");
     assert_eq!(loaded.content_digest(), sections.content_digest());
     assert_eq!(loaded.literal_index, sections.literal_index);
@@ -83,7 +83,7 @@ fn mismatched_binary_identity_never_loads() {
         None,
     )
     .expect("identity");
-    store_matcher_artifact(dir.path(), &identity, &sections, ir.as_bytes(), true).expect("store");
+    store_matcher_artifact(dir.path(), &identity, &sections, ir.as_bytes()).expect("store");
 
     let mut foreign = identity.clone();
     foreign.binary_digest = "0".repeat(64);
@@ -109,7 +109,7 @@ fn mismatched_config_digest_never_loads() {
         None,
     )
     .expect("identity");
-    store_matcher_artifact(dir.path(), &identity, &sections, ir.as_bytes(), true).expect("store");
+    store_matcher_artifact(dir.path(), &identity, &sections, ir.as_bytes()).expect("store");
 
     let foreign = MatcherArtifactIdentity::new(
         ir.digest(),
@@ -154,39 +154,4 @@ fn hyperscan_db_filename_is_not_a_matcher_artifact() {
     );
 }
 
-#[test]
-fn custom_corpus_store_does_not_publish_tip() {
-    let dir = allowlisted_tempdir();
-    let detectors = sample_detectors();
-    let ir = CanonicalDetectorExecutionIr::compile(&detectors).expect("ir");
-    let sections =
-        CompiledRouteMatcherSections::compile(&ir, ExecutionPackBackend::Cpu).expect("sections");
-    let identity = MatcherArtifactIdentity::new(
-        ir.digest(),
-        [9u8; 32],
-        None,
-        ExecutionPackBackend::Cpu,
-        None,
-    )
-    .expect("identity");
-    store_matcher_artifact(dir.path(), &identity, &sections, ir.as_bytes(), false)
-        .expect("store without tip");
-    let tips: Vec<_> = std::fs::read_dir(dir.path())
-        .expect("read cache")
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| ext == "kht")
-        })
-        .collect();
-    assert!(
-        tips.is_empty(),
-        "custom/non-embedded stores must not publish tip files; found {tips:?}"
-    );
-    // Artifact itself must still load.
-    let loaded = load_matcher_artifact(dir.path(), &identity).expect("load");
-    assert_eq!(loaded.content_digest(), sections.content_digest());
-}
 

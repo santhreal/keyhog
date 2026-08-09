@@ -18,7 +18,7 @@ use crate::compiler::compiler_build::CompileState;
 use crate::engine::CompiledScanner;
 use crate::error::{Result, ScanError};
 use crate::execution_pack::matcher_sections::{
-    decode_authenticated_compile_state_sections, CompiledRouteMatcherSections,
+    decode_compile_state_sections, CompiledRouteMatcherSections,
 };
 use crate::execution_pack::{CanonicalDetectorExecutionIr, ExecutionPackBackend};
 use crate::hw_probe::ScanBackend;
@@ -34,58 +34,15 @@ pub const MATCHER_ARTIFACT_MAGIC: &[u8; 4] = b"KHMA";
 ///
 /// v1 used a JSON body that expanded section blobs into number arrays and made
 /// second-run deserialize dominate tiny-file CPU. v2 stores raw section bytes.
-/// v3 appends canonical detector-IR bytes so a tip hit can skip TOML corpus load.
+/// v3 appends canonical detector-IR bytes (retained for artifact self-description;
+/// hydrate uses the live process corpus + section digests).
 pub const MATCHER_ARTIFACT_VERSION: u32 = 3;
 /// Filename suffix for MatcherArtifact cache files.
 pub const MATCHER_ARTIFACT_SUFFIX: &str = ".khm";
-/// Filename suffix for tip files (embedded-default shortcut; corpus digest lives in tip body).
-pub const MATCHER_ARTIFACT_TIP_SUFFIX: &str = ".kht";
 /// Hard cap for one MatcherArtifact cache file, including header.
 pub const MATCHER_ARTIFACT_FILE_BYTES: u64 = 256 * 1024 * 1024;
 
 static CONFIGURED_CACHE_DIR: OnceLock<parking_lot::RwLock<Option<PathBuf>>> = OnceLock::new();
-static PRELOADED_MATCHER_ARTIFACT: OnceLock<
-    parking_lot::Mutex<Option<(MatcherArtifactIdentity, LoadedMatcherArtifact, [u8; 32])>>,
-> = OnceLock::new();
-
-fn preloaded_matcher_artifact_cell() -> &'static parking_lot::Mutex<
-    Option<(MatcherArtifactIdentity, LoadedMatcherArtifact, [u8; 32])>,
-> {
-    PRELOADED_MATCHER_ARTIFACT.get_or_init(|| parking_lot::Mutex::new(None))
-}
-
-pub fn clear_preloaded_matcher_artifact() {
-    *preloaded_matcher_artifact_cell().lock() = None;
-}
-
-fn detector_corpus_fingerprint(detectors: &[keyhog_core::DetectorSpec]) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    update_tagged(&mut hasher, b"domain", b"keyhog-matcher-artifact-detector-fp-v1");
-    hasher.update(&(detectors.len() as u64).to_le_bytes());
-    for detector in detectors {
-        update_tagged(&mut hasher, b"id", detector.id.as_bytes());
-        hasher.update(&(detector.patterns.len() as u64).to_le_bytes());
-        for pattern in &detector.patterns {
-            update_tagged(&mut hasher, b"regex", pattern.regex.as_bytes());
-        }
-    }
-    *hasher.finalize().as_bytes()
-}
-
-fn take_any_preloaded_matcher_artifact()
--> Option<(MatcherArtifactIdentity, LoadedMatcherArtifact, [u8; 32])> {
-    preloaded_matcher_artifact_cell().lock().take()
-}
-
-fn stash_preloaded_matcher_artifact(
-    identity: MatcherArtifactIdentity,
-    loaded: LoadedMatcherArtifact,
-    detectors: &[keyhog_core::DetectorSpec],
-) {
-    let fingerprint = detector_corpus_fingerprint(detectors);
-    *preloaded_matcher_artifact_cell().lock() = Some((identity, loaded, fingerprint));
-}
-
 fn configured_cache_dir_cell() -> &'static parking_lot::RwLock<Option<PathBuf>> {
     CONFIGURED_CACHE_DIR.get_or_init(|| parking_lot::RwLock::new(None))
 }
@@ -459,88 +416,7 @@ pub struct LoadedMatcherArtifact {
     pub detector_ir: Vec<u8>,
 }
 
-/// Tip that locates a MatcherArtifact without first loading the detector corpus.
-///
-/// Tips are an embedded-default-only shortcut. Custom `--detectors` / overlay
-/// corpora never publish tips (`write_embedded_tip = false`).
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct MatcherArtifactTip {
-    /// Build-time embedded corpus stamp (`keyhog_core::detector_digest()`).
-    /// Tips are only valid for the default embedded corpus of this binary.
-    pub embedded_set: String,
-    /// Hex digest of the canonical detector execution IR stored in the artifact.
-    pub detector_corpus_digest: String,
-    /// Hex digest of the full [`MatcherArtifactIdentity`] for the artifact.
-    pub identity_digest: String,
-}
 
-/// Build the tip filename for the embedded-default corpus shortcut path.
-pub fn matcher_artifact_tip_filename(
-    resolved_config_digest: [u8; 32],
-    pack_generation: Option<&str>,
-    backend: ExecutionPackBackend,
-    runtime_identity: Option<&str>,
-) -> std::result::Result<String, String> {
-    let mut hasher = blake3::Hasher::new();
-    update_tagged(&mut hasher, b"domain", b"keyhog-matcher-artifact-tip-v2");
-    update_tagged(
-        &mut hasher,
-        b"version",
-        &MATCHER_ARTIFACT_VERSION.to_le_bytes(),
-    );
-    update_tagged(
-        &mut hasher,
-        b"binary_digest",
-        current_executable_sha256()?.as_bytes(),
-    );
-    update_tagged(
-        &mut hasher,
-        b"binary_version",
-        env!("CARGO_PKG_VERSION").as_bytes(),
-    );
-    update_tagged(&mut hasher, b"git_hash", keyhog_core::git_hash().as_bytes());
-    update_tagged(
-        &mut hasher,
-        b"target",
-        format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS).as_bytes(),
-    );
-    update_tagged(&mut hasher, b"features", scanner_feature_identity().as_bytes());
-    // Bind the build-time embedded detector set so a tip cannot be reused across
-    // binaries/stamps that share other identity fields. Detector IR digest stays
-    // out of the filename because tip lookup must run before corpus load; that
-    // digest is enforced from the tip body + artifact identity.
-    update_tagged(
-        &mut hasher,
-        b"embedded_set",
-        keyhog_core::detector_digest().as_bytes(),
-    );
-    update_tagged(
-        &mut hasher,
-        b"resolved_config_digest",
-        keyhog_core::hex_encode(&resolved_config_digest).as_bytes(),
-    );
-    update_tagged(
-        &mut hasher,
-        b"pack_generation",
-        pack_generation.unwrap_or("none").as_bytes(),
-    );
-    update_tagged(&mut hasher, b"backend", backend_name(backend).as_bytes());
-    update_tagged(
-        &mut hasher,
-        b"runtime_identity",
-        runtime_identity.unwrap_or("none").as_bytes(),
-    );
-    update_tagged(
-        &mut hasher,
-        b"route_matcher_section_version",
-        &crate::execution_pack::ROUTE_MATCHER_SECTION_VERSION.to_le_bytes(),
-    );
-    Ok(format!(
-        "tip-{}{}",
-        keyhog_core::hex_encode(hasher.finalize().as_bytes()),
-        MATCHER_ARTIFACT_TIP_SUFFIX
-    ))
-}
 
 fn parse_loaded_matcher_artifact(
     path: &Path,
@@ -694,13 +570,12 @@ pub fn load_matcher_artifact_with_ir(
     Ok(loaded)
 }
 
-/// Persist `sections` and `detector_ir` under `identity`, and refresh the tip.
+/// Persist `sections` and `detector_ir` under `identity`.
 pub fn store_matcher_artifact(
     cache_dir: &Path,
     identity: &MatcherArtifactIdentity,
     sections: &CompiledRouteMatcherSections,
     detector_ir: &[u8],
-    write_embedded_tip: bool,
 ) -> std::result::Result<(), String> {
     let expected_backend =
         parse_backend_name(&identity.backend).ok_or_else(|| "unknown identity backend".to_owned())?;
@@ -754,147 +629,10 @@ pub fn store_matcher_artifact(
     atomic_write(&path, &bytes)
         .map_err(|error| format!("cannot write matcher artifact {}: {error}", path.display()))?;
 
-    // Tips are an embedded-default-only shortcut. Never publish them for custom
-    // `--detectors` / overlay corpora or a later default scan can silently load
-    // the wrong detector set.
-    if !write_embedded_tip {
-        return Ok(());
-    }
-    let tip_name = matcher_artifact_tip_filename(
-        parse_hex_digest(&identity.resolved_config_digest)?,
-        if identity.pack_generation == "none" {
-            None
-        } else {
-            Some(identity.pack_generation.as_str())
-        },
-        expected_backend,
-        if identity.runtime_identity == "none" {
-            None
-        } else {
-            Some(identity.runtime_identity.as_str())
-        },
-    )?;
-    let tip = MatcherArtifactTip {
-        embedded_set: keyhog_core::detector_digest().to_owned(),
-        detector_corpus_digest: identity.detector_corpus_digest.clone(),
-        identity_digest: keyhog_core::hex_encode(&identity_digest),
-    };
-    let tip_bytes = serde_json::to_vec(&tip)
-        .map_err(|error| format!("cannot serialize matcher artifact tip: {error}"))?;
-    atomic_write(&cache_dir.join(tip_name), &tip_bytes)
-        .map_err(|error| format!("cannot write matcher artifact tip: {error}"))
+    Ok(())
 }
 
-fn parse_hex_digest(text: &str) -> std::result::Result<[u8; 32], String> {
-    parse_hex32(text).ok_or_else(|| format!("malformed digest {text}"))
-}
 
-fn parse_hex32(text: &str) -> Option<[u8; 32]> {
-    if text.len() != 64 {
-        return None;
-    }
-    let mut out = [0u8; 32];
-    for (index, chunk) in text.as_bytes().chunks(2).enumerate() {
-        let hi = hex_nibble(chunk[0])?;
-        let lo = hex_nibble(chunk[1])?;
-        out[index] = (hi << 4) | lo;
-    }
-    Some(out)
-}
-
-fn hex_nibble(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
-}
-
-/// Try to load detectors + sections via tip without parsing the TOML corpus.
-pub fn try_load_from_matcher_artifact_tip(
-    cache_dir: &Path,
-    resolved_config_digest: [u8; 32],
-    pack_generation: Option<&str>,
-    backend: ExecutionPackBackend,
-    runtime_identity: Option<&str>,
-) -> std::result::Result<Option<(Vec<keyhog_core::DetectorSpec>, LoadedMatcherArtifact, MatcherArtifactIdentity)>, String> {
-    let tip_name =
-        matcher_artifact_tip_filename(resolved_config_digest, pack_generation, backend, runtime_identity)?;
-    let tip_path = cache_dir.join(tip_name);
-    let tip_meta = match std::fs::symlink_metadata(&tip_path) {
-        Ok(meta) => meta,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(format!(
-                "cannot stat matcher artifact tip {}: {error}",
-                tip_path.display()
-            ))
-        }
-    };
-    if tip_meta.file_type().is_symlink() {
-        return Err(format!(
-            "matcher artifact tip {} is a symlink; refusing to load",
-            tip_path.display()
-        ));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if tip_meta.uid() != current_uid() {
-            return Err(format!(
-                "matcher artifact tip {} is not owned by the current user; refusing to load",
-                tip_path.display()
-            ));
-        }
-    }
-    let tip_bytes = match std::fs::read(&tip_path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(format!(
-                "cannot read matcher artifact tip {}: {error}",
-                tip_path.display()
-            ))
-        }
-    };
-    let tip: MatcherArtifactTip = serde_json::from_slice(&tip_bytes).map_err(|error| {
-        format!(
-            "matcher artifact tip {} is not valid JSON: {error}",
-            tip_path.display()
-        )
-    })?;
-    if tip.embedded_set != keyhog_core::detector_digest() {
-        return Err(format!(
-            "matcher artifact tip {} is not for this binary's embedded detector set",
-            tip_path.display()
-        ));
-    }
-    let detector_digest = parse_hex_digest(&tip.detector_corpus_digest)?;
-    let identity = MatcherArtifactIdentity::new(
-        detector_digest,
-        resolved_config_digest,
-        pack_generation,
-        backend,
-        runtime_identity,
-    )?;
-    if keyhog_core::hex_encode(&identity.digest()) != tip.identity_digest {
-        return Err(format!(
-            "matcher artifact tip {} identity digest mismatch",
-            tip_path.display()
-        ));
-    }
-    let loaded = load_matcher_artifact_with_ir(cache_dir, &identity)?;
-    let decoded = CanonicalDetectorExecutionIr::decode_runtime(&loaded.detector_ir).map_err(|error| {
-        format!("matcher artifact detector IR decode failed: {error}")
-    })?;
-    if decoded.digest() != detector_digest {
-        return Err("matcher artifact detector IR digest mismatch".to_owned());
-    }
-    let detectors = decoded.into_detectors();
-    stash_preloaded_matcher_artifact(identity.clone(), loaded.clone(), &detectors);
-    Ok(Some((detectors, loaded, identity)))
-}
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let parent = path
@@ -928,8 +666,8 @@ fn record_outcome(outcome: &MatcherArtifactCacheOutcome) {
 
 /// Compile a scanner, consulting the MatcherArtifact cache when configured.
 ///
-/// On hit, eager `build_compile_state` is skipped and the authenticated matcher
-/// graph is hydrated. On miss/invalidation the corpus is compiled once, stored
+/// On hit, eager `build_compile_state` is skipped and the persisted matcher
+/// graph is hydrated through the canonical section decoder. On miss/invalidation the corpus is compiled once, stored
 /// when a cache directory is configured, then hydrated from that artifact so the
 /// miss path does not compile twice.
 pub fn compile_shared_with_matcher_artifact_cache(
@@ -939,11 +677,9 @@ pub fn compile_shared_with_matcher_artifact_cache(
     resolved_config_digest: [u8; 32],
     pack_generation: Option<&str>,
     runtime_identity: Option<&str>,
-    write_embedded_tip: bool,
 ) -> Result<(CompiledScanner, MatcherArtifactCacheOutcome)> {
     let cache_dir = configured_matcher_artifact_cache_dir();
     let Some(backend) = matcher_backend_for_gpu_policy(gpu_policy) else {
-        clear_preloaded_matcher_artifact();
         let outcome = MatcherArtifactCacheOutcome::Disabled;
         record_outcome(&outcome);
         let scanner = CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
@@ -956,7 +692,6 @@ pub fn compile_shared_with_matcher_artifact_cache(
 
     // Cache disabled: keep the historical compile cost (no IR round-trip).
     if cache_dir.is_none() {
-        clear_preloaded_matcher_artifact();
         let outcome = MatcherArtifactCacheOutcome::Disabled;
         record_outcome(&outcome);
         let scanner = CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
@@ -967,35 +702,9 @@ pub fn compile_shared_with_matcher_artifact_cache(
         return Ok((scanner, outcome));
     }
 
-    // Tip path already loaded the artifact once; reuse it and skip IR recompile.
-    if let Some((pre_identity, loaded, fingerprint)) = take_any_preloaded_matcher_artifact() {
-        let tip_matches = pre_identity.resolved_config_digest
-            == keyhog_core::hex_encode(&resolved_config_digest)
-            && pre_identity.backend == backend_name(backend)
-            && pre_identity.pack_generation == pack_generation.unwrap_or("none")
-            && pre_identity.runtime_identity == runtime_identity.unwrap_or("none")
-            && fingerprint == detector_corpus_fingerprint(detectors.as_ref());
-        if tip_matches {
-            let detector_digest = parse_hex32(&pre_identity.detector_corpus_digest).ok_or_else(|| {
-                ScanError::Config("preloaded matcher artifact has a malformed detector digest".into())
-            })?;
-            let state = hydrate_authenticated_state(
-                &loaded.sections,
-                detector_digest,
-                detectors.as_ref(),
-            )?;
-            let scanner = CompiledScanner::compile_shared_from_compile_state(
-                detectors,
-                gpu_policy,
-                tuning_config,
-                state,
-            )?;
-            let outcome = MatcherArtifactCacheOutcome::Hit;
-            record_outcome(&outcome);
-            return Ok((scanner, outcome));
-        }
-    }
-
+    // Identity keys on the canonical detector-IR digest (same digest packs use).
+    // Computing it requires IR normalization; the avoided cost on hit is the
+    // route-matcher section compile + eager CompileState construction.
     let ir = CanonicalDetectorExecutionIr::compile(detectors.as_ref()).map_err(|error| {
         ScanError::Config(format!(
             "cannot compile detector execution IR for matcher cache: {error}"
@@ -1015,7 +724,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
     if let Some(cache_dir) = cache_dir.as_ref() {
         match load_matcher_artifact_with_ir(cache_dir, &identity) {
             Ok(loaded) => {
-                let state = hydrate_authenticated_state(
+                let state = hydrate_matcher_artifact_state(
                     &loaded.sections,
                     detector_digest,
                     sorted.as_ref(),
@@ -1057,7 +766,6 @@ pub fn compile_shared_with_matcher_artifact_cache(
                         &identity,
                         &sections,
                         ir.as_bytes(),
-                        write_embedded_tip,
                     )
                 {
                     tracing::warn!(
@@ -1067,7 +775,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
                     );
                 }
                 let state =
-                    hydrate_authenticated_state(&sections, detector_digest, sorted.as_ref())?;
+                    hydrate_matcher_artifact_state(&sections, detector_digest, sorted.as_ref())?;
                 let scanner = CompiledScanner::compile_shared_from_compile_state(
                     sorted,
                     gpu_policy,
@@ -1090,12 +798,16 @@ pub fn compile_shared_with_matcher_artifact_cache(
     Ok((scanner, outcome))
 }
 
-fn hydrate_authenticated_state(
+fn hydrate_matcher_artifact_state(
     sections: &CompiledRouteMatcherSections,
     detector_digest: [u8; 32],
     detectors: &[keyhog_core::DetectorSpec],
 ) -> Result<CompileState> {
-    decode_authenticated_compile_state_sections(
+    // MatcherArtifact files are digest-authenticated (identity + content digests
+    // bound to the running binary), not signature-authenticated execution packs.
+    // Use the canonical re-encode path so section envelopes cannot skip integrity
+    // checks that unsigned on-disk bytes must still pass.
+    decode_compile_state_sections(
         sections.backend,
         &sections.literal_index,
         &sections.regex_programs,

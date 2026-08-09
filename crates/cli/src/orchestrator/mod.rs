@@ -1554,7 +1554,6 @@ impl ScanOrchestrator {
                             resolved_config_digest,
                             pack_generation.as_deref(),
                             runtime_identity.as_deref(),
-                            detector_corpus_provenance.mode == "embedded",
                         )
                         .map(|(scanner, outcome)| {
                             tracing::debug!(
@@ -1577,7 +1576,6 @@ impl ScanOrchestrator {
                     resolved_config_digest,
                     None,
                     runtime_identity.as_deref(),
-                    false,
                 )
                 .map(|(scanner, outcome)| {
                     tracing::debug!(
