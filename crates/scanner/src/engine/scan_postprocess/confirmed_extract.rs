@@ -390,7 +390,15 @@ impl CompiledScanner {
             .unwrap_or(false)
     }
 }
-#[cfg(test)]
-pub(crate) fn confirmed_scratch_hot_direct_offsets_capacity() -> usize {
-    CONFIRMED_SCRATCH.with(|cell| cell.borrow().hot_direct_offsets.capacity())
+pub(crate) fn exercise_confirmed_offsets_scratch_for_test(entries: usize) -> usize {
+    CONFIRMED_SCRATCH.with(|cell| {
+        let mut scratch = cell.take();
+        scratch
+            .hot_direct_offsets
+            .extend((0..entries).map(|index| (index, index)));
+        scratch.reset_hot_direct_offsets();
+        let capacity = scratch.hot_direct_offsets.capacity();
+        cell.replace(scratch);
+        capacity
+    })
 }

@@ -32,8 +32,11 @@ impl Drop for SkipLinesGuard {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn entropy_skip_lines_scratch_capacity() -> usize {
+pub(crate) fn exercise_entropy_skip_lines_scratch_for_test(entries: usize) -> usize {
+    {
+        let mut scratch = SkipLinesGuard(ENTROPY_SKIP_LINES_SCRATCH.with(|cell| cell.take()));
+        scratch.0.extend(0..entries);
+    }
     ENTROPY_SKIP_LINES_SCRATCH.with(|cell| cell.borrow().capacity())
 }
 

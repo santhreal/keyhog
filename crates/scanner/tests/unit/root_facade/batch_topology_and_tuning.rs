@@ -1,54 +1,4 @@
-use keyhog_core::{CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity};
 use keyhog_scanner::CompiledScanner;
-use std::sync::Arc;
-
-#[test]
-fn test_decoded_candidates_sort_total_ordering_determinism() {
-    fn dummy_raw_match(id: &str, cred: &str, offset: usize, severity: Severity) -> RawMatch {
-        RawMatch {
-            detector_id: Arc::from(id),
-            detector_name: Arc::from(id),
-            service: Arc::from("service"),
-            severity,
-            credential: SensitiveString::from(cred),
-            credential_hash: CredentialHash::from([0u8; 32]),
-            companions: Default::default(),
-            location: MatchLocation {
-                source: Arc::from("filesystem"),
-                file_path: Some(Arc::from("test.txt")),
-                line: Some(1),
-                offset,
-                commit: None,
-                author: None,
-                date: None,
-            },
-            entropy: Some(4.5),
-            confidence: Some(0.9),
-        }
-    }
-
-    let m1 = dummy_raw_match("det_a", "cred1", 100, Severity::High);
-    let m2 = dummy_raw_match("det_b", "cred2", 100, Severity::Critical);
-    let m3 = dummy_raw_match("det_a", "cred3", 100, Severity::Medium);
-
-    let mut list_1 = vec![m1.clone(), m2.clone(), m3.clone()];
-    let mut list_2 = vec![m3.clone(), m1.clone(), m2.clone()];
-
-    let sort_fn = |a: &RawMatch, b: &RawMatch| {
-        a.location
-            .offset
-            .cmp(&b.location.offset)
-            .then_with(|| a.cmp(b))
-    };
-
-    list_1.sort_by(sort_fn);
-    list_2.sort_by(sort_fn);
-
-    assert_eq!(
-        list_1, list_2,
-        "total ordering sorting must yield deterministic results regardless of input order"
-    );
-}
 
 #[test]
 fn test_is_hot_confirmed_pattern_fails_closed_on_out_of_bounds() {
@@ -57,80 +7,163 @@ fn test_is_hot_confirmed_pattern_fails_closed_on_out_of_bounds() {
     assert!(!scanner.is_hot_confirmed_pattern(999_999));
 }
 #[test]
-fn test_chunk_lane_threshold_validation_and_sentinel() {
-    use keyhog_scanner::ScannerTuningConfig;
+fn mixed_batch_topology_never_serializes_a_large_chunk_with_neighbors() {
+    const THRESHOLD: usize = 8;
+    const WORKERS: usize = 8;
+    let mut sizes = vec![THRESHOLD; 999];
+    sizes.insert(500, THRESHOLD + 1);
 
-    let cfg_none = ScannerTuningConfig {
-        chunk_lane_threshold: None,
-        ..Default::default()
-    };
-    assert_eq!(
-        cfg_none.effective().chunk_lane_threshold,
-        64 * 1024,
-        "None must yield default 64 KiB threshold"
-    );
+    let lanes = keyhog_scanner::testing::chunk_lane_topology_for_test(&sizes, THRESHOLD, WORKERS);
+    let large_lanes: Vec<&Vec<usize>> = lanes
+        .iter()
+        .filter_map(|(is_large, indices)| is_large.then_some(indices))
+        .collect();
+    assert_eq!(large_lanes.len(), 1);
+    assert_eq!(large_lanes[0].as_slice(), &[500]);
 
-    let cfg_valid = ScannerTuningConfig {
-        chunk_lane_threshold: Some(32 * 1024),
-        ..Default::default()
-    };
-    assert_eq!(
-        cfg_valid.effective().chunk_lane_threshold,
-        32 * 1024,
-        "Valid threshold must be preserved"
-    );
+    let small_lanes: Vec<&Vec<usize>> = lanes
+        .iter()
+        .filter_map(|(is_large, indices)| (!is_large).then_some(indices))
+        .collect();
+    assert_eq!(small_lanes.len(), WORKERS);
+    assert!(small_lanes.iter().all(|lane| lane.len() <= 125));
+    assert!(small_lanes.iter().all(|lane| !lane.contains(&500)));
 
-    let cfg_zero = ScannerTuningConfig {
-        chunk_lane_threshold: Some(0),
-        ..Default::default()
-    };
-    assert_eq!(
-        cfg_zero.effective().chunk_lane_threshold,
-        64 * 1024,
-        "0 must be rejected and yield default 64 KiB threshold"
-    );
-
-    let cfg_max = ScannerTuningConfig {
-        chunk_lane_threshold: Some(usize::MAX),
-        ..Default::default()
-    };
-    assert_eq!(
-        cfg_max.effective().chunk_lane_threshold,
-        64 * 1024,
-        "usize::MAX must be rejected and yield default 64 KiB threshold"
-    );
-}
-#[test]
-fn test_scratch_storage_capacity_retention_ceiling() {
-    use std::collections::HashSet;
-
-    let mut set: HashSet<usize> = HashSet::new();
-    for i in 0..10_000 {
-        set.insert(i);
-    }
-    let capacity_large = set.capacity();
-    assert!(
-        capacity_large > 4096,
-        "Large set capacity must exceed ceiling"
-    );
-
-    set.clear();
-    if set.capacity() > 4096 {
-        set = HashSet::new();
-    }
-    assert!(
-        set.capacity() <= 4096,
-        "Capacity after ceiling drop must shrink below ceiling"
-    );
+    let mut scheduled: Vec<usize> = lanes
+        .iter()
+        .flat_map(|(_, indices)| indices.iter().copied())
+        .collect();
+    scheduled.sort_unstable();
+    assert_eq!(scheduled, (0..sizes.len()).collect::<Vec<_>>());
 }
 
 #[test]
-fn test_entropy_line_indices_above_u32_max() {
-    let large_line_idx_1 = u32::MAX as usize;
-    let large_line_idx_2 = u32::MAX as usize + 1;
+fn production_topology_covers_every_boundary_variant_exactly_once() {
+    const THRESHOLD: usize = 8;
+    const WORKERS: usize = 4;
+    let cases = [
+        ("empty", vec![]),
+        ("below-worker-count", vec![THRESHOLD, THRESHOLD + 1]),
+        ("all-small", vec![THRESHOLD; WORKERS + 3]),
+        ("all-large", vec![THRESHOLD + 1; WORKERS + 3]),
+        (
+            "mixed-boundary",
+            vec![0, THRESHOLD, THRESHOLD + 1, 1, THRESHOLD + 2],
+        ),
+    ];
 
-    let indices = vec![large_line_idx_1, large_line_idx_2];
-    assert_eq!(indices[0], u32::MAX as usize);
-    assert_eq!(indices[1], u32::MAX as usize + 1);
-    assert!(indices[1] > u32::MAX as usize);
+    for (name, sizes) in cases {
+        let lanes =
+            keyhog_scanner::testing::chunk_lane_topology_for_test(&sizes, THRESHOLD, WORKERS);
+        let mut scheduled = Vec::new();
+        for (is_large, indices) in &lanes {
+            assert!(!indices.is_empty(), "{name}: empty work lane");
+            if *is_large {
+                assert_eq!(
+                    indices.len(),
+                    1,
+                    "{name}: every large chunk must remain independently scheduled"
+                );
+                assert!(
+                    sizes[indices[0]] > THRESHOLD,
+                    "{name}: large lane contains a small chunk"
+                );
+            } else {
+                assert!(
+                    indices.iter().all(|&index| sizes[index] <= THRESHOLD),
+                    "{name}: small lane contains a large chunk"
+                );
+            }
+            scheduled.extend(indices.iter().copied());
+        }
+        scheduled.sort_unstable();
+        assert_eq!(
+            scheduled,
+            (0..sizes.len()).collect::<Vec<_>>(),
+            "{name}: topology must schedule every chunk exactly once"
+        );
+    }
+}
+
+#[test]
+fn chunk_lane_tuning_validates_bounds_and_reaches_runtime_state() {
+    use keyhog_scanner::{GpuInitPolicy, ScannerTuningConfig};
+
+    let valid_cases = [
+        (None, 64 * 1024),
+        (
+            Some(ScannerTuningConfig::CHUNK_LANE_THRESHOLD_MIN),
+            ScannerTuningConfig::CHUNK_LANE_THRESHOLD_MIN,
+        ),
+        (
+            Some(ScannerTuningConfig::CHUNK_LANE_THRESHOLD_MAX),
+            ScannerTuningConfig::CHUNK_LANE_THRESHOLD_MAX,
+        ),
+    ];
+    for (configured, expected) in valid_cases {
+        let tuning = ScannerTuningConfig {
+            chunk_lane_threshold: configured,
+            ..Default::default()
+        };
+        tuning.validate().expect("valid threshold");
+        assert_eq!(tuning.effective().chunk_lane_threshold, expected);
+        let scanner = CompiledScanner::compile_with_gpu_policy_and_tuning(
+            vec![],
+            GpuInitPolicy::ForceDisabled,
+            &tuning,
+        )
+        .expect("valid tuning compiles");
+        assert_eq!(
+            keyhog_scanner::testing::scanner_chunk_lane_threshold_for_test(&scanner),
+            expected
+        );
+    }
+
+    for invalid in [0, usize::MAX] {
+        let tuning = ScannerTuningConfig {
+            chunk_lane_threshold: Some(invalid),
+            ..Default::default()
+        };
+        assert_eq!(
+            tuning.effective().chunk_lane_threshold,
+            invalid,
+            "effective config must not silently substitute the default"
+        );
+        assert!(tuning.validate().is_err());
+        assert!(
+            CompiledScanner::compile_with_gpu_policy_and_tuning(
+                vec![],
+                GpuInitPolicy::ForceDisabled,
+                &tuning,
+            )
+            .is_err(),
+            "invalid threshold {invalid} must fail scanner construction"
+        );
+        assert!(
+            CompiledScanner::compile(vec![])
+                .expect("default scanner compiles")
+                .with_tuning_config(tuning)
+                .is_err(),
+            "invalid threshold {invalid} must fail post-compile tuning"
+        );
+    }
+}
+
+#[test]
+fn worker_local_scratch_drops_pathological_capacity_before_reuse() {
+    let (entropy_capacity, entropy_ceiling, confirmed_capacity, confirmed_ceiling) =
+        keyhog_scanner::testing::scratch_retention_after_growth_for_test(10_000);
+    assert!(entropy_capacity <= entropy_ceiling);
+    assert!(confirmed_capacity <= confirmed_ceiling);
+
+    let (
+        small_entropy_capacity,
+        small_entropy_ceiling,
+        small_confirmed_capacity,
+        small_confirmed_ceiling,
+    ) = keyhog_scanner::testing::scratch_retention_after_growth_for_test(8);
+    assert_eq!(small_entropy_ceiling, entropy_ceiling);
+    assert_eq!(small_confirmed_ceiling, confirmed_ceiling);
+    assert!(small_entropy_capacity <= entropy_ceiling);
+    assert!(small_confirmed_capacity <= confirmed_ceiling);
 }

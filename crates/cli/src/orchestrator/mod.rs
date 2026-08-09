@@ -997,8 +997,7 @@ fn setup_default_scan_runtime_with_rayon_policy(
                 &error,
             )
         })?
-        .with_config(effective_config.engine_scanner_config())
-        .with_tuning_config(effective_config.scanner_tuning.clone()),
+        .with_config(effective_config.engine_scanner_config()),
     );
 
     let gpu_participates = router_gpu_participates(
@@ -1559,8 +1558,7 @@ impl ScanOrchestrator {
                     .with_context(|| {
                         format!("materializing scanner for {detector_count} detectors")
                     })?
-                    .with_config(effective_config.engine_scanner_config())
-                    .with_tuning_config(effective_config.scanner_tuning.clone()),
+                    .with_config(effective_config.engine_scanner_config()),
             )
         };
 

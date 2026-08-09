@@ -124,7 +124,8 @@ impl ScannerTuning {
     }
 
     /// Apply explicit resolved config overrides to this scanner instance.
-    pub(crate) fn apply_config(&self, config: &ScannerTuningConfig) {
+    pub(crate) fn apply_config(&self, config: &ScannerTuningConfig) -> Result<(), String> {
+        config.validate()?;
         self.set_phase2_hs(config.phase2_hs);
         self.set_hs_prefilter_max_len(config.hs_prefilter_max_len);
         self.set_phase2_anchor_mode(config.phase2_anchor);
@@ -139,6 +140,7 @@ impl ScannerTuning {
         self.set_phase2_plain_localizer(config.fallback_localizer);
         self.set_gpu_recall_floor(config.gpu_recall_floor);
         self.set_chunk_lane_threshold(config.chunk_lane_threshold);
+        Ok(())
     }
 
     /// Resolve every per-scanner tuning override once into a plain copyable
@@ -204,7 +206,7 @@ impl ScannerTuning {
             .store(threshold.unwrap_or(usize::MAX), Relaxed); // LAW10: None is the documented compiled-default sentinel, not an error fallback.
     }
 
-    // ── Chunk lane threshold sweeping ─────────────────────────────────────
+    // ── Chunk lane threshold ──────────────────────────────────────────────
 
     /// Get the current configured chunk lane threshold for small file scanning.
     pub(crate) fn chunk_lane_threshold(&self) -> usize {
@@ -214,14 +216,10 @@ impl ScannerTuning {
         }
     }
 
-    /// Force the chunk lane threshold for small file performance tuning.
-    /// Rejects 0 and `usize::MAX`, representing default/None as 0.
+    /// Force the validated chunk lane threshold for small-file scheduling.
     pub(crate) fn set_chunk_lane_threshold(&self, threshold: Option<usize>) {
-        let val = match threshold {
-            Some(t) if t > 0 && t < usize::MAX => t,
-            _ => 0,
-        };
-        self.chunk_lane_threshold.store(val, Relaxed);
+        self.chunk_lane_threshold
+            .store(threshold.unwrap_or(0), Relaxed);
     }
 
     // ── Shared-anchor phase-2 localization ────────────────────────────────

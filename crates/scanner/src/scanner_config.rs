@@ -63,6 +63,23 @@ impl ScannerTuningConfig {
     pub(crate) const GPU_RECALL_FLOOR_DEFAULT: bool = false;
     pub(crate) const CHUNK_LANE_THRESHOLD_DEFAULT: usize =
         crate::engine::batch_topology::SMALL_CHUNK_MAX_BYTES;
+    pub const CHUNK_LANE_THRESHOLD_MIN: usize = 1;
+    pub const CHUNK_LANE_THRESHOLD_MAX: usize = usize::MAX - 1;
+
+    pub fn validate(&self) -> Result<(), String> {
+        if let Some(threshold) = self.chunk_lane_threshold {
+            if !(Self::CHUNK_LANE_THRESHOLD_MIN..=Self::CHUNK_LANE_THRESHOLD_MAX)
+                .contains(&threshold)
+            {
+                return Err(format!(
+                    "chunk_lane_threshold must be between {} and {} bytes, got {threshold}",
+                    Self::CHUNK_LANE_THRESHOLD_MIN,
+                    Self::CHUNK_LANE_THRESHOLD_MAX
+                ));
+            }
+        }
+        Ok(())
+    }
 
     pub fn effective(&self) -> ResolvedScannerTuningConfig {
         ResolvedScannerTuningConfig {
@@ -150,10 +167,8 @@ impl ScannerTuningConfig {
             .unwrap_or(Self::GPU_RECALL_FLOOR_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
     pub(crate) fn chunk_lane_threshold_effective(&self) -> usize {
-        match self.chunk_lane_threshold {
-            Some(val) if val > 0 && val < usize::MAX => val,
-            _ => Self::CHUNK_LANE_THRESHOLD_DEFAULT,
-        }
+        self.chunk_lane_threshold
+            .unwrap_or(Self::CHUNK_LANE_THRESHOLD_DEFAULT)
     }
 }
 

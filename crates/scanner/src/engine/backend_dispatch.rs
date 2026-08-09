@@ -195,56 +195,41 @@ impl CompiledScanner {
             })
         };
         let threshold = self.tuning.chunk_lane_threshold();
-        let is_small = |chunk: &Chunk| chunk.data.len() <= threshold;
-        let small_count = chunks.iter().filter(|c| is_small(c)).count();
         let workers = rayon::current_num_threads().max(1);
 
-        let mut results: Vec<Vec<RawMatch>> = if small_count == 0 || chunks.len() <= workers {
-            chunks
-                .par_iter()
-                .enumerate()
-                .map(|(index, chunk)| scan_one(index, chunk))
-                .collect::<crate::error::Result<Vec<_>>>()?
-        } else {
-            let lane_width =
-                super::batch_topology::coalesced_lane_width_with_threshold(chunks, threshold);
-            let mut work_lanes: Vec<Vec<usize>> = Vec::new();
-            let small_indices: Vec<usize> = chunks
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, c)| if is_small(c) { Some(idx) } else { None })
-                .collect();
+        let mut results: Vec<Vec<RawMatch>> =
+            if chunks.len() <= workers || chunks.iter().all(|chunk| chunk.data.len() > threshold) {
+                chunks
+                    .par_iter()
+                    .enumerate()
+                    .map(|(index, chunk)| scan_one(index, chunk))
+                    .collect::<crate::error::Result<Vec<_>>>()?
+            } else {
+                let work_lanes = super::batch_topology::coalesced_work_lanes(chunks, threshold);
+                let lane_results: Vec<Vec<(usize, Vec<RawMatch>)>> = work_lanes
+                    .par_iter()
+                    .map(|lane| {
+                        let indices: &[usize] = match lane {
+                            super::batch_topology::CoalescedLane::Small(indices) => indices,
+                            super::batch_topology::CoalescedLane::Large(index) => {
+                                std::slice::from_ref(index)
+                            }
+                        };
+                        indices
+                            .iter()
+                            .map(|&index| Ok((index, scan_one(index, &chunks[index])?)))
+                            .collect::<crate::error::Result<Vec<_>>>()
+                    })
+                    .collect::<crate::error::Result<Vec<_>>>()?;
 
-            for small_group in small_indices.chunks(lane_width) {
-                work_lanes.push(small_group.to_vec());
-            }
-
-            for (idx, c) in chunks.iter().enumerate() {
-                if !is_small(c) {
-                    work_lanes.push(vec![idx]);
+                let mut combined = vec![Vec::new(); chunks.len()];
+                for lane_res in lane_results {
+                    for (index, result) in lane_res {
+                        combined[index] = result;
+                    }
                 }
-            }
-
-            let lane_results: Vec<Vec<(usize, Vec<RawMatch>)>> = work_lanes
-                .par_iter()
-                .map(|lane| {
-                    lane.iter()
-                        .map(|&idx| {
-                            let res = scan_one(idx, &chunks[idx])?;
-                            Ok((idx, res))
-                        })
-                        .collect::<crate::error::Result<Vec<_>>>()
-                })
-                .collect::<crate::error::Result<Vec<_>>>()?;
-
-            let mut combined = vec![Vec::new(); chunks.len()];
-            for lane_res in lane_results {
-                for (idx, res) in lane_res {
-                    combined[idx] = res;
-                }
-            }
-            combined
-        };
+                combined
+            };
         super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route)?;
         Ok(results)
     }

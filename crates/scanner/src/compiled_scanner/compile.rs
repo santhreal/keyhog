@@ -533,6 +533,9 @@ impl CompiledScanner {
         packed_decoder_plan: Option<(Arc<crate::decode::CompiledDecoderPlan>, [u8; 32])>,
         mut packed_detector_plan: Option<PackedDetectorPlanPrelude<'_>>,
     ) -> Result<Self> {
+        tuning_config
+            .validate()
+            .map_err(crate::error::ScanError::Config)?;
         if packed_detector_plan.is_none() {
             if packed_state.is_none() {
                 super::validation::validate_detector_corpus(&detectors)
@@ -1347,6 +1350,10 @@ impl CompiledScanner {
             ),
         };
 
+        scanner
+            .tuning
+            .apply_config(tuning_config)
+            .map_err(crate::error::ScanError::Config)?;
         Ok(scanner)
     }
 
@@ -1358,9 +1365,11 @@ impl CompiledScanner {
     }
 
     /// Apply explicit performance-route tuning to this compiled scanner.
-    pub fn with_tuning_config(self, config: ScannerTuningConfig) -> Self {
-        self.tuning.apply_config(&config);
-        self
+    pub fn with_tuning_config(self, config: ScannerTuningConfig) -> Result<Self> {
+        self.tuning
+            .apply_config(&config)
+            .map_err(crate::error::ScanError::Config)?;
+        Ok(self)
     }
 }
 

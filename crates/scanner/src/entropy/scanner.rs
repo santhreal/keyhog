@@ -576,6 +576,10 @@ fn find_classified_entropy_secrets_from_lines(
     matches
 }
 
+pub(crate) fn keyword_line_ids_contain(keyword_line_ids: &[usize], line_index: usize) -> bool {
+    keyword_line_ids.binary_search(&line_index).is_ok()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn scan_keyword_contexts(
     lines: &impl EntropyLines,
@@ -610,7 +614,9 @@ fn scan_keyword_contexts(
             .saturating_add(1)
             .min(lines.len());
         for line_idx in start..end {
-            if line_idx != keyword_line_index && keyword_line_ids.binary_search(&line_idx).is_ok() {
+            if line_idx != keyword_line_index
+                && keyword_line_ids_contain(keyword_line_ids, line_idx)
+            {
                 continue;
             }
             if skip_lines.is_some_and(|skip| skip.contains(&line_idx)) {

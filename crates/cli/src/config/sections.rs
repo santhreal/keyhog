@@ -265,6 +265,19 @@ pub(super) fn apply_tuning_section(
         scanner_tuning.no_candidate_gate = tuning.no_candidate_gate;
         scanner_tuning.fallback_localizer = tuning.fallback_localizer;
         scanner_tuning.gpu_recall_floor = tuning.gpu_recall_floor;
-        scanner_tuning.chunk_lane_threshold = tuning.chunk_lane_threshold;
+        if let Some(threshold) = tuning.chunk_lane_threshold {
+            if !(keyhog_scanner::ScannerTuningConfig::CHUNK_LANE_THRESHOLD_MIN
+                ..=keyhog_scanner::ScannerTuningConfig::CHUNK_LANE_THRESHOLD_MAX)
+                .contains(&threshold)
+            {
+                config_errors.push(format!(
+                    "- [tuning].chunk_lane_threshold: expected an integer between {} and {}",
+                    keyhog_scanner::ScannerTuningConfig::CHUNK_LANE_THRESHOLD_MIN,
+                    keyhog_scanner::ScannerTuningConfig::CHUNK_LANE_THRESHOLD_MAX
+                ));
+            } else {
+                scanner_tuning.chunk_lane_threshold = Some(threshold);
+            }
+        }
     }
 }

@@ -137,6 +137,9 @@ pub(crate) use scan_postprocess::{
 };
 #[path = "scan_postprocess/confirmed_extract.rs"]
 mod scan_postprocess_confirmed_extract;
+pub(crate) use scan_postprocess_confirmed_extract::{
+    exercise_confirmed_offsets_scratch_for_test, HOT_DIRECT_OFFSETS_CEILING,
+};
 #[path = "scan_postprocess/fragments.rs"]
 mod scan_postprocess_fragments;
 #[cfg(feature = "ml")]

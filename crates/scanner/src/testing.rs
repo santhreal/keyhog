@@ -887,6 +887,46 @@ pub fn find_keyword_assignment_line_ids_for_test(text: &str) -> Vec<usize> {
         &matcher,
     )
 }
+/// Checks one line identity through the entropy scanner's sorted membership path.
+pub fn keyword_line_ids_contain_for_test(keyword_line_ids: &[usize], line_index: usize) -> bool {
+    crate::entropy::scanner::keyword_line_ids_contain(keyword_line_ids, line_index)
+}
+
+/// Returns the production lane topology as `(is_large, original_indices)`.
+pub fn chunk_lane_topology_for_test(
+    chunk_sizes: &[usize],
+    threshold: usize,
+    workers: usize,
+) -> Vec<(bool, Vec<usize>)> {
+    let chunks: Vec<keyhog_core::Chunk> = chunk_sizes
+        .iter()
+        .map(|&size| keyhog_core::Chunk {
+            data: "x".repeat(size).into(),
+            metadata: keyhog_core::ChunkMetadata::default(),
+        })
+        .collect();
+    crate::engine::batch_topology::coalesced_work_lanes_for_workers(&chunks, threshold, workers)
+        .into_iter()
+        .map(|lane| match lane {
+            crate::engine::batch_topology::CoalescedLane::Small(indices) => (false, indices),
+            crate::engine::batch_topology::CoalescedLane::Large(index) => (true, vec![index]),
+        })
+        .collect()
+}
+
+/// Returns the effective runtime threshold stored by a compiled scanner.
+pub fn scanner_chunk_lane_threshold_for_test(scanner: &crate::CompiledScanner) -> usize {
+    scanner.tuning.chunk_lane_threshold()
+}
+/// Grows both worker-local hash sets and returns each retained capacity and ceiling.
+pub fn scratch_retention_after_growth_for_test(entries: usize) -> (usize, usize, usize, usize) {
+    (
+        crate::engine::phase2_entropy::exercise_entropy_skip_lines_scratch_for_test(entries),
+        crate::engine::phase2_entropy::SCRATCH_CAPACITY_CEILING,
+        crate::engine::exercise_confirmed_offsets_scratch_for_test(entries),
+        crate::engine::HOT_DIRECT_OFFSETS_CEILING,
+    )
+}
 
 /// `is_import_like_prefix`: true when a trimmed line begins with an
 /// import/use/include/require/package/from declaration prefix (the single owner
