@@ -284,60 +284,49 @@ fn emit_archive_leaf_member(
         None => "filesystem/archive-binary",
     };
 
-    // Mirror FilesystemSource's large-file windowing so a buffered archive/layer
-    // member does not decode into one multi-hundred-MiB String (and a second
-    // owned chunk) when the disk path would have streamed ~1 MiB windows.
-    // Binary members must NOT take the lossy-window path: that bypasses the
-    // archive-binary / binary-strings noise gate. Classify with the same decoder
-    // the small-member path uses; only confirmed text is windowed. Keep the
-    // archive text_source_type on each window so reports/baselines keyed on
-    // archive identity do not silently move to filesystem/windowed.
+    // Mirror FilesystemSource's large-file policy:
+    //   * already-UTF-8 members window on the RAW bytes (offsets == member bytes
+    //     == size_bytes), matching the mmap window path;
+    //   * UTF-16 / other encodings take the whole-member decode path (one chunk
+    //     at base_offset 0), matching large_file_requires_whole_file_decode.
+    // Windowing decoded UTF-16 would mix decoded offsets with raw size_bytes and
+    // mis-locate findings. Keep archive text_source_type on each window.
     let window_size = super::reader::DEFAULT_WINDOW_SIZE;
     let window_overlap = super::reader::DEFAULT_WINDOW_OVERLAP;
     if content.len() > window_size && provenance.is_none() {
         let raw_member_len = content.len() as u64;
-        match read::decode_text_file_owned_or_bytes(content) {
-            Ok(text) => {
-                // Stream one window at a time (same shape as mmap windowing) so
-                // peak RAM stays ~decoded member + one window, not member + every
-                // window text held simultaneously. size_bytes keeps the original
-                // member byte length (not decoded UTF-8 length).
-                let file_size = raw_member_len;
-                let bytes = text.into_bytes();
-                return read::for_each_slice_window(
-                    &bytes,
-                    window_size,
-                    window_overlap,
-                    |window| {
-                        if window.text.is_empty() {
-                            return true;
-                        }
-                        emit(Ok(Chunk {
-                            data: window.text,
-                            metadata: ChunkMetadata {
-                                source_type: text_source_type.into(),
-                                path: Some(member_display.to_owned().into()),
-                                base_offset: window.offset,
-                                base_line: window.base_line,
-                                size_bytes: Some(file_size),
-                                decoded_span: None,
-                                ..Default::default()
-                            },
-                        }))
-                    },
-                );
-            }
-            Err(bytes) => {
-                match chunk_from_extracted_entry(
-                    bytes,
-                    member_display.to_string(),
-                    text_source_type,
-                    binary_source_type,
-                ) {
-                    Some(chunk) => return emit(chunk),
-                    None => return true,
-                }
-            }
+        if std::str::from_utf8(&content).is_ok() {
+            return read::for_each_slice_window(
+                &content,
+                window_size,
+                window_overlap,
+                |window| {
+                    if window.text.is_empty() {
+                        return true;
+                    }
+                    emit(Ok(Chunk {
+                        data: window.text,
+                        metadata: ChunkMetadata {
+                            source_type: text_source_type.into(),
+                            path: Some(member_display.to_owned().into()),
+                            base_offset: window.offset,
+                            base_line: window.base_line,
+                            size_bytes: Some(raw_member_len),
+                            decoded_span: None,
+                            ..Default::default()
+                        },
+                    }))
+                },
+            );
+        }
+        match chunk_from_extracted_entry(
+            content,
+            member_display.to_string(),
+            text_source_type,
+            binary_source_type,
+        ) {
+            Some(chunk) => return emit(chunk),
+            None => return true,
         }
     }
 
@@ -497,10 +486,11 @@ fn emit_archive_member_with_tex_provenance(
         );
     }
 
-    // Structured HAR expansion used to run only after a layer was spilled to
-    // disk. Keep that coverage on the streaming/in-memory dispatcher. Top-level
-    // 7z/RAR layer members are handled at the Docker boundary instead so nested
-    // archives cannot open a fresh bomb budget here.
+    // HAR expansion matches process_entry on disk: a .har member expands into
+    // wire:har:{request,response} chunks instead of one opaque JSON leaf. That
+    // parity applies to every in-memory archive family (zip/tar/7z/RAR/docker
+    // layers), not only Docker streaming. Charge derived bytes against the
+    // shared archive-bomb accumulator the surrounding branches already use.
     let ext = std::path::Path::new(entry_name)
         .extension()
         .and_then(|e| e.to_str())
@@ -520,6 +510,14 @@ fn emit_archive_member_with_tex_provenance(
                     }
                 }
                 crate::profile::add_derived_bytes(derived_bytes);
+                let total_budget = extraction_total_budget(max_size);
+                let attempted = (*total_uncompressed).saturating_add(derived_bytes);
+                if attempted > total_budget {
+                    let err = report_archive_truncation(member_display, attempted, total_budget);
+                    *total_uncompressed = total_budget;
+                    return emit(Err(err));
+                }
+                *total_uncompressed = attempted;
                 return true;
             }
             None => {
