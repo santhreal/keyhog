@@ -380,6 +380,46 @@ fn stream_layer_scans_large_extensionless_utf16_le() {
     );
 }
 
+/// A layer member whose name starts with `#` must stay scannable; HAR `#url`
+/// peeling must not treat it as an empty path body.
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_hash_prefixed_member_name_still_scans() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let secret = b"HASH_NAME_SECRET=ghp_HashPrefixedMemberToken000000001";
+    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("#config", secret)]);
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream hash-prefixed member");
+    let rewritten: Vec<_> = rows
+        .into_iter()
+        .map(|row| match row {
+            Ok(chunk) => TestApi.rewrite_streamed_docker_layer_chunk(chunk, "img", "layer.tar"),
+            Err(error) => Err(error),
+        })
+        .collect();
+    assert!(
+        rewritten.iter().all(|row| row.is_ok()),
+        "hash-prefixed member must not become unsafe-path: {rewritten:?}"
+    );
+    let chunks: Vec<_> = rewritten.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().any(|chunk| chunk
+            .data
+            .contains("HASH_NAME_SECRET=ghp_HashPrefixedMemberToken000000001")),
+        "hash-prefixed member content must remain scannable, got {:?}",
+        chunks
+            .iter()
+            .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
+    );
+}
+
 /// HAR request URLs are opaque provenance (`member#url`). A `/../` segment in
 /// the captured URL must not fail streamed path normalization.
 #[cfg(feature = "docker")]
