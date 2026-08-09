@@ -22,14 +22,12 @@ fn availability_probe_records_no_gpu_evidence() {
     );
     let (events, _, _) = runtime.take_session_typed_events();
     assert!(
-        events
-            .iter()
-            .all(|event| !matches!(
-                event.event_id,
-                keyhog_profile::EventId::GpuAdapterAcquired
-                    | keyhog_profile::EventId::GpuFault
-                    | keyhog_profile::EventId::GpuCapabilityUnsupported
-            )),
+        events.iter().all(|event| !matches!(
+            event.event_id,
+            keyhog_profile::EventId::GpuAdapterAcquired
+                | keyhog_profile::EventId::GpuFault
+                | keyhog_profile::EventId::GpuCapabilityUnsupported
+        )),
         "availability probe recorded unexpected GPU events: {events:?}"
     );
 }
@@ -44,10 +42,8 @@ fn policy_disabled_probe_records_no_gpu_evidence() {
             assert!(!gpu_available());
         }
     });
-    assert!(
-        runtime
-            .take_session_typed_metrics()
-            .iter()
-            .all(|metric| !metric.metric_id.descriptor().name.starts_with("gpu-")),
-    );
+    assert!(runtime
+        .take_session_typed_metrics()
+        .iter()
+        .all(|metric| !metric.metric_id.descriptor().name.starts_with("gpu-")),);
 }

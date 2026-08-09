@@ -9,7 +9,7 @@
 //! count cap that is inode exhaustion and an effective hang from a tiny input.
 
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 /// One past `MAX_DOCKER_TAR_ENTRIES` in `src/docker/archive.rs`.
 #[cfg(feature = "docker")]
@@ -76,9 +76,7 @@ fn docker_tar_under_entry_cap_still_unpacks() {
     header.set_size(payload.len() as u64);
     header.set_entry_type(tar::EntryType::Regular);
     header.set_cksum();
-    builder
-        .append(&header, payload.as_slice())
-        .expect("append");
+    builder.append(&header, payload.as_slice()).expect("append");
     builder.finish().expect("finish tar");
 
     TestApi

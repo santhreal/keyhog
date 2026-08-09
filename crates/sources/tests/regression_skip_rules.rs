@@ -20,7 +20,7 @@
 //!     NUL-run files.
 
 use keyhog_core::{Chunk, Source, SourceError};
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::fs;
 use std::path::Path;

@@ -1,6 +1,6 @@
 #![cfg(feature = "web")]
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 macro_rules! redact_case {
     ($name:ident, $input:expr, $expected:expr) => {
@@ -67,7 +67,7 @@ redact_cases! {
 // They are ignored so the suite stays green; enable each as the redaction list expands.
 #[cfg(test)]
 mod roadmap {
-    use keyhog_sources::testing::{TestApi};
+    use keyhog_sources::testing::TestApi;
 
     macro_rules! roadmap_redact_case {
         ($name:ident, $input:expr, $expected:expr) => {

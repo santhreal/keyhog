@@ -27,7 +27,7 @@
 #![cfg(feature = "github")]
 
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_verifier::ssrf::is_private_url;
 
 // ---------------------------------------------------------------------------

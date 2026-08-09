@@ -88,7 +88,6 @@ pub enum Command {
     #[command(verbatim_doc_comment, hide = true)]
     CompileExecutionPacks(CompileExecutionPacksArgs),
 
-
     /// Manage git pre-commit hooks
     #[command(verbatim_doc_comment)]
     Hook {

@@ -1,5 +1,5 @@
 use keyhog_sources::skip_counts;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::thread;

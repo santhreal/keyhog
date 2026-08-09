@@ -11,7 +11,7 @@
 //! `verify_oci_blob_sha256_ok` test accessor so the private fn stays private.
 #![cfg(feature = "docker")]
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use sha2::{Digest, Sha256};
 
 fn sha256_digest_string(content: &[u8]) -> String {

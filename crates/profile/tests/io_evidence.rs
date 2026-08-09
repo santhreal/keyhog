@@ -3,12 +3,11 @@
 //! and network counters with retry aggregation at drain.
 
 use keyhog_profile::{
-    add_derived_decoder_bytes, add_input_bytes, record_annotation,
-    record_fs_metadata_latency_ns, record_fs_open_latency_ns, record_fs_read_latency_ns,
-    record_io_cache_state, record_network_bytes, record_network_latency_ns,
-    record_network_request, record_retained_buffer_bytes, take_metric_distributions,
-    take_typed_metrics, AnnotationId, Evidence, EvidenceGap, IoCacheStateV2, MetricId, MetricKind,
-    RunIdentity, RunState, Session,
+    add_derived_decoder_bytes, add_input_bytes, record_annotation, record_fs_metadata_latency_ns,
+    record_fs_open_latency_ns, record_fs_read_latency_ns, record_io_cache_state,
+    record_network_bytes, record_network_latency_ns, record_network_request,
+    record_retained_buffer_bytes, take_metric_distributions, take_typed_metrics, AnnotationId,
+    Evidence, EvidenceGap, IoCacheStateV2, MetricId, MetricKind, RunIdentity, RunState, Session,
 };
 
 fn session(name: &str) -> Session {

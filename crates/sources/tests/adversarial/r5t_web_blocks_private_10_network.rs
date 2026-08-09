@@ -1,6 +1,6 @@
 //! R5-T http adversarial: blocks RFC1918 10.0.0.0/8.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 #[cfg(feature = "web")]
 #[test]
 fn r5t_web_blocks_private_10_network() {

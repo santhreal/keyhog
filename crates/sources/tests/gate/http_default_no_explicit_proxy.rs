@@ -1,7 +1,7 @@
 //! LR1-A8 replacement gate: `http.rs` default proxy policy.
 
 use keyhog_sources::http::HttpClientConfig;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 #[test]
 fn http_config_default_has_no_explicit_proxy_override() {

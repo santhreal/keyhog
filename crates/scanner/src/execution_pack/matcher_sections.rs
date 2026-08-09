@@ -331,8 +331,12 @@ fn decode_validated_compile_state_sections(
         decode_canonical("literal index", literal_index, backend, authenticated)?;
     let regex: RegexEnvelope =
         decode_canonical("regex programs", regex_programs, backend, authenticated)?;
-    let suppression: SuppressionEnvelope =
-        decode_canonical("suppression policy", suppression_policy, backend, authenticated)?;
+    let suppression: SuppressionEnvelope = decode_canonical(
+        "suppression policy",
+        suppression_policy,
+        backend,
+        authenticated,
+    )?;
     if literal.detector_count != regex.detector_count
         || literal.detector_count != suppression.detector_count
     {
@@ -623,11 +627,7 @@ fn unpack_companion(
             value_relation: packed.value_relation,
         });
     }
-    RUNTIME_COMPANION_VALIDATIONS.set(
-        RUNTIME_COMPANION_VALIDATIONS
-            .get()
-            .saturating_add(1),
-    );
+    RUNTIME_COMPANION_VALIDATIONS.set(RUNTIME_COMPANION_VALIDATIONS.get().saturating_add(1));
     let spec = CompanionSpec {
         name: packed.name,
         regex: packed.regex,

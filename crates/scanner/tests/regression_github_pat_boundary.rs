@@ -21,8 +21,8 @@
 mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::sync::OnceLock;
+use keyhog_scanner::ScanBackend;
+use std::sync::LazyLock;
 
 /// Known-valid classic PAT: `ghp_` + 36 word chars with a correct trailing
 /// checksum (a wrong checksum is silently dropped, so every positive case must
@@ -35,14 +35,14 @@ const DETECTOR_IDS: &[&str] = &["github-classic-pat"];
 /// pass only); its emit still funnels through the same extraction path.
 const CPU_BACKENDS: [ScanBackend; 2] = [ScanBackend::SimdCpu, ScanBackend::CpuFallback];
 
-fn scanner() -> &'static CompiledScanner {
-    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
-    SCANNER.get_or_init(|| {
+fn scanner() -> &'static support::ExactCpuScanners {
+    static SCANNER: LazyLock<support::ExactCpuScanners> = LazyLock::new(|| {
         let mut detectors =
             keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
         detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
-        CompiledScanner::compile(detectors).expect("compile")
-    })
+        support::ExactCpuScanners::compile(detectors).expect("compile exact CPU scanners")
+    });
+    &SCANNER
 }
 
 fn chunk(text: &str) -> Chunk {

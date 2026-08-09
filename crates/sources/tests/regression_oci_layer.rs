@@ -12,7 +12,7 @@
 //! the facade; the multi-layer test asserts against a locally-sorted expectation.
 
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 #[cfg(feature = "docker")]
 fn sha256_hex(bytes: &[u8]) -> String {

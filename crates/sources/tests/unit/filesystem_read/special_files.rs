@@ -1,7 +1,7 @@
 //! Special-file safety at the single read-open boundary (`open_file_safe`).
 
 use super::super::support::{make_fifo, within_timeout, write_regular};
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use std::io::Read;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;

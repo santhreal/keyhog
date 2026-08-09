@@ -1,6 +1,6 @@
 //! R5-T http adversarial: WebSource SSRF gate blocks localhost domain.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 #[cfg(feature = "web")]
 #[test]
 fn r5t_web_blocks_localhost_domain() {

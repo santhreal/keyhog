@@ -4,7 +4,7 @@ use crate::support::split_chunk_results;
 use std::io::Write;
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::fs::File;
 use zip::write::SimpleFileOptions;

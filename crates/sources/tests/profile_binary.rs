@@ -12,7 +12,7 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_profile::Stage;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use std::io::Write;
 use support::profile::{run_with_profile, stage_calls};
 
@@ -47,7 +47,9 @@ fn binary_records_acquire_read_decode_and_extracted_totals() {
         "a healthy fixture must not report coverage errors: {errors:?}"
     );
     assert_eq!(chunks.len(), 1, "one strings chunk expected: {rows:?}");
-    assert!(chunks[0].data.contains("AKIABINARYFIXTURE001_visible_secret"));
+    assert!(chunks[0]
+        .data
+        .contains("AKIABINARYFIXTURE001_visible_secret"));
 
     assert_eq!(stage_calls(&profile, Stage::SourceAcquire), 1);
     assert_eq!(stage_calls(&profile, Stage::SourceRead), 1);

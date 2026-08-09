@@ -5,6 +5,7 @@ pub mod a3_pipeline;
 pub mod a4_lr2;
 pub mod adjudicate;
 pub mod alphabet_filter;
+pub mod anchored_regex_cases;
 pub mod ascii_ci;
 pub mod base64_byte_predicates;
 pub mod base64_non_padding_equals;

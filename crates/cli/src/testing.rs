@@ -456,6 +456,12 @@ pub trait CliTestApi {
     /// `EXIT_LIVE_CREDENTIALS` (10) if any finding is `VerificationResult::Live`,
     /// else `EXIT_SUCCESS` (0). Mirrors the exit-code branch in `run()`.
     fn scan_exit_code(&self, findings: &[VerifiedFinding]) -> u8;
+    fn resolve_scan_exit_for_test(
+        &self,
+        has_new_entries: bool,
+        incremental_cache_failed: bool,
+        source_coverage_incomplete: bool,
+    ) -> u8;
     fn scan_orchestrator_from_parts_for_test(
         &self,
         args: ScanArgs,
@@ -1380,6 +1386,18 @@ impl CliTestApi for TestApi {
     }
     fn scan_exit_code(&self, findings: &[VerifiedFinding]) -> u8 {
         crate::orchestrator::scan_exit_code(findings)
+    }
+    fn resolve_scan_exit_for_test(
+        &self,
+        has_new_entries: bool,
+        incremental_cache_failed: bool,
+        source_coverage_incomplete: bool,
+    ) -> u8 {
+        crate::orchestrator::resolve_scan_exit_for_test(
+            has_new_entries,
+            incremental_cache_failed,
+            source_coverage_incomplete,
+        )
     }
     fn scan_orchestrator_from_parts_for_test(
         &self,
