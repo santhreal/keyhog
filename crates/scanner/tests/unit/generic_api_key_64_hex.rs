@@ -14,10 +14,7 @@ fn test_generic_api_key_64_hex_policy() {
     let matches = scanner.scan_coalesced(&[chunk]).expect("scan chunk");
     println!("coalesced_matches: {matches:?}");
     assert!(!matches.is_empty() && !matches[0].is_empty(), "api_secret_key 64-hex JSON field must match");
-    let generic_match = matches[0]
-        .iter()
-        .find(|m| m.detector_id.as_ref() == "generic-api-key")
-        .expect("generic-api-key detector identity must match for api_key 64-hex JSON field");
+    let generic_match = &matches[0][0];
     assert_eq!(generic_match.detector_id.as_ref(), "generic-api-key");
     assert_eq!(
         generic_match.credential.as_ref(),
@@ -41,10 +38,7 @@ fn test_generic_api_secret_key_64_hex_assignment_policy() {
     let matches = scanner.scan_coalesced(&[chunk]).expect("scan chunk");
     println!("COALESCED: {matches:?}");
     assert!(!matches.is_empty() && !matches[0].is_empty(), "api_secret_key 64-hex assignment must match");
-    let generic_match = matches[0]
-        .iter()
-        .find(|m| m.detector_id.as_ref() == "generic-api-key")
-        .expect("generic-api-key detector identity must match for api_secret_key 64-hex assignment");
+    let generic_match = &matches[0][0];
     assert_eq!(generic_match.detector_id.as_ref(), "generic-api-key");
     assert_eq!(
         generic_match.credential.as_ref(),
