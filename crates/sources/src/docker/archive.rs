@@ -411,9 +411,36 @@ fn stream_layer_tar_reader(
                 }
                 prebuffered = Some(bytes);
             } else if crate::filesystem::looks_binary_prefix(&prefix) {
+                // Magic/NUL-run extensionless binaries match process_entry: Binary
+                // skip (no printable-string mining of ELF/PE payloads).
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
                 drain_layer_member_remainder(&mut entry, after_prefix)?;
                 continue;
+            } else if crate::filesystem::looks_binary(&prefix) {
+                // C0-density binary without a confident magic/NUL prefix: buffer
+                // for archive-binary / printable-strings. Do NOT lossy-window as
+                // text (junk matches); this matches the extensioned sniff arm.
+                let mut bytes = prefix;
+                let room = member_scan_cap.saturating_sub(bytes.len() as u64);
+                let to_take = after_prefix.min(room);
+                if to_take > 0 {
+                    let mut take = Read::take(&mut entry, to_take);
+                    take.read_to_end(&mut bytes).map_err(SourceError::Io)?;
+                }
+                let leftover = after_prefix.saturating_sub(to_take);
+                if leftover > 0 {
+                    drain_layer_member_remainder(&mut entry, leftover)?;
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                    if !emit(Err(docker_archive_entry_over_entry_cap_error(
+                        &path,
+                        size,
+                        member_scan_cap,
+                    ))) {
+                        return Ok(false);
+                    }
+                    continue;
+                }
+                prebuffered = Some(bytes);
             } else if size > window_size as u64 {
                 let stream_size = size.min(member_scan_cap);
                 if !stream_plain_layer_member_windows(

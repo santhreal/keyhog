@@ -305,6 +305,48 @@ fn stream_layer_scans_extensionless_text_with_late_nul_run() {
 
 /// Large extensionless UTF-16 (BOM) must whole-member decode, not lossy plain
 /// windows — otherwise every other byte is garbled and secrets are missed.
+/// Signature-less high-C0 binaries must not take lossy plain windows. Density
+/// hits buffer into archive-binary / printable-strings (extensioned parity).
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_density_binary_extensionless_uses_archive_binary() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let secret = b"DENSITY_STREAM_SECRET=ghp_DensityBinToken00000000000001";
+    // >5% C0 controls in the 1 KiB sniff window, no 4-byte NUL run, no magic.
+    let mut prefix = Vec::with_capacity(1024);
+    while prefix.len() < 1024 {
+        prefix.push(0x01);
+        prefix.extend_from_slice(b"abcd");
+    }
+    prefix.truncate(1024);
+    let mut payload = prefix;
+    payload.extend(vec![0x01; 1024 * 1024]);
+    payload.extend_from_slice(secret);
+    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/blob", &payload)]);
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream density binary");
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().any(|chunk| {
+            chunk
+                .data
+                .contains("DENSITY_STREAM_SECRET=ghp_DensityBinToken00000000000001")
+                && chunk.metadata.source_type.contains("archive-binary")
+        }),
+        "density binary must take archive-binary strings, got {:?}",
+        chunks
+            .iter()
+            .map(|c| (c.metadata.source_type.as_ref(), c.metadata.path.as_deref()))
+            .collect::<Vec<_>>()
+    );
+}
+
 #[cfg(feature = "docker")]
 #[test]
 fn stream_layer_scans_large_extensionless_utf16_le() {
@@ -347,8 +389,8 @@ fn stream_layer_har_url_with_parent_segments_still_scans() {
     let secret = "HAR_STREAM_SECRET=ghp_HarParentSegToken0000000000001";
     let har = format!(
         r#"{{"log":{{"version":"1.2","entries":[{{"request":{{"method":"GET","url":"https://example.invalid/api/../token","headers":[],"queryString":[],"headersSize":-1,"bodySize":0}},"response":{{"status":200,"statusText":"OK","headers":[],"content":{{"size":{size},"mimeType":"text/plain","text":"{secret}"}},"headersSize":-1,"bodySize":{size}}}}}]}}}}"#,
-        size=secret.len(),
-        secret=secret,
+        size = secret.len(),
+        secret = secret,
     );
     let layer = layer_tar_with_entries(
         dir.path(),
