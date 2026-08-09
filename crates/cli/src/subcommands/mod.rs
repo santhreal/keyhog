@@ -15,6 +15,7 @@ pub(crate) mod diff;
 pub(crate) mod doctor;
 pub(crate) mod explain;
 pub(crate) mod hook;
+pub(crate) mod guard;
 pub(crate) mod repair;
 pub(crate) mod scan;
 pub(crate) mod scan_system;

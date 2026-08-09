@@ -1,0 +1,249 @@
+//! `keyhog guard {add, remove, list, status, reconcile}` subcommand.
+//!
+//! Connects to the daemon and sends guard control frames. When no daemon
+//! is available, reports that clearly instead of silently doing nothing.
+
+use crate::args::{GuardAction, GuardArgs};
+use crate::daemon::client;
+use crate::daemon::protocol::{Request, Response, response_kind};
+use crate::exit_codes;
+use crate::style;
+use std::process::ExitCode;
+
+use crate::daemon::server::default_socket_path;
+
+pub(crate) async fn run(args: GuardArgs) -> anyhow::Result<ExitCode> {
+    match args.action {
+        GuardAction::Add { root, mode } => run_add(root, mode).await,
+        GuardAction::Remove { root } => run_remove(root).await,
+        GuardAction::List => run_list().await,
+        GuardAction::Status { root, format } => run_status(root, format).await,
+        GuardAction::Reconcile { root } => run_reconcile(root).await,
+    }
+}
+
+async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitCode> {
+    let socket = default_socket_path();
+    let mut conn = match client::connect(&socket).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            anyhow::bail!(
+                "guard add: no compatible daemon at {} (start one with `keyhog daemon start`): {error}",
+                socket.display()
+            );
+        }
+    };
+
+    let request = Request::GuardAdd {
+        root: root.to_string_lossy().to_string(),
+        mode,
+    };
+    match conn.round_trip(&request).await? {
+        Response::GuardAdded {
+            root: _,
+            state,
+            terminal_sequence,
+        } => {
+            let palette = style::for_stderr();
+            eprintln!(
+                "{} guard: root {} is {} (sequence {})",
+                style::pass("OK", &palette),
+                root.display(),
+                state,
+                terminal_sequence
+            );
+            Ok(ExitCode::SUCCESS)
+        }
+        Response::Error { message } => {
+            anyhow::bail!("{message}");
+        }
+        other => {
+            anyhow::bail!(
+                "guard add: protocol mismatch (got {})",
+                response_kind(&other)
+            );
+        }
+    }
+}
+
+async fn run_remove(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
+    let socket = default_socket_path();
+    let mut conn = match client::connect(&socket).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            anyhow::bail!(
+                "guard remove: no compatible daemon at {} (start one with `keyhog daemon start`): {error}",
+                socket.display()
+            );
+        }
+    };
+
+    let request = Request::GuardRemove {
+        root: root.to_string_lossy().to_string(),
+    };
+    match conn.round_trip(&request).await? {
+        Response::GuardRemoved => {
+            let palette = style::for_stderr();
+            eprintln!(
+                "{} guard: removed {}",
+                style::pass("OK", &palette),
+                root.display()
+            );
+            Ok(ExitCode::SUCCESS)
+        }
+        Response::Error { message } => {
+            anyhow::bail!("{message}");
+        }
+        other => {
+            anyhow::bail!(
+                "guard remove: protocol mismatch (got {})",
+                response_kind(&other)
+            );
+        }
+    }
+}
+
+async fn run_list() -> anyhow::Result<ExitCode> {
+    // List is not yet a daemon frame; report that the guard runtime is
+    // not yet available. This will be replaced when Lane E ships the
+    // root registry status aggregation.
+    let palette = style::for_stderr();
+    eprintln!(
+        "{} guard list: the guard runtime is not yet available on this daemon",
+        style::warn("WARN", &palette)
+    );
+    Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
+}
+
+async fn run_status(
+    root: std::path::PathBuf,
+    format: String,
+) -> anyhow::Result<ExitCode> {
+    let socket = default_socket_path();
+    let mut conn = match client::connect(&socket).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            anyhow::bail!(
+                "guard status: no compatible daemon at {} (start one with `keyhog daemon start`): {error}",
+                socket.display()
+            );
+        }
+    };
+
+    let request = Request::GuardStatus {
+        root: root.to_string_lossy().to_string(),
+    };
+    match conn.round_trip(&request).await? {
+        Response::GuardStatusResult {
+            root: _,
+            mode,
+            state,
+            terminal_sequence,
+            pending_events,
+            files_scanned,
+            bytes_scanned,
+            attestation_hits,
+            attestation_misses,
+            findings_count,
+            coverage_gaps,
+            scanner_residency,
+            repair_command,
+        } => {
+            if format == "json" {
+                let json = serde_json::json!({
+                    "root": root.to_string_lossy(),
+                    "mode": mode,
+                    "state": state,
+                    "terminal_sequence": terminal_sequence,
+                    "pending_events": pending_events,
+                    "files_scanned": files_scanned,
+                    "bytes_scanned": bytes_scanned,
+                    "attestation_hits": attestation_hits,
+                    "attestation_misses": attestation_misses,
+                    "findings_count": findings_count,
+                    "coverage_gaps": coverage_gaps,
+                    "scanner_residency": scanner_residency,
+                    "repair_command": repair_command,
+                });
+                println!("{json}");
+            } else {
+                let palette = style::for_stderr();
+                eprintln!("root:           {}", root.display());
+                eprintln!("mode:           {mode}");
+                eprintln!("state:          {state}");
+                eprintln!("sequence:       {terminal_sequence}");
+                eprintln!("pending events: {pending_events}");
+                eprintln!("files scanned:  {files_scanned}");
+                eprintln!("bytes scanned:  {bytes_scanned}");
+                eprintln!("cache hits:     {attestation_hits}");
+                eprintln!("cache misses:   {attestation_misses}");
+                eprintln!("findings:       {findings_count}");
+                eprintln!("coverage gaps:  {coverage_gaps}");
+                eprintln!("residency:      {scanner_residency}");
+                if state == "degraded" || state == "stale-policy" {
+                    eprintln!(
+                        "{} repair: {repair_command}",
+                        style::warn("WARN", &palette)
+                    );
+                }
+            }
+            // Exit 13 for degraded/stale/stopped/indexing states.
+            if matches!(
+                state.as_str(),
+                "degraded" | "stale-policy" | "stopped" | "indexing"
+            ) {
+                Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
+            } else if findings_count > 0 {
+                Ok(ExitCode::from(exit_codes::EXIT_FINDINGS))
+            } else {
+                Ok(ExitCode::SUCCESS)
+            }
+        }
+        Response::Error { message } => {
+            anyhow::bail!("{message}");
+        }
+        other => {
+            anyhow::bail!(
+                "guard status: protocol mismatch (got {})",
+                response_kind(&other)
+            );
+        }
+    }
+}
+
+async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
+    let socket = default_socket_path();
+    let mut conn = match client::connect(&socket).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            anyhow::bail!(
+                "guard reconcile: no compatible daemon at {} (start one with `keyhog daemon start`): {error}",
+                socket.display()
+            );
+        }
+    };
+
+    let request = Request::GuardReconcile {
+        root: root.to_string_lossy().to_string(),
+    };
+    match conn.round_trip(&request).await? {
+        Response::GuardReconcileStarted { root: _ } => {
+            let palette = style::for_stderr();
+            eprintln!(
+                "{} guard: reconciliation started for {}",
+                style::pass("OK", &palette),
+                root.display()
+            );
+            Ok(ExitCode::SUCCESS)
+        }
+        Response::Error { message } => {
+            anyhow::bail!("{message}");
+        }
+        other => {
+            anyhow::bail!(
+                "guard reconcile: protocol mismatch (got {})",
+                response_kind(&other)
+            );
+        }
+    }
+}
