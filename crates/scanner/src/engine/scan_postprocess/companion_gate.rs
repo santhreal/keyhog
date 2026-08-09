@@ -242,7 +242,7 @@ pub(crate) fn companions_deny_absent(
 
 /// True when the pattern may still match: no gate, or at least one arm has
 /// every required companion literal present in `text` (ASCII case-insensitive).
-#[cfg(test)]
+/// Test/diagnostic helper; production uses [`companions_deny_absent`].
 pub(crate) fn companions_allow(src: &str, text: &str) -> bool {
     let mut out = vec![true; 1];
     companions_allow_batch(&[(0, src)], text, &mut out);
@@ -342,29 +342,5 @@ fn flush_run(run: &mut String, out: &mut Vec<String>) {
         out.push(std::mem::take(run));
     } else {
         run.clear();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn formbuilder_requires_form_or_fused_token() {
-        let src = r#"(?:123[_\-\s]*form[_\-\s]*builder|123FORMBUILDER)[_.\s]*(?:api[_\-\s]*key)"#;
-        let arms = companion_arms(src);
-        assert!(!arms.is_empty(), "expected companion arms for 123formbuilder");
-        let padding = "const ordinary_value = 1234567890;\n";
-        assert!(!companions_allow(src, padding));
-        assert!(companions_allow(src, "123_form_builder_api_key=abcdef"));
-        assert!(companions_allow(src, "123FORMBUILDER_api_key=abcdef"));
-    }
-
-    #[test]
-    fn ip_api_requires_api_companion() {
-        let src = r#"(?:IP[_\-\s]*API|ip[_\-\s]*api)(?:_KEY)?[=:\s"']+([a-zA-Z0-9_-]{10,})"#;
-        let lorem = "lorem ipsum dolor sit amet, consectetur adipiscing elit.\n";
-        assert!(!companions_allow(src, lorem));
-        assert!(companions_allow(src, "IPAPI_KEY=WnGcEBigw6"));
     }
 }

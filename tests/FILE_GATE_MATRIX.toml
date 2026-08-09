@@ -1200,6 +1200,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/engine/vocab_absence.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/engine/scan.rs"
 error = true
 adversarial = true
@@ -2181,6 +2186,11 @@ adversarial = true
 
 [[module]]
 path = "crates/scanner/src/gpu_literal_artifacts.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/engine/scan_postprocess/companion_gate.rs"
 error = true
 adversarial = true
 

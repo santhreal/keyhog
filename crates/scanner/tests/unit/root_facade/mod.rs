@@ -13,6 +13,7 @@ mod backend_collapse_surface_regression;
 mod compiled_scanner_compile;
 mod compiler_compile;
 mod confirmed_anchor_parity;
+mod companion_gate;
 mod confirmed_gate_parity;
 mod confirmed_pattern_profile;
 mod csr;

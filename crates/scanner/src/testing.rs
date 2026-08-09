@@ -2600,6 +2600,14 @@ pub fn has_fragment_assignment_syntax_for_test(data: &[u8]) -> bool {
 pub fn suffix_gate_literals_for_test(src: &str) -> Vec<String> {
     crate::engine::suffix_gate_literals(src)
 }
+
+pub fn companion_arms_for_test(src: &str) -> Vec<Vec<String>> {
+    crate::engine::companion_arms(src).as_ref().clone()
+}
+
+pub fn companions_allow_for_test(src: &str, text: &str) -> bool {
+    crate::engine::companions_allow(src, text)
+}
 pub fn new_trigger_bitmap_for_test(n_patterns: usize) -> Vec<u64> {
     crate::engine::trigger_bitmap::new_trigger_bitmap(n_patterns)
 }
@@ -3683,6 +3691,14 @@ pub(crate) fn set_confirmed_suffix_gate(
     mode: Option<bool>,
 ) {
     scanner.tuning().set_confirmed_suffix_gate(mode);
+}
+
+#[cfg(test)]
+pub(crate) fn set_confirmed_companion_gate(
+    scanner: &crate::engine::CompiledScanner,
+    mode: Option<bool>,
+) {
+    scanner.tuning().set_confirmed_companion_gate(mode);
 }
 
 #[cfg(test)]

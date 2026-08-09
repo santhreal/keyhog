@@ -83,6 +83,8 @@ pub(crate) struct ScannerTuning {
     decode_focus: AtomicU8,
     /// Override for the confirmed-pass suffix gate.
     confirmed_suffix_gate: AtomicU8,
+    /// Override for the confirmed-pass companion mid-literal gate.
+    confirmed_companion_gate: AtomicU8,
     /// Override for the SWE-101 combined no-candidate prefilter gate (default ON;
     /// recall-identical, a no-hit is a sound proof nothing can fire). A
     /// differential parity test forces it OFF on one scanner to prove the gate
@@ -114,6 +116,7 @@ impl ScannerTuning {
             phase2_prefix_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
             decode_focus: AtomicU8::new(BoolOverride::Default.as_byte()),
             confirmed_suffix_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
+            confirmed_companion_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
             no_candidate_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
             phase2_plain_localizer: AtomicU8::new(BoolOverride::Default.as_byte()),
             gpu_recall_floor: AtomicU8::new(BoolOverride::Default.as_byte()),
@@ -320,6 +323,21 @@ impl ScannerTuning {
     pub(crate) fn confirmed_suffix_gate_enabled(&self) -> bool {
         BoolOverride::from_raw(self.confirmed_suffix_gate.load(Relaxed))
             .resolve(ScannerTuningConfig::CONFIRMED_SUFFIX_GATE_DEFAULT)
+    }
+
+    /// Override the confirmed-pass companion gate (test/diagnostic). `Some(true)`
+    /// forces it on, `Some(false)` off, `None` = compiled default (on). Recall is
+    /// identical either way: the gate only skips patterns whose required mid-literals
+    /// are absent, so they cannot match.
+    pub(crate) fn set_confirmed_companion_gate(&self, mode: Option<bool>) {
+        self.confirmed_companion_gate
+            .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
+    }
+
+    /// Whether the confirmed-pass companion mid-literal gate is enabled (default on).
+    pub(crate) fn confirmed_companion_gate_enabled(&self) -> bool {
+        BoolOverride::from_raw(self.confirmed_companion_gate.load(Relaxed))
+            .resolve(true)
     }
 
     // ── SWE-101 combined no-candidate prefilter gate ───────────────────────

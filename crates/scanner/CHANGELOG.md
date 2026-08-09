@@ -3,9 +3,11 @@
 ## 0.5.68 - 2026-08-05
 
 - Fix cfg(test) `scalar_overlaps_reference` to call `contains_anchor_ascii8` after the hot-path reject probe stopped exposing `contains_anchor`, so `cargo test -p keyhog-scanner --lib` compiles again (macOS CI).
+- Extract vocabulary-stage absence helpers into `engine/vocab_absence.rs` so `engine/scan.rs` stays under the STANDARD 500 LOC cap; register `companion_gate` in FILE_GATE_MATRIX and migrate its inline tests to `tests/unit`.
+- Add a per-scanner confirmed companion-gate test override so suffix-gate cold-regex differential coverage can isolate itself from mid-literal denial.
 - Speed up decode-through on repetitive single-line JSON: memoize base64 trial-decode by candidate value, intern extracted candidate strings as `Arc<str>`, and skip duplicate Caesar inputs that would emit identical bare chunks.
 - Bound the base64 success memo to second-sighting retention: failures stay memoized immediately, but successful UTF-8 text is retained only after a candidate repeats, so unique-blob corpora do not keep a second full-size copy of every decode for the whole chunk.
-- Skip decode-through (and always-active phase-2 presence work) on markerless single-line chunks/windows that lack classical encode markers (`+`, `/`, `=`, `%`, `\`). Plaintext credentials still match; windows that carry markers still decode.
+- Skip decode-through on *dense* markerless single-line chunks (≥64 KiB, no classical encode markers `+`, `/`, `=`, `%`, `\`). Short markerless lines still decode so postprocess truncation/suppression telemetry and small encoded payloads keep working; marker-bearing windows still decode.
 - Keep the confirmed companion gate's allow-set in the per-worker scratch bitset instead of allocating a full `ac_map`-sized `Vec<bool>` each chunk.
 - Speed the confirmed companion gate with a first-bigram absence prescreen and a thread-local Aho-Corasick cache for repeated active literal sets across windows.
 - Skip entropy-only no-hit admission on markerless single-line chunks after phase-2/generic keywords miss, so one_long_line windows rejected by the direct-literal bloom do not re-enter the entropy storm.

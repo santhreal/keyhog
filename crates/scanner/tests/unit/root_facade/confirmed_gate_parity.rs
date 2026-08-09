@@ -207,6 +207,11 @@ fn suffix_gate_filters_anchored_cold_regexes() {
         .expect("compile exact ungated CPU scanner");
     let chunk = chunk_of(b"ANCHOR_12345678_absent\n", "anchored-cold-regexes");
 
+    // Isolate the suffix gate: companion mid-literal denial would also skip the
+    // cold regex when REQUIRED_SUFFIX is absent, collapsing both compile counts
+    // to zero and hiding the suffix-gate differential this test asserts.
+    keyhog_scanner::testing::set_confirmed_companion_gate(&gated, Some(false));
+    keyhog_scanner::testing::set_confirmed_companion_gate(&ungated, Some(false));
     keyhog_scanner::testing::set_confirmed_suffix_gate(&gated, Some(true));
     let before_on = keyhog_scanner::testing::lazy_regex_compile_events();
     let on = canonical(&[gated
@@ -225,6 +230,8 @@ fn suffix_gate_filters_anchored_cold_regexes() {
 
     keyhog_scanner::testing::set_confirmed_suffix_gate(&gated, None);
     keyhog_scanner::testing::set_confirmed_suffix_gate(&ungated, None);
+    keyhog_scanner::testing::set_confirmed_companion_gate(&gated, None);
+    keyhog_scanner::testing::set_confirmed_companion_gate(&ungated, None);
     assert_eq!(on, off, "suffix gating must preserve findings");
     assert!(
         compiled_without_gate > compiled_with_gate,

@@ -159,20 +159,22 @@ impl CompiledScanner {
         // absent (short phase-1 triggers like "123"/"ip" on inert padding).
         let companion_t0 = prof.then(std::time::Instant::now);
         scratch_owned.reset_companion_allow_all(self.ac_map.len());
-        let companion_patterns: Vec<(usize, &str)> = confirmed_patterns
-            .iter()
-            .filter_map(|&pat_idx| {
-                self.ac_map
-                    .get(pat_idx)
-                    .map(|entry| (pat_idx, entry.regex.as_str()))
-            })
-            .collect();
-        super::scan_postprocess_companion_gate::companions_deny_absent(
-            self.detector_digest,
-            &companion_patterns,
-            &preprocessed.text,
-            |pat_idx| scratch_owned.deny_companion(pat_idx),
-        );
+        if self.tuning.confirmed_companion_gate_enabled() {
+            let companion_patterns: Vec<(usize, &str)> = confirmed_patterns
+                .iter()
+                .filter_map(|&pat_idx| {
+                    self.ac_map
+                        .get(pat_idx)
+                        .map(|entry| (pat_idx, entry.regex.as_str()))
+                })
+                .collect();
+            super::scan_postprocess_companion_gate::companions_deny_absent(
+                self.detector_digest,
+                &companion_patterns,
+                &preprocessed.text,
+                |pat_idx| scratch_owned.deny_companion(pat_idx),
+            );
+        }
         if let Some(companion_t0) = companion_t0 {
             scan_postprocess_profile::confirmed_prof_record(
                 scan_postprocess_profile::ConfirmedStage::CompanionGate,
