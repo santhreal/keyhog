@@ -66,6 +66,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "access-targets",
     "action-receipt",
     "autoroute-cache",
+    "matcher-cache",
     "autoroute-calibrate",
     "autoroute-gpu",
     "backend",

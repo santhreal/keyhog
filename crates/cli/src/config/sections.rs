@@ -78,6 +78,11 @@ pub(super) fn apply_system_section(
             args.autoroute_cache = Some(autoroute_cache.clone());
         }
     }
+    if let Some(matcher_cache) = system.and_then(|section| section.matcher_cache.as_ref()) {
+        if args.matcher_cache.is_none() {
+            args.matcher_cache = Some(matcher_cache.clone());
+        }
+    }
     if let Some(calibration_cache) = system.and_then(|section| section.calibration_cache.as_ref()) {
         if calibration_cache.is_absolute() {
             if args.calibration_cache.is_none() {

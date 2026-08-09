@@ -357,6 +357,9 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     let autoroute_cache_path =
         format_optional_path(resolved.autoroute_cache_path.as_ref(), "<disabled>");
     out.push_str(&format!("autoroute_cache_path = {autoroute_cache_path}\n"));
+    let matcher_cache_path =
+        format_optional_path(resolved.matcher_cache_path.as_ref(), "<disabled>");
+    out.push_str(&format!("matcher_cache_path = {matcher_cache_path}\n"));
     // LAW10: absent explicit calibration cache; scanner config carries None and does not read disk.
     let calibration_cache_path =
         format_optional_path(resolved.calibration_cache_path.as_ref(), "<disabled>");
@@ -665,6 +668,10 @@ pub(crate) fn profiling_resolved_config_digest(resolved: &ResolvedScanConfig) ->
     h.field_option_path(
         "autoroute_cache_path",
         resolved.autoroute_cache_path.as_deref(),
+    );
+    h.field_option_path(
+        "matcher_cache_path",
+        resolved.matcher_cache_path.as_deref(),
     );
     h.field_option_path(
         "calibration_cache_path",

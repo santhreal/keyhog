@@ -160,6 +160,29 @@ impl CompiledScanner {
         )
     }
 
+    /// Hydrate a scanner from an already-decoded [`CompileState`].
+    ///
+    /// Used by the MatcherArtifact cache hit path and by miss-path hydration
+    /// after a freshly compiled artifact is persisted, so eager construction
+    /// runs at most once per miss.
+    pub(crate) fn compile_shared_from_compile_state(
+        detectors: Arc<[DetectorSpec]>,
+        gpu_policy: GpuInitPolicy,
+        tuning_config: &ScannerTuningConfig,
+        state: crate::compiler::compiler_build::CompileState,
+    ) -> Result<Self> {
+        Self::compile_shared_with_state_source(
+            detectors,
+            gpu_policy,
+            tuning_config,
+            Some(state),
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
     /// Construct a scanner from the canonical matcher graph compiled into an execution pack.
     pub fn compile_from_packed_matchers(
         detectors: Vec<DetectorSpec>,

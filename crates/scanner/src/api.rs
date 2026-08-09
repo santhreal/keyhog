@@ -25,6 +25,14 @@ pub use crate::gpu_literal_artifacts::{
     GpuLiteralArtifact, GpuLiteralArtifacts,
 };
 pub use crate::hw_probe::{probe_hardware, select_backend, HardwareCaps, ScanBackend};
+pub use crate::matcher_artifact_cache::{
+    compile_shared_with_matcher_artifact_cache, configured_matcher_artifact_cache_dir,
+    default_matcher_artifact_cache_dir, default_matcher_artifact_cache_dir_from_base,
+    execution_pack_backend_for_scan_backend, load_matcher_artifact, matcher_backend_for_gpu_policy,
+    record_matcher_artifact_pack_hit, store_matcher_artifact, MatcherArtifactCacheOutcome,
+    MatcherArtifactIdentity, MATCHER_ARTIFACT_FILE_BYTES, MATCHER_ARTIFACT_MAGIC,
+    MATCHER_ARTIFACT_SUFFIX, MATCHER_ARTIFACT_VERSION,
+};
 // The measurement switch is the profiler's, re-exported so a `keyhog-scanner`
 // consumer never has to reach past the scanner for it, and never gets a second
 // scanner-owned switch that can disagree with it.

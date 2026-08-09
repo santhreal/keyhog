@@ -1524,35 +1524,66 @@ impl ScanOrchestrator {
         };
         let scanner = {
             let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
+            let resolved_config_digest =
+                crate::orchestrator_config::profiling_resolved_config_digest(&effective_config);
+            let runtime_identity = keyhog_scanner::hw_probe::hyperscan_runtime_identity();
+            let pack_generation = detector_execution_pack.as_ref().map(|pack| {
+                keyhog_core::hex_encode(&pack.identity().digest())
+            });
             let compiled = if disabled_detectors.is_empty() {
                 match detector_execution_pack.as_ref() {
                     Some(pack) => {
-                        CompiledScanner::compile_from_execution_pack_with_gpu_policy_and_tuning(
-                            pack,
-                            gpu_init_policy,
-                            &effective_config.scanner_tuning,
-                        )
+                        let compiled =
+                            CompiledScanner::compile_from_execution_pack_with_gpu_policy_and_tuning(
+                                pack,
+                                gpu_init_policy,
+                                &effective_config.scanner_tuning,
+                            )?;
+                        keyhog_scanner::record_matcher_artifact_pack_hit();
+                        Ok(compiled)
                     }
                     None => {
                         let detectors = detectors.as_ref().context(
                             "embedded/debug scanner construction requires detector schemas",
                         )?;
-                        CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
+                        keyhog_scanner::compile_shared_with_matcher_artifact_cache(
                             Arc::clone(detectors),
                             gpu_init_policy,
                             &effective_config.scanner_tuning,
+                            resolved_config_digest,
+                            pack_generation.as_deref(),
+                            runtime_identity.as_deref(),
                         )
+                        .map(|(scanner, outcome)| {
+                            tracing::debug!(
+                                target: "keyhog::matcher_artifact_cache",
+                                outcome = outcome.as_str(),
+                                "matcher artifact cache outcome"
+                            );
+                            scanner
+                        })
                     }
                 }
             } else {
                 let detectors = detectors
                     .as_ref()
                     .context("disabled-detector scanner construction requires detector schemas")?;
-                CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
+                keyhog_scanner::compile_shared_with_matcher_artifact_cache(
                     Arc::clone(detectors),
                     gpu_init_policy,
                     &effective_config.scanner_tuning,
+                    resolved_config_digest,
+                    None,
+                    runtime_identity.as_deref(),
                 )
+                .map(|(scanner, outcome)| {
+                    tracing::debug!(
+                        target: "keyhog::matcher_artifact_cache",
+                        outcome = outcome.as_str(),
+                        "matcher artifact cache outcome"
+                    );
+                    scanner
+                })
             };
             Arc::new(
                 compiled
@@ -1802,6 +1833,7 @@ impl ScanOrchestrator {
                 incremental_cache_path: None,
                 hyperscan_cache_dir: None,
                 autoroute_cache_path: None,
+                matcher_cache_path: None,
                 calibration_cache_path: None,
                 calibration_entry_count: 0,
                 calibration_digest: 0,

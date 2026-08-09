@@ -13,6 +13,7 @@ pub mod format;
 pub mod gates;
 pub mod inline_suppression_context;
 pub mod installer;
+pub mod matcher_cache_path;
 pub mod orchestrator;
 pub mod orchestrator_config;
 pub mod orchestrator_reporting_render;

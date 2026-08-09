@@ -26,7 +26,7 @@ pub(crate) use policy::{ResolvedAllowlistConfig, ResolvedReportPolicy, ResolvedV
 #[cfg(feature = "git")]
 pub(crate) use runtime::MAX_COMMITS_DEFAULT;
 pub(crate) use runtime::{
-    backend_override_cli_value, backend_override_label, configure_hyperscan_cache_dir,
+    backend_override_cli_value, backend_override_label, configure_hyperscan_cache_dir, configure_matcher_artifact_cache_dir,
     configure_persistent_daemon_threads, configure_threads, fused_batch_calibration_counts,
     fused_cpu_wave_width, fused_depth_default, gpu_runtime_policy_for_backend_override,
     gpu_runtime_policy_from_args, keyhog_worker_threads, parse_backend_override, ScanRuntimeInput,
@@ -123,6 +123,9 @@ pub(crate) struct ResolvedScanConfig {
     /// Resolved persistent autoroute calibration cache file. `None` means
     /// persistence is explicitly disabled.
     pub(crate) autoroute_cache_path: Option<PathBuf>,
+    /// Resolved MatcherArtifact cache directory. `None` means persistence is
+    /// explicitly disabled.
+    pub(crate) matcher_cache_path: Option<PathBuf>,
     /// Resolved explicit per-detector Bayesian calibration cache file. `None`
     /// means confidence scoring is hermetic and does not read disk state.
     pub(crate) calibration_cache_path: Option<PathBuf>,
@@ -189,6 +192,11 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         runtime_input.autoroute_cache.as_deref(),
     )
     .map_err(anyhow::Error::msg)?;
+    let matcher_cache_path = crate::matcher_cache_path::resolve_matcher_cache_path(
+        runtime_input.matcher_cache.as_deref(),
+    )
+    .map_err(anyhow::Error::msg)?;
+    configure_matcher_artifact_cache_dir(matcher_cache_path.clone())?;
     let backend_override = parse_backend_override(runtime_input.backend.as_deref())?;
     let scanner_tuning = outcome.scanner_tuning;
     let scanner_input = ScannerConfigInput::from_scan_args(args);
@@ -233,6 +241,7 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         incremental_cache_path: runtime_input.incremental_cache_path,
         hyperscan_cache_dir: runtime_input.cache_dir,
         autoroute_cache_path,
+        matcher_cache_path,
         calibration_cache_path,
         calibration_entry_count,
         calibration_digest,
@@ -280,6 +289,7 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
         incremental_cache_path: None,
         hyperscan_cache_dir: None,
         autoroute_cache_path: None,
+        matcher_cache_path: None,
         calibration_cache_path: None,
         calibration_entry_count: 0,
         calibration_digest: 0,

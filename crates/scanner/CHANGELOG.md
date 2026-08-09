@@ -2,6 +2,7 @@
 
 ## 0.5.68 - 2026-08-05
 
+- Persist a MatcherArtifact cache of the eager compiled matcher graph across process invocations (`--matcher-cache` / `[system].matcher_cache`, default `dirs::cache_dir()/keyhog/matcher-artifacts`). Cold one-shot and `--incremental` scans reuse the artifact when binary, features, detector digest, resolved config digest, pack generation, backend, and runtime identity match; mismatches miss and rebuild. Profile output records `CacheId::MatcherArtifact` hit/miss/invalidation. Hyperscan `--cache-dir` `.db` shards alone do not satisfy this cache. LazyRegex residency is not retained, so mirror RSS stays near the MemoryFootprint baseline.
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.
 - Make scanner construction route-specific. The default library constructor owns only the scalar reference route, `compile_for_backend` owns one explicit route, and cross-route dispatch fails instead of materializing or substituting a backend.
 - Store each interned detector metadata string in one lookup-map key instead of a parallel arena and index, and reuse those allocations for resolution and cross-detector relation identities.
