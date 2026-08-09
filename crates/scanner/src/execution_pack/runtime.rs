@@ -126,7 +126,10 @@ impl std::fmt::Debug for ExecutionPack {
             .debug_struct("ExecutionPack")
             .field("path", &self.path)
             .field("identity", &self.identity)
-            .field("content_digest", &keyhog_core::hex_encode(&self.content_digest))
+            .field(
+                "content_digest",
+                &keyhog_core::hex_encode(&self.content_digest),
+            )
             .field("signature_authenticated", &self.signature_authenticated)
             .finish_non_exhaustive()
     }

@@ -653,7 +653,8 @@ mod tests {
     #[test]
     fn detector_spec_reconstruction_counter_is_zero_for_prelude_hydration() {
         let before = detector_spec_schema_reconstructions();
-        let ir = CanonicalDetectorExecutionIr::compile(&[detector("zero-recon")]).expect("compile IR");
+        let ir =
+            CanonicalDetectorExecutionIr::compile(&[detector("zero-recon")]).expect("compile IR");
         let plan_section = CompiledDetectorPlanSection::compile(&ir).expect("compile plan section");
 
         let header = CompiledDetectorPlanSection::stream_prelude_records(
@@ -665,6 +666,9 @@ mod tests {
 
         assert_eq!(header.detector_count, 1);
         let after = detector_spec_schema_reconstructions();
-        assert_eq!(after, before, "prelude streaming must not increment detector spec schema reconstructions");
+        assert_eq!(
+            after, before,
+            "prelude streaming must not increment detector spec schema reconstructions"
+        );
     }
 }

@@ -707,10 +707,17 @@ fn runtime_rejects_mismatched_section_schema_version_with_rebuild_suggestion() {
     let path = directory.path().join("invalid_version.khpack");
     fs::write(&path, tampered_bytes).expect("publish tampered pack");
 
-    let error = ExecutionPack::open(&path, identity()).expect_err("mismatched section version must fail");
+    let error =
+        ExecutionPack::open(&path, identity()).expect_err("mismatched section version must fail");
     let err_msg = error.to_string();
-    assert!(err_msg.contains("uses schema 99"), "error must mention invalid schema version; got: {err_msg}");
-    assert!(err_msg.contains("keyhog compile-execution-packs to rebuild"), "error must suggest rebuild command; got: {err_msg}");
+    assert!(
+        err_msg.contains("uses schema 99"),
+        "error must mention invalid schema version; got: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("keyhog compile-execution-packs to rebuild"),
+        "error must suggest rebuild command; got: {err_msg}"
+    );
 }
 
 #[test]
@@ -734,8 +741,14 @@ fn runtime_rejects_version_zero_section_schema() {
 
     let error = ExecutionPack::open(&path, identity()).expect_err("version 0 section must fail");
     let err_msg = error.to_string();
-    assert!(err_msg.contains("uses schema 0"), "error must mention invalid schema version 0; got: {err_msg}");
-    assert!(err_msg.contains("keyhog compile-execution-packs to rebuild"), "error must suggest rebuild command; got: {err_msg}");
+    assert!(
+        err_msg.contains("uses schema 0"),
+        "error must mention invalid schema version 0; got: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("keyhog compile-execution-packs to rebuild"),
+        "error must suggest rebuild command; got: {err_msg}"
+    );
 }
 
 #[test]
@@ -755,7 +768,9 @@ fn unauthenticated_section_table_mutation_fails_at_content_authentication() {
         tampered_bytes[offset] = tampered_bytes[offset].wrapping_add(1);
 
         let directory = tempfile::tempdir().expect("temporary directory");
-        let path = directory.path().join(format!("unauth_mutation_{offset}.khpack"));
+        let path = directory
+            .path()
+            .join(format!("unauth_mutation_{offset}.khpack"));
         fs::write(&path, tampered_bytes).expect("publish tampered pack");
 
         let error = ExecutionPack::open(&path, identity())
@@ -791,8 +806,9 @@ fn runtime_rejects_stale_section_schema_version_at_persisted_boundary() {
     let path = directory.path().join("stale_persisted_schema.khpack");
     fs::write(&path, stale_bytes).expect("publish stale pack");
 
-    let error = ExecutionPack::open(&path, identity())
-        .expect_err("stale section schema version at persisted boundary must fail with rebuild suggestion");
+    let error = ExecutionPack::open(&path, identity()).expect_err(
+        "stale section schema version at persisted boundary must fail with rebuild suggestion",
+    );
     let err_msg = error.to_string();
     assert!(
         err_msg.contains("uses schema 0") || err_msg.contains("uses schema"),
