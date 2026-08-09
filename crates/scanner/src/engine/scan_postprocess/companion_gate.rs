@@ -30,6 +30,8 @@ use super::phase2_first_bigram::FirstBigramSet;
 pub(crate) const MIN_COMPANION_BYTES: usize = 3;
 
 struct CompanionDerived {
+    /// Owning scanner identity — indices alone are scanner-local.
+    detector_digest: u64,
     /// Active pattern indices that contributed companion arms (cache key).
     pattern_key: Vec<usize>,
     literals: Vec<String>,
@@ -132,6 +134,7 @@ pub(crate) fn companions_allow_batch(
 /// (patterns that stay allowed never touch the callback). Starts from an
 /// all-allowed bitset owned by the caller.
 pub(crate) fn companions_deny_absent(
+    detector_digest: u64,
     patterns: &[(usize, &str)],
     text: &str,
     mut deny: impl FnMut(usize),
@@ -143,9 +146,9 @@ pub(crate) fn companions_deny_absent(
     let pattern_key: Vec<usize> = patterns.iter().map(|(idx, _)| *idx).collect();
     COMPANION_DERIVED_CACHE.with(|cell| {
         let mut slot = cell.borrow_mut();
-        let needs_rebuild = slot
-            .as_ref()
-            .is_none_or(|cached| cached.pattern_key != pattern_key);
+        let needs_rebuild = slot.as_ref().is_none_or(|cached| {
+            cached.detector_digest != detector_digest || cached.pattern_key != pattern_key
+        });
         if needs_rebuild {
             let mut literal_ids: HashMap<String, usize> = HashMap::new();
             let mut literals: Vec<String> = Vec::new();
@@ -188,6 +191,7 @@ pub(crate) fn companions_deny_absent(
                 return;
             };
             *slot = Some(CompanionDerived {
+                detector_digest,
                 pattern_key,
                 literals,
                 armed,

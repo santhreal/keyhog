@@ -168,6 +168,7 @@ impl CompiledScanner {
             })
             .collect();
         super::scan_postprocess_companion_gate::companions_deny_absent(
+            self.detector_digest,
             &companion_patterns,
             &preprocessed.text,
             |pat_idx| scratch_owned.deny_companion(pat_idx),

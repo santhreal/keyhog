@@ -17,6 +17,7 @@
 - Bound confirmed-anchor sparse collect to a small unique-literal budget and keep the shared first-bigram reject in front of both collect paths.
 - Cache companion-gate derived literal/AC/bigram state across chunks that share the same active pattern set, and attribute companion time to its own profiler stage.
 - On vocab-clean windowed shortcuts, return empty matches and let the parent coalesced post-process own decode/fragment work (avoid double decode).
+- Key the companion-gate derived cache by `detector_digest` as well as active pattern indices so thread-local reuse cannot cross CompiledScanner instances.
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.
 - Make scanner construction route-specific. The default library constructor owns only the scalar reference route, `compile_for_backend` owns one explicit route, and cross-route dispatch fails instead of materializing or substituting a backend.
