@@ -19,6 +19,7 @@ pub(super) fn extract_rar_chunks(
     path: &Path,
     max_size: u64,
     respect_default_excludes: bool,
+    nested_depth: usize,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     if is_symlink(path) {
@@ -61,7 +62,7 @@ pub(super) fn extract_rar_chunks(
         }
     };
 
-    let mut state = RarExtractionState::new(path, max_size, respect_default_excludes);
+    let mut state = RarExtractionState::new(path, max_size, respect_default_excludes, nested_depth);
     match &archive {
         Archive::Rar13(archive) => {
             for entry in &archive.entries {
@@ -481,10 +482,16 @@ struct RarExtractionState<'a> {
     consumer_stopped: bool,
     archive_truncated: bool,
     respect_default_excludes: bool,
+    nested_depth: usize,
 }
 
 impl<'a> RarExtractionState<'a> {
-    fn new(archive_path: &'a Path, max_size: u64, respect_default_excludes: bool) -> Self {
+    fn new(
+        archive_path: &'a Path,
+        max_size: u64,
+        respect_default_excludes: bool,
+        nested_depth: usize,
+    ) -> Self {
         Self {
             archive_path,
             archive_display: display_path(archive_path),
@@ -494,6 +501,7 @@ impl<'a> RarExtractionState<'a> {
             consumer_stopped: false,
             archive_truncated: false,
             respect_default_excludes,
+            nested_depth,
         }
     }
 
@@ -732,7 +740,7 @@ impl<'a> RarExtractionState<'a> {
             &member_display,
             per_entry_cap,
             &mut self.total_uncompressed,
-            0,
+            self.nested_depth.saturating_add(1),
             respect,
             emit,
         ) {

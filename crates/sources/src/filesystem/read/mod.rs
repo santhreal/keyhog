@@ -85,14 +85,6 @@ pub(crate) fn read_file_windowed_mmap_len_for_test(
     window::read_file_windowed_mmap(path, window_size, overlap).map(|windows| windows.len())
 }
 
-pub(in crate::filesystem) fn slice_into_windows(
-    bytes: &[u8],
-    window_size: usize,
-    overlap: usize,
-) -> Vec<window::FileWindow> {
-    window::slice_into_windows(bytes, window_size, overlap)
-}
-
 pub(in crate::filesystem) fn for_each_slice_window(
     bytes: &[u8],
     window_size: usize,

@@ -527,12 +527,19 @@ fn emit_archive_member_with_tex_provenance(
             }
         }
     } else if ext.eq_ignore_ascii_case("7z") || ext.eq_ignore_ascii_case("rar") {
+        if nested_depth >= MAX_NESTED_ARCHIVE_DEPTH {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return emit(Err(SourceError::Other(format!(
+                "failed to scan embedded archive '{member_display}': maximum nested archive depth {MAX_NESTED_ARCHIVE_DEPTH} exceeded; embedded archive was not scanned"
+            ))));
+        }
         return emit_path_backed_archive_bytes(
             ext,
             content,
             member_display,
             max_size,
             respect_default_excludes,
+            nested_depth,
             emit,
         );
     }
@@ -546,6 +553,7 @@ fn emit_path_backed_archive_bytes(
     member_display: &str,
     max_size: u64,
     respect_default_excludes: bool,
+    nested_depth: usize,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
     use std::io::Write;
@@ -588,6 +596,7 @@ fn emit_path_backed_archive_bytes(
                     &staged_path,
                     max_size,
                     respect_default_excludes,
+                    nested_depth,
                     counted,
                 );
             } else {
@@ -595,6 +604,7 @@ fn emit_path_backed_archive_bytes(
                     &staged_path,
                     max_size,
                     respect_default_excludes,
+                    nested_depth,
                     counted,
                 );
             }
@@ -914,6 +924,7 @@ pub(super) fn process_entry(
                     &path,
                     max_size,
                     respect_default_excludes,
+                    0,
                     counted,
                 )
             },
@@ -922,7 +933,7 @@ pub(super) fn process_entry(
         return;
     } else if ext.eq_ignore_ascii_case("rar") {
         run_derived_extractor(
-            |counted| rar::extract_rar_chunks(&path, max_size, respect_default_excludes, counted),
+            |counted| rar::extract_rar_chunks(&path, max_size, respect_default_excludes, 0, counted),
             emit,
         );
         return;

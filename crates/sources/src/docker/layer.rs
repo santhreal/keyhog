@@ -150,7 +150,9 @@ fn scan_docker_layer(
         &mut |row| {
             let rewritten = match row {
                 Ok(chunk) => rewrite_streamed_chunk(chunk, image, &layer_name),
-                Err(error) => Err(error),
+                Err(error) => Err(SourceError::Other(format!(
+                    "docker layer {layer_name} scan failed: {error}"
+                ))),
             };
             emit(rewritten)
         },

@@ -16,6 +16,7 @@ pub(super) fn extract_seven_zip_chunks(
     path: &Path,
     max_size: u64,
     respect_default_excludes: bool,
+    nested_depth: usize,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     if is_symlink(path) {
@@ -281,7 +282,7 @@ pub(super) fn extract_seven_zip_chunks(
         // Re-dispatch the member through the canonical archive-member handler so
         // a tar/zip/gz nested inside the 7z is recursed, not leaf-scanned as
         // printable strings -- which silently missed a secret in its compressed
-        // payload (Law 10). A 7z member starts at nesting depth 0.
+        // payload (Law 10). Carry nested_depth so 7z-in-7z cannot reset the cap.
         let member_display = format!("{archive_display}//{entry_name}");
         if !super::emit_archive_member(
             &entry_name,
@@ -289,7 +290,7 @@ pub(super) fn extract_seven_zip_chunks(
             &member_display,
             per_entry_cap,
             &mut total_uncompressed,
-            0,
+            nested_depth.saturating_add(1),
             respect_default_excludes,
             emit,
         ) {
