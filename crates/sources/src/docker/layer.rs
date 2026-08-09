@@ -1,10 +1,8 @@
-use super::archive::{unpack_layer_archive, DockerUnpackBudget};
+use super::archive::{stream_layer_archive_chunks, DockerUnpackBudget};
 use super::metadata::manifest_layer_archives as find_manifest_layer_archives;
-use super::{create_private_directory_all, DockerScanWorkspace};
-use keyhog_core::{Chunk, Source, SourceError};
+use super::DockerScanWorkspace;
+use keyhog_core::{Chunk, SourceError};
 use std::path::{Path, PathBuf};
-
-use crate::FilesystemSource;
 
 pub(super) fn stream_docker_layer_chunks(
     workspace: &DockerScanWorkspace,
@@ -130,10 +128,6 @@ where
     Ok(true)
 }
 
-pub(super) fn sanitize_layer_name(layer_name: &str) -> String {
-    layer_name.replace('/', "_")
-}
-
 fn scan_docker_layer(
     workspace: &DockerScanWorkspace,
     image: &str,
@@ -144,30 +138,25 @@ fn scan_docker_layer(
     emit: &mut impl FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> Result<bool, SourceError> {
     let layer_name = docker_layer_name(layer_tar, workspace.root_path());
-    let layer_dir = workspace.layer_dir(&layer_name);
-    create_private_directory_all(&layer_dir)?;
-    let error_rows = match unpack_layer_archive(layer_tar, &layer_dir, limits, budget) {
-        Ok(report) => report.into_rows(),
-        Err(error) => vec![Err(error)],
-    };
-
-    if !stream_rewritten_layer_chunks(
-        FilesystemSource::new(layer_dir.clone())
-            .with_default_excludes(respect_default_excludes)
-            .chunks(),
-        image,
-        &layer_dir,
-        &layer_name,
-        emit,
-    )? {
-        return Ok(false);
-    }
-    for row in error_rows {
-        if !emit(row) {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    // Stream member bytes straight into the shared in-memory archive dispatcher.
+    // Materializing every layer onto disk then re-walking it with FilesystemSource
+    // was the competitive container loss: double inflate for gzip/zstd layers plus
+    // a full write/read syscall tax on ~96 MiB of unpacked content.
+    stream_layer_archive_chunks(
+        layer_tar,
+        limits,
+        budget,
+        respect_default_excludes,
+        &mut |row| {
+            let rewritten = match row {
+                Ok(chunk) => rewrite_streamed_chunk(chunk, image, &layer_name),
+                Err(error) => Err(SourceError::Other(format!(
+                    "docker layer {layer_name} scan failed: {error}"
+                ))),
+            };
+            emit(rewritten)
+        },
+    )
 }
 
 fn docker_layer_name(layer_tar: &Path, root_path: &Path) -> String {
@@ -198,6 +187,39 @@ fn rewrite_chunk(
     })?;
     let relative_path = layer_relative_path(source_path, normalized_root)?;
 
+    apply_docker_chunk_identity(&mut chunk, image, layer_name, &relative_path);
+    Ok(chunk)
+}
+
+pub(super) fn rewrite_streamed_chunk(
+    mut chunk: Chunk,
+    image: &str,
+    layer_name: &str,
+) -> Result<Chunk, SourceError> {
+    let source_path = chunk.metadata.path.as_deref().ok_or_else(|| {
+        SourceError::Other(format!(
+            "docker layer {layer_name} produced a chunk without a file path"
+        ))
+    })?;
+    let relative_path = normalize_streamed_layer_path(source_path)?;
+    apply_docker_chunk_identity(&mut chunk, image, layer_name, &relative_path);
+    Ok(chunk)
+}
+
+pub(super) fn rewrite_streamed_chunk_for_test(
+    chunk: Chunk,
+    image: &str,
+    layer_name: &str,
+) -> Result<Chunk, SourceError> {
+    rewrite_streamed_chunk(chunk, image, layer_name)
+}
+
+fn apply_docker_chunk_identity(
+    chunk: &mut Chunk,
+    image: &str,
+    layer_name: &str,
+    relative_path: &str,
+) {
     if chunk.metadata.source_type.starts_with("binary:")
         || chunk.metadata.source_type.contains("binary-strings")
         || chunk.metadata.source_type.contains("archive-binary")
@@ -210,7 +232,6 @@ fn rewrite_chunk(
     chunk.metadata.commit = None;
     chunk.metadata.author = None;
     chunk.metadata.date = None;
-    Ok(chunk)
 }
 
 /// Resolve one chunk's path relative to an ALREADY-canonicalized layer root.
@@ -252,6 +273,95 @@ fn layer_relative_path(path: &str, normalized_root: &Path) -> Result<String, Sou
         Some(member) => format!("{relative}//{}", member.replace('\\', "/")),
         None => relative,
     })
+}
+
+fn normalize_streamed_layer_path(path: &str) -> Result<String, SourceError> {
+    if path.is_empty() {
+        return Err(SourceError::Other(
+            "docker layer chunk has an empty member path".into(),
+        ));
+    }
+    // HAR expansion labels chunks `{member}.har#{url}`. Peel that opaque URL
+    // BEFORE splitting nested-archive `//` separators; otherwise `https://...`
+    // in the captured URL becomes a false nested member and `/../` segments
+    // refuse the whole request/response body.
+    //
+    // Only peel when the body looks like a `.har` member. Peeling on a bare
+    // `://` suffix would let an attacker-controlled tar name such as
+    // `a#http://x/../../etc/shadow` bypass component validation on the suffix.
+    // A real member named `#config` (or `zip//#config`) must stay intact:
+    // naive `split_once('#')` would otherwise leave an empty path body.
+    let (path_body, har_url) = match path.split_once('#') {
+        Some((body, url)) if !body.is_empty() && path_body_looks_like_har(body) => {
+            (body, Some(url))
+        }
+        _ => (path, None),
+    };
+    let mut normalized = Vec::new();
+    for member in path_body.split("//") {
+        // GNU/BSD tar often records `./etc/creds.env`. `Component::CurDir` is
+        // safe and must not become a false path-traversal refusal after the
+        // archive-level validator already admitted the entry.
+        let cleaned = {
+            let mut parts = Vec::new();
+            for component in Path::new(member).components() {
+                match component {
+                    std::path::Component::Normal(part) => {
+                        parts.push(part.to_string_lossy().replace('\\', "/"))
+                    }
+                    std::path::Component::CurDir => {}
+                    _ => {
+                        return Err(SourceError::Other(format!(
+                            "docker layer chunk has unsafe virtual archive member path '{member}'"
+                        )));
+                    }
+                }
+            }
+            parts.join("/")
+        };
+        if cleaned.is_empty() {
+            return Err(SourceError::Other(format!(
+                "docker layer chunk has unsafe virtual archive member path '{member}'"
+            )));
+        }
+        validate_virtual_member_path(&cleaned)?;
+        normalized.push(cleaned);
+    }
+    let joined = normalized.join("//");
+    Ok(match har_url {
+        Some(url) => {
+            validate_har_provenance_suffix(url)?;
+            format!("{joined}#{url}")
+        }
+        None => joined,
+    })
+}
+
+/// HAR chunk labels append `#{url}` as opaque provenance. Require a URL scheme
+/// (or a path-safe relative suffix) so a crafted `#../../etc/passwd` peel cannot
+/// bypass `validate_virtual_member_path` on the body alone.
+fn validate_har_provenance_suffix(url: &str) -> Result<(), SourceError> {
+    if url.is_empty()
+        || url
+            .as_bytes()
+            .iter()
+            .any(|byte| matches!(byte, 0 | b'\n' | b'\r'))
+    {
+        return Err(SourceError::Other(
+            "docker layer chunk has unsafe HAR provenance suffix".into(),
+        ));
+    }
+    if url.contains("://") {
+        return Ok(());
+    }
+    validate_virtual_member_path(url)
+}
+
+fn path_body_looks_like_har(body: &str) -> bool {
+    Path::new(body)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("har"))
 }
 
 fn validate_virtual_member_path(member: &str) -> Result<(), SourceError> {
