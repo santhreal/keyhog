@@ -34,6 +34,7 @@ mod gpu_resident_throughput;
 mod homoglyph_ascii_skip_parity;
 mod homoglyph_gate_repro;
 mod lazy_regex;
+mod markerless_dense_skip;
 mod perf_decode_caesar;
 mod perf_locality_intern;
 mod perf_ml_scoring;

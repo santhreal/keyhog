@@ -129,7 +129,8 @@ pub use recovery::{BackendRecoveryReceipt, CoalescedScanOutcome, RecoveredInputR
 mod scan;
 mod vocab_absence;
 pub(crate) use scan::{
-    text_is_dense_markerless_single_line, vocab_path_class, vocab_previously_clean,
+    text_is_dense_markerless_single_line, text_is_markerless_single_line, vocab_path_class,
+    vocab_previously_clean, MARKERLESS_NO_HIT_MIN_BYTES,
 };
 mod scan_coalesced;
 #[cfg(feature = "simd")]
