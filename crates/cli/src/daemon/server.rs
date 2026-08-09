@@ -1246,12 +1246,17 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     message: format!("daemon: guard add: path must be absolute and canonical: {}", canonical),
                 };
             }
-            if !canonical_path.exists() {
-                return Response::Error {
-                    message: format!("daemon: guard add: path does not exist: {}", canonical),
-                };
-            }
-            if !canonical_path.is_dir() {
+            // Use symlink_metadata to avoid following symlinks. The design
+            // contract requires roots be validated without following symlinks.
+            let meta = match std::fs::symlink_metadata(&canonical_path) {
+                Ok(m) => m,
+                Err(e) => {
+                    return Response::Error {
+                        message: format!("daemon: guard add: path does not exist: {}: {}", canonical, e),
+                    };
+                }
+            };
+            if !meta.is_dir() {
                 return Response::Error {
                     message: format!("daemon: guard add: path is not a directory: {}", canonical),
                 };

@@ -1102,6 +1102,7 @@ pub(crate) fn staged_manifest_acquire(
     let mut raw_path = Vec::new();
     let mut entries = Vec::new();
     let mut total_bytes: u64 = 0;
+    let mut coverage_gaps: Vec<String> = Vec::new();
 
     loop {
         let header_bytes = match read_capped_record(
@@ -1162,9 +1163,20 @@ pub(crate) fn staged_manifest_acquire(
         // Use find_header to avoid loading the full object payload into memory.
         if entry.kind != manifest::StagedEntryKind::Deletion && !entry.object_oid.is_empty() {
             if let Ok(oid) = gix::ObjectId::from_hex(entry.object_oid.as_bytes()) {
-                if let Ok(header) = repo.find_header(oid) {
-                    entry.object_size = header.size();
+                match repo.find_header(oid) {
+                    Ok(header) => entry.object_size = header.size(),
+                    Err(_) => {
+                        coverage_gaps.push(format!(
+                            "staged object {} could not be read for size lookup",
+                            entry.object_oid
+                        ));
+                    }
                 }
+            } else {
+                coverage_gaps.push(format!(
+                    "staged object OID '{}' is not a valid hash",
+                    entry.object_oid
+                ));
             }
         }
         if entry.kind != manifest::StagedEntryKind::Deletion {
@@ -1188,6 +1200,7 @@ pub(crate) fn staged_manifest_acquire(
         entries,
         total_bytes,
         total_objects,
+        coverage_gaps,
     };
     manifest.index_fingerprint = manifest.recompute_fingerprint();
     Ok(manifest)

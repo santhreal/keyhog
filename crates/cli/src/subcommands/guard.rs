@@ -116,7 +116,7 @@ async fn run_remove(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
 
 async fn run_list() -> anyhow::Result<ExitCode> {
     let socket = default_socket_path();
-    let mut conn = match client::connect_any_version(&socket).await {
+    let mut conn = match client::connect(&socket).await {
         Ok(c) => c,
         Err(e) => {
             anyhow::bail!(
@@ -210,6 +210,12 @@ async fn run_status(
             scanner_residency,
             repair_command,
         } => {
+            if format != "human" && format != "json" {
+                anyhow::bail!(
+                    "guard status: invalid format '{}': expected 'human' or 'json'",
+                    format
+                );
+            }
             if format == "json" {
                 let json = serde_json::json!({
                     "root": daemon_root,
@@ -249,12 +255,14 @@ async fn run_status(
                 }
             }
             // Exit 13 for degraded/stale/stopped/indexing states.
+            // Exit 1 for blocked state (unsuppressed findings).
+            // Exit 1 for any state with findings_count > 0.
             if matches!(
                 state.as_str(),
                 "degraded" | "stale-policy" | "stopped" | "indexing"
             ) {
                 Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
-            } else if findings_count > 0 {
+            } else if state == "blocked" || findings_count > 0 {
                 Ok(ExitCode::from(exit_codes::EXIT_FINDINGS))
             } else {
                 Ok(ExitCode::SUCCESS)
@@ -311,9 +319,13 @@ async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
 
 /// Canonicalize a root path on the client side before sending it to the
 /// daemon. The daemon must not re-resolve relative paths against its own
-/// working directory.
+/// working directory. Non-UTF-8 paths are rejected with an explicit error
+/// rather than silently mangled by lossy conversion.
 fn canonicalize_root(root: &std::path::Path) -> anyhow::Result<String> {
     let canonical = std::fs::canonicalize(root)
         .map_err(|e| anyhow::anyhow!("guard: cannot canonicalize {}: {}", root.display(), e))?;
-    Ok(canonical.to_string_lossy().into_owned())
+    canonical
+        .into_os_string()
+        .into_string()
+        .map_err(|s| anyhow::anyhow!("guard: root path is not valid UTF-8: {:?}", s))
 }

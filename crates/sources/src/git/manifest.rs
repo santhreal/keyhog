@@ -59,8 +59,10 @@ pub struct StagedManifest {
     pub entries: Vec<StagedManifestEntry>,
     /// Total bytes across all non-deletion entries.
     pub total_bytes: u64,
-    /// Total object count (including deletions).
     pub total_objects: u64,
+    /// Coverage gaps: non-secret descriptions of entries where the
+    /// object could not be read or sized.
+    pub coverage_gaps: Vec<String>,
 }
 
 impl StagedManifest {
