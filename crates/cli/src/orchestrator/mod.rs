@@ -1276,6 +1276,19 @@ impl ScanOrchestrator {
             let detectors_path = auto_discover_detectors(&args.detectors)?;
             (requested_detector_mode, detectors_path)
         };
+        let resolved_config_digest =
+            crate::orchestrator_config::profiling_resolved_config_digest(&effective_config);
+        let runtime_identity = keyhog_scanner::hw_probe::hyperscan_runtime_identity();
+        let gpu_init_policy = {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackSelect);
+            gpu_init_policy_for_args(
+                &args,
+                effective_config.autoroute_cache_path.as_deref(),
+                effective_config.autoroute_gpu,
+                effective_config.autoroute_calibration,
+            )
+        };
+        let matcher_backend = keyhog_scanner::matcher_backend_for_gpu_policy(gpu_init_policy);
         let (mut loaded_corpus, detector_execution_pack) = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
             if !detectors_path.exists() && requested_detector_mode.is_none() {
@@ -1321,15 +1334,66 @@ impl ScanOrchestrator {
                             error = %error,
                             "no installed execution-pack generation; parsing embedded detectors"
                         );
+                        let embedded = || -> anyhow::Result<LoadedDetectorCorpus> {
+                            load_effective_detector_corpus(
+                                &detectors_path,
+                                requested_detector_mode,
+                                !args.lockdown,
+                            )
+                            .context("loading effective detector corpus")
+                        };
+                        let from_tip = if disabled_detectors.is_empty() {
+                            keyhog_scanner::configured_matcher_artifact_cache_dir().and_then(
+                                |cache_dir| {
+                                    let backend = matcher_backend?;
+                                    match keyhog_scanner::try_load_from_matcher_artifact_tip(
+                                        &cache_dir,
+                                        resolved_config_digest,
+                                        None,
+                                        backend,
+                                        runtime_identity.as_deref(),
+                                    ) {
+                                        Ok(Some((detectors, _loaded, _identity))) => {
+                                            tracing::debug!(
+                                                target: "keyhog::matcher_artifact_cache",
+                                                "loaded detector corpus from matcher artifact tip"
+                                            );
+                                            let embedded_count = detectors.len();
+                                            Some(LoadedDetectorCorpus {
+                                                detectors,
+                                                schema_version:
+                                                    keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
+                                                provenance: DetectorCorpusProvenance {
+                                                    mode: "embedded",
+                                                    source: format!(
+                                                        "matcher artifact tip {}",
+                                                        cache_dir.display()
+                                                    ),
+                                                    embedded_count,
+                                                    custom_count: 0,
+                                                },
+                                            })
+                                        }
+                                        Ok(None) => None,
+                                        Err(tip_error) => {
+                                            tracing::debug!(
+                                                target: "keyhog::matcher_artifact_cache",
+                                                error = %tip_error,
+                                                "matcher artifact tip unusable; loading embedded detectors"
+                                            );
+                                            None
+                                        }
+                                    }
+                                },
+                            )
+                        } else {
+                            None
+                        };
                         (
-                            Some(
-                                load_effective_detector_corpus(
-                                    &detectors_path,
-                                    requested_detector_mode,
-                                    !args.lockdown,
-                                )
-                                .context("loading effective detector corpus")?,
-                            ),
+                            Some(match from_tip {
+                                Some(corpus) => corpus,
+                                None => embedded()?,
+                            }),
                             None,
                         )
                     }
@@ -1513,20 +1577,8 @@ impl ScanOrchestrator {
         let detectors: Option<Arc<[DetectorSpec]>> =
             (!direct_pack_hydration).then(|| detectors.into());
 
-        let gpu_init_policy = {
-            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackSelect);
-            gpu_init_policy_for_args(
-                &args,
-                effective_config.autoroute_cache_path.as_deref(),
-                effective_config.autoroute_gpu,
-                effective_config.autoroute_calibration,
-            )
-        };
         let scanner = {
             let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
-            let resolved_config_digest =
-                crate::orchestrator_config::profiling_resolved_config_digest(&effective_config);
-            let runtime_identity = keyhog_scanner::hw_probe::hyperscan_runtime_identity();
             let pack_generation = detector_execution_pack.as_ref().map(|pack| {
                 keyhog_core::hex_encode(&pack.identity().digest())
             });

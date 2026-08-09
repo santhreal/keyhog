@@ -31,9 +31,15 @@ use std::sync::{Arc, OnceLock};
 /// On-disk magic for MatcherArtifact cache files.
 pub const MATCHER_ARTIFACT_MAGIC: &[u8; 4] = b"KHMA";
 /// Cache format version. Bump when the envelope layout changes.
-pub const MATCHER_ARTIFACT_VERSION: u32 = 1;
+///
+/// v1 used a JSON body that expanded section blobs into number arrays and made
+/// second-run deserialize dominate tiny-file CPU. v2 stores raw section bytes.
+/// v3 appends canonical detector-IR bytes so a tip hit can skip TOML corpus load.
+pub const MATCHER_ARTIFACT_VERSION: u32 = 3;
 /// Filename suffix for MatcherArtifact cache files.
 pub const MATCHER_ARTIFACT_SUFFIX: &str = ".khm";
+/// Filename suffix for detector-digest tip files (no corpus digest in the key).
+pub const MATCHER_ARTIFACT_TIP_SUFFIX: &str = ".kht";
 /// Hard cap for one MatcherArtifact cache file, including header.
 pub const MATCHER_ARTIFACT_FILE_BYTES: u64 = 256 * 1024 * 1024;
 
@@ -358,25 +364,224 @@ fn current_executable_sha256() -> std::result::Result<String, String> {
         .clone()
 }
 
-#[derive(Serialize, Deserialize)]
-struct MatcherArtifactFile {
-    identity: MatcherArtifactIdentity,
-    identity_digest: String,
-    content_digest: String,
-    literal_index: Vec<u8>,
-    regex_programs: Vec<u8>,
-    suppression_policy: Vec<u8>,
+/// MatcherArtifact v3 body layout (after the 8-byte magic/version header):
+/// `identity_json_len:u32` + identity JSON + `identity_digest:[u8;32]` +
+/// `content_digest:[u8;32]` + length-prefixed raw `literal_index` /
+/// `regex_programs` / `suppression_policy` / `detector_ir` blobs.
+
+fn read_u32_le(bytes: &[u8], offset: &mut usize, path: &Path) -> std::result::Result<u32, String> {
+    let end = offset
+        .checked_add(4)
+        .filter(|end| *end <= bytes.len())
+        .ok_or_else(|| format!("matcher artifact {} is truncated", path.display()))?;
+    let value = u32::from_le_bytes(bytes[*offset..end].try_into().expect("4 bytes"));
+    *offset = end;
+    Ok(value)
+}
+
+fn read_exact<'a>(
+    bytes: &'a [u8],
+    offset: &mut usize,
+    len: usize,
+    path: &Path,
+) -> std::result::Result<&'a [u8], String> {
+    let end = offset
+        .checked_add(len)
+        .filter(|end| *end <= bytes.len())
+        .ok_or_else(|| format!("matcher artifact {} is truncated", path.display()))?;
+    let slice = &bytes[*offset..end];
+    *offset = end;
+    Ok(slice)
+}
+
+/// Loaded MatcherArtifact payload (route matcher sections + canonical detector IR).
+#[derive(Clone, Debug)]
+pub struct LoadedMatcherArtifact {
+    pub sections: CompiledRouteMatcherSections,
+    pub detector_ir: Vec<u8>,
+}
+
+/// Tip that locates a MatcherArtifact without first loading the detector corpus.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MatcherArtifactTip {
+    pub detector_corpus_digest: String,
+    pub identity_digest: String,
+}
+
+/// Build the tip filename for the default-embedded corpus path (detector digest omitted).
+pub fn matcher_artifact_tip_filename(
+    resolved_config_digest: [u8; 32],
+    pack_generation: Option<&str>,
+    backend: ExecutionPackBackend,
+    runtime_identity: Option<&str>,
+) -> std::result::Result<String, String> {
+    let mut hasher = blake3::Hasher::new();
+    update_tagged(&mut hasher, b"domain", b"keyhog-matcher-artifact-tip-v1");
+    update_tagged(
+        &mut hasher,
+        b"version",
+        &MATCHER_ARTIFACT_VERSION.to_le_bytes(),
+    );
+    update_tagged(
+        &mut hasher,
+        b"binary_digest",
+        current_executable_sha256()?.as_bytes(),
+    );
+    update_tagged(
+        &mut hasher,
+        b"binary_version",
+        env!("CARGO_PKG_VERSION").as_bytes(),
+    );
+    update_tagged(&mut hasher, b"git_hash", keyhog_core::git_hash().as_bytes());
+    update_tagged(
+        &mut hasher,
+        b"target",
+        format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS).as_bytes(),
+    );
+    update_tagged(&mut hasher, b"features", scanner_feature_identity().as_bytes());
+    update_tagged(
+        &mut hasher,
+        b"resolved_config_digest",
+        keyhog_core::hex_encode(&resolved_config_digest).as_bytes(),
+    );
+    update_tagged(
+        &mut hasher,
+        b"pack_generation",
+        pack_generation.unwrap_or("none").as_bytes(),
+    );
+    update_tagged(&mut hasher, b"backend", backend_name(backend).as_bytes());
+    update_tagged(
+        &mut hasher,
+        b"runtime_identity",
+        runtime_identity.unwrap_or("none").as_bytes(),
+    );
+    update_tagged(
+        &mut hasher,
+        b"route_matcher_section_version",
+        &crate::execution_pack::ROUTE_MATCHER_SECTION_VERSION.to_le_bytes(),
+    );
+    Ok(format!(
+        "tip-{}{}",
+        keyhog_core::hex_encode(hasher.finalize().as_bytes()),
+        MATCHER_ARTIFACT_TIP_SUFFIX
+    ))
+}
+
+fn parse_loaded_matcher_artifact(
+    path: &Path,
+    bytes: &[u8],
+    expected_identity: Option<&MatcherArtifactIdentity>,
+) -> std::result::Result<(MatcherArtifactIdentity, LoadedMatcherArtifact), String> {
+    if bytes.len() < 8 {
+        return Err(format!(
+            "matcher artifact {} is truncated",
+            path.display()
+        ));
+    }
+    if &bytes[..4] != MATCHER_ARTIFACT_MAGIC {
+        return Err(format!(
+            "matcher artifact {} has invalid magic",
+            path.display()
+        ));
+    }
+    let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+    if version != MATCHER_ARTIFACT_VERSION {
+        return Err(format!(
+            "matcher artifact {} version {version} is incompatible with {MATCHER_ARTIFACT_VERSION}",
+            path.display()
+        ));
+    }
+
+    let mut offset = 8usize;
+    let identity_len = read_u32_le(bytes, &mut offset, path)? as usize;
+    let identity_bytes = read_exact(bytes, &mut offset, identity_len, path)?;
+    let decoded_identity: MatcherArtifactIdentity = serde_json::from_slice(identity_bytes)
+        .map_err(|error| {
+            format!(
+                "matcher artifact {} identity is not valid JSON: {error}",
+                path.display()
+            )
+        })?;
+    if let Some(expected) = expected_identity {
+        if decoded_identity != *expected {
+            return Err(format!(
+                "matcher artifact {} identity fields do not match the running scan",
+                path.display()
+            ));
+        }
+    }
+    let stored_identity_digest: [u8; 32] = read_exact(bytes, &mut offset, 32, path)?
+        .try_into()
+        .expect("32 bytes");
+    let expected_digest = decoded_identity.digest();
+    if stored_identity_digest != expected_digest {
+        return Err(format!(
+            "matcher artifact {} identity digest mismatch",
+            path.display()
+        ));
+    }
+    let stored_content_digest: [u8; 32] = read_exact(bytes, &mut offset, 32, path)?
+        .try_into()
+        .expect("32 bytes");
+    let literal_len = read_u32_le(bytes, &mut offset, path)? as usize;
+    let literal_index = read_exact(bytes, &mut offset, literal_len, path)?.to_vec();
+    let regex_len = read_u32_le(bytes, &mut offset, path)? as usize;
+    let regex_programs = read_exact(bytes, &mut offset, regex_len, path)?.to_vec();
+    let supp_len = read_u32_le(bytes, &mut offset, path)? as usize;
+    let suppression_policy = read_exact(bytes, &mut offset, supp_len, path)?.to_vec();
+    let ir_len = read_u32_le(bytes, &mut offset, path)? as usize;
+    let detector_ir = read_exact(bytes, &mut offset, ir_len, path)?.to_vec();
+    if offset != bytes.len() {
+        return Err(format!(
+            "matcher artifact {} has trailing bytes after the envelope",
+            path.display()
+        ));
+    }
+
+    let sections = CompiledRouteMatcherSections {
+        backend: parse_backend_name(&decoded_identity.backend).ok_or_else(|| {
+            format!(
+                "matcher artifact {} has unknown backend {}",
+                path.display(),
+                decoded_identity.backend
+            )
+        })?,
+        literal_index,
+        regex_programs,
+        suppression_policy,
+    };
+    let content = sections.content_digest();
+    if content != stored_content_digest {
+        return Err(format!(
+            "matcher artifact {} content digest mismatch",
+            path.display()
+        ));
+    }
+    // Intentionally skip validate_canonical here: hydrate/decode re-parses the
+    // section envelopes and fails closed. Avoiding a second 2.8 MiB JSON parse
+    // keeps second-run tiny-file CPU near the warm-daemon reference.
+    Ok((
+        decoded_identity,
+        LoadedMatcherArtifact {
+            sections,
+            detector_ir,
+        },
+    ))
 }
 
 /// Load a MatcherArtifact for `identity` from `cache_dir`.
-///
-/// Returns `Ok(sections)` only when every identity field and content digest
-/// matches. Any mismatch is `Err` with a reason suitable for invalidation
-/// telemetry; callers must rebuild rather than serve the foreign matcher.
 pub fn load_matcher_artifact(
     cache_dir: &Path,
     identity: &MatcherArtifactIdentity,
 ) -> std::result::Result<CompiledRouteMatcherSections, String> {
+    Ok(load_matcher_artifact_with_ir(cache_dir, identity)?.sections)
+}
+
+/// Load matcher sections plus the canonical detector IR for `identity`.
+pub fn load_matcher_artifact_with_ir(
+    cache_dir: &Path,
+    identity: &MatcherArtifactIdentity,
+) -> std::result::Result<LoadedMatcherArtifact, String> {
     let path = cache_dir.join(identity.cache_filename());
     let metadata = std::fs::symlink_metadata(&path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
@@ -398,97 +603,18 @@ pub fn load_matcher_artifact(
             MATCHER_ARTIFACT_FILE_BYTES
         ));
     }
-    let mut file = std::fs::File::open(&path)
-        .map_err(|error| format!("cannot open matcher artifact {}: {error}", path.display()))?;
-    let mut header = [0u8; 8];
-    file.read_exact(&mut header).map_err(|error| {
-        format!(
-            "cannot read matcher artifact header {}: {error}",
-            path.display()
-        )
-    })?;
-    if &header[..4] != MATCHER_ARTIFACT_MAGIC {
-        return Err(format!(
-            "matcher artifact {} has invalid magic",
-            path.display()
-        ));
-    }
-    let version = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
-    if version != MATCHER_ARTIFACT_VERSION {
-        return Err(format!(
-            "matcher artifact {} version {version} is incompatible with {MATCHER_ARTIFACT_VERSION}",
-            path.display()
-        ));
-    }
-    let mut limited = file.take(MATCHER_ARTIFACT_FILE_BYTES.saturating_sub(8));
-    let mut body = Vec::new();
-    limited
-        .read_to_end(&mut body)
+    let bytes = std::fs::read(&path)
         .map_err(|error| format!("cannot read matcher artifact {}: {error}", path.display()))?;
-    let decoded: MatcherArtifactFile = serde_json::from_slice(&body).map_err(|error| {
-        format!(
-            "matcher artifact {} is not valid JSON: {error}",
-            path.display()
-        )
-    })?;
-    if decoded.identity != *identity {
-        return Err(format!(
-            "matcher artifact {} identity fields do not match the running scan",
-            path.display()
-        ));
-    }
-    let expected_digest = identity.digest();
-    let stored_digest = parse_hex32(&decoded.identity_digest).ok_or_else(|| {
-        format!(
-            "matcher artifact {} has a malformed identity digest",
-            path.display()
-        )
-    })?;
-    if stored_digest != expected_digest {
-        return Err(format!(
-            "matcher artifact {} identity digest mismatch",
-            path.display()
-        ));
-    }
-    let sections = CompiledRouteMatcherSections {
-        backend: parse_backend_name(&decoded.identity.backend).ok_or_else(|| {
-            format!(
-                "matcher artifact {} has unknown backend {}",
-                path.display(),
-                decoded.identity.backend
-            )
-        })?,
-        literal_index: decoded.literal_index,
-        regex_programs: decoded.regex_programs,
-        suppression_policy: decoded.suppression_policy,
-    };
-    let content = sections.content_digest();
-    let stored_content = parse_hex32(&decoded.content_digest).ok_or_else(|| {
-        format!(
-            "matcher artifact {} has a malformed content digest",
-            path.display()
-        )
-    })?;
-    if content != stored_content {
-        return Err(format!(
-            "matcher artifact {} content digest mismatch",
-            path.display()
-        ));
-    }
-    sections.validate_canonical().map_err(|error| {
-        format!(
-            "matcher artifact {} failed canonical validation: {error}",
-            path.display()
-        )
-    })?;
-    Ok(sections)
+    let (_identity, loaded) = parse_loaded_matcher_artifact(&path, &bytes, Some(identity))?;
+    Ok(loaded)
 }
 
-/// Persist `sections` under `identity` into `cache_dir`.
+/// Persist `sections` and `detector_ir` under `identity`, and refresh the tip.
 pub fn store_matcher_artifact(
     cache_dir: &Path,
     identity: &MatcherArtifactIdentity,
     sections: &CompiledRouteMatcherSections,
+    detector_ir: &[u8],
 ) -> std::result::Result<(), String> {
     let expected_backend =
         parse_backend_name(&identity.backend).ok_or_else(|| "unknown identity backend".to_owned())?;
@@ -502,43 +628,72 @@ pub fn store_matcher_artifact(
         )
     })?;
     let path = cache_dir.join(identity.cache_filename());
-    let file = MatcherArtifactFile {
-        identity: identity.clone(),
-        identity_digest: keyhog_core::hex_encode(&identity.digest()),
-        content_digest: keyhog_core::hex_encode(&sections.content_digest()),
-        literal_index: sections.literal_index.clone(),
-        regex_programs: sections.regex_programs.clone(),
-        suppression_policy: sections.suppression_policy.clone(),
-    };
-    let body = serde_json::to_vec(&file)
-        .map_err(|error| format!("cannot serialize matcher artifact: {error}"))?;
-    if (body.len() as u64).saturating_add(8) > MATCHER_ARTIFACT_FILE_BYTES {
+    let identity_json = serde_json::to_vec(identity)
+        .map_err(|error| format!("cannot serialize matcher artifact identity: {error}"))?;
+    let identity_digest = identity.digest();
+    let content_digest = sections.content_digest();
+
+    let mut bytes = Vec::with_capacity(
+        8 + 4
+            + identity_json.len()
+            + 64
+            + 16
+            + sections.literal_index.len()
+            + sections.regex_programs.len()
+            + sections.suppression_policy.len()
+            + detector_ir.len(),
+    );
+    bytes.extend_from_slice(MATCHER_ARTIFACT_MAGIC);
+    bytes.extend_from_slice(&MATCHER_ARTIFACT_VERSION.to_le_bytes());
+    bytes.extend_from_slice(&(identity_json.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&identity_json);
+    bytes.extend_from_slice(&identity_digest);
+    bytes.extend_from_slice(&content_digest);
+    bytes.extend_from_slice(&(sections.literal_index.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&sections.literal_index);
+    bytes.extend_from_slice(&(sections.regex_programs.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&sections.regex_programs);
+    bytes.extend_from_slice(&(sections.suppression_policy.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&sections.suppression_policy);
+    bytes.extend_from_slice(&(detector_ir.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(detector_ir);
+
+    if (bytes.len() as u64) > MATCHER_ARTIFACT_FILE_BYTES {
         return Err(format!(
             "matcher artifact would exceed {} byte cap",
             MATCHER_ARTIFACT_FILE_BYTES
         ));
     }
-    let mut bytes = Vec::with_capacity(8 + body.len());
-    bytes.extend_from_slice(MATCHER_ARTIFACT_MAGIC);
-    bytes.extend_from_slice(&MATCHER_ARTIFACT_VERSION.to_le_bytes());
-    bytes.extend_from_slice(&body);
     atomic_write(&path, &bytes)
-        .map_err(|error| format!("cannot write matcher artifact {}: {error}", path.display()))
+        .map_err(|error| format!("cannot write matcher artifact {}: {error}", path.display()))?;
+
+    // Tip lets the next process resolve detector digest without TOML load.
+    let tip_name = matcher_artifact_tip_filename(
+        parse_hex_digest(&identity.resolved_config_digest)?,
+        if identity.pack_generation == "none" {
+            None
+        } else {
+            Some(identity.pack_generation.as_str())
+        },
+        expected_backend,
+        if identity.runtime_identity == "none" {
+            None
+        } else {
+            Some(identity.runtime_identity.as_str())
+        },
+    )?;
+    let tip = MatcherArtifactTip {
+        detector_corpus_digest: identity.detector_corpus_digest.clone(),
+        identity_digest: keyhog_core::hex_encode(&identity_digest),
+    };
+    let tip_bytes = serde_json::to_vec(&tip)
+        .map_err(|error| format!("cannot serialize matcher artifact tip: {error}"))?;
+    atomic_write(&cache_dir.join(tip_name), &tip_bytes)
+        .map_err(|error| format!("cannot write matcher artifact tip: {error}"))
 }
 
-fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(parent)?;
-    let tmp = tempfile::NamedTempFile::new_in(parent)?;
-    {
-        let mut file = tmp.reopen()?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-    }
-    tmp.persist(path).map(drop).map_err(|error| error.error)
+fn parse_hex_digest(text: &str) -> std::result::Result<[u8; 32], String> {
+    parse_hex32(text).ok_or_else(|| format!("malformed digest {text}"))
 }
 
 fn parse_hex32(text: &str) -> Option<[u8; 32]> {
@@ -562,6 +717,73 @@ fn hex_nibble(byte: u8) -> Option<u8> {
         _ => None,
     }
 }
+
+/// Try to load detectors + sections via tip without parsing the TOML corpus.
+pub fn try_load_from_matcher_artifact_tip(
+    cache_dir: &Path,
+    resolved_config_digest: [u8; 32],
+    pack_generation: Option<&str>,
+    backend: ExecutionPackBackend,
+    runtime_identity: Option<&str>,
+) -> std::result::Result<Option<(Vec<keyhog_core::DetectorSpec>, LoadedMatcherArtifact, MatcherArtifactIdentity)>, String> {
+    let tip_name =
+        matcher_artifact_tip_filename(resolved_config_digest, pack_generation, backend, runtime_identity)?;
+    let tip_path = cache_dir.join(tip_name);
+    let tip_bytes = match std::fs::read(&tip_path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "cannot read matcher artifact tip {}: {error}",
+                tip_path.display()
+            ))
+        }
+    };
+    let tip: MatcherArtifactTip = serde_json::from_slice(&tip_bytes).map_err(|error| {
+        format!(
+            "matcher artifact tip {} is not valid JSON: {error}",
+            tip_path.display()
+        )
+    })?;
+    let detector_digest = parse_hex_digest(&tip.detector_corpus_digest)?;
+    let identity = MatcherArtifactIdentity::new(
+        detector_digest,
+        resolved_config_digest,
+        pack_generation,
+        backend,
+        runtime_identity,
+    )?;
+    if keyhog_core::hex_encode(&identity.digest()) != tip.identity_digest {
+        return Err(format!(
+            "matcher artifact tip {} identity digest mismatch",
+            tip_path.display()
+        ));
+    }
+    let loaded = load_matcher_artifact_with_ir(cache_dir, &identity)?;
+    let decoded = CanonicalDetectorExecutionIr::decode_runtime(&loaded.detector_ir).map_err(|error| {
+        format!("matcher artifact detector IR decode failed: {error}")
+    })?;
+    if decoded.digest() != detector_digest {
+        return Err("matcher artifact detector IR digest mismatch".to_owned());
+    }
+    Ok(Some((decoded.into_detectors(), loaded, identity)))
+}
+
+fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    let tmp = tempfile::NamedTempFile::new_in(parent)?;
+    {
+        let mut file = tmp.reopen()?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+    }
+    tmp.persist(path).map(drop).map_err(|error| error.error)
+}
+
 
 fn record_outcome(outcome: &MatcherArtifactCacheOutcome) {
     match outcome {
@@ -654,7 +876,9 @@ pub fn compile_shared_with_matcher_artifact_cache(
                             "cannot compile matcher artifact sections: {error}"
                         ))
                     })?;
-                if let Err(store_error) = store_matcher_artifact(cache_dir, &identity, &sections) {
+                if let Err(store_error) =
+                    store_matcher_artifact(cache_dir, &identity, &sections, ir.as_bytes())
+                {
                     tracing::warn!(
                         target: "keyhog::matcher_artifact_cache",
                         error = %store_error,
