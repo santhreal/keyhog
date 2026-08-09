@@ -486,48 +486,6 @@ fn emit_archive_member_with_tex_provenance(
         );
     }
 
-    // HAR expansion matches process_entry on disk: a .har member expands into
-    // wire:har:{request,response} chunks instead of one opaque JSON leaf. That
-    // parity applies to every in-memory archive family (zip/tar/7z/RAR/docker
-    // layers), not only Docker streaming. Charge derived bytes against the
-    // shared archive-bomb accumulator the surrounding branches already use.
-    let ext = std::path::Path::new(entry_name)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    if ext.eq_ignore_ascii_case("har") {
-        let _decode = crate::profile::decode_span();
-        match crate::har::try_expand_har(&content, member_display, max_size) {
-            Some(har_chunks) => {
-                let mut derived_bytes = 0_u64;
-                for chunk in har_chunks {
-                    if let Ok(chunk_ok) = &chunk {
-                        derived_bytes = derived_bytes.saturating_add(chunk_ok.data.len() as u64);
-                    }
-                    if !emit(chunk) {
-                        crate::profile::add_derived_bytes(derived_bytes);
-                        return false;
-                    }
-                }
-                crate::profile::add_derived_bytes(derived_bytes);
-                let total_budget = extraction_total_budget(max_size);
-                let attempted = (*total_uncompressed).saturating_add(derived_bytes);
-                if attempted > total_budget {
-                    let err = report_archive_truncation(member_display, attempted, total_budget);
-                    *total_uncompressed = total_budget;
-                    return emit(Err(err));
-                }
-                *total_uncompressed = attempted;
-                return true;
-            }
-            None => {
-                tracing::info!(
-                    path = member_display,
-                    "HAR parse failed; scanning as plain archive member"
-                );
-            }
-        }
-    }
 
     emit_archive_leaf_member(content, member_display, provenance, emit)
 }

@@ -343,6 +343,38 @@ fn stream_layer_tar_reader(
             continue;
         }
 
+        // Large plain members: stream ~1 MiB windows from the tar entry instead
+        // of buffering up to the 100 MiB member-scan cap (restores near-window
+        // peak RSS vs the prior unpack+mmap path).
+        let window_size = 1024 * 1024; // matches filesystem::reader::DEFAULT_WINDOW_SIZE
+        let window_overlap = 128 * 1024; // matches filesystem::reader::DEFAULT_WINDOW_OVERLAP
+        if size > window_size as u64 && !layer_member_requires_full_buffer(ext) {
+            if !stream_plain_layer_member_windows(
+                &mut entry,
+                size.min(member_scan_cap),
+                &entry_name,
+                window_size,
+                window_overlap,
+                respect_default_excludes,
+                emit,
+            )? {
+                return Ok(false);
+            }
+            // If the tar header size exceeded the scan cap, surface the same
+            // oversize skip the buffered path uses after read_to_cap truncates.
+            if size > member_scan_cap {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                if !emit(Err(docker_archive_entry_over_entry_cap_error(
+                    &path,
+                    size,
+                    member_scan_cap,
+                ))) {
+                    return Ok(false);
+                }
+            }
+            continue;
+        }
+
         let read = crate::capped_read::read_to_cap(&mut entry, member_scan_cap, Some(size))
             .map_err(SourceError::Io)?;
         if read.truncated {
@@ -443,6 +475,38 @@ fn stream_layer_tar_reader(
             continue;
         }
 
+        // HAR expansion stays on the Docker streaming boundary so nested
+        // .har members inside ordinary zip/tar/7z/RAR keep the historical
+        // filesystem/archive leaf identity. Layer .har files still match
+        // process_entry-after-unpack coverage (wire:har:*).
+        if ext.eq_ignore_ascii_case("har") {
+            let _decode = crate::profile::decode_span();
+            match crate::har::try_expand_har(
+                &read.bytes,
+                &entry_name,
+                keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
+            ) {
+                Some(har_chunks) => {
+                    let mut derived_bytes = 0_u64;
+                    for chunk in har_chunks {
+                        if let Ok(chunk_ok) = &chunk {
+                            derived_bytes =
+                                derived_bytes.saturating_add(chunk_ok.data.len() as u64);
+                        }
+                        if !emit(chunk) {
+                            crate::profile::add_derived_bytes(derived_bytes);
+                            return Ok(false);
+                        }
+                    }
+                    crate::profile::add_derived_bytes(derived_bytes);
+                    continue;
+                }
+                None => {
+                    tracing::info!(path = entry_name.as_str(), "HAR parse failed; scanning as plain layer member");
+                }
+            }
+        }
+
         if !crate::filesystem::emit_in_memory_member(
             &entry_name,
             read.bytes,
@@ -457,6 +521,124 @@ fn stream_layer_tar_reader(
 
     Ok(true)
 }
+
+
+fn layer_member_requires_full_buffer(ext: &str) -> bool {
+    if ext.is_empty() {
+        // Extensionless members may be containers; sniff needs a buffered prefix
+        // and nested dispatch needs the full member when the sniff hits.
+        return true;
+    }
+    if crate::filesystem::is_openpack_archive_ext(ext) {
+        return true;
+    }
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "pdf"
+            | "har"
+            | "7z"
+            | "rar"
+            | "zip"
+            | "jar"
+            | "war"
+            | "ear"
+            | "apk"
+            | "ipa"
+            | "whl"
+            | "tar"
+            | "tgz"
+            | "tbz"
+            | "tbz2"
+            | "txz"
+            | "gz"
+            | "bz2"
+            | "xz"
+            | "zst"
+            | "zstd"
+            | "png"
+            | "jpg"
+            | "jpeg"
+            | "tif"
+            | "tiff"
+            | "webp"
+    )
+}
+
+/// Stream a large plain UTF-8 layer member in ~1 MiB windows from the tar entry
+/// so peak RAM stays near one window instead of the full member-scan cap.
+fn stream_plain_layer_member_windows<R: Read>(
+    entry: &mut R,
+    size: u64,
+    entry_name: &str,
+    window_size: usize,
+    window_overlap: usize,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<keyhog_core::Chunk, SourceError>) -> bool,
+) -> Result<bool, SourceError> {
+    use keyhog_core::{Chunk, ChunkMetadata};
+
+    let mut carry: Vec<u8> = Vec::new();
+    let mut absolute_offset: usize = 0;
+    let mut base_line: usize = 0;
+    let mut remaining = size;
+    loop {
+        let need = window_size.saturating_sub(carry.len());
+        let mut buf = carry;
+        if need > 0 && remaining > 0 {
+            let to_read = std::cmp::min(need as u64, remaining) as usize;
+            let start = buf.len();
+            buf.resize(start + to_read, 0);
+            entry.read_exact(&mut buf[start..]).map_err(SourceError::Io)?;
+            remaining = remaining.saturating_sub(to_read as u64);
+        }
+        if buf.is_empty() {
+            return Ok(true);
+        }
+        let Ok(text) = std::str::from_utf8(&buf) else {
+            // Non-UTF-8 on the plain-stream path: drain remainder and leaf-scan
+            // the prefix we already hold plus the drained tail (capped).
+            let mut rest = Vec::new();
+            if remaining > 0 {
+                let mut take = entry.take(remaining);
+                take.read_to_end(&mut rest).map_err(SourceError::Io)?;
+            }
+            buf.extend_from_slice(&rest);
+            return Ok(crate::filesystem::emit_in_memory_member(
+                entry_name,
+                buf,
+                entry_name,
+                keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
+                respect_default_excludes,
+                emit,
+            ));
+        };
+        if !text.is_empty()
+            && !emit(Ok(Chunk {
+                data: text.to_owned().into(),
+                metadata: ChunkMetadata {
+                    source_type: "filesystem/archive".into(),
+                    path: Some(entry_name.to_owned().into()),
+                    base_offset: absolute_offset,
+                    base_line,
+                    size_bytes: Some(size),
+                    decoded_span: None,
+                    ..Default::default()
+                },
+            }))
+        {
+            return Ok(false);
+        }
+        if remaining == 0 {
+            return Ok(true);
+        }
+        let overlap = std::cmp::min(window_overlap, buf.len().saturating_sub(1));
+        let keep_from = buf.len().saturating_sub(overlap);
+        base_line += buf[..keep_from].iter().filter(|&&b| b == b'\n').count();
+        absolute_offset += keep_from;
+        carry = buf[keep_from..].to_vec();
+    }
+}
+
 
 fn layer_member_may_carry_image_metadata(ext: &str) -> bool {
     matches!(

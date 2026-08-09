@@ -13,7 +13,7 @@ even when a later layer deletes the file, because every layer is scanned
 independently: whiteout and opaque-dir markers are ordinary members, not a
 reason to hide earlier-layer content.
 
-Nested members keep the same coverage as an unpack-then-walk scan: gzip/zip/tar/compressed payloads descend in memory, `.7z`/`.rar` use the shared path extractors (staged from the already-buffered member), and `.har` expands through the HAR decoder with the same `wire:har` labels as on-disk scans. Large already-UTF-8 text members are windowed on raw bytes; UTF-16 and other encodings keep the whole-member decode path. Windowed members keep the `filesystem/archive` source identity.
+Nested members keep the same coverage as an unpack-then-walk scan: gzip/zip/tar/compressed payloads descend in memory, `.7z`/`.rar` use the shared path extractors (staged from the already-buffered member), and layer `.har` files expand at the Docker boundary with `wire:har` labels. Nested `.har` inside ordinary zip/tar/7z/RAR keep the historical `filesystem/archive` leaf identity. Large already-UTF-8 plain layer members stream in ~1 MiB windows from the tar entry; UTF-16 and other encodings keep the whole-member decode path. Windowed members keep the `filesystem/archive` source identity.
 
 ## What you need
 
