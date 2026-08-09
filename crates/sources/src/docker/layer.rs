@@ -281,18 +281,18 @@ fn normalize_streamed_layer_path(path: &str) -> Result<String, SourceError> {
             "docker layer chunk has an empty member path".into(),
         ));
     }
-    // HAR expansion labels chunks `{member}#{url}`. Peel an opaque URL BEFORE
-    // splitting nested-archive `//` separators; otherwise `https://...` in the
-    // captured URL becomes a false nested member and `/../` segments refuse the
-    // whole request/response body.
+    // HAR expansion labels chunks `{member}.har#{url}`. Peel that opaque URL
+    // BEFORE splitting nested-archive `//` separators; otherwise `https://...`
+    // in the captured URL becomes a false nested member and `/../` segments
+    // refuse the whole request/response body.
     //
-    // Only peel when the body is non-empty AND the suffix looks like HAR/URL
-    // provenance. A real member named `#config` (or `zip//#config`) must stay
-    // intact: naive `split_once('#')` would otherwise leave an empty path body.
+    // Only peel when the body looks like a `.har` member. Peeling on a bare
+    // `://` suffix would let an attacker-controlled tar name such as
+    // `a#http://x/../../etc/shadow` bypass component validation on the suffix.
+    // A real member named `#config` (or `zip//#config`) must stay intact:
+    // naive `split_once('#')` would otherwise leave an empty path body.
     let (path_body, har_url) = match path.split_once('#') {
-        Some((body, url))
-            if !body.is_empty() && (url.contains("://") || path_body_looks_like_har(body)) =>
-        {
+        Some((body, url)) if !body.is_empty() && path_body_looks_like_har(body) => {
             (body, Some(url))
         }
         _ => (path, None),
@@ -329,9 +329,32 @@ fn normalize_streamed_layer_path(path: &str) -> Result<String, SourceError> {
     }
     let joined = normalized.join("//");
     Ok(match har_url {
-        Some(url) => format!("{joined}#{url}"),
+        Some(url) => {
+            validate_har_provenance_suffix(url)?;
+            format!("{joined}#{url}")
+        }
         None => joined,
     })
+}
+
+/// HAR chunk labels append `#{url}` as opaque provenance. Require a URL scheme
+/// (or a path-safe relative suffix) so a crafted `#../../etc/passwd` peel cannot
+/// bypass `validate_virtual_member_path` on the body alone.
+fn validate_har_provenance_suffix(url: &str) -> Result<(), SourceError> {
+    if url.is_empty()
+        || url
+            .as_bytes()
+            .iter()
+            .any(|byte| matches!(byte, 0 | b'\n' | b'\r'))
+    {
+        return Err(SourceError::Other(
+            "docker layer chunk has unsafe HAR provenance suffix".into(),
+        ));
+    }
+    if url.contains("://") {
+        return Ok(());
+    }
+    validate_virtual_member_path(url)
 }
 
 fn path_body_looks_like_har(body: &str) -> bool {

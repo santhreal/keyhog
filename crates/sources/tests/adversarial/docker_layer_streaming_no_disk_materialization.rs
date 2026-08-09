@@ -941,4 +941,23 @@ fn stream_layer_scans_launcher_prefixed_jar() {
     );
 }
 
+/// Non-`.har` `#http://.../../...` labels must not peel past path validation.
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_non_har_hash_url_dotdot_refused_on_rewrite() {
+    let chunk = keyhog_core::Chunk {
+        data: "NONHAR_HASH_SECRET=ghp_NonHarHashToken0000000000000001".into(),
+        metadata: keyhog_core::ChunkMetadata {
+            source_type: "filesystem/archive".into(),
+            path: Some("a#http://x/../../etc/shadow".into()),
+            ..Default::default()
+        },
+    };
+    let rewritten = keyhog_sources::testing::TestApi
+        .rewrite_streamed_docker_layer_chunk(chunk, "img", "layer.tar");
+    assert!(
+        rewritten.is_err(),
+        "non-har #url with /../ must fail closed during docker path rewrite, got {rewritten:?}"
+    );
+}
 
