@@ -828,7 +828,8 @@ fn stream_layer_png_records_decode_and_derived_bytes() {
 fn stream_layer_nested_zip_records_decode_and_derived_bytes() {
     let dir = tempfile::tempdir().expect("tempdir");
     let member_body = "ZIP_PROFILE_SECRET=ghp_ZipProfileToken00000000000000001\n";
-    let zip_bytes = crate::support::archive::zip_with_entries(&[("inner.txt", member_body.as_bytes())]);
+    let zip_bytes =
+        crate::support::archive::zip_with_entries(&[("inner.txt", member_body.as_bytes())]);
     let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/bundle.zip", &zip_bytes)]);
     let (profile, rows) = crate::support::profile::run_with_profile(|| {
         TestApi
@@ -842,7 +843,9 @@ fn stream_layer_nested_zip_records_decode_and_derived_bytes() {
     });
     let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
     assert!(
-        chunks.iter().any(|chunk| chunk.data.contains("ZIP_PROFILE_SECRET")),
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("ZIP_PROFILE_SECRET")),
         "nested zip member must scan under profiling: {chunks:?}"
     );
     assert!(
@@ -862,7 +865,11 @@ fn stream_layer_nested_zip_records_decode_and_derived_bytes() {
 fn stream_layer_plain_text_skips_derived_decode() {
     let dir = tempfile::tempdir().expect("tempdir");
     let body = "PLAIN_PROFILE_SECRET=ghp_PlainProfileToken000000000000001\n";
-    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/notes.txt", body.as_bytes())]);
+    let layer = layer_tar_with_entries(
+        dir.path(),
+        "layer.tar",
+        &[("opt/notes.txt", body.as_bytes())],
+    );
     let (profile, rows) = crate::support::profile::run_with_profile(|| {
         TestApi
             .stream_docker_layer_archive_chunks(
@@ -875,7 +882,9 @@ fn stream_layer_plain_text_skips_derived_decode() {
     });
     let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
     assert!(
-        chunks.iter().any(|chunk| chunk.data.contains("PLAIN_PROFILE_SECRET")),
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("PLAIN_PROFILE_SECRET")),
         "plain text must still scan"
     );
     assert_eq!(
@@ -905,8 +914,7 @@ fn stream_layer_scans_launcher_prefixed_jar() {
         matches!(prefixed.starts_with(b"PK"), false),
         "fixture must not begin with the zip local-file signature"
     );
-    let layer =
-        layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/app.jar", &prefixed)]);
+    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/app.jar", &prefixed)]);
     let rows = TestApi
         .stream_docker_layer_archive_chunks(
             &layer,
@@ -953,11 +961,13 @@ fn stream_layer_non_har_hash_url_dotdot_refused_on_rewrite() {
             ..Default::default()
         },
     };
-    let rewritten = keyhog_sources::testing::TestApi
-        .rewrite_streamed_docker_layer_chunk(chunk, "img", "layer.tar");
+    let rewritten = keyhog_sources::testing::TestApi.rewrite_streamed_docker_layer_chunk(
+        chunk,
+        "img",
+        "layer.tar",
+    );
     assert!(
         rewritten.is_err(),
         "non-har #url with /../ must fail closed during docker path rewrite, got {rewritten:?}"
     );
 }
-
