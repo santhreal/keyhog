@@ -11,6 +11,9 @@
 - Memoize empty decode-through outcomes by unique-line vocabulary (keyed by detector digest) so overlapping windows of repetitive multi-line corpora (one_large) do not re-run hex/base64 trial decode after the first empty result.
 - Memoize confirmed-pattern and entropy absence by the same detector-scoped unique-line vocabulary so later overlapping windows of repetitive multi-line corpora skip those stages after the first empty proof.
 - Short-circuit the prepared scan (and phase-1 classification) for detector-scoped vocabularies already proven clean so later overlapping windows of repetitive multi-line corpora skip preprocess/phase2/hot-pattern work after the first empty proof.
+- Keep markerless no-hit skips from bypassing Unicode de-obfuscation: fall through to `should_scan_no_hit_chunk` when the raw window still carries evasion characters.
+- Record vocab confirmed/entropy absence from accepted match/ML push events instead of heap `len()` deltas, so capacity-bounded replacement cannot forge an empty proof.
+- Skip unique-line vocabulary fingerprint hashing when the per-scanner absence cache is empty (cold lookups cannot hit).
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.
 - Make scanner construction route-specific. The default library constructor owns only the scalar reference route, `compile_for_backend` owns one explicit route, and cross-route dispatch fails instead of materializing or substituting a backend.

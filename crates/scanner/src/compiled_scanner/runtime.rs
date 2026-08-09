@@ -1128,10 +1128,14 @@ impl CompiledScanner {
                     && !bytes.iter().any(|&byte| {
                         matches!(byte, b'+' | b'/' | b'=' | b'%' | b'\\')
                     });
+                // Homoglyph-obfuscated keywords need `should_scan_no_hit_chunk`'s
+                // normalize-and-recheck path; never take the fast skip when the
+                // raw window still carries evasion characters.
                 markerless
                     && phase2_keyword_hints.is_some_and(|hints| hints.is_empty())
                     && generic_keyword_positions.is_some_and(|positions| positions.is_empty())
                     && !crate::engine::scan_filters::has_secret_keyword_fast(bytes)
+                    && !crate::unicode_hardening::contains_evasion(&chunk.data)
             };
             if markerless_no_hit_skip {
                 if self.chunk_needs_decode_postprocess_with_absence(chunk, decoder_absence) {

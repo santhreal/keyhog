@@ -426,6 +426,10 @@ pub(crate) fn vocab_stage_absence(
     path_class: u64,
     text: &str,
 ) -> Option<VocabStageAbsence> {
+    // Empty cache: skip fingerprint hashing; every lookup would miss.
+    if cache.is_empty() {
+        return None;
+    }
     let key = vocab_absence_key(detector_digest, entropy_config_digest, path_class, text)?;
     cache.get(&key).map(|entry| *entry)
 }

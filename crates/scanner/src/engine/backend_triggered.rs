@@ -182,9 +182,11 @@ impl CompiledScanner {
                 }
             });
 
-            let matches_before = scan_state.matches.len();
+            // Heap len is not an emptiness signal once max_matches_per_chunk is
+            // reached (push_match replaces in place). Count accepted push events.
+            let accepts_before = scan_state.accepted_match_events;
             #[cfg(feature = "ml")]
-            let ml_before = scan_state.ml_pending.len();
+            let ml_before = scan_state.accepted_ml_events;
             self.extract_confirmed_patterns(
                 &confirmed_patterns,
                 &prepared.preprocessed,
@@ -194,9 +196,9 @@ impl CompiledScanner {
                 deadline,
                 confirmed_anchor_literal_matches,
             );
-            let confirmed_empty = scan_state.matches.len() == matches_before;
+            let confirmed_empty = scan_state.accepted_match_events == accepts_before;
             #[cfg(feature = "ml")]
-            let confirmed_empty = confirmed_empty && scan_state.ml_pending.len() == ml_before;
+            let confirmed_empty = confirmed_empty && scan_state.accepted_ml_events == ml_before;
             if confirmed_empty
                 && raw_text_unchanged
                 && !crate::deadline::expired(deadline)
@@ -285,18 +287,18 @@ impl CompiledScanner {
                 u64::try_from(prepared.preprocessed.text.len()).unwrap_or(u64::MAX),
                 std::sync::atomic::Ordering::Relaxed,
             );
-            let matches_before = scan_state.matches.len();
+            let accepts_before = scan_state.accepted_match_events;
             #[cfg(feature = "ml")]
-            let ml_before = scan_state.ml_pending.len();
+            let ml_before = scan_state.accepted_ml_events;
             self.scan_entropy_fallback(
                 &prepared.preprocessed,
                 line_index,
                 prepared.chunk,
                 &mut scan_state,
             );
-            let entropy_empty = scan_state.matches.len() == matches_before;
+            let entropy_empty = scan_state.accepted_match_events == accepts_before;
             #[cfg(feature = "ml")]
-            let entropy_empty = entropy_empty && scan_state.ml_pending.len() == ml_before;
+            let entropy_empty = entropy_empty && scan_state.accepted_ml_events == ml_before;
             if entropy_empty
                 && raw_text_unchanged
                 && !crate::deadline::expired(deadline)

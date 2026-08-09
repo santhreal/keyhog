@@ -466,10 +466,17 @@ pub(crate) fn contains_evasion(text: &str) -> bool {
     // zero-width/RTL/separator/combining/ascii-control). Delegating here keeps
     // `normalized_char` the single owner of that classification, so a new
     // evasion category added there can never silently desync this detector.
-    contains_ascii_evasion(text.as_bytes())
-        || text
-            .chars()
-            .any(|ch| !matches!(normalized_char(ch), NormalizedChar::Keep))
+    let bytes = text.as_bytes();
+    if contains_ascii_evasion(bytes) {
+        return true;
+    }
+    // Pure ASCII cannot host homoglyph replacements; skip the char walk on the
+    // dominant hot-path shape (minified / one_long_line alphanumeric blobs).
+    if bytes.iter().all(|&b| b < 0x80) {
+        return false;
+    }
+    text.chars()
+        .any(|ch| !matches!(normalized_char(ch), NormalizedChar::Keep))
 }
 
 fn contains_ascii_evasion(bytes: &[u8]) -> bool {

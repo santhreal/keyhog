@@ -840,6 +840,8 @@ impl CompiledScanner {
     }
 
     pub(crate) fn entropy_evidence_config_digest(&self) -> [u8; 32] {
+        // Recomputed from live config: tests and callers may mutate entropy
+        // thresholds after compile, and absence keys must track that policy.
         fn update_strings(hasher: &mut blake3::Hasher, values: &[String]) {
             hasher.update(&(values.len() as u64).to_le_bytes());
             for value in values {
