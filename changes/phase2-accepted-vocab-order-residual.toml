@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "Document unique-line vocab fingerprint order/multiplicity YELLOW as an accepted residual in the scanner SPEC, with path-scoped filesystem/windowed-only mitigations and no autoroute short-circuit."
+crates = ["scanner"]
