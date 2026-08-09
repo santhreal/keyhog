@@ -231,6 +231,7 @@ path = "crates/cli/src/daemon/control.rs"
 boundary = true
 error = true
 adversarial = true
+e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/daemon/frame.rs"
@@ -241,10 +242,17 @@ e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/daemon/frame_incremental_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/daemon/frame_streaming_tests.rs"
-
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
 [[module]]
 path = "crates/cli/src/daemon/sigpipe.rs"
 boundary = true
@@ -334,6 +342,7 @@ path = "crates/cli/src/execution_pack_install.rs"
 boundary = true
 error = true
 adversarial = true
+e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/exit_codes.rs"
@@ -368,6 +377,7 @@ path = "crates/cli/src/installer/execution_packs.rs"
 boundary = true
 error = true
 adversarial = true
+e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/installer/gpu_artifacts.rs"
@@ -469,6 +479,10 @@ e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/orchestrator/dispatch/backend/routing.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/orchestrator/dispatch/backend/store.rs"
@@ -657,6 +671,7 @@ path = "crates/cli/src/orchestrator/reporting/progress.rs"
 boundary = true
 error = true
 adversarial = true
+e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/orchestrator/reporting/tests.rs"
@@ -852,18 +867,21 @@ path = "crates/cli/src/subcommands/backend/autoroute.rs"
 boundary = true
 error = true
 adversarial = true
+e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/subcommands/backend/report.rs"
 boundary = true
 error = true
 adversarial = true
+e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/subcommands/backend/self_test.rs"
 boundary = true
 error = true
 adversarial = true
+e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/subcommands/backend/tests.rs"
@@ -898,6 +916,7 @@ path = "crates/cli/src/subcommands/compile_execution_packs.rs"
 boundary = true
 error = true
 adversarial = true
+e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/subcommands/completion.rs"

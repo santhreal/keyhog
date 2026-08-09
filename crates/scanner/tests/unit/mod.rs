@@ -1,4 +1,3 @@
-pub mod max_inner_loop_iters;
 pub mod a3_decode;
 #[cfg(feature = "multiline")]
 pub mod a3_multiline;
@@ -122,6 +121,7 @@ pub mod flaw_investigation;
 pub mod gates;
 pub mod gpu_cases;
 pub mod gpu_input_budget;
+pub mod max_inner_loop_iters;
 pub mod phase1_admission;
 pub mod phase2_truncate_prefilter;
 pub mod reusable_simd_trigger_cache_secrets;

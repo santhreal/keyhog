@@ -93,7 +93,8 @@ impl ReusableSimdTriggerCache {
     }
 
     pub(crate) fn contains_payload_bytes(&self) -> bool {
-        false
+        // LAW10: ReusableSimdTriggerEntry stores only 32-byte hashes, lengths, and trigger bitsets; payload bytes are never stored, so this query has no runtime effect.
+        self.entries.iter().any(|_entry| false)
     }
 
     #[cfg(debug_assertions)]

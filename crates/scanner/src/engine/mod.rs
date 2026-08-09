@@ -55,11 +55,12 @@ pub(crate) mod backend;
 mod batch_topology;
 mod boundary;
 pub(crate) use boundary::derive_pattern_boundary_context;
-pub(crate) use boundary::MAX_BOUNDARY_SEAM_BYTES;
 #[cfg(feature = "gpu")]
 pub(crate) use boundary::regex_match_byte_upper_bound;
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries as scan_chunk_boundaries_for_test;
+#[cfg(test)]
+pub(crate) use boundary::MAX_BOUNDARY_SEAM_BYTES;
 mod csr;
 pub(crate) use csr::CsrU32;
 mod extract;
@@ -673,4 +674,3 @@ const _: () = {
     const fn assert_send_sync<T: Send + Sync>() {}
     let _ = assert_send_sync::<CompiledScanner>; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
 };
-

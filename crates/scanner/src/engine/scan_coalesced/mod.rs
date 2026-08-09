@@ -433,18 +433,7 @@ impl CompiledScanner {
                             .map(|opt| opt.as_ref().map(|arc| arc.as_ref().to_vec()))
                             .map_err(Clone::clone);
                     }
-                    let res =
-                        self.reusable_simd_triggers
-                            .lock()
-                            .get_or_compute(&chunk.data, || {
-                                self.compute_one_coalesced_simd_trigger(
-                                    data,
-                                    prefilter,
-                                    ac_len,
-                                    words_needed,
-                                )
-                            })?;
-                    Ok(res.map(|arc| arc.as_ref().to_vec()))
+                    self.compute_one_coalesced_simd_trigger(data, prefilter, ac_len, words_needed)
                 })
                 .collect::<Result<Vec<_>, String>>()?
         } else {

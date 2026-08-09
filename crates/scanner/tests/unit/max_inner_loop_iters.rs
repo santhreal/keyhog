@@ -31,8 +31,5 @@ fn boundary_seam_cap_matches_window_overlap() {
         keyhog_scanner::engine::MAX_BOUNDARY_SEAM_BYTES,
         keyhog_scanner::types::WINDOW_OVERLAP_BYTES
     );
-    assert_eq!(
-        keyhog_scanner::engine::MAX_BOUNDARY_SEAM_BYTES,
-        128 * 1024
-    );
+    assert_eq!(keyhog_scanner::engine::MAX_BOUNDARY_SEAM_BYTES, 128 * 1024);
 }
