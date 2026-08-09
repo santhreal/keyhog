@@ -547,12 +547,6 @@ pub(crate) struct CompiledCompanion {
     pub(crate) requirement: keyhog_core::EvidenceRequirement,
     pub(crate) value_relation: keyhog_core::EvidenceValueRelation,
 }
-impl CompiledCompanion {
-    #[allow(dead_code)]
-    pub(crate) fn is_compiled(&self) -> bool {
-        self.regex.is_compiled()
-    }
-}
 
 #[cfg(feature = "entropy")]
 pub(crate) use crate::scan_state::RawMatchPriority;

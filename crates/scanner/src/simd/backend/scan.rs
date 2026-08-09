@@ -120,16 +120,6 @@ pub(super) fn purge_scanner_scratch(scanner_id: u64) {
             .retain(|(cached_scanner_id, _), _| *cached_scanner_id != scanner_id);
     });
 }
-#[allow(dead_code)]
-pub(super) fn scanner_scratch_bytes(scanner_id: u64) -> usize {
-    SCRATCH_TLS.with(|tls| {
-        tls.borrow()
-            .iter()
-            .filter(|((id, _), cached)| *id == scanner_id && cached.owner.strong_count() > 0)
-            .map(|(_, cached)| cached.scratch.size().unwrap_or(0))
-            .sum()
-    })
-}
 
 /// A call's complete set of per-shard scratches, acquired before the first
 /// Hyperscan callback can become observable.

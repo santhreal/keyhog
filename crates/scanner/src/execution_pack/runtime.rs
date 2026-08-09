@@ -201,24 +201,12 @@ impl ExecutionPack {
     /// so later section faults do not repeat storage I/O, but the whole pack no
     /// longer overlaps decoded runtime state in RSS.
     pub fn release_resident_pages(&self) -> Result<(), ExecutionPackError> {
-        #[cfg(unix)]
-        {
-            let result = unsafe {
-                libc::madvise(
-                    self.mapping.as_ptr() as *mut libc::c_void,
-                    self.mapping.len(),
-                    libc::MADV_DONTNEED,
-                )
-            };
-            if result != 0 {
-                return Err(ExecutionPackError::Io {
-                    operation: "discard authenticated pages",
-                    path: self.path.clone(),
-                    source: std::io::Error::last_os_error(),
-                });
-            }
-        }
-        Ok(())
+        release_mapping_slice(
+            &self.mapping,
+            &self.path,
+            &self.mapping[..],
+            "discard authenticated pages",
+        )
     }
     /// Drop full pages covered by one decoded section field while retaining the
     /// immutable mapping and any partial edge pages. Callers must pass a slice

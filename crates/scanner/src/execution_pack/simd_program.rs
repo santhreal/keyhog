@@ -133,11 +133,19 @@ pub struct HyperscanSimdExecutionProgram {
     pub serialized_shards: Vec<SerializedHyperscanShard>,
     pub phase2_scopes: Vec<HyperscanPhase2ScopeProgram>,
 }
+/// Memory attribution report for SIMD execution programs and active scanners.
+///
+/// Provides static serialization footprint (from [`HyperscanSimdExecutionProgram::memory_attribution`])
+/// or active runtime database/scratch residency (from [`HsScanner::memory_attribution`]).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SimdPackMemoryAttribution {
+    /// Bytes allocated for compiled native Hyperscan databases (runtime scanner view).
     pub native_database_bytes: usize,
+    /// Bytes consumed by serialized shard data structures (static program view).
     pub serialized_shard_bytes: usize,
+    /// Scratch memory allocated across worker threads (runtime scanner view).
     pub scratch_bytes: usize,
+    /// Resident bytes for pattern and index mappings.
     pub mapping_residency_bytes: usize,
 }
 
@@ -298,6 +306,7 @@ impl HyperscanSimdExecutionProgram {
         program.validate_structure()?;
         Ok(program)
     }
+    /// Reports static program memory attribution before runtime compilation.
     pub fn memory_attribution(&self) -> SimdPackMemoryAttribution {
         let serialized_shard_bytes = self.serialized_shards.iter().map(|shard| shard.len()).sum();
         let mapping_residency_bytes = self
