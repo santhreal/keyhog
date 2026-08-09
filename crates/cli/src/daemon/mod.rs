@@ -49,6 +49,7 @@ mod path_resolution_tests;
 mod protected_wire_tests;
 pub(crate) mod protocol;
 pub(crate) mod server;
+pub(crate) mod guard_runtime;
 pub(crate) mod sigpipe;
 mod trust;
 mod warm_identity;
