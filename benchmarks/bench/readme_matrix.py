@@ -16,6 +16,7 @@ import sys
 from typing import Any
 
 from .report import inject, load_results
+from .workload_catalog import load_workload_catalog, WorkloadCatalog
 
 BENCH_ROOT = pathlib.Path(__file__).resolve().parents[1]
 REPO_ROOT = BENCH_ROOT.parent
@@ -443,12 +444,8 @@ def render_daemon(snapshot: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def render_contract_matrix(snapshot: dict[str, Any], catalog: Any = None) -> str:
+def render_contract_matrix(snapshot: dict[str, Any], catalog: WorkloadCatalog) -> str:
     """Render the source-of-truth contract matrix showing pass or exact blocking metric for every catalog workload."""
-    from .workload_catalog import load_workload_catalog
-    if catalog is None:
-        catalog = load_workload_catalog(BENCH_ROOT / "workload-catalog.toml")
-    
     snapshot_cat_sha256 = snapshot.get("catalog_sha256")
     cat_file = BENCH_ROOT / "workload-catalog.toml"
     current_cat_sha256 = _sha256_file(cat_file) if cat_file.exists() else None
@@ -474,30 +471,30 @@ def render_contract_matrix(snapshot: dict[str, Any], catalog: Any = None) -> str
             speed_ok = speedup >= speed_target
             speed_str = f"{speedup:.2f}x ({'PASS' if speed_ok else 'FAIL'})"
         else:
-            speed_ok = True
-            speed_str = f"PASS (>= {speed_target:.1f}x)"
+            speed_ok = False
+            speed_str = f"UNKNOWN (>= {speed_target:.1f}x)"
 
         if rss_ratio is not None:
             rss_ok = rss_ratio <= catalog.targets.max_rss_ratio
             rss_str = f"{rss_ratio:.4f} ({'PASS' if rss_ok else 'FAIL'})"
         else:
-            rss_ok = True
-            rss_str = "PASS (<= 0.25)"
+            rss_ok = False
+            rss_str = "UNKNOWN (<= 0.25)"
 
         if cpu_simd_rss_bytes is not None:
             cpu_simd_ok = cpu_simd_rss_bytes <= catalog.targets.cpu_simd_max_rss_bytes
             rss_bytes_str = f"{cpu_simd_rss_bytes / (1024*1024):.1f} MiB ({'PASS' if cpu_simd_ok else 'FAIL'})"
         else:
-            cpu_simd_ok = True
-            rss_bytes_str = "PASS (<= 128 MiB)"
+            cpu_simd_ok = False
+            rss_bytes_str = "UNKNOWN (<= 128 MiB)"
 
         if wl.betterleaks_comparable:
             if bl_time_ratio is not None:
                 bl_ok = bl_time_ratio <= catalog.targets.betterleaks_max_time_ratio
                 bl_str = f"{bl_time_ratio:.4f} ({'PASS' if bl_ok else 'FAIL'})"
             else:
-                bl_ok = True
-                bl_str = "PASS (<= 0.25)"
+                bl_ok = False
+                bl_str = "UNKNOWN (<= 0.25)"
         else:
             bl_ok = True
             bl_str = "N/A"
@@ -507,8 +504,8 @@ def render_contract_matrix(snapshot: dict[str, Any], catalog: Any = None) -> str
                 vram_ok = vram_ratio <= catalog.targets.max_vram_ratio
                 vram_str = f"{vram_ratio:.4f} ({'PASS' if vram_ok else 'FAIL'})"
             else:
-                vram_ok = True
-                vram_str = "PASS (<= 0.25)"
+                vram_ok = False
+                vram_str = "UNKNOWN (<= 0.25)"
         else:
             vram_ok = True
             vram_str = "N/A"
@@ -532,15 +529,16 @@ def render_contract_matrix(snapshot: dict[str, Any], catalog: Any = None) -> str
     return "\n".join(lines)
 
 
-def render_sections(snapshot: dict[str, Any]) -> dict[str, str]:
+def render_sections(snapshot: dict[str, Any], catalog: WorkloadCatalog | None = None) -> dict[str, str]:
     """Render every generated README matrix marker."""
+    if catalog is None:
+        catalog = load_workload_catalog(BENCH_ROOT / "workload-catalog.toml")
     return {
         "accuracy": render_accuracy(snapshot),
         "config": render_configuration(snapshot),
         "daemon": render_daemon(snapshot),
-        "contract": render_contract_matrix(snapshot),
+        "contract": render_contract_matrix(snapshot, catalog),
     }
-
 
 def write_reports(sections: dict[str, str], reports: pathlib.Path) -> None:
     reports.mkdir(parents=True, exist_ok=True)
@@ -566,13 +564,15 @@ def update_readme(readme: pathlib.Path, sections: dict[str, str], check: bool) -
     original = readme.read_text(encoding="utf-8")
     updated = original
     for name, body in sections.items():
+        start_marker = f"<!-- BENCH:{name}:start -->"
+        if start_marker not in updated:
+            raise MatrixError(f"README.md missing section marker: {start_marker}")
         updated = inject(updated, name, body)
     if check:
         if updated != original:
             raise MatrixError("README configuration benchmark panels are stale")
         return
     readme.write_text(updated, encoding="utf-8")
-
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command line arguments for README matrix renderer."""

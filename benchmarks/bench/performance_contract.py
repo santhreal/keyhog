@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Container, Mapping
 
 from .baseline_capture import MIN_TRIALS
 from .workload_catalog import WorkloadCatalog
@@ -56,22 +56,23 @@ def evaluate_betterleaks_memory_contract(
         )
     candidate_rows = _rows(candidate, "candidate")
     competitor_rows = _rows(betterleaks, "betterleaks")
+    cand_keys = set(candidate_rows.keys())
+    comp_keys = set(competitor_rows.keys())
     shared_keys = {
         (workload.workload_id, route)
         for workload in catalog.workloads
         if workload.betterleaks_comparable
         for route in workload.execution_routes
     }
-    cand_keys = set(candidate_rows.keys())
-    comp_keys = set(competitor_rows.keys())
-    if cand_keys != shared_keys:
-        missing = sorted(f"{w}[{r}]" for w, r in (shared_keys - cand_keys))
-        extra = sorted(f"{w}[{r}]" for w, r in (cand_keys - shared_keys))
+    expected_comp_ids = {w for w, _ in shared_keys}
+    cand_comp_workload_ids = {w for w, _ in cand_keys if w in expected_comp_ids}
+    if cand_comp_workload_ids != expected_comp_ids:
+        missing = sorted(expected_comp_ids - cand_comp_workload_ids)
+        extra = sorted(cand_comp_workload_ids - expected_comp_ids)
         raise PerformanceContractError(
             f"candidate shared coverage differs: missing={missing}, extra={extra}"
         )
     comp_workload_ids = {w for w, _ in comp_keys}
-    expected_comp_ids = {w for w, _ in shared_keys}
     if comp_workload_ids != expected_comp_ids:
         missing = sorted(expected_comp_ids - comp_workload_ids)
         extra = sorted(comp_workload_ids - expected_comp_ids)
@@ -148,6 +149,12 @@ def evaluate_performance_contract(
         raise PerformanceContractError(
             f"candidate coverage differs: missing={missing}, extra={extra}"
         )
+    if set(baseline_rows.keys()) != set(candidate_rows.keys()):
+        missing = sorted(set(baseline_rows.keys()) - set(candidate_rows.keys()))
+        extra = sorted(set(candidate_rows.keys()) - set(baseline_rows.keys()))
+        raise PerformanceContractError(
+            f"candidate route keys differ from baseline: missing={missing}, extra={extra}"
+        )
     backend = candidate.get("backend")
     if not isinstance(backend, str):
         raise PerformanceContractError("candidate backend is missing")
@@ -178,89 +185,89 @@ def evaluate_performance_contract(
                 f"extra={sorted(actual_comp_ids-shared_comp_ids)}"
             )
     violations: list[str] = []
-    for workload in catalog.workloads:
-        for route in workload.execution_routes:
-            key = (workload.workload_id, route)
-            workload_id = workload.workload_id
-            before = baseline_rows[key]
-            after = candidate_rows[key]
+    workload_map = {workload.workload_id: workload for workload in catalog.workloads}
+    for key in sorted(candidate_rows.keys()):
+        workload_id, route = key
+        workload = workload_map[workload_id]
+        before = baseline_rows[key]
+        after = candidate_rows[key]
+        if (
+            before.get("fixture_input_sha256") != after.get("fixture_input_sha256")
+            or before.get("fixture_answer_sha256") != after.get("fixture_answer_sha256")
+        ):
+            raise PerformanceContractError(f"{workload_id}: baseline and candidate fixture identity differs")
+        axis_fields = ("policy", "process_state", "page_cache_state", "output_format", "execution_route")
+        for field in axis_fields:
+            if not isinstance(before.get(field), str) or not before.get(field):
+                raise PerformanceContractError(f"{workload_id}: baseline {field} is missing")
+            if after.get(field) != before.get(field):
+                raise PerformanceContractError(f"{workload_id}: candidate {field} differs from baseline")
+        if before["process_state"] not in {"cold", "warm", "steady"}:
+            raise PerformanceContractError(f"{workload_id}: process_state is not cold, warm, or steady")
+        if before.get("parity_ok") is not True:
+            violations.append(f"{workload_id}: baseline finding parity is not proven")
+        if after.get("parity_ok") is not True:
+            violations.append(f"{workload_id}: candidate finding parity is not proven")
+        baseline_wall = _positive(before, "p50_wall_ms", f"baseline {workload_id}")
+        candidate_wall = _positive(after, "p50_wall_ms", f"candidate {workload_id}")
+        speedup = baseline_wall / candidate_wall
+        if speedup < speed_floor:
+            violations.append(
+                f"{workload_id}: speedup {speedup:.6f}x is below {speed_floor:.6f}x"
+            )
+        baseline_rss = _positive(before, "max_peak_rss_kb", f"baseline {workload_id}")
+        candidate_rss = _positive(after, "max_peak_rss_kb", f"candidate {workload_id}")
+        rss_ratio = candidate_rss / baseline_rss
+        if rss_ratio > catalog.targets.max_rss_ratio:
+            violations.append(
+                f"{workload_id}: peak RSS ratio {rss_ratio:.6f} exceeds "
+                f"{catalog.targets.max_rss_ratio:.6f}"
+            )
+        if backend in {"cpu", "simd"} and candidate_rss * 1024 > catalog.targets.cpu_simd_max_rss_bytes:
+            violations.append(
+                f"{workload_id}: peak RSS {int(candidate_rss*1024)} bytes exceeds "
+                f"CPU/SIMD ceiling {catalog.targets.cpu_simd_max_rss_bytes}"
+            )
+        if gpu and workload.gpu_eligible:
+            baseline_vram = _positive(before, "max_peak_vram_bytes", f"baseline {workload_id}")
+            candidate_vram = _positive(after, "max_peak_vram_bytes", f"candidate {workload_id}")
+            vram_ratio = candidate_vram / baseline_vram
+            if vram_ratio > catalog.targets.max_vram_ratio:
+                violations.append(
+                    f"{workload_id}: device VRAM ratio {vram_ratio:.6f} exceeds {catalog.targets.max_vram_ratio:.6f}"
+                )
+        if workload.betterleaks_comparable:
+            competitor = competitor_rows.get(key) or competitor_rows.get((workload_id, "in-process"))
+            if competitor is None:
+                if betterleaks is not None:
+                    violations.append(f"{workload_id}: Betterleaks evidence is missing")
+                continue
             if (
-                before.get("fixture_input_sha256") != after.get("fixture_input_sha256")
-                or before.get("fixture_answer_sha256") != after.get("fixture_answer_sha256")
+                competitor.get("fixture_input_sha256") != after.get("fixture_input_sha256")
+                or competitor.get("fixture_answer_sha256") != after.get("fixture_answer_sha256")
             ):
-                raise PerformanceContractError(f"{workload_id}: baseline and candidate fixture identity differs")
-            axis_fields = ("policy", "process_state", "page_cache_state", "output_format", "execution_route")
-            for field in axis_fields:
-                if not isinstance(before.get(field), str) or not before.get(field):
-                    raise PerformanceContractError(f"{workload_id}: baseline {field} is missing")
-                if after.get(field) != before.get(field):
-                    raise PerformanceContractError(f"{workload_id}: candidate {field} differs from baseline")
-            if before["process_state"] not in {"cold", "warm", "steady"}:
-                raise PerformanceContractError(f"{workload_id}: process_state is not cold, warm, or steady")
-            if before.get("parity_ok") is not True:
-                violations.append(f"{workload_id}: baseline finding parity is not proven")
-            if after.get("parity_ok") is not True:
-                violations.append(f"{workload_id}: candidate finding parity is not proven")
-            baseline_wall = _positive(before, "p50_wall_ms", f"baseline {workload_id}")
-            candidate_wall = _positive(after, "p50_wall_ms", f"candidate {workload_id}")
-            speedup = baseline_wall / candidate_wall
-            if speedup < speed_floor:
+                raise PerformanceContractError(
+                    f"{workload_id}: Betterleaks and candidate fixture identity differs"
+                )
+            if competitor.get("parity_ok") is not True:
+                violations.append(f"{workload_id}: Betterleaks finding parity is not proven")
+            competitor_wall = _positive(
+                competitor, "p50_wall_ms", f"Betterleaks {workload_id}"
+            )
+            ratio = candidate_wall / competitor_wall
+            if ratio > catalog.targets.betterleaks_max_time_ratio:
                 violations.append(
-                    f"{workload_id}: speedup {speedup:.6f}x is below {speed_floor:.6f}x"
+                    f"{workload_id}: Betterleaks time ratio {ratio:.6f} exceeds "
+                    f"{catalog.targets.betterleaks_max_time_ratio:.6f}"
                 )
-            baseline_rss = _positive(before, "max_peak_rss_kb", f"baseline {workload_id}")
-            candidate_rss = _positive(after, "max_peak_rss_kb", f"candidate {workload_id}")
-            rss_ratio = candidate_rss / baseline_rss
-            if rss_ratio > catalog.targets.max_rss_ratio:
+            competitor_rss = _positive(
+                competitor, "max_peak_rss_kb", f"Betterleaks {workload_id}"
+            )
+            if candidate_rss >= competitor_rss:
                 violations.append(
-                    f"{workload_id}: peak RSS ratio {rss_ratio:.6f} exceeds "
-                    f"{catalog.targets.max_rss_ratio:.6f}"
+                    f"{workload_id}: candidate peak RSS {int(candidate_rss)} KiB is not "
+                    f"strictly below Betterleaks {int(competitor_rss)} KiB"
                 )
-            if backend in {"cpu", "simd"} and candidate_rss * 1024 > catalog.targets.cpu_simd_max_rss_bytes:
-                violations.append(
-                    f"{workload_id}: peak RSS {int(candidate_rss*1024)} bytes exceeds "
-                    f"CPU/SIMD ceiling {catalog.targets.cpu_simd_max_rss_bytes}"
-                )
-            if gpu and workload.gpu_eligible:
-                baseline_vram = _positive(before, "max_peak_vram_bytes", f"baseline {workload_id}")
-                candidate_vram = _positive(after, "max_peak_vram_bytes", f"candidate {workload_id}")
-                vram_ratio = candidate_vram / baseline_vram
-                if vram_ratio > catalog.targets.max_vram_ratio:
-                    violations.append(
-                        f"{workload_id}: device VRAM ratio {vram_ratio:.6f} exceeds {catalog.targets.max_vram_ratio:.6f}"
-                    )
-            if workload.betterleaks_comparable:
-                competitor = competitor_rows.get(key) or competitor_rows.get((workload_id, "in-process"))
-                if competitor is None:
-                    if betterleaks is not None:
-                        violations.append(f"{workload_id}: Betterleaks evidence is missing")
-                    continue
-                if (
-                    competitor.get("fixture_input_sha256") != after.get("fixture_input_sha256")
-                    or competitor.get("fixture_answer_sha256") != after.get("fixture_answer_sha256")
-                ):
-                    raise PerformanceContractError(
-                        f"{workload_id}: Betterleaks and candidate fixture identity differs"
-                    )
-                if competitor.get("parity_ok") is not True:
-                    violations.append(f"{workload_id}: Betterleaks finding parity is not proven")
-                competitor_wall = _positive(
-                    competitor, "p50_wall_ms", f"Betterleaks {workload_id}"
-                )
-                ratio = candidate_wall / competitor_wall
-                if ratio > catalog.targets.betterleaks_max_time_ratio:
-                    violations.append(
-                        f"{workload_id}: Betterleaks time ratio {ratio:.6f} exceeds "
-                        f"{catalog.targets.betterleaks_max_time_ratio:.6f}"
-                    )
-                competitor_rss = _positive(
-                    competitor, "max_peak_rss_kb", f"Betterleaks {workload_id}"
-                )
-                if candidate_rss >= competitor_rss:
-                    violations.append(
-                        f"{workload_id}: candidate peak RSS {int(candidate_rss)} KiB is not "
-                        f"strictly below Betterleaks {int(competitor_rss)} KiB"
-                    )
     return violations
 def evaluate_exhaustive_performance_gate(
     runs_by_backend: Mapping[str, tuple[Mapping[str, object], Mapping[str, object]]],
@@ -303,21 +310,16 @@ def evaluate_exhaustive_performance_gate(
         raise PerformanceContractError(
             f"exhaustive performance gate backend coverage differs: missing={missing}, extra={extra}"
         )
-
     for backend, run_pair in sorted(runs_by_backend.items()):
         if not isinstance(run_pair, (tuple, list)) or len(run_pair) != 2:
             raise PerformanceContractError(f"backend {backend!r} run set must be a (baseline, candidate) pair")
         baseline, candidate = run_pair
         if not isinstance(baseline, Mapping) or not isinstance(candidate, Mapping):
             raise PerformanceContractError(f"backend {backend!r} baseline and candidate must be mappings")
-
-        if baseline.get("backend") != backend:
+        if baseline.get("backend") != backend or candidate.get("backend") != backend:
             raise PerformanceContractError(
-                f"backend {backend!r} baseline backend field {baseline.get('backend')!r} does not match key"
-            )
-        if candidate.get("backend") != backend:
-            raise PerformanceContractError(
-                f"backend {backend!r} candidate backend field {candidate.get('backend')!r} does not match key"
+                f"backend {backend!r} run set has mismatched backend field: "
+                f"baseline={baseline.get('backend')!r}, candidate={candidate.get('backend')!r}"
             )
 
         if backend in {"cpu", "simd"} and betterleaks is not None:

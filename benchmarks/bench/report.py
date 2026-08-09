@@ -530,10 +530,13 @@ def select_declared_results(
     if len(hosts) > 1:
         raise ResultSelectionError(f"invalid report run set: mixed-host rows detected: {sorted(hosts)}")
     detectors = {getattr(r.scanner, "detector_corpus_sha256", None) for r in selected}
-    if not detectors or any(d is None or not isinstance(d, str) or not is_sha256(d) for d in detectors):
+    if None in detectors:
         raise ResultSelectionError("invalid report run set: detector corpus identity is missing")
-    if len(detectors) > 1:
-        reprs = [repr(d) for d in sorted(detectors, key=lambda x: str(x))]
+    valid_detectors = {d for d in detectors if isinstance(d, str) and is_sha256(d)}
+    if not valid_detectors:
+        raise ResultSelectionError("invalid report run set: detector corpus identity is missing")
+    if len(valid_detectors) > 1:
+        reprs = [repr(d) for d in sorted(valid_detectors)]
         raise ResultSelectionError(f"invalid report run set: mixed-detector rows detected: {reprs}")
     return selected
 

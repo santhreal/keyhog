@@ -265,8 +265,13 @@ def test_snapshot_loader_rejects_unknown_schema(tmp_path) -> None:
 
     with pytest.raises(readme_matrix.MatrixError, match="unsupported"):
         readme_matrix.load_snapshot(snapshot)
-def test_render_contract_matrix_contains_59_catalog_workloads(tmp_path) -> None:
+def test_render_contract_matrix_covers_every_catalog_workload(tmp_path) -> None:
     """WHY: KH-2009 requires generating a source-of-truth contract matrix for every catalog workload."""
+    from bench.workload_catalog import load_workload_catalog
+    from bench.readme_matrix import BENCH_ROOT
+    import re
+    import pathlib
+
     config_results, daemon_results, daemon_corpus = _matrix_fixture(tmp_path)
     snapshot = readme_matrix.capture_snapshot(
         config_results,
@@ -274,8 +279,9 @@ def test_render_contract_matrix_contains_59_catalog_workloads(tmp_path) -> None:
         daemon_corpus,
         "clean",
     )
-    rendered = readme_matrix.render_contract_matrix(snapshot)
+    catalog = load_workload_catalog(pathlib.Path(BENCH_ROOT) / "workload-catalog.toml")
+    rendered = readme_matrix.render_contract_matrix(snapshot, catalog)
     assert "| Workload ID |" in rendered
-    assert "filesystem-empty-directory" in rendered
-    assert "stdin-empty" in rendered
-    assert rendered.count("| `") == 59
+    expected_ids = {w.workload_id for w in catalog.workloads}
+    rendered_ids = set(re.findall(r"^\| `([^`]+)`", rendered, flags=re.MULTILINE))
+    assert rendered_ids == expected_ids

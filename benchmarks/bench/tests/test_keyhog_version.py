@@ -556,16 +556,51 @@ def test_workspace_cleanliness_honors_allow_dirty_env(tmp_path, monkeypatch):
     monkeypatch.setenv("KEYHOG_BENCH_ALLOW_DIRTY", "1")
     # With the env, the check passes despite the uncommitted edit.
     keyhog_version.assert_workspace_tracked_tree_clean(tmp_path)
-def test_build_evidence_inventory_produces_59_workloads():
-    """WHY: KH-2000 requires proving catalog, fixture lock, target, binary, detector corpus, and route identities agree, emitting 59 workloads."""
+def test_build_evidence_inventory_produces_catalog_workloads():
+    """WHY: KH-2000 requires proving catalog, fixture lock, target, binary, detector corpus, and route identities agree."""
+    from bench.workload_catalog import load_workload_catalog
+    from bench.readme_matrix import BENCH_ROOT
+    import pathlib
+
+    catalog = load_workload_catalog(pathlib.Path(BENCH_ROOT) / "workload-catalog.toml")
+    expected_count = len(catalog.workloads)
+    expected_ids = [w.workload_id for w in catalog.workloads]
+
     inventory = keyhog_version.build_evidence_inventory()
     assert inventory["schema_version"] == 1
-    assert inventory["workload_count"] == 59
-    assert len(inventory["workloads"]) == 59
+    assert inventory["workload_count"] == expected_count
+    assert len(inventory["workloads"]) == expected_count
+    assert [w["workload_id"] for w in inventory["workloads"]] == expected_ids
     assert isinstance(inventory["catalog_sha256"], str)
     assert isinstance(inventory["fixture_lock_sha256"], str)
     assert isinstance(inventory["target_matrix_sha256"], str)
     assert isinstance(inventory["detector_corpus_sha256"], str)
+
+
+def test_execution_pack_manifest_validation_in_inventory_and_baseline(tmp_path):
+    """WHY: Execution pack manifest with version=1 and valid digests must validate cleanly in both evidence inventory and baseline capture."""
+    from bench.keyhog_version import build_evidence_inventory, workspace_detector_corpus_sha256
+    from bench.readme_matrix import BENCH_ROOT
+    import json
+    import hashlib
+    import pathlib
+
+    lock_path = pathlib.Path(BENCH_ROOT) / "workload-fixtures.lock.json"
+    lock_sha256 = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+    det_sha256 = workspace_detector_corpus_sha256()
+
+    manifest_path = tmp_path / "manifest.json"
+    manifest_data = {
+        "version": 1,
+        "detector_digest": det_sha256,
+        "binary_digest": "a" * 64,
+        "fixture_digest": lock_sha256,
+    }
+    manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+    inventory = build_evidence_inventory(execution_pack_manifest_path=manifest_path)
+    assert inventory["execution_pack_manifest"]["version"] == 1
+    assert inventory["execution_pack_manifest"]["detector_digest"] == det_sha256
 def test_build_evidence_inventory_handles_nonexistent_binary(tmp_path):
     """WHY: non-existent binary path raises KeyhogVersionError instead of raw OSError/FileNotFoundError."""
     fake_binary = tmp_path / "nonexistent_keyhog"
