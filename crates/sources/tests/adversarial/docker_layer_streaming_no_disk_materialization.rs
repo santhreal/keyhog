@@ -148,3 +148,128 @@ fn stream_layers_share_image_wide_budget_fail_closed() {
 fn docker_layer_streaming_requires_docker_feature() {
     assert!(!cfg!(feature = "docker"));
 }
+
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_accepts_gnu_tar_dot_slash_member_paths() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let tar_path = dir.path().join("layer.tar");
+    let file = std::fs::File::create(&tar_path).expect("create");
+    let mut builder = tar::Builder::new(file);
+    let payload = b"AWS_ACCESS_KEY_ID=AKIA0PERF2CANARYKEY0\n";
+    let mut header = tar::Header::new_gnu();
+    header.set_path("./etc/creds.env").expect("path");
+    header.set_size(payload.len() as u64);
+    header.set_entry_type(tar::EntryType::Regular);
+    header.set_mode(0o644);
+    header.set_cksum();
+    builder.append(&header, &payload[..]).expect("append");
+    builder.finish().expect("finish");
+
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &tar_path,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream");
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("AKIA0PERF2CANARYKEY0")),
+        "GNU ./ prefixed member must still be scanned, got {:?}",
+        chunks
+            .iter()
+            .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_skips_extensionless_elf_without_string_mining() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // Minimal ELF magic + planted ASCII that string-mining would otherwise surface.
+    let mut elf = b"\x7fELF".to_vec();
+    elf.extend_from_slice(&[1, 1, 1, 0]);
+    elf.extend_from_slice(&[0u8; 32]);
+    elf.extend_from_slice(b"AWS_ACCESS_KEY_ID=AKIA0PERF2ELFBINSKIP0\n");
+    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("usr/bin/app", &elf)]);
+
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream");
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks
+            .iter()
+            .all(|chunk| !chunk.data.contains("AKIA0PERF2ELFBINSKIP0")),
+        "extensionless ELF must be Binary-skipped, not string-mined; got {:?}",
+        chunks
+            .iter()
+            .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_emits_png_text_metadata_for_image_extensions() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let secret = "PNG_STREAM_SECRET=ghp_PngStreamMetadataToken00000000001";
+    let mut text_payload = b"Comment\0".to_vec();
+    text_payload.extend_from_slice(secret.as_bytes());
+
+    fn png_chunk(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+        let mut chunk = Vec::new();
+        chunk.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        chunk.extend_from_slice(kind);
+        chunk.extend_from_slice(payload);
+        chunk.extend_from_slice(&[0; 4]);
+        chunk
+    }
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&1u32.to_be_bytes());
+    ihdr.extend_from_slice(&1u32.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 2, 0, 0, 0]);
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    png.extend_from_slice(&png_chunk(b"IHDR", &ihdr));
+    png.extend_from_slice(&png_chunk(b"tEXt", &text_payload));
+    png.extend_from_slice(&png_chunk(b"IEND", &[]));
+
+    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/badge.png", &png)]);
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream");
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().any(|chunk| chunk.data.contains(secret)),
+        "PNG tEXt metadata must emit from the streaming path, got {:?}",
+        chunks
+            .iter()
+            .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        chunks.iter().any(|chunk| {
+            chunk
+                .metadata
+                .path
+                .as_deref()
+                .is_some_and(|path| path.contains("PNG:tEXt@"))
+        }),
+        "streamed PNG metadata chunks must keep the tagged path provenance"
+    );
+}

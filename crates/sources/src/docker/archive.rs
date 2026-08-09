@@ -312,21 +312,23 @@ fn stream_layer_tar_reader(
         }
 
         let entry_name = path.to_string_lossy().replace('\\', "/");
-        // Match FilesystemSource after disk unpack: binary-extension members are
-        // counted as Binary coverage skips and never decoded as text/strings.
-        if let Some(ext) = Path::new(&entry_name)
-            .extension()
-            .and_then(|ext| ext.to_str())
-        {
-            if crate::filesystem::is_default_skip_extension(ext) {
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                continue;
-            }
-        }
         if respect_default_excludes && crate::filesystem::is_default_excluded_path(&entry_name) {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
             continue;
         }
+
+        let ext = Path::new(&entry_name)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
+        let skip_extension = !ext.is_empty() && crate::filesystem::is_default_skip_extension(ext);
+        // Non-image skip-extensions match FilesystemSource: counted Binary and
+        // never read. Image extensions still need their bytes for metadata.
+        if skip_extension && !layer_member_may_carry_image_metadata(ext) {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+            continue;
+        }
+
         let read = crate::capped_read::read_to_cap(
             &mut entry,
             limits.docker_tar_entry_bytes,
@@ -345,6 +347,32 @@ fn stream_layer_tar_reader(
             continue;
         }
 
+        if skip_extension {
+            match crate::filesystem::try_emit_image_metadata_member(
+                &entry_name,
+                &read.bytes,
+                ext,
+                emit,
+            )? {
+                Some(false) => return Ok(false),
+                Some(true) => continue,
+                None => {
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                    continue;
+                }
+            }
+        }
+
+        // Extensionless members: same container-or-binary sniff as process_entry.
+        if ext.is_empty() {
+            if layer_member_looks_like_container(&read.bytes) {
+                // Fall through to the shared archive dispatcher.
+            } else if crate::filesystem::looks_binary_prefix(&read.bytes) {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                continue;
+            }
+        }
+
         if !crate::filesystem::emit_in_memory_member(
             &entry_name,
             read.bytes,
@@ -358,6 +386,26 @@ fn stream_layer_tar_reader(
     }
 
     Ok(true)
+}
+
+fn layer_member_may_carry_image_metadata(ext: &str) -> bool {
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "tif" | "tiff" | "webp"
+    )
+}
+
+fn layer_member_looks_like_container(bytes: &[u8]) -> bool {
+    crate::magic::starts_with_gzip(bytes)
+        || crate::magic::starts_with_zstd_frame(bytes)
+        || crate::magic::starts_with_lz4_frame(bytes)
+        || crate::magic::starts_with_snappy_frame(bytes)
+        || crate::magic::has_bzip2_header(bytes)
+        || crate::magic::starts_with_xz_stream(bytes)
+        || crate::magic::starts_with_zip_container_prefix(bytes)
+        || bytes.starts_with(crate::magic::SEVEN_ZIP_PREFIX)
+        || bytes.starts_with(crate::magic::RAR_PREFIX)
+        || (bytes.len() > 262 && &bytes[257..262] == b"ustar")
 }
 
 enum LayerArchiveEncoding {

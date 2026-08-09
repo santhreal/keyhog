@@ -442,6 +442,35 @@ fn emit_archive_member_with_tex_provenance(
     emit_archive_leaf_member(content, member_display, provenance, emit)
 }
 
+pub(crate) fn try_emit_image_metadata_member(
+    entry_name: &str,
+    bytes: &[u8],
+    ext: &str,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<Option<bool>, SourceError> {
+    let Some(kind) = image_metadata::probe_kind_from_bytes(ext, bytes) else {
+        return Ok(None);
+    };
+    let extraction = image_metadata::extract_from_bytes(
+        entry_name,
+        bytes,
+        kind,
+        keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
+    )?;
+    for chunk in extraction.chunks {
+        if !emit(Ok(chunk)) {
+            return Ok(Some(false));
+        }
+    }
+    if let Some(error) = extraction.coverage_error {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
+        if !emit(Err(error)) {
+            return Ok(Some(false));
+        }
+    }
+    Ok(Some(true))
+}
+
 pub(super) fn report_archive_truncation(
     archive_display: &str,
     attempted_total: u64,

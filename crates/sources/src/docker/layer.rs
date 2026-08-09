@@ -268,8 +268,33 @@ fn normalize_streamed_layer_path(path: &str) -> Result<String, SourceError> {
     }
     let mut normalized = Vec::new();
     for member in path.split("//") {
-        validate_virtual_member_path(member)?;
-        normalized.push(member.replace('\\', "/"));
+        // GNU/BSD tar often records `./etc/creds.env`. `Component::CurDir` is
+        // safe and must not become a false path-traversal refusal after the
+        // archive-level validator already admitted the entry.
+        let cleaned = {
+            let mut parts = Vec::new();
+            for component in Path::new(member).components() {
+                match component {
+                    std::path::Component::Normal(part) => {
+                        parts.push(part.to_string_lossy().replace('\\', "/"))
+                    }
+                    std::path::Component::CurDir => {}
+                    _ => {
+                        return Err(SourceError::Other(format!(
+                            "docker layer chunk has unsafe virtual archive member path '{member}'"
+                        )));
+                    }
+                }
+            }
+            parts.join("/")
+        };
+        if cleaned.is_empty() {
+            return Err(SourceError::Other(format!(
+                "docker layer chunk has unsafe virtual archive member path '{member}'"
+            )));
+        }
+        validate_virtual_member_path(&cleaned)?;
+        normalized.push(cleaned);
     }
     Ok(normalized.join("//"))
 }

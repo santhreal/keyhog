@@ -28,6 +28,20 @@ pub(crate) use path::display_path;
 pub(crate) use read::decode_text_file;
 pub(crate) use read::open_file_safe;
 
+/// Emit image-metadata chunks for an in-memory layer member whose extension is a
+/// recognised image type. Returns `Ok(Some(true))` when the member was an image and
+/// emission completed, `Ok(Some(false))` when the consumer stopped, and `Ok(None)`
+/// when the bytes are not a recognised image payload so the caller can fall through
+/// to the ordinary Binary skip.
+pub(crate) fn try_emit_image_metadata_member(
+    entry_name: &str,
+    bytes: &[u8],
+    ext: &str,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<Option<bool>, SourceError> {
+    extract::try_emit_image_metadata_member(entry_name, bytes, ext, emit)
+}
+
 /// Scan one already-buffered archive/layer member through the shared in-memory
 /// dispatcher (nested tar/zip/compressed descent + leaf text/strings). Used by
 /// Docker layer streaming so a layer never has to hit the filesystem first.
@@ -646,6 +660,10 @@ pub(crate) fn decode_text_file_owned_or_bytes_for_test(bytes: Vec<u8>) -> Result
 }
 
 pub(crate) fn looks_binary_prefix_for_test(bytes: &[u8]) -> bool {
+    read::looks_binary_prefix_for_test(bytes)
+}
+
+pub(crate) fn looks_binary_prefix(bytes: &[u8]) -> bool {
     read::looks_binary_prefix_for_test(bytes)
 }
 
