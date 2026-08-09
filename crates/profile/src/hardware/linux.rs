@@ -194,7 +194,11 @@ fn open_stall(config: u64) -> Result<Option<OwnedFd>, EvidenceGap> {
 pub(super) fn platform_collectors() -> PlatformCollectors {
     let counter_capability = counter_capability();
     let available = counter_capability.availability == CollectorAvailability::Available;
-    let open = |config: u64| available.then(|| open_hardware_counter(config).ok()).flatten();
+    let open = |config: u64| {
+        available
+            .then(|| open_hardware_counter(config).ok())
+            .flatten()
+    };
     let counters = CounterState {
         cycles: open(PERF_COUNT_HW_CPU_CYCLES),
         instructions: open(PERF_COUNT_HW_INSTRUCTIONS),
@@ -300,10 +304,9 @@ pub(super) fn sample_counters(
                 HardwareFieldSourceV2::PerfEventOpen,
                 EvidenceGap::Unsupported,
             ),
-            Err(gap_reason) => SourcedEvidenceV2::gapped(
-                HardwareFieldSourceV2::PerfEventOpen,
-                *gap_reason,
-            ),
+            Err(gap_reason) => {
+                SourcedEvidenceV2::gapped(HardwareFieldSourceV2::PerfEventOpen, *gap_reason)
+            }
         }
     };
     HardwareCounterSampleV2 {
@@ -375,10 +378,7 @@ pub(super) fn sample_scheduler(state: &mut SchedulerState) -> SchedulerSampleV2 
         });
     let total = match (&voluntary.value, &involuntary.value) {
         (Evidence::Recorded { value: v }, Evidence::Recorded { value: i }) => {
-            SourcedEvidenceV2::recorded(
-                v.saturating_add(*i),
-                HardwareFieldSourceV2::ProcSelfSched,
-            )
+            SourcedEvidenceV2::recorded(v.saturating_add(*i), HardwareFieldSourceV2::ProcSelfSched)
         }
         _ => SourcedEvidenceV2::gapped(
             HardwareFieldSourceV2::ProcSelfSched,
@@ -507,15 +507,12 @@ pub(super) fn sample_frequency(elapsed_ns: u64) -> Option<CpuFrequencySampleV2> 
 }
 
 pub(super) fn frequency_availability() -> Evidence<HardwareFieldSourceV2> {
-    if cpu_indices()
-        .into_iter()
-        .any(|cpu| {
-            std::path::Path::new(&format!(
-                "/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_cur_freq"
-            ))
-            .exists()
-        })
-    {
+    if cpu_indices().into_iter().any(|cpu| {
+        std::path::Path::new(&format!(
+            "/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_cur_freq"
+        ))
+        .exists()
+    }) {
         Evidence::recorded(HardwareFieldSourceV2::SysfsCpu)
     } else {
         Evidence::unavailable(EvidenceGap::Unsupported)
@@ -578,9 +575,8 @@ fn cgroup_quota_milli() -> Option<u64> {
 fn affinity_cpu_count() -> Option<u32> {
     let mut set: libc::cpu_set_t = unsafe { std::mem::zeroed() };
     // SAFETY: set points to a valid zeroed cpu_set_t of the given size.
-    let result = unsafe {
-        libc::sched_getaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &mut set)
-    };
+    let result =
+        unsafe { libc::sched_getaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &mut set) };
     if result != 0 {
         return None;
     }
@@ -612,19 +608,23 @@ pub(super) fn capture_topology() -> TopologyEvidenceV2 {
     }
     let sourced_u32 = |value: Option<u32>| match value {
         Some(value) => SourcedEvidenceV2::recorded(value, HardwareFieldSourceV2::SysfsCpu),
-        None => SourcedEvidenceV2::gapped(HardwareFieldSourceV2::SysfsCpu, EvidenceGap::Unavailable),
+        None => {
+            SourcedEvidenceV2::gapped(HardwareFieldSourceV2::SysfsCpu, EvidenceGap::Unavailable)
+        }
     };
-    let numa_nodes = std::fs::read_dir("/sys/devices/system/node").ok().map(|entries| {
-        entries
-            .flatten()
-            .filter(|entry| {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                name.strip_prefix("node")
-                    .is_some_and(|rest| rest.parse::<u32>().is_ok())
-            })
-            .count() as u32
-    });
+    let numa_nodes = std::fs::read_dir("/sys/devices/system/node")
+        .ok()
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| {
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    name.strip_prefix("node")
+                        .is_some_and(|rest| rest.parse::<u32>().is_ok())
+                })
+                .count() as u32
+        });
     TopologyEvidenceV2 {
         version: HARDWARE_EVIDENCE_V2_VERSION,
         logical_cpus,
@@ -641,9 +641,10 @@ pub(super) fn capture_topology() -> TopologyEvidenceV2 {
         numa_nodes: sourced_u32(numa_nodes.filter(|nodes| *nodes > 0)),
         affinity_cpus: match affinity_cpu_count() {
             Some(count) => SourcedEvidenceV2::recorded(count, HardwareFieldSourceV2::SystemCall),
-            None => {
-                SourcedEvidenceV2::gapped(HardwareFieldSourceV2::SystemCall, EvidenceGap::Unavailable)
-            }
+            None => SourcedEvidenceV2::gapped(
+                HardwareFieldSourceV2::SystemCall,
+                EvidenceGap::Unavailable,
+            ),
         },
         cpu_quota_milli: match cgroup_quota_milli() {
             Some(quota) => SourcedEvidenceV2::recorded(quota, HardwareFieldSourceV2::SysfsCgroup),

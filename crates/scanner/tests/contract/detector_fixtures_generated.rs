@@ -9883,6 +9883,55 @@ positive_fixture!(
     r#"expedia-api-credentials.txt"#
 );
 contract_schema!(
+    facebook_access_token_schema,
+    "facebook-access-token",
+    "facebook",
+    "high",
+    None
+);
+positive_fixture!(
+    facebook_access_token_positive_0,
+    "facebook-access-token",
+    r#"fb_access_token: "EAACEdEose0cBAMZD123456789abcdefghijklmnopqrstuvwxyz""#,
+    r#"EAACEdEose0cBAMZD123456789abcdefghijklmnopqrstuvwxyz"#,
+    r#"facebook-access-token.txt"#
+);
+positive_fixture!(
+    facebook_access_token_positive_1,
+    "facebook-access-token",
+    r#"FACEBOOK_ACCESS_TOKEN=EAAZk9mPq2wL5nR8tWvZ4YbHc7T6sDfGjKlQxCvBnM"#,
+    r#"EAAZk9mPq2wL5nR8tWvZ4YbHc7T6sDfGjKlQxCvBnM"#,
+    r#"facebook-access-token.txt"#
+);
+negative_fixture!(
+    facebook_access_token_negative_0,
+    "facebook-access-token",
+    r#"fb_access_token: "EAAshort""#,
+    r#"facebook-access-token.txt"#,
+    false
+);
+negative_fixture!(
+    facebook_access_token_negative_1,
+    "facebook-access-token",
+    r#"image = nginx@sha256:eaa35988c9b3f5a761d1c4e6f9972e8ba9de65059bfc"#,
+    r#"facebook-access-token.txt"#,
+    false
+);
+negative_fixture!(
+    facebook_access_token_negative_2,
+    "facebook-access-token",
+    r#"prefixEAAZk9mPq2wL5nR8tWvZ4YbHc7T6sDfGjKlQxCvBnM"#,
+    r#"facebook-access-token.txt"#,
+    false
+);
+positive_fixture!(
+    facebook_access_token_evasion_0,
+    "facebook-access-token",
+    r#"Authorization: Bearer EAAZk9mPq2wL5nR8tWvZ4YbHc7T6sDfGjKlQxCvBnM"#,
+    r#"EAAZk9mPq2wL5nR8tWvZ4YbHc7T6sDfGjKlQxCvBnM"#,
+    r#"facebook-access-token.txt"#
+);
+contract_schema!(
     facebook_oauth_secret_schema,
     "facebook-oauth-secret",
     "facebook",
@@ -14953,6 +15002,62 @@ positive_fixture!(
     r#"hotjar-api-key.txt"#
 );
 contract_schema!(
+    http_basic_auth_schema,
+    "http-basic-auth",
+    "http-basic-auth",
+    "medium",
+    None
+);
+positive_fixture!(
+    http_basic_auth_positive_0,
+    "http-basic-auth",
+    r#"Authorization: Basic dXNlcjpwYXNzd29yZA=="#,
+    r#"dXNlcjpwYXNzd29yZA=="#,
+    r#"http-basic-auth.txt"#
+);
+positive_fixture!(
+    http_basic_auth_positive_1,
+    "http-basic-auth",
+    r#"Authorization: Basic YWRtaW46czNjcjN0UEBzc3cwcmQ="#,
+    r#"YWRtaW46czNjcjN0UEBzc3cwcmQ="#,
+    r#"http-basic-auth.txt"#
+);
+positive_fixture!(
+    http_basic_auth_positive_2,
+    "http-basic-auth",
+    r#"curl -H "Authorization: Basic c3ZjX2FjY291bnQ6S3g5bVBxMndMNW5SOHRXdlo=" https://api.example.com/v1"#,
+    r#"c3ZjX2FjY291bnQ6S3g5bVBxMndMNW5SOHRXdlo="#,
+    r#"http-basic-auth.txt"#
+);
+negative_fixture!(
+    http_basic_auth_negative_0,
+    "http-basic-auth",
+    r#"// Supports Basic or Bearer authentication schemes for the REST API."#,
+    r#"http-basic-auth.txt"#,
+    false
+);
+negative_fixture!(
+    http_basic_auth_negative_1,
+    "http-basic-auth",
+    r#"Authorization: Basic dGVzdA=="#,
+    r#"http-basic-auth.txt"#,
+    false
+);
+negative_fixture!(
+    http_basic_auth_negative_2,
+    "http-basic-auth",
+    r#"subscription_tier = "Basic""#,
+    r#"http-basic-auth.txt"#,
+    false
+);
+positive_fixture!(
+    http_basic_auth_evasion_0,
+    "http-basic-auth",
+    r#"Proxy-Authorization:	Basic   c3ZjX2FjY291bnQ6S3g5bVBxMndMNW5SOHRXdlo="#,
+    r#"c3ZjX2FjY291bnQ6S3g5bVBxMndMNW5SOHRXdlo="#,
+    r#"http-basic-auth.txt"#
+);
+contract_schema!(
     huawei_cloud_api_credentials_schema,
     "huawei-cloud-api-credentials",
     "huawei-cloud",
@@ -15916,8 +16021,8 @@ positive_fixture!(
 positive_fixture!(
     intercom_access_token_positive_1,
     "intercom-access-token",
-    r#"INTERCOM_ACCESS_TOKEN=dG9rVk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9B"#,
-    r#"dG9rVk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9B"#,
+    r#"INTERCOM_ACCESS_TOKEN=dG9rVk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9BVk9Bn3Lp7Qm2"#,
+    r#"dG9rVk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9BVk9Bn3Lp7Qm2"#,
     r#"intercom-access-token.txt"#
 );
 negative_fixture!(
@@ -22013,6 +22118,55 @@ positive_fixture!(
     r##"# NUVEI_API_SECRET=0815d6afa7b1dbda0815d6afa7b1dbda"##,
     r#"0815d6afa7b1dbda0815d6afa7b1dbda"#,
     r#"nuvei-api-credentials.txt"#
+);
+contract_schema!(
+    oauth_client_secret_schema,
+    "oauth-client-secret",
+    "generic",
+    "high",
+    None
+);
+positive_fixture!(
+    oauth_client_secret_positive_0,
+    "oauth-client-secret",
+    r#"client_secret = C113nt53KR3TN6N90yVuAgICxIRwsObLi0E67/N8eRN="#,
+    r#"C113nt53KR3TN6N90yVuAgICxIRwsObLi0E67/N8eRN="#,
+    r#"oauth-client-secret.txt"#
+);
+positive_fixture!(
+    oauth_client_secret_positive_1,
+    "oauth-client-secret",
+    r#"clientSecret: "0F12A345BB67C8D901EFG23H45IJKL67MNO89PQ12RST34UV""#,
+    r#"0F12A345BB67C8D901EFG23H45IJKL67MNO89PQ12RST34UV"#,
+    r#"oauth-client-secret.txt"#
+);
+negative_fixture!(
+    oauth_client_secret_negative_0,
+    "oauth-client-secret",
+    r#"client_secret=${OAUTH_CLIENT_SECRET}"#,
+    r#"oauth-client-secret.txt"#,
+    false
+);
+negative_fixture!(
+    oauth_client_secret_negative_1,
+    "oauth-client-secret",
+    r#"client_secret=<secret>"#,
+    r#"oauth-client-secret.txt"#,
+    false
+);
+negative_fixture!(
+    oauth_client_secret_negative_2,
+    "oauth-client-secret",
+    r#"client_secret=secret"#,
+    r#"oauth-client-secret.txt"#,
+    false
+);
+positive_fixture!(
+    oauth_client_secret_evasion_0,
+    "oauth-client-secret",
+    r#"client-secret: 'C113nt53KR3TN6N90yVuAgICxIRwsObLi0E67/N8eRN='"#,
+    r#"C113nt53KR3TN6N90yVuAgICxIRwsObLi0E67/N8eRN="#,
+    r#"oauth-client-secret.txt"#
 );
 contract_schema!(
     octopus_deploy_api_key_schema,

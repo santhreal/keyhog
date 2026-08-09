@@ -285,24 +285,39 @@ fn anchored_generic_service_detectors_remain_named_through_resolution() {
         checked += 1;
     }
     assert_eq!(
-        checked, 7,
+        checked, 8,
         "every anchored generic-service detector's inline positives are checked \
-         (oauth-client-secret ships two, the rest one each)"
+         (oauth-client-secret ships three, the rest one each)"
     );
 }
 
 #[test]
 fn corrected_primary_role_regressions_have_exact_backend_parity() {
-    let scanner = scanner();
-    let acquired_gpu_backends: Vec<_> = scanner
-        .gpu_backend_candidates()
-        .into_iter()
-        .filter(|candidate| candidate.available)
-        .map(|candidate| candidate.backend)
-        .collect();
+    let detectors = keyhog_core::load_detectors(&detector_dir())
+        .expect("detectors/ must load into exact-route scanners");
+    let cpu_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::CpuFallback)
+            .expect("compile scalar scanner");
+    let simd_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
+            .expect("compile SIMD scanner");
+    let gpu_scanners: Vec<_> = [
+        ScanBackend::GpuCuda,
+        ScanBackend::GpuMetal,
+        ScanBackend::GpuWgpu,
+    ]
+    .into_iter()
+    .filter_map(|backend| {
+        let scanner = CompiledScanner::compile_for_backend(detectors.clone(), backend).ok()?;
+        scanner
+            .gpu_backend_candidates()
+            .iter()
+            .any(|candidate| candidate.backend == backend && candidate.acquired)
+            .then_some((backend, scanner))
+    })
+    .collect();
     assert!(
-        !keyhog_scanner::hw_probe::probe_hardware().gpu_available
-            || !acquired_gpu_backends.is_empty(),
+        !keyhog_scanner::hw_probe::probe_hardware().gpu_available || !gpu_scanners.is_empty(),
         "physical GPU probe succeeded but no compiled GPU peer was acquired"
     );
     let corrected: std::collections::BTreeSet<&str> = [
@@ -332,20 +347,20 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
             continue;
         };
         let chunk = make_chunk(positive, case.path.as_deref());
-        scanner.clear_fragment_cache();
-        let mut cpu = scanner
+        cpu_scanner.clear_fragment_cache();
+        let mut cpu = cpu_scanner
             .scan_with_backend(&chunk, ScanBackend::CpuFallback)
             .expect("selected backend scan succeeds");
-        scanner.clear_fragment_cache();
-        let mut simd = scanner
+        simd_scanner.clear_fragment_cache();
+        let mut simd = simd_scanner
             .scan_with_backend(&chunk, ScanBackend::SimdCpu)
             .expect("selected backend scan succeeds");
         cpu.sort();
         simd.sort();
         assert_eq!(cpu, simd, "CPU/SIMD finding drift for {}", case.detector_id);
-        for backend in &acquired_gpu_backends {
-            scanner.clear_fragment_cache();
-            let mut gpu = scanner
+        for (backend, gpu_scanner) in &gpu_scanners {
+            gpu_scanner.clear_fragment_cache();
+            let mut gpu = gpu_scanner
                 .scan_with_backend(&chunk, *backend)
                 .expect("selected backend scan succeeds");
             gpu.sort();
@@ -357,7 +372,7 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
                 case.detector_id
             );
         }
-        let resolved = scanner
+        let resolved = cpu_scanner
             .try_resolve_matches(cpu)
             .expect("active plan resolves corrected inline findings");
         assert!(

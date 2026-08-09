@@ -11,7 +11,11 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 #[test]
 fn prefix_storm_seed_has_exact_repeatable_cpu_backend_parity() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let simd_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
+            .expect("SIMD scanner compile");
+    let cpu_scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::CpuFallback)
+        .expect("scalar scanner compile");
 
     // Minimal failing seed lifted from the
     // gpu_proptest_invariants.proptest-regressions file (cc 5b3e2404…).
@@ -35,15 +39,15 @@ fn prefix_storm_seed_has_exact_repeatable_cpu_backend_parity() {
         findings
     };
 
-    // Reuse the same scanner so residual per-scan state cannot hide behind a
-    // fresh compile. Full RawMatch equality also preserves multiplicity.
+    // Reuse each exact-route scanner so residual per-scan state cannot hide
+    // behind a fresh compile. Full RawMatch equality also preserves multiplicity.
     for round in 0..5 {
-        scanner.clear_fragment_cache();
-        let simd = scanner
+        simd_scanner.clear_fragment_cache();
+        let simd = simd_scanner
             .scan_chunks_with_backend(&[chunk.clone()], ScanBackend::SimdCpu)
             .expect("selected backend scan succeeds");
-        scanner.clear_fragment_cache();
-        let cpu = scanner
+        cpu_scanner.clear_fragment_cache();
+        let cpu = cpu_scanner
             .scan_chunks_with_backend(&[chunk.clone()], ScanBackend::CpuFallback)
             .expect("selected backend scan succeeds");
         let simd = canonical(&simd);

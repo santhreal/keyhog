@@ -161,12 +161,7 @@ fn empty_directory_reports_the_no_input_row_not_the_all_skipped_row() {
             .any(|reason| reason.contains("every candidate was skipped")),
         "the two nothing-scanned causes must never both fire; reasons={reasons:?}"
     );
-    assert_eq!(
-        run.code,
-        Some(EXIT_INCOMPLETE),
-        "stderr={}",
-        run.stderr
-    );
+    assert_eq!(run.code, Some(EXIT_INCOMPLETE), "stderr={}", run.stderr);
 }
 
 /// A directory whose only entry is a symlink. Symlinks are deliberately never
@@ -262,7 +257,8 @@ fn empty_scan_text_output_says_it_covered_nothing() {
     let run = scan(&[], dir.path());
 
     assert!(
-        !run.stdout.contains("No secrets detected in the scanned files."),
+        !run.stdout
+            .contains("No secrets detected in the scanned files."),
         "a scan with no scanned files must not print the clean-scan line; stdout={}",
         run.stdout
     );

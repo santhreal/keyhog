@@ -13,7 +13,7 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_profile::Stage;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use support::profile::{run_with_profile, stage_calls};
 
 /// One endpoint fetch records one acquisition, one wire-read span, and the

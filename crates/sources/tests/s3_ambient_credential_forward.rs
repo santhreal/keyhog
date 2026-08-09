@@ -19,7 +19,7 @@
 //! Wire-format verification lives in unit tests under
 //! `crates/sources/src/s3/auth.rs`.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use std::sync::Mutex;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());

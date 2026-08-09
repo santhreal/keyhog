@@ -1,7 +1,7 @@
 //! Docker layer symlinks must be ignored without following host targets.
 
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 /// A real image symlink must not abort the layer, materialize the link, or expose its absolute host target.
 #[cfg(feature = "docker")]

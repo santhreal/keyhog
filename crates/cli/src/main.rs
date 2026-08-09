@@ -169,11 +169,20 @@ mod interrupt {
 
 fn main() -> ExitCode {
     configure_allocator_memory_policy();
-    tokio::runtime::Builder::new_current_thread()
+    let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .expect("building KeyHog async runtime")
-        .block_on(async_main())
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!(
+                "error: failed to build the KeyHog async runtime: {error}. \
+                 Fix: verify available process resources and retry."
+            );
+            return ExitCode::from(keyhog::exit_codes::EXIT_SYSTEM_ERROR);
+        }
+    };
+    runtime.block_on(async_main())
 }
 
 async fn async_main() -> ExitCode {

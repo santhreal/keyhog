@@ -361,4 +361,3 @@ fn rate_limit_initial_slot_steps_back_one_interval_when_representable() {
         "the step-back must equal exactly one interval"
     );
 }
-

@@ -7,7 +7,7 @@ mod archive_support;
 mod support;
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{skip_counts, FilesystemSource};
 use sevenz_rust2::{ArchiveEntry, ArchiveWriter, SourceReader};
 use std::io::Cursor;
@@ -292,4 +292,3 @@ fn solid_seven_zip_special_entry_drains_before_safe_sibling() {
         "the refused solid 7z special entry must count as unreadable"
     );
 }
-

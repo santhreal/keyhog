@@ -16,7 +16,10 @@ fn session(name: &str) -> Session {
     .expect("start profile")
 }
 
-fn collector(profile: &keyhog_profile::RunProfile, id: CollectorId) -> &keyhog_profile::CollectorCapability {
+fn collector(
+    profile: &keyhog_profile::RunProfile,
+    id: CollectorId,
+) -> &keyhog_profile::CollectorCapability {
     profile
         .collectors
         .iter()
@@ -53,8 +56,8 @@ fn disabled_feature_reports_disabled_collectors_and_gap() {
 #[cfg(all(feature = "hardware-counters", target_os = "linux"))]
 mod linux {
     use keyhog_profile::{
-        CounterId, HardwareCounterCollector, HardwareFieldSourceV2, MetricId,
-        SchedulerCollector, SnapshotCollector,
+        CounterId, HardwareCounterCollector, HardwareFieldSourceV2, MetricId, SchedulerCollector,
+        SnapshotCollector,
     };
 
     use super::*;
@@ -200,10 +203,7 @@ mod linux {
             HardwareFieldSourceV2::ProcSelfSchedstat
         );
         assert!(
-            matches!(
-                delta.scheduler_delay_ns.value,
-                Evidence::Recorded { .. }
-            ),
+            matches!(delta.scheduler_delay_ns.value, Evidence::Recorded { .. }),
             "schedstat runqueue delay must be recorded on this kernel"
         );
         assert_eq!(
@@ -233,7 +233,10 @@ mod linux {
                     involuntary = value.split(':').nth(1).and_then(|v| v.trim().parse().ok());
                 }
             }
-            (voluntary.expect("voluntary field"), involuntary.expect("involuntary field"))
+            (
+                voluntary.expect("voluntary field"),
+                involuntary.expect("involuntary field"),
+            )
         }
 
         let mut collector = SchedulerCollector::new();
@@ -297,7 +300,10 @@ mod linux {
             .expect("typed voluntary context switches recorded");
         assert_eq!(typed_voluntary.value, voluntary);
         let typed_counter = CounterId::SchedulerVoluntaryContextSwitches;
-        assert_eq!(typed_counter.metric_id(), MetricId::SchedulerVoluntaryContextSwitches);
+        assert_eq!(
+            typed_counter.metric_id(),
+            MetricId::SchedulerVoluntaryContextSwitches
+        );
         // Perf is denied on hosts with perf_event_paranoid above 2; the run
         // counter fields must then carry the same explicit gap.
         let capability = collector(&profile, CollectorId::HardwareCounters);

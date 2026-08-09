@@ -141,7 +141,12 @@ fn a_path_included_module_is_not_an_inline_body() {
     let inline = ["#[cfg(test)]", "mod tests {", "}"];
     assert!(opens_inline_body(&inline, 0));
 
-    let spaced = ["#[cfg(test)]", "", "#[path = \"../tests/unit/x.rs\"]", "mod x;"];
+    let spaced = [
+        "#[cfg(test)]",
+        "",
+        "#[path = \"../tests/unit/x.rs\"]",
+        "mod x;",
+    ];
     assert!(!opens_inline_body(&spaced, 0));
 }
 
