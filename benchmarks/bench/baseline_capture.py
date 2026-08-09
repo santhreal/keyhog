@@ -67,6 +67,7 @@ class BaselineTrial:
     result_error: str
 
     def to_json(self) -> dict[str, object]:
+        """Serialize run metrics to a JSON-serializable dictionary."""
         return {
             "wall_ms": self.wall_ms,
             "peak_rss_kb": self.peak_rss_kb,
@@ -101,6 +102,7 @@ class BaselineSummary:
     parity_ok: bool
 
     def to_json(self) -> dict[str, object]:
+        """Serialize baseline summary statistics to a JSON-serializable dictionary."""
         return {
             "schema_version": BASELINE_SCHEMA_VERSION,
             "workload_id": self.workload_id,
@@ -426,6 +428,7 @@ def runtime_fixture_state(fixture_root: pathlib.Path):
         originals = {growing: growing.read_bytes(), shrinking: shrinking.read_bytes()}
 
         def mutate() -> None:
+            """Background thread worker to continuously mutate growing and shrinking files."""
             while not stop.is_set():
                 with growing.open("ab") as handle:
                     handle.write(b"runtime append\n")
@@ -796,9 +799,11 @@ def fixture_http_server(fixture_root: pathlib.Path):
 
     class QuietHandler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
+            """Initialize the QuietHandler with directory pointing to fixture responses."""
             super().__init__(*args, directory=str(responses), **kwargs)
 
         def log_message(self, _format, *_args):
+            """Suppress HTTP server log messages during fixture execution."""
             return
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), QuietHandler)
@@ -951,12 +956,15 @@ def fixture_daemon_remote_server(fixture_root: pathlib.Path):
     text=(fixture_root/"input/responses/secret.env").read_text().strip()
     class RemoteHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
+            """Handle GET requests for Slack remote daemon endpoints."""
             path=urllib.parse.urlparse(self.path).path
             if path=="/conversations.list": payload={"ok":True,"channels":[{"id":"C1","name":"general"}],"response_metadata":{"next_cursor":""}}
             elif path=="/conversations.history": payload={"ok":True,"messages":[{"user":"U1","text":text,"ts":"1700000000.000001"}],"has_more":False,"response_metadata":{"next_cursor":""}}
             else: self.send_error(404); return
             body=json.dumps(payload).encode(); self.send_response(200); self.send_header("content-type","application/json"); self.send_header("content-length",str(len(body))); self.end_headers(); self.wfile.write(body)
-        def log_message(self,_format,*_args): return
+        def log_message(self,_format,*_args):
+            """Suppress HTTP server log messages during daemon fixture execution."""
+            return
     server=http.server.ThreadingHTTPServer(("127.0.0.1",0),RemoteHandler); worker=threading.Thread(target=server.serve_forever,daemon=True); worker.start()
     try: yield f"http://127.0.0.1:{server.server_port}"
     finally: server.shutdown(); server.server_close(); worker.join(timeout=5)
@@ -1119,6 +1127,7 @@ def fixture_s3_server(fixture_root: pathlib.Path):
 
     class S3Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
+            """Handle GET requests for S3 bucket listing and object retrieval."""
             parsed = urllib.parse.urlparse(self.path)
             query = urllib.parse.parse_qs(parsed.query)
             if parsed.path == "/storage/v1/b/benchmark/o" and query.get("alt") == ["json"]:
@@ -1168,6 +1177,7 @@ def fixture_s3_server(fixture_root: pathlib.Path):
                 self.send_error(404)
 
         def log_message(self, _format, *_args):
+            """Suppress HTTP server log messages during S3 fixture execution."""
             return
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), S3Handler)
@@ -1342,11 +1352,13 @@ def fixture_github_collaboration_server(fixture_root: pathlib.Path, workload_id:
 
     class GitHubHandler(http.server.BaseHTTPRequestHandler):
         def _send(self, payload):
+            """Send a JSON payload with standard HTTP 200 headers."""
             body = json.dumps(payload).encode(); self.send_response(200)
             self.send_header("content-type", "application/json"); self.send_header("content-length", str(len(body)))
             self.end_headers(); self.wfile.write(body)
 
         def do_GET(self):
+            """Handle GET requests for REST GitHub collaboration endpoints."""
             path = urllib.parse.urlparse(self.path).path
             if workload_id.endswith("issues") and path == "/repos/acme/rocket/issues":
                 return self._send([{"node_id":"I_fixture","number":7,"title":"fixture","body":secret,"user":{"login":"bench"},"updated_at":"2026-07-13T00:00:00Z"}])
@@ -1363,6 +1375,7 @@ def fixture_github_collaboration_server(fixture_root: pathlib.Path, workload_id:
             self.send_error(404)
 
         def do_POST(self):
+            """Handle POST requests for GraphQL GitHub discussion endpoints."""
             if urllib.parse.urlparse(self.path).path != "/graphql": self.send_error(404); return
             length = int(self.headers.get("content-length", "0")); body = self.rfile.read(length).decode()
             if workload_id.endswith("discussions") and "discussions(first:100" in body:
@@ -1371,7 +1384,9 @@ def fixture_github_collaboration_server(fixture_root: pathlib.Path, workload_id:
                 return self._send({"data":{"repository":{"discussion":{"comments":{"nodes":[],"pageInfo":{"hasNextPage":False,"endCursor":None}}}}}})
             self.send_error(404)
 
-        def log_message(self, _format, *_args): return
+        def log_message(self, _format, *_args):
+            """Suppress HTTP server log messages during GitHub fixture execution."""
+            return
 
     server=http.server.ThreadingHTTPServer(("127.0.0.1",0),GitHubHandler); worker=threading.Thread(target=server.serve_forever,daemon=True); worker.start()
     try: yield f"http://127.0.0.1:{server.server_port}"
@@ -1417,6 +1432,7 @@ def verification_connect_proxy(destination: pathlib.Path):
     context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); context.load_cert_chain(cert,key); state={"requests":0}
     class ProxyHandler(socketserver.BaseRequestHandler):
         def handle(self):
+            """Handle CONNECT tunnel establishment and TLS verification requests."""
             incoming=b""
             while b"\r\n\r\n" not in incoming and len(incoming)<16384:
                 chunk=self.request.recv(4096)
@@ -1455,6 +1471,7 @@ def verification_oob_connect_proxy(destination: pathlib.Path):
     tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); tls.load_cert_chain(cert,key)
     state={"register":0,"poll":0,"deregister":0,"verify":0,"registration":None,"pending":[]}; lock=threading.Lock()
     def encrypted_poll():
+        """Poll pending out-of-band events and return AES-encrypted payloads."""
         with lock:
             registration=state["registration"]; pending=list(state["pending"]); state["pending"].clear()
         if not pending: return {"data":[],"extra":[]}
@@ -1467,6 +1484,7 @@ def verification_oob_connect_proxy(destination: pathlib.Path):
         return {"data":entries,"extra":[],"aes_key":base64.b64encode(wrapped).decode()}
     class ProxyHandler(socketserver.BaseRequestHandler):
         def handle(self):
+            """Handle OOB proxy requests, registration, polling, and verification."""
             incoming=b""
             while b"\r\n\r\n" not in incoming and len(incoming)<16384:
                 chunk=self.request.recv(4096)
@@ -1568,6 +1586,7 @@ def fixture_hosted_group_server(fixture_root: pathlib.Path, destination: pathlib
     if completed.returncode!=0: raise BaselineCaptureError(f"{platform} bare clone failed: {completed.stderr.strip()}")
     class HostedHandler(http.server.BaseHTTPRequestHandler):
         def _git_backend(self):
+            """Execute git http-backend CGI script for smart HTTP requests."""
             parsed=urllib.parse.urlparse(self.path); length=int(self.headers.get("content-length","0")); request=self.rfile.read(length) if length else b""
             env=dict(os.environ); env.update({"GIT_PROJECT_ROOT":str(destination),"GIT_HTTP_EXPORT_ALL":"1","PATH_INFO":parsed.path,"QUERY_STRING":parsed.query,"REQUEST_METHOD":self.command,"CONTENT_TYPE":self.headers.get("content-type",""),"CONTENT_LENGTH":str(length),"REMOTE_ADDR":"127.0.0.1"})
             completed=subprocess.run(["git","http-backend"],input=request,capture_output=True,check=False,env=env,timeout=30)
@@ -1583,6 +1602,7 @@ def fixture_hosted_group_server(fixture_root: pathlib.Path, destination: pathlib
             for name,value in headers: self.send_header(name,value)
             self.end_headers(); self.wfile.write(body)
         def do_GET(self):
+            """Handle GET requests for hosted group platform API or Git smart HTTP."""
             parsed=urllib.parse.urlparse(self.path); host,port=self.server.server_address; clone=f"http://{host}:{port}/repository.git"
             if platform=="gitlab" and parsed.path=="/api/v4/groups/acme/projects":
                 payload=[{"path_with_namespace":"acme/repository","http_url_to_repo":clone}]
@@ -1590,8 +1610,12 @@ def fixture_hosted_group_server(fixture_root: pathlib.Path, destination: pathlib
                 payload={"values":[{"slug":"repository","links":{"clone":[{"name":"https","href":clone}]}}],"next":None}
             else: self._git_backend(); return
             body=json.dumps(payload).encode(); self.send_response(200); self.send_header("content-type","application/json"); self.send_header("content-length",str(len(body))); self.end_headers(); self.wfile.write(body)
-        def do_POST(self): self._git_backend()
-        def log_message(self,_format,*_args): return
+        def do_POST(self):
+            """Handle POST requests for Git smart HTTP upload/receive service."""
+            self._git_backend()
+        def log_message(self,_format,*_args):
+            """Suppress HTTP server log messages during hosted group fixture execution."""
+            return
     server=http.server.ThreadingHTTPServer(("127.0.0.1",0),HostedHandler); worker=threading.Thread(target=server.serve_forever,daemon=True); worker.start()
     try: yield f"http://127.0.0.1:{server.server_port}"
     finally: server.shutdown(); server.server_close(); worker.join(timeout=5)
@@ -1630,6 +1654,7 @@ def fixture_github_org_server(fixture_root: pathlib.Path, destination: pathlib.P
     if completed.returncode != 0: raise BaselineCaptureError(f"organization server-info failed: {completed.stderr.strip()}")
     class OrgHandler(http.server.BaseHTTPRequestHandler):
         def _git_backend(self):
+            """Execute git http-backend CGI script for GitHub org requests."""
             parsed=urllib.parse.urlparse(self.path); length=int(self.headers.get("content-length","0")); request=self.rfile.read(length) if length else b""
             env=dict(os.environ); env.update({"GIT_PROJECT_ROOT":str(destination),"GIT_HTTP_EXPORT_ALL":"1","PATH_INFO":parsed.path,"QUERY_STRING":parsed.query,"REQUEST_METHOD":self.command,"CONTENT_TYPE":self.headers.get("content-type",""),"CONTENT_LENGTH":str(length),"REMOTE_ADDR":"127.0.0.1"})
             completed=subprocess.run(["git","http-backend"],input=request,capture_output=True,check=False,env=env,timeout=30)
@@ -1646,12 +1671,17 @@ def fixture_github_org_server(fixture_root: pathlib.Path, destination: pathlib.P
             for name,value in headers: self.send_header(name,value)
             self.end_headers(); self.wfile.write(body)
         def do_GET(self):
+            """Handle GET requests for GitHub org repos listing or Git smart HTTP."""
             if urllib.parse.urlparse(self.path).path == "/orgs/acme/repos":
                 host,port=self.server.server_address; payload=[{"name":"repository","clone_url":f"http://{host}:{port}/repository.git"}]
                 body=json.dumps(payload).encode(); self.send_response(200); self.send_header("content-type","application/json"); self.send_header("content-length",str(len(body))); self.end_headers(); self.wfile.write(body); return
             self._git_backend()
-        def do_POST(self): self._git_backend()
-        def log_message(self,_format,*_args): return
+        def do_POST(self):
+            """Handle POST requests for Git smart HTTP upload/receive service."""
+            self._git_backend()
+        def log_message(self,_format,*_args):
+            """Suppress HTTP server log messages during GitHub org fixture execution."""
+            return
     server=http.server.ThreadingHTTPServer(("127.0.0.1",0),OrgHandler); worker=threading.Thread(target=server.serve_forever,daemon=True); worker.start()
     try: yield f"http://127.0.0.1:{server.server_port}"
     finally: server.shutdown(); server.server_close(); worker.join(timeout=5)
@@ -1672,8 +1702,11 @@ def fixture_git_http_server(repository: pathlib.Path, destination: pathlib.Path)
     if completed.returncode != 0: raise BaselineCaptureError(f"wiki server-info failed: {completed.stderr.strip()}")
     class GitHandler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
+            """Initialize GitHandler with directory set to the target destination."""
             super().__init__(*args, directory=str(destination), **kwargs)
-        def log_message(self, _format, *_args): return
+        def log_message(self, _format, *_args):
+            """Suppress HTTP server log messages during dumb Git HTTP fixture execution."""
+            return
     server=http.server.ThreadingHTTPServer(("127.0.0.1",0),GitHandler); worker=threading.Thread(target=server.serve_forever,daemon=True); worker.start()
     try: yield f"http://127.0.0.1:{server.server_port}/wiki.git"
     finally: server.shutdown(); server.server_close(); worker.join(timeout=5)
@@ -1730,6 +1763,7 @@ def fixture_slack_server(fixture_root: pathlib.Path):
 
     class SlackHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
+            """Handle GET requests for Slack API conversations listing and history."""
             parsed = urllib.parse.urlparse(self.path)
             if parsed.path == "/conversations.list":
                 body = json.dumps({"ok": True, "channels": [{"id": "C1", "name": "general"}], "response_metadata": {"next_cursor": ""}}).encode()
@@ -1740,7 +1774,9 @@ def fixture_slack_server(fixture_root: pathlib.Path):
             self.send_response(200); self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
-        def log_message(self, _format, *_args): return
+        def log_message(self, _format, *_args):
+            """Suppress HTTP server log messages during Slack fixture execution."""
+            return
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), SlackHandler)
     worker = threading.Thread(target=server.serve_forever, name="fixture-slack", daemon=True); worker.start()
