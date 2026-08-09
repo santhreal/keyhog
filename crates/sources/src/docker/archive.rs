@@ -668,9 +668,20 @@ fn stream_plain_layer_member_windows<R: Read>(
             let to_read = std::cmp::min(need as u64, remaining) as usize;
             let start = buf.len();
             buf.resize(start + to_read, 0);
-            // Short reads are partial coverage (truncated tar member), not a hard
-            // Io failure: keep the bytes we got and stop asking for more.
-            let got = entry.read(&mut buf[start..]).map_err(SourceError::Io)?;
+            // `Read::read` may legally return fewer bytes than requested without
+            // being at EOF (gzip/zstd inflate does this on nearly every call), so
+            // fill the window in a loop. Only a 0-byte read is real EOF; treating
+            // a short read as EOF silently dropped the rest of the member.
+            let mut got = 0usize;
+            while got < to_read {
+                let n = entry
+                    .read(&mut buf[start + got..])
+                    .map_err(SourceError::Io)?;
+                if n == 0 {
+                    break;
+                }
+                got += n;
+            }
             buf.truncate(start + got);
             if got < to_read {
                 remaining = 0;

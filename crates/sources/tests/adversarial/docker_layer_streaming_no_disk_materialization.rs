@@ -88,6 +88,41 @@ fn stream_gzip_layer_surfaces_secret_without_disk_unpack() {
     );
 }
 
+/// Gzip/zstd inflate returns short reads; window fill must loop until the
+/// requested size or real EOF. Otherwise secrets past the first ~1 MiB of a
+/// large plain layer member are silently dropped.
+#[cfg(feature = "docker")]
+#[test]
+fn stream_gzip_layer_surfaces_secret_past_first_megabyte() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let marker = b"PERF2_PAST_1MIB_SECRET=ghp_PastOneMibStreamToken00000000001\n";
+    let mut payload = vec![b'a'; 1024 * 1024 + 64 * 1024];
+    payload.extend_from_slice(marker);
+    let layer = gzip_layer_tar(
+        dir.path(),
+        "layer.tar.gz",
+        &[("var/log/big.log", payload.as_slice())],
+    );
+
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream large gzip layer member");
+
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().any(|chunk| chunk
+            .data
+            .contains("PERF2_PAST_1MIB_SECRET=ghp_PastOneMibStreamToken00000000001")),
+        "secret past the first megabyte must survive gzip short-read windowing, got {} chunks",
+        chunks.len()
+    );
+}
+
 /// Whiteout markers do not suppress members from other layers: each layer is
 /// streamed independently. A `.wh.secret` marker in layer B must not hide
 /// `secret` content from layer A, and the marker itself remains an ordinary
@@ -106,11 +141,7 @@ fn stream_layers_preserve_independent_whiteout_semantics() {
 
     // One ordered session so layer B cannot retroactively hide layer A content.
     let rows = TestApi
-        .stream_docker_layers_with_shared_budget(
-            &[&layer_a, &layer_b],
-            1024 * 1024,
-            true,
-        )
+        .stream_docker_layers_with_shared_budget(&[&layer_a, &layer_b], 1024 * 1024, true)
         .expect("stream both layers");
 
     assert!(
