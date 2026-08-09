@@ -51,6 +51,11 @@ impl CompiledScanner {
             // so one_long_line residual stays bounded; windows that do carry a
             // marker still decode normally.
             && !chunk_is_markerless_single_line(chunk)
+            // Repetitive multi-line corpora (one_large) share a tiny line
+            // vocabulary across overlapping windows. Once a vocab has been
+            // decode-through'd to an empty child set, later windows with the
+            // same unique-line fingerprint skip decode-through entirely.
+            && !decode_vocab_previously_empty(&chunk.data)
             && {
                 #[cfg(debug_assertions)]
                 self.decoder_admission_scanned_bytes.fetch_add(
@@ -299,4 +304,75 @@ pub(crate) fn text_is_markerless_single_line(text: &str) -> bool {
     !bytes
         .iter()
         .any(|&byte| matches!(byte, b'+' | b'/' | b'=' | b'%' | b'\\'))
+}
+
+/// Cap on unique lines participating in a decode-vocab fingerprint. Above this,
+/// the window is too diverse for cross-window empty-decode memoization to help,
+/// and hashing every distinct line would dominate the skip check.
+const DECODE_VOCAB_FINGERPRINT_MAX_UNIQUE_LINES: usize = 512;
+const DECODE_VOCAB_EMPTY_CACHE_CAP: usize = 1024;
+
+static DECODE_VOCAB_EMPTY_CACHE: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<[u8; 16], ()>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Order-independent fingerprint of the unique line set in `text`.
+///
+/// Returns `None` when the text is empty or too diverse to memoize. Used to
+/// skip decode-through on later windows that share the same line vocabulary as
+/// a window that already produced zero decoded children (one_large).
+#[inline]
+pub(crate) fn decode_vocab_fingerprint(text: &str) -> Option<[u8; 16]> {
+    if text.is_empty() {
+        return None;
+    }
+    // Cheap unique-line set first (one_large windows have ~5-6 unique lines
+    // across tens of thousands of repeats). Only blake3 the tiny unique set.
+    let mut unique: ahash::AHashSet<&str> = ahash::AHashSet::with_capacity(16);
+    for line in text.lines() {
+        if unique.len() >= DECODE_VOCAB_FINGERPRINT_MAX_UNIQUE_LINES && !unique.contains(line)
+        {
+            return None;
+        }
+        unique.insert(line);
+    }
+    if unique.is_empty() {
+        return None;
+    }
+    let mut lines: Vec<&str> = unique.into_iter().collect();
+    lines.sort_unstable();
+    let mut hasher = blake3::Hasher::new();
+    for line in &lines {
+        hasher.update(line.as_bytes());
+        hasher.update(&[0]);
+    }
+    let full = hasher.finalize();
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&full.as_bytes()[..16]);
+    Some(out)
+}
+
+#[inline]
+pub(crate) fn decode_vocab_previously_empty(text: &str) -> bool {
+    let Some(fp) = decode_vocab_fingerprint(text) else {
+        return false;
+    };
+    DECODE_VOCAB_EMPTY_CACHE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .contains_key(&fp)
+}
+
+#[inline]
+pub(crate) fn mark_decode_vocab_empty(text: &str) {
+    let Some(fp) = decode_vocab_fingerprint(text) else {
+        return;
+    };
+    let mut cache = DECODE_VOCAB_EMPTY_CACHE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if cache.len() >= DECODE_VOCAB_EMPTY_CACHE_CAP {
+        cache.clear();
+    }
+    cache.insert(fp, ());
 }

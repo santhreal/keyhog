@@ -90,6 +90,11 @@ impl CompiledScanner {
                 if crate::deadline::expired(deadline) {
                     return Ok(());
                 }
+                // Empty decode-through on this line vocabulary: later windows
+                // with the same unique-line fingerprint can skip the pipeline.
+                if decoded_chunks.is_empty() {
+                    super::scan::mark_decode_vocab_empty(&chunk.data);
+                }
                 if !decoded_chunks.is_empty() {
                     keyhog_profile::add_counter(keyhog_profile::CounterId::DecodeParentChunks, 1);
                     keyhog_profile::add_counter(
