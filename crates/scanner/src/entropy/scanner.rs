@@ -473,8 +473,9 @@ pub(crate) fn find_classified_entropy_secrets_with_precomputed_keywords_and_poli
     );
     let keyword_line_ids: Vec<u32> = keyword_lines
         .iter()
-        .map(|(line_idx, _)| {
-            u32::try_from(*line_idx).unwrap_or(u32::MAX)
+        .map(|(line_idx, _)| match u32::try_from(*line_idx) {
+            Ok(line_id) => line_id,
+            Err(_) => panic!("entropy input exceeds the checked u32 line-index boundary"),
         })
         .collect();
     find_classified_entropy_secrets_from_lines(
@@ -613,13 +614,11 @@ fn scan_keyword_contexts(
             .saturating_add(1)
             .min(lines.len());
         for line_idx in start..end {
-            if line_idx != keyword_line_index
-                && keyword_line_ids
-                    .binary_search(
-                        &u32::try_from(line_idx).unwrap_or(u32::MAX),
-                    )
-                    .is_ok()
-            {
+            let line_id = match u32::try_from(line_idx) {
+                Ok(line_id) => line_id,
+                Err(_) => panic!("entropy input exceeds the checked u32 line-index boundary"),
+            };
+            if line_idx != keyword_line_index && keyword_line_ids.binary_search(&line_id).is_ok() {
                 continue;
             }
             if skip_lines.is_some_and(|skip| skip.contains(&line_idx)) {
@@ -763,8 +762,9 @@ fn scan_keyword_free_candidates(
     let dogfood_enabled = crate::telemetry::is_dogfood_enabled();
     let mut keyword_line_cursor = 0usize;
     for line_idx in 0..lines.len() {
-        let Ok(line_id) = u32::try_from(line_idx) else {
-            return;
+        let line_id = match u32::try_from(line_idx) {
+            Ok(line_id) => line_id,
+            Err(_) => panic!("entropy input exceeds the checked u32 line-index boundary"),
         };
         let Some(line) = lines.line(line_idx) else {
             continue;

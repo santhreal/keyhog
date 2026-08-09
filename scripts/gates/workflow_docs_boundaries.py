@@ -22,6 +22,8 @@ PATHS = {
     "install": REPO / "docs" / "src" / "install.md",
 }
 
+PUBLISH_SCRIPT = REPO / "scripts" / "publish.sh"
+
 REQUIRED_TEXT = {
     "readme": (
         "https://santhreal.github.io/keyhog/capabilities.html",
@@ -71,7 +73,8 @@ REQUIRED_TEXT = {
     "release": (
         "## Release a push",
         "successful `main` CI run",
-        "`CARGO_REGISTRY_TOKEN`",
+        "trusted publisher",
+        "`rust-lang/crates-io-auth-action`",
         "lightweight version tag",
         "make release-check",
     ),
@@ -112,6 +115,11 @@ REQUIRED_TEXT = {
     "install": (
         "cargo install --locked --version '=",
         "--no-default-features --features portable,gpu",
+        "--no-default-features --features portable,simd",
+        "--features ci",
+        "`ci-lean` is a broad maintainer test closure",
+        "Cargo does not execute the binary after installation",
+        "historical binary-asset channel",
         "does not publish binary release assets or installer bundles",
     ),
 }
@@ -140,6 +148,21 @@ def boundary_issues(texts: dict[str, str]) -> list[str]:
         text = texts.get(name, "")
         if match := pattern.search(text):
             issues.append(f"{name}: heading belongs to another workflow: {match.group(0)!r}")
+    release = texts.get("release", "")
+    publish_script = PUBLISH_SCRIPT.read_text(encoding="utf-8")
+    publish_match = re.search(r"^CRATES=\(([^)]*)\)$", publish_script, re.MULTILINE)
+    if publish_match is None:
+        issues.append("release: scripts/publish.sh does not expose the canonical CRATES list")
+    else:
+        for crate in publish_match.group(1).split():
+            if f"`{crate}`" not in release:
+                issues.append(
+                    f"release: published crate {crate!r} is missing from the release guide"
+                )
+    if "Set the repository Actions secret `CARGO_REGISTRY_TOKEN`" in release:
+        issues.append(
+            "release: guide still requires a long-lived crates.io token instead of trusted publishing"
+        )
     return issues
 
 
