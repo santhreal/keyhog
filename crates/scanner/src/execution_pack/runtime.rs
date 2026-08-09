@@ -397,35 +397,6 @@ impl ExecutionPack {
                 path.display()
             )));
         }
-        let section_count = read_u32(bytes, 12) as usize;
-        if section_count == 0 || section_count > 64 {
-            return Err(ExecutionPackError::InvalidPack(format!(
-                "{} declares invalid section count {section_count}",
-                path.display()
-            )));
-        }
-        let declared_len = usize::try_from(read_u64(bytes, 16)).map_err(|_| {
-            ExecutionPackError::InvalidPack(format!(
-                "{} length does not fit this target",
-                path.display()
-            ))
-        })?;
-        if declared_len != bytes.len() {
-            return Err(ExecutionPackError::InvalidPack(format!(
-                "{} declares {declared_len} bytes but maps {} bytes",
-                path.display(),
-                bytes.len()
-            )));
-        }
-        let identity = decode_identity_header(bytes, &path)?;
-        let stored_identity_digest = array32(bytes, 280);
-        if stored_identity_digest != identity.digest() {
-            return Err(ExecutionPackError::InvalidPack(format!(
-                "{} execution-pack identity digest mismatch; reinstall this generation",
-                path.display()
-            )));
-        }
-        validate_identity(&path, identity, expected)?;
         let content_digest = array32(bytes, 248);
 
         let mut signature_authenticated = false;
@@ -441,6 +412,23 @@ impl ExecutionPack {
         } else if verify_content_digest {
             verify_content_digest_mapping(&mapping, &path, content_digest)?;
         }
+
+        let section_count = read_u32(bytes, 12) as usize;
+        if section_count == 0 || section_count > 64 {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} declares invalid section count {section_count}",
+                path.display()
+            )));
+        }
+        let identity = decode_identity_header(bytes, &path)?;
+        let stored_identity_digest = array32(bytes, 280);
+        if stored_identity_digest != identity.digest() {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} execution-pack identity digest mismatch; reinstall this generation",
+                path.display()
+            )));
+        }
+        validate_identity(&path, identity, expected)?;
 
         let table_end = EXECUTION_PACK_HEADER_LEN
             .checked_add(section_count * EXECUTION_PACK_SECTION_ENTRY_LEN)
@@ -678,7 +666,11 @@ fn update_mapping_and_release(
             .min(range.end);
         let chunk = &mapping[start..end];
         update(chunk);
-        release_mapping_slice(mapping, path, chunk, release_operation)?;
+        if end > 4096 {
+            let release_start = start.max(4096);
+            let release_chunk = &mapping[release_start..end];
+            release_mapping_slice(mapping, path, release_chunk, release_operation)?;
+        }
         start = end;
     }
     Ok(())

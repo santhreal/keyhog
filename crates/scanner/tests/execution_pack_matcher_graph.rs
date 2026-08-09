@@ -319,10 +319,17 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     let detectors = detectors();
     let ordinary = CompiledScanner::compile(detectors.clone()).expect("compile ordinary scanner");
     let (directory, pack) = mapped_pack(&detectors, None, false);
+    let schema_reconstructions_before =
+        keyhog_scanner::execution_pack::detector_plan::detector_spec_schema_reconstructions();
     let localization_fallbacks_before =
         keyhog_scanner::execution_pack::matcher_sections::runtime_localization_hint_fallbacks();
     let direct = CompiledScanner::compile_from_execution_pack(&pack)
         .expect("stream detector plan directly from mapped execution pack");
+    assert_eq!(
+        keyhog_scanner::execution_pack::detector_plan::detector_spec_schema_reconstructions(),
+        schema_reconstructions_before,
+        "normal installed-pack hydration must not reconstruct DetectorSpec"
+    );
     assert_eq!(
         keyhog_scanner::execution_pack::matcher_sections::runtime_localization_hint_fallbacks(),
         localization_fallbacks_before,

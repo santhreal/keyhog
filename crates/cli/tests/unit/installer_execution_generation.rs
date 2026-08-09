@@ -137,12 +137,16 @@ fn signing_key_debug_formatting_does_not_leak_key_bytes() {
     let key = ExecutionPackSigningKey::from_bytes(raw_key).expect("valid signing key");
     let debug_str = format!("{key:?}");
     assert!(
-        !debug_str.contains("ab"),
+        !debug_str.contains(&hex::encode(raw_key)),
         "debug output must not leak secret key bytes"
     );
-    assert!(
-        debug_str.contains("key_id"),
-        "debug output must include public key_id"
+    assert_eq!(
+        debug_str,
+        format!(
+            "ExecutionPackSigningKey {{ key_id: {:?}, .. }}",
+            hex::encode(key.key_id())
+        ),
+        "debug output must match expected key_id formatting"
     );
 }
 

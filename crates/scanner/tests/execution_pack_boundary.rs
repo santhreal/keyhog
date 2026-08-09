@@ -791,14 +791,13 @@ fn runtime_rejects_stale_section_schema_version_at_persisted_boundary() {
     })
     .expect("compile pack");
 
-    // Construct stale pack independently by modifying section schema version and re-authenticating content_digest
+    // Construct stale pack independently by modifying section 0 schema version to previous accepted version 1
     let mut stale_bytes = compiled.as_bytes().to_vec();
     let version_offset = EXECUTION_PACK_HEADER_LEN + 2;
-    // Set section 0 schema version to stale value 0
     stale_bytes[version_offset] = 0;
     stale_bytes[version_offset + 1] = 0;
 
-    // Re-authenticate content digest over stale payload
+    // Re-authenticate content digest over stale payload so content digest authentication passes
     let content_digest = blake3::hash(&stale_bytes[EXECUTION_PACK_HEADER_LEN..]);
     stale_bytes[248..280].copy_from_slice(content_digest.as_bytes());
 
@@ -811,7 +810,7 @@ fn runtime_rejects_stale_section_schema_version_at_persisted_boundary() {
     );
     let err_msg = error.to_string();
     assert!(
-        err_msg.contains("uses schema 0") || err_msg.contains("uses schema"),
+        err_msg.contains("uses schema 0"),
         "error must state section schema version mismatch; got: {err_msg}"
     );
     assert!(

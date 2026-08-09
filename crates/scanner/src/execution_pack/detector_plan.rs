@@ -18,7 +18,8 @@ thread_local! {
     static PEAK_LIVE_WIRE_ROWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-pub(crate) fn detector_spec_schema_reconstructions() -> usize {
+#[doc(hidden)]
+pub fn detector_spec_schema_reconstructions() -> usize {
     DETECTOR_SPEC_SCHEMA_RECONSTRUCTIONS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
@@ -634,41 +635,4 @@ fn canonical_json<T: Serialize>(value: &T, operation: &str) -> Result<Vec<u8>, E
     serde_json::to_vec(value).map_err(|error| {
         ExecutionPackError::InvalidCompilerInput(format!("cannot {operation}: {error}"))
     })
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::execution_pack::ir::CanonicalDetectorExecutionIr;
-
-    fn detector(id: &str) -> keyhog_core::DetectorSpec {
-        keyhog_core::DetectorSpec {
-            id: id.into(),
-            name: format!("{id} Detector"),
-            service: "test".into(),
-            keywords: vec!["test_kw".into()],
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn detector_spec_reconstruction_counter_is_zero_for_prelude_hydration() {
-        let before = detector_spec_schema_reconstructions();
-        let ir =
-            CanonicalDetectorExecutionIr::compile(&[detector("zero-recon")]).expect("compile IR");
-        let plan_section = CompiledDetectorPlanSection::compile(&ir).expect("compile plan section");
-
-        let header = CompiledDetectorPlanSection::stream_prelude_records(
-            plan_section.as_bytes(),
-            ir.digest(),
-            |_, _record| Ok(std::sync::Arc::from("zero-recon")),
-        )
-        .expect("stream prelude records");
-
-        assert_eq!(header.detector_count, 1);
-        let after = detector_spec_schema_reconstructions();
-        assert_eq!(
-            after, before,
-            "prelude streaming must not increment detector spec schema reconstructions"
-        );
-    }
 }
