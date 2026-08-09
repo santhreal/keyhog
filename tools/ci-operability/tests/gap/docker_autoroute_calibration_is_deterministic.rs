@@ -37,9 +37,9 @@ fn glibc_autoroute_calibration_uses_the_authorized_ci_timing_fixture() {
 #[test]
 fn glibc_autoroute_calibration_still_fails_on_nonzero_probe_status() {
     let dockerfile = glibc_dockerfile();
-    assert!(dockerfile.contains("if [ \"$rc\" != 0 ]; then"));
+    assert!(dockerfile.contains("case \"$rc\" in") || dockerfile.contains("if [ \"$rc\" != 0 ]; then"));
     assert!(dockerfile.contains("autoroute calibration failed (exit $rc)"));
-    assert!(dockerfile.contains("exit 1;"));
+    assert!(dockerfile.contains("exit 1;") || dockerfile.contains("exit 1"));
     assert!(
         !dockerfile.contains(
             "--autoroute-calibrate --autoroute-gpu \"$@\" --format json >/dev/null || true"

@@ -33,9 +33,9 @@ fn fuzz_smoke_pins_the_rust_toolchain() {
         .expect("read CI workflow");
 
     assert!(
-        workflow.contains("rustup toolchain install nightly-2026-07-24 --profile minimal")
-            && workflow.contains("cargo +nightly-2026-07-24 fuzz run decode_target")
-            && workflow.contains("cargo +nightly-2026-07-24 fuzz run scanner_target")
+        workflow.contains("rustup toolchain install nightly-2026-08-07 --profile minimal")
+            && workflow.contains("cargo +nightly-2026-08-07 fuzz run decode_target")
+            && workflow.contains("cargo +nightly-2026-08-07 fuzz run scanner_target")
             && !workflow.contains("rustup toolchain install nightly --profile minimal"),
         "fuzz smoke must use its verified pinned nightly, not a rolling compiler that can change \
          sanitizer behavior between otherwise identical commits"
