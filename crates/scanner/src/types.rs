@@ -165,6 +165,10 @@ impl<'a> PreprocessedText<'a> {
         }
     }
 
+    pub(crate) fn transport_decoded_for_offset(&self, offset: usize) -> bool {
+        transport_decoded_for_offset(&self.mappings, offset)
+    }
+
     pub(crate) fn source_offset_for_match(
         &self,
         source: &str,
@@ -209,6 +213,7 @@ impl<'a> PreprocessedText<'a> {
                 start_offset: offset,
                 end_offset: end + 1,
                 original_start_offset: offset,
+                transport_decoded: false,
             });
             offset = end + 1;
         }

@@ -158,18 +158,21 @@ struct RemediationFile {
 // empty map would silently strip remediation advice (Law 10). `clippy::panic`
 // targets genuine runtime panics; this compile-time invariant is the exception.
 #[allow(clippy::panic)]
-static REMEDIATION_MAP: LazyLock<RemediationFile> = LazyLock::new(|| match parse_remediation_file(
-    include_str!("../data/remediation.toml"),
-    "<embedded data/remediation.toml>",
-) {
-    Ok(parsed) => parsed,
-    Err(error) => {
-        panic!(
+static REMEDIATION_MAP: LazyLock<RemediationFile> =
+    LazyLock::new(|| {
+        match parse_remediation_file(
+            include_str!("../data/remediation.toml"),
+            "<embedded data/remediation.toml>",
+        ) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                panic!(
             "keyhog: remediation map '<embedded data/remediation.toml>' is invalid: {error}. \
                  Fix: correct crates/core/data/remediation.toml and rebuild"
         );
-    }
-});
+            }
+        }
+    });
 
 /// The per-severity remediation fallback, resolved once into a rank-indexed total
 /// array. `REMEDIATION_MAP`'s initializer runs `validate_severity_remediation`,

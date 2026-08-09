@@ -111,11 +111,11 @@ pub(crate) mod detector_plan;
 pub(crate) mod engine;
 /// Shannon entropy analysis for secret detection.
 pub mod entropy;
-/// Immutable install-time execution-pack compiler and scan-time loader.
-pub mod execution_pack;
 /// Tier-B per-family generic-detector entropy-floor calibration table.
 /// Specialized error types for the scanner.
 pub(crate) mod error;
+/// Immutable install-time execution-pack compiler and scan-time loader.
+pub mod execution_pack;
 /// Cross-chunk fragment reassembly cache.
 pub(crate) mod fragment_cache;
 /// Detector-owned generic assignment value-shape adjudication.

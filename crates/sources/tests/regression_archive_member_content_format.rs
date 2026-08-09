@@ -131,8 +131,7 @@ fn xz_member_of_a_tar_is_decompressed_without_an_xz_extension() {
 #[test]
 fn bzip2_member_of_a_tar_is_decompressed_without_a_bz2_extension() {
     use std::io::Write as _;
-    let mut encoder =
-        bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::default());
+    let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::default());
     encoder.write_all(SECRET).expect("bzip2 write");
     let bz2 = encoder.finish().expect("bzip2 finish");
     assert_name_independent(
@@ -255,9 +254,14 @@ fn a_plain_text_member_is_still_scanned_and_reports_no_container_gap() {
     // Guard against the signature probe misfiring: ordinary members must be
     // unaffected, with no spurious uncovered-region error.
     let (chunks, errors) = scan("plain.tar", &tar_with_file("notes.txt", SECRET));
-    assert!(!recovered(&chunks).is_empty(), "plain member must be scanned");
     assert!(
-        !errors.iter().any(|error| error.contains("were not scanned")),
+        !recovered(&chunks).is_empty(),
+        "plain member must be scanned"
+    );
+    assert!(
+        !errors
+            .iter()
+            .any(|error| error.contains("were not scanned")),
         "a plain text member must not report an uncovered region, got {errors:?}"
     );
 }
@@ -295,11 +299,7 @@ fn scan_named(name: &str, bytes: &[u8]) -> (Vec<Chunk>, Vec<String>) {
     scan(name, bytes)
 }
 
-fn assert_extension_independent_on_disk(
-    bytes: &[u8],
-    control_name: &str,
-    bare_name: &str,
-) {
+fn assert_extension_independent_on_disk(bytes: &[u8], control_name: &str, bare_name: &str) {
     let (control_chunks, control_errors) = scan_named(control_name, bytes);
     let control = recovered(&control_chunks);
     assert!(
@@ -354,7 +354,10 @@ fn extensionless_gzipped_tar_layer_on_disk_reaches_the_inner_file() {
     // The on-disk OCI layer: a digest-named gzip whose payload is a tar. Two
     // hops, and no name in the chain carries an extension.
     let layer = gzip_bytes(&tar_with_file("root/.aws/credentials", SECRET));
-    let (chunks, errors) = scan_named("sha256_aabbccddeeff00112233445566778899aabbccddeeff0011", &layer);
+    let (chunks, errors) = scan_named(
+        "sha256_aabbccddeeff00112233445566778899aabbccddeeff0011",
+        &layer,
+    );
     assert!(
         !recovered(&chunks).is_empty(),
         "a digest-named gzipped tar layer on disk must be scanned \

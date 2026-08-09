@@ -139,6 +139,7 @@ pub mod report_starts_empty;
 pub mod reporter_trait_can_be_implemented;
 pub mod reserved_companion_name_is_error;
 pub mod resolves_sh_to_known_path;
+pub mod retry;
 pub mod round_trip_binary_serde;
 pub mod round_trip_serde;
 pub mod safe_bin_no_production_path_fallback;

@@ -36,7 +36,7 @@ mod support;
 
 use httpmock::{Method, Mock, MockServer};
 use keyhog_core::{Chunk, Source, SourceError};
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use std::sync::{Mutex, MutexGuard};
 use support::split_chunk_results;
 

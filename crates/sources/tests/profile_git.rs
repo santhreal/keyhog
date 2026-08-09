@@ -13,7 +13,7 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_profile::Stage;
-use keyhog_sources::{GitDiffSource, GitHistorySource, GitStagedSource, GitSource};
+use keyhog_sources::{GitDiffSource, GitHistorySource, GitSource, GitStagedSource};
 use support::profile::{run_with_profile, stage_calls};
 
 /// `GitSource` (reachable history blobs) records one acquisition, tree-walk
@@ -35,7 +35,11 @@ fn git_source_records_acquire_walk_read_and_blob_totals() {
         errors.is_empty(),
         "a healthy git fixture must not report coverage errors: {errors:?}"
     );
-    assert_eq!(chunks.len(), 1, "one committed blob yields one chunk: {rows:?}");
+    assert_eq!(
+        chunks.len(),
+        1,
+        "one committed blob yields one chunk: {rows:?}"
+    );
     assert!(chunks[0].data.contains("AKIAGITFIXTURE000001"));
 
     assert_eq!(stage_calls(&profile, Stage::SourceAcquire), 1);
@@ -64,7 +68,9 @@ fn git_history_records_enumeration_and_hunk_totals() {
     support::git::commit(&repo, "notes.txt", second, "second commit");
 
     let (profile, rows) = run_with_profile(|| {
-        GitHistorySource::new(repo.clone()).chunks().collect::<Vec<_>>()
+        GitHistorySource::new(repo.clone())
+            .chunks()
+            .collect::<Vec<_>>()
     });
 
     let (chunks, errors) = support::split_chunk_results(&rows);
@@ -111,7 +117,11 @@ fn git_diff_records_acquire_and_hunk_totals() {
         errors.is_empty(),
         "a healthy git fixture must not report coverage errors: {errors:?}"
     );
-    assert_eq!(chunks.len(), 1, "one modified file yields one hunk: {rows:?}");
+    assert_eq!(
+        chunks.len(),
+        1,
+        "one modified file yields one hunk: {rows:?}"
+    );
     assert!(chunks[0].data.contains("line two"));
 
     assert_eq!(stage_calls(&profile, Stage::SourceAcquire), 1);
@@ -150,7 +160,11 @@ fn git_staged_records_enumeration_read_and_blob_totals() {
         errors.is_empty(),
         "a healthy git fixture must not report coverage errors: {errors:?}"
     );
-    assert_eq!(chunks.len(), 1, "one staged file yields one chunk: {rows:?}");
+    assert_eq!(
+        chunks.len(),
+        1,
+        "one staged file yields one chunk: {rows:?}"
+    );
     assert!(chunks[0].data.contains("AKIASTAGEDFIXTURE01"));
 
     assert_eq!(stage_calls(&profile, Stage::SourceAcquire), 1);

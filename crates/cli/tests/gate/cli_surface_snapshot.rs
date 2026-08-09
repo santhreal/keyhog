@@ -29,6 +29,7 @@ const BASE_SUBCOMMANDS: &[&str] = &[
     "bloom-diagnostic",
     "calibrate",
     "calibrate-autoroute",
+    "compile-execution-packs",
     "completion",
     "config",
     "daemon",
@@ -62,6 +63,7 @@ fn expected_subcommands() -> BTreeSet<String> {
 /// here (or in the matching cfg block) on purpose. A rename shows up as one
 /// removal + one addition, so churn is caught too.
 const BASE_SCAN_LONG_FLAGS: &[&str] = &[
+    "access-targets",
     "action-receipt",
     "autoroute-cache",
     "autoroute-calibrate",
@@ -73,6 +75,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "cache-dir",
     "calibration-cache",
     "config",
+    "correlate",
     "create-baseline",
     "daemon",
     "daemon-socket",
@@ -170,14 +173,17 @@ fn expected_scan_long_flags() -> BTreeSet<String> {
     #[cfg(feature = "github")]
     {
         add("github-all");
+        add("github-api-endpoint");
         add("github-collaboration");
         add("github-discussions");
         add("github-gists");
         add("github-issues");
+        add("github-releases");
         add("github-org");
         add("github-pull-requests");
         add("github-token");
         add("github-wiki");
+        add("github-wiki-url");
     }
     #[cfg(feature = "gitlab")]
     {

@@ -120,7 +120,13 @@ fn fixed_chunks() -> Vec<Chunk> {
 
 #[test]
 fn scan_coalesced_is_deterministic_across_trials() {
-    let scanner = support::compile_full_detector_scanner();
+    let detectors =
+        keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
+    let scanner = keyhog_scanner::CompiledScanner::compile_for_backend(
+        detectors,
+        keyhog_scanner::ScanBackend::SimdCpu,
+    )
+    .expect("compile exact SIMD scanner");
     let chunks = fixed_chunks();
 
     // Match the production autoroute evidence count. Each trial saturates the

@@ -12,7 +12,7 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_profile::Stage;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use support::profile::{run_with_profile, stage_calls};
 
 /// A single-page listing with one text blob records 1 acquisition, 1 walk, 1

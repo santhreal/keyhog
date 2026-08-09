@@ -34,7 +34,9 @@ fn daemon_scan_path_decodes_utf16le_file() {
 
     let envelope: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("daemon stdout is a JSON envelope");
-    let findings = envelope["findings"].as_array().expect("json findings array");
+    let findings = envelope["findings"]
+        .as_array()
+        .expect("json findings array");
     assert!(
         findings.iter().any(|finding| {
             finding.get("detector_id").and_then(|value| value.as_str())

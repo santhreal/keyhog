@@ -38,7 +38,11 @@ fn uneven_shards_produce_exact_imbalance_metrics() {
         .workers
         .windows(2)
         .all(|pair| pair[0].worker_id < pair[1].worker_id));
-    let mut calls: Vec<u64> = imbalance.workers.iter().map(|worker| worker.calls).collect();
+    let mut calls: Vec<u64> = imbalance
+        .workers
+        .iter()
+        .map(|worker| worker.calls)
+        .collect();
     calls.sort_unstable();
     assert_eq!(calls, vec![0, 100, 200, 400]);
     for worker in &imbalance.workers {
@@ -143,7 +147,11 @@ fn idle_registered_workers_are_visible_in_worker_records() {
     // Upper median of per-worker calls [0, 10] is 10, the full call total.
     assert_eq!(imbalance.median_share_ppm, 1_000_000);
     assert_eq!(imbalance.idle_share_ppm, 500_000);
-    let mut calls: Vec<u64> = imbalance.workers.iter().map(|worker| worker.calls).collect();
+    let mut calls: Vec<u64> = imbalance
+        .workers
+        .iter()
+        .map(|worker| worker.calls)
+        .collect();
     calls.sort_unstable();
     assert_eq!(calls, vec![0, 10]);
 }

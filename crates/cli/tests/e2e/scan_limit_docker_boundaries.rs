@@ -47,8 +47,11 @@ fn build_image(work: &Path) -> bool {
         "the fixture's exact entry size is what the boundary assertions use"
     );
     std::fs::write(root.join("etc/app.env"), leak).expect("leak file");
-    std::fs::write(root.join("etc/pad.txt"), "P".repeat(PAD_ENTRY_BYTES as usize))
-        .expect("pad file");
+    std::fs::write(
+        root.join("etc/pad.txt"),
+        "P".repeat(PAD_ENTRY_BYTES as usize),
+    )
+    .expect("pad file");
 
     let tar = work.join("rootfs.tar");
     let status = Command::new("tar")
@@ -84,6 +87,8 @@ fn scan(extra: &[&str]) -> Output {
         .args([
             "scan",
             "--daemon=off",
+            "--backend",
+            "simd",
             "--no-suppress-test-fixtures",
             "--format",
             "jsonl",

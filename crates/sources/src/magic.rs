@@ -29,25 +29,25 @@ pub(crate) const UNAMBIGUOUS_BINARY_PREFIXES: &[&[u8]] = &[
     PDF_PREFIX,
     ZIP_LOCAL_FILE_PREFIX, // ZIP / JAR / DOCX / XLSX / PPTX / APK / OOXML
     b"\x89PNG\r\n\x1a\n",
-    b"\xD0\xCF\x11\xE0",   // OLE compound document (older Office)
-    b"\x7fELF",            // Linux / BSD executables, .so, .o, .a
-    b"\xfe\xed\xfa\xce",   // Mach-O 32-bit (macOS, iOS executables)
-    b"\xfe\xed\xfa\xcf",   // Mach-O 64-bit
-    b"\xcf\xfa\xed\xfe",   // Mach-O 64-bit reversed
-    b"\xca\xfe\xba\xbe",   // Java .class (universal Mach-O collision)
-    GZIP_PREFIX,           // gzip (.gz)
-    ZSTD_FRAME_MAGIC,      // zstd (.zst)
-    XZ_STREAM_MAGIC,       // xz (.xz)
-    SEVEN_ZIP_PREFIX,      // 7z (.7z)
-    RAR_PREFIX,            // RAR
-    b"GIF87a",             // GIF
-    b"GIF89a",             // GIF
-    b"\xff\xd8\xff",       // JPEG (any variant)
-    b"\x00\x00\x01\x00",   // ICO
-    b"OggS",               // Ogg container
-    b"fLaC",               // FLAC
-    WASM_MAGIC,            // WebAssembly module
-    UNIX_AR_PREFIX,        // Unix `ar` archives (.a, .deb)
+    b"\xD0\xCF\x11\xE0", // OLE compound document (older Office)
+    b"\x7fELF",          // Linux / BSD executables, .so, .o, .a
+    b"\xfe\xed\xfa\xce", // Mach-O 32-bit (macOS, iOS executables)
+    b"\xfe\xed\xfa\xcf", // Mach-O 64-bit
+    b"\xcf\xfa\xed\xfe", // Mach-O 64-bit reversed
+    b"\xca\xfe\xba\xbe", // Java .class (universal Mach-O collision)
+    GZIP_PREFIX,         // gzip (.gz)
+    ZSTD_FRAME_MAGIC,    // zstd (.zst)
+    XZ_STREAM_MAGIC,     // xz (.xz)
+    SEVEN_ZIP_PREFIX,    // 7z (.7z)
+    RAR_PREFIX,          // RAR
+    b"GIF87a",           // GIF
+    b"GIF89a",           // GIF
+    b"\xff\xd8\xff",     // JPEG (any variant)
+    b"\x00\x00\x01\x00", // ICO
+    b"OggS",             // Ogg container
+    b"fLaC",             // FLAC
+    WASM_MAGIC,          // WebAssembly module
+    UNIX_AR_PREFIX,      // Unix `ar` archives (.a, .deb)
 ];
 
 #[inline]

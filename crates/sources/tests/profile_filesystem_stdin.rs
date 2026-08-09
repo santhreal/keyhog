@@ -91,7 +91,11 @@ fn filesystem_tgz_records_decode_span_and_derived_bytes() {
         errors.is_empty(),
         "a healthy fixture must not report coverage errors: {errors:?}"
     );
-    assert_eq!(chunks.len(), 1, "the tar member scans as one chunk: {rows:?}");
+    assert_eq!(
+        chunks.len(),
+        1,
+        "the tar member scans as one chunk: {rows:?}"
+    );
     assert!(
         chunks[0].data.contains("AKIAFIXTURE00000001"),
         "member content must reach the scanner: {:?}",

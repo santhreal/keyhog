@@ -1,5 +1,5 @@
 use keyhog_core::{Chunk, SourceError};
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 // The fixture carries a real-SHAPE GitHub classic PAT so the request chunk
 // exercises the Authorization-header path. The 36-char token body is split
@@ -47,7 +47,9 @@ fn expand_har(
     bytes: &[u8],
     path_str: &str,
     max_size: u64,
-) -> Option<Vec<Result<Chunk, SourceError>>> {TestApi.expand_har(bytes, path_str, max_size)}
+) -> Option<Vec<Result<Chunk, SourceError>>> {
+    TestApi.expand_har(bytes, path_str, max_size)
+}
 
 #[test]
 fn try_expand_har_splits_request_and_response() {
@@ -243,10 +245,14 @@ fn wrapped_base64_response_body_is_decoded_before_scanning() {
 }
 
 #[test]
-fn compact_base64_text_preserves_non_ascii_noise() {let compacted = TestApi.compact_har_base64_text("ab\né\tcd");
+fn compact_base64_text_preserves_non_ascii_noise() {
+    let compacted = TestApi.compact_har_base64_text("ab\né\tcd");
     assert_eq!(
-        compacted.as_str(), "abécd", "base64 whitespace compaction must not byte-cast and corrupt non-ASCII text"
-    );}
+        compacted.as_str(),
+        "abécd",
+        "base64 whitespace compaction must not byte-cast and corrupt non-ASCII text"
+    );
+}
 
 #[test]
 fn base64_decoded_invalid_utf8_response_body_is_scanned_lossy() {
@@ -433,7 +439,10 @@ fn credential_bearing_request_url_is_masked_in_the_chunk_path() {
             path, "capture.har#https://***@api.example.com/v1/me?access_token=***",
             "chunk path must carry the masked URL"
         );
-        assert!(!path.contains("hunter2"), "userinfo leaked into path: {path}");
+        assert!(
+            !path.contains("hunter2"),
+            "userinfo leaked into path: {path}"
+        );
         assert!(
             !path.contains(GHP_TOKEN),
             "query credential leaked into path: {path}"

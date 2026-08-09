@@ -61,7 +61,8 @@ fn fb_prefilter_under_one_microsecond_per_chunk() {
     // Required test asset: fail closed rather than skip the whole cost gate.
     let detectors = keyhog_core::load_detectors(&detector_dir())
         .expect("load detectors from the required on-disk detector directory");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::SimdCpu)
+        .expect("SIMD scanner compile");
     let chunks = no_candidate_chunks(20_000);
 
     // Warm caches (HS scratch, lazy regex, gate AC) so the timed loop measures

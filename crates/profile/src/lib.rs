@@ -102,11 +102,11 @@ mod schema_v2;
 mod session;
 mod system;
 
-pub use analysis::take_stage_measurements;
 pub use allocation::{
-    allocation_snapshot, allocation_tracking_installed, reset_allocation_peaks,
-    AllocationSlotV2, AllocationSnapshotV2, TrackingAllocator, ROOT_SLOT, STAGE_SLOTS,
+    allocation_snapshot, allocation_tracking_installed, reset_allocation_peaks, AllocationSlotV2,
+    AllocationSnapshotV2, TrackingAllocator, ROOT_SLOT, STAGE_SLOTS,
 };
+pub use analysis::take_stage_measurements;
 pub use collector::{
     CollectorAvailability, CollectorCapability, CollectorId, SnapshotCollector,
     COLLECTOR_CAPABILITY_VERSION,
@@ -120,11 +120,10 @@ pub use hardware::{
     aggregate_span_hardware, milli_ratio, CpuFrequencySampleV2, HardwareCounterCollector,
     HardwareCounterSampleV2, HardwareCounterSetV2, HardwareFieldSourceV2, HardwareRunEvidenceV2,
     RunSpanHardwareV2, SchedulerCollector, SchedulerEvidenceV2, SchedulerSampleV2,
-    SourcedEvidenceV2, SpanHardwareAggregationV2, SpanHardwareV2, StageHardwareV2,
-    ThreadCpuV2, ThreadHardwareV2, ThreadUtilizationCollector, ThreadUtilizationSampleV2,
-    ThreadUtilizationV2, TopologyCollector, TopologyEvidenceV2, UtilizationEvidenceV2,
-    HARDWARE_EVIDENCE_V2_VERSION, MAX_SAMPLE_THREADS, MAX_UTILIZATION_SAMPLES,
-    SPAN_HARDWARE_V2_VERSION,
+    SourcedEvidenceV2, SpanHardwareAggregationV2, SpanHardwareV2, StageHardwareV2, ThreadCpuV2,
+    ThreadHardwareV2, ThreadUtilizationCollector, ThreadUtilizationSampleV2, ThreadUtilizationV2,
+    TopologyCollector, TopologyEvidenceV2, UtilizationEvidenceV2, HARDWARE_EVIDENCE_V2_VERSION,
+    MAX_SAMPLE_THREADS, MAX_UTILIZATION_SAMPLES, SPAN_HARDWARE_V2_VERSION,
 };
 pub use identity::{
     BuildIdentityInput, ConfigIdentityInput, DetectorIdentityInput, SourceIdentityInput,
@@ -137,27 +136,24 @@ pub use insight::{
 };
 pub use metrics::{
     AnnotationId, CacheId, CounterId, EventId, GaugeId, IndexedCounterId, MacroStageId,
-    MetricDescriptor, MetricId, MetricKind, MetricUnit, QueueId, RetryCause,
-    INDEXED_COUNTER_SLOTS, METRICS,
+    MetricDescriptor, MetricId, MetricKind, MetricUnit, QueueId, RetryCause, INDEXED_COUNTER_SLOTS,
+    METRICS,
 };
 pub use runtime::{
     add_backend_dispatched_bytes, add_counter, add_derived_decoder_bytes, add_indexed_counter,
     add_input_bytes, add_input_units, add_stage_bytes, blocked, counter_span,
-    current_causal_parent, current_runtime, current_task_id, current_work_origin,
-    decision_timer, enabled, instrument_future,
-    instrument_future_with_parent, record_annotation, record_batch_route, record_cache_hit,
-    record_cache_miss, record_distribution, record_event, record_fs_metadata_latency_ns,
-    record_fs_open_latency_ns, record_fs_read_latency_ns, record_io_cache_state,
-    record_network_bytes, record_network_latency_ns, record_network_request,
-    record_queue_dequeue, record_queue_depth_dequeue, record_queue_depth_enqueue,
-    record_queue_enqueue, record_retained_buffer_bytes, record_retry, record_sampled_event,
-    reset,
+    current_causal_parent, current_runtime, current_task_id, current_work_origin, decision_timer,
+    enabled, instrument_future, instrument_future_with_parent, record_annotation,
+    record_batch_route, record_cache_hit, record_cache_miss, record_distribution, record_event,
+    record_fs_metadata_latency_ns, record_fs_open_latency_ns, record_fs_read_latency_ns,
+    record_io_cache_state, record_network_bytes, record_network_latency_ns, record_network_request,
+    record_queue_depth_dequeue, record_queue_depth_enqueue, record_queue_dequeue,
+    record_queue_enqueue, record_retained_buffer_bytes, record_retry, record_sampled_event, reset,
     serial_span, set_attribution, set_enabled, set_gauge, set_queue_depth, set_task_id,
     set_work_origin, span, span_with_parent, take_input_totals, take_metric_distributions,
     take_typed_metrics, Attribution, CausalParent, ContextGuard, CounterSpan, DecisionTimer,
-    EventLossCounts,
-    QueueLinkLossCounts, Runtime, SamplingPolicy, Span, MAX_ANNOTATIONS, MAX_POINT_EVENTS,
-    MAX_QUEUE_LINKS, MAX_RECORDED_SPANS,
+    EventLossCounts, QueueLinkLossCounts, Runtime, SamplingPolicy, Span, MAX_ANNOTATIONS,
+    MAX_POINT_EVENTS, MAX_QUEUE_LINKS, MAX_RECORDED_SPANS,
 };
 pub use schema::{
     CacheState, DaemonState, ResourceSample, ResourceSnapshot, ResourceUsage, RunIdentity,
@@ -169,26 +165,23 @@ pub use schema::{
 pub use schema_v2::{
     AnnotationV2, ArtifactIntegrityV2, BatchRouteV2, BlockedWaitRecordV2, BuildIdentityV2,
     CacheEffectivenessV2, CacheLayerKindV2, CacheLayerV2, CausalProfileV2, CausalRunIdentityV2,
-    ConfigIdentityV2, CoverageStateV2, DaemonIdentityV2, DetectorIdentityV2,
-    DistributionBucketV2, EventStreamV2, Evidence, EvidenceGap, HostIdentityV2,
-    IndexedCounterRecordV2, LatencyBucketV2, LatencyDistributionV2, MetricDistributionV2,
-    RetryRecordV2,
-    OutcomeIdentityV2, PointEventV2,
-    ProducerIdentityV2, ProfileEnvelopeV2, QueueDepthV2, QueueLinkV2, RouteIdentityV2,
-    SchemaVersionV2, SourceIdentityV2, SpanRecordV2, StageConcurrencyV2, TypedMetricRecordV2,
-    WorkerImbalanceV2, WorkerLoadV2, WorkerOccupancyRowV2, WorkerOccupancyV2, WorkOrigin,
-    WorkloadIdentityV2, CACHE_EFFECTIVENESS_V2_VERSION, CAUSAL_IDENTITY_V2_VERSION,
-    CAUSAL_PROFILE_V2_VERSION, EVENT_SCHEMA_VERSION, EXPORTER_VERSION, METRIC_REGISTRY_VERSION,
-    PROFILE_ENVELOPE_V2_VERSION, PROFILE_SCHEMA_V2, PROFILE_SCHEMA_V2_MAJOR,
-    PROFILE_SCHEMA_V2_MINOR, INDEXED_COUNTER_V2_VERSION, RETRY_RECORD_V2_VERSION,
-    STAGE_CONCURRENCY_V2_VERSION,
-    WORKER_OCCUPANCY_V2_VERSION,
+    ConfigIdentityV2, CoverageStateV2, DaemonIdentityV2, DetectorIdentityV2, DistributionBucketV2,
+    EventStreamV2, Evidence, EvidenceGap, HostIdentityV2, IndexedCounterRecordV2, LatencyBucketV2,
+    LatencyDistributionV2, MetricDistributionV2, OutcomeIdentityV2, PointEventV2,
+    ProducerIdentityV2, ProfileEnvelopeV2, QueueDepthV2, QueueLinkV2, RetryRecordV2,
+    RouteIdentityV2, SchemaVersionV2, SourceIdentityV2, SpanRecordV2, StageConcurrencyV2,
+    TypedMetricRecordV2, WorkOrigin, WorkerImbalanceV2, WorkerLoadV2, WorkerOccupancyRowV2,
+    WorkerOccupancyV2, WorkloadIdentityV2, CACHE_EFFECTIVENESS_V2_VERSION,
+    CAUSAL_IDENTITY_V2_VERSION, CAUSAL_PROFILE_V2_VERSION, EVENT_SCHEMA_VERSION, EXPORTER_VERSION,
+    INDEXED_COUNTER_V2_VERSION, METRIC_REGISTRY_VERSION, PROFILE_ENVELOPE_V2_VERSION,
+    PROFILE_SCHEMA_V2, PROFILE_SCHEMA_V2_MAJOR, PROFILE_SCHEMA_V2_MINOR, RETRY_RECORD_V2_VERSION,
+    STAGE_CONCURRENCY_V2_VERSION, WORKER_OCCUPANCY_V2_VERSION,
 };
 pub use session::{Session, SessionActive};
 pub use system::{
     AllocationEvidenceV2, AllocationTotalsV2, DecodeRetentionEvidenceV2, FaultEvidenceV2,
-    IoCacheStateV2, IoEvidenceV2, MemoryEvidenceV2, NetworkEvidenceV2,
-    NetworkProcessCountersV2, PressureEvidenceV2, PressureThermalCollector,
-    PressureThermalSampleV2, StageAllocationV2, SystemIoCollector, SystemIoSampleV2,
-    SystemRunEvidenceV2, ThermalEvidenceV2, SYSTEM_EVIDENCE_V2_VERSION,
+    IoCacheStateV2, IoEvidenceV2, MemoryEvidenceV2, NetworkEvidenceV2, NetworkProcessCountersV2,
+    PressureEvidenceV2, PressureThermalCollector, PressureThermalSampleV2, StageAllocationV2,
+    SystemIoCollector, SystemIoSampleV2, SystemRunEvidenceV2, ThermalEvidenceV2,
+    SYSTEM_EVIDENCE_V2_VERSION,
 };

@@ -12,7 +12,7 @@
 //! and prove an `@` outside the authority (path / query / fragment) is never
 //! mistaken for a userinfo separator (no over-redaction).
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 fn redact(url: &str) -> String {
     TestApi.redact_url(url)

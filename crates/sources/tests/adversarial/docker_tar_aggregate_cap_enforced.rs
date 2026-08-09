@@ -4,7 +4,7 @@
 #[cfg(feature = "docker")]
 use keyhog_sources::skip_counts;
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 #[cfg(feature = "docker")]
 #[test]
 fn docker_tar_aggregate_cap_enforced() {

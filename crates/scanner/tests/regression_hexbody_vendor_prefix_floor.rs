@@ -25,8 +25,8 @@
 mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::sync::OnceLock;
+use keyhog_scanner::ScanBackend;
+use std::sync::LazyLock;
 
 const CPU_BACKENDS: [ScanBackend; 2] = [ScanBackend::SimdCpu, ScanBackend::CpuFallback];
 
@@ -41,13 +41,13 @@ const POSTMAN: &str = "PMAK-4e1d93c6b8072a5f9e13d0c7-b4a8623f1a2b3c4d5e6f70819a0
 const SHIPPO: &str = "shippo_live_4e1d93c6b8072a5f9e13d0c7b4a8623f"; // + 32
 const FLIPT: &str = "flipt_4e1d93c6b8072a5f9e13d0c7b4a8623f1a2b3c4d"; // + 40
 
-fn scanner() -> &'static CompiledScanner {
-    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
-    SCANNER.get_or_init(|| {
+fn scanner() -> &'static support::ExactCpuScanners {
+    static SCANNER: LazyLock<support::ExactCpuScanners> = LazyLock::new(|| {
         let detectors =
             keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
-        CompiledScanner::compile(detectors).expect("compile")
-    })
+        support::ExactCpuScanners::compile(detectors).expect("compile exact CPU scanners")
+    });
+    &SCANNER
 }
 
 fn chunk(text: &str) -> Chunk {

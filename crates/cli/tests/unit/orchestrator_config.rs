@@ -722,4 +722,3 @@ fn detector_parse_cache_refuses_oversized_cache_file() {
         "oversized parse cache must be replaced by a normal cache artifact"
     );
 }
-
