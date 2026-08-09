@@ -424,45 +424,25 @@ impl CompiledScanner {
 
     #[cfg(feature = "gpu")]
     pub(crate) fn phase2_keyword_hints_from_gpu_presence(&self, presence: &[u32]) -> Vec<u32> {
-        let keyword_count = self.phase2_keyword_count;
-        if keyword_count == 0 {
-            return Vec::new();
-        }
+        if self.phase2_keyword_count == 0 { return Vec::new(); }
         let base = self.ac_map.len();
-        let mut hints = Vec::new();
-        for keyword_idx in 0..keyword_count {
-            let literal_idx = base + keyword_idx;
-            let word_idx = literal_idx / 32;
-            let bit = literal_idx % 32;
-            if presence
-                .get(word_idx)
-                .is_some_and(|word| (word & (1u32 << bit)) != 0)
-            {
-                hints.push(keyword_idx as u32);
-            }
-        }
-        hints
+        (0..self.phase2_keyword_count)
+            .filter(|&kw_idx| {
+                let idx = base + kw_idx;
+                presence.get(idx / 32).is_some_and(|w| (w & (1u32 << (idx % 32))) != 0)
+            })
+            .map(|kw_idx| kw_idx as u32)
+            .collect()
     }
 
     #[cfg(feature = "gpu")]
     pub(crate) fn phase2_always_anchor_present_from_gpu_presence(&self, presence: &[u32]) -> bool {
-        let anchor_count = self.phase2_always_anchor_literal_count;
-        if anchor_count == 0 {
-            return false;
-        }
+        if self.phase2_always_anchor_literal_count == 0 { return false; }
         let base = self.ac_map.len() + self.phase2_keyword_count;
-        for anchor_idx in 0..anchor_count {
-            let literal_idx = base + anchor_idx;
-            let word_idx = literal_idx / 32;
-            let bit = literal_idx % 32;
-            if presence
-                .get(word_idx)
-                .is_some_and(|word| (word & (1u32 << bit)) != 0)
-            {
-                return true;
-            }
-        }
-        false
+        (0..self.phase2_always_anchor_literal_count).any(|anchor_idx| {
+            let idx = base + anchor_idx;
+            presence.get(idx / 32).is_some_and(|w| (w & (1u32 << (idx % 32))) != 0)
+        })
     }
 
     pub(crate) fn mark_triggered_pattern(
@@ -487,30 +467,26 @@ impl CompiledScanner {
     #[doc(hidden)]
     #[cfg(debug_assertions)]
     pub fn reset_confirmed_pattern_scanned_bytes_for_diagnostics(&self) {
-        self.confirmed_pattern_scanned_bytes
-            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.confirmed_pattern_scanned_bytes.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     #[doc(hidden)]
     #[cfg(debug_assertions)]
     #[must_use]
     pub fn confirmed_pattern_scanned_bytes_for_diagnostics(&self) -> u64 {
-        self.confirmed_pattern_scanned_bytes
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.confirmed_pattern_scanned_bytes.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     #[doc(hidden)]
     #[cfg(debug_assertions)]
     pub fn reset_entropy_scanned_bytes_for_diagnostics(&self) {
-        self.entropy_scanned_bytes
-            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.entropy_scanned_bytes.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     #[doc(hidden)]
     #[cfg(debug_assertions)]
     #[must_use]
     pub fn entropy_scanned_bytes_for_diagnostics(&self) -> u64 {
-        self.entropy_scanned_bytes
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.entropy_scanned_bytes.load(std::sync::atomic::Ordering::Relaxed)
     }
 }

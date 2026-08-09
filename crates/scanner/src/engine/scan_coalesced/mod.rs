@@ -7,11 +7,11 @@ use super::phase2::Phase2AlwaysActiveGpuEvidence;
 use super::scan_filters::*;
 use super::*;
 
+#[cfg(feature = "simd")]
 pub(crate) mod trigger_cache;
 
-pub(crate) use trigger_cache::ReusableSimdTriggerCache;
 #[cfg(feature = "simd")]
-pub(crate) use trigger_cache::{mark_hs_trigger, with_trigger_buffer};
+pub(crate) use trigger_cache::{mark_hs_trigger, with_trigger_buffer, ReusableSimdTriggerCache};
 
 impl CompiledScanner {
     // The coalesced phase-2 tail is only reachable from the SIMD producer

@@ -1,18 +1,4 @@
-use super::fixtures::*;
-use super::fixtures::decode_workload_sketch;
-use super::fixtures::workload_key;
-use super::super::evidence::*;
-use super::super::host::*;
-use super::super::store::*;
-use super::super::workload::*;
-use super::super::workload::decode_workload_sketch as decode_workload_sketch_with_plan;
-use super::super::workload::workload_key as workload_key_with_plan;
-use super::super::*;
-use keyhog_core::*;
-use keyhog_scanner::*;
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::sync::{Arc, Mutex};
-use std::result::Result as StdResult;
+use super::{load_autoroute_cache, test_host, test_rules_digest, AUTOROUTE_CACHE_VERSION};
 
 /// An outdated cache (older `version`, written before a field was added to the
 /// schema) must be rejected on its schema version with a clear, actionable
@@ -23,10 +9,8 @@ use std::result::Result as StdResult;
 /// version gate sat after the full deserialize and could never run.
 #[test]
 fn autoroute_cache_rejects_outdated_schema_with_clear_version_error() {
-    let path = std::env::temp_dir().join(format!(
-        "keyhog_autoroute_outdated_{}.json",
-        std::process::id()
-    ));
+    let dir = tempfile::tempdir().expect("autoroute outdated cache tempdir");
+    let path = dir.path().join("autoroute.json");
     // A genuinely old cache: version 1, structurally incompatible with the
     // current schema (no `decode_density_bucket`, no `binary_version`, …).
     let outdated = br#"{
@@ -51,7 +35,6 @@ fn autoroute_cache_rejects_outdated_schema_with_clear_version_error() {
     )
     .expect_err("outdated-schema cache must be rejected")
     .to_string();
-    let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 
     assert!(
         err.contains("unsupported autoroute cache version"),
@@ -66,10 +49,8 @@ fn autoroute_cache_rejects_outdated_schema_with_clear_version_error() {
 
 #[test]
 fn autoroute_cache_rejects_v25_decode_density_identity_before_payload_decode() {
-    let path = std::env::temp_dir().join(format!(
-        "keyhog_autoroute_v25_decode_density_{}.json",
-        std::process::id()
-    ));
+    let dir = tempfile::tempdir().expect("v25 autoroute cache tempdir");
+    let path = dir.path().join("autoroute.json");
     std::fs::write(
         &path,
         br#"{"version":25,"configs":[{"decisions":[[{"decode_density_bucket":3},{}]]}]}"#,
@@ -85,7 +66,6 @@ fn autoroute_cache_rejects_v25_decode_density_identity_before_payload_decode() {
     )
     .expect_err("v25 decode-density identity must never be reused as current decoder work")
     .to_string();
-    let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 
     assert!(
         error.contains("unsupported autoroute cache version 25")
@@ -101,10 +81,8 @@ fn autoroute_cache_rejects_v25_decode_density_identity_before_payload_decode() {
 
 #[test]
 fn autoroute_cache_rejects_v28_before_phase1_identity_decode() {
-    let path = std::env::temp_dir().join(format!(
-        "keyhog_autoroute_v28_phase1_{}.json",
-        std::process::id()
-    ));
+    let dir = tempfile::tempdir().expect("v28 autoroute cache tempdir");
+    let path = dir.path().join("autoroute.json");
     std::fs::write(
         &path,
         br#"{"version":28,"configs":[{"decisions":[[{"bytes_bucket":23,"chunks_bucket":0,"max_file_bucket":23,"pattern_bucket":9,"decode_kind_mask":0,"decode_candidate_count_bucket":0,"decode_candidate_bytes_bucket":0,"decode_sample_bytes_bucket":0,"source_class_hash":1},{}]]}]}"#,
@@ -120,7 +98,6 @@ fn autoroute_cache_rejects_v28_before_phase1_identity_decode() {
     )
     .expect_err("v28 identity must never be reused without phase-one admission classes")
     .to_string();
-    let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 
     assert!(
         error.contains("unsupported autoroute cache version 28")
@@ -136,10 +113,8 @@ fn autoroute_cache_rejects_v28_before_phase1_identity_decode() {
 
 #[test]
 fn autoroute_cache_rejects_v29_before_source_mixture_decode() {
-    let path = std::env::temp_dir().join(format!(
-        "keyhog_autoroute_v29_source_mixture_{}.json",
-        std::process::id()
-    ));
+    let dir = tempfile::tempdir().expect("v29 autoroute cache tempdir");
+    let path = dir.path().join("autoroute.json");
     std::fs::write(
         &path,
         br#"{"version":29,"configs":[{"decisions":[[{"source_class_hash":1},{}]]}]}"#,
@@ -155,7 +130,6 @@ fn autoroute_cache_rejects_v29_before_source_mixture_decode() {
     )
     .expect_err("v29 identity must never be reused without exact source mixtures")
     .to_string();
-    let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 
     assert!(
         error.contains("unsupported autoroute cache version 29")
@@ -171,10 +145,8 @@ fn autoroute_cache_rejects_v29_before_source_mixture_decode() {
 
 #[test]
 fn autoroute_cache_rejects_v30_before_workload_binding_decode() {
-    let path = std::env::temp_dir().join(format!(
-        "keyhog_autoroute_v30_workload_binding_{}.json",
-        std::process::id()
-    ));
+    let dir = tempfile::tempdir().expect("v30 autoroute cache tempdir");
+    let path = dir.path().join("autoroute.json");
     std::fs::write(
         &path,
         br#"{"version":30,"configs":[{"decisions":[[{"source_mixture":{"entries":[]}},{}]]}]}"#,
@@ -190,7 +162,6 @@ fn autoroute_cache_rejects_v30_before_workload_binding_decode() {
     )
     .expect_err("v30 decisions must never be reused without workload binding")
     .to_string();
-    let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 
     assert!(
         error.contains("unsupported autoroute cache version 30")

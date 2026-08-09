@@ -5,12 +5,7 @@ use super::super::workload::*;
 use super::super::workload::decode_workload_sketch as decode_workload_sketch_with_plan;
 use super::super::workload::workload_key as workload_key_with_plan;
 use super::super::*;
-use keyhog_core::*;
-use keyhog_scanner::*;
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::sync::{Arc, Mutex};
 use std::result::Result as StdResult;
-
 pub(crate) fn route_timings(
     simd: BackendTimingEvidence,
     cpu: Option<BackendTimingEvidence>,

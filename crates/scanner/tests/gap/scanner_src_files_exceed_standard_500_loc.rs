@@ -25,6 +25,18 @@ fn no_scanner_src_file_exceeds_standard_500_loc_cap() {
             manifest.join("src/suppression/mod.rs"),
         ),
         ("engine/backend/mod.rs", manifest.join("src/engine/backend/mod.rs")),
+        (
+            "engine/backend/dispatch.rs",
+            manifest.join("src/engine/backend/dispatch.rs"),
+        ),
+        (
+            "engine/backend/prepared.rs",
+            manifest.join("src/engine/backend/prepared.rs"),
+        ),
+        (
+            "engine/backend/triggered.rs",
+            manifest.join("src/engine/backend/triggered.rs"),
+        ),
         ("gpu.rs", manifest.join("src/gpu.rs")),
         ("compiler.rs", manifest.join("src/compiler.rs")),
     ];

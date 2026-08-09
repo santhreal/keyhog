@@ -1,5 +1,6 @@
 //! Trigger buffer pool and SIMD trigger caching for scan coalescing.
 
+#[cfg(feature = "simd")]
 use super::*;
 #[cfg(feature = "simd")]
 use std::cell::RefCell;

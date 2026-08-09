@@ -406,28 +406,14 @@ pub(crate) fn build_packed_simd_compile_plan(
         ));
     }
 
-    let unsupported = program
-        .unsupported_pattern_ids
-        .iter()
-        .map(|&id| id as usize)
-        .collect::<Vec<_>>();
-    let unsupported_set = unsupported
-        .iter()
-        .copied()
-        .collect::<std::collections::HashSet<_>>();
+    let unsupported: Vec<usize> = program.unsupported_pattern_ids.iter().map(|&id| id as usize).collect();
+    let unsupported_set: std::collections::HashSet<usize> = unsupported.iter().copied().collect();
     let pattern_map = program
         .patterns
         .iter()
         .enumerate()
         .filter(|(id, _)| !unsupported_set.contains(id))
-        .map(|(id, pattern)| {
-            (
-                id,
-                pattern.detector_index as usize,
-                pattern.pattern_index as usize,
-                pattern.reports_start,
-            )
-        })
+        .map(|(id, p)| (id, p.detector_index as usize, p.pattern_index as usize, p.reports_start))
         .collect();
     let pattern_count = program.patterns.len();
 
@@ -499,4 +485,3 @@ impl SimdPhase1CompilePlan {
             .map_err(|error| error.to_string())
     }
 }
-

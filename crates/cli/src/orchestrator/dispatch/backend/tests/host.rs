@@ -1,18 +1,8 @@
-use super::fixtures::*;
+use super::*;
 use super::fixtures::decode_workload_sketch;
 use super::fixtures::workload_key;
-use super::super::evidence::*;
-use super::super::host::*;
-use super::super::store::*;
-use super::super::workload::*;
 use super::super::workload::decode_workload_sketch as decode_workload_sketch_with_plan;
 use super::super::workload::workload_key as workload_key_with_plan;
-use super::super::*;
-use keyhog_core::*;
-use keyhog_scanner::*;
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::sync::{Arc, Mutex};
-use std::result::Result as StdResult;
 
 #[test]
 fn autoroute_host_identity_uses_dependency_owned_gpu_compile_fact() {
