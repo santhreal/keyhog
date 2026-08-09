@@ -657,7 +657,6 @@ pub(super) fn process_entry(
         return;
     }
 
-
     if ext.eq_ignore_ascii_case("pdf") {
         run_derived_extractor(
             |counted| pdf::extract_pdf_chunks(&path, file_size, live_mtime_ns, max_size, counted),

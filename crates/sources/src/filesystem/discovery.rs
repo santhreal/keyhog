@@ -168,7 +168,9 @@ fn configured_walk_builder(root: &Path, config: &FilesystemWalkConfig) -> ignore
             if entry.path() == root_owned {
                 return true;
             }
-            let is_dir = entry.file_type().is_some_and(|file_type| file_type.is_dir());
+            let is_dir = entry
+                .file_type()
+                .is_some_and(|file_type| file_type.is_dir());
             if is_dir && super::filter::is_default_excluded_dir_name(entry.file_name()) {
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
                 return false;
@@ -285,10 +287,10 @@ pub(super) fn collect_unbounded_sorted(
     let mut errors = Vec::new();
     let mut count = 0usize;
     let mut bytes = 0u64;
+    // Latch after the first descriptor-rebuild attempt (Ok or Err) so a deep tree
+    // with many ENAMETOOLONG rows cannot restart a full root walk per error.
     #[cfg(target_os = "linux")]
-    let mut path_limit_seen = false;
-    #[cfg(target_os = "linux")]
-    let mut rebuild_succeeded = false;
+    let mut rebuild_attempted = false;
     #[cfg(target_os = "linux")]
     let excluded_before_walk = crate::skip_counts().excluded;
     #[cfg(target_os = "linux")]
@@ -334,8 +336,8 @@ pub(super) fn collect_unbounded_sorted(
                 }
                 Err(error) => {
                     #[cfg(target_os = "linux")]
-                    if is_name_too_long(&error) && rebuild_viable && !rebuild_succeeded {
-                        path_limit_seen = true;
+                    if is_name_too_long(&error) && rebuild_viable && !rebuild_attempted {
+                        rebuild_attempted = true;
                         let walk_excluded = crate::skip_counts()
                             .excluded
                             .saturating_sub(excluded_before_walk);
@@ -345,11 +347,11 @@ pub(super) fn collect_unbounded_sorted(
                                 count = replacement_count;
                                 bytes = replacement_bytes;
                                 crate::skip::subtract_excluded(walk_excluded);
-                                rebuild_succeeded = true;
                                 return false;
                             }
                             Err(_rebuild_error) => {
-                                // Keep walking so coverage is not truncated.
+                                // Keep walking so coverage is not truncated. Do not
+                                // retry descriptor rebuild on later ENAMETOOLONG rows.
                             }
                         }
                     }
@@ -365,26 +367,6 @@ pub(super) fn collect_unbounded_sorted(
             }
             true
         });
-    }
-
-    #[cfg(target_os = "linux")]
-    if path_limit_seen && !rebuild_succeeded {
-        let walk_excluded = crate::skip_counts()
-            .excluded
-            .saturating_sub(excluded_before_walk);
-        match collect_descriptor_entries(root, config, has_ignore_patterns) {
-            Ok((replacement, replacement_count, replacement_bytes)) => {
-                builder = Some(replacement);
-                count = replacement_count;
-                bytes = replacement_bytes;
-                crate::skip::subtract_excluded(walk_excluded);
-            }
-            Err(error) => {
-                // Keep the completed pathname walk. Over-long paths remain as
-                // unreadable coverage rows already recorded above.
-                let _ = error;
-            }
-        }
     }
 
     #[cfg(unix)]
@@ -434,7 +416,6 @@ fn is_name_too_long(error: &impl std::fmt::Display) -> bool {
     let rendered = error.to_string();
     rendered.contains("File name too long") || rendered.contains("os error 36")
 }
-
 
 #[cfg(target_os = "linux")]
 fn descriptor_rebuild_viable(
@@ -511,8 +492,10 @@ fn collect_descriptor_entries(
             }
             DescriptorEntryKind::File { size } => {
                 let name_str = name.and_then(OsStr::to_str);
-                if matches!(name_str, Some(".gitignore") | Some(".ignore") | Some(".keyhogignore"))
-                {
+                if matches!(
+                    name_str,
+                    Some(".gitignore") | Some(".ignore") | Some(".keyhogignore")
+                ) {
                     return Err(SourceError::Other(format!(
                         "descriptor-relative discovery encountered ignore metadata at '{}'; refusing to bypass ignore semantics for a path beyond the platform pathname limit",
                         entry.path.display()
