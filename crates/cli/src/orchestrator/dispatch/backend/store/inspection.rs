@@ -119,6 +119,7 @@ impl AutorouteCacheInspection {
         }
     }
 }
+#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AutorouteRemediationSchema {
@@ -126,8 +127,8 @@ pub(crate) struct AutorouteRemediationSchema {
     pub(crate) invalid_classes: Vec<String>,
     pub(crate) recalibration_command: String,
 }
-
 impl AutorouteRemediationSchema {
+    #[allow(dead_code)]
     pub(crate) fn render_terminal_output(&self) -> String {
         let mut out = format!("Readiness: {}\n", self.readiness);
         if !self.invalid_classes.is_empty() {
@@ -140,8 +141,8 @@ impl AutorouteRemediationSchema {
         out
     }
 }
-
 impl AutorouteCacheInspection {
+    #[allow(dead_code)]
     pub(crate) fn remediation_schema(&self) -> AutorouteRemediationSchema {
         let readiness = self.readiness();
         let recalibration_command = readiness

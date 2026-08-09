@@ -10,6 +10,7 @@ mod telemetry;
 mod validation;
 
 pub(super) use codec::autoroute_cache_file_presence;
+#[allow(unused_imports)]
 pub(crate) use inspection::{
     inspect_autoroute_cache, AutorouteReadiness, AutorouteRemediationSchema,
 };
