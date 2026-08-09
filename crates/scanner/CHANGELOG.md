@@ -3,6 +3,7 @@
 ## 0.5.68 - 2026-08-05
 
 - Speed up decode-through on repetitive single-line JSON: memoize base64 trial-decode by candidate value, intern extracted candidate strings as `Arc<str>`, and skip duplicate Caesar inputs that would emit identical bare chunks.
+- Bound the base64 success memo to second-sighting retention: failures stay memoized immediately, but successful UTF-8 text is retained only after a candidate repeats, so unique-blob corpora do not keep a second full-size copy of every decode for the whole chunk.
 - Skip decode-through (and always-active phase-2 presence work) on markerless single-line chunks/windows that lack classical encode markers (`+`, `/`, `=`, `%`, `\`). Plaintext credentials still match; windows that carry markers still decode.
 - Keep the confirmed companion gate's allow-set in the per-worker scratch bitset instead of allocating a full `ac_map`-sized `Vec<bool>` each chunk.
 - Speed the confirmed companion gate with a first-bigram absence prescreen and a thread-local Aho-Corasick cache for repeated active literal sets across windows.

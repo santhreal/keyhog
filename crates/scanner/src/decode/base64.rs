@@ -27,14 +27,23 @@ impl Decoder for Base64Decoder {
         // Long single-line JSON corpora often repeat the same opaque token
         // tens of thousands of times; trial-decoding each occurrence is pure
         // waste when the byte payload is identical. Failed/non-text outcomes
-        // are memoized as None so subsequent hits skip inflate/UTF-8 work.
-        // Successful text is still spliced once per occurrence (recall: each
-        // span needs its own replacement for location-accurate companions).
+        // are memoized as None immediately (cheap). Successful text is retained
+        // only after a second sighting of the same candidate, so unique-blob
+        // corpora do not keep a second full-size copy of every decode for the
+        // whole chunk. Successful text is still spliced once per occurrence
+        // (recall: each span needs its own replacement for location-accurate
+        // companions).
         let mut decoded_memo: [HashMap<std::sync::Arc<str>, Option<String>>; 4] = [
             HashMap::new(),
             HashMap::new(),
             HashMap::new(),
             HashMap::new(),
+        ];
+        let mut seen_once: [std::collections::HashSet<std::sync::Arc<str>>; 4] = [
+            std::collections::HashSet::new(),
+            std::collections::HashSet::new(),
+            std::collections::HashSet::new(),
+            std::collections::HashSet::new(),
         ];
         visit_classified_base64_string_spans(
             &chunk.data,
@@ -43,7 +52,8 @@ impl Decoder for Base64Decoder {
                 if !open {
                     return;
                 }
-                let slot = &mut decoded_memo[base64_variant_memo_index(variant)];
+                let idx = base64_variant_memo_index(variant);
+                let slot = &mut decoded_memo[idx];
                 if let Some(cached) = slot.get(&b64_match.value) {
                     if let Some(text) = cached {
                         let (start, end) = b64_match.span();
@@ -75,7 +85,21 @@ impl Decoder for Base64Decoder {
                     let (start, end) = b64_match.span();
                     open = batch.push(start, end, text.clone());
                 }
-                slot.insert(std::sync::Arc::clone(&b64_match.value), text);
+                match text {
+                    None => {
+                        slot.insert(std::sync::Arc::clone(&b64_match.value), None);
+                    }
+                    Some(text) => {
+                        let seen = &mut seen_once[idx];
+                        if seen.contains(&b64_match.value) {
+                            seen.remove(&b64_match.value);
+                            slot.insert(std::sync::Arc::clone(&b64_match.value), Some(text));
+                        } else {
+                            // First success: do not retain the decoded String.
+                            seen.insert(std::sync::Arc::clone(&b64_match.value));
+                        }
+                    }
+                }
             },
         );
         if open {
