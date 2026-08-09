@@ -20,7 +20,10 @@ use std::process::{Command, Output};
 /// A leak the default corpus reports. Object bodies are built from this so a
 /// dropped object is visible as a missing finding, not just a missing byte.
 fn object_body(index: usize) -> String {
-    format!("AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZB{}\n", (b'A' + index as u8) as char)
+    format!(
+        "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZB{}\n",
+        (b'A' + index as u8) as char
+    )
 }
 
 const OBJECTS: usize = 4;
@@ -35,6 +38,8 @@ fn run(args: &[&str]) -> Output {
         .args([
             "scan",
             "--daemon=off",
+            "--backend",
+            "simd",
             "--no-suppress-test-fixtures",
             "--allow-private-cloud-endpoint",
             "--format",
@@ -74,7 +79,10 @@ fn gcs_listing() -> String {
             )
         })
         .collect();
-    format!(r#"{{"kind":"storage#objects","items":[{}]}}"#, items.join(","))
+    format!(
+        r#"{{"kind":"storage#objects","items":[{}]}}"#,
+        items.join(",")
+    )
 }
 
 /// Serve one GCS bucket: the JSON listing plus every object body.
@@ -212,7 +220,10 @@ fn limit_web_response_bytes_bounds_the_listing_response_exactly() {
 fn limit_cloud_max_objects_cuts_the_listing_and_surfaces_the_remainder() {
     let server = gcs_server();
 
-    let exact = scan_gcs(&server, &["--limit-cloud-max-objects", &OBJECTS.to_string()]);
+    let exact = scan_gcs(
+        &server,
+        &["--limit-cloud-max-objects", &OBJECTS.to_string()],
+    );
     assert_eq!(
         findings(&exact),
         OBJECTS,

@@ -55,7 +55,13 @@ fn commit_file(repo: &Path, name: &str, body: &str) {
 fn scan(repo: &Path, args: &[&str]) -> Output {
     let mut command = Command::new(binary());
     command
-        .args(["scan", "--daemon=off", "--no-suppress-test-fixtures"])
+        .args([
+            "scan",
+            "--daemon=off",
+            "--backend",
+            "simd",
+            "--no-suppress-test-fixtures",
+        ])
         .args(args)
         .current_dir(repo);
     command.output().expect("spawn keyhog")
@@ -308,7 +314,10 @@ fn limit_git_chunks_cuts_deterministically_and_only_reports_a_real_gap() {
          reporting a gap would be crying wolf; stderr={exact_stderr}"
     );
     let all = findings(&exact);
-    assert!(all >= 2, "fixture must yield several chunks worth of findings");
+    assert!(
+        all >= 2,
+        "fixture must yield several chunks worth of findings"
+    );
 
     let one = scan(
         repo,
@@ -336,7 +345,14 @@ fn limit_git_chunks_cuts_deterministically_and_only_reports_a_real_gap() {
     // a budget of zero can only ever produce a false clean.
     let zero = scan(
         repo,
-        &["--git-history", ".", "--limit-git-chunks", "0", "--format", "jsonl"],
+        &[
+            "--git-history",
+            ".",
+            "--limit-git-chunks",
+            "0",
+            "--format",
+            "jsonl",
+        ],
     );
     assert_ne!(
         zero.status.code(),

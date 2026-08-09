@@ -100,6 +100,20 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
+path = "crates/cli/src/daemon/control.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/daemon/sigpipe.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
 path = "crates/cli/src/daemon/mod.rs"
 boundary = true
 error = true
@@ -149,7 +163,21 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
+path = "crates/cli/src/execution_pack_install.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
 path = "crates/cli/src/installer.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/installer/execution_packs.rs"
 boundary = true
 error = true
 adversarial = true
@@ -226,6 +254,13 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
+path = "crates/cli/src/orchestrator/dispatch/backend/store/telemetry.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
 path = "crates/cli/src/orchestrator/dispatch/backend/tests.rs"
 boundary = true
 error = true
@@ -269,6 +304,13 @@ e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/orchestrator/reporting.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/orchestrator/reporting/progress.rs"
 boundary = true
 error = true
 adversarial = true
@@ -352,6 +394,27 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
+path = "crates/cli/src/subcommands/backend/autoroute.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/subcommands/backend/report.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/subcommands/backend/self_test.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
 path = "crates/cli/src/subcommands/calibrate.rs"
 boundary = true
 error = true
@@ -380,6 +443,13 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
+path = "crates/cli/src/subcommands/compile_execution_packs.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
 path = "crates/cli/src/subcommands/config.rs"
 boundary = true
 error = true
@@ -395,6 +465,13 @@ e2e_linked = true
 
 [[module]]
 path = "crates/cli/src/subcommands/detectors.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/subcommands/detectors/mechanisms.rs"
 boundary = true
 error = true
 adversarial = true
