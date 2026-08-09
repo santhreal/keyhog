@@ -177,7 +177,7 @@ fn looks_binary_header_check(bytes: &[u8]) -> bool {
     false
 }
 
-pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
+pub(in crate::filesystem) fn looks_binary(bytes: &[u8]) -> bool {
     if has_binary_magic(bytes) || has_utf16_nul_pattern(bytes) {
         return true;
     }
