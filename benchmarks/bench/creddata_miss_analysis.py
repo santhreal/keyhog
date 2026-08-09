@@ -509,8 +509,9 @@ def cluster_fn_misses(
     ranked: list[dict[str, object]] = []
     for (detector, gate), count in grouped.items():
         new_tp = tp_count + count
+        new_p = new_tp / (new_tp + fp_count) if (new_tp + fp_count) > 0 else 0.0
         new_r = new_tp / total_positives
-        new_f1 = (2 * base_p * new_r / (base_p + new_r)) if (base_p + new_r) > 0 else 0.0
+        new_f1 = (2 * new_p * new_r / (new_p + new_r)) if (new_p + new_r) > 0 else 0.0
         f1_gain = round(new_f1 - base_f1, 4)
         ranked.append(
             {
@@ -605,18 +606,37 @@ def cmd_cluster(root: pathlib.Path, scanner_bin: str, backend: str = "simd") -> 
 
     tp_count = 0
     fn_items: list[dict[str, str]] = []
+    fp_count = sum(
+        1
+        for r, find_list in finds.items()
+        for c, det in find_list
+        if not any(val == c for rel_pos, val in pos if rel_pos == r)
+    )
+
     for rel, val in pos:
         rv = _redact(val)
-        matched_find = [det for (c, det) in finds.get(rel, []) if val == c or val in c or c in val]
+        matched_find = [det for (c, det) in finds.get(rel, []) if val == c]
         if matched_find:
             tp_count += 1
             continue
-        matched_supp = [r for (cr, r, d) in supp.get(rel, set()) if cr == rv]
-        det = "generic-secret"
-        gate = matched_supp[0] if matched_supp else "un-generated_candidate"
+        matched_supp = [(r, d) for (cr, r, d) in supp.get(rel, set()) if cr == rv]
+        if matched_supp:
+            dets = sorted({d for (r, d) in matched_supp if d})
+            det = f"ambiguous:{','.join(dets)}" if len(dets) > 1 else (dets[0] if dets else "unmapped_detector")
+            gates = sorted({r for (r, d) in matched_supp if r})
+            gate = ",".join(gates) if gates else "un-generated_candidate"
+        else:
+            matched_finds = [det for (c, det) in finds.get(rel, []) if c == val]
+            if matched_finds:
+                dets = sorted({d for d in matched_finds if d})
+                det = f"ambiguous:{','.join(dets)}" if len(dets) > 1 else (dets[0] if dets else "unmapped_detector")
+                gate = "un-generated_candidate"
+            else:
+                det = "unmapped_detector"
+                gate = "un-generated_candidate"
         fn_items.append({"detector": det, "failed_gate": gate})
 
-    clusters = cluster_fn_misses(fn_items, tp_count, len(pos), 0)
+    clusters = cluster_fn_misses(fn_items, tp_count, len(pos), fp_count)
     print("\n=== CredData Miss Clusters (Ranked by Recoverable F1 Gain) ===")
     print(f"{'Detector':30} {'Failed Gate':35} {'FNs':>5} {'Recov F1 Gain':>14}")
     print("-" * 88)

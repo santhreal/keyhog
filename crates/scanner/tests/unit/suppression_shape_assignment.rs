@@ -123,7 +123,10 @@ fn high_entropy_base64_secret_recall_and_negative_suppression_boundaries() {
     let hex_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     let low_entropy_b64 = "Y2FsaWNvK29uL2t1YmVz/2FtcGxlc3RyaW5nK2FkZA==";
 
-    assert!(suppression_stage(doc_negative).is_some() || doc_negative.contains("PLACEHOLDER"));
+    assert_eq!(
+        suppression_stage(doc_negative),
+        Some(StageId::ShapeGate("placeholder_word"))
+    );
     assert!(looks_like_entropy_canonical_hex_digest(hex_digest));
     assert!(looks_like_generic_random_base64_blob_decoy(
         low_entropy_b64,

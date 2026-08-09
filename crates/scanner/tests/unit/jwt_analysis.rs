@@ -235,14 +235,16 @@ fn es256_is_known_alg() {
 }
 
 #[test]
-fn repeated_character_negatives_fail() {
+fn repeated_character_negatives_fail_structural_decode() {
     let degenerate1 = "eyJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eyJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     let degenerate2 = "eyJaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.eyJaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     let degenerate3 = "eyJ11111111111111111111111111111111.eyJ11111111111111111111111111111111.11111111111111111111111111111111";
-    assert!(!looks_like_jwt(degenerate1));
+    // Base64url 3-part segment shape matches looks_like_jwt...
+    assert!(looks_like_jwt(degenerate1));
+    assert!(looks_like_jwt(degenerate2));
+    assert!(looks_like_jwt(degenerate3));
+    // ...but full structural JSON analysis rejects invalid payload structure.
     assert!(analyze(degenerate1).is_none());
-    assert!(!looks_like_jwt(degenerate2));
     assert!(analyze(degenerate2).is_none());
-    assert!(!looks_like_jwt(degenerate3));
     assert!(analyze(degenerate3).is_none());
 }

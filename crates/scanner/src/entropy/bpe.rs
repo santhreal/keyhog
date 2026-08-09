@@ -220,6 +220,10 @@ fn byte_pair_count(piece: &[u8]) -> usize {
 /// Bound retained candidate material to at most 64 KiB per scanner worker.
 /// Longer values still tokenize exactly but do not remain resident.
 const TOKEN_CACHE_ENTRIES: usize = 256;
+const TOKEN_CACHE_CAPACITY: NonZeroUsize = match NonZeroUsize::new(TOKEN_CACHE_ENTRIES) {
+    Some(n) => n,
+    None => NonZeroUsize::MIN,
+};
 const TOKEN_CACHE_MAX_VALUE_BYTES: usize = 256;
 
 struct TokenCountCacheEntry {
@@ -232,10 +236,7 @@ struct TokenCountCacheEntry {
 
 thread_local! {
     static TOKEN_COUNT_CACHE: RefCell<LruCache<u64, TokenCountCacheEntry>> = RefCell::new(
-        LruCache::new(
-            NonZeroUsize::new(TOKEN_CACHE_ENTRIES)
-                .expect("TOKEN_CACHE_ENTRIES is a non-zero compile-time constant"),
-        )
+        LruCache::new(TOKEN_CACHE_CAPACITY)
     );
     #[cfg(test)]
     static TOKENIZER_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
