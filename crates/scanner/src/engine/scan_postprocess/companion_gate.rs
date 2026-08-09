@@ -66,11 +66,7 @@ pub(crate) fn companion_arms(src: &str) -> Arc<Vec<Vec<String>>> {
 
 /// Evaluate companion gates for every active confirmed pattern in one haystack
 /// pass. `out[pat_idx]` is true when the pattern may still match.
-pub(crate) fn companions_allow_batch(
-    patterns: &[(usize, &str)],
-    text: &str,
-    out: &mut [bool],
-) {
+pub(crate) fn companions_allow_batch(patterns: &[(usize, &str)], text: &str, out: &mut [bool]) {
     out.fill(true);
     if patterns.is_empty() {
         return;
@@ -179,7 +175,8 @@ pub(crate) fn companions_deny_absent(
                 return;
             }
 
-            let bigrams = FirstBigramSet::from_literals(literals.iter().map(String::as_bytes), true);
+            let bigrams =
+                FirstBigramSet::from_literals(literals.iter().map(String::as_bytes), true);
             let Ok(ac) = AhoCorasickBuilder::new()
                 .match_kind(MatchKind::Standard)
                 .kind(Some(AhoCorasickKind::ContiguousNFA))

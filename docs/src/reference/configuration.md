@@ -494,6 +494,7 @@ prefilter_truncate = true
 fallback_prefix_gate = false
 decode_focus = true
 confirmed_suffix_gate = true
+confirmed_companion_gate = true
 no_candidate_gate = true
 fallback_localizer = true
 gpu_recall_floor = false
@@ -505,6 +506,8 @@ printed by `keyhog config --effective`. They do not have CLI flags because
 per-run hidden recall changes would invalidate installer calibration.
 `hs_shard_target` controls Hyperscan patterns-per-shard during compile; changing
 it affects compile/cache shape and autoroute identity but not detector recall.
+`confirmed_companion_gate` skips confirmed patterns whose required mid-literals
+are all absent in the chunk (recall-identical to running those patterns cold).
 `fallback_localizer` moves plain phase-two candidates to one ASCII anchor index.
 It is enabled by default, which avoids compiling and scanning the full portable
 phase-two marking set when the anchor index can localize candidates. Autoroute

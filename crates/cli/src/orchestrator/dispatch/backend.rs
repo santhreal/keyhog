@@ -505,8 +505,11 @@ impl CachedBackendRouter {
         record_hit();
         Ok(BackendSelection {
             backend: route.backend,
-                        phase1_plan: Some(phase1_plan_for_selected_backend(
-                scanner, route.backend, phase1_plan, batch,
+            phase1_plan: Some(phase1_plan_for_selected_backend(
+                scanner,
+                route.backend,
+                phase1_plan,
+                batch,
             )),
             execution_route: route.execution_route(),
             recovery_plan: automatic_recovery_plan(
@@ -727,8 +730,11 @@ impl MeasuredBackendRouter {
             }
             return Ok(BackendSelection {
                 backend: route.backend,
-                                phase1_plan: Some(phase1_plan_for_selected_backend(
-                    scanner, route.backend, phase1_plan, batch,
+                phase1_plan: Some(phase1_plan_for_selected_backend(
+                    scanner,
+                    route.backend,
+                    phase1_plan,
+                    batch,
                 )),
                 execution_route: route.execution_route(),
                 recovery_plan: if self.calibration_mode {
@@ -780,8 +786,11 @@ impl MeasuredBackendRouter {
             record_hit();
             return Ok(BackendSelection {
                 backend: route.backend,
-                                phase1_plan: Some(phase1_plan_for_selected_backend(
-                    scanner, route.backend, phase1_plan, batch,
+                phase1_plan: Some(phase1_plan_for_selected_backend(
+                    scanner,
+                    route.backend,
+                    phase1_plan,
+                    batch,
                 )),
                 execution_route: route.execution_route(),
                 recovery_plan: automatic_recovery_plan(
@@ -847,8 +856,11 @@ impl MeasuredBackendRouter {
         self.cache_dirty = true;
         Ok(BackendSelection {
             backend: route.backend,
-                        phase1_plan: Some(phase1_plan_for_selected_backend(
-                scanner, route.backend, phase1_plan, batch,
+            phase1_plan: Some(phase1_plan_for_selected_backend(
+                scanner,
+                route.backend,
+                phase1_plan,
+                batch,
             )),
             execution_route: route.execution_route(),
             recovery_plan: None,

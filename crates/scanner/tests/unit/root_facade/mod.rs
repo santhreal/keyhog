@@ -9,11 +9,11 @@ mod audit_speed;
 mod autoroute_gpu_optin_contract;
 mod backend_collapse_regression;
 mod backend_collapse_surface_regression;
+mod companion_gate;
 #[cfg(feature = "simd")]
 mod compiled_scanner_compile;
 mod compiler_compile;
 mod confirmed_anchor_parity;
-mod companion_gate;
 mod confirmed_gate_parity;
 mod confirmed_pattern_profile;
 mod csr;

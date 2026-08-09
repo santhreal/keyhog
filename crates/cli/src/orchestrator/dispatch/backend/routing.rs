@@ -376,7 +376,8 @@ pub(super) fn direct_backend_selection(
     let backend = explicit.or_else(sole_compiled_backend)?;
     Some(BackendSelection {
         backend,
-        phase1_plan: (!backend.is_gpu()).then(|| scanner.phase1_admission_plan_for_backend(batch, backend)),
+        phase1_plan: (!backend.is_gpu())
+            .then(|| scanner.phase1_admission_plan_for_backend(batch, backend)),
         execution_route: scanner.execution_route_for_backend(backend),
         recovery_plan: None,
         runtime_route: None,
@@ -413,7 +414,10 @@ pub(super) fn autoroute_state_recovery_selection(
     BackendSelection {
         backend,
         phase1_plan: Some(phase1_plan_for_selected_backend(
-            scanner, backend, phase1_plan, batch,
+            scanner,
+            backend,
+            phase1_plan,
+            batch,
         )),
         execution_route: scanner.execution_route_for_backend(backend),
         recovery_plan: None,

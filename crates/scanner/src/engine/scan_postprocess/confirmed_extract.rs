@@ -210,8 +210,9 @@ impl CompiledScanner {
                     // trigger bitmap, so membership is one word load instead of
                     // the binary search this probe used to run for every
                     // (literal hit x pattern sharing that literal).
-                    let is_active =
-                        |pat_idx: usize| scratch.contains_active(pat_idx) && pattern_allows(pat_idx);
+                    let is_active = |pat_idx: usize| {
+                        scratch.contains_active(pat_idx) && pattern_allows(pat_idx)
+                    };
                     if let Some(literal_matches) = confirmed_anchor_literal_matches {
                         anchor_index.collect_candidates_from_literal_matches(
                             literal_matches,

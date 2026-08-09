@@ -1091,14 +1091,16 @@ impl CompiledScanner {
         if admission != Phase1Admission::Admitted {
             if chunk.metadata.decoded_span.is_none()
                 && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
-                && crate::engine::vocab_previously_clean(&self.vocab_stage_absence_cache, self.detector_digest,
-                self.entropy_evidence_config_digest(),
-                crate::engine::vocab_path_class(
-                    chunk.metadata.source_type.as_ref(),
-                    chunk.metadata.path.as_deref(),
-                ),
-                &chunk.data,
-            )
+                && crate::engine::vocab_previously_clean(
+                    &self.vocab_stage_absence_cache,
+                    self.detector_digest,
+                    self.entropy_evidence_config_digest(),
+                    crate::engine::vocab_path_class(
+                        chunk.metadata.source_type.as_ref(),
+                        chunk.metadata.path.as_deref(),
+                    ),
+                    &chunk.data,
+                )
             {
                 // Matcher stages are proven empty; still decode-through.
                 if self.chunk_needs_decode_postprocess_with_absence(chunk, decoder_absence) {
@@ -1125,8 +1127,7 @@ impl CompiledScanner {
                 let bytes = chunk.data.as_bytes();
                 // Dense markerless only: short unterminated lines still reach
                 // keyword-free entropy / always-active no-hit admission.
-                let markerless =
-                    crate::engine::text_is_dense_markerless_single_line(&chunk.data);
+                let markerless = crate::engine::text_is_dense_markerless_single_line(&chunk.data);
                 // Homoglyph-obfuscated keywords need `should_scan_no_hit_chunk`'s
                 // normalize-and-recheck path; never take the fast skip when the
                 // raw window still carries evasion characters.

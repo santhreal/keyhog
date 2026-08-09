@@ -135,6 +135,7 @@ impl ScannerTuning {
         self.set_phase2_prefix_gate(config.fallback_prefix_gate);
         self.set_decode_focus(config.decode_focus);
         self.set_confirmed_suffix_gate(config.confirmed_suffix_gate);
+        self.set_confirmed_companion_gate(config.confirmed_companion_gate);
         self.set_no_candidate_gate(config.no_candidate_gate);
         self.set_phase2_plain_localizer(config.fallback_localizer);
         self.set_gpu_recall_floor(config.gpu_recall_floor);
@@ -171,6 +172,10 @@ impl ScannerTuning {
                 .resolve(ScannerTuningConfig::DECODE_FOCUS_DEFAULT),
             confirmed_suffix_gate: BoolOverride::from_raw(self.confirmed_suffix_gate.load(Relaxed))
                 .resolve(ScannerTuningConfig::CONFIRMED_SUFFIX_GATE_DEFAULT),
+            confirmed_companion_gate: BoolOverride::from_raw(
+                self.confirmed_companion_gate.load(Relaxed),
+            )
+            .resolve(ScannerTuningConfig::CONFIRMED_COMPANION_GATE_DEFAULT),
             no_candidate_gate: BoolOverride::from_raw(self.no_candidate_gate.load(Relaxed))
                 .resolve(ScannerTuningConfig::NO_CANDIDATE_GATE_DEFAULT),
             fallback_localizer: BoolOverride::from_raw(self.phase2_plain_localizer.load(Relaxed))
@@ -337,7 +342,7 @@ impl ScannerTuning {
     /// Whether the confirmed-pass companion mid-literal gate is enabled (default on).
     pub(crate) fn confirmed_companion_gate_enabled(&self) -> bool {
         BoolOverride::from_raw(self.confirmed_companion_gate.load(Relaxed))
-            .resolve(true)
+            .resolve(ScannerTuningConfig::CONFIRMED_COMPANION_GATE_DEFAULT)
     }
 
     // ── SWE-101 combined no-candidate prefilter gate ───────────────────────

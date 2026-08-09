@@ -269,7 +269,9 @@ impl CompiledScanner {
         // Preprocess / Phase1Triggers leaf spans (opened inside those calls).
         if chunk.metadata.decoded_span.is_none()
             && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
-            && vocab_previously_clean(&self.vocab_stage_absence_cache, self.detector_digest,
+            && vocab_previously_clean(
+                &self.vocab_stage_absence_cache,
+                self.detector_digest,
                 self.entropy_evidence_config_digest(),
                 vocab_path_class(
                     chunk.metadata.source_type.as_ref(),

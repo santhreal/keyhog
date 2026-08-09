@@ -76,7 +76,13 @@ impl CompiledScanner {
         // Parent windows only: decode sub-chunks create new adjacencies and must
         // not inherit a parent vocabulary clean proof.
         if windowed_parent
-            && super::scan::vocab_previously_clean(&self.vocab_stage_absence_cache, self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data)
+            && super::scan::vocab_previously_clean(
+                &self.vocab_stage_absence_cache,
+                self.detector_digest,
+                vocab_cfg,
+                vocab_path_class,
+                &prepared.chunk.data,
+            )
         {
             return scan_state;
         }
@@ -138,10 +144,18 @@ impl CompiledScanner {
         // overlapping windows. After the first window proves confirmed/entropy
         // absence for that vocabulary, later windows skip those stages.
         let vocab_absence = (raw_text_unchanged && windowed_parent)
-            .then(|| super::scan::vocab_stage_absence(&self.vocab_stage_absence_cache, self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data))
+            .then(|| {
+                super::scan::vocab_stage_absence(
+                    &self.vocab_stage_absence_cache,
+                    self.detector_digest,
+                    vocab_cfg,
+                    vocab_path_class,
+                    &prepared.chunk.data,
+                )
+            })
             .flatten();
-        let confirmed_patterns_absence = confirmed_patterns_absence
-            || vocab_absence.is_some_and(|absence| absence.confirmed);
+        let confirmed_patterns_absence =
+            confirmed_patterns_absence || vocab_absence.is_some_and(|absence| absence.confirmed);
         let entropy_absence =
             entropy_absence || vocab_absence.is_some_and(|absence| absence.entropy);
 
@@ -212,7 +226,13 @@ impl CompiledScanner {
                 && scan_state.matches.len() < self.config.max_matches_per_chunk
                 && !crate::deadline::expired(deadline)
             {
-                super::scan::mark_vocab_confirmed_absent(&self.vocab_stage_absence_cache, self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data);
+                super::scan::mark_vocab_confirmed_absent(
+                    &self.vocab_stage_absence_cache,
+                    self.detector_digest,
+                    vocab_cfg,
+                    vocab_path_class,
+                    &prepared.chunk.data,
+                );
             }
         }
 
@@ -314,7 +334,13 @@ impl CompiledScanner {
                 && scan_state.matches.len() < self.config.max_matches_per_chunk
                 && !crate::deadline::expired(deadline)
             {
-                super::scan::mark_vocab_entropy_absent(&self.vocab_stage_absence_cache, self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data);
+                super::scan::mark_vocab_entropy_absent(
+                    &self.vocab_stage_absence_cache,
+                    self.detector_digest,
+                    vocab_cfg,
+                    vocab_path_class,
+                    &prepared.chunk.data,
+                );
             }
         }
         if crate::deadline::expired(deadline) {
@@ -329,7 +355,13 @@ impl CompiledScanner {
             && prepared.chunk.metadata.decoded_span.is_none()
             && prepared.chunk.metadata.source_type.as_ref() == "filesystem/windowed"
         {
-            super::scan::mark_vocab_clean(&self.vocab_stage_absence_cache, self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data);
+            super::scan::mark_vocab_clean(
+                &self.vocab_stage_absence_cache,
+                self.detector_digest,
+                vocab_cfg,
+                vocab_path_class,
+                &prepared.chunk.data,
+            );
         }
 
         scan_state

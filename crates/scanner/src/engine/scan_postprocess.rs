@@ -98,7 +98,9 @@ impl CompiledScanner {
                     && chunk.metadata.decoded_span.is_none()
                     && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
                 {
-                    super::scan::mark_decode_vocab_empty(&self.vocab_stage_absence_cache, self.detector_digest,
+                    super::scan::mark_decode_vocab_empty(
+                        &self.vocab_stage_absence_cache,
+                        self.detector_digest,
                         self.entropy_evidence_config_digest(),
                         super::scan::vocab_path_class(
                             chunk.metadata.source_type.as_ref(),
@@ -234,8 +236,7 @@ impl CompiledScanner {
                 // own marker surface so markerless windows skip decode-through.
                 let parent_single_line = !chunk.data.as_bytes().contains(&b'\n');
                 self.decode_source_windows(chunk, |window| {
-                    if parent_single_line && super::scan::chunk_is_markerless_single_line(window)
-                    {
+                    if parent_single_line && super::scan::chunk_is_markerless_single_line(window) {
                         return Ok(());
                     }
                     if self.chunk_needs_decode_postprocess(window) {

@@ -197,7 +197,8 @@ impl CoalescedBatchRouter {
         match self {
             Self::Explicit(backend) => Ok(BackendSelection {
                 backend: *backend,
-                phase1_plan: (!backend.is_gpu()).then(|| scanner.phase1_admission_plan_for_backend(batch, *backend)),
+                phase1_plan: (!backend.is_gpu())
+                    .then(|| scanner.phase1_admission_plan_for_backend(batch, *backend)),
                 execution_route: scanner.execution_route_for_backend(*backend),
                 recovery_plan: None,
                 runtime_route: None,
@@ -521,7 +522,8 @@ pub(crate) fn recover_automatic_backend_batch(
             failed_backend.label()
         )));
     }
-    let admission = (!recovery_plan.backend.is_gpu()).then(|| scanner.phase1_admission_plan_for_backend(batch, recovery_plan.backend));
+    let admission = (!recovery_plan.backend.is_gpu())
+        .then(|| scanner.phase1_admission_plan_for_backend(batch, recovery_plan.backend));
     let outcome = scanner.scan_coalesced_with_backend_admission_route_and_recovery(
         batch,
         recovery_plan.backend,

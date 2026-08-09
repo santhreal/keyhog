@@ -126,8 +126,8 @@ mod process;
 pub(crate) use crate::scan_profile as profile;
 mod recovery;
 pub use recovery::{BackendRecoveryReceipt, CoalescedScanOutcome, RecoveredInputRange};
-mod vocab_absence;
 mod scan;
+mod vocab_absence;
 pub(crate) use scan::{
     text_is_dense_markerless_single_line, vocab_path_class, vocab_previously_clean,
 };
@@ -175,8 +175,8 @@ pub(crate) use boundary::scan_chunk_boundaries;
 pub(crate) use gpu_forced_helpers::gpu_forced_unavailable_message;
 #[cfg(test)]
 pub(crate) use phase2::{phase2_gate_stats_dump, take_mark_stats};
-pub(crate) use scan_postprocess_suffix_gate::suffix_gate_literals;
 pub(crate) use scan_postprocess_companion_gate::{companion_arms, companions_allow};
+pub(crate) use scan_postprocess_suffix_gate::suffix_gate_literals;
 pub(crate) use windowed::{reject_oversized_window_chunk, MAX_WINDOW_CHUNK_BYTES};
 pub(crate) use windowed_support::{absolute_line, absolute_offset, ceil_char_boundary};
 pub use windowed_support::{

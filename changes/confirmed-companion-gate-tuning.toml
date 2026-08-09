@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "Expose confirmed_companion_gate on [tuning] and resolved/autoroute config identity (default on), so operators can disable the mid-literal confirmed-pass skip the same way as confirmed_suffix_gate."
+crates = ["scanner", "cli"]

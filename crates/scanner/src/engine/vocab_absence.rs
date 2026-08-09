@@ -153,7 +153,8 @@ fn mark_vocab_stage_absence(
     text: &str,
     update: impl FnOnce(&mut VocabStageAbsence),
 ) {
-    let Some(key) = vocab_absence_key(detector_digest, entropy_config_digest, path_class, text) else {
+    let Some(key) = vocab_absence_key(detector_digest, entropy_config_digest, path_class, text)
+    else {
         return;
     };
     // Bound growth without wiping unrelated clean/confirmed/entropy proofs.
@@ -173,8 +174,14 @@ pub(crate) fn decode_vocab_previously_empty(
     path_class: u64,
     text: &str,
 ) -> bool {
-    vocab_stage_absence(cache, detector_digest, entropy_config_digest, path_class, text)
-        .is_some_and(|absence| absence.decode_empty)
+    vocab_stage_absence(
+        cache,
+        detector_digest,
+        entropy_config_digest,
+        path_class,
+        text,
+    )
+    .is_some_and(|absence| absence.decode_empty)
 }
 
 #[inline]
@@ -239,8 +246,14 @@ pub(crate) fn vocab_previously_clean(
     path_class: u64,
     text: &str,
 ) -> bool {
-    vocab_stage_absence(cache, detector_digest, entropy_config_digest, path_class, text)
-        .is_some_and(|absence| absence.clean)
+    vocab_stage_absence(
+        cache,
+        detector_digest,
+        entropy_config_digest,
+        path_class,
+        text,
+    )
+    .is_some_and(|absence| absence.clean)
 }
 
 #[inline]
@@ -269,6 +282,3 @@ pub(crate) fn mark_vocab_clean(
 pub(crate) fn clear_vocab_stage_absence_cache_for_diagnostics(cache: &VocabAbsenceMap) {
     cache.clear();
 }
-
-
-

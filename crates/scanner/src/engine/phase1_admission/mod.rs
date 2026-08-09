@@ -1029,8 +1029,7 @@ impl CompiledScanner {
             } else {
                 self.phase1_admission(chunk.data.as_bytes())
             };
-            let (keyword_trigger_count, keyword_hints) =
-                self.phase2_keyword_triggers(&chunk.data);
+            let (keyword_trigger_count, keyword_hints) = self.phase2_keyword_triggers(&chunk.data);
             let mut generic_positions = Vec::new();
             if let Some(generic_plan) = self.detector_plans.generic_assignment() {
                 crate::engine::phase2_generic::keywords::collect_generic_keyword_positions_with(
@@ -1098,16 +1097,15 @@ impl CompiledScanner {
         // Unique CPU windows need hints for the scalar lane. Repeated payloads
         // still need them to prove confirmed/entropy absence for reuse. Unique
         // SIMD/GPU windows pay neither.
-        let cpu_trigger_hints =
-            (admitted && (collect_cpu_trigger_hints || classify_reusable_evidence))
-                .then(|| self.collect_triggered_patterns_cpu(&chunk.data));
+        let cpu_trigger_hints = (admitted
+            && (collect_cpu_trigger_hints || classify_reusable_evidence))
+            .then(|| self.collect_triggered_patterns_cpu(&chunk.data));
         let confirmed_patterns_absence = classify_reusable_evidence
             && cpu_trigger_hints
                 .as_deref()
                 .is_some_and(|triggers| self.confirmed_patterns_absent(&chunk.data, triggers));
-        let normalization_passthrough = classify_reusable_evidence
-            && admitted
-            && self.normalization_passthrough(&chunk.data);
+        let normalization_passthrough =
+            classify_reusable_evidence && admitted && self.normalization_passthrough(&chunk.data);
         let built_line_context_index = (classify_reusable_evidence && admitted)
             .then(|| crate::context::LineContextIndex::try_new(&chunk.data).ok())
             .flatten()

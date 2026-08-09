@@ -2,6 +2,7 @@
 
 ## 0.5.68 - 2026-08-05
 
+- Expose `confirmed_companion_gate` on `[tuning]` / resolved config / autoroute identity (default on), matching the other recall-identical confirmed-pass gates.
 - Fix cfg(test) `scalar_overlaps_reference` to call `contains_anchor_ascii8` after the hot-path reject probe stopped exposing `contains_anchor`, so `cargo test -p keyhog-scanner --lib` compiles again (macOS CI).
 - Extract vocabulary-stage absence helpers into `engine/vocab_absence.rs` so `engine/scan.rs` stays under the STANDARD 500 LOC cap; register `companion_gate` in FILE_GATE_MATRIX and migrate its inline tests to `tests/unit`.
 - Add a per-scanner confirmed companion-gate test override so suffix-gate cold-regex differential coverage can isolate itself from mid-literal denial.
