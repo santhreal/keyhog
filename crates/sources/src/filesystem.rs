@@ -92,14 +92,11 @@ pub(crate) fn emit_in_memory_member(
     respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
-    let mut total_uncompressed = 0_u64;
-    extract::emit_archive_member(
+    extract::emit_in_memory_member(
         entry_name,
         content,
         member_display,
         max_size,
-        &mut total_uncompressed,
-        0,
         respect_default_excludes,
         emit,
     )

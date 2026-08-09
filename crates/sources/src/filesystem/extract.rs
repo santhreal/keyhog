@@ -526,24 +526,35 @@ pub(crate) fn try_emit_image_metadata_member(
     let Some(kind) = image_metadata::probe_kind_from_bytes(ext, bytes) else {
         return Ok(None);
     };
+    // Match process_entry Decode accounting so Docker layer streaming profiles
+    // stay comparable for image-metadata members.
     let extraction = image_metadata::extract_from_bytes(
         entry_name,
         bytes,
         kind,
         keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
     )?;
-    for chunk in extraction.chunks {
-        if !emit(Ok(chunk)) {
-            return Ok(Some(false));
-        }
-    }
-    if let Some(error) = extraction.coverage_error {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
-        if !emit(Err(error)) {
-            return Ok(Some(false));
-        }
-    }
-    Ok(Some(true))
+    let mut keep_going = true;
+    run_derived_extractor(
+        |counted| {
+            for chunk in extraction.chunks {
+                if counted(Ok(chunk)) {
+                    continue;
+                }
+                return;
+            }
+            if let Some(error) = extraction.coverage_error {
+                let _event =
+                    crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
+                let _stopped = counted(Err(error));
+            }
+        },
+        &mut |chunk| {
+            keep_going = emit(chunk);
+            keep_going
+        },
+    );
+    Ok(Some(keep_going))
 }
 
 pub(crate) fn is_openpack_archive_ext(ext: &str) -> bool {
@@ -593,14 +604,80 @@ pub(crate) fn try_emit_pdf_member(
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
     let file_size = bytes.len() as u64;
-    pdf::extract_pdf_chunks_from_bytes(
-        entry_name,
-        bytes,
-        None,
-        file_size,
-        keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
-        emit,
-    )
+    // Same Decode + derived-byte wrap process_entry uses for on-disk PDFs.
+    let mut keep_going = true;
+    run_derived_extractor(
+        |counted| {
+            let _stopped = pdf::extract_pdf_chunks_from_bytes(
+                entry_name,
+                bytes,
+                None,
+                file_size,
+                keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
+                counted,
+            );
+        },
+        &mut |chunk| {
+            keep_going = emit(chunk);
+            keep_going
+        },
+    );
+    keep_going
+}
+
+/// In-memory dispatcher used by Docker layer streaming. Archive/compressed
+/// payloads take the shared Decode + derived-byte wrap that `process_entry`
+/// applies to top-level tar/zip/compressed files; plain leaf members stay
+/// outside Decode so profiles stay comparable with a filesystem walk.
+pub(crate) fn emit_in_memory_member(
+    entry_name: &str,
+    content: Vec<u8>,
+    member_display: &str,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let is_tar = compressed::entry_is_embedded_tar(&content);
+    let is_zip = matches!(is_tar, false) && archive::member_is_embedded_zip(&content);
+    let compressed_format = if is_tar || is_zip {
+        None
+    } else {
+        compressed::compressed_member_format(entry_name, &content)
+    };
+    let mut total_uncompressed = 0_u64;
+    if is_tar || is_zip || compressed_format.is_some() {
+        let mut keep_going = true;
+        run_derived_extractor(
+            |counted| {
+                let _stopped = emit_archive_member(
+                    entry_name,
+                    content,
+                    member_display,
+                    max_size,
+                    &mut total_uncompressed,
+                    0,
+                    respect_default_excludes,
+                    counted,
+                );
+            },
+            &mut |chunk| {
+                keep_going = emit(chunk);
+                keep_going
+            },
+        );
+        keep_going
+    } else {
+        emit_archive_member(
+            entry_name,
+            content,
+            member_display,
+            max_size,
+            &mut total_uncompressed,
+            0,
+            respect_default_excludes,
+            emit,
+        )
+    }
 }
 
 pub(super) fn report_archive_truncation(

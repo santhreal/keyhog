@@ -6,6 +6,8 @@
 //! every-layer-independent whiteout contract.
 
 #[cfg(feature = "docker")]
+use keyhog_profile::Stage;
+#[cfg(feature = "docker")]
 use keyhog_sources::testing::TestApi;
 
 #[cfg(feature = "docker")]
@@ -719,3 +721,172 @@ fn stream_layer_extracts_pdf_text_without_disk_unpack() {
             .collect::<Vec<_>>()
     );
 }
+
+/// PDF extraction on the streaming path must open Decode and charge derived
+/// bytes, matching FilesystemSource `process_entry` after unpack.
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_pdf_records_decode_and_derived_bytes() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let secret = "PDF_PROFILE_SECRET=ghp_PdfProfileToken00000000000000001";
+    let pdf = format!(
+        "%PDF-1.4\n1 0 obj<<>>endobj\n2 0 obj<< /Length {} >>stream\n({})\nendstream\nendobj\ntrailer<<>>\n%%EOF\n",
+        secret.len() + 2,
+        secret
+    );
+    let layer = layer_tar_with_entries(
+        dir.path(),
+        "layer.tar",
+        &[("opt/notes.pdf", pdf.as_bytes())],
+    );
+    let (profile, rows) = crate::support::profile::run_with_profile(|| {
+        TestApi
+            .stream_docker_layer_archive_chunks(
+                &layer,
+                keyhog_sources::SourceLimits::default(),
+                keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+                true,
+            )
+            .expect("stream")
+    });
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().any(|chunk| chunk.data.contains(secret)),
+        "PDF text must still extract under profiling"
+    );
+    let derived: u64 = chunks.iter().map(|chunk| chunk.data.len() as u64).sum();
+    assert!(
+        crate::support::profile::stage_calls(&profile, Stage::Decode) >= 1,
+        "streamed PDF must open Decode: {profile:?}"
+    );
+    assert_eq!(
+        profile.workload.derived_decoder_bytes,
+        Some(derived),
+        "streamed PDF derived bytes must match emitted chunk lengths"
+    );
+}
+
+/// Image-metadata extraction on the streaming path must open Decode and charge
+/// derived bytes so container profiles stay honest.
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_png_records_decode_and_derived_bytes() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let secret = "PNG_PROFILE_SECRET=ghp_PngProfileMetadataToken000000001";
+    let mut text_payload = b"Comment\0".to_vec();
+    text_payload.extend_from_slice(secret.as_bytes());
+
+    fn png_chunk(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+        let mut chunk = Vec::new();
+        chunk.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        chunk.extend_from_slice(kind);
+        chunk.extend_from_slice(payload);
+        chunk.extend_from_slice(&[0; 4]);
+        chunk
+    }
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&1u32.to_be_bytes());
+    ihdr.extend_from_slice(&1u32.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 2, 0, 0, 0]);
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    png.extend_from_slice(&png_chunk(b"IHDR", &ihdr));
+    png.extend_from_slice(&png_chunk(b"tEXt", &text_payload));
+    png.extend_from_slice(&png_chunk(b"IEND", &[]));
+
+    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/badge.png", &png)]);
+    let (profile, rows) = crate::support::profile::run_with_profile(|| {
+        TestApi
+            .stream_docker_layer_archive_chunks(
+                &layer,
+                keyhog_sources::SourceLimits::default(),
+                keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+                true,
+            )
+            .expect("stream")
+    });
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().any(|chunk| chunk.data.contains(secret)),
+        "PNG metadata must still extract under profiling"
+    );
+    let derived: u64 = chunks.iter().map(|chunk| chunk.data.len() as u64).sum();
+    assert!(
+        crate::support::profile::stage_calls(&profile, Stage::Decode) >= 1,
+        "streamed PNG metadata must open Decode: {profile:?}"
+    );
+    assert_eq!(
+        profile.workload.derived_decoder_bytes,
+        Some(derived),
+        "streamed PNG derived bytes must match emitted chunk lengths"
+    );
+}
+
+/// Nested zip members on the streaming path must open Decode and charge the
+/// extracted member bytes, matching FilesystemSource top-level zip accounting.
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_nested_zip_records_decode_and_derived_bytes() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let member_body = "ZIP_PROFILE_SECRET=ghp_ZipProfileToken00000000000000001\n";
+    let zip_bytes = crate::support::archive::zip_with_entries(&[("inner.txt", member_body.as_bytes())]);
+    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/bundle.zip", &zip_bytes)]);
+    let (profile, rows) = crate::support::profile::run_with_profile(|| {
+        TestApi
+            .stream_docker_layer_archive_chunks(
+                &layer,
+                keyhog_sources::SourceLimits::default(),
+                keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+                true,
+            )
+            .expect("stream")
+    });
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().any(|chunk| chunk.data.contains("ZIP_PROFILE_SECRET")),
+        "nested zip member must scan under profiling: {chunks:?}"
+    );
+    assert!(
+        crate::support::profile::stage_calls(&profile, Stage::Decode) >= 1,
+        "streamed nested zip must open Decode: {profile:?}"
+    );
+    assert_eq!(
+        profile.workload.derived_decoder_bytes,
+        Some(member_body.len() as u64),
+        "streamed nested zip derived bytes must match the extracted member"
+    );
+}
+
+/// Plain leaf layer members must not open Decode / charge derived bytes.
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_plain_text_skips_derived_decode() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let body = "PLAIN_PROFILE_SECRET=ghp_PlainProfileToken000000000000001\n";
+    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/notes.txt", body.as_bytes())]);
+    let (profile, rows) = crate::support::profile::run_with_profile(|| {
+        TestApi
+            .stream_docker_layer_archive_chunks(
+                &layer,
+                keyhog_sources::SourceLimits::default(),
+                keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+                true,
+            )
+            .expect("stream")
+    });
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().any(|chunk| chunk.data.contains("PLAIN_PROFILE_SECRET")),
+        "plain text must still scan"
+    );
+    assert_eq!(
+        crate::support::profile::stage_calls(&profile, Stage::Decode),
+        0,
+        "plain leaf members must stay outside Decode: {profile:?}"
+    );
+    assert_eq!(
+        profile.workload.derived_decoder_bytes.unwrap_or(0),
+        0,
+        "plain leaf members must not charge derived decoder bytes: {profile:?}"
+    );
+}
+
