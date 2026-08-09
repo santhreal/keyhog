@@ -300,7 +300,8 @@ pub(super) fn extract_seven_zip_chunks_from_bytes(
         // Re-dispatch the member through the canonical archive-member handler so
         // a tar/zip/gz nested inside the 7z is recursed, not leaf-scanned as
         // printable strings -- which silently missed a secret in its compressed
-        // payload (Law 10). Carry nested_depth so 7z-in-7z cannot reset the cap.
+        // payload (Law 10). Members start at nesting depth 0 (7z/RAR do not re-enter
+        // these extractors from emit_archive_member).
         let member_display = format!("{archive_display}//{entry_name}");
         if !super::emit_archive_member(
             &entry_name,
@@ -308,7 +309,7 @@ pub(super) fn extract_seven_zip_chunks_from_bytes(
             &member_display,
             per_entry_cap,
             &mut total_uncompressed,
-            nested_depth.saturating_add(1),
+            0,
             respect_default_excludes,
             emit,
         ) {

@@ -761,7 +761,7 @@ impl RarExtractionState {
             &member_display,
             per_entry_cap,
             &mut self.total_uncompressed,
-            self.nested_depth.saturating_add(1),
+            0,
             respect,
             emit,
         ) {

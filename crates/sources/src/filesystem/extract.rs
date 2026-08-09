@@ -294,12 +294,14 @@ fn emit_archive_leaf_member(
     let window_size = super::reader::DEFAULT_WINDOW_SIZE;
     let window_overlap = super::reader::DEFAULT_WINDOW_OVERLAP;
     if content.len() > window_size && provenance.is_none() {
+        let raw_member_len = content.len() as u64;
         match read::decode_text_file_owned_or_bytes(content) {
             Ok(text) => {
                 // Stream one window at a time (same shape as mmap windowing) so
                 // peak RAM stays ~decoded member + one window, not member + every
-                // window text held simultaneously.
-                let file_size = text.len() as u64;
+                // window text held simultaneously. size_bytes keeps the original
+                // member byte length (not decoded UTF-8 length).
+                let file_size = raw_member_len;
                 let bytes = text.into_bytes();
                 return read::for_each_slice_window(
                     &bytes,
