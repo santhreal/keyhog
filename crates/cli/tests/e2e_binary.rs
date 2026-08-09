@@ -863,12 +863,6 @@ fn scan_comments_flag_surfaces_credentials_in_comments() {
     );
 }
 
-fn workspace_detectors() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../detectors")
-        .canonicalize()
-        .expect("workspace detectors dir")
-}
 
 #[cfg(feature = "git")]
 fn init_git_repo(repo_path: &std::path::Path) {
