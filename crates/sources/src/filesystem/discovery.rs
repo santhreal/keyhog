@@ -245,11 +245,11 @@ fn metadata_walk_result(
     Some(
         std::fs::metadata(&path)
             .map(|metadata| FileEntry {
-                path,
+                path: path.clone(),
                 size: metadata.len(),
                 is_binary: false,
             })
-            .map_err(|error| error.to_string()),
+            .map_err(|error| format!("'{}': {error}", path.display())),
     )
 }
 
@@ -341,6 +341,7 @@ pub(super) fn collect_unbounded_sorted(
                         let walk_excluded = crate::skip_counts()
                             .excluded
                             .saturating_sub(excluded_before_walk);
+                        let excluded_before_rebuild = crate::skip_counts().excluded;
                         match collect_descriptor_entries(root, config, has_ignore_patterns) {
                             Ok((replacement, replacement_count, replacement_bytes)) => {
                                 builder = Some(replacement);
@@ -350,6 +351,13 @@ pub(super) fn collect_unbounded_sorted(
                                 return false;
                             }
                             Err(_rebuild_error) => {
+                                // Roll back Excluded events recorded by the aborted
+                                // rebuild so the resumed pathname walk does not
+                                // double-count the same pruned paths.
+                                let rebuild_excluded = crate::skip_counts()
+                                    .excluded
+                                    .saturating_sub(excluded_before_rebuild);
+                                crate::skip::subtract_excluded(rebuild_excluded);
                                 // Keep walking so coverage is not truncated. Do not
                                 // retry descriptor rebuild on later ENAMETOOLONG rows.
                             }
@@ -479,9 +487,14 @@ fn collect_descriptor_entries(
                     }
                 }
                 let name_str = name.and_then(OsStr::to_str);
-                if name_str == Some(".git")
-                    || (config.respect_gitignore
-                        && matches!(name_str, Some(".gitignore") | Some(".ignore")))
+                // When gitignore handling is disabled, nested .git / ignore
+                // directories do not affect scan semantics, so keep the fast
+                // descriptor path. .keyhogignore is only meaningful as a file.
+                if config.respect_gitignore
+                    && matches!(
+                        name_str,
+                        Some(".git") | Some(".gitignore") | Some(".ignore")
+                    )
                 {
                     return Err(SourceError::Other(format!(
                         "descriptor-relative discovery encountered ignore metadata at '{}'; refusing to bypass ignore semantics for a path beyond the platform pathname limit",
@@ -492,10 +505,12 @@ fn collect_descriptor_entries(
             }
             DescriptorEntryKind::File { size } => {
                 let name_str = name.and_then(OsStr::to_str);
-                if matches!(
-                    name_str,
-                    Some(".gitignore") | Some(".ignore") | Some(".keyhogignore")
-                ) {
+                // .keyhogignore always blocks the rebuild; VCS ignore files only
+                // matter when gitignore handling is enabled for this scan.
+                let blocks_ignore_proof = name_str == Some(".keyhogignore")
+                    || (config.respect_gitignore
+                        && matches!(name_str, Some(".gitignore") | Some(".ignore")));
+                if blocks_ignore_proof {
                     return Err(SourceError::Other(format!(
                         "descriptor-relative discovery encountered ignore metadata at '{}'; refusing to bypass ignore semantics for a path beyond the platform pathname limit",
                         entry.path.display()
