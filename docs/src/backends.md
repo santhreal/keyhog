@@ -26,11 +26,13 @@ keyhog backend --autoroute
 keyhog scan .
 ```
 
-The last command is equivalent to `keyhog scan . --backend auto`. A normal
-installation already runs the all-preset calibration sweep, so you usually need
-the first command only after a binary, driver, hardware, or routing-relevant
-configuration change. `auto` performs an exact cache lookup. It does not try
-backends in order and does not benchmark during the scan.
+The last command is equivalent to `keyhog scan . --backend auto`. The historical
+verified binary-asset installers run the all-preset calibration sweep. Cargo
+cannot execute a binary after `cargo install`, so run the first command once
+after installing a multi-backend Cargo build and again after any binary, driver,
+hardware, or routing-relevant configuration change. A scalar-only build needs no
+calibration and reports `health: direct`. `auto` performs an exact cache lookup.
+It does not try backends in order and does not benchmark during the scan.
 
 For a healthy multi-backend installation, `keyhog backend --autoroute` reports
 `health: ready`. A scalar-only build reports `health: direct` because it has no

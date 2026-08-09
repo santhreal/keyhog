@@ -231,11 +231,11 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
             .and_then(|embedded| embedded.match_confidence),
         ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile_with_gpu_policy(
-        vec![detector],
-        keyhog_scanner::GpuInitPolicy::FromRuntimePolicy,
-    )
-    .expect("compile WGPU shard scanner");
+    let cpu_scanner =
+        CompiledScanner::compile_for_backend(vec![detector.clone()], ScanBackend::CpuFallback)
+            .expect("compile scalar WGPU shard reference");
+    let scanner = CompiledScanner::compile_for_backend(vec![detector], ScanBackend::GpuWgpu)
+        .expect("compile exact WGPU shard scanner");
     if !crate::hw_probe::probe_hardware().gpu_available {
         eprintln!("GPU parity fixture requires a physical GPU");
         return;
@@ -279,7 +279,7 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
         .iter()
         .all(|shard| shard.coalesced_bytes <= WGPU_BYTE_SCAN_DISPATCH_LIMIT));
 
-    let mut cpu = scanner
+    let mut cpu = cpu_scanner
         .scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback)
         .expect("scalar WGPU-sharding control scan succeeds");
     reset_test_window_reduction_allocations();
@@ -335,11 +335,11 @@ fn production_cuda_windows_seam_tail_and_mixed_rows_with_cpu_parity() {
         keywords: vec!["KHCUDAX_".into()],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile_with_gpu_policy(
-        vec![detector],
-        keyhog_scanner::GpuInitPolicy::FromRuntimePolicy,
-    )
-    .expect("compile CUDA window scanner");
+    let cpu_scanner =
+        CompiledScanner::compile_for_backend(vec![detector.clone()], ScanBackend::CpuFallback)
+            .expect("compile scalar CUDA window reference");
+    let scanner = CompiledScanner::compile_for_backend(vec![detector], ScanBackend::GpuCuda)
+        .expect("compile exact CUDA window scanner");
     let cuda = scanner
         .gpu_backend_candidates()
         .into_iter()
@@ -372,7 +372,7 @@ fn production_cuda_windows_seam_tail_and_mixed_rows_with_cpu_parity() {
         keyhog_core::Chunk::from(oversized),
         keyhog_core::Chunk::from("KHCUDAX_T5y6U7i8!"),
     ];
-    let mut cpu = scanner
+    let mut cpu = cpu_scanner
         .scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback)
         .expect("scalar CUDA-windowing control scan succeeds");
     reset_test_window_reduction_allocations();

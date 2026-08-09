@@ -5,6 +5,10 @@ cloud object inventories, archives, and local systems for leaked credentials.
 You can start with one command, then choose a source boundary, detection policy,
 and execution route that match the job.
 
+The sample below comes from a `portable,simd` build. The default crates.io
+install reports the pure-Rust CPU route instead; host labels and backend lines
+are evidence from the running binary, not universal defaults.
+
 ```text
 $ keyhog scan . --progress
     K E Y H O G
@@ -54,11 +58,11 @@ then fail closed rather than shadowing shipped rules.
 ## What it doesn't do
 
 - **No telemetry.** Findings stay local. The scanner never phones home.
-- **No agent.** A daemon service exists for IDE-save and stdin/single-file
-  fast-path scans on Unix. Starting it is explicit and it stays on your
-  machine; once you start a compatible daemon, the ordinary Unix scan default
-  (`--daemon=auto`, including an omitted flag) uses it for eligible requests.
-  Use `--daemon=off` to force the in-process path.
+- **No hosted scanning agent.** Findings are not uploaded to a KeyHog service.
+  A local daemon exists for eligible stdin and single-file requests on Unix.
+  Starting it is explicit and it stays on your machine; after you start a
+  compatible daemon, the ordinary Unix scan default (`--daemon=auto`) uses it
+  for eligible requests. Use `--daemon=off` to force the in-process path.
 - **No remote "AI-powered" detection.** Service detectors use TOML regexes and
   structural validators; generic detectors compose assignment shape, entropy,
   BPE token efficiency, context, and local confidence policy. The small
