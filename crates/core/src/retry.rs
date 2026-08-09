@@ -284,4 +284,3 @@ impl crate::FileContentSource for RetryingContentSource<'_> {
         )
     }
 }
-

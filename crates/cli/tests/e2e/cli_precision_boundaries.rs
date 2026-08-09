@@ -181,7 +181,11 @@ fn precision_mode_respects_min_confidence_when_higher() {
 fn precision_mode_empty_file_exits_thirteen() {
     let fixture = "";
     let (_out, _, code) = scan_with_args(fixture, &["--precision"]);
-    assert_eq!(code, Some(13), "empty file scans zero bytes and must exit 13");
+    assert_eq!(
+        code,
+        Some(13),
+        "empty file scans zero bytes and must exit 13"
+    );
 }
 
 /// Precision mode on a file with only comments/whitespace exits 0.

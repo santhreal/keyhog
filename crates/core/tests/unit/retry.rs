@@ -34,7 +34,11 @@ fn absent_operator_path_is_permanent_but_a_vanished_walk_entry_retries() {
         operator_attempts.set(operator_attempts.get() + 1);
         Err(io_error(io::ErrorKind::NotFound))
     });
-    assert_eq!(operator_attempts.get(), 1, "a typo in --path is a user error");
+    assert_eq!(
+        operator_attempts.get(),
+        1,
+        "a typo in --path is a user error"
+    );
 
     let walk_attempts = Cell::new(0u32);
     let _: io::Result<()> = retry_io(RetryPolicy::DEFAULT, PathOrigin::Enumerated, || {
@@ -124,7 +128,10 @@ fn classification_is_origin_sensitive_only_for_absence() {
         Some(RetryCause::Interrupted)
     );
     assert_eq!(
-        classify_io(&io_error(io::ErrorKind::NotFound), PathOrigin::OperatorSupplied),
+        classify_io(
+            &io_error(io::ErrorKind::NotFound),
+            PathOrigin::OperatorSupplied
+        ),
         None
     );
     assert_eq!(

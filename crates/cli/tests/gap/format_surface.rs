@@ -1358,7 +1358,6 @@ fn empty_file_exits_thirteen_for_every_format() {
     }
 }
 
-
 /// Boundary: an UNKNOWN `--format` value is rejected by clap as a usage
 /// error (exit 2), not silently defaulted. The OutputFormat ValueEnum only
 /// accepts text/json/jsonl/sarif/csv/github-annotations/gitlab-sast/html/junit.
