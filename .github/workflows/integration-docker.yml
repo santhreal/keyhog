@@ -32,7 +32,7 @@ concurrency:
 jobs:
   matrix:
     name: ${{ matrix.variant }} integration
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     # Build times: glibc builds `--features ci-lean` (Hyperscan ON, GPU stack
     # OFF) under release-fast (thin LTO); musl builds `--features portable`
     # under `--release`. Both drop the wgpu/vyre/cuda graph, so both link in

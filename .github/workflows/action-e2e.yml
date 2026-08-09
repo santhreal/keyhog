@@ -43,7 +43,7 @@ jobs:
 
   action-contract:
     name: Action contract and mirror lock
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -85,7 +85,7 @@ jobs:
 
   positive-lockdown:
     name: provisioned source-CPU / release-auto lockdown (root and nested)
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     permissions:
       contents: read

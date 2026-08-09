@@ -78,7 +78,7 @@ concurrency:
 jobs:
   build:
     name: Build mdBook
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     # Per-job permissions: this repo rejects dispatch of any workflow that
     # declares a TOP-LEVEL `permissions:` block (1-3s exit, 0 jobs -- see
     # health-check.yml / keyhog.yml). Per-job is equivalent and dispatch-safe.
@@ -152,7 +152,7 @@ jobs:
     name: Deploy to GitHub Pages
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     # Pages deploy needs write + OIDC; scoped to this job only (top-level
     # permissions is rejected at dispatch on this repo, which is why the
     # docs site stopped publishing).
