@@ -174,7 +174,7 @@ macro_rules! simple_decoder {
                     with_extracted_value_spans(&chunk.data, |candidates| {
                         candidates
                             .iter()
-                            .filter(|candidate| ($filter)(candidate.value.as_str()))
+                            .filter(|candidate| ($filter)(candidate.value.as_ref()))
                             .fold((0usize, 0usize), |(count, bytes), candidate| {
                                 (
                                     count.saturating_add(1),

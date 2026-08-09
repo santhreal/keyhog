@@ -240,7 +240,7 @@ pub fn extract_encoded_value_spans_for_test(text: &str) -> Vec<(String, usize, u
             .iter()
             .map(|value| {
                 let (start, end) = value.span();
-                (value.value.clone(), start, end)
+                (value.value.to_string(), start, end)
             })
             .collect()
     })

@@ -45,14 +45,18 @@ pub(crate) fn extract_profile_from_typed(
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtractedValue {
-    pub(crate) value: String,
+    pub(crate) value: std::sync::Arc<str>,
     pub(crate) start: usize,
     pub(crate) end: usize,
 }
 
 impl ExtractedValue {
-    pub(crate) fn new(value: String, start: usize, end: usize) -> Self {
-        Self { value, start, end }
+    pub(crate) fn new(value: impl Into<std::sync::Arc<str>>, start: usize, end: usize) -> Self {
+        Self {
+            value: value.into(),
+            start,
+            end,
+        }
     }
 
     pub(crate) fn span(&self) -> (usize, usize) {
@@ -128,6 +132,24 @@ fn extract_encoded_value_spans_raw(
     );
     let _extract = keyhog_profile::counter_span(keyhog_profile::CounterId::DecodeExtractNs);
     let mut values = Vec::new();
+    // Intern repeated candidate payloads within this extraction. Long single-line
+    // JSON often repeats the same opaque token tens of thousands of times; each
+    // occurrence still needs its own span, but sharing the `Arc<str>` avoids
+    // allocating a fresh String per hit and makes later per-value decode memos
+    // hit with pointer-cheap clones.
+    let mut value_intern: std::collections::HashMap<u64, std::sync::Arc<str>> =
+        std::collections::HashMap::new();
+    let mut intern_value = |raw: &str| -> std::sync::Arc<str> {
+        let key = hash_fast(raw.as_bytes());
+        if let Some(existing) = value_intern.get(&key) {
+            if existing.as_ref() == raw {
+                return std::sync::Arc::clone(existing);
+            }
+        }
+        let owned: std::sync::Arc<str> = std::sync::Arc::from(raw);
+        value_intern.insert(key, std::sync::Arc::clone(&owned));
+        owned
+    };
     // Base64 block accumulator - collected in the SAME pass as quoted/assigned values.
     let mut b64_block = String::new();
     let mut b64_start: Option<usize> = None;
@@ -293,7 +315,11 @@ fn extract_encoded_value_spans_raw(
                     if cleaned.len() >= MIN_EXTRACTED_VALUE_LEN {
                         if let Some(start) = value_start {
                             push_b64_subruns(&mut values, text, start, value_end);
-                            values.push(ExtractedValue::new(cleaned, start, value_end));
+                            values.push(ExtractedValue::new(
+                                intern_value(&cleaned),
+                                start,
+                                value_end,
+                            ));
                         }
                     }
                     break;
@@ -366,7 +392,7 @@ fn extract_encoded_value_spans_raw(
                     && value.bytes().all(|byte| byte.is_ascii_alphanumeric());
                 if value.len() >= MIN_EXTRACTED_VALUE_LEN && !default_impossible {
                     push_b64_subruns(&mut values, text, start, value_end);
-                    values.push(ExtractedValue::new(value.to_owned(), start, value_end));
+                    values.push(ExtractedValue::new(intern_value(value), start, value_end));
                 }
             }
             continue;

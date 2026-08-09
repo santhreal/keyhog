@@ -66,7 +66,7 @@ pub fn find_hex_strings(text: &str, min_length: usize) -> Vec<EncodedString> {
     find_hex_string_spans(text, min_length)
         .into_iter()
         .map(|candidate| EncodedString {
-            value: candidate.value,
+            value: candidate.value.to_string(),
         })
         .collect()
 }

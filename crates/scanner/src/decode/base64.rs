@@ -7,6 +7,7 @@ use super::pipeline::{
 };
 use super::{DecodeAdmissionSketch, DecodeOutputSink, Decoder, EncodedString};
 use keyhog_core::Chunk;
+use std::collections::HashMap;
 
 pub(super) struct Base64Decoder;
 
@@ -22,6 +23,19 @@ impl Decoder for Base64Decoder {
     fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
         let mut batch = DecodedReplacementBatcher::new(sink, chunk, self.name());
         let mut open = true;
+        // Per-chunk memo of candidate value (+ variant) -> decoded UTF-8 text.
+        // Long single-line JSON corpora often repeat the same opaque token
+        // tens of thousands of times; trial-decoding each occurrence is pure
+        // waste when the byte payload is identical. Failed/non-text outcomes
+        // are memoized as None so subsequent hits skip inflate/UTF-8 work.
+        // Successful text is still spliced once per occurrence (recall: each
+        // span needs its own replacement for location-accurate companions).
+        let mut decoded_memo: [HashMap<std::sync::Arc<str>, Option<String>>; 4] = [
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        ];
         visit_classified_base64_string_spans(
             &chunk.data,
             MIN_BASE64_CANDIDATE_LEN,
@@ -29,26 +43,39 @@ impl Decoder for Base64Decoder {
                 if !open {
                     return;
                 }
-                let Ok(decoded) = base64_decode_with_variant(&b64_match.value, variant) else {
-                    // LAW10: failed trial decode is recall-preserving; the original candidate-bearing chunk stays scanned unchanged.
+                let slot = &mut decoded_memo[base64_variant_memo_index(variant)];
+                if let Some(cached) = slot.get(&b64_match.value) {
+                    if let Some(text) = cached {
+                        let (start, end) = b64_match.span();
+                        open = batch.push(start, end, text.clone());
+                    }
                     return;
-                };
-                // A non-container, malformed container, or binary inflate result
-                // falls through to the original decoded bytes. LAW10: this is
-                // recall-preserving because those bytes remain the only valid
-                // textual decode view; non-UTF-8 bytes leave the encoded root
-                // scanned unchanged.
-                let text = match crate::decode::inflate::try_inflate_to_text(&decoded) {
-                    Some(inflated) => Some(inflated),
-                    None => match String::from_utf8(decoded) {
-                        Ok(text) => Some(text),
-                        Err(_) => None, // LAW10: recall-preserving: the original encoded bytes still take the whole-chunk scan path unchanged; non-text output is not source text.
-                    },
-                };
-                if let Some(text) = text {
-                    let (start, end) = b64_match.span();
-                    open = batch.push(start, end, text);
                 }
+                let text = match base64_decode_with_variant(&b64_match.value, variant) {
+                    Ok(decoded) => {
+                        // A non-container, malformed container, or binary inflate result
+                        // falls through to the original decoded bytes. LAW10: this is
+                        // recall-preserving because those bytes remain the only valid
+                        // textual decode view; non-UTF-8 bytes leave the encoded root
+                        // scanned unchanged.
+                        match crate::decode::inflate::try_inflate_to_text(&decoded) {
+                            Some(inflated) => Some(inflated),
+                            None => match String::from_utf8(decoded) {
+                                Ok(text) => Some(text),
+                                Err(_) => None, // LAW10: recall-preserving: the original encoded bytes still take the whole-chunk scan path unchanged; non-text output is not source text.
+                            },
+                        }
+                    }
+                    Err(()) => {
+                        // LAW10: failed trial decode is recall-preserving; the original candidate-bearing chunk stays scanned unchanged.
+                        None
+                    }
+                };
+                if let Some(text) = text.as_ref() {
+                    let (start, end) = b64_match.span();
+                    open = batch.push(start, end, text.clone());
+                }
+                slot.insert(std::sync::Arc::clone(&b64_match.value), text);
             },
         );
         if open {
@@ -100,6 +127,16 @@ enum Base64Variant {
     StandardNoPad,
     UrlSafe,
     UrlSafeNoPad,
+}
+
+#[inline]
+fn base64_variant_memo_index(variant: Base64Variant) -> usize {
+    match variant {
+        Base64Variant::Standard => 0,
+        Base64Variant::StandardNoPad => 1,
+        Base64Variant::UrlSafe => 2,
+        Base64Variant::UrlSafeNoPad => 3,
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -162,7 +199,7 @@ pub fn find_base64_strings(text: &str, min_length: usize) -> Vec<EncodedString> 
     find_base64_string_spans(text, min_length)
         .into_iter()
         .map(|candidate| EncodedString {
-            value: candidate.value,
+            value: candidate.value.to_string(),
         })
         .collect()
 }
@@ -349,7 +386,7 @@ fn visit_z85_string_spans(
                         .collect(),
                 )
             } else {
-                std::borrow::Cow::Borrowed(candidate.value.as_str())
+                std::borrow::Cow::Borrowed(candidate.value.as_ref())
             };
             if value.len() >= min_length
                 && value.len().is_multiple_of(5)
