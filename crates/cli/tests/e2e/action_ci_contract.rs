@@ -1151,6 +1151,7 @@ fn action_quick_start_scans_the_checked_out_workspace_by_default() {
     );
 
     let no_checkout = TempDir::new().expect("empty workspace tempdir");
+    fs::write(no_checkout.path().join("main.rs"), "fn main() {}\n").expect("clean source file");
     let clean =
         run_action_with_path_prefix(&no_checkout, binary_dir, &[("ACTION_INPUT_BACKEND", "cpu")]);
     assert_eq!(

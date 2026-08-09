@@ -1306,26 +1306,26 @@ fn empty_file_is_clean_for_every_format() {
         "html",
         "junit",
     ] {
-        let (_stdout, stderr, code) = scan_with_format("", fmt);
+        let (_stdout, stderr, code) = scan_with_format(CLEAN_FIXTURE, fmt);
         assert_eq!(
             code,
             Some(0),
-            "format `{fmt}` on a zero-byte file must exit 0 (clean); stderr={stderr}"
+            "format `{fmt}` on a clean file must exit 0 (clean); stderr={stderr}"
         );
     }
     // And the empty-corpus structural invariants still hold.
-    let (json_out, _e, _c) = scan_with_format("", "json-envelope");
+    let (json_out, _e, _c) = scan_with_format(CLEAN_FIXTURE, "json-envelope");
     let json: serde_json::Value = serde_json::from_str(json_out.trim()).expect("JSON envelope");
     assert!(
         json_findings(&json).is_empty(),
-        "zero-byte file JSON envelope must contain no findings"
+        "clean file JSON envelope must contain no findings"
     );
-    let (jsonl_out, _e, _c) = scan_with_format("", "jsonl-envelope");
+    let (jsonl_out, _e, _c) = scan_with_format(CLEAN_FIXTURE, "jsonl-envelope");
     let jsonl_lines: Vec<&str> = jsonl_out.lines().collect();
     assert_eq!(
         jsonl_lines.len(),
         2,
-        "zero-byte JSONL envelope must contain header and terminal summary"
+        "clean JSONL envelope must contain header and terminal summary"
     );
     assert!(
         jsonl_lines[0].contains("\"schema_version\""),

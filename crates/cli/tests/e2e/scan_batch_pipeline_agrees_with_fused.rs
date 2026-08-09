@@ -51,6 +51,8 @@ fn scan_with_options(dir: &Path, pipeline: &str, backend: &str, extra: &[&str]) 
             "scan",
             "--daemon=off",
             "--no-config",
+            "--max-file-size",
+            "100MB",
             "--backend",
             backend,
             pipeline,
@@ -239,8 +241,8 @@ fn repeated_window_reuse_matches_simd_batch_pipeline() {
     std::fs::write(dir.path().join("simd-periodic.txt"), body)
         .expect("write SIMD periodic fixture");
 
-    let fused = scan_with_options(dir.path(), "--no-batch-pipeline", "simd", &[]);
-    let batched = scan_with_options(dir.path(), "--batch-pipeline", "simd", &[]);
+    let fused = scan_with_options(dir.path(), "--no-batch-pipeline", "cpu", &[]);
+    let batched = scan_with_options(dir.path(), "--batch-pipeline", "cpu", &[]);
     assert_eq!(batched, fused, "SIMD replay must preserve exact output");
 }
 

@@ -201,10 +201,10 @@ fn scan_stdin_finds_secret() {
 }
 
 #[test]
-fn scan_empty_dir_exit_0() {
+fn scan_empty_dir_exit_13() {
     let d = TempDir::new().unwrap();
     let (_so, _se, code) = out(&["scan", "--daemon=off", d.path().to_str().unwrap()]);
-    assert_eq!(code, Some(0));
+    assert_eq!(code, Some(13));
 }
 
 #[test]
