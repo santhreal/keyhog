@@ -727,10 +727,14 @@ fn stream_plain_layer_member_windows<R: Read>(
             }
             buf.truncate(start + got);
             if got < to_read {
-                // Real EOF before declared size (truncated layer). Do not re-emit
-                // a carry-only overlap window; only emit when new bytes arrived.
+                // Real EOF before declared size (truncated layer).
+                // - got==0 and absolute_offset>0: buf is overlap carry already
+                //   emitted as the tail of the previous window — do not re-emit.
+                // - got==0 and absolute_offset==0: buf still holds the never-
+                //   emitted sniff prefix — fall through and emit it once.
+                // - got>0: emit the truncated window that includes new bytes.
                 remaining = 0;
-                if got == 0 {
+                if got == 0 && absolute_offset > 0 {
                     return Ok(true);
                 }
             } else {
