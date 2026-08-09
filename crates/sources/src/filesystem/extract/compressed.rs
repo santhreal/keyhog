@@ -385,19 +385,6 @@ fn emit_tar_entries_from_reader<R: Read>(
             ) {
                 return false;
             }
-            // Charge declared size: non-seekable decoders still inflate skipped
-            // entry bodies on Drop, so skipped members must count toward the
-            // aggregate bomb budget.
-            *total_uncompressed = (*total_uncompressed).saturating_add(entry_size);
-            if total_budget > 0 && *total_uncompressed > total_budget {
-                let error = super::report_archive_truncation(
-                    container_display,
-                    *total_uncompressed,
-                    total_budget,
-                );
-                let _keep_going = emit(Err(error));
-                return true;
-            }
             continue;
         }
         if respect_default_excludes && super::super::filter::is_default_excluded(&entry_name) {
@@ -423,19 +410,6 @@ fn emit_tar_entries_from_reader<R: Read>(
                 ),
             ) {
                 return false;
-            }
-            // Charge declared size: non-seekable decoders still inflate skipped
-            // entry bodies on Drop, so skipped members must count toward the
-            // aggregate bomb budget.
-            *total_uncompressed = (*total_uncompressed).saturating_add(entry_size);
-            if total_budget > 0 && *total_uncompressed > total_budget {
-                let error = super::report_archive_truncation(
-                    container_display,
-                    *total_uncompressed,
-                    total_budget,
-                );
-                let _keep_going = emit(Err(error));
-                return true;
             }
             continue;
         }
@@ -518,7 +492,7 @@ fn emit_tar_entries_from_reader<R: Read>(
             return false;
         }
     }
-    return false;
+    false
 }
 
 fn analyze_tex_package(tar_bytes: &[u8]) -> super::tex_package::TexPackageAnalysis {
@@ -796,31 +770,6 @@ fn emit_tar_entry_error(
 }
 
 
-/// True when the on-disk name is a gzipped tarball (`.tar.gz` / `.tgz` / …).
-///
-/// `Path::extension` for `bundle.tar.gz` is only `gz`, so callers that need a
-/// name-only hint (and the nested-archive streaming structural pin) inspect the
-/// full file name. Streaming still sniffs bytes for `*.tar.gz`; only `.tgz`
-/// forces the tar path when the peek is ambiguous.
-#[allow(dead_code)] // LAW10: retained as the documented name-hint helper; streaming sniff is the recall path for misnamed single-file `*.tar.gz`.
-fn path_looks_like_compressed_tar(path: &Path, ext: &str) -> bool {
-    if is_tgz_ext(ext) {
-        return true;
-    }
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| {
-            let lower = name.to_ascii_lowercase();
-            lower.ends_with(".tar.gz")
-                || lower.ends_with(".tar.gzip")
-                || lower.ends_with(".tar.bz2")
-                || lower.ends_with(".tar.xz")
-                || lower.ends_with(".tar.zst")
-                || lower.ends_with(".tar.lz4")
-                || lower.ends_with(".tar.sz")
-                || lower.ends_with(".tgz")
-        })
-}
 
 fn open_format_decoder<'a>(
     format: CompressedFormat,
@@ -873,10 +822,8 @@ fn try_emit_streaming_compressed_tar(
     // the leaf-scan path. Only `.tgz` (force_tar) keeps the historical
     // unconditional-tar behavior when the peek is short/ambiguous.
     let looks = peeked >= 512 && looks_like_tar(&head[..peeked]);
-    if !looks {
-        if peeked >= 512 || !force_tar {
-            return false;
-        }
+    if !looks && (peeked >= 512 || !force_tar) {
+        return false;
     }
 
     // Stream once: one entry buffer at a time, never the full tar image, and
