@@ -1,6 +1,6 @@
 //! WebSource SSRF gate must block redirect-target host `http://169.254.169.254/latest/meta-data/`.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 #[cfg(feature = "web")]
 #[test]
 fn web_redirect_target_metadata_ip_blocked() {

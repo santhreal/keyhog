@@ -6,7 +6,7 @@
 //! individual check passed and the operator had no knob that said otherwise.
 
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 /// Build a layer tar holding one regular entry of exactly `payload_len` bytes.
 #[cfg(feature = "docker")]

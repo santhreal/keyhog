@@ -395,7 +395,8 @@ pub(crate) fn parse_vocab(raw: &str) -> Result<PlaceholderVocab, String> {
         validate_markers(parsed.entropy_markers.exact_values, "entropy exact_value")?;
     let entropy_structural_bytes =
         validate_structural_bytes(parsed.entropy_markers.structural_bytes)?;
-    let entropy_length_gated = validate_length_gated(parsed.entropy_markers.length_gated_substrings)?;
+    let entropy_length_gated =
+        validate_length_gated(parsed.entropy_markers.length_gated_substrings)?;
     let entropy_compound_shapes = validate_compound_shapes(parsed.entropy_markers.compound_shapes)?;
 
     Ok(PlaceholderVocab {
@@ -479,14 +480,22 @@ fn validate_compound_shapes(raw: Vec<CompoundShape>) -> Result<Vec<CompoundShape
                 shape.prefix
             ));
         }
-        if shape.suffixes.iter().chain(&shape.substrings).any(String::is_empty) {
+        if shape
+            .suffixes
+            .iter()
+            .chain(&shape.substrings)
+            .any(String::is_empty)
+        {
             return Err(format!(
                 "compound_shapes {:?} suffix/substring entries must not be empty",
                 shape.prefix
             ));
         }
         if !seen.insert(shape.prefix.clone()) {
-            return Err(format!("duplicate compound_shapes prefix {:?}", shape.prefix));
+            return Err(format!(
+                "duplicate compound_shapes prefix {:?}",
+                shape.prefix
+            ));
         }
     }
     Ok(raw)

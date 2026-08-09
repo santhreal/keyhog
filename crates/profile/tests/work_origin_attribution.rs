@@ -84,10 +84,7 @@ fn legacy_attribution_api_maps_onto_work_origin() {
     let runtime = session.runtime();
     set_work_origin(WorkOrigin::Retried);
     // Legacy projection: any attributed (non-root) origin reads as Decoded.
-    assert_eq!(
-        set_attribution(Attribution::Decoded),
-        Attribution::Decoded
-    );
+    assert_eq!(set_attribution(Attribution::Decoded), Attribution::Decoded);
     drop(span(Stage::Decode));
     assert_eq!(set_attribution(Attribution::Root), Attribution::Decoded);
     drop(span(Stage::SourceRead));
@@ -112,7 +109,11 @@ fn legacy_attribution_api_maps_onto_work_origin() {
 #[test]
 fn non_root_origins_count_as_attributed_work() {
     let session = session("origin-attribution-totals");
-    for origin in [WorkOrigin::Decoded, WorkOrigin::Derived, WorkOrigin::Retried] {
+    for origin in [
+        WorkOrigin::Decoded,
+        WorkOrigin::Derived,
+        WorkOrigin::Retried,
+    ] {
         set_work_origin(origin);
         drop(span(Stage::GenericDetection));
     }
@@ -179,10 +180,9 @@ fn legacy_span_json_decodes_root_and_new_origins_round_trip() {
         Evidence::unavailable(EvidenceGap::LegacyV1NotRecorded)
     );
 
-    let round_trip: SpanRecordV2 = serde_json::from_value(
-        serde_json::to_value(&spans[0]).expect("serialize span again"),
-    )
-    .expect("round-trip span");
+    let round_trip: SpanRecordV2 =
+        serde_json::from_value(serde_json::to_value(&spans[0]).expect("serialize span again"))
+            .expect("round-trip span");
     assert_eq!(round_trip, spans[0]);
     let _ = session.finish(RunState::Completed);
 }

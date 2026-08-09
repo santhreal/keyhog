@@ -3,7 +3,7 @@
 #[cfg(feature = "docker")]
 use keyhog_sources::skip_counts;
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 #[cfg(feature = "docker")]
 fn tar_layer_bytes(path: &str, payload: &[u8]) -> Vec<u8> {

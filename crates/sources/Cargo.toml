@@ -22,7 +22,7 @@ status = "alpha"
 
 [features]
 default = ["git", "web"]
-git = ["gix", "dep:ignore"]
+git = ["gix"]
 # `dep:serde` / `dep:serde_json` removed from these feature gates 
 # they're unconditional now (serde for the HAR parser in
 # filesystem.rs::har, which is in the always-on path).
@@ -83,7 +83,7 @@ keyhog-profile = { workspace = true }
 # keyhog-sources.
 keyhog-verifier = { workspace = true, optional = true }
 codewalk = { workspace = true }
-ignore = { workspace = true, optional = true }
+ignore = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 rayon = { workspace = true }

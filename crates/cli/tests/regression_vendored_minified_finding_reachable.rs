@@ -163,7 +163,9 @@ fn minified_bundle_credential_is_reachable_with_no_default_excludes() {
         suppressed.stdout
     );
     assert!(
-        suppressed.stderr.contains("credential match(es) were DROPPED"),
+        suppressed
+            .stderr
+            .contains("credential match(es) were DROPPED"),
         "the default-policy drop must be visible; stderr={}",
         suppressed.stderr
     );

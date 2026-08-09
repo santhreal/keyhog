@@ -205,10 +205,14 @@ fn instrumented_future_with_token_preserves_chain_across_spawn() {
     let worker_runtime = runtime.clone();
     std::thread::spawn(move || {
         worker_runtime.scope(|| {
-            block_on(instrument_future_with_parent(token, Stage::Preprocess, async {
-                YieldOnce(true).await;
-                drop(span(Stage::Decode));
-            }));
+            block_on(instrument_future_with_parent(
+                token,
+                Stage::Preprocess,
+                async {
+                    YieldOnce(true).await;
+                    drop(span(Stage::Decode));
+                },
+            ));
         });
     })
     .join()
@@ -230,10 +234,7 @@ fn instrumented_future_with_token_preserves_chain_across_spawn() {
         .iter()
         .find(|record| record.metric_id == MetricId::Decode)
         .expect("leaf span");
-    assert_eq!(
-        parent_id(&async_span.parent_span_id),
-        Some(parent.span_id)
-    );
+    assert_eq!(parent_id(&async_span.parent_span_id), Some(parent.span_id));
     assert_eq!(parent_id(&leaf.parent_span_id), Some(async_span.span_id));
     assert_eq!(
         parent.exclusive_ns,

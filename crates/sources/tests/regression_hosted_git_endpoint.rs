@@ -27,7 +27,7 @@
 
 use std::time::Duration;
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -70,14 +70,22 @@ fn gitlab_group_single_error(params: &str) -> String {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn github_valid_https_clone_url_accepted() {assert_accepted(
-        TestApi.validate_clone_url("https://github.com/acme/repo.git"), "a canonical https github.com clone URL", );}
+fn github_valid_https_clone_url_accepted() {
+    assert_accepted(
+        TestApi.validate_clone_url("https://github.com/acme/repo.git"),
+        "a canonical https github.com clone URL",
+    );
+}
 
 #[test]
-fn github_clone_url_explicit_default_port_accepted() {// Explicit :443 is the https default; `port_or_known_default()` normalizes
+fn github_clone_url_explicit_default_port_accepted() {
+    // Explicit :443 is the https default; `port_or_known_default()` normalizes
     // it to 443, which matches the expected github.com:443 origin.
     assert_accepted(
-        TestApi.validate_clone_url("https://github.com:443/acme/repo.git"), "explicit-default-port (github.com:443) clone URL", );}
+        TestApi.validate_clone_url("https://github.com:443/acme/repo.git"),
+        "explicit-default-port (github.com:443) clone URL",
+    );
+}
 
 // ---------------------------------------------------------------------------
 // GitHub clone-URL origin validation (negative twins)

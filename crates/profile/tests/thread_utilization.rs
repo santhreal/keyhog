@@ -27,7 +27,7 @@ fn disabled_feature_gaps_utilization() {
 
 #[cfg(all(feature = "hardware-counters", target_os = "linux"))]
 mod linux {
-    use keyhog_profile::{HardwareFieldSourceV2, ThreadUtilizationCollector, SnapshotCollector};
+    use keyhog_profile::{HardwareFieldSourceV2, SnapshotCollector, ThreadUtilizationCollector};
 
     use super::*;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -48,8 +48,7 @@ mod linux {
             .flatten()
             .filter_map(|entry| {
                 let tid = entry.file_name().to_string_lossy().parse::<u64>().ok()?;
-                let stat =
-                    std::fs::read_to_string(entry.path().join("stat")).ok()?;
+                let stat = std::fs::read_to_string(entry.path().join("stat")).ok()?;
                 let command_end = stat.rfind(')')?;
                 let mut fields = stat[command_end + 2..].split_whitespace();
                 let user_ticks: u64 = fields.nth(11)?.parse().ok()?;
@@ -123,7 +122,10 @@ mod linux {
                     .map(|start| thread.cpu_time_ns.saturating_sub(*start))
             })
             .sum();
-        assert!(collector_total >= 30_000_000, "three spinning workers must accrue CPU");
+        assert!(
+            collector_total >= 30_000_000,
+            "three spinning workers must accrue CPU"
+        );
 
         let start_by_id: std::collections::BTreeMap<u64, u64> =
             tasks_start.iter().copied().collect();
@@ -237,9 +239,7 @@ mod linux {
             pushes as u64
         );
         assert_eq!(utilization.dropped_samples, 10);
-        assert!(
-            utilization.frequency_samples.len() <= keyhog_profile::MAX_UTILIZATION_SAMPLES
-        );
+        assert!(utilization.frequency_samples.len() <= keyhog_profile::MAX_UTILIZATION_SAMPLES);
     }
 
     /// Threads that exit mid-session and threads that join mid-session must
@@ -270,8 +270,14 @@ mod linux {
             other => panic!("hardware evidence must be recorded: {other:?}"),
         };
         let utilization = &evidence.utilization;
-        assert!(utilization.exited_threads >= 1, "the early thread must exit mid-session");
-        assert!(utilization.joined_threads >= 1, "the late thread must join mid-session");
+        assert!(
+            utilization.exited_threads >= 1,
+            "the early thread must exit mid-session"
+        );
+        assert!(
+            utilization.joined_threads >= 1,
+            "the late thread must join mid-session"
+        );
         for thread in &utilization.threads {
             assert_ne!(thread.thread_id, 0);
         }

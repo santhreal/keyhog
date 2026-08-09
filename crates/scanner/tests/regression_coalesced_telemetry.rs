@@ -9,8 +9,11 @@ const TEST_NAME: &str =
     "regression_coalesced_telemetry::coalesced_simd_records_each_input_file_and_byte_once";
 
 fn run_isolated_counter_oracle() {
-    let scanner = CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
-        .expect("compile embedded detectors");
+    let scanner = CompiledScanner::compile_for_backend(
+        keyhog_core::embedded_detector_specs().to_vec(),
+        ScanBackend::SimdCpu,
+    )
+    .expect("compile embedded detectors for SIMD");
     let chunks = ["ordinary source text", "another plain source"]
         .into_iter()
         .enumerate()

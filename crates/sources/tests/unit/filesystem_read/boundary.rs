@@ -1,41 +1,49 @@
 //! Boundary responsibility tests for filesystem read: overlapping-window
 //! slicing arithmetic and special-file safety at every read entry point.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 // ----- slice_into_windows: pure-function boundary behavior -----
 
 /// Regression: preserves the externally observable `slice_into_windows_empty_input_returns_empty` behavior after the inline suite split.
 #[test]
-fn slice_into_windows_empty_input_returns_empty() {assert!(TestApi
+fn slice_into_windows_empty_input_returns_empty() {
+    assert!(TestApi
         .slice_into_windows_with_offsets(&[], 64, 8)
-        .is_empty());}
+        .is_empty());
+}
 
 /// Regression: preserves the externally observable `slice_into_windows_smaller_than_window_yields_one_window` behavior after the inline suite split.
 #[test]
-fn slice_into_windows_smaller_than_window_yields_one_window() {let bytes = b"hello, world";
+fn slice_into_windows_smaller_than_window_yields_one_window() {
+    let bytes = b"hello, world";
     let ws = TestApi.slice_into_windows_with_offsets(bytes, 64, 8);
     assert_eq!(ws.len(), 1);
     assert_eq!(ws[0].0, 0);
-    assert_eq!(ws[0].1, "hello, world");}
+    assert_eq!(ws[0].1, "hello, world");
+}
 
 /// Regression: preserves the externally observable `slice_into_windows_exactly_one_window_size` behavior after the inline suite split.
 #[test]
-fn slice_into_windows_exactly_one_window_size() {let bytes = vec![b'a'; 64];
+fn slice_into_windows_exactly_one_window_size() {
+    let bytes = vec![b'a'; 64];
     let ws = TestApi.slice_into_windows_with_offsets(&bytes, 64, 8);
     assert_eq!(ws.len(), 1);
     assert_eq!(ws[0].0, 0);
-    assert_eq!(ws[0].1.len(), 64);}
+    assert_eq!(ws[0].1.len(), 64);
+}
 
 /// Regression: preserves the externally observable `slice_into_windows_one_byte_over_window_emits_two_windows` behavior after the inline suite split.
 #[test]
-fn slice_into_windows_one_byte_over_window_emits_two_windows() {// A 65-byte input with window=64, overlap=8 - stride is 56, // so window 1 starts at offset 56 and runs 56..65 = 9 bytes.
+fn slice_into_windows_one_byte_over_window_emits_two_windows() {
+    // A 65-byte input with window=64, overlap=8 - stride is 56, // so window 1 starts at offset 56 and runs 56..65 = 9 bytes.
     let bytes: Vec<u8> = (0..65u8).collect();
     let ws = TestApi.slice_into_windows_with_offsets(&bytes, 64, 8);
     assert_eq!(ws.len(), 2);
     assert_eq!(ws[0].0, 0);
     assert_eq!(ws[0].1.len(), 64);
     assert_eq!(ws[1].0, 56);
-    assert_eq!(ws[1].1.len(), 9);}
+    assert_eq!(ws[1].1.len(), 9);
+}
 
 /// Regression: preserves the externally observable `slice_into_windows_overlap_bytes_match_between_neighbours` behavior after the inline suite split.
 #[test]
@@ -89,7 +97,8 @@ fn slice_into_windows_offsets_cover_the_whole_input() {
 
 /// Regression: preserves the externally observable `slice_into_windows_secret_straddling_cut_present_in_both_windows` behavior after the inline suite split.
 #[test]
-fn slice_into_windows_secret_straddling_cut_present_in_both_windows() {// Motivating case. window=128, overlap=32 → stride=96.
+fn slice_into_windows_secret_straddling_cut_present_in_both_windows() {
+    // Motivating case. window=128, overlap=32 → stride=96.
     // For exactly 2 windows we need len in (128, 128+96] = (128, 224].
     // Pick 200; windows are [0..128) and [96..200). The secret at
     // offset 100..120 sits in both - so the scanner can't miss it.
@@ -101,15 +110,20 @@ fn slice_into_windows_secret_straddling_cut_present_in_both_windows() {// Motiva
     bytes[100..100 + secret.len()].copy_from_slice(secret);
     let ws = TestApi.slice_into_windows_with_offsets(&bytes, 128, 32);
     assert_eq!(
-        ws.len(), 2, "expected exactly 2 windows for len=200, ws=128, ov=32"
+        ws.len(),
+        2,
+        "expected exactly 2 windows for len=200, ws=128, ov=32"
     );
     let s = std::str::from_utf8(secret).unwrap();
     assert!(
-        ws[0].1.contains(s), "window 0 must carry the straddling secret"
+        ws[0].1.contains(s),
+        "window 0 must carry the straddling secret"
     );
     assert!(
-        ws[1].1.contains(s), "window 1 must carry the straddling secret"
-    );}
+        ws[1].1.contains(s),
+        "window 1 must carry the straddling secret"
+    );
+}
 
 /// Regression: preserves the externally observable `slice_into_windows_invalid_utf8_at_boundary_decodes_lossy` behavior after the inline suite split.
 #[test]
@@ -137,7 +151,8 @@ fn slice_into_windows_invalid_utf8_at_boundary_decodes_lossy() {
 
 /// Regression: preserves the externally observable `slice_into_windows_large_input_window_count_matches_formula` behavior after the inline suite split.
 #[test]
-fn slice_into_windows_large_input_window_count_matches_formula() {// len = 4096, window = 1024, overlap = 64 → stride = 960.
+fn slice_into_windows_large_input_window_count_matches_formula() {
+    // len = 4096, window = 1024, overlap = 64 → stride = 960.
     // Windows: starts at 0, 960, 1920, 2880, 3840 - 5 windows
     // (the last one ending exactly at 4096).
     let bytes = vec![b'x'; 4096];
@@ -148,14 +163,17 @@ fn slice_into_windows_large_input_window_count_matches_formula() {// len = 4096,
     assert_eq!(ws[2].0, 1920);
     assert_eq!(ws[3].0, 2880);
     assert_eq!(ws[4].0, 3840);
-    assert_eq!(ws[4].1.len(), 256);}
+    assert_eq!(ws[4].1.len(), 256);
+}
 
 /// Regression: preserves the externally observable `slice_into_windows_panics_when_overlap_geq_window` behavior after the inline suite split.
 #[test]
 #[should_panic(expected = "window must exceed overlap")]
-fn slice_into_windows_panics_when_overlap_geq_window() {// Same-as-window overlap means stride == 0 → infinite loop.
+fn slice_into_windows_panics_when_overlap_geq_window() {
+    // Same-as-window overlap means stride == 0 → infinite loop.
     // Catch it as a programming error at the API surface.
-    TestApi.slice_into_windows_with_offsets(b"abc", 16, 16);}
+    TestApi.slice_into_windows_with_offsets(b"abc", 16, 16);
+}
 
 #[cfg(unix)]
 #[path = "special_files.rs"]

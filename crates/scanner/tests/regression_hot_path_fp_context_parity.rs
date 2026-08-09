@@ -15,8 +15,8 @@
 mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::sync::OnceLock;
+use keyhog_scanner::ScanBackend;
+use std::sync::LazyLock;
 
 const GHP: &str = "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"; // 40, valid checksum
 const AKIA: &str = "AKIAQYLPMN5HFIQR7XYA"; // 20, not an …EXAMPLE placeholder
@@ -25,14 +25,14 @@ const SKPROJ: &str = "sk-proj-aB3dE6gH9jK2mN5pQ8rS1tU4vW7xY0zA3cD6eF9h"; // sk-p
 const DETECTOR_IDS: &[&str] = &["github-classic-pat", "aws-access-key", "openai-api-key"];
 const CPU_BACKENDS: [ScanBackend; 2] = [ScanBackend::SimdCpu, ScanBackend::CpuFallback];
 
-fn scanner() -> &'static CompiledScanner {
-    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
-    SCANNER.get_or_init(|| {
+fn scanner() -> &'static support::ExactCpuScanners {
+    static SCANNER: LazyLock<support::ExactCpuScanners> = LazyLock::new(|| {
         let mut detectors =
             keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
-        detectors.retain(|d| DETECTOR_IDS.contains(&d.id.as_str()));
-        CompiledScanner::compile(detectors).expect("compile")
-    })
+        detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
+        support::ExactCpuScanners::compile(detectors).expect("compile exact CPU scanners")
+    });
+    &SCANNER
 }
 
 fn chunk(text: &str) -> Chunk {

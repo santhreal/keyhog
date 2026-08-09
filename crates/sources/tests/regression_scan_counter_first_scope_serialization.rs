@@ -1,7 +1,7 @@
 //! Regression coverage for the first counter-isolation scope in a test process.
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::FilesystemSource;
 
 /// A scan that starts before the first counter guard must already hold a shared

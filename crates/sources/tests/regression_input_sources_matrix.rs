@@ -11,7 +11,7 @@
 //!   - `FilesystemSource` binary-strings path (strings.rs, MIN_PRINTABLE_STRING_LEN)
 
 use keyhog_core::{Source, SourceError};
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::FilesystemSource;
 
 const BIG_MAX_SIZE: u64 = 1_000_000;

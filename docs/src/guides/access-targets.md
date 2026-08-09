@@ -124,7 +124,7 @@ Measured on `benchmarks/corpora/homefield`, 2,251 findings produced 1,213 rows.
 Sixteen distinct rule ids appear: 15 of the 21 `[[rule]]` entries, plus the
 `[[metadata]]` account mapping.
 
-```
+```text
 3559 endpoint  database-uri-endpoint
 1366 tenant    atlassian-site
  910 account   azure-storage-account
@@ -229,7 +229,7 @@ asserting a distance the line number cannot support.
 Worked example, one 1.3 MB file scanned with `--access-targets`, credential on
 line 1 and the door on line 2:
 
-```
+```text
 source                 filesystem/windowed
 targets                endpoint prod-db.example.org:5432   confidence 0.496
                        database customers                  confidence 0.470

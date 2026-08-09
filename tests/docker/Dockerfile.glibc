@@ -79,10 +79,10 @@ WORKDIR /data
 # LOUD exit 2 against the built image (drift fails the test, never ships silent).
 # Decisions accumulate in the current multi-config cache at ~/.cache/keyhog/autoroute.json,
 # baked into this layer and read by every later `docker run --rm`.
-# NOTE on exit codes: `--autoroute-calibrate` is a routing-measurement command,
-# so successful calibration returns 0 even when the measured scan finds a
-# credential. Any non-zero result is a calibration failure and aborts the image
-# build (Law 10: never ship a silently uncalibrated image).
+# NOTE on exit codes: calibration does not suppress the scan verdict. A clean
+# sample returns 0 and a sample with findings returns 1; any other result is a
+# calibration failure and aborts the image build (Law 10: never ship a silently
+# uncalibrated image).
 # Hosted-runner timing noise can make equally correct backends statistically
 # indistinguishable. The ci-lean-only fixture replaces timings only after the
 # real scans, parity receipts, and finding identity checks have succeeded.
@@ -91,10 +91,10 @@ RUN export KEYHOG_CI_AUTOROUTE_TIMING_FIXTURE=confidence-separated-v1 \
     calib() { \
         keyhog scan --autoroute-calibrate --autoroute-gpu "$@" --format json >/dev/null; \
         rc=$?; \
-        if [ "$rc" != 0 ]; then \
-            echo "autoroute calibration failed (exit $rc): keyhog scan --autoroute-calibrate --autoroute-gpu $*" >&2; \
-            exit 1; \
-        fi; \
+        case "$rc" in \
+            0|1) ;; \
+            *) echo "autoroute calibration failed (exit $rc): keyhog scan --autoroute-calibrate --autoroute-gpu $*" >&2; exit 1 ;; \
+        esac; \
     }; \
     for prof in "" "--fast" "--deep" "--precision" "--no-entropy" "--no-ml" "--no-gpu" "--threads 1"; do \
         for f in aws_leak.env clean.txt fp_trap.txt; do calib "/data/corpus/$f" $prof; done; \

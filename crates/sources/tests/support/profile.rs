@@ -66,7 +66,10 @@ pub fn run_with_profile_annotations<T>(
     let runtime = session.runtime();
     let output = operation();
     let (_events, annotations, loss) = runtime.take_session_typed_events();
-    assert_eq!(loss.annotations, 0, "annotation storage must not drop records");
+    assert_eq!(
+        loss.annotations, 0,
+        "annotation storage must not drop records"
+    );
     let values = annotations
         .into_iter()
         .filter(|record| record.annotation_id == annotation)
