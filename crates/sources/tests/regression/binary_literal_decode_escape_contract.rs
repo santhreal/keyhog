@@ -24,7 +24,7 @@
 //! no goblin object parsing (so they are deterministic and host-independent).
 #![cfg(feature = "binary")]
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 /// Extract every C string literal from one line of decompiled source.
 fn lits(line: &str) -> Vec<String> {

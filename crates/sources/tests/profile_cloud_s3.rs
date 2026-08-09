@@ -13,7 +13,7 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_profile::Stage;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use support::profile::{run_with_profile, stage_calls};
 
 const BUCKET: &str = "profile-bucket";
@@ -74,7 +74,11 @@ fn s3_paginated_listing_records_pages_downloads_and_object_totals() {
             .header("content-type", "application/xml")
             .body(page_two);
     });
-    for (key, body) in [("a.txt", "alpha\n"), ("b.txt", "bravo\n"), ("c.txt", "charl\n")] {
+    for (key, body) in [
+        ("a.txt", "alpha\n"),
+        ("b.txt", "bravo\n"),
+        ("c.txt", "charl\n"),
+    ] {
         server.mock(|when, then| {
             when.method(httpmock::Method::GET).path_includes(key);
             then.status(200)

@@ -416,7 +416,13 @@ pub(crate) async fn download_verified_asset(
 ) -> Result<Vec<u8>> {
     let bytes = keyhog_profile::instrument_future(
         keyhog_profile::Stage::SourceAcquire,
-        download_verified_payload(client, release, asset, MAX_RELEASE_ASSET_BYTES, "release asset"),
+        download_verified_payload(
+            client,
+            release,
+            asset,
+            MAX_RELEASE_ASSET_BYTES,
+            "release asset",
+        ),
     )
     .await?;
     if !looks_like_native_executable(&bytes) {

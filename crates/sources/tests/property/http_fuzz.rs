@@ -22,7 +22,7 @@
 
 #![cfg(any(feature = "web", feature = "github", feature = "s3"))]
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 

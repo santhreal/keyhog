@@ -44,7 +44,6 @@ pub struct CalibrateAutorouteArgs {
     #[arg(long, value_name = "DIR", hide = true)]
     pub execution_packs: Option<PathBuf>,
 
-
     /// Select which scan policy to calibrate.
     ///
     /// `all` preserves the install-time sweep. Select one policy when you need

@@ -91,9 +91,8 @@ fn formerly_simd_only_fixtures_have_backend_parity() {
     let simd_scanner =
         CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
             .expect("compile SIMD scanner");
-    let cpu_scanner =
-        CompiledScanner::compile_for_backend(detectors, ScanBackend::CpuFallback)
-            .expect("compile CPU scanner");
+    let cpu_scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::CpuFallback)
+        .expect("compile CPU scanner");
 
     for &(detector_id, text, credential) in HS_MINUS_AC_FIXTURES {
         let chunk = make_chunk(text);
@@ -137,9 +136,8 @@ fn simd_findings_are_a_superset_of_scalar() {
     let simd_scanner =
         CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
             .expect("compile SIMD scanner");
-    let cpu_scanner =
-        CompiledScanner::compile_for_backend(detectors, ScanBackend::CpuFallback)
-            .expect("compile CPU scanner");
+    let cpu_scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::CpuFallback)
+        .expect("compile CPU scanner");
 
     // Literal-anchored control: a fixed-prefix secret (AKIA) is in the AC literal
     // set, so BOTH backends must find it. This proves the Hyperscan union did not

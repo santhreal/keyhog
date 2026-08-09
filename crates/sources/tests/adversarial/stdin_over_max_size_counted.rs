@@ -1,7 +1,7 @@
 //! Oversized stdin must fail loud and increment size-limit telemetry.
 
 use keyhog_sources::skip_counts;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 #[test]
 fn stdin_over_max_size_counted() {

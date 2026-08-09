@@ -152,7 +152,8 @@ fn report_json_records_assembly_and_encoder_spans() {
     let guard = API.scan_runtime_guard_for_test();
     let args = report_args(dir.path(), "json", "report.json");
     let measurements = measure(|| {
-        API.report_findings(&[], &args, &guard).expect("JSON report");
+        API.report_findings(&[], &args, &guard)
+            .expect("JSON report");
     });
     assert_only_stage(&measurements, Stage::Reporting, 2);
 }
@@ -208,7 +209,8 @@ fn report_json_never_records_coverage_gap_events() {
     let runtime = keyhog_profile::Runtime::new();
     let profile_guard = runtime.enter();
     let args = report_args(dir.path(), "json", "report.json");
-    API.report_findings(&[], &args, &guard).expect("JSON report");
+    API.report_findings(&[], &args, &guard)
+        .expect("JSON report");
     let measurements = keyhog_profile::take_stage_measurements();
     let (events, _, _) = runtime.take_session_typed_events();
     drop(profile_guard);
@@ -217,7 +219,9 @@ fn report_json_never_records_coverage_gap_events() {
 
     assert_only_stage(&measurements, Stage::Reporting, 2);
     assert!(
-        events.iter().all(|event| event.event_id != EventId::CoverageGap),
+        events
+            .iter()
+            .all(|event| event.event_id != EventId::CoverageGap),
         "JSON reporting must not detect coverage gaps, got {events:?}"
     );
 }
@@ -229,7 +233,8 @@ fn baseline_load_records_preprocess_span() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("baseline.json");
     let baseline = API.baseline_empty();
-    API.baseline_save(&baseline, &path).expect("seed baseline file");
+    API.baseline_save(&baseline, &path)
+        .expect("seed baseline file");
     let measurements = measure(|| {
         API.baseline_load(&path).expect("load baseline");
     });
@@ -253,7 +258,11 @@ fn baseline_save_records_reporting_span() {
 /// exactly one span per Baseline::from_findings call.
 #[test]
 fn baseline_from_findings_records_result_merge_span() {
-    let findings = [verified_finding(1), verified_finding(1), verified_finding(2)];
+    let findings = [
+        verified_finding(1),
+        verified_finding(1),
+        verified_finding(2),
+    ];
     let measurements = measure(|| {
         let baseline = API.baseline_from_findings(&findings);
         assert_eq!(baseline.entries.len(), 2, "dedup behavior unchanged");

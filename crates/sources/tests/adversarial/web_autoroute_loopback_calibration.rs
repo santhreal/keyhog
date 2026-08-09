@@ -7,7 +7,7 @@ use crate::support::split_chunk_results;
 #[test]
 fn web_loopback_fetch_requires_explicit_autoroute_calibration() {
     use keyhog_core::Source;
-    use keyhog_sources::testing::{TestApi};
+    use keyhog_sources::testing::TestApi;
     use keyhog_sources::WebSource;
 
     let server = httpmock::MockServer::start();

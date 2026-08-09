@@ -3,7 +3,7 @@
 use keyhog_profile::{
     add_counter, add_input_bytes, add_input_units, record_distribution, reset, set_enabled,
     take_metric_distributions, take_typed_metrics, CounterId, MetricId, MetricKind, MetricUnit,
-    METRIC_REGISTRY_VERSION, METRICS,
+    METRICS, METRIC_REGISTRY_VERSION,
 };
 
 /// The standalone set_enabled runtime must record typed counters exactly so
@@ -95,17 +95,26 @@ fn value_distribution_buckets_exact_observations() {
     assert_eq!(distribution.maximum, 300);
     assert_eq!(distribution.buckets.len(), 3);
     assert_eq!(
-        (distribution.buckets[0].lower_bound, distribution.buckets[0].upper_bound),
+        (
+            distribution.buckets[0].lower_bound,
+            distribution.buckets[0].upper_bound
+        ),
         (1, 1)
     );
     assert_eq!(distribution.buckets[0].count, 1);
     assert_eq!(
-        (distribution.buckets[1].lower_bound, distribution.buckets[1].upper_bound),
+        (
+            distribution.buckets[1].lower_bound,
+            distribution.buckets[1].upper_bound
+        ),
         (4, 7)
     );
     assert_eq!(distribution.buckets[1].count, 2);
     assert_eq!(
-        (distribution.buckets[2].lower_bound, distribution.buckets[2].upper_bound),
+        (
+            distribution.buckets[2].lower_bound,
+            distribution.buckets[2].upper_bound
+        ),
         (256, 511)
     );
     assert_eq!(distribution.buckets[2].count, 1);

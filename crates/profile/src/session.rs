@@ -143,7 +143,10 @@ impl Session {
             &resource_samples,
         );
         let wall_ns = u64::try_from(wall.as_nanos()).unwrap_or(u64::MAX);
-        let hardware_session = self.hardware.take().expect("unfinished profile owns hardware");
+        let hardware_session = self
+            .hardware
+            .take()
+            .expect("unfinished profile owns hardware");
         let mut collectors = vec![self.resource_collector.capability()];
         collectors.extend(hardware_session.capabilities());
         let hardware = hardware_session.finish_evidence(wall_ns, &self.runtime);

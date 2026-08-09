@@ -2,13 +2,20 @@
 //! and must refuse to reach one they do not.
 
 use keyhog_profile::{
-    BottleneckKindV2, CacheId, CausalProfileV2, RunIdentity, RunInsightV2, RunState, Session,
-    SerialScopeV2, Stage,
+    BottleneckKindV2, CacheId, CausalProfileV2, RunIdentity, RunInsightV2, RunState, SerialScopeV2,
+    Session, Stage,
 };
 use std::sync::{Arc, Barrier};
 
 fn identity(threads: usize) -> RunIdentity {
-    let mut identity = RunIdentity::new("0.5.68", "detectors", "config", "filesystem", "text", "auto");
+    let mut identity = RunIdentity::new(
+        "0.5.68",
+        "detectors",
+        "config",
+        "filesystem",
+        "text",
+        "auto",
+    );
     identity.scanner_threads = threads;
     identity.logical_cpus = 8;
     identity

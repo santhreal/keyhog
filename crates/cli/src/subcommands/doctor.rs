@@ -525,24 +525,30 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
         "  pack path      {dim}{}{reset}",
         execution_pack_dir.display()
     );
-    let installed_pack_binding = match crate::execution_pack_install::load_authenticated_binding(
-        &execution_pack_dir,
-    ) {
-        Ok(binding) => {
-            println!(
-                "  pack state     {green}AUTHENTICATED{reset}  {dim}{} policy/backend pack(s), manifest {}{reset}",
-                binding.packs.len(),
-                keyhog_core::hex_encode(&binding.manifest_digest),
-            );
-            Some(binding)
+    let installed_pack_binding = if execution_pack_dir.exists() {
+        match crate::execution_pack_install::load_authenticated_binding(&execution_pack_dir) {
+            Ok(binding) => {
+                println!(
+                    "  pack state     {green}AUTHENTICATED{reset}  {dim}{} policy/backend pack(s), manifest {}{reset}",
+                    binding.packs.len(),
+                    keyhog_core::hex_encode(&binding.manifest_digest),
+                );
+                Some(binding)
+            }
+            Err(error) => {
+                healthy = false;
+                println!(
+                    "  pack state     {red}INVALID{reset}  {dim}{error:#}; repair: `keyhog repair --force`{reset}"
+                );
+                None
+            }
         }
-        Err(error) => {
-            healthy = false;
-            println!(
-                "  pack state     {red}INVALID{reset}  {dim}{error:#}; repair: `keyhog repair --force`{reset}"
-            );
-            None
-        }
+    } else {
+        warned = true;
+        println!(
+            "  pack state     {yellow}NOT INSTALLED{reset}  {dim}using the embedded detector corpus; install an authenticated generation to avoid runtime compilation{reset}"
+        );
+        None
     };
     let route_pack_binding = autoroute_cache
         .as_deref()

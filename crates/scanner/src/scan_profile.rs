@@ -384,8 +384,7 @@ pub fn dump(label: &str) {
             crate::engine::scan_postprocess::decode_recursion_from_typed(&typed);
         let gen_ms = ns[row(Stage::Decode)] as f64 / 1e6;
         let scan_ms = decode_total as f64 / 1e6;
-        if parents != 0 || subchunks != 0 || derived_bytes != 0 || gen_ms != 0.0 || scan_ms != 0.0
-        {
+        if parents != 0 || subchunks != 0 || derived_bytes != 0 || gen_ms != 0.0 || scan_ms != 0.0 {
             eprintln!(
                 "{}",
                 crate::engine::scan_postprocess::format_decode_recursion(
@@ -418,10 +417,8 @@ pub fn dump(label: &str) {
     }
     #[cfg(feature = "ml")]
     {
-        let batch = crate::engine::scan_postprocess::ml_batch_profile_from_parts(
-            &typed,
-            &distributions,
-        );
+        let batch =
+            crate::engine::scan_postprocess::ml_batch_profile_from_parts(&typed, &distributions);
         if batch.calls != 0 {
             eprintln!(
                 "{}",
