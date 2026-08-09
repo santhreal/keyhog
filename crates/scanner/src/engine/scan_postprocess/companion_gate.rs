@@ -1,0 +1,237 @@
+//! Confirmed companion-literal presence gate.
+//!
+//! Phase-1 triggers on short `required_literals` (e.g. `"123"`, `"IP"`, `"ps"`)
+//! can activate confirmed patterns whose regex also requires rarer companion
+//! literals (`form`+`builder`, `api`, `webhook`, …). Without a presence check
+//! those patterns fall into whole-chunk or short-prefix anchored extract and
+//! burn milliseconds per chunk on inert padding (`ordinary_value = 1234567890`,
+//! lorem `ipsum` / `adipiscing`).
+//!
+//! This gate parses each regex once (thread-local cache) into an OR-of-AND of
+//! lowercase ASCII literal runs (at least [`MIN_COMPANION_BYTES`]). A pattern is
+//! skipped only when every alternation arm is missing at least one required
+//! run — fail-open on parse/empty so recall is preserved.
+//!
+//! Per-chunk evaluation builds one temporary Aho-Corasick over the unique
+//! companion literals of the active set and marks presence in a single pass,
+//! instead of one full-haystack memmem per literal (measured: multi-memmem
+//! dominated confirmed time on large inert lorem).
+
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind};
+use regex_syntax::ast::{parse::Parser, Ast};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+/// Minimum literal-run length worth gating on. Shorter runs (`ip`, `ps`) are
+/// too common in ordinary text to reject work on their own.
+pub(crate) const MIN_COMPANION_BYTES: usize = 3;
+
+thread_local! {
+    static COMPANION_ARMS_CACHE: RefCell<HashMap<String, Arc<Vec<Vec<String>>>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// OR-of-AND companion arms for `src`. Empty means "no gate" (fail-open).
+pub(crate) fn companion_arms(src: &str) -> Arc<Vec<Vec<String>>> {
+    COMPANION_ARMS_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some(arms) = cache.get(src) {
+            return Arc::clone(arms);
+        }
+        let arms = Arc::new(compute_companion_arms(src));
+        cache.insert(src.to_string(), Arc::clone(&arms));
+        arms
+    })
+}
+
+/// Evaluate companion gates for every active confirmed pattern in one haystack
+/// pass. `out[pat_idx]` is true when the pattern may still match.
+pub(crate) fn companions_allow_batch(
+    patterns: &[(usize, &str)],
+    text: &str,
+    out: &mut [bool],
+) {
+    out.fill(true);
+    if patterns.is_empty() {
+        return;
+    }
+
+    let mut literal_ids: HashMap<String, usize> = HashMap::new();
+    let mut literals: Vec<String> = Vec::new();
+    // pat_idx -> arms as literal-id conjunctions
+    let mut armed: Vec<(usize, Vec<Vec<usize>>)> = Vec::with_capacity(patterns.len());
+
+    for &(pat_idx, src) in patterns {
+        let arms = companion_arms(src);
+        if arms.is_empty() {
+            continue;
+        }
+        let mut id_arms: Vec<Vec<usize>> = Vec::with_capacity(arms.len());
+        for conj in arms.iter() {
+            let mut ids = Vec::with_capacity(conj.len());
+            for lit in conj {
+                let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
+                    literals.push(lit.clone());
+                    literals.len() - 1
+                });
+                ids.push(id);
+            }
+            id_arms.push(ids);
+        }
+        armed.push((pat_idx, id_arms));
+    }
+
+    if literals.is_empty() || armed.is_empty() {
+        return;
+    }
+
+    let Ok(ac) = AhoCorasickBuilder::new()
+        .match_kind(MatchKind::Standard)
+        .kind(Some(AhoCorasickKind::ContiguousNFA))
+        .ascii_case_insensitive(true)
+        .build(&literals)
+    else {
+        // Fail-open: keep every pattern allowed.
+        return;
+    };
+
+    let mut present = vec![false; literals.len()];
+    for mat in ac.find_overlapping_iter(text) {
+        present[mat.pattern().as_usize()] = true;
+    }
+
+    for (pat_idx, id_arms) in armed {
+        let allow = id_arms
+            .iter()
+            .any(|conj| conj.iter().all(|&id| present[id]));
+        if let Some(slot) = out.get_mut(pat_idx) {
+            *slot = allow;
+        }
+    }
+}
+
+/// True when the pattern may still match: no gate, or at least one arm has
+/// every required companion literal present in `text` (ASCII case-insensitive).
+#[cfg(test)]
+pub(crate) fn companions_allow(src: &str, text: &str) -> bool {
+    let mut out = vec![true; 1];
+    companions_allow_batch(&[(0, src)], text, &mut out);
+    out[0]
+}
+
+fn compute_companion_arms(src: &str) -> Vec<Vec<String>> {
+    let Ok(ast) = Parser::new().parse(src) else {
+        return Vec::new();
+    };
+    let mut arms = Vec::new();
+    collect_arms(&ast, &mut arms);
+    arms.retain(|conj| conj.is_empty() == false);
+    arms
+}
+
+fn collect_arms(ast: &Ast, out: &mut Vec<Vec<String>>) {
+    match ast {
+        Ast::Alternation(alt) => {
+            for branch in &alt.asts {
+                collect_arms(branch, out);
+            }
+        }
+        Ast::Group(group) => collect_arms(&group.ast, out),
+        other => {
+            let mut conj = Vec::new();
+            collect_runs(other, &mut conj);
+            conj.sort_unstable();
+            conj.dedup();
+            out.push(conj);
+        }
+    }
+}
+
+fn collect_runs(ast: &Ast, out: &mut Vec<String>) {
+    match ast {
+        Ast::Concat(concat) => {
+            let mut run = String::new();
+            for inner in &concat.asts {
+                match inner {
+                    Ast::Literal(lit) => {
+                        if lit.c.is_ascii() {
+                            run.push(lit.c.to_ascii_lowercase());
+                        } else {
+                            flush_run(&mut run, out);
+                        }
+                    }
+                    _ => {
+                        flush_run(&mut run, out);
+                        collect_runs(inner, out);
+                    }
+                }
+            }
+            flush_run(&mut run, out);
+        }
+        Ast::Group(group) => collect_runs(&group.ast, out),
+        Ast::Alternation(alt) => {
+            let mut iter = alt.asts.iter();
+            let Some(first) = iter.next() else {
+                return;
+            };
+            let mut common: Vec<String> = Vec::new();
+            collect_runs(first, &mut common);
+            common.sort_unstable();
+            common.dedup();
+            for branch in iter {
+                let mut branch_runs = Vec::new();
+                collect_runs(branch, &mut branch_runs);
+                branch_runs.sort_unstable();
+                branch_runs.dedup();
+                common.retain(|lit| branch_runs.binary_search(lit).is_ok());
+            }
+            out.extend(common);
+        }
+        Ast::Literal(lit) if lit.c.is_ascii() => {
+            let mut run = lit.c.to_ascii_lowercase().to_string();
+            flush_run(&mut run, out);
+        }
+        Ast::Repetition(_)
+        | Ast::ClassUnicode(_)
+        | Ast::ClassPerl(_)
+        | Ast::ClassBracketed(_)
+        | Ast::Dot(_)
+        | Ast::Empty(_)
+        | Ast::Flags(_)
+        | Ast::Assertion(_)
+        | Ast::Literal(_) => {}
+    }
+}
+
+fn flush_run(run: &mut String, out: &mut Vec<String>) {
+    if run.len() >= MIN_COMPANION_BYTES {
+        out.push(std::mem::take(run));
+    } else {
+        run.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formbuilder_requires_form_or_fused_token() {
+        let src = r#"(?:123[_\-\s]*form[_\-\s]*builder|123FORMBUILDER)[_.\s]*(?:api[_\-\s]*key)"#;
+        let arms = companion_arms(src);
+        assert!(arms.is_empty() == false, "expected companion arms for 123formbuilder");
+        let padding = "const ordinary_value = 1234567890;\n";
+        assert_eq!(companions_allow(src, padding), false);
+        assert_eq!(companions_allow(src, "123_form_builder_api_key=abcdef"), true);
+        assert_eq!(companions_allow(src, "123FORMBUILDER_api_key=abcdef"), true);
+    }
+
+    #[test]
+    fn ip_api_requires_api_companion() {
+        let src = r#"(?:IP[_\-\s]*API|ip[_\-\s]*api)(?:_KEY)?[=:\s"']+([a-zA-Z0-9_-]{10,})"#;
+        let lorem = "lorem ipsum dolor sit amet, consectetur adipiscing elit.\n";
+        assert_eq!(companions_allow(src, lorem), false);
+        assert_eq!(companions_allow(src, "IPAPI_KEY=WnGcEBigw6"), true);
+    }
+}

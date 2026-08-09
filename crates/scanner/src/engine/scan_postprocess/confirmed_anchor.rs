@@ -6,6 +6,11 @@
 //! Aho-Corasick pass can collect candidate start positions and then verify each
 //! candidate with the same anchored regex machinery used by phase-2. Patterns
 //! without a proven prefix keep the whole-chunk path.
+//!
+//! When only a handful of eligible patterns are active on a chunk, searching
+//! those patterns' required-prefix literals directly is cheaper than running
+//! the full shared automaton (measured: anchor-collect dominated confirmed
+//! time on large inert files that triggered only two patterns).
 
 use super::super::phase2_anchor::{
     required_prefix_literals_with_cap, CONFIRMED_MAX_LITERALS_PER_PATTERN,
@@ -16,6 +21,11 @@ use crate::anchored_regex::AnchoredRegex;
 use crate::types::CompiledPattern;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind};
 use std::sync::OnceLock;
+
+/// Above this many active eligible patterns, the full shared automaton is the
+/// cheaper collect path. Below it, per-literal `ci_find_iter` over the active
+/// needles avoids scanning the whole confirmed-anchor literal set.
+const SPARSE_ACTIVE_ELIGIBLE_MAX: usize = 32;
 
 impl CompiledScanner {
     #[cfg(test)]
@@ -43,6 +53,9 @@ pub(crate) struct ConfirmedAnchorIndex {
     anchor_first_bigram: FirstBigramSet,
     anchor_literals: Vec<String>,
     literal_patterns: super::super::CsrU32,
+    /// Reverse of `literal_patterns`: per confirmed pattern, the shared-anchor
+    /// literal ids that localize it. Drives the sparse active-set collect path.
+    pattern_literals: super::super::CsrU32,
     eligible: Vec<bool>,
     anchored: Vec<Option<AnchoredRegex>>,
     eligible_count: usize,
@@ -65,6 +78,7 @@ impl ConfirmedAnchorIndex {
             std::collections::HashMap::new();
         let mut literals: Vec<String> = Vec::new();
         let mut literal_pattern_pairs = Vec::new();
+        let mut pattern_literal_pairs = Vec::new();
         let mut eligible = vec![false; ac_map.len()];
         let mut anchored: Vec<Option<AnchoredRegex>> = (0..ac_map.len()).map(|_| None).collect();
 
@@ -91,6 +105,7 @@ impl ConfirmedAnchorIndex {
                     literals.len() - 1
                 });
                 literal_pattern_pairs.push((id, idx));
+                pattern_literal_pairs.push((idx, id));
             }
             eligible[idx] = true;
             anchored[idx] = Some(AnchoredRegex::new(pattern.regex.as_str(), ci));
@@ -98,6 +113,8 @@ impl ConfirmedAnchorIndex {
 
         let literal_patterns =
             super::super::CsrU32::from_pairs(literals.len(), literal_pattern_pairs);
+        let pattern_literals =
+            super::super::CsrU32::from_pairs(ac_map.len(), pattern_literal_pairs);
 
         let eligible_count = eligible.iter().filter(|&&value| value).count();
         if eligible_count == 0 {
@@ -114,6 +131,7 @@ impl ConfirmedAnchorIndex {
             anchor_first_bigram,
             anchor_literals: literals,
             literal_patterns,
+            pattern_literals,
             eligible,
             anchored,
             eligible_count,
@@ -166,13 +184,37 @@ impl ConfirmedAnchorIndex {
         Some(anchored)
     }
 
+    /// Collect `(pattern, start)` candidates for the active confirmed set.
+    ///
+    /// `active_patterns` is the chunk's confirmed trigger list (ac_map indices).
+    /// `is_active` applies any extra gate (suffix presence). When few eligible
+    /// patterns survive, their required-prefix literals are searched directly;
+    /// otherwise the shared automaton runs. Both paths emit the same
+    /// `(pattern, start)` set for a given active mask.
     pub(crate) fn collect_candidates(
         &self,
         text: &str,
+        active_patterns: &[usize],
         is_active: impl Fn(usize) -> bool,
         out: &mut Vec<(u32, u32)>,
     ) {
         out.clear();
+        let mut sparse: Vec<usize> = Vec::new();
+        for &pat_idx in active_patterns {
+            if self.is_eligible(pat_idx) && is_active(pat_idx) {
+                sparse.push(pat_idx);
+                if sparse.len() > SPARSE_ACTIVE_ELIGIBLE_MAX {
+                    break;
+                }
+            }
+        }
+        if sparse.is_empty() {
+            return;
+        }
+        if sparse.len() <= SPARSE_ACTIVE_ELIGIBLE_MAX {
+            self.collect_candidates_sparse(text, &sparse, out);
+            return;
+        }
         if !self.anchor_first_bigram.may_have_match(text) {
             return;
         }
@@ -185,6 +227,30 @@ impl ConfirmedAnchorIndex {
                     if is_active(pattern) {
                         out.push((pattern as u32, pos));
                     }
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+    }
+
+    fn collect_candidates_sparse(
+        &self,
+        text: &str,
+        active_eligible: &[usize],
+        out: &mut Vec<(u32, u32)>,
+    ) {
+        let haystack = text.as_bytes();
+        for &pat_idx in active_eligible {
+            let Some(literal_ids) = self.pattern_literals.get(pat_idx) else {
+                continue;
+            };
+            for &literal_id in literal_ids {
+                let Some(literal) = self.anchor_literals.get(literal_id as usize) else {
+                    continue;
+                };
+                for pos in crate::ascii_ci::ci_find_iter(haystack, literal.as_bytes()) {
+                    out.push((pat_idx as u32, pos as u32));
                 }
             }
         }

@@ -131,15 +131,41 @@ impl CompiledScanner {
         } else {
             false
         };
+        // Companion gate: skip patterns whose required mid-literals are all
+        // absent (short phase-1 triggers like "123"/"ip" on inert padding).
+        let companion_t0 = prof.then(std::time::Instant::now);
+        let mut companion_ok = vec![true; self.ac_map.len()];
+        let companion_patterns: Vec<(usize, &str)> = confirmed_patterns
+            .iter()
+            .filter_map(|&pat_idx| {
+                self.ac_map
+                    .get(pat_idx)
+                    .map(|entry| (pat_idx, entry.regex.as_str()))
+            })
+            .collect();
+        super::scan_postprocess_companion_gate::companions_allow_batch(
+            &companion_patterns,
+            &preprocessed.text,
+            &mut companion_ok,
+        );
+        if let Some(companion_t0) = companion_t0 {
+            scan_postprocess_profile::confirmed_prof_record(
+                scan_postprocess_profile::ConfirmedStage::SuffixGate,
+                companion_t0.elapsed(),
+            );
+        }
         // Freeze the scratch for the rest of the pass: every use below is a
         // read, so the closures share one immutable borrow.
         let scratch = &scratch_owned;
-        let suffix_allows = |pat_idx: usize| -> bool {
-            if !suffix_gate_active {
+        let pattern_allows = |pat_idx: usize| -> bool {
+            if companion_ok.get(pat_idx).copied() != Some(true) {
+                return false;
+            }
+            if suffix_gate_active == false {
                 return true;
             }
             match self.ac_suffix_gate.get(pat_idx) {
-                Some(gate) if !gate.is_empty() => {
+                Some(gate) if gate.is_empty() == false => {
                     gate.iter().any(|id| scratch.contains_suffix(*id as usize))
                 }
                 _ => true,
@@ -149,7 +175,7 @@ impl CompiledScanner {
         if let Some(anchor_index) = &self.confirmed_anchor_index {
             let has_active_anchored = confirmed_patterns
                 .iter()
-                .any(|&pat_idx| anchor_index.is_eligible(pat_idx) && suffix_allows(pat_idx));
+                .any(|&pat_idx| anchor_index.is_eligible(pat_idx) && pattern_allows(pat_idx));
             if has_active_anchored {
                 super::with_candidate_scratch(|candidates| {
                     let collect_t0 = prof.then(std::time::Instant::now);
@@ -158,7 +184,7 @@ impl CompiledScanner {
                     // the binary search this probe used to run for every
                     // (literal hit x pattern sharing that literal).
                     let is_active =
-                        |pat_idx: usize| scratch.contains_active(pat_idx) && suffix_allows(pat_idx);
+                        |pat_idx: usize| scratch.contains_active(pat_idx) && pattern_allows(pat_idx);
                     if let Some(literal_matches) = confirmed_anchor_literal_matches {
                         anchor_index.collect_candidates_from_literal_matches(
                             literal_matches,
@@ -166,7 +192,12 @@ impl CompiledScanner {
                             candidates,
                         );
                     } else {
-                        anchor_index.collect_candidates(&preprocessed.text, is_active, candidates);
+                        anchor_index.collect_candidates(
+                            &preprocessed.text,
+                            confirmed_patterns,
+                            is_active,
+                            candidates,
+                        );
                     }
                     if let Some(collect_t0) = collect_t0 {
                         scan_postprocess_profile::confirmed_prof_record(
@@ -275,7 +306,7 @@ impl CompiledScanner {
                 break;
             }
             // Skip a gated ac_map pattern whose required suffix literal is absent.
-            if !suffix_allows(pat_idx) {
+            if !pattern_allows(pat_idx) {
                 continue;
             }
             if self

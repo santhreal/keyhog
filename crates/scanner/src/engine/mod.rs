@@ -146,6 +146,8 @@ mod scan_postprocess_ml;
 pub(crate) use scan_postprocess_ml::finalize_pending_match_for_test;
 #[path = "scan_postprocess/profile.rs"]
 mod scan_postprocess_profile;
+#[path = "scan_postprocess/companion_gate.rs"]
+mod scan_postprocess_companion_gate;
 #[path = "scan_postprocess/suffix_gate.rs"]
 mod scan_postprocess_suffix_gate;
 pub(crate) mod trigger_bitmap;
