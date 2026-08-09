@@ -7,6 +7,7 @@
 ## 0.5.68 - 2026-08-05
 
 - Scanner source files freed of large co-located test suites.
+- Verify that oversized TeX archive members remain scannable across every bounded extraction window when provenance analysis reaches its size cap.
 
 ## 0.5.67 - 2026-08-05
 
