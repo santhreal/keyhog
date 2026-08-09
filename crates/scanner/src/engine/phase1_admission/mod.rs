@@ -1015,8 +1015,9 @@ impl CompiledScanner {
         // keyword-trigger census still run live: those fields feed autoroute
         // WorkloadKey and must not flip after the first clean window.
         // Safe to publish into a reusable evidence row only because
-        // representative grouping for filesystem/windowed also requires the
-        // same path class (see phase1_admission_plan_with_bigram_mode).
+        // representative grouping is symmetric: mixed windowed/non-windowed never
+        // share, and filesystem/windowed pairs also require the same path
+        // (see phase1_admission_plan_with_bigram_mode).
         if chunk.metadata.decoded_span.is_none()
             && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
             && super::scan::vocab_previously_clean(
@@ -1189,21 +1190,23 @@ impl CompiledScanner {
         for (index, chunk) in chunks.iter().enumerate() {
             let data = chunk.data.as_bytes();
             let fingerprint = phase1_payload_fingerprint(data);
-            let windowed_path = (chunk.metadata.source_type.as_ref() == "filesystem/windowed")
-                .then_some(chunk.metadata.path.as_deref());
+            let current_windowed = chunk.metadata.source_type.as_ref() == "filesystem/windowed";
             let mut representative_position = None;
             for (position, (candidate, representative_index)) in representatives.iter().enumerate()
             {
                 let representative = &chunks[*representative_index];
-                let same_windowed_path = match windowed_path {
-                    // Non-windowed payloads keep content-only reuse (path-independent
-                    // absence fields only). Windowed rows also require the same path
-                    // so a path-scoped vocab-clean proof cannot jump to another file.
-                    None => true,
-                    Some(path) => {
-                        representative.metadata.source_type.as_ref() == "filesystem/windowed"
-                            && representative.metadata.path.as_deref() == path
+                let representative_windowed =
+                    representative.metadata.source_type.as_ref() == "filesystem/windowed";
+                // Symmetric: both non-windowed may share content-only reuse; both
+                // filesystem/windowed require the same path so a path-scoped
+                // vocab-clean proof cannot jump to another file or source class.
+                // Mixed windowed/non-windowed never share a representative.
+                let same_windowed_path = match (current_windowed, representative_windowed) {
+                    (true, true) => {
+                        chunk.metadata.path.as_deref() == representative.metadata.path.as_deref()
                     }
+                    (false, false) => true,
+                    _ => false,
                 };
                 if *candidate == fingerprint
                     && same_windowed_path
