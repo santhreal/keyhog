@@ -924,7 +924,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
                 };
                 tracing::debug!(
                     target: "keyhog::matcher_artifact_cache",
-                    __veyyon_magic("", "reason,")
+                    %reason,
                     outcome = outcome.as_str(),
                     "matcher artifact cache miss"
                 );
@@ -939,7 +939,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
                 {
                     tracing::warn!(
                         target: "keyhog::matcher_artifact_cache",
-                        error = __veyyon_magic("", "store_error,")
+                        error = %store_error,
                         "failed to persist matcher artifact cache entry"
                     );
                 }
