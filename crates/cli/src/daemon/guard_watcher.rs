@@ -27,8 +27,6 @@ use parking_lot::Mutex;
 
 /// One watched root and its event buffer.
 struct WatchedRoot {
-    /// Canonical root path.
-    path: PathBuf,
     /// Bounded event buffer with monotonic sequence.
     buffer: Arc<Mutex<EventBuffer>>,
 }
@@ -36,7 +34,8 @@ struct WatchedRoot {
 /// Manages filesystem watchers for all guard roots.
 pub struct GuardWatcher {
     /// The native watcher handle. One watcher serves all roots.
-    watcher: RecommendedWatcher,
+    /// `None` when the platform watcher could not be created.
+    watcher: Option<RecommendedWatcher>,
     /// Channel receiver for events from the native watcher.
     rx: mpsc::Receiver<notify::Result<notify::Event>>,
     /// Tracked roots: canonical path -> watched root state.
@@ -54,12 +53,26 @@ impl GuardWatcher {
         })
         .map_err(|e| format!("failed to create filesystem watcher: {}", e))?;
         Ok(Self {
-            watcher,
+            watcher: Some(watcher),
             rx,
             roots: HashMap::new(),
             config,
         })
     }
+
+    /// Create a disabled watcher that never produces events. Guard
+    /// still works via commit transactions; it just loses advisory
+    /// filesystem events.
+    pub fn new_disabled() -> Self {
+        let (_tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+        Self {
+            watcher: None,
+            rx,
+            roots: HashMap::new(),
+            config: GuardReconciliationConfig::default(),
+        }
+    }
+
 
     /// Register a new root for watching. The watcher is started before
     /// the baseline walk so events during the walk are captured.
@@ -67,32 +80,28 @@ impl GuardWatcher {
         if self.roots.contains_key(&path) {
             return Err(format!("root already watched: {}", path.display()));
         }
-        self.watcher
-            .watch(&path, RecursiveMode::Recursive)
-            .map_err(|e| {
+        if let Some(ref mut watcher) = self.watcher {
+            watcher.watch(&path, RecursiveMode::Recursive).map_err(|e| {
                 format!(
                     "failed to watch {}: {}; on Linux raise fs.inotify.max_user_watches",
                     path.display(),
                     e
                 )
             })?;
+        }
         let buffer = Arc::new(Mutex::new(EventBuffer::new(
             self.config.max_pending_events_per_root,
         )));
-        self.roots.insert(
-            path.clone(),
-            WatchedRoot {
-                path,
-                buffer,
-            },
-        );
+        self.roots.insert(path, WatchedRoot { buffer });
         Ok(())
     }
 
     /// Remove a root from watching.
     pub fn remove_root(&mut self, path: &std::path::Path) {
         if self.roots.remove(path).is_some() {
-            let _ = self.watcher.unwatch(path);
+            if let Some(ref mut watcher) = self.watcher {
+                let _ = watcher.unwatch(path);
+            }
         }
     }
     /// Poll for events from the native watcher. Returns normalized
@@ -159,10 +168,6 @@ impl GuardWatcher {
         self.roots.is_empty()
     }
 
-    /// Get the event buffer for a root.
-    pub fn event_buffer(&self, root: &std::path::Path) -> Option<Arc<Mutex<EventBuffer>>> {
-        self.roots.get(root).map(|r| r.buffer.clone())
-    }
 }
 
 /// Convert a notify::Event into normalized GuardEvent(s).

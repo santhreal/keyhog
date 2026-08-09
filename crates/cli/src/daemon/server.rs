@@ -250,6 +250,8 @@ struct ServerState {
     active_requests: AtomicU32,
     /// Guard runtime: root registry, attestation index, policy identity.
     guard: Arc<crate::daemon::guard_runtime::GuardRuntime>,
+    /// Guard filesystem watcher: native watchers for all guard roots.
+    guard_watcher: Arc<parking_lot::Mutex<crate::daemon::guard_watcher::GuardWatcher>>,
 }
 
 impl ServerState {
@@ -291,6 +293,15 @@ impl ServerState {
             scans_drained: Notify::new(),
             active_requests: AtomicU32::new(0),
             guard: Arc::new(crate::daemon::guard_runtime::GuardRuntime::new()),
+            guard_watcher: Arc::new(parking_lot::Mutex::new(
+                crate::daemon::guard_watcher::GuardWatcher::new(
+                    keyhog_sources::guard::GuardReconciliationConfig::default(),
+                )
+                .unwrap_or_else(|e| {
+                    tracing::warn!("daemon: guard watcher disabled: {}", e);
+                    crate::daemon::guard_watcher::GuardWatcher::new_disabled()
+                }),
+            )),
         }
     }
 
@@ -472,6 +483,7 @@ pub(crate) async fn run_with_backend_override(
 
     announce_daemon_ready(&socket_path, detector_count, &state.warm_backend_status());
     let accept_task = spawn_accept_loop(listener, state.clone());
+    let watcher_task = spawn_guard_watcher_loop(state.clone());
 
     finish_daemon_service(&socket_path, accept_task).await
 }
@@ -588,6 +600,67 @@ fn spawn_accept_loop(
     state: Arc<ServerState>,
 ) -> tokio::task::JoinHandle<std::result::Result<(), DaemonServiceFailure>> {
     tokio::spawn(run_accept_loop(listener, state))
+}
+
+/// Spawn a background task that polls the guard filesystem watcher and
+/// processes events through the guard state machine. Events are
+/// coalesced within a short window before applying transitions.
+fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let coalesce_window = std::time::Duration::from_millis(
+            keyhog_sources::guard::GuardReconciliationConfig::default().coalesce_window_ms,
+        );
+        loop {
+            tokio::select! {
+                _ = state.shutdown.notified() => return,
+                _ = tokio::time::sleep(coalesce_window) => {
+                    let events = state.guard_watcher.lock().poll_events();
+                    for (root, evts) in events {
+                        process_guard_events(&state, &root, evts);
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// Process a batch of guard events for one root. Applies the guard
+/// state machine transition based on the event classification.
+fn process_guard_events(state: &ServerState, root: &Path, events: Vec<keyhog_sources::guard::GuardEvent>) {
+    use keyhog_core::guard_state::{GuardTransition, GuardRootState};
+    use keyhog_sources::guard::GuardEvent;
+
+    let root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(root.as_os_str());
+    let has_findings = false; // Advisory events do not prove findings;
+                              // only a commit transaction does.
+    let has_degradation = events.iter().any(|e| matches!(e, GuardEvent::ReconcileSubtree(_)));
+
+    let transition = if has_degradation {
+        GuardTransition::EventsDegraded
+    } else if has_findings {
+        GuardTransition::EventsFindings
+    } else {
+        GuardTransition::EventsClean
+    };
+
+    match state.guard.transition_root(root_bytes, &transition) {
+        Ok(new_state) => {
+            if new_state == GuardRootState::Degraded {
+                tracing::warn!(
+                    "daemon: guard root {} degraded after {} events",
+                    root.display(),
+                    events.len()
+                );
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                "daemon: guard transition failed for {}: {}",
+                root.display(),
+                e
+            );
+        }
+    }
 }
 
 async fn run_accept_loop(
@@ -1554,17 +1627,33 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             }
             let fs_identity = filesystem_identity(&canonical_path);
             match state.guard.add_root(canonical.as_bytes().to_vec(), fs_identity, guard_mode) {
-                Ok(record) => Response::GuardAdded {
-                    root: canonical.clone(),
-                    state: record.state.label().to_string(),
-                    terminal_sequence: record.terminal_sequence,
-                },
+                Ok(record) => {
+                    // Register the root with the filesystem watcher.
+                    // Subscribe-first: the watcher starts before any
+                    // baseline walk so events during the walk are
+                    // captured.
+                    if let Err(e) = state.guard_watcher.lock().add_root(canonical_path.clone()) {
+                        tracing::warn!(
+                            "daemon: guard watcher failed to register {}: {}",
+                            canonical,
+                            e
+                        );
+                    }
+                    Response::GuardAdded {
+                        root: canonical.clone(),
+                        state: record.state.label().to_string(),
+                        terminal_sequence: record.terminal_sequence,
+                    }
+                }
                 Err(msg) => Response::Error { message: format!("daemon: guard add failed: {}", msg) },
             }
         }
         Request::GuardRemove { root } => {
             match state.guard.remove_root(root.as_bytes()) {
-                Some(_) => Response::GuardRemoved,
+                Some(_) => {
+                    state.guard_watcher.lock().remove_root(std::path::Path::new(&root));
+                    Response::GuardRemoved
+                }
                 None => Response::Error {
                     message: format!("daemon: guard root not registered: {}", root),
                 },
