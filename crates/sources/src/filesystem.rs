@@ -50,15 +50,15 @@ pub(crate) fn try_emit_pdf_member(
     extract::try_emit_pdf_member(entry_name, bytes, emit)
 }
 
-/// Scan one already-buffered archive/layer member through the shared in-memory
-/// dispatcher (nested tar/zip/compressed descent + leaf text/strings). Used by
-/// Docker layer streaming so a layer never has to hit the filesystem first.
 /// Shared container-magic probe used by Docker layer streaming and the
 /// filesystem extensionless-container router.
 pub(crate) fn container_extension_from_prefix(bytes: &[u8]) -> Option<&'static str> {
     extract::container_extension_from_prefix(bytes)
 }
 
+/// Scan one already-buffered archive/layer member through the shared in-memory
+/// dispatcher (nested tar/zip/compressed descent + leaf text/strings). Used by
+/// Docker layer streaming so a layer never has to hit the filesystem first.
 pub(crate) fn emit_in_memory_member(
     entry_name: &str,
     content: Vec<u8>,
