@@ -211,16 +211,12 @@ pub(crate) fn companions_deny_absent(
 
         COMPANION_PRESENT_SCRATCH.with(|present_cell| {
             let mut present = present_cell.borrow_mut();
-            if present.len() < derived.literals.len() {
-                present.resize(derived.literals.len(), false);
-            }
-            // Always clear the active prefix. `resize` only initializes newly
-            // appended slots; stale true bits from a shorter prior literal set
-            // would otherwise over-admit on the first chunk after growth.
-            for bit in present.iter_mut().take(derived.literals.len()) {
-                *bit = false;
-            }
-            let present = &mut present[..derived.literals.len()];
+            // Resize to the active literal count, then clear EVERY slot.
+            // Growing with `resize(_, false)` alone leaves `0..old_len` intact,
+            // so leftover `true` bits from a shorter prior set would over-admit
+            // on the first chunk after growth. Shrinking truncates unused tail.
+            present.resize(derived.literals.len(), false);
+            present.fill(false);
             for mat in derived.ac.find_overlapping_iter(text) {
                 present[mat.pattern().as_usize()] = true;
             }
@@ -339,5 +335,62 @@ fn flush_run(run: &mut String, out: &mut Vec<String>) {
         out.push(std::mem::take(run));
     } else {
         run.clear();
+    }
+}
+
+#[cfg(test)]
+mod presence_scratch_tests {
+    use super::{companion_arms, companions_deny_absent};
+
+    /// WHY: reusable presence scratch used to grow via `resize(_, false)` without
+    /// clearing `0..old_len`, so leftover `true` bits from a shorter prior set
+    /// over-admitted the first chunk after growth.
+    #[test]
+    fn presence_scratch_clears_stale_flags_after_literal_set_grows() {
+        // Seed scratch with matches on a small literal set.
+        let small = [(0usize, r"formbuilder")];
+        assert_eq!(
+            companion_arms(small[0].1).is_empty(),
+            false,
+            "seed pattern must arm the companion gate"
+        );
+        let mut denied = Vec::new();
+        companions_deny_absent(0xC0_u64, &small, "prefix formbuilder suffix", |idx| {
+            denied.push(idx)
+        });
+        assert!(
+            denied.is_empty(),
+            "seed chunk must admit when companions are present: {denied:?}"
+        );
+
+        // Grow the active literal set on the same thread. Haystack has none of
+        // the companions — every armed pattern must be denied. Under the old
+        // grow-skips-clear bug, stale true bits from the seed chunk over-admit.
+        let large = [
+            (0usize, r"formbuilder"),
+            (1usize, r"webhooksecret"),
+            (2usize, r"apikeytoken"),
+            (3usize, r"passwordhashvalue"),
+        ];
+        for (_, src) in &large {
+            assert_eq!(
+                companion_arms(src).is_empty(),
+                false,
+                "large-set pattern must arm the companion gate: {src}"
+            );
+        }
+        denied.clear();
+        companions_deny_absent(
+            0xC0_u64,
+            &large,
+            "lorem ipsum dolor ordinary_value = 1234567890 adipiscing",
+            |idx| denied.push(idx),
+        );
+        denied.sort_unstable();
+        assert_eq!(
+            denied,
+            vec![0, 1, 2, 3],
+            "stale presence flags must not over-admit after scratch growth"
+        );
     }
 }
