@@ -4,12 +4,12 @@ An empty findings list has two very different causes. KeyHog read your input and
 found nothing. Or KeyHog never read your input. This page shows you how to tell
 those apart on any workload.
 
-The reason this needs a page at all is that a clean result and a total failure
-look the same. "No secrets found" is what you hope for and also what you get
-when nothing was scanned, so the answer you want cannot distinguish itself from
-the failure. A slow scan announces itself; a scan that skipped your input does
-not. That is why the check below is a byte count rather than a look at the
-findings list.
+The most dangerous ambiguity is no longer a total source failure: a read-nothing
+scan exits `13`. It is a partially read scan whose only missing content is
+classified as an advisory skip. That scan can exit `0` while the envelope says
+`partial`, so neither an empty findings list nor the process code proves that
+the specific files you care about reached the detector pipeline. Check the byte
+count and gap reasons together.
 
 Read one number first:
 
@@ -42,9 +42,11 @@ jq '{
 printf 'keyhog exit=%s\n' "$rc"
 ```
 
-Treat the result as a real clean only when `bytes` is greater than zero, and
-greater than you expect for an empty input. A repository whose scan reports a
-few dozen bytes did not scan the repository.
+Treat the result as a real clean only when `bytes` is greater than zero and the
+gap reasons are acceptable for this source boundary. Compare against an
+inventory or expected eligible-byte range when you have one; raw repository
+size is not a valid oracle because exclusions and decode expansion move the
+counter in opposite directions.
 
 Read the structured fields, not the warnings. It is tempting to build a CI
 check by searching stderr for the word `WARN`, but this page is about detecting
@@ -131,7 +133,7 @@ longer; the fragment shown here is enough to match on.
 | Reason fragment | What was not scanned | What to do |
 |---|---|---|
 | `exceeded --max-file-size` | A file larger than the cap, 100 MiB by default. | Raise `--max-file-size` with a unit, or scan the file on its own. |
-| `binary (extension or content sniff)` | A file KeyHog classified as binary. A directory walk does not scan compiled executables: they produce this gap and zero bytes, so an all-binary directory reports a clean scan it never performed. | Expected for images. Never read it as coverage of an executable. `--no-default-excludes` does not change it. Use `keyhog scan --binary <file>` on a build with the `binary` feature. |
+| `binary (extension or content sniff)` | A file KeyHog classified as binary. A directory walk does not reinterpret it as text. A directory containing only skipped binaries also gets `scan covered nothing` and exits `13`; a mixed tree can exit `0` with this advisory row. | Expected for images. Never read it as coverage of an executable. `--no-default-excludes` does not change it. Use `keyhog scan --binary <file>` on a build with the `binary` feature. |
 | `unreadable (permission denied or I/O error)` | A file KeyHog could not open. | Fix permissions or rerun with the right identity. |
 | `default exclusion policy (lock files, minified/...)` | A path removed by the default skips. Your own `.keyhogignore` and `--exclude-paths` removals are NOT counted here. | Expected on repositories. See the next section for the limits. |
 | `source emitted error rows` | A source returned an error for part of its input. | Read the stderr warnings, which name the exact path or object. |
@@ -192,10 +194,10 @@ carrying whatever findings there were and the gaps naming what was not covered:
 }
 ```
 
-That gives `non-zero exit and no report file` a single meaning. A missing report
-is an output-path failure, which exits `3` and prints a stderr line naming the
-path, not `13`. Exit `13` means KeyHog could not cover your input and always
-comes with a report saying so.
+When a scan reaches report writing and the output path is writable, exit `13`
+comes with an envelope naming the uncovered input. A missing report is not
+evidence of a source gap: inspect the exit code and stderr. An invalid or
+unwritable output path exits `2` and names that path.
 
 Findings are never discarded because part of the input failed. A directory
 holding one readable file with a credential and one unreadable file reports the
