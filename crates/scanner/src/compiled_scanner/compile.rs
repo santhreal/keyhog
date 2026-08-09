@@ -560,10 +560,14 @@ impl CompiledScanner {
         // Fresh compiles and MatcherArtifact hydration supply full live
         // DetectorSpecs (including companion regexes). Authenticated
         // execution-pack schema reconstruction only fills companion names, so
-        // the corpus quality gate must stay skipped there.
-        if packed_detector_plan.is_none() && validate_live_detector_corpus {
-            super::validation::validate_detector_corpus(&detectors)
-                .map_err(crate::error::ScanError::Config)?;
+        // the corpus quality gate must stay skipped there. Feature
+        // compatibility (e.g. entropy-less builds refusing entropy-owning
+        // detectors) still runs for every non-prelude path.
+        if packed_detector_plan.is_none() {
+            if validate_live_detector_corpus {
+                super::validation::validate_detector_corpus(&detectors)
+                    .map_err(crate::error::ScanError::Config)?;
+            }
             crate::entropy::policy::validate_feature_compatibility(&detectors)
                 .map_err(crate::error::ScanError::Config)?;
         }
