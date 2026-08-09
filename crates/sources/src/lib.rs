@@ -12,6 +12,8 @@ mod blocking_thread;
 mod capped_read;
 mod compression_limits;
 mod decode;
+/// Guard event normalization and subscribe-first reconciliation protocol.
+pub mod guard;
 #[cfg(any(
     feature = "azure",
     feature = "s3",
