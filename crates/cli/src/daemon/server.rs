@@ -449,11 +449,26 @@ pub(crate) async fn run_with_backend_override(
         router,
         shutdown.clone(),
         detector_count,
-        detector_rules_digest,
+        detector_rules_digest.clone(),
         options,
         backend_override,
         warm_backend,
     ));
+
+    // Set the guard policy identity from the daemon's scanner and build
+    // identity. This binds clean attestations to the exact detector corpus,
+    // suppression, and configuration the daemon was started with.
+    state.guard.set_policy_identity(keyhog_core::guard_state::GuardPolicyIdentity {
+        build_identity: KEYHOG_VERSION.to_string(),
+        detector_digest: detector_rules_digest.clone(),
+        suppression_digest: String::new(),
+        keyhogignore_digest: String::new(),
+        config_digest: String::new(),
+        decode_policy_version: 1,
+        source_policy_digest: String::new(),
+        guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
+        report_semantics_version: 1,
+    });
 
     announce_daemon_ready(&socket_path, detector_count, &state.warm_backend_status());
     let accept_task = spawn_accept_loop(listener, state.clone());
