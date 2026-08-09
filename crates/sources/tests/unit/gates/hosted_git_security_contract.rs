@@ -167,8 +167,20 @@ fn hosted_git_scan_orchestrator_keeps_single_repo_worker_boundary() {
             "single hosted repo worker must own pipeline step {required}"
         );
     }
+    let val_pos = worker_code
+        .find("validate_clone_url_for_origin(")
+        .expect("validate_clone_url_for_origin present");
+    let clone_pos = worker_code.find("clone_repo(").expect("clone_repo present");
+    let scan_pos = worker_code
+        .find("scan_repo_into(")
+        .or_else(|| worker_code.find("scan_repo("))
+        .expect("scan_repo present");
     assert!(
-        worker_code.contains("scan_repo(") || worker_code.contains("scan_repo_into("),
-        "single hosted repo worker must own scan repo step"
+        val_pos < clone_pos,
+        "validation must precede clone_repo in worker"
+    );
+    assert!(
+        clone_pos < scan_pos,
+        "clone_repo must precede scan_repo in worker"
     );
 }

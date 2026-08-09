@@ -337,12 +337,15 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
             .scan_with_backend(&chunk, ScanBackend::CpuFallback)
             .expect("selected backend scan succeeds");
         scanner.clear_fragment_cache();
-        let mut simd = scanner
-            .scan_with_backend(&chunk, ScanBackend::SimdCpu)
-            .expect("selected backend scan succeeds");
-        cpu.sort();
-        simd.sort();
-        assert_eq!(cpu, simd, "CPU/SIMD finding drift for {}", case.detector_id);
+        match scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu) {
+            Ok(mut simd) => {
+                cpu.sort();
+                simd.sort();
+                assert_eq!(cpu, simd, "CPU/SIMD finding drift for {}", case.detector_id);
+            }
+            Err(keyhog_scanner::ScanError::Simd(msg)) if msg.contains("unavailable") => {}
+            Err(err) => panic!("SIMD scan failed for {}: {err}", case.detector_id),
+        }
         for backend in &acquired_gpu_backends {
             scanner.clear_fragment_cache();
             let mut gpu = scanner

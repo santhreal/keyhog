@@ -1212,6 +1212,24 @@ fn grouped_companion_literal_satisfies_context_anchor() {
         )),
         "AST literal run inside a group must count as companion context; got {issues:?}"
     );
+
+    // Broad companion without literal run:
+    let mut broad = detector_with_pattern("token_[A-Z0-9]{8}");
+    broad.companions.push(CompanionSpec {
+        name: "secret".into(),
+        regex: "(?:[A-Z0-9]+)".into(),
+        within_lines: 12,
+        required: false,
+        ..Default::default()
+    });
+    let broad_issues = validate_detector(&broad);
+    assert!(
+        broad_issues.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Warning(message) if message.contains("too broad")
+        )),
+        "grouped companion without literal run must produce too-broad warning; got {broad_issues:?}"
+    );
 }
 
 #[test]
