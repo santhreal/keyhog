@@ -252,8 +252,8 @@ fn phase1_plan_classifies_each_distinct_payload_once() {
             .expect("scan sampled-fingerprint collision");
         assert_eq!(
             simd_scanner.phase1_trigger_scanned_bytes_for_diagnostics(),
-            BYTES as u64,
-            "a sampled-fingerprint collision must execute an independent SIMD trigger scan"
+            2 * BYTES as u64,
+            "a sampled-fingerprint collision must execute an independent CPU admission trigger scan and an independent SIMD trigger scan"
         );
         assert_eq!(
             simd_scanner.reusable_simd_trigger_hits_for_diagnostics(),

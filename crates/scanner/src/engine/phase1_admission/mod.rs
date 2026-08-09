@@ -974,21 +974,34 @@ impl CompiledScanner {
                 &mut generic_positions,
             );
         }
+        // Always collect CPU triggers/absence for every representative so unique
+        // filesystem windows (one_long_line) can skip re-scanning in the hot
+        // lane. Cache insertion below stays gated on classify_reusable_evidence
+        // so one-off payloads do not clone multi-MiB chunk bodies into the
+        // reuse map.
+        let admitted = admission == Phase1Admission::Admitted;
+        // Collect CPU trigger hints for every admitted representative so the
+        // CPU scan lane can reuse them. Absence proofs that suppress later
+        // work stay gated on classify_reusable_evidence: unique payloads must
+        // not publish CPU-derived absence to SIMD/GPU routes that collect
+        // their own triggers.
         let cpu_trigger_hints =
-            classify_reusable_evidence.then(|| self.collect_triggered_patterns_cpu(&chunk.data));
-        let confirmed_patterns_absence = cpu_trigger_hints
-            .as_deref()
-            .is_some_and(|triggers| self.confirmed_patterns_absent(&chunk.data, triggers));
-        let normalization_passthrough =
-            classify_reusable_evidence && self.normalization_passthrough(&chunk.data);
-        let built_line_context_index = classify_reusable_evidence
-            // LAW10: line-index construction failure disables evidence reuse; the later scan rebuilds context normally.
+            admitted.then(|| self.collect_triggered_patterns_cpu(&chunk.data));
+        let confirmed_patterns_absence = classify_reusable_evidence
+            && cpu_trigger_hints
+                .as_deref()
+                .is_some_and(|triggers| self.confirmed_patterns_absent(&chunk.data, triggers));
+        let normalization_passthrough = classify_reusable_evidence
+            && admitted
+            && self.normalization_passthrough(&chunk.data);
+        let built_line_context_index = (classify_reusable_evidence && admitted)
             .then(|| crate::context::LineContextIndex::try_new(&chunk.data).ok())
             .flatten()
             .map(Arc::new);
-        let entropy_absence = built_line_context_index
-            .as_deref()
-            .is_some_and(|index| self.entropy_absent(&chunk.data, index));
+        let entropy_absence = classify_reusable_evidence
+            && built_line_context_index
+                .as_deref()
+                .is_some_and(|index| self.entropy_absent(&chunk.data, index));
         let line_context_index = normalization_passthrough
             .then(|| built_line_context_index)
             .flatten();
@@ -998,13 +1011,17 @@ impl CompiledScanner {
             keyword_hints,
             generic_positions,
             phase2_always_active_absence: classify_reusable_evidence
+                && admitted
                 && self.phase2_always_active_absence(&chunk.data),
             cpu_trigger_hints,
             normalization_passthrough,
             confirmed_patterns_absence,
             entropy_absence,
-            multiline_absence: classify_reusable_evidence && self.multiline_absent(&chunk.data),
+            multiline_absence: classify_reusable_evidence
+                && admitted
+                && self.multiline_absent(&chunk.data),
             decoder_absence: classify_reusable_evidence
+                && admitted
                 && decoder_admission_context.is_some()
                 && self.decoder_admission_absent(chunk),
             line_context_index,

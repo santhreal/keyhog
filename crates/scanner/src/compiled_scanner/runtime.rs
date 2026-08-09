@@ -1089,6 +1089,45 @@ impl CompiledScanner {
             return self.scan_proven_direct_absence(chunk, deadline, route, decoder_absence);
         }
         if admission != Phase1Admission::Admitted {
+            // Admission already ran the phase-2 keyword index. Markerless
+            // single-line windows with no keyword/generic hints cannot host a
+            // named plaintext credential the direct matchers missed, and the
+            // entropy-only no-hit lane is skipped for that shape. Honor the
+            // plan hints here so we do not re-walk the keyword AC via
+            // `should_scan_no_hit_chunk` on every one_long_line window.
+            let markerless_no_hit_skip = {
+                let bytes = chunk.data.as_bytes();
+                let markerless = !bytes.is_empty()
+                    && !bytes.contains(&b'\n')
+                    && !bytes.iter().any(|&byte| {
+                        matches!(byte, b'+' | b'/' | b'=' | b'%' | b'\\')
+                    });
+                markerless
+                    && phase2_keyword_hints.is_some_and(|hints| hints.is_empty())
+                    && generic_keyword_positions.is_some_and(|positions| positions.is_empty())
+                    && !crate::engine::scan_filters::has_secret_keyword_fast(bytes)
+            };
+            if markerless_no_hit_skip {
+                if self.chunk_needs_decode_postprocess_with_absence(chunk, decoder_absence) {
+                    if scan_deadline_expired(deadline) {
+                        return Ok(Vec::new());
+                    }
+                    let mut matches = Vec::new();
+                    self.post_process_matches_with_decoder_absence(
+                        chunk,
+                        &mut matches,
+                        deadline,
+                        route,
+                        decoder_absence,
+                    )?;
+                    if scan_deadline_expired(deadline) {
+                        return Ok(matches);
+                    }
+                    return Ok(matches);
+                }
+                crate::telemetry::record_file_skipped();
+                return Ok(Vec::new());
+            }
             if self.should_scan_no_hit_chunk(chunk, route) {
                 let prepared = self.prepare_chunk_with_normalization_passthrough(
                     chunk,
