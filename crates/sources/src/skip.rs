@@ -522,6 +522,15 @@ pub(crate) fn gate_scan<'a, T: 'a>(
     attach_scan_lease(lease, inner)
 }
 
+pub(crate) fn subtract_excluded(delta: usize) {
+    if delta == 0 {
+        return;
+    }
+    let _ = SKIPPED_EXCLUDED.fetch_update(Relaxed, Relaxed, |current| {
+        Some(current.saturating_sub(delta))
+    });
+}
+
 pub(crate) fn store_skip_counts(counts: SkipCounts) {
     SKIPPED_OVER_MAX_SIZE.store(counts.over_max_size, Relaxed);
     SKIPPED_BINARY.store(counts.binary, Relaxed);

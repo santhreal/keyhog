@@ -580,9 +580,20 @@ pub(super) fn process_entry(
         return;
     }
 
+    if let (Some(idx), Some(meta)) = (merkle.as_ref(), live_metadata) {
+        if !meta.is_symlink {
+            if let Some(mtime_ns) = meta.mtime_ns {
+                if idx.metadata_unchanged(&path, mtime_ns, meta.size_bytes) {
+                    skipped.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
+            }
+        }
+    }
+
     if ext.is_empty() {
-        // Cheap content sniff for unclassifiable names before merkle / full
-        // reads (KH-50 / KH-213x). Same no-follow open as the real reader.
+        // Cheap content sniff for unclassifiable names after the incremental
+        // unchanged-file gate and before full reads (KH-50 / KH-213x).
         let mut buf = [0u8; EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES];
         if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
             // LAW10: failed prefix probe leaves binary hint false; the full safe read path below is the loud, recall-preserving path that still surfaces unreadable files.
@@ -617,17 +628,6 @@ pub(super) fn process_entry(
                     if n < buf.len() && n as u64 == file_size {
                         prefetched_extensionless_bytes = Some(head.to_vec());
                     }
-                }
-            }
-        }
-    }
-
-    if let (Some(idx), Some(meta)) = (merkle.as_ref(), live_metadata) {
-        if !meta.is_symlink {
-            if let Some(mtime_ns) = meta.mtime_ns {
-                if idx.metadata_unchanged(&path, mtime_ns, meta.size_bytes) {
-                    skipped.fetch_add(1, Ordering::Relaxed);
-                    return;
                 }
             }
         }

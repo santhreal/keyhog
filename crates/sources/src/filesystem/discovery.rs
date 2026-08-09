@@ -286,9 +286,11 @@ pub(super) fn collect_unbounded_sorted(
     let mut count = 0usize;
     let mut bytes = 0u64;
     #[cfg(target_os = "linux")]
-    let mut path_limit_failed = false;
+    let mut path_limit_seen = false;
     #[cfg(target_os = "linux")]
-    let excluded_baseline = crate::skip_counts().excluded;
+    let mut rebuild_succeeded = false;
+    #[cfg(target_os = "linux")]
+    let excluded_before_walk = crate::skip_counts().excluded;
     #[cfg(target_os = "linux")]
     let rebuild_viable = descriptor_rebuild_viable(root, config, has_ignore_patterns);
 
@@ -332,12 +334,24 @@ pub(super) fn collect_unbounded_sorted(
                 }
                 Err(error) => {
                     #[cfg(target_os = "linux")]
-                    if is_name_too_long(&error) && rebuild_viable {
-                        // Abort only when descriptor-relative rebuild can replace
-                        // the incomplete walk. Custom --exclude-paths force the
-                        // pathname walk to continue so coverage is not truncated.
-                        path_limit_failed = true;
-                        return false;
+                    if is_name_too_long(&error) && rebuild_viable && !rebuild_succeeded {
+                        path_limit_seen = true;
+                        let walk_excluded = crate::skip_counts()
+                            .excluded
+                            .saturating_sub(excluded_before_walk);
+                        match collect_descriptor_entries(root, config, has_ignore_patterns) {
+                            Ok((replacement, replacement_count, replacement_bytes)) => {
+                                builder = Some(replacement);
+                                count = replacement_count;
+                                bytes = replacement_bytes;
+                                crate::skip::subtract_excluded(walk_excluded);
+                                rebuild_succeeded = true;
+                                return false;
+                            }
+                            Err(_rebuild_error) => {
+                                // Keep walking so coverage is not truncated.
+                            }
+                        }
                     }
                     let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                     tracing::warn!(
@@ -354,28 +368,21 @@ pub(super) fn collect_unbounded_sorted(
     }
 
     #[cfg(target_os = "linux")]
-    if path_limit_failed {
-        let excluded_before_rebuild = crate::skip_counts().excluded;
-        match collect_descriptor_entries(root, config, has_ignore_patterns, true, true) {
+    if path_limit_seen && !rebuild_succeeded {
+        let walk_excluded = crate::skip_counts()
+            .excluded
+            .saturating_sub(excluded_before_walk);
+        match collect_descriptor_entries(root, config, has_ignore_patterns) {
             Ok((replacement, replacement_count, replacement_bytes)) => {
                 builder = Some(replacement);
                 count = replacement_count;
                 bytes = replacement_bytes;
-                // WalkBuilder may have recorded shallow Excluded events before
-                // ENAMETOOLONG; keep baseline + descriptor contribution only.
-                let after = crate::skip_counts();
-                let descriptor_added =
-                    after.excluded.saturating_sub(excluded_before_rebuild);
-                let mut fixed = after;
-                fixed.excluded = excluded_baseline.saturating_add(descriptor_added);
-                crate::skip::store_skip_counts(fixed);
+                crate::skip::subtract_excluded(walk_excluded);
             }
             Err(error) => {
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                errors.push(SourceError::Other(
-                    "filesystem path exceeded the platform pathname limit and descriptor-relative discovery could not replace the incomplete walk; affected entries were not scanned".to_string(),
-                ));
-                errors.push(error);
+                // Keep the completed pathname walk. Over-long paths remain as
+                // unreadable coverage rows already recorded above.
+                let _ = error;
             }
         }
     }
@@ -467,8 +474,6 @@ fn collect_descriptor_entries(
     root: &Path,
     config: &FilesystemWalkConfig,
     has_ignore_patterns: bool,
-    require_ignore_proof: bool,
-    record_excluded: bool,
 ) -> Result<(CompactEntriesBuilder, usize, u64), SourceError> {
     if has_ignore_patterns {
         return Err(SourceError::Other(
@@ -487,32 +492,26 @@ fn collect_descriptor_entries(
                         if config.respect_default_excludes
                             && super::filter::is_default_excluded_dir_name(dir_name)
                         {
-                            if record_excluded {
-                                let _event =
-                                    crate::record_skip_event(crate::SourceSkipEvent::Excluded);
-                            }
+                            let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
                             return Ok(false);
                         }
                     }
                 }
-                if require_ignore_proof {
-                    let name_str = name.and_then(OsStr::to_str);
-                    if name_str == Some(".git")
-                        || (config.respect_gitignore
-                            && matches!(name_str, Some(".gitignore") | Some(".ignore")))
-                    {
-                        return Err(SourceError::Other(format!(
-                            "descriptor-relative discovery encountered ignore metadata at '{}'; refusing to bypass ignore semantics for a path beyond the platform pathname limit",
-                            entry.path.display()
-                        )));
-                    }
+                let name_str = name.and_then(OsStr::to_str);
+                if name_str == Some(".git")
+                    || (config.respect_gitignore
+                        && matches!(name_str, Some(".gitignore") | Some(".ignore")))
+                {
+                    return Err(SourceError::Other(format!(
+                        "descriptor-relative discovery encountered ignore metadata at '{}'; refusing to bypass ignore semantics for a path beyond the platform pathname limit",
+                        entry.path.display()
+                    )));
                 }
                 Ok(true)
             }
             DescriptorEntryKind::File { size } => {
                 let name_str = name.and_then(OsStr::to_str);
-                if require_ignore_proof
-                    && matches!(name_str, Some(".gitignore") | Some(".ignore") | Some(".keyhogignore"))
+                if matches!(name_str, Some(".gitignore") | Some(".ignore") | Some(".keyhogignore"))
                 {
                     return Err(SourceError::Other(format!(
                         "descriptor-relative discovery encountered ignore metadata at '{}'; refusing to bypass ignore semantics for a path beyond the platform pathname limit",
@@ -520,9 +519,7 @@ fn collect_descriptor_entries(
                     )));
                 }
                 if config.respect_default_excludes && path_is_default_excluded(root, &entry.path) {
-                    if record_excluded {
-                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
-                    }
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
                     return Ok(true);
                 }
                 builder.push(FileEntry {
