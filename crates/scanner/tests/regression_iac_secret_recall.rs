@@ -17,12 +17,14 @@ mod support;
 
 use keyhog_core::Chunk;
 use keyhog_scanner::CompiledScanner;
-use std::sync::OnceLock;
+use std::sync::{LazyLock, Mutex, MutexGuard};
 use support::contracts::{make_chunk, scanner};
 
-fn shared() -> &'static CompiledScanner {
-    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
-    SCANNER.get_or_init(scanner)
+fn shared() -> MutexGuard<'static, CompiledScanner> {
+    static SCANNER: LazyLock<Mutex<CompiledScanner>> = LazyLock::new(|| Mutex::new(scanner()));
+    SCANNER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Deterministic high-entropy alphanumeric value of length `n` (no dictionary

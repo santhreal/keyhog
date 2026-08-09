@@ -1094,7 +1094,7 @@ fn action_runs_real_keyhog_and_counts_sarif_findings() {
             ("ACTION_INPUT_FORMAT", "sarif"),
             ("ACTION_INPUT_OUTPUT", "real-keyhog.sarif"),
             ("ACTION_INPUT_SEVERITY", "high"),
-            ("ACTION_INPUT_BACKEND", "simd"),
+            ("ACTION_INPUT_BACKEND", "cpu"),
         ],
     );
     assert_eq!(
@@ -1123,7 +1123,7 @@ fn action_runs_real_keyhog_and_counts_sarif_findings() {
 }
 
 #[test]
-fn action_quick_start_scans_the_checked_out_workspace_by_default() {
+fn action_quick_start_scans_the_workspace_and_fails_closed_when_empty() {
     let checked_out = TempDir::new().expect("checked-out workspace tempdir");
     fs::write(
         checked_out.path().join("secret.env"),
@@ -1155,13 +1155,16 @@ fn action_quick_start_scans_the_checked_out_workspace_by_default() {
         run_action_with_path_prefix(&no_checkout, binary_dir, &[("ACTION_INPUT_BACKEND", "cpu")]);
     assert_eq!(
         clean.status.code(),
-        Some(0),
-        "an empty no-checkout workspace should remain clean; output={}",
+        Some(13),
+        "an empty no-checkout workspace must fail closed; output={}",
         combined_output(&clean)
     );
+    let receipt = output_file(&no_checkout);
     assert!(
-        output_file(&no_checkout).contains("findings=0"),
-        "the action must not claim repository coverage without checked-out content"
+        receipt.contains("findings=0\n")
+            && receipt.contains("exit-code=13\n")
+            && receipt.contains("scan-status=partial\n"),
+        "the action must publish an incomplete-coverage receipt without claiming the workspace is clean: {receipt}"
     );
 }
 
@@ -1190,7 +1193,7 @@ fn action_runs_real_keyhog_and_counts_text_findings() {
             ("ACTION_INPUT_FORMAT", "text"),
             ("ACTION_INPUT_OUTPUT", "real-keyhog.txt"),
             ("ACTION_INPUT_SEVERITY", "high"),
-            ("ACTION_INPUT_BACKEND", "simd"),
+            ("ACTION_INPUT_BACKEND", "cpu"),
         ],
     );
     assert_eq!(
@@ -1613,11 +1616,13 @@ fn action_real_cli_preserves_preset_lockdown_composition() {
     }
 }
 
-/// Regression: a lockdown calibration receipt must remain compatible with an
+/// Regression: lockdown calibration must publish an ephemeral receipt whenever
+/// autoroute has multiple compiled peers. A portable sole-backend build routes
+/// directly without inventing a decision table. Both paths must preserve an
 /// explicitly pinned diagnostic CPU scan, or fail closed when the host cannot
 /// apply memory protections.
 #[test]
-fn action_real_cli_lockdown_cpu_with_receipt_succeeds_or_fails_closed() {
+fn action_real_cli_lockdown_cpu_routing_succeeds_or_fails_closed() {
     let binary = keyhog_binary();
     let dir = TempDir::new().expect("tempdir");
     fs::write(dir.path().join("safe.txt"), "ordinary fixture content\n")
@@ -1657,10 +1662,17 @@ fn action_real_cli_lockdown_cpu_with_receipt_succeeds_or_fails_closed() {
         );
         return;
     }
-    assert!(
-        route_cache.is_file() && fs::metadata(&route_cache).expect("route metadata").len() > 0,
-        "calibration must publish a nonempty ephemeral routing receipt"
-    );
+    if keyhog_scanner::hw_probe::multiple_backends_compiled() {
+        assert!(
+            route_cache.is_file() && fs::metadata(&route_cache).expect("route metadata").len() > 0,
+            "multi-backend calibration must publish a nonempty ephemeral routing receipt"
+        );
+    } else {
+        assert!(
+            !route_cache.exists(),
+            "a sole compiled backend must route directly without persisting a fabricated decision"
+        );
+    }
 
     let scan = Command::new(&binary)
         .args([
@@ -1677,15 +1689,17 @@ fn action_real_cli_lockdown_cpu_with_receipt_succeeds_or_fails_closed() {
         .current_dir(dir.path())
         .env("XDG_CACHE_HOME", &cache_home)
         .output()
-        .expect("run production scan with calibration receipt");
+        .expect("run production scan after calibration");
     assert_eq!(
         scan.status.code(),
         Some(0),
-        "production CPU scan must preserve lockdown with a calibration receipt present: {}",
+        "production CPU scan must preserve lockdown after calibration: {}",
         combined_output(&scan)
     );
     assert!(report.is_file(), "production scan must publish its report");
-    fs::remove_file(&route_cache).expect("delete ephemeral routing receipt");
+    if route_cache.exists() {
+        fs::remove_file(&route_cache).expect("delete ephemeral routing receipt");
+    }
     assert!(
         !route_cache.exists(),
         "Action cleanup contract requires the routing receipt to be deletable"

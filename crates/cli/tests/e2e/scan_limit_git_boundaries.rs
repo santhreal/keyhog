@@ -55,7 +55,13 @@ fn commit_file(repo: &Path, name: &str, body: &str) {
 fn scan(repo: &Path, args: &[&str]) -> Output {
     let mut command = Command::new(binary());
     command
-        .args(["scan", "--daemon=off", "--no-suppress-test-fixtures"])
+        .args([
+            "scan",
+            "--daemon=off",
+            "--backend",
+            "simd",
+            "--no-suppress-test-fixtures",
+        ])
         .args(args)
         .current_dir(repo);
     command.output().expect("spawn keyhog")

@@ -18,8 +18,8 @@
 mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::sync::OnceLock;
+use keyhog_scanner::ScanBackend;
+use std::sync::LazyLock;
 
 /// Enrolled detectors (every one is proven (below) to surface its exact token).
 const DETECTOR_IDS: &[&str] = &[
@@ -30,16 +30,16 @@ const DETECTOR_IDS: &[&str] = &[
 ];
 const CPU_BACKENDS: [ScanBackend; 2] = [ScanBackend::SimdCpu, ScanBackend::CpuFallback];
 
-fn scanner() -> &'static CompiledScanner {
-    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
-    SCANNER.get_or_init(|| {
+fn scanner() -> &'static support::ExactCpuScanners {
+    static SCANNER: LazyLock<support::ExactCpuScanners> = LazyLock::new(|| {
         // Full detector set: non-hot vendor detectors fire through the regular
         // AC+phase2 pipeline. Assertions target a specific detector_id, so
         // co-firing of other detectors is harmless.
         let detectors =
             keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
-        CompiledScanner::compile(detectors).expect("compile")
-    })
+        support::ExactCpuScanners::compile(detectors).expect("compile exact CPU scanners")
+    });
+    &SCANNER
 }
 
 fn chunk(text: &str) -> Chunk {

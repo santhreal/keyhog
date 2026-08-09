@@ -14,17 +14,17 @@ fn backend_self_test_json_preserves_failing_region_presence_probe() {
     assert_eq!(parsed["exit_code"], 4);
     assert_eq!(parsed["gpu_name"], "NVIDIA GeForce RTX 5090");
     assert_eq!(parsed["route_selection"], "not_measured");
-    assert_eq!(parsed["probes"][1]["status"], "known");
+    assert_eq!(parsed["probes"][0]["status"], "known");
+    assert_eq!(parsed["probes"][1]["name"], "gpu_region_presence");
+    assert_eq!(parsed["probes"][1]["status"], "fail");
+    assert_eq!(parsed["probes"][1]["backend_route"], "gpu-cuda");
+    assert_eq!(parsed["probes"][1]["backend_id"], "cuda");
     assert_eq!(parsed["probes"][2]["name"], "gpu_region_presence");
-    assert_eq!(parsed["probes"][2]["status"], "fail");
-    assert_eq!(parsed["probes"][2]["backend_route"], "gpu-cuda");
-    assert_eq!(parsed["probes"][2]["backend_id"], "cuda");
-    assert_eq!(parsed["probes"][3]["name"], "gpu_region_presence");
-    assert_eq!(parsed["probes"][3]["status"], "pass");
-    assert_eq!(parsed["probes"][3]["backend_route"], "gpu-wgpu");
-    assert_eq!(parsed["probes"][3]["backend_id"], "wgpu");
+    assert_eq!(parsed["probes"][2]["status"], "pass");
+    assert_eq!(parsed["probes"][2]["backend_route"], "gpu-wgpu");
+    assert_eq!(parsed["probes"][2]["backend_id"], "wgpu");
     assert!(
-        parsed["probes"][2]["message"]
+        parsed["probes"][1]["message"]
             .as_str()
             .is_some_and(|message| message.contains("region-presence dispatch failed")),
         "region-presence failure reason must survive JSON rendering: {parsed}"

@@ -87,6 +87,8 @@ fn scan(extra: &[&str]) -> Output {
         .args([
             "scan",
             "--daemon=off",
+            "--backend",
+            "simd",
             "--no-suppress-test-fixtures",
             "--format",
             "jsonl",

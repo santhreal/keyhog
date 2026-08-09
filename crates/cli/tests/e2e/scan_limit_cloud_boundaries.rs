@@ -38,6 +38,8 @@ fn run(args: &[&str]) -> Output {
         .args([
             "scan",
             "--daemon=off",
+            "--backend",
+            "simd",
             "--no-suppress-test-fixtures",
             "--allow-private-cloud-endpoint",
             "--format",

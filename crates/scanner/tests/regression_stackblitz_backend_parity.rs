@@ -12,7 +12,11 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 #[cfg(feature = "gpu")]
 fn stripe_aws_reproducer_has_exact_gpu_simd_parity_without_degrade() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let simd_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
+            .expect("SIMD scanner compile");
+    let gpu_scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::GpuWgpu)
+        .expect("GPU scanner compile");
 
     // The chunk that the parity test attributes the missing finding to.
     let chunk = make_chunk(
@@ -25,20 +29,20 @@ fn stripe_aws_reproducer_has_exact_gpu_simd_parity_without_degrade() {
         findings.sort();
         findings
     };
-    scanner.clear_fragment_cache();
+    simd_scanner.clear_fragment_cache();
     let simd = canonical(
-        &scanner
+        &simd_scanner
             .scan_chunks_with_backend(&[chunk.clone()], ScanBackend::SimdCpu)
             .expect("selected backend scan succeeds"),
     );
-    scanner.clear_fragment_cache();
-    let degrade_before = scanner.runtime_status().gpu_degrade_count;
+    gpu_scanner.clear_fragment_cache();
+    let degrade_before = gpu_scanner.runtime_status().gpu_degrade_count;
     let gpu = canonical(
-        &scanner
+        &gpu_scanner
             .scan_chunks_with_backend(&[chunk], ScanBackend::GpuWgpu)
             .expect("selected backend scan succeeds"),
     );
-    let degrade_after = scanner.runtime_status().gpu_degrade_count;
+    let degrade_after = gpu_scanner.runtime_status().gpu_degrade_count;
 
     assert_eq!(
         degrade_after, degrade_before,
@@ -57,7 +61,8 @@ fn simd_sb_hallucinates_with_no_sb_in_input() {
     // stackblitz-credentials finding, that's a Hyperscan FP and the
     // bug is on the SIMD side (not a GPU gap).
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::SimdCpu)
+        .expect("SIMD scanner compile");
 
     let chunk = make_chunk(
         "auth: \"sk_live_4eC39HqLyjWDarjtT1zdp7dc\"",

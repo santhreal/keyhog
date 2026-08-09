@@ -2,6 +2,7 @@
 
 use clap::Parser;
 use keyhog::args::{Cli, ScanArgs};
+use keyhog::exit_codes::{EXIT_FINDINGS, EXIT_SOURCE_FAILED, EXIT_SYSTEM_ERROR};
 use keyhog::testing::{CliTestApi as _, API};
 // The public daemon facade is Unix-only because it resolves a Unix socket path.
 #[cfg(unix)]
@@ -27,23 +28,22 @@ fn lib_error() {
 #[test]
 fn scan_exit_precedence_keeps_system_failure_above_source_coverage_gap() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let run = std::fs::read_to_string(root.join("src/orchestrator/run.rs")).expect("read run");
-    let findings_pos = run
-        .find("} else if outcome.has_new_entries {")
-        .expect("findings exit branch");
-    let incremental_pos = run
-        .find("} else if outcome.incremental_cache_failed {")
-        .expect("incremental cache exit branch");
-    let source_gap_pos = run
-        .find("} else if outcome.source_coverage_incomplete {")
-        .expect("source coverage exit branch");
-
-    assert!(
-        findings_pos < incremental_pos && incremental_pos < source_gap_pos,
-        "exit precedence must be live -> panic -> findings -> system/cache failure -> \
-         source coverage failure. A source coverage warning must not mask a system \
-         cache failure when there are no findings."
+    assert_eq!(
+        API.resolve_scan_exit_for_test(true, true, true),
+        EXIT_FINDINGS,
+        "findings outrank cache and source coverage failures"
     );
+    assert_eq!(
+        API.resolve_scan_exit_for_test(false, true, true),
+        EXIT_SYSTEM_ERROR,
+        "cache failure outranks a source coverage failure"
+    );
+    assert_eq!(
+        API.resolve_scan_exit_for_test(false, false, true),
+        EXIT_SOURCE_FAILED,
+        "source coverage failure remains fail-closed"
+    );
+    let run = std::fs::read_to_string(root.join("src/orchestrator/run.rs")).expect("read run");
     assert!(
         run.contains("crate::reporting::CoverageCounts::current().fail_class_total()"),
         "source, scanner, and orchestrator coverage gaps must reach the canonical FAIL-class total before a clean-looking scan can exit successfully"

@@ -18,19 +18,45 @@ mod support;
 use keyhog_core::Chunk;
 use keyhog_scanner::testing::lazy_regex_compile_events;
 use keyhog_scanner::CompiledScanner;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 use support::contracts::{make_chunk, scanner};
+
+const CHILD_ENV: &str = "KEYHOG_ZERO_PATTERN_RECOMPILE_CHILD";
+
+fn run_isolated_counter_test() -> bool {
+    if std::env::var_os(CHILD_ENV).is_some() {
+        return false;
+    }
+    let test_name = std::thread::current()
+        .name()
+        .expect("test thread has a name")
+        .to_owned();
+    let output = std::process::Command::new(
+        std::env::current_exe().expect("current scanner test executable is available"),
+    )
+    .env(CHILD_ENV, "1")
+    .arg(&test_name)
+    .arg("--exact")
+    .arg("--test-threads=1")
+    .output()
+    .expect("isolated compile-event test process starts");
+    assert!(
+        output.status.success(),
+        "isolated compile-event test `{test_name}` failed"
+    );
+    true
+}
 
 /// One shared scanner, warmed once. `warm()` forces first-touch compilation of
 /// the lazy regex caches so that, combined with a per-chunk priming scan, the
 /// measured re-scans operate entirely on already-compiled regexes.
 fn primed() -> &'static CompiledScanner {
-    static S: OnceLock<CompiledScanner> = OnceLock::new();
-    S.get_or_init(|| {
-        let s = scanner();
-        s.warm();
-        s
-    })
+    static S: LazyLock<CompiledScanner> = LazyLock::new(|| {
+        let scanner = scanner();
+        scanner.warm();
+        scanner
+    });
+    &S
 }
 
 fn chunk(text: &str) -> Chunk {
@@ -41,6 +67,9 @@ fn chunk(text: &str) -> Chunk {
 /// assert the process-wide compile-event counter never advanced, i.e. the
 /// re-scans recompiled nothing.
 fn assert_rescan_recompiles_nothing(text: &str, rounds: usize) {
+    if run_isolated_counter_test() {
+        return;
+    }
     let s = primed();
     let c = chunk(text);
     s.clear_fragment_cache();
@@ -176,6 +205,9 @@ fn rescan_zero_kitchen_sink() {
 
 #[test]
 fn warm_is_idempotent_compiles_nothing() {
+    if run_isolated_counter_test() {
+        return;
+    }
     let s = primed(); // already warmed once in the OnceLock initializer
     let before = lazy_regex_compile_events();
     s.warm();
@@ -191,6 +223,9 @@ fn warm_is_idempotent_compiles_nothing() {
 
 #[test]
 fn fifty_rescans_compile_nothing() {
+    if run_isolated_counter_test() {
+        return;
+    }
     let s = primed();
     let c = chunk(
         "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI7K8MDENGbPxRfiCYEXKEYAAAA password=Hunter2Value99",
@@ -213,6 +248,9 @@ fn fifty_rescans_compile_nothing() {
 
 #[test]
 fn cold_first_scan_then_warm_rescans_compile_nothing() {
+    if run_isolated_counter_test() {
+        return;
+    }
     // The "cold vs warm" measurement: the first scan of a chunk may compile its
     // lazy paths once; every subsequent (warm) scan must recompile nothing.
     let s = primed();
@@ -237,6 +275,9 @@ fn cold_first_scan_then_warm_rescans_compile_nothing() {
 
 #[test]
 fn distinct_primed_files_in_sequence_compile_nothing() {
+    if run_isolated_counter_test() {
+        return;
+    }
     let s = primed();
     let texts = [
         "AKIAZ7QH4XNB2WKLP3RV",
@@ -269,6 +310,9 @@ fn distinct_primed_files_in_sequence_compile_nothing() {
 
 #[test]
 fn clearing_fragment_cache_does_not_recompile_patterns() {
+    if run_isolated_counter_test() {
+        return;
+    }
     // Clearing the per-chunk fragment memo must not touch the regex OnceLocks.
     let s = primed();
     let c = chunk("password=Sup3rSecretValue12345 AKIAZ7QH4XNB2WKLP3RV");
@@ -291,6 +335,9 @@ fn clearing_fragment_cache_does_not_recompile_patterns() {
 
 #[test]
 fn compile_event_counter_is_monotonic_non_decreasing() {
+    if run_isolated_counter_test() {
+        return;
+    }
     // The observable only ever ticks forward on a real compile; it never resets.
     let a = lazy_regex_compile_events();
     let s = primed();
@@ -303,6 +350,9 @@ fn compile_event_counter_is_monotonic_non_decreasing() {
 
 #[test]
 fn second_scanner_from_same_corpus_rescans_compile_nothing() {
+    if run_isolated_counter_test() {
+        return;
+    }
     // The compile-once guarantee is per-scanner: a freshly built, warmed scanner
     // also reaches steady state with zero recompiles on re-scan.
     let fresh = scanner();
@@ -328,6 +378,9 @@ fn second_scanner_from_same_corpus_rescans_compile_nothing() {
 
 #[test]
 fn interleaved_diverse_chunks_after_priming_compile_nothing() {
+    if run_isolated_counter_test() {
+        return;
+    }
     let s = primed();
     let primers = [
         "AKIAZ7QH4XNB2WKLP3RV",

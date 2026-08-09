@@ -179,7 +179,7 @@ pub struct ScanArgs {
     #[arg(skip)]
     pub(crate) buffered_stdin: Option<std::sync::Arc<[u8]>>,
 
-    /// Scan reachable git blobs from repository history (deduplicated by blob ID)
+    /// Scan repository blobs from refs, reflogs, stashes, and unreachable objects
     #[cfg(feature = "git")]
     #[arg(long)]
     pub git_blobs: Option<PathBuf>,

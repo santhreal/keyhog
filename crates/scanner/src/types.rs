@@ -168,6 +168,10 @@ impl<'a> PreprocessedText<'a> {
         }
     }
 
+    pub(crate) fn transport_decoded_for_offset(&self, offset: usize) -> bool {
+        transport_decoded_for_offset(&self.mappings, offset)
+    }
+
     pub(crate) fn source_offset_for_match(
         &self,
         source: &str,

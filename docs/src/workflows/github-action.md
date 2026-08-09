@@ -1,8 +1,10 @@
 # GitHub Action
 
 Use the KeyHog Action when you want to scan one checked-out repository path in a
-GitHub Actions job. The Action installs an authenticated KeyHog release, runs the
-scan, retains the report as a workflow artifact, and uploads SARIF to GitHub Code
+GitHub Actions job. A published Action ref installs its exact KeyHog crate with
+the lean `ci` feature. A reviewed branch or commit ref builds the checked-out
+portable source profile and requires `backend: cpu`. Both paths run the scan,
+retain the report as a workflow artifact, and upload SARIF to GitHub Code
 Scanning by default.
 
 For GitLab, CircleCI, Jenkins, and other CI systems, use the
