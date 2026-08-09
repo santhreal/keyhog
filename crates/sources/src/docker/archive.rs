@@ -1,4 +1,4 @@
-use keyhog_core::SourceError;
+use keyhog_core::{Chunk, SourceError};
 use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::{Component, Path};
@@ -97,7 +97,7 @@ impl DockerExtractReport {
         self.errors
     }
 
-    pub(super) fn into_rows(self) -> Vec<Result<keyhog_core::Chunk, SourceError>> {
+    pub(super) fn into_rows(self) -> Vec<Result<Chunk, SourceError>> {
         self.errors.into_iter().map(Err).collect()
     }
 }
@@ -109,6 +109,9 @@ pub(super) fn unpack_tar(
     budget: &DockerUnpackBudget,
 ) -> Result<DockerExtractReport, SourceError> {
     let file = File::open(archive_path).map_err(SourceError::Io)?;
+    // Disk unpack keeps validate-before-write so a tar-header bomb cannot create
+    // entries before the cap refuses the archive. Production layer scanning uses
+    // `stream_layer_archive_chunks` instead and never materializes members.
     unpack_open_tar(file, destination, limits, false, budget)
 }
 
@@ -131,7 +134,6 @@ pub(super) fn unpack_layer_archive(
                 true,
                 budget,
             )?;
-
             file.rewind().map_err(SourceError::Io)?;
             unpack_tar_reader(
                 flate2::read::MultiGzDecoder::new(&mut file),
@@ -160,6 +162,49 @@ pub(super) fn unpack_layer_archive(
                 ))
                 .map_err(SourceError::Io)?;
             unpack_tar_reader(extract_reader, destination, limits, true, budget)
+        }
+    }
+}
+
+/// Stream one layer archive into scannable chunks without materializing files.
+///
+/// Whiteout markers (`.wh.<name>`) and opaque-dir markers (`.wh..wh..opq`) are
+/// ordinary tar members here: they are scanned when they carry bytes and never
+/// suppress members from earlier layers. That matches the product contract that
+/// every layer is examined independently, including files a later layer deletes.
+///
+/// Returns `Ok(false)` when the consumer stops; hard bomb/path failures return
+/// `Err` so the image cannot report clean coverage after a truncated unpack.
+pub(super) fn stream_layer_archive_chunks(
+    archive_path: &Path,
+    limits: crate::SourceLimits,
+    budget: &DockerUnpackBudget,
+    respect_default_excludes: bool,
+    emit: &mut impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<bool, SourceError> {
+    let mut file = File::open(archive_path).map_err(SourceError::Io)?;
+    let encoding = layer_archive_encoding(&mut file)?;
+    file.rewind().map_err(SourceError::Io)?;
+
+    match encoding {
+        LayerArchiveEncoding::RawTar => {
+            stream_layer_tar_reader(file, limits, budget, respect_default_excludes, emit)
+        }
+        LayerArchiveEncoding::GzipTar => stream_layer_tar_reader(
+            flate2::read::MultiGzDecoder::new(file),
+            limits,
+            budget,
+            respect_default_excludes,
+            emit,
+        ),
+        LayerArchiveEncoding::ZstdTar => {
+            let mut reader = zstd::stream::read::Decoder::new(file).map_err(SourceError::Io)?;
+            reader
+                .window_log_max(crate::compression_limits::zstd_window_log_max_for_budget(
+                    limits.docker_tar_total_bytes,
+                ))
+                .map_err(SourceError::Io)?;
+            stream_layer_tar_reader(reader, limits, budget, respect_default_excludes, emit)
         }
     }
 }
@@ -223,6 +268,98 @@ fn unpack_tar_reader(
     )
 }
 
+fn stream_layer_tar_reader(
+    reader: impl Read,
+    limits: crate::SourceLimits,
+    budget: &DockerUnpackBudget,
+    respect_default_excludes: bool,
+    emit: &mut impl FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<bool, SourceError> {
+    let mut archive = tar::Archive::new(reader);
+    for (entry_index, entry) in archive.entries().map_err(SourceError::Io)?.enumerate() {
+        if entry_index >= MAX_DOCKER_TAR_ENTRIES {
+            return Err(docker_archive_entry_count_error("layer stream"));
+        }
+        let mut entry = entry.map_err(SourceError::Io)?;
+        let path = entry.path().map_err(SourceError::Io)?.into_owned();
+        let size = entry.header().entry_size().map_err(SourceError::Io)?;
+        let file_type = entry.header().entry_type();
+        validate_docker_archive_entry(&path, file_type)?;
+
+        if !budget.charge(size) {
+            return Err(docker_image_budget_error(
+                &path,
+                limits.docker_tar_total_bytes,
+            ));
+        }
+
+        if !file_type.is_file() {
+            // Directories are structural. Symlinks/hardlinks/devices are ignored
+            // without following or materializing host targets (same as unpack).
+            continue;
+        }
+
+        if docker_archive_entry_exceeds_scan_cap(file_type, size, limits) {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            if !emit(Err(docker_archive_entry_over_entry_cap_error(
+                &path,
+                size,
+                limits.docker_tar_entry_bytes,
+            ))) {
+                return Ok(false);
+            }
+            continue;
+        }
+
+        let entry_name = path.to_string_lossy().replace('\\', "/");
+        // Match FilesystemSource after disk unpack: binary-extension members are
+        // counted as Binary coverage skips and never decoded as text/strings.
+        if let Some(ext) = Path::new(&entry_name)
+            .extension()
+            .and_then(|ext| ext.to_str())
+        {
+            if crate::filesystem::is_default_skip_extension(ext) {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                continue;
+            }
+        }
+        if respect_default_excludes && crate::filesystem::is_default_excluded_path(&entry_name) {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+            continue;
+        }
+        let read = crate::capped_read::read_to_cap(
+            &mut entry,
+            limits.docker_tar_entry_bytes,
+            Some(size),
+        )
+        .map_err(SourceError::Io)?;
+        if read.truncated {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            if !emit(Err(docker_archive_entry_over_entry_cap_error(
+                &path,
+                size.max(limits.docker_tar_entry_bytes.saturating_add(1)),
+                limits.docker_tar_entry_bytes,
+            ))) {
+                return Ok(false);
+            }
+            continue;
+        }
+
+        if !crate::filesystem::emit_in_memory_member(
+            &entry_name,
+            read.bytes,
+            &entry_name,
+            keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
+            respect_default_excludes,
+            emit,
+        ) {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
 enum LayerArchiveEncoding {
     RawTar,
     GzipTar,
@@ -267,9 +404,7 @@ fn validate_extracted_tree_with_limits<R: Read>(
         }
 
         // Checked against what the IMAGE has left, not against the per-tar cap,
-        // so a later layer cannot restart the count at zero. Validation only
-        // reads the budget; `extract_docker_archive_entries` is the single site
-        // that spends it, otherwise the two passes over one tar double-charge.
+        // so a later layer cannot restart the count at zero.
         cumulative_bytes = cumulative_bytes.saturating_add(size);
         if cumulative_bytes > budget.remaining() {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
@@ -306,8 +441,7 @@ fn validate_docker_archive_plan<R: Read>(
         if cumulative_bytes > budget.remaining() {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
             return Err(SourceError::Other(format!(
-                "docker archive cumulative size exceeds {} bytes at entry '{}' \
-                 (likely zip-bomb)",
+                "docker archive cumulative size exceeds {} bytes at entry '{}'                  (likely zip-bomb)",
                 limits.docker_tar_total_bytes,
                 path.display(),
             )));
@@ -338,9 +472,8 @@ fn extract_docker_archive_entries<R: Read>(
         let size = entry.header().entry_size().map_err(SourceError::Io)?;
         validate_docker_archive_entry(&path, entry.header().entry_type())?;
 
-        // The one site that SPENDS the image budget. Every tar in the image
-        // draws from the same cell, so 127 layers can no longer each unpack a
-        // full `docker_tar_total_bytes`.
+        // The one site that SPENDS the image budget for disk unpack. Streaming
+        // layer scans charge through `stream_layer_tar_reader` instead.
         if !budget.charge(size) {
             return Err(docker_image_budget_error(
                 &path,

@@ -1,3 +1,3 @@
 category = "Performance"
-summary = "Docker image scans now stream metadata and rewritten layer chunks through a one-row backpressure channel instead of retaining all extracted layer content until the image finishes."
+summary = "Docker image scans stream each layer's tar members through the shared in-memory archive dispatcher with one inflate pass and image-scoped unpack budgets, instead of validating by full decompress, materializing layer files, and re-walking them with FilesystemSource."
 crates = ["sources"]

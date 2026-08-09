@@ -28,6 +28,30 @@ pub(crate) use path::display_path;
 pub(crate) use read::decode_text_file;
 pub(crate) use read::open_file_safe;
 
+/// Scan one already-buffered archive/layer member through the shared in-memory
+/// dispatcher (nested tar/zip/compressed descent + leaf text/strings). Used by
+/// Docker layer streaming so a layer never has to hit the filesystem first.
+pub(crate) fn emit_in_memory_member(
+    entry_name: &str,
+    content: Vec<u8>,
+    member_display: &str,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let mut total_uncompressed = 0_u64;
+    extract::emit_archive_member(
+        entry_name,
+        content,
+        member_display,
+        max_size,
+        &mut total_uncompressed,
+        0,
+        respect_default_excludes,
+        emit,
+    )
+}
+
 /// Crate-visible read of the walker's default window size for the limits
 /// ordering guard. `reader::DEFAULT_WINDOW_SIZE` is `pub(in crate::filesystem)`,
 /// so a test outside this module cannot see it directly, and the guard has to
@@ -50,17 +74,14 @@ pub(crate) fn default_exclude_dirs() -> &'static [String] {
     filter::default_exclude_dirs()
 }
 
-#[cfg(feature = "git")]
 pub(crate) fn is_default_excluded_path(path: &str) -> bool {
     filter::is_default_excluded(path)
 }
 
-#[cfg(feature = "git")]
 pub(crate) fn is_default_excluded_path_bytes(path: &[u8]) -> bool {
     filter::is_default_excluded_bytes(path)
 }
 
-#[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
 pub(crate) fn is_default_skip_extension(ext: &str) -> bool {
     filter::is_skip_extension(ext)
 }
