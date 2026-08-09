@@ -48,17 +48,15 @@ impl ReusableSimdTriggerCache {
             .iter()
             .position(|entry| entry.fingerprint == fingerprint && entry.payload.eq(payload))
         {
-            let entry = self
-                .entries
-                .remove(position)
-                .expect("cache position came from the same deque");
-            let triggers = entry.triggers.clone();
-            self.entries.push_back(entry);
-            #[cfg(debug_assertions)]
-            {
-                self.hits = self.hits.saturating_add(1);
+            if let Some(entry) = self.entries.remove(position) {
+                let triggers = entry.triggers.clone();
+                self.entries.push_back(entry);
+                #[cfg(debug_assertions)]
+                {
+                    self.hits = self.hits.saturating_add(1);
+                }
+                return Ok(triggers);
             }
-            return Ok(triggers);
         }
 
         let triggers = compute()?;

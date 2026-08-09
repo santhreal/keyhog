@@ -473,9 +473,7 @@ pub(crate) fn find_classified_entropy_secrets_with_precomputed_keywords_and_poli
     );
     let keyword_line_ids: Vec<u32> = keyword_lines
         .iter()
-        .map(|(line_idx, _)| {
-            u32::try_from(*line_idx).expect("entropy line index exceeds the checked u32 boundary")
-        })
+        .map(|(line_idx, _)| u32::try_from(*line_idx).unwrap_or(u32::MAX))
         .collect();
     find_classified_entropy_secrets_from_lines(
         &BorrowedEntropyLines {
@@ -616,7 +614,7 @@ fn scan_keyword_contexts(
             if line_idx != keyword_line_index
                 && keyword_line_ids
                     .binary_search(
-                        &u32::try_from(line_idx).expect("chunk-bounded line index must fit u32"),
+                        &u32::try_from(line_idx).unwrap_or(u32::MAX),
                     )
                     .is_ok()
             {
