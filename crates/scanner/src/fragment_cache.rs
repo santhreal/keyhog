@@ -12,7 +12,8 @@ use zeroize::Zeroizing;
 
 const SHARD_COUNT: usize = 64;
 const MAX_FRAGMENTS_PER_SCOPE: usize = 8;
-const MIN_SHARD_CAPACITY: usize = 1;
+const MIN_SHARD_CAPACITY_NZ: NonZeroUsize = NonZeroUsize::MIN;
+const MIN_SHARD_CAPACITY: usize = MIN_SHARD_CAPACITY_NZ.get();
 
 /// A potential fragment of a secret (variable assignment part).
 ///
@@ -119,8 +120,7 @@ pub(crate) struct FragmentCache {
 impl FragmentCache {
     pub(crate) fn new(capacity: usize) -> Self {
         let max_per_shard = (capacity / SHARD_COUNT).max(MIN_SHARD_CAPACITY);
-        let initial = NonZeroUsize::new(MIN_SHARD_CAPACITY)
-            .expect("MIN_SHARD_CAPACITY is a non-zero constant");
+        let initial = MIN_SHARD_CAPACITY_NZ;
         Self {
             shards: std::array::from_fn(|_| Mutex::new(LruCache::new(initial))),
             max_per_shard,
@@ -272,8 +272,7 @@ impl FragmentCache {
     }
 
     pub(crate) fn clear(&self) {
-        let minimum = NonZeroUsize::new(MIN_SHARD_CAPACITY)
-            .expect("MIN_SHARD_CAPACITY is a non-zero constant");
+        let minimum = MIN_SHARD_CAPACITY_NZ;
         for shard in &self.shards {
             let mut shard = shard.lock();
             shard.clear();
