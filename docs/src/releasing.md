@@ -39,19 +39,27 @@ Valid categories are:
 - `Fixed`
 - `Security`
 
-Valid crate names are `cli`, `core`, `scanner`, `sources`, and `verifier`. The release commit consumes the fragment. Any crate not covered by a fragment receives the push commit subject.
+Valid crate names are `cli`, `core`, `profile`, `scanner`, `sources`, and `verifier`. The release commit consumes the fragment. Any crate not covered by a fragment receives the push commit subject.
 
-## Configure crates.io
+## Configure crates.io trusted publishing
 
-Set the repository Actions secret `CARGO_REGISTRY_TOKEN`. The token must publish these crates:
+Configure each published package on crates.io with a trusted publisher for this
+repository's `release.yml` workflow. The workflow requests `id-token: write` and
+uses `rust-lang/crates-io-auth-action` to obtain a short-lived publication token.
+It does not read a long-lived `CARGO_REGISTRY_TOKEN` repository secret.
+
+The trusted publisher must be authorized for all six packages, in publication
+order:
 
 1. `keyhog-core`
-2. `keyhog-verifier`
-3. `keyhog-sources`
-4. `keyhog-scanner`
-5. `keyhog`
+2. `keyhog-profile`
+3. `keyhog-verifier`
+4. `keyhog-sources`
+5. `keyhog-scanner`
+6. `keyhog`
 
-The repository workflow token also needs `contents: write`. It uses that permission only for the generated release commit and lightweight version tag.
+The repository workflow token also needs `contents: write`. It uses that
+permission only for the generated release commit and lightweight version tag.
 
 ## Recover a failed upload
 

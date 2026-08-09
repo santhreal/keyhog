@@ -11,7 +11,7 @@ fn scanner_source(path: &str) -> String {
 #[test]
 fn gpu_dispatch_failure_has_no_cpu_substitution_path() {
     let dispatch = scanner_source("engine/backend_dispatch.rs");
-    let gpu_region = scanner_source("engine/gpu_region_dispatch.rs");
+    let gpu_region = scanner_source("engine/gpu_region_dispatch/mod.rs");
     assert!(
         dispatch.contains("self.scan_coalesced_gpu_region_presence(chunks, backend, route)")
             && dispatch.contains("crate::error::ScanError::Gpu(error.to_string())")

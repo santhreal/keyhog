@@ -1123,7 +1123,7 @@ pub fn telemetry_reset_zeroes_all_seeded_gap_counters() -> bool {
         .all(|gap| gap.counter().load(Ordering::Relaxed) == 0)
 }
 
-/// `(ALL.len(), all_seven_variants_present)` for `ScannerCoverageGapEvent::ALL`: the
+/// `(ALL.len(), all_nine_variants_present)` for `ScannerCoverageGapEvent::ALL`: the
 /// reset owner iterates `ALL`, so a new variant added without extending `ALL` would
 /// silently escape the per-scan reset. Encapsulates the private variant set in-crate.
 pub fn telemetry_coverage_gap_all_completeness() -> (usize, bool) {
@@ -1132,10 +1132,12 @@ pub fn telemetry_coverage_gap_all_completeness() -> (usize, bool) {
         E::StructuredParseFailure,
         E::StructuredOversizeSkip,
         E::DecodeTruncation,
+        E::DecodeOversizeSkip,
         E::InvalidPatternIndexSkip,
         E::BoundaryResultCardinalityMismatch,
         E::LineOffsetMappingMismatch,
         E::ChunkDeadlineAbort,
+        E::BinaryStringsNamedExclusion,
     ]
     .iter()
     .all(|variant| E::ALL.contains(variant));

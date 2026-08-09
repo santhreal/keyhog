@@ -31,12 +31,12 @@ keyhog scan --daemon=off \
   --format json-envelope --output s3.json
 ```
 
-Each run walks every repository or object under the target and writes one
-envelope report carrying source identity and coverage. That is the whole setup
-for a single provider target. The rest of this guide covers scanning *across
-many* targets (multiple orgs, mixed local + cloud, thousands of repos) where
-you partition and aggregate. If one org or bucket is all you need, the command
-above is complete.
+Each run traverses repositories or objects until a configured page, object,
+byte, or source limit binds. The envelope records source identity and names any
+remaining inventory as a coverage gap. That is the complete setup for one
+bounded provider target. The rest of this guide covers scanning *across many*
+targets (multiple orgs, mixed local and cloud sources, or thousands of
+repositories) where you partition and aggregate.
 
 Use one bounded report and one exit status per partition when scanning many
 repositories, buckets, or files. Keep the partition manifest outside the scan
