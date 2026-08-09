@@ -34,26 +34,7 @@ impl SerializedHyperscanShard {
 
     pub fn release_resident_pages(&self) -> Result<(), ExecutionPackError> {
         match &self.0 {
-            SerializedHyperscanShardStorage::Owned(bytes) => {
-                #[cfg(unix)]
-                {
-                    let ptr = bytes.as_ptr() as usize;
-                    let sys_page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-                    let page_size = if sys_page_size > 0 && (sys_page_size as usize).is_power_of_two() { sys_page_size as usize } else { 4096 };
-                    let start = (ptr + page_size - 1) & !(page_size - 1);
-                    let end = (ptr + bytes.len()) & !(page_size - 1);
-                    if end > start {
-                        unsafe {
-                            libc::madvise(
-                                start as *mut libc::c_void,
-                                end - start,
-                                libc::MADV_DONTNEED,
-                            );
-                        }
-                    }
-                }
-                Ok(())
-            }
+            SerializedHyperscanShardStorage::Owned(_) => Ok(()),
             SerializedHyperscanShardStorage::Mapped(bytes) => bytes.release_resident_pages(),
         }
     }
@@ -63,28 +44,7 @@ impl SerializedHyperscanShard {
         range: std::ops::Range<usize>,
     ) -> Result<(), ExecutionPackError> {
         match &self.0 {
-            SerializedHyperscanShardStorage::Owned(bytes) => {
-                #[cfg(unix)]
-                {
-                    if range.start < range.end && range.end <= bytes.len() {
-                        let ptr = bytes.as_ptr() as usize;
-                        let sys_page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-                        let page_size = if sys_page_size > 0 && (sys_page_size as usize).is_power_of_two() { sys_page_size as usize } else { 4096 };
-                        let start = (ptr + range.start + page_size - 1) & !(page_size - 1);
-                        let end = (ptr + range.end) & !(page_size - 1);
-                        if end > start && end <= ptr + bytes.len() {
-                            unsafe {
-                                libc::madvise(
-                                    start as *mut libc::c_void,
-                                    end - start,
-                                    libc::MADV_DONTNEED,
-                                );
-                            }
-                        }
-                    }
-                }
-                Ok(())
-            }
+            SerializedHyperscanShardStorage::Owned(_) => Ok(()),
             SerializedHyperscanShardStorage::Mapped(bytes) => bytes.release_resident_range(range),
         }
     }

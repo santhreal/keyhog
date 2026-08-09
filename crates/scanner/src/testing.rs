@@ -6030,3 +6030,6 @@ pub fn stream_detector_plan_for_test(
             crate::execution_pack::detector_plan::detector_plan_peak_live_wire_rows(),
     })
 }
+pub fn test_reusable_phase1_evidence_cache_bounds_for_test() {
+    crate::engine::phase1_admission::ReusablePhase1EvidenceCache::test_replacements_and_bounds();
+}

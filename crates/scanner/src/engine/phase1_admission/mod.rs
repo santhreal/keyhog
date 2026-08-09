@@ -196,6 +196,18 @@ impl ReusablePhase1EvidenceCache {
                 self.resident_bytes = self.resident_bytes.saturating_sub(entry.resident_bytes());
                 entry.evidence = evidence;
                 let updated_bytes = entry.resident_bytes();
+                if updated_bytes > REUSABLE_EVIDENCE_MAX_BYTES {
+                    return;
+                }
+                while self.entries.len() >= REUSABLE_EVIDENCE_MAX_ENTRIES
+                    || self.resident_bytes.saturating_add(updated_bytes) > REUSABLE_EVIDENCE_MAX_BYTES
+                {
+                    let Some(evicted) = self.entries.pop_front() else {
+                        break;
+                    };
+                    self.resident_bytes =
+                        self.resident_bytes.saturating_sub(evicted.resident_bytes());
+                }
                 self.resident_bytes = self.resident_bytes.saturating_add(updated_bytes);
                 self.entries.push_back(entry);
             }
@@ -219,6 +231,120 @@ impl ReusablePhase1EvidenceCache {
             payload,
             evidence,
         });
+    }
+    pub(crate) fn test_replacements_and_bounds() {
+        let mut cache = ReusablePhase1EvidenceCache::default();
+        let fp = [1u8; 32];
+        let digest = [2u8; 32];
+
+        let make_evidence = |index| ReusablePhase1Evidence {
+            admission: Phase1Admission::Admitted,
+            keyword_trigger_count: 0,
+            keyword_hints: Vec::new(),
+            generic_positions: Vec::new(),
+            phase2_always_active_absence: false,
+            cpu_trigger_hints: None,
+            normalization_passthrough: false,
+            confirmed_patterns_absence: false,
+            entropy_absence: false,
+            multiline_absence: false,
+            line_context_index: index,
+            decoder_absence: false,
+        };
+
+        let index_large = crate::context::LineContextIndex::try_new(
+            "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10",
+        )
+        .ok()
+        .map(Arc::new);
+        let index_small = crate::context::LineContextIndex::try_new("line1\n")
+            .ok()
+            .map(Arc::new);
+
+        let payload = SensitiveString::from("entry_1");
+        let base_len = payload.len();
+        let bytes_large = base_len + index_large.as_ref().map_or(0, |idx| idx.storage_bytes());
+        let bytes_small = base_len + index_small.as_ref().map_or(0, |idx| idx.storage_bytes());
+
+        // 1. Initial insert with large index
+        cache.insert(
+            fp,
+            false,
+            false,
+            digest,
+            None,
+            payload.clone(),
+            make_evidence(index_large.clone()),
+        );
+        assert_eq!(cache.resident_bytes, bytes_large);
+
+        // 2. Smaller replacement
+        cache.insert(
+            fp,
+            false,
+            false,
+            digest,
+            None,
+            payload.clone(),
+            make_evidence(index_small.clone()),
+        );
+        assert_eq!(cache.resident_bytes, bytes_small);
+
+        // 3. Equal replacement
+        cache.insert(
+            fp,
+            false,
+            false,
+            digest,
+            None,
+            payload.clone(),
+            make_evidence(index_small.clone()),
+        );
+        assert_eq!(cache.resident_bytes, bytes_small);
+
+        // 4. Larger replacement
+        cache.insert(
+            fp,
+            false,
+            false,
+            digest,
+            None,
+            payload.clone(),
+            make_evidence(index_large.clone()),
+        );
+        assert_eq!(cache.resident_bytes, bytes_large);
+
+        // 5. New over-limit payload (> 1MB) is rejected without modifying cache
+        let huge_payload = SensitiveString::from("x".repeat(1024 * 1024 + 100));
+        cache.insert(
+            [2u8; 32],
+            false,
+            false,
+            digest,
+            None,
+            huge_payload,
+            make_evidence(index_small.clone()),
+        );
+        assert_eq!(cache.resident_bytes, bytes_large);
+
+        // 6. Over-limit replacement: existing payload replaced with evidence exceeding ceiling
+        let huge_lines: String = (0..50_000).map(|i| format!("line_{i}: data_padding_for_index\n")).collect();
+        if let Ok(huge_idx) = crate::context::LineContextIndex::try_new(&huge_lines) {
+            let huge_arc = Arc::new(huge_idx);
+            if base_len + huge_arc.storage_bytes() > REUSABLE_EVIDENCE_MAX_BYTES {
+                cache.insert(
+                    fp,
+                    false,
+                    false,
+                    digest,
+                    None,
+                    payload.clone(),
+                    make_evidence(Some(huge_arc)),
+                );
+                assert_eq!(cache.resident_bytes, 0);
+                assert_eq!(cache.entries.len(), 0);
+            }
+        }
     }
 }
 

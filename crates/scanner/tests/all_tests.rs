@@ -519,3 +519,5 @@ pub mod unit_engine_cases_live;
 pub mod vendorgen_harness_contract;
 #[path = "window_boundary.rs"]
 pub mod window_boundary;
+#[path = "unit/root_facade/backlog_kh2040_kh2049_tests.rs"]
+pub mod backlog_kh2040_kh2049_tests;

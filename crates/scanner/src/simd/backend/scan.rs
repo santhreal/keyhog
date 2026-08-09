@@ -1,4 +1,4 @@
-use super::HsScanner;
+use super::{HsScanner, ScratchTracker};
 use hyperscan::{Matching, Scratch};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -6,8 +6,19 @@ use std::mem::MaybeUninit;
 use std::sync::{Arc, Weak};
 
 struct CachedScratch {
-    owner: Weak<()>,
+    owner: Weak<ScratchTracker>,
     scratch: Scratch,
+    size: usize,
+}
+
+impl Drop for CachedScratch {
+    fn drop(&mut self) {
+        if let Some(owner) = self.owner.upgrade() {
+            owner
+                .bytes
+                .fetch_sub(self.size, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
 }
 
 const SCRATCH_TLS_PRUNE_THRESHOLD: usize = 32;
@@ -44,7 +55,8 @@ fn allocate_scratch(
     scanner_id: u64,
     shard_idx: usize,
     shard: &super::Shard,
-) -> Result<Scratch, String> {
+    owner: &Arc<ScratchTracker>,
+) -> Result<CachedScratch, String> {
     #[cfg(test)]
     if take_injected_scratch_failure(shard_idx) {
         return Err(format!(
@@ -53,11 +65,20 @@ fn allocate_scratch(
         ));
     }
 
-    shard.db.alloc_scratch().map_err(|error| {
+    let scratch = shard.db.alloc_scratch().map_err(|error| {
         format!(
             "hyperscan scratch on-demand growth failed for scanner {scanner_id} \
              shard {shard_idx}: {error}"
         )
+    })?;
+    let size = scratch.size().unwrap_or(0);
+    owner
+        .bytes
+        .fetch_add(size, std::sync::atomic::Ordering::SeqCst);
+    Ok(CachedScratch {
+        owner: Arc::downgrade(owner),
+        scratch,
+        size,
     })
 }
 
@@ -65,44 +86,27 @@ fn take_scratch(
     scanner_id: u64,
     shard_idx: usize,
     shard: &super::Shard,
-    owner: &Arc<()>,
-) -> Result<Scratch, String> {
+    owner: &Arc<ScratchTracker>,
+) -> Result<CachedScratch, String> {
     let key = (scanner_id, shard_idx);
     if let Some(cached) = SCRATCH_TLS.with(|tls| tls.borrow_mut().remove(&key)) {
-        // The monotonic scanner id is the fast cache key. Checking the Arc
-        // address as well makes a wrapped/reused id fail safe instead of
-        // handing Hyperscan scratch to a different database.
         if std::ptr::eq(cached.owner.as_ptr(), Arc::as_ptr(owner)) {
-            return Ok(cached.scratch);
+            return Ok(cached);
         }
     }
     debug_assert!(Arc::strong_count(owner) > 0);
     SCRATCH_TLS.with(|tls| prune_dead_scanner_scratch(&mut tls.borrow_mut()));
-    // The first scan on this thread for this (scanner, shard) allocates a
-    // scratch lazily. The scratch is bound to this shard's database and is
-    // returned to thread-local storage after the scan, so every later request
-    // on this thread reuses it lock-free. If more distinct threads scan a
-    // shard than the executor width (`--batch-pipeline` reader + fused-dispatch
-    // threads on top of rayon), each new thread pays the one-time allocation
-    // exactly once and then caches its own scratch. This is the same precise
-    // full-chunk scan; there is no silent partial or over-marked degrade.
-    allocate_scratch(scanner_id, shard_idx, shard)
+    allocate_scratch(scanner_id, shard_idx, shard, owner)
 }
 
-fn put_scratch(scanner_id: u64, shard_idx: usize, owner: &Arc<()>, scratch: Scratch) {
+fn put_scratch(scanner_id: u64, shard_idx: usize, cached: CachedScratch) {
     let key = (scanner_id, shard_idx);
     SCRATCH_TLS.with(|tls| {
         let mut tls = tls.borrow_mut();
         if tls.len() >= SCRATCH_TLS_PRUNE_THRESHOLD {
             prune_dead_scanner_scratch(&mut tls);
         }
-        tls.insert(
-            key,
-            CachedScratch {
-                owner: Arc::downgrade(owner),
-                scratch,
-            },
-        );
+        tls.insert(key, cached);
     });
 }
 
@@ -116,6 +120,7 @@ pub(super) fn purge_scanner_scratch(scanner_id: u64) {
             .retain(|(cached_scanner_id, _), _| *cached_scanner_id != scanner_id);
     });
 }
+#[allow(dead_code)]
 pub(super) fn scanner_scratch_bytes(scanner_id: u64) -> usize {
     SCRATCH_TLS.with(|tls| {
         tls.borrow()
@@ -135,9 +140,9 @@ pub(super) fn scanner_scratch_bytes(scanner_id: u64) -> usize {
 /// before any finding state has been mutated.
 struct ScratchBatch<'a> {
     scanner_id: u64,
-    owner: &'a Arc<()>,
     initialized: usize,
-    slots: [MaybeUninit<Scratch>; super::MAX_COMPILE_SHARDS],
+    slots: [MaybeUninit<CachedScratch>; super::MAX_COMPILE_SHARDS],
+    _phantom: std::marker::PhantomData<&'a ()>,
 }
 
 impl<'a> ScratchBatch<'a> {
@@ -152,14 +157,14 @@ impl<'a> ScratchBatch<'a> {
 
         let mut batch = Self {
             scanner_id: scanner.scanner_id,
-            owner: &scanner.scratch_owner,
             initialized: 0,
             slots: std::array::from_fn(|_| MaybeUninit::uninit()),
+            _phantom: std::marker::PhantomData,
         };
         for (shard_idx, shard) in scanner.shards.iter().enumerate() {
-            let scratch =
+            let cached =
                 take_scratch(scanner.scanner_id, shard_idx, shard, &scanner.scratch_owner)?;
-            batch.slots[shard_idx].write(scratch);
+            batch.slots[shard_idx].write(cached);
             batch.initialized += 1;
         }
         Ok(batch)
@@ -168,20 +173,15 @@ impl<'a> ScratchBatch<'a> {
     #[inline]
     fn scratch(&self, shard_idx: usize) -> &Scratch {
         debug_assert!(shard_idx < self.initialized);
-        // SAFETY: `acquire` initializes slots contiguously and returns `Ok`
-        // only after every scanner shard has a scratch. Scan loops use shard
-        // indices from that same scanner.
-        unsafe { self.slots.get_unchecked(shard_idx).assume_init_ref() }
+        unsafe { &self.slots.get_unchecked(shard_idx).assume_init_ref().scratch }
     }
 }
 
 impl Drop for ScratchBatch<'_> {
     fn drop(&mut self) {
         for shard_idx in 0..self.initialized {
-            // SAFETY: the prefix `0..initialized` contains exactly the slots
-            // written by `acquire`, and each is read only here during Drop.
-            let scratch = unsafe { self.slots.get_unchecked(shard_idx).assume_init_read() };
-            put_scratch(self.scanner_id, shard_idx, self.owner, scratch);
+            let cached = unsafe { self.slots.get_unchecked(shard_idx).assume_init_read() };
+            put_scratch(self.scanner_id, shard_idx, cached);
         }
     }
 }

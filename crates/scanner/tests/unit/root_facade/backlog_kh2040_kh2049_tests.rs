@@ -4,7 +4,7 @@ use keyhog_scanner::testing as scan_testing;
 
 #[test]
 fn test_kh2040_simd_memory_attribution_struct() {
-    use keyhog_scanner::simd::backend::SimdPackMemoryAttribution;
+    use keyhog_scanner::execution_pack::simd_program::SimdPackMemoryAttribution;
     let attr = SimdPackMemoryAttribution {
         native_database_bytes: 1024,
         serialized_shard_bytes: 512,
@@ -24,15 +24,15 @@ fn test_kh2040_simd_memory_attribution_struct() {
 #[test]
 fn test_kh2040_simd_memory_attribution() {
     let patterns = vec![(0, 0, "aws_key_[A-Z0-9]{8}", false)];
-    if let Ok(scanner) = scan_testing::HsScannerForTest::compile(&patterns) {
-        let attr = scanner.memory_attribution();
-        assert!(attr.mapping_residency_bytes > 0);
-        // Scratch is unallocated until warm/scan
-        assert_eq!(attr.scratch_bytes, 0);
-        // Verify struct equality and formatting
-        let attr_clone = attr.clone();
-        assert_eq!(attr, attr_clone);
-    }
+    let scanner = scan_testing::HsScannerForTest::compile(&patterns)
+        .expect("compiling valid HS pattern fixture should succeed");
+    let attr = scanner.memory_attribution();
+    assert!(attr.mapping_residency_bytes > 0);
+    // Scratch is unallocated until warm/scan
+    assert_eq!(attr.scratch_bytes, 0);
+    // Verify struct equality and formatting
+    let attr_clone = attr.clone();
+    assert_eq!(attr, attr_clone);
 }
 
 #[test]
@@ -48,24 +48,24 @@ fn test_kh2041_lazy_companion_activation_checks() {
 #[test]
 fn test_kh2042_coordinate_line_index_reuse_passthrough() {
     let text = "first line\nsecond line with secret\r\nthird line\nfourth line";
-    if let Ok(index) = scan_testing::compact_line_index_for_test(text) {
-        // Line numbers are 1-indexed
-        assert_eq!(index.line_number_for_offset(0), 1);
-        assert_eq!(index.line_number_for_offset(5), 1);
-        assert_eq!(index.line_number_for_offset(11), 2);
-        assert_eq!(index.line_number_for_offset(36), 3);
-        assert_eq!(index.line_number_for_offset(47), 4);
-        // Out-of-bounds offset returns bounded line count
-        assert_eq!(index.line_number_for_offset(1000), 4);
-    }
+    let index = scan_testing::compact_line_index_for_test(text)
+        .expect("building line index fixture should succeed");
+    // Line numbers are 1-indexed
+    assert_eq!(index.line_number_for_offset(0), 1);
+    assert_eq!(index.line_number_for_offset(5), 1);
+    assert_eq!(index.line_number_for_offset(11), 2);
+    assert_eq!(index.line_number_for_offset(36), 3);
+    assert_eq!(index.line_number_for_offset(47), 4);
+    // Out-of-bounds offset returns bounded line count
+    assert_eq!(index.line_number_for_offset(1000), 4);
 
     // Boundary check for single line text
     let single_line = "no_newline_text";
-    if let Ok(index) = scan_testing::compact_line_index_for_test(single_line) {
-        assert_eq!(index.line_number_for_offset(0), 1);
-        assert_eq!(index.line_number_for_offset(5), 1);
-        assert_eq!(index.line_number_for_offset(100), 1);
-    }
+    let index = scan_testing::compact_line_index_for_test(single_line)
+        .expect("building single line index fixture should succeed");
+    assert_eq!(index.line_number_for_offset(0), 1);
+    assert_eq!(index.line_number_for_offset(5), 1);
+    assert_eq!(index.line_number_for_offset(100), 1);
 }
 
 #[test]
@@ -80,6 +80,9 @@ fn test_kh2043_payload_evidence_cache_bounding() {
     assert_ne!(data1, data3);
     assert_eq!(data1.len(), 20);
     assert_eq!(data3.len(), 22);
+
+    // Exercise production ReusablePhase1EvidenceCache replacements and bounds
+    scan_testing::test_reusable_phase1_evidence_cache_bounds_for_test();
 }
 
 #[test]
