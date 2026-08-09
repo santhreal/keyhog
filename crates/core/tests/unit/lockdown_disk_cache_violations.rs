@@ -157,4 +157,3 @@ fn cache_entry_read_error_is_lockdown_violation() {
         "a per-entry read_dir error must fail closed instead of being filtered out"
     );
 }
-

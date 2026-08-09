@@ -8,10 +8,7 @@ fn matcher_cache_path_config_overrides_and_disable() {
     let home = dirs::home_dir().expect("home");
     let default = resolve_matcher_cache_path_with_default(None, Some(home.clone()))
         .expect("default matcher cache");
-    assert_eq!(
-        default,
-        Some(home.join("keyhog-matcher-artifacts"))
-    );
+    assert_eq!(default, Some(home.join("keyhog-matcher-artifacts")));
 
     // Unusable automatic defaults soft-fail to disabled.
     assert_eq!(

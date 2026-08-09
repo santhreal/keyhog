@@ -397,9 +397,7 @@ pub(crate) fn configure_hyperscan_cache_dir(cache_dir: Option<PathBuf>) -> Resul
 pub(crate) fn configure_matcher_artifact_cache_dir(cache_dir: Option<PathBuf>) -> Result<()> {
     if let Some(path) = cache_dir.as_ref() {
         keyhog_scanner::validate_matcher_artifact_cache_dir(path).map_err(|error| {
-            anyhow::anyhow!(
-                "{error}. Configure with --matcher-cache or [system].matcher_cache"
-            )
+            anyhow::anyhow!("{error}. Configure with --matcher-cache or [system].matcher_cache")
         })?;
     }
     keyhog_scanner::set_matcher_artifact_cache_dir(cache_dir);

@@ -130,10 +130,10 @@ pub(crate) mod gpu_input_budget;
 pub(crate) mod gpu_literal_artifacts;
 /// Persistent GPU matcher artifact cache.
 pub(crate) mod gpu_matcher_cache;
-/// Persistent compiled matcher (`MatcherArtifact`) cache shared across processes.
-pub mod matcher_artifact_cache;
 /// Hardware capability detection and backend selection.
 pub mod hw_probe;
+/// Persistent compiled matcher (`MatcherArtifact`) cache shared across processes.
+pub mod matcher_artifact_cache;
 /// Machine learning inference for secret scoring.
 pub mod ml_scorer;
 /// Multiline secret reassembly logic.

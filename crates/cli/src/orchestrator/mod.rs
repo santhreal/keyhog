@@ -1341,10 +1341,7 @@ impl ScanOrchestrator {
                             )
                             .context("loading effective detector corpus")
                         };
-                        (
-                            Some(embedded()?),
-                            None,
-                        )
+                        (Some(embedded()?), None)
                     }
                     Err(error) => {
                         return Err(error).context(
@@ -1528,9 +1525,9 @@ impl ScanOrchestrator {
 
         let scanner = {
             let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
-            let pack_generation = detector_execution_pack.as_ref().map(|pack| {
-                keyhog_core::hex_encode(&pack.identity().digest())
-            });
+            let pack_generation = detector_execution_pack
+                .as_ref()
+                .map(|pack| keyhog_core::hex_encode(&pack.identity().digest()));
             let compiled = if disabled_detectors.is_empty() {
                 match detector_execution_pack.as_ref() {
                     Some(pack) => {

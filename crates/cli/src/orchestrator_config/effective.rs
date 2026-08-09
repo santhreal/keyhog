@@ -669,10 +669,7 @@ pub(crate) fn profiling_resolved_config_digest(resolved: &ResolvedScanConfig) ->
         "autoroute_cache_path",
         resolved.autoroute_cache_path.as_deref(),
     );
-    h.field_option_path(
-        "matcher_cache_path",
-        resolved.matcher_cache_path.as_deref(),
-    );
+    h.field_option_path("matcher_cache_path", resolved.matcher_cache_path.as_deref());
     h.field_option_path(
         "calibration_cache_path",
         resolved.calibration_cache_path.as_deref(),

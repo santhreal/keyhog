@@ -659,7 +659,6 @@ pub(crate) mod action_report;
 pub mod args;
 pub(crate) mod atomic_file;
 pub(crate) mod autoroute_cache_path;
-pub(crate) mod matcher_cache_path;
 pub(crate) mod baseline;
 pub(crate) mod benchmark;
 pub(crate) mod bloom_diagnostic;
@@ -669,6 +668,7 @@ pub mod exit_codes;
 pub(crate) mod format;
 pub(crate) mod installer;
 pub(crate) mod log_dedup;
+pub(crate) mod matcher_cache_path;
 pub(crate) mod runtime_preflight;
 // Daemon uses Unix-domain sockets (`tokio::net::UnixListener` and
 // `std::os::unix::net`). Windows lacks both surfaces in the form

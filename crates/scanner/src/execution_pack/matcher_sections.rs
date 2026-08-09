@@ -315,9 +315,36 @@ pub(crate) fn validate_compile_state_sections(
         literal_index,
         regex_programs,
         suppression_policy,
-        false,
+        SectionDecodeTrust::Untrusted,
     )
     .map(|_| ())
+}
+
+/// How strictly matcher-section bytes are validated during hydrate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SectionDecodeTrust {
+    /// Signed/authenticated execution pack: skip canonical re-encode and
+    /// companion re-validation (already sealed by the pack signature path).
+    AuthenticatedPack,
+    /// Local MatcherArtifact cache: outer identity/content digests already
+    /// checked the bytes, so skip the expensive JSON canonical re-encode, but
+    /// still run `compile_companion` validation before LazyRegex construction.
+    LocalDigestCheckedCache,
+    /// Fully untrusted input: canonical re-encode + companion validation.
+    Untrusted,
+}
+
+impl SectionDecodeTrust {
+    fn skip_canonical_reencode(self) -> bool {
+        matches!(
+            self,
+            Self::AuthenticatedPack | Self::LocalDigestCheckedCache
+        )
+    }
+
+    fn skip_companion_validation(self) -> bool {
+        matches!(self, Self::AuthenticatedPack)
+    }
 }
 
 fn decode_validated_compile_state_sections(
@@ -325,18 +352,13 @@ fn decode_validated_compile_state_sections(
     literal_index: &[u8],
     regex_programs: &[u8],
     suppression_policy: &[u8],
-    authenticated: bool,
+    trust: SectionDecodeTrust,
 ) -> Result<(LiteralEnvelope, RegexEnvelope, SuppressionEnvelope), ExecutionPackError> {
     let literal: LiteralEnvelope =
-        decode_canonical("literal index", literal_index, backend, authenticated)?;
-    let regex: RegexEnvelope =
-        decode_canonical("regex programs", regex_programs, backend, authenticated)?;
-    let suppression: SuppressionEnvelope = decode_canonical(
-        "suppression policy",
-        suppression_policy,
-        backend,
-        authenticated,
-    )?;
+        decode_canonical("literal index", literal_index, backend, trust)?;
+    let regex: RegexEnvelope = decode_canonical("regex programs", regex_programs, backend, trust)?;
+    let suppression: SuppressionEnvelope =
+        decode_canonical("suppression policy", suppression_policy, backend, trust)?;
     if literal.detector_count != regex.detector_count
         || literal.detector_count != suppression.detector_count
     {
@@ -376,7 +398,7 @@ fn decode_validated_compile_state_sections(
         ("regex programs", regex_programs),
         ("suppression policy", suppression_policy),
     ];
-    if authenticated {
+    if trust.skip_canonical_reencode() {
         for (index, (name, bytes)) in sections.iter().enumerate() {
             if sections[..index]
                 .iter()
@@ -459,7 +481,7 @@ pub(crate) fn decode_authenticated_compile_state_sections_from_ids(
         suppression_policy,
         expected_detector_ir_digest,
         detector_ids,
-        true,
+        SectionDecodeTrust::AuthenticatedPack,
     )
 }
 
@@ -478,7 +500,32 @@ pub(crate) fn decode_compile_state_sections_from_ids(
         suppression_policy,
         expected_detector_ir_digest,
         detector_ids,
-        false,
+        SectionDecodeTrust::Untrusted,
+    )
+}
+
+/// Hydrate CompileState from a local MatcherArtifact whose outer identity and
+/// content digests have already been checked against the live process.
+pub(crate) fn decode_local_matcher_artifact_compile_state_sections(
+    backend: ExecutionPackBackend,
+    literal_index: &[u8],
+    regex_programs: &[u8],
+    suppression_policy: &[u8],
+    expected_detector_ir_digest: [u8; 32],
+    detectors: &[keyhog_core::DetectorSpec],
+) -> Result<CompileState, ExecutionPackError> {
+    let detector_ids = detectors
+        .iter()
+        .map(|detector| detector.id.as_str())
+        .collect::<Vec<_>>();
+    decode_compile_state_sections_from_ids_inner(
+        backend,
+        literal_index,
+        regex_programs,
+        suppression_policy,
+        expected_detector_ir_digest,
+        &detector_ids,
+        SectionDecodeTrust::LocalDigestCheckedCache,
     )
 }
 
@@ -489,14 +536,14 @@ fn decode_compile_state_sections_from_ids_inner(
     suppression_policy: &[u8],
     expected_detector_ir_digest: [u8; 32],
     detector_ids: &[&str],
-    authenticated: bool,
+    trust: SectionDecodeTrust,
 ) -> Result<CompileState, ExecutionPackError> {
     let (literal, regex, _suppression) = decode_validated_compile_state_sections(
         backend,
         literal_index,
         regex_programs,
         suppression_policy,
-        authenticated,
+        trust,
     )?;
     if literal.detector_ir_digest != expected_detector_ir_digest {
         return Err(ExecutionPackError::Incompatible(
@@ -534,9 +581,7 @@ fn decode_compile_state_sections_from_ids_inner(
         .map(|(detector_index, packed)| {
             packed
                 .into_iter()
-                .map(|companion| {
-                    unpack_companion(companion, detector_ids[detector_index], authenticated)
-                })
+                .map(|companion| unpack_companion(companion, detector_ids[detector_index], trust))
                 .collect()
         })
         .collect::<Result<Vec<_>, ExecutionPackError>>()?;
@@ -612,9 +657,9 @@ fn unpack_pattern(
 fn unpack_companion(
     packed: PackedCompanion,
     detector_id: &str,
-    authenticated: bool,
+    trust: SectionDecodeTrust,
 ) -> Result<crate::types::CompiledCompanion, ExecutionPackError> {
-    if authenticated {
+    if trust.skip_companion_validation() {
         return Ok(crate::types::CompiledCompanion {
             name: std::sync::Arc::<str>::from(packed.name),
             regex: LazyRegex::companion(packed.regex),
@@ -651,7 +696,7 @@ fn decode_canonical<T>(
     name: &'static str,
     bytes: &[u8],
     backend: ExecutionPackBackend,
-    authenticated: bool,
+    trust: SectionDecodeTrust,
 ) -> Result<T, ExecutionPackError>
 where
     T: serde::de::DeserializeOwned + Serialize + MatcherEnvelopeIdentity,
@@ -666,7 +711,7 @@ where
             "compiled route {name} version or backend is incompatible"
         )));
     }
-    if !authenticated {
+    if !trust.skip_canonical_reencode() {
         RUNTIME_CANONICAL_REENCODES.set(RUNTIME_CANONICAL_REENCODES.get().saturating_add(1));
         let canonical = serde_json::to_vec(&decoded).map_err(|error| {
             ExecutionPackError::InvalidPack(format!(

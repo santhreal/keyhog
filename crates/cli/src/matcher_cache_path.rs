@@ -6,11 +6,15 @@ use std::path::PathBuf;
 ///   1. explicit `--matcher-cache <DIR|off>` / `[system].matcher_cache`
 ///   2. `dirs::cache_dir()/keyhog-matcher-artifacts`
 ///
-/// `off` / `0` / empty disables persistence.
+/// `off` / `0` / empty disables persistence. `--lockdown` also disables the
+/// cache at the orchestrator layer (unsigned local detector/matcher graphs are
+/// incompatible with lockdown's past-findings audit).
 ///
-/// An explicit path that fails validation is a hard error. The automatic
-/// default soft-fails to `None` (cache disabled) when the platform cache root
-/// is missing or outside the allowlist, matching Hyperscan's default behaviour.
+/// Default-on mirrors Hyperscan's persistent shard cache, which likewise
+/// resolves under `dirs::cache_dir()/keyhog` when `--cache-dir` is unset
+/// (`simd::backend::resolve_cache_dir`). An explicit path that fails validation
+/// is a hard error. The automatic default soft-fails to `None` (cache disabled)
+/// when the platform cache root is missing or outside the allowlist.
 pub(crate) fn resolve_matcher_cache_path(raw: Option<&str>) -> Result<Option<PathBuf>, String> {
     resolve_matcher_cache_path_with_default(raw, dirs::cache_dir())
 }

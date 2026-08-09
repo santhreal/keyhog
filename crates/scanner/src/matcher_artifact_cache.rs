@@ -18,7 +18,7 @@ use crate::compiler::compiler_build::CompileState;
 use crate::engine::CompiledScanner;
 use crate::error::{Result, ScanError};
 use crate::execution_pack::matcher_sections::{
-    decode_authenticated_compile_state_sections, CompiledRouteMatcherSections,
+    decode_local_matcher_artifact_compile_state_sections, CompiledRouteMatcherSections,
 };
 use crate::execution_pack::{CanonicalDetectorExecutionIr, ExecutionPackBackend};
 use crate::hw_probe::ScanBackend;
@@ -384,9 +384,9 @@ fn read_u32_le(bytes: &[u8], offset: &mut usize, path: &Path) -> std::result::Re
         .checked_add(4)
         .filter(|end| *end <= bytes.len())
         .ok_or_else(|| format!("matcher artifact {} is truncated", path.display()))?;
-    let arr: [u8; 4] = bytes[*offset..end].try_into().map_err(|_| {
-        format!("matcher artifact {} is truncated", path.display())
-    })?;
+    let arr: [u8; 4] = bytes[*offset..end]
+        .try_into()
+        .map_err(|_| format!("matcher artifact {} is truncated", path.display()))?;
     let value = u32::from_le_bytes(arr);
     *offset = end;
     Ok(value)
@@ -416,18 +416,13 @@ pub struct LoadedMatcherArtifact {
     pub detector_ir: Vec<u8>,
 }
 
-
-
 fn parse_loaded_matcher_artifact(
     path: &Path,
     bytes: &[u8],
     expected_identity: Option<&MatcherArtifactIdentity>,
 ) -> std::result::Result<(MatcherArtifactIdentity, LoadedMatcherArtifact), String> {
     if bytes.len() < 8 {
-        return Err(format!(
-            "matcher artifact {} is truncated",
-            path.display()
-        ));
+        return Err(format!("matcher artifact {} is truncated", path.display()));
     }
     if &bytes[..4] != MATCHER_ARTIFACT_MAGIC {
         return Err(format!(
@@ -577,8 +572,8 @@ pub fn store_matcher_artifact(
     sections: &CompiledRouteMatcherSections,
     detector_ir: &[u8],
 ) -> std::result::Result<(), String> {
-    let expected_backend =
-        parse_backend_name(&identity.backend).ok_or_else(|| "unknown identity backend".to_owned())?;
+    let expected_backend = parse_backend_name(&identity.backend)
+        .ok_or_else(|| "unknown identity backend".to_owned())?;
     if sections.backend != expected_backend {
         return Err("matcher artifact backend does not match identity".to_owned());
     }
@@ -660,8 +655,6 @@ fn evict_old_matcher_artifacts(cache_dir: &Path) {
     }
 }
 
-
-
 fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let parent = path
         .parent()
@@ -676,7 +669,6 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     }
     tmp.persist(path).map(drop).map_err(|error| error.error)
 }
-
 
 fn record_outcome(outcome: &MatcherArtifactCacheOutcome) {
     match outcome {
@@ -803,12 +795,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
                         ))
                     })?;
                 if let Err(store_error) =
-                    store_matcher_artifact(
-                        cache_dir,
-                        &identity,
-                        &sections,
-                        ir.as_bytes(),
-                    )
+                    store_matcher_artifact(cache_dir, &identity, &sections, ir.as_bytes())
                 {
                     tracing::warn!(
                         target: "keyhog::matcher_artifact_cache",
@@ -845,12 +832,11 @@ fn hydrate_matcher_artifact_state(
     detector_digest: [u8; 32],
     detectors: &[keyhog_core::DetectorSpec],
 ) -> Result<CompileState> {
-    // Integrity for MatcherArtifact is the outer identity/content digests plus
-    // binary-bound identity (and lockdown disables the cache). Re-running the
-    // untrusted-pack canonical JSON re-encode here reintroduced ~1 CPU-s on the
-    // tiny-file warm hit, erasing the lane's floor win — so hydrate uses the
-    // authenticated section decoder after those outer checks succeed.
-    decode_authenticated_compile_state_sections(
+    // Outer identity/content digests already bound these bytes to the live
+    // process (and `--lockdown` disables the cache). Skip only the untrusted-pack
+    // JSON canonical re-encode (~1 CPU-s on a ~6 MiB artifact); still run
+    // companion validation before constructing LazyRegex programs.
+    decode_local_matcher_artifact_compile_state_sections(
         sections.backend,
         &sections.literal_index,
         &sections.regex_programs,

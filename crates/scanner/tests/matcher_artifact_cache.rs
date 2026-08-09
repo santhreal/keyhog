@@ -4,10 +4,7 @@ use keyhog_core::{DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::execution_pack::{
     CanonicalDetectorExecutionIr, CompiledRouteMatcherSections, ExecutionPackBackend,
 };
-use keyhog_scanner::{
-    load_matcher_artifact, store_matcher_artifact, MatcherArtifactIdentity,
-};
-
+use keyhog_scanner::{load_matcher_artifact, store_matcher_artifact, MatcherArtifactIdentity};
 
 fn allowlisted_tempdir() -> tempfile::TempDir {
     let uid = std::fs::read_to_string("/proc/self/status")
@@ -153,5 +150,3 @@ fn hyperscan_db_filename_is_not_a_matcher_artifact() {
         "MatcherArtifact filenames must not collide with Hyperscan .db shards"
     );
 }
-
-
