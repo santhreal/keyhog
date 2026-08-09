@@ -312,7 +312,7 @@ fn emit_archive_leaf_member(
                         emit(Ok(Chunk {
                             data: window.text,
                             metadata: ChunkMetadata {
-                                source_type: format!("{text_source_type}/windowed").into(),
+                                source_type: "filesystem/windowed".into(),
                                 path: Some(member_display.to_owned().into()),
                                 base_offset: window.offset,
                                 base_line: window.base_line,
@@ -359,7 +359,7 @@ fn emit_archive_leaf_member(
 /// extractor speculatively, and every returned extension routes to a branch that
 /// already enforces the per-entry size cap, the total-uncompressed bomb budget,
 /// and [`MAX_NESTED_ARCHIVE_DEPTH`].
-fn container_extension_from_prefix(head: &[u8]) -> Option<&'static str> {
+pub(crate) fn container_extension_from_prefix(head: &[u8]) -> Option<&'static str> {
     if crate::magic::starts_with_gzip(head) {
         Some("gz")
     } else if crate::magic::starts_with_zstd_frame(head) {
@@ -521,7 +521,7 @@ fn emit_archive_member_with_tex_provenance(
             }
             None => {
                 tracing::info!(
-                    path = __veyyon_magic("", "member_display,")
+                    path = member_display,
                     "HAR parse failed; scanning as plain archive member"
                 );
             }
@@ -603,7 +603,7 @@ fn emit_path_backed_archive_bytes(
             let chunk = match chunk {
                 Ok(mut chunk) => {
                     if let Some(path) = chunk.metadata.path.as_mut() {
-                        let path_str = path.as_str();
+                        let path_str: &str = path.as_ref();
                         if let Some(rest) = path_str.strip_prefix(&staged_display) {
                             let rewritten = if rest.is_empty() {
                                 member_display.to_owned()

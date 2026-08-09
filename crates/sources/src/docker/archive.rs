@@ -428,16 +428,9 @@ fn layer_member_may_carry_image_metadata(ext: &str) -> bool {
 }
 
 fn layer_member_looks_like_container(bytes: &[u8]) -> bool {
-    crate::magic::starts_with_gzip(bytes)
-        || crate::magic::starts_with_zstd_frame(bytes)
-        || crate::magic::starts_with_lz4_frame(bytes)
-        || crate::magic::starts_with_snappy_frame(bytes)
-        || crate::magic::has_bzip2_header(bytes)
-        || crate::magic::starts_with_xz_stream(bytes)
-        || crate::magic::starts_with_zip_container_prefix(bytes)
-        || bytes.starts_with(crate::magic::SEVEN_ZIP_PREFIX)
-        || bytes.starts_with(crate::magic::RAR_PREFIX)
-        || (bytes.len() > 262 && &bytes[257..262] == b"ustar")
+    // Reuse the filesystem extensionless-container detector so tar/gzip/zip/
+    // classification cannot drift from emit_archive_member / process_entry.
+    crate::filesystem::container_extension_from_prefix(bytes).is_some()
 }
 
 enum LayerArchiveEncoding {
