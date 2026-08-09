@@ -286,12 +286,13 @@ async fn daemon_frame_rejects_oversized_length_prefix() {
     );
 }
 
-/// Locks the v12 bump: the profile flag/payload is an incompatible wire
-/// change, so the version constant must move and peers stay refused at the
-/// Hello handshake (client::connect_inner bails on any version mismatch).
+/// Locks the v13 bump: the guard commit transaction frames are an
+/// incompatible wire change, so the version constant must move and peers
+/// stay refused at the Hello handshake (client::connect_inner bails on
+/// any version mismatch).
 #[test]
-fn daemon_wire_version_is_v12_with_request_profiles() {
-    assert_eq!(WIRE_VERSION, 12);
+fn daemon_wire_version_is_v13_with_guard_transaction() {
+    assert_eq!(WIRE_VERSION, 13);
 }
 
 /// The v12 `profile` opt-in must survive the frame round-trip verbatim on

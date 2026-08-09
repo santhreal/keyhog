@@ -1089,6 +1089,11 @@ fn is_work_request(request: &Request) -> bool {
             | Request::MassFilesystemBegin { .. }
             | Request::MassFilesystemNext
             | Request::MassEnd
+            | Request::GuardCommitBegin { .. }
+            | Request::GuardCommitBlob { .. }
+            | Request::GuardCommitFinish { .. }
+            | Request::GuardAdd { .. }
+            | Request::GuardReconcile { .. }
     )
 }
 
@@ -1213,6 +1218,15 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
         | Request::MassFilesystemNext
         | Request::MassEnd => Response::Error {
             message: "daemon: mass transaction request reached invalid dispatch state".to_string(),
+        },
+        Request::GuardCommitBegin { .. }
+        | Request::GuardCommitBlob { .. }
+        | Request::GuardCommitFinish { .. }
+        | Request::GuardAdd { .. }
+        | Request::GuardRemove { .. }
+        | Request::GuardStatus { .. }
+        | Request::GuardReconcile { .. } => Response::Error {
+            message: "daemon: guard runtime is not yet initialized on this daemon".to_string(),
         },
         // The wire contract says Shutdown flushes in-flight scans. Refuse new
         // work, wait for the running scans, and only then acknowledge, so a
