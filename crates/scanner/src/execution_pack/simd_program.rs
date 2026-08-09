@@ -38,7 +38,8 @@ impl SerializedHyperscanShard {
                 #[cfg(unix)]
                 {
                     let ptr = bytes.as_ptr() as usize;
-                    let page_size = 4096;
+                    let sys_page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+                    let page_size = if sys_page_size > 0 { sys_page_size as usize } else { 4096 };
                     let start = (ptr + page_size - 1) & !(page_size - 1);
                     let end = (ptr + bytes.len()) & !(page_size - 1);
                     if end > start {
@@ -67,7 +68,8 @@ impl SerializedHyperscanShard {
                 {
                     if range.start < range.end && range.end <= bytes.len() {
                         let ptr = bytes.as_ptr() as usize;
-                        let page_size = 4096;
+                        let sys_page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+                        let page_size = if sys_page_size > 0 { sys_page_size as usize } else { 4096 };
                         let start = (ptr + range.start + page_size - 1) & !(page_size - 1);
                         let end = (ptr + range.end) & !(page_size - 1);
                         if end > start && end <= ptr + bytes.len() {
