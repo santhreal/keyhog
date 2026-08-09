@@ -121,10 +121,10 @@ if [ -x "$KEYHOG" ]; then
     [ "$sc" = "1" ] && ok_ "A.6 seeded scan exits 1 (findings)" || \
         bad_ "A.6 seeded scan exits 1 (findings)" "exit=$sc; $(printf '%s' "$scan_output" | tail -4)"
 
-    # Clean dir: exit 0.
+    # Empty input is not a clean bill of health: no bytes were examined.
     mkdir -p "$WORK/empty"
     "$KEYHOG" scan "$WORK/empty" >/dev/null 2>&1; ec=$?
-    [ "$ec" = "0" ] && ok_ "A.7 empty scan exits 0" || bad_ "A.7 empty scan exits 0" "exit=$ec"
+    [ "$ec" = "13" ] && ok_ "A.7 empty scan fails closed" || bad_ "A.7 empty scan fails closed" "exit=$ec"
 
     # SARIF emission is well-formed and carries results.
     sarif_output=$("$KEYHOG" scan "$WORK/scanme" --format sarif --output "$WORK/out.sarif" 2>&1); sarif_rc=$?

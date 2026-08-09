@@ -1,4 +1,4 @@
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 #[test]
 fn core_windows_verbatim_prefix_contracts() {
@@ -21,10 +21,12 @@ fn core_windows_verbatim_prefix_contracts() {
 }
 
 #[test]
-fn http_user_agent_contracts() {let ua = TestApi.user_agent(None);
+fn http_user_agent_contracts() {
+    let ua = TestApi.user_agent(None);
     assert!(ua.starts_with("keyhog/"));
     assert!(ua.contains(env!("CARGO_PKG_VERSION")));
-    assert!(TestApi.user_agent(Some("web")).contains("(web)"));}
+    assert!(TestApi.user_agent(Some("web")).contains("(web)"));
+}
 
 #[cfg(feature = "binary")]
 #[test]
@@ -46,18 +48,21 @@ fn binary_literal_extraction_contracts() {
 
 #[cfg(feature = "binary")]
 #[test]
-fn binary_section_extraction_rejects_bad_inputs_without_panic() {assert!(TestApi
+fn binary_section_extraction_rejects_bad_inputs_without_panic() {
+    assert!(TestApi
         .extract_sections(&[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc], "junk.bin")
         .is_none());
     assert!(TestApi.extract_sections(&[], "empty.bin").is_none());
 
     let mut bytes = vec![0x7f, b'E', b'L', b'F', 2, 1, 0];
     bytes.extend(std::iter::repeat(0xFF).take(120));
-    let _ = TestApi.extract_sections(&bytes, "trunc.elf");}
+    let _ = TestApi.extract_sections(&bytes, "trunc.elf");
+}
 
 #[cfg(feature = "binary")]
 #[test]
-fn binary_unresolvable_section_name_bumps_partial_parse_counter() {// Canonical SCAN_GATE guard, not a local mutex: this set_skip_counts zeroes
+fn binary_unresolvable_section_name_bumps_partial_parse_counter() {
+    // Canonical SCAN_GATE guard, not a local mutex: this set_skip_counts zeroes
     // ALL process-global counters, and only the shared exclusive scan scope
     // serializes it against a concurrent counter-asserting scan in the same
     // `all_tests` process (a local mutex does not, which intermittently flaked
@@ -68,12 +73,16 @@ fn binary_unresolvable_section_name_bumps_partial_parse_counter() {// Canonical 
     let name = TestApi.resolve_binary_section_name(None, 42);
     assert_eq!(name, "", "an unresolvable name yields the empty string");
     assert_eq!(
-        keyhog_sources::skip_counts().binary_section_name_unresolved, 1, "a corrupt-strtab name lookup must bump the loud partial-parse counter exactly once"
-    );}
+        keyhog_sources::skip_counts().binary_section_name_unresolved,
+        1,
+        "a corrupt-strtab name lookup must bump the loud partial-parse counter exactly once"
+    );
+}
 
 #[cfg(feature = "binary")]
 #[test]
-fn binary_legitimate_unnamed_section_does_not_bump_counter() {// Canonical SCAN_GATE guard, not a local mutex: this set_skip_counts zeroes
+fn binary_legitimate_unnamed_section_does_not_bump_counter() {
+    // Canonical SCAN_GATE guard, not a local mutex: this set_skip_counts zeroes
     // ALL process-global counters, and only the shared exclusive scan scope
     // serializes it against a concurrent counter-asserting scan in the same
     // `all_tests` process (a local mutex does not, which intermittently flaked
@@ -84,12 +93,16 @@ fn binary_legitimate_unnamed_section_does_not_bump_counter() {// Canonical SCAN_
     let name = TestApi.resolve_binary_section_name(None, 0);
     assert_eq!(name, "");
     assert_eq!(
-        keyhog_sources::skip_counts().binary_section_name_unresolved, 0, "sh_name==0 is the strtab's empty entry, not an anomaly; counter must stay 0"
-    );}
+        keyhog_sources::skip_counts().binary_section_name_unresolved,
+        0,
+        "sh_name==0 is the strtab's empty entry, not an anomaly; counter must stay 0"
+    );
+}
 
 #[cfg(feature = "binary")]
 #[test]
-fn binary_resolved_section_name_passes_through_without_counting() {// Canonical SCAN_GATE guard, not a local mutex: this set_skip_counts zeroes
+fn binary_resolved_section_name_passes_through_without_counting() {
+    // Canonical SCAN_GATE guard, not a local mutex: this set_skip_counts zeroes
     // ALL process-global counters, and only the shared exclusive scan scope
     // serializes it against a concurrent counter-asserting scan in the same
     // `all_tests` process (a local mutex does not, which intermittently flaked
@@ -100,8 +113,10 @@ fn binary_resolved_section_name_passes_through_without_counting() {// Canonical 
     let name = TestApi.resolve_binary_section_name(Some(".rodata"), 7);
     assert_eq!(name, ".rodata");
     assert_eq!(
-        keyhog_sources::skip_counts().binary_section_name_unresolved, 0
-    );}
+        keyhog_sources::skip_counts().binary_section_name_unresolved,
+        0
+    );
+}
 
 #[cfg(feature = "github")]
 #[test]
@@ -563,13 +578,15 @@ fn skip_counter_reset_tests_hold_shared_guard() {
         if !touches_counters {
             continue;
         }
-        let has_guard = if is_aggregator {// Aggregator modules share the single `all_tests` process, so only
+        let has_guard = if is_aggregator {
+            // Aggregator modules share the single `all_tests` process, so only
             // the canonical SCAN_GATE guard (`TestApi.skip_counter_guard()`)
             // serializes a counter mutation against a concurrent counter-
             // asserting scan. A local `Mutex` does NOT -- it only serializes
             // within its own file -- which intermittently flaked tests like
             // zst_truncated_header_no_panic by zeroing their counters mid-scan.
-            src.contains("skip_counter_guard()")} else {
+            src.contains("skip_counter_guard()")
+        } else {
             // Top-level `tests/*.rs` standalone binaries run in their own
             // process (private counter copy); a local mutex is sufficient there.
             src.contains("skip_counter_guard()")
@@ -623,7 +640,8 @@ fn hosted_git_askpass_uses_private_create_new_files() {
         parts.sort();
         for part in parts {
             module.push('\n');
-            module.push_str(&std::fs::read_to_string(&part).expect("hosted_git submodule readable"));
+            module
+                .push_str(&std::fs::read_to_string(&part).expect("hosted_git submodule readable"));
         }
     }
 

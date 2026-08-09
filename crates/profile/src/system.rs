@@ -432,7 +432,14 @@ impl SystemSession {
                 .session_gauge(crate::GaugeId::RetainedBufferPeakBytes)
                 .map_or_else(|| gap(EvidenceGap::Unavailable), Evidence::recorded),
         };
-        record_system_metrics(runtime, &faults, &io, &memory, &allocation, retry_annotations);
+        record_system_metrics(
+            runtime,
+            &faults,
+            &io,
+            &memory,
+            &allocation,
+            retry_annotations,
+        );
         Evidence::recorded(SystemRunEvidenceV2 {
             version: SYSTEM_EVIDENCE_V2_VERSION,
             allocation,
@@ -581,7 +588,10 @@ fn record_system_metrics(
             runtime.add_counter(crate::CounterId::AllocationBytes, totals.allocated_bytes);
         }
         if totals.deallocated_bytes > 0 {
-            runtime.add_counter(crate::CounterId::DeallocationBytes, totals.deallocated_bytes);
+            runtime.add_counter(
+                crate::CounterId::DeallocationBytes,
+                totals.deallocated_bytes,
+            );
         }
         runtime.set_gauge(crate::GaugeId::AllocationLiveBytes, totals.live_bytes);
         runtime.set_gauge(

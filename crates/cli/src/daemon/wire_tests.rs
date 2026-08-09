@@ -328,16 +328,28 @@ async fn daemon_wire_v12_profile_flag_roundtrips_on_scan_requests() {
         let decoded: Request = serde_json::from_str(&encoded).expect("deserialize request");
         let (expected, actual) = match (&request, &decoded) {
             (
-                Request::ScanText { profile: expected, .. },
-                Request::ScanText { profile: actual, .. },
+                Request::ScanText {
+                    profile: expected, ..
+                },
+                Request::ScanText {
+                    profile: actual, ..
+                },
             )
             | (
-                Request::ScanPath { profile: expected, .. },
-                Request::ScanPath { profile: actual, .. },
+                Request::ScanPath {
+                    profile: expected, ..
+                },
+                Request::ScanPath {
+                    profile: actual, ..
+                },
             )
             | (
-                Request::MassBegin { profile: expected, .. },
-                Request::MassBegin { profile: actual, .. },
+                Request::MassBegin {
+                    profile: expected, ..
+                },
+                Request::MassBegin {
+                    profile: actual, ..
+                },
             ) => (expected, actual),
             (sent, got) => panic!("request kind changed across the wire: {sent:?} -> {got:?}"),
         };
@@ -396,7 +408,9 @@ async fn daemon_wire_v12_scan_results_roundtrips_request_profile() {
         .expect("read response")
         .expect("ScanResults frame");
     match decoded {
-        Response::ScanResults { profile: decoded, .. } => {
+        Response::ScanResults {
+            profile: decoded, ..
+        } => {
             let decoded = decoded.expect("request profile");
             assert_eq!(decoded, profile, "profile payload must round-trip exactly");
         }

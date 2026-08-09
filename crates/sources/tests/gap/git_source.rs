@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use keyhog_core::{Chunk, Source, SourceError};
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{
     git_object_unreadable, skip_counts, FilesystemSource, GitSource, SourceLimits,
 };

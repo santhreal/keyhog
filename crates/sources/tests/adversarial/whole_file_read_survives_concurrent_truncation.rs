@@ -19,7 +19,7 @@
 //! want. Every individual read is free to return `Some` (whatever bytes it saw)
 //! or `None` (a visible skip); the contract is only that it RETURNS.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

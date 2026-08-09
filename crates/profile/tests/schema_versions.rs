@@ -105,8 +105,7 @@ fn legacy_unversioned_components_decode_as_version_one() {
         + system_versions;
     assert_eq!(removed, expected);
 
-    let mut decoded: RunProfile =
-        serde_json::from_value(json).expect("decode unversioned profile");
+    let mut decoded: RunProfile = serde_json::from_value(json).expect("decode unversioned profile");
     assert_eq!(decoded.version, 1);
     decoded.version = profile.version;
     // Resource snapshots moved to version 2; unversioned records still decode

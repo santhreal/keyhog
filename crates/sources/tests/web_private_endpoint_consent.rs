@@ -45,7 +45,10 @@ fn explicit_private_endpoint_consent_controls_loopback_fetches() {
         .expect("explicitly permitted private endpoint must be fetched");
     assert_eq!(chunks.len(), 1);
     assert_eq!(chunks[0].metadata.source_type.as_ref(), "web:js");
-    assert_eq!(chunks[0].data.as_ref(), "const token = 'PRIVATE_WEB_CANARY';");
+    assert_eq!(
+        chunks[0].data.as_ref(),
+        "const token = 'PRIVATE_WEB_CANARY';"
+    );
     assert_eq!(endpoint.calls(), 1);
 }
 

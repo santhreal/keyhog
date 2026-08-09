@@ -79,8 +79,8 @@ use std::borrow::Cow;
 
 pub use api::*;
 pub use detector_corpus::{
-    DetectorCorpusError, DetectorCorpusMode, compose_detector_corpus,
-    compute_detector_corpus_digest, compute_detector_corpus_digest_for_schema,
+    compose_detector_corpus, compute_detector_corpus_digest,
+    compute_detector_corpus_digest_for_schema, DetectorCorpusError, DetectorCorpusMode,
 };
 /// Auto-fix suggestion logic for SARIF output.
 mod auto_fix;

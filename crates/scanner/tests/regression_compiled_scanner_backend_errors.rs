@@ -7,7 +7,7 @@ const CHILD_ENV: &str = "KEYHOG_COMPILED_SCANNER_BACKEND_ERROR_CHILD";
 const TEST_NAME: &str = "regression_compiled_scanner_backend_errors::selected_backend_failure_returns_error_without_terminating_host";
 const CHILD_ALIVE_MARKER: &str = "compiled-scanner-host-remained-alive";
 
-fn scanner_and_matching_chunk() -> (CompiledScanner, Chunk) {
+fn scanner_and_matching_chunk(backend: ScanBackend) -> (CompiledScanner, Chunk) {
     let detector = DetectorSpec {
         tests: Vec::new(),
         id: "compiled-scanner-backend-error".into(),
@@ -29,7 +29,8 @@ fn scanner_and_matching_chunk() -> (CompiledScanner, Chunk) {
         min_confidence: Some(0.1),
         ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).expect("regression detector compiles");
+    let scanner = CompiledScanner::compile_for_backend(vec![detector], backend)
+        .expect("regression detector compiles for the selected backend");
     let chunk = Chunk {
         data: "tok=abc".into(),
         metadata: ChunkMetadata::default(),
@@ -42,8 +43,8 @@ fn scanner_and_matching_chunk() -> (CompiledScanner, Chunk) {
 #[test]
 fn selected_backend_failure_returns_error_without_terminating_host() {
     if std::env::var_os(CHILD_ENV).is_some() {
-        let (scanner, chunk) = scanner_and_matching_chunk();
-        let error = scanner
+        let (gpu_scanner, chunk) = scanner_and_matching_chunk(ScanBackend::GpuCuda);
+        let error = gpu_scanner
             .scan_with_backend(&chunk, ScanBackend::GpuCuda)
             .expect_err("a build without gpu must reject the selected GPU backend");
         assert!(
@@ -51,7 +52,7 @@ fn selected_backend_failure_returns_error_without_terminating_host() {
             "backend failure must retain its structured GPU classification: {error}"
         );
 
-        let batch_error = scanner
+        let batch_error = gpu_scanner
             .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::GpuCuda)
             .expect_err("batch dispatch must use the same fallible backend boundary");
         assert!(
@@ -61,7 +62,8 @@ fn selected_backend_failure_returns_error_without_terminating_host() {
 
         #[cfg(not(feature = "simd"))]
         {
-            let simd_error = scanner
+            let (simd_scanner, _) = scanner_and_matching_chunk(ScanBackend::SimdCpu);
+            let simd_error = simd_scanner
                 .scan_with_backend(&chunk, ScanBackend::SimdCpu)
                 .expect_err("a build without SIMD must reject the selected SIMD backend");
             assert!(
@@ -70,7 +72,8 @@ fn selected_backend_failure_returns_error_without_terminating_host() {
             );
         }
 
-        let matches = scanner
+        let (cpu_scanner, _) = scanner_and_matching_chunk(ScanBackend::CpuFallback);
+        let matches = cpu_scanner
             .scan_with_backend(&chunk, ScanBackend::CpuFallback)
             .expect("the host can keep using the scanner after the backend error");
         assert_eq!(
@@ -111,7 +114,7 @@ fn selected_backend_failure_returns_error_without_terminating_host() {
 /// change successful CPU findings relative to the portable reference API.
 #[test]
 fn fallible_backend_scan_preserves_success_results() {
-    let (scanner, chunk) = scanner_and_matching_chunk();
+    let (scanner, chunk) = scanner_and_matching_chunk(ScanBackend::CpuFallback);
     let reference = scanner
         .scan(&chunk)
         .expect("portable reference scan remains available");

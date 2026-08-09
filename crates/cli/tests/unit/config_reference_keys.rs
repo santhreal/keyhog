@@ -23,7 +23,9 @@ fn accepted_fields(table: Option<&str>) -> BTreeSet<String> {
     let error = toml::from_str::<super::schema::ConfigFile>(&probe)
         .err()
         .unwrap_or_else(|| {
-            panic!("{probe:?} must be rejected by deny_unknown_fields, otherwise this gate is blind")
+            panic!(
+                "{probe:?} must be rejected by deny_unknown_fields, otherwise this gate is blind"
+            )
         })
         .to_string();
     // serde phrases the list three ways depending on how many fields there

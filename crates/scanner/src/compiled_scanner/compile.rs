@@ -74,7 +74,7 @@ fn selected_gpu_peer(backend: crate::hw_probe::ScanBackend) -> SelectedGpuPeer {
             #[cfg(target_os = "macos")]
             match crate::gpu::gpu_adapter_probe() {
                 Some(probe) => peer.mark_available(
-                    probe.device_identity,
+                    probe.device_identity.clone(),
                     Some(format!(
                         "vyre-metal={};{}",
                         env!("KEYHOG_VYRE_METAL_VERSION"),

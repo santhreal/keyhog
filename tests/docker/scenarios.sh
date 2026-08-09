@@ -130,7 +130,7 @@ SURFACES=(
   "version|-|--version|0|KeyHog v|-"
   "help|-|--help|0|secret|-"
   "missing-path-exit2|-|scan /data/corpus/nope.env|2|-|detector_id"
-  "empty-dir-clean|-|scan /tmp|0|-|-"
+  "empty-dir-fails-closed|-|scan /tmp|13|Not reporting \"clean\"|detector_id"
 )
 for s in "${SURFACES[@]}"; do
   IFS='|' read -r n e a x g f <<<"$s"

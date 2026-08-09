@@ -171,7 +171,7 @@ fn clone_at_depth(origin: &std::path::Path, depth: Option<u32>) -> tempfile::Tem
 #[test]
 fn shallow_clone_hiding_a_deleted_credential_counts_a_coverage_gap() {
     use keyhog_core::Source;
-    use keyhog_sources::testing::{TestApi};
+    use keyhog_sources::testing::TestApi;
     use keyhog_sources::{skip_counts, GitHistorySource, GitSource};
 
     let _guard = TestApi.skip_counter_guard();
@@ -195,22 +195,23 @@ fn shallow_clone_hiding_a_deleted_credential_counts_a_coverage_gap() {
     );
 
     let shallow = clone_at_depth(origin.path(), Some(1));
-    let assert_gap = |label: &str, rows: &[Result<keyhog_core::Chunk, keyhog_core::SourceError>]| {
-        let (chunks, _errors) = split_chunk_results(rows);
-        assert!(
-            !chunks
-                .iter()
-                .any(|chunk| chunk.data.contains("DELETED=AKIAQYLPMN5HFIQR7XYA")),
-            "{label}: the depth-1 clone cannot contain the credential's bytes; got {chunks:?}"
-        );
-        assert_eq!(
+    let assert_gap =
+        |label: &str, rows: &[Result<keyhog_core::Chunk, keyhog_core::SourceError>]| {
+            let (chunks, _errors) = split_chunk_results(rows);
+            assert!(
+                !chunks
+                    .iter()
+                    .any(|chunk| chunk.data.contains("DELETED=AKIAQYLPMN5HFIQR7XYA")),
+                "{label}: the depth-1 clone cannot contain the credential's bytes; got {chunks:?}"
+            );
+            assert_eq!(
             skip_counts().git_object_unreadable,
             1,
             "{label}: the one parent commit the graft boundary names is absent, so exactly one \
              unscanned Git object must be counted; a zero here is the false clean this test \
              exists to forbid"
         );
-    };
+        };
 
     TestApi.reset_skip_counters();
     let blob_rows: Vec<_> = GitSource::new(shallow.path().to_path_buf())
@@ -233,7 +234,7 @@ fn shallow_clone_hiding_a_deleted_credential_counts_a_coverage_gap() {
 #[test]
 fn shallow_clone_whose_boundary_is_the_root_commit_reports_no_gap() {
     use keyhog_core::Source;
-    use keyhog_sources::testing::{TestApi};
+    use keyhog_sources::testing::TestApi;
     use keyhog_sources::{skip_counts, GitSource};
     use std::process::Command;
 
@@ -259,7 +260,11 @@ fn shallow_clone_whose_boundary_is_the_root_commit_reports_no_gap() {
         );
     };
     git(&["init", "-b", "main", "."]);
-    std::fs::write(origin.path().join("only.env"), "ONLY=AKIAQYLPMN5HFIQR7XYA\n").expect("write");
+    std::fs::write(
+        origin.path().join("only.env"),
+        "ONLY=AKIAQYLPMN5HFIQR7XYA\n",
+    )
+    .expect("write");
     git(&["add", "-A"]);
     git(&["commit", "-m", "only commit"]);
 

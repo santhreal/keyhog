@@ -1,8 +1,8 @@
 //! Cross-platform backend shape, schema compatibility, and registry additions.
 
 use keyhog_profile::{
-    Evidence, EvidenceGap, MetricId, MetricKind, MetricUnit, RunIdentity, RunState, Session,
-    Stage, METRICS,
+    Evidence, EvidenceGap, MetricId, MetricKind, MetricUnit, RunIdentity, RunState, Session, Stage,
+    METRICS,
 };
 
 fn session(name: &str) -> Session {

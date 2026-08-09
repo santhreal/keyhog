@@ -28,7 +28,7 @@ fn scan_simd_cpu_empty_chunk() {
         min_confidence: None,
         ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let s = CompiledScanner::compile(vec![d]).unwrap();
+    let s = CompiledScanner::compile_for_backend(vec![d], ScanBackend::SimdCpu).unwrap();
     let chunk = Chunk {
         data: "".into(),
         metadata: ChunkMetadata::default(),

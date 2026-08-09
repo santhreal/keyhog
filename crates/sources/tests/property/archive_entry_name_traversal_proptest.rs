@@ -29,7 +29,7 @@
 //! `src/filesystem/extract/**` no-inline-tests contract keeps unit coverage out
 //! of `src`). No cargo feature is required (the guard is on the base build).
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use proptest::prelude::*;
 
 /// Percent-encode EVERY byte of `s` to `%XX` (uppercase hex). Applied to a

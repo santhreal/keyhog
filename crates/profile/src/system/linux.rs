@@ -110,7 +110,11 @@ fn thermal_max_millicelsius() -> Option<u64> {
     let entries = std::fs::read_dir("/sys/class/thermal").ok()?;
     let mut maximum: Option<u64> = None;
     for entry in entries.flatten() {
-        if !entry.file_name().to_string_lossy().starts_with("thermal_zone") {
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("thermal_zone")
+        {
             continue;
         }
         let Ok(temp) = std::fs::read_to_string(entry.path().join("temp")) else {

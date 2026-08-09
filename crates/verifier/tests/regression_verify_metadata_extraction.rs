@@ -104,13 +104,16 @@ fn empty_specs_yield_empty_metadata_even_on_rich_json() {
 }
 
 #[test]
-fn root_selector_extracts_a_scalar_document() {let specs = [spec("account", "$")];
+fn root_selector_extracts_a_scalar_document() {
+    let specs = [spec("account", "$")];
     let meta = TestApi
         .extract_metadata_for_test(&specs, r#""just-a-string""#)
         .expect("root selector");
     assert_eq!(
-        meta.get("account").map(String::as_str), Some("just-a-string")
-    );}
+        meta.get("account").map(String::as_str),
+        Some("just-a-string")
+    );
+}
 
 #[test]
 fn invalid_selector_is_not_reported_as_missing_metadata() {

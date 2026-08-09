@@ -24,7 +24,7 @@
 //!
 //! Base build: the extractor facade needs no cargo feature.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use proptest::prelude::*;
 use std::collections::HashMap;
 

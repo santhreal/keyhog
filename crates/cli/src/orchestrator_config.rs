@@ -30,9 +30,8 @@ pub(crate) use runtime::{
     configure_persistent_daemon_threads, configure_threads, fused_batch_calibration_counts,
     fused_cpu_wave_width, fused_depth_default, gpu_runtime_policy_for_backend_override,
     gpu_runtime_policy_from_args, keyhog_worker_threads, parse_backend_override, ScanRuntimeInput,
-    FUSED_BATCH_BYTES,
-    FUSED_BATCH_DEFAULT, MAX_THREADS_CAP, ML_THRESHOLD_DEFAULT, VERIFY_MAX_CONCURRENT_DEFAULT,
-    VERIFY_TIMEOUT_DEFAULT_SECS,
+    FUSED_BATCH_BYTES, FUSED_BATCH_DEFAULT, MAX_THREADS_CAP, ML_THRESHOLD_DEFAULT,
+    VERIFY_MAX_CONCURRENT_DEFAULT, VERIFY_TIMEOUT_DEFAULT_SECS,
 };
 pub(crate) use scanner::build_scanner_config;
 use scanner::{build_scanner_config_from_input, ScannerConfigInput};

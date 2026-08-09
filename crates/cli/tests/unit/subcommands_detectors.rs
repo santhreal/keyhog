@@ -114,4 +114,3 @@ fn verify_block_rewrite_preserves_non_ascii() {
         "non-ASCII in the verify body must be preserved, got: {out}"
     );
 }
-
