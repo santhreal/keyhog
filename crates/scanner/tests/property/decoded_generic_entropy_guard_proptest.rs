@@ -62,6 +62,13 @@ proptest! {
     ) {
         let plaintext = format!("secret={token}\n");
         let direct = scan(plaintext.clone());
+        // Named detectors that also match the same token (e.g. backblaze
+        // K00M shapes) are a separate collision class covered by regression
+        // fixtures. This property only owns decode retention of the anchored
+        // generic assignment when the token is generic-only at top level.
+        prop_assume!(!direct.iter().any(|m| {
+            m.credential.as_ref() == token && !is_generic_or_entropy(m.detector_id.as_ref())
+        }));
         let direct_hits: Vec<&RawMatch> = direct
             .iter()
             .filter(|m| {

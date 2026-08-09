@@ -221,6 +221,15 @@ fn gpu_region_batches_overlap_two_resident_io_slots() {
     });
 
     assert_eq!(outcome.matches, expected);
+    // Dual-slot overlap requires async timed resident dispatch. wgpu/Metal hosts
+    // without TIMESTAMP_QUERY(_INSIDE_ENCODERS) take the borrowed sync path and
+    // never arm the in-flight counter; correctness is already covered above.
+    if !scanner
+        .backend_state
+        .gpu_resident_timed_dispatch_supported(backend)
+    {
+        return;
+    }
     assert_eq!(
         crate::gpu::test_max_in_flight_slots(),
         2,
