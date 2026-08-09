@@ -579,7 +579,6 @@ pub(crate) fn emit_top_level_seven_zip_or_rar_member(
                     member_display,
                     max_size,
                     respect_default_excludes,
-                    0,
                     counted,
                 );
             } else {
@@ -588,7 +587,6 @@ pub(crate) fn emit_top_level_seven_zip_or_rar_member(
                     member_display.to_owned(),
                     max_size,
                     respect_default_excludes,
-                    0,
                     counted,
                 );
             }
@@ -845,7 +843,6 @@ pub(super) fn process_entry(
                     &path,
                     max_size,
                     respect_default_excludes,
-                    0,
                     counted,
                 )
             },
@@ -855,7 +852,7 @@ pub(super) fn process_entry(
     } else if ext.eq_ignore_ascii_case("rar") {
         run_derived_extractor(
             |counted| {
-                rar::extract_rar_chunks(&path, max_size, respect_default_excludes, 0, counted)
+                rar::extract_rar_chunks(&path, max_size, respect_default_excludes, counted)
             },
             emit,
         );

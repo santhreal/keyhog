@@ -19,7 +19,6 @@ pub(super) fn extract_rar_chunks(
     path: &Path,
     max_size: u64,
     respect_default_excludes: bool,
-    nested_depth: usize,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     if is_symlink(path) {
@@ -50,7 +49,6 @@ pub(super) fn extract_rar_chunks(
         display_path(path),
         max_size,
         respect_default_excludes,
-        nested_depth,
         emit,
     );
 }
@@ -60,7 +58,6 @@ pub(super) fn extract_rar_chunks_from_bytes(
     archive_display: String,
     max_size: u64,
     respect_default_excludes: bool,
-    nested_depth: usize,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
     let archive = match ArchiveReader::read(file_bytes) {
@@ -84,7 +81,6 @@ pub(super) fn extract_rar_chunks_from_bytes(
         archive_display.clone(),
         max_size,
         respect_default_excludes,
-        nested_depth,
     );
     match &archive {
         Archive::Rar13(archive) => {
@@ -504,7 +500,6 @@ struct RarExtractionState {
     consumer_stopped: bool,
     archive_truncated: bool,
     respect_default_excludes: bool,
-    nested_depth: usize,
 }
 
 impl RarExtractionState {
@@ -512,7 +507,6 @@ impl RarExtractionState {
         archive_display: String,
         max_size: u64,
         respect_default_excludes: bool,
-        nested_depth: usize,
     ) -> Self {
         Self {
             archive_display,
@@ -522,7 +516,6 @@ impl RarExtractionState {
             consumer_stopped: false,
             archive_truncated: false,
             respect_default_excludes,
-            nested_depth,
         }
     }
 
