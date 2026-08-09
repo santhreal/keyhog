@@ -645,12 +645,8 @@ mod tests {
             id: id.into(),
             name: format!("{id} Detector"),
             service: "test".into(),
-            companion_names: Vec::new(),
-            anchors: vec!["test_anchor".into()],
             keywords: vec!["test_kw".into()],
-            decoders: Vec::new(),
-            matchers: Vec::new(),
-            offline_entropy: None,
+            ..Default::default()
         }
     }
 

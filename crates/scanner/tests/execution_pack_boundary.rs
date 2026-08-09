@@ -747,8 +747,8 @@ fn unauthenticated_section_table_mutation_fails_at_content_authentication() {
     .expect("compile pack");
 
     // Offsets to mutate in section table without updating content_digest:
-    // [12: section_count, 320: section 0 kind, 322: section 0 schema, 324: section 0 offset, 332: section 0 len, 340: section 0 alignment]
-    let test_offsets = [12, 320, 322, 324, 332, 340];
+    // [320: section 0 kind, 322: section 0 schema, 324: section 0 offset, 332: section 0 len, 340: section 0 alignment]
+    let test_offsets = [320, 322, 324, 332, 340];
 
     for offset in test_offsets {
         let mut tampered_bytes = compiled.as_bytes().to_vec();

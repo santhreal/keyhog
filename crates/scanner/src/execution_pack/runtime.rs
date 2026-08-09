@@ -538,6 +538,7 @@ impl ExecutionPack {
             sections,
         })
     }
+}
 
 fn verify_content_digest_mapping(
     mapping: &Mmap,
