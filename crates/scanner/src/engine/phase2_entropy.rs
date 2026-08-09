@@ -17,15 +17,24 @@ thread_local! {
         std::cell::RefCell::new(std::collections::HashSet::new());
 }
 
+pub(crate) const SCRATCH_CAPACITY_CEILING: usize = 4096;
 struct SkipLinesGuard(std::collections::HashSet<usize>);
 
 impl Drop for SkipLinesGuard {
     fn drop(&mut self) {
         self.0.clear();
+        if self.0.capacity() > SCRATCH_CAPACITY_CEILING {
+            self.0 = std::collections::HashSet::new();
+        }
         ENTROPY_SKIP_LINES_SCRATCH.with(|cell| {
             cell.replace(std::mem::take(&mut self.0));
         });
     }
+}
+
+#[cfg(test)]
+pub(crate) fn entropy_skip_lines_scratch_capacity() -> usize {
+    ENTROPY_SKIP_LINES_SCRATCH.with(|cell| cell.borrow().capacity())
 }
 
 #[cfg(feature = "entropy")]

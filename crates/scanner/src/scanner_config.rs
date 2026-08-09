@@ -61,6 +61,8 @@ impl ScannerTuningConfig {
     pub(crate) const NO_CANDIDATE_GATE_DEFAULT: bool = true;
     pub(crate) const FALLBACK_LOCALIZER_DEFAULT: bool = true;
     pub(crate) const GPU_RECALL_FLOOR_DEFAULT: bool = false;
+    pub(crate) const CHUNK_LANE_THRESHOLD_DEFAULT: usize =
+        crate::engine::batch_topology::SMALL_CHUNK_MAX_BYTES;
 
     pub fn effective(&self) -> ResolvedScannerTuningConfig {
         ResolvedScannerTuningConfig {
@@ -78,6 +80,7 @@ impl ScannerTuningConfig {
             no_candidate_gate: self.no_candidate_gate_effective(),
             fallback_localizer: self.fallback_localizer_effective(),
             gpu_recall_floor: self.gpu_recall_floor_effective(),
+            chunk_lane_threshold: self.chunk_lane_threshold_effective(),
         }
     }
 
@@ -146,6 +149,12 @@ impl ScannerTuningConfig {
         self.gpu_recall_floor
             .unwrap_or(Self::GPU_RECALL_FLOOR_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
+    pub(crate) fn chunk_lane_threshold_effective(&self) -> usize {
+        match self.chunk_lane_threshold {
+            Some(val) if val > 0 && val < usize::MAX => val,
+            _ => Self::CHUNK_LANE_THRESHOLD_DEFAULT,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -164,6 +173,7 @@ pub struct ResolvedScannerTuningConfig {
     pub no_candidate_gate: bool,
     pub fallback_localizer: bool,
     pub gpu_recall_floor: bool,
+    pub chunk_lane_threshold: usize,
 }
 
 /// Recall-equivalent execution choices resolved for one scan request.

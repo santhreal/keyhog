@@ -92,7 +92,7 @@ pub(crate) struct ScannerTuning {
     phase2_plain_localizer: AtomicU8,
     /// Override for the GPU region-presence full CPU recall floor.
     gpu_recall_floor: AtomicU8,
-    /// Override for chunk lane threshold sweeping (`usize::MAX` = default).
+    /// Override for chunk lane threshold sweeping (0 = compiled default).
     chunk_lane_threshold: AtomicUsize,
 }
 
@@ -119,7 +119,7 @@ impl ScannerTuning {
             no_candidate_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
             phase2_plain_localizer: AtomicU8::new(BoolOverride::Default.as_byte()),
             gpu_recall_floor: AtomicU8::new(BoolOverride::Default.as_byte()),
-            chunk_lane_threshold: AtomicUsize::new(usize::MAX),
+            chunk_lane_threshold: AtomicUsize::new(0),
         }
     }
 
@@ -209,15 +209,19 @@ impl ScannerTuning {
     /// Get the current configured chunk lane threshold for small file scanning.
     pub(crate) fn chunk_lane_threshold(&self) -> usize {
         match self.chunk_lane_threshold.load(Relaxed) {
-            usize::MAX => crate::engine::batch_topology::SMALL_CHUNK_MAX_BYTES,
+            0 => crate::engine::batch_topology::SMALL_CHUNK_MAX_BYTES,
             val => val,
         }
     }
 
-    /// Force the chunk lane threshold for small file performance tuning and sweeping.
+    /// Force the chunk lane threshold for small file performance tuning.
+    /// Rejects 0 and `usize::MAX`, representing default/None as 0.
     pub(crate) fn set_chunk_lane_threshold(&self, threshold: Option<usize>) {
-        self.chunk_lane_threshold
-            .store(threshold.unwrap_or(usize::MAX), Relaxed);
+        let val = match threshold {
+            Some(t) if t > 0 && t < usize::MAX => t,
+            _ => 0,
+        };
+        self.chunk_lane_threshold.store(val, Relaxed);
     }
 
     // ── Shared-anchor phase-2 localization ────────────────────────────────

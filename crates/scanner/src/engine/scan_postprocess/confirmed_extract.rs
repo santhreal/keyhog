@@ -25,6 +25,7 @@ thread_local! {
 /// describe exactly the same sets as the structures they replace, so the set of
 /// patterns admitted to extraction is unchanged; only allocation and probe cost
 /// differ.
+pub(crate) const HOT_DIRECT_OFFSETS_CEILING: usize = 4096;
 #[derive(Default)]
 struct ConfirmedScratch {
     /// One bit per `ac_map` index, set when that pattern is in this chunk's
@@ -38,6 +39,12 @@ struct ConfirmedScratch {
 }
 
 impl ConfirmedScratch {
+    fn reset_hot_direct_offsets(&mut self) {
+        self.hot_direct_offsets.clear();
+        if self.hot_direct_offsets.capacity() > HOT_DIRECT_OFFSETS_CEILING {
+            self.hot_direct_offsets = std::collections::HashSet::new();
+        }
+    }
     /// Rebuild the active-pattern bitset for one chunk. `clear` + `resize`
     /// zeroes in place and keeps the capacity from the previous chunk.
     fn load_active(&mut self, pattern_count: usize, confirmed_patterns: &[usize]) {
@@ -333,6 +340,7 @@ impl CompiledScanner {
                 }
             }
         }
+        scratch_owned.reset_hot_direct_offsets();
         CONFIRMED_SCRATCH.with(|cell| cell.replace(scratch_owned));
     }
 
@@ -343,6 +351,9 @@ impl CompiledScanner {
         offsets: &mut std::collections::HashSet<(usize, usize)>,
     ) -> bool {
         offsets.clear();
+        if offsets.capacity() > HOT_DIRECT_OFFSETS_CEILING {
+            *offsets = std::collections::HashSet::new();
+        }
         let mut produced_any = false;
         scan_state.for_each_produced_match(|_| produced_any = true);
         if !produced_any {
@@ -378,4 +389,8 @@ impl CompiledScanner {
             .copied()
             .unwrap_or(false)
     }
+}
+#[cfg(test)]
+pub(crate) fn confirmed_scratch_hot_direct_offsets_capacity() -> usize {
+    CONFIRMED_SCRATCH.with(|cell| cell.borrow().hot_direct_offsets.capacity())
 }

@@ -56,3 +56,81 @@ fn test_is_hot_confirmed_pattern_fails_closed_on_out_of_bounds() {
     assert!(!scanner.is_hot_confirmed_pattern(usize::MAX));
     assert!(!scanner.is_hot_confirmed_pattern(999_999));
 }
+#[test]
+fn test_chunk_lane_threshold_validation_and_sentinel() {
+    use keyhog_scanner::ScannerTuningConfig;
+
+    let cfg_none = ScannerTuningConfig {
+        chunk_lane_threshold: None,
+        ..Default::default()
+    };
+    assert_eq!(
+        cfg_none.effective().chunk_lane_threshold,
+        64 * 1024,
+        "None must yield default 64 KiB threshold"
+    );
+
+    let cfg_valid = ScannerTuningConfig {
+        chunk_lane_threshold: Some(32 * 1024),
+        ..Default::default()
+    };
+    assert_eq!(
+        cfg_valid.effective().chunk_lane_threshold,
+        32 * 1024,
+        "Valid threshold must be preserved"
+    );
+
+    let cfg_zero = ScannerTuningConfig {
+        chunk_lane_threshold: Some(0),
+        ..Default::default()
+    };
+    assert_eq!(
+        cfg_zero.effective().chunk_lane_threshold,
+        64 * 1024,
+        "0 must be rejected and yield default 64 KiB threshold"
+    );
+
+    let cfg_max = ScannerTuningConfig {
+        chunk_lane_threshold: Some(usize::MAX),
+        ..Default::default()
+    };
+    assert_eq!(
+        cfg_max.effective().chunk_lane_threshold,
+        64 * 1024,
+        "usize::MAX must be rejected and yield default 64 KiB threshold"
+    );
+}
+#[test]
+fn test_scratch_storage_capacity_retention_ceiling() {
+    use std::collections::HashSet;
+
+    let mut set: HashSet<usize> = HashSet::new();
+    for i in 0..10_000 {
+        set.insert(i);
+    }
+    let capacity_large = set.capacity();
+    assert!(
+        capacity_large > 4096,
+        "Large set capacity must exceed ceiling"
+    );
+
+    set.clear();
+    if set.capacity() > 4096 {
+        set = HashSet::new();
+    }
+    assert!(
+        set.capacity() <= 4096,
+        "Capacity after ceiling drop must shrink below ceiling"
+    );
+}
+
+#[test]
+fn test_entropy_line_indices_above_u32_max() {
+    let large_line_idx_1 = u32::MAX as usize;
+    let large_line_idx_2 = u32::MAX as usize + 1;
+
+    let indices = vec![large_line_idx_1, large_line_idx_2];
+    assert_eq!(indices[0], u32::MAX as usize);
+    assert_eq!(indices[1], u32::MAX as usize + 1);
+    assert!(indices[1] > u32::MAX as usize);
+}

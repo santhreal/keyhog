@@ -521,54 +521,56 @@ impl CompiledScanner {
                 .map(|_| std::sync::OnceLock::new())
                 .collect::<Vec<std::sync::OnceLock<Result<Option<Vec<u64>>, String>>>>()
         });
-        let lane_width = super::batch_topology::coalesced_lane_width_with_threshold(
-            chunks,
-            self.tuning.chunk_lane_threshold(),
-        );
-        let triggers = if lane_width == 1 {
+        let compute_single_trigger = |chunk_index: usize, chunk: &keyhog_core::Chunk| {
+            let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+            let data = chunk.data.as_bytes();
+            let admission = match admission_plan.and_then(|plan| plan.admission_for(chunk_index)) {
+                Some(admission) => admission,
+                None => self.phase1_admission(data),
+            };
+            if admission != super::Phase1Admission::Admitted {
+                return Ok(None);
+            }
+            let reusable =
+                admission_plan
+                    .zip(reusable_triggers.as_ref())
+                    .and_then(|(plan, rows)| {
+                        let row = plan.payload_evidence_row_for(chunk_index)?;
+                        rows.get(row)
+                    });
+            if let Some(reusable) = reusable {
+                return reusable
+                    .get_or_init(|| {
+                        self.reusable_simd_triggers
+                            .lock()
+                            .get_or_compute(&chunk.data, || {
+                                self.compute_one_coalesced_simd_trigger(
+                                    data,
+                                    prefilter,
+                                    ac_len,
+                                    words_needed,
+                                )
+                            })
+                    })
+                    .clone();
+            }
+            self.compute_one_coalesced_simd_trigger(data, prefilter, ac_len, words_needed)
+        };
+
+        let threshold = self.tuning.chunk_lane_threshold();
+        let is_small = |chunk: &keyhog_core::Chunk| chunk.data.len() <= threshold;
+        let small_count = chunks.iter().filter(|c| is_small(c)).count();
+        let workers = rayon::current_num_threads().max(1);
+
+        let triggers = if small_count == 0 || chunks.len() <= workers {
             chunks
                 .par_iter()
                 .enumerate()
-                .map(|(chunk_index, chunk)| {
-                    let _profile_context =
-                        profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
-                    let data = chunk.data.as_bytes();
-                    let admission =
-                        match admission_plan.and_then(|plan| plan.admission_for(chunk_index)) {
-                            Some(admission) => admission,
-                            None => self.phase1_admission(data),
-                        };
-                    if admission != super::Phase1Admission::Admitted {
-                        return Ok(None);
-                    }
-                    let reusable =
-                        admission_plan
-                            .zip(reusable_triggers.as_ref())
-                            .and_then(|(plan, rows)| {
-                                let row = plan.payload_evidence_row_for(chunk_index)?;
-                                rows.get(row)
-                            });
-                    if let Some(reusable) = reusable {
-                        return reusable
-                            .get_or_init(|| {
-                                self.reusable_simd_triggers.lock().get_or_compute(
-                                    &chunk.data,
-                                    || {
-                                        self.compute_one_coalesced_simd_trigger(
-                                            data,
-                                            prefilter,
-                                            ac_len,
-                                            words_needed,
-                                        )
-                                    },
-                                )
-                            })
-                            .clone();
-                    }
-                    self.compute_one_coalesced_simd_trigger(data, prefilter, ac_len, words_needed)
-                })
+                .map(|(chunk_index, chunk)| compute_single_trigger(chunk_index, chunk))
                 .collect::<Result<Vec<_>, String>>()?
-        } else {
+        } else if small_count == chunks.len() {
+            let lane_width =
+                super::batch_topology::coalesced_lane_width_with_threshold(chunks, threshold);
             chunks
                 .par_chunks(lane_width)
                 .enumerate()
@@ -611,6 +613,87 @@ impl CompiledScanner {
                 .into_iter()
                 .flatten()
                 .collect()
+        } else {
+            let lane_width =
+                super::batch_topology::coalesced_lane_width_with_threshold(chunks, threshold);
+            let mut small_indices: Vec<usize> = Vec::new();
+            let mut large_indices: Vec<usize> = Vec::new();
+            for (idx, c) in chunks.iter().enumerate() {
+                if is_small(c) {
+                    small_indices.push(idx);
+                } else {
+                    large_indices.push(idx);
+                }
+            }
+
+            let large_triggers: Vec<(usize, Option<Vec<u64>>)> = large_indices
+                .par_iter()
+                .map(|&idx| {
+                    let tr = compute_single_trigger(idx, &chunks[idx])?;
+                    Ok((idx, tr))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+
+            let small_groups: Vec<Vec<usize>> = small_indices
+                .chunks(lane_width)
+                .map(|group| group.to_vec())
+                .collect();
+
+            let small_triggers: Vec<Vec<(usize, Option<Vec<u64>>)>> = small_groups
+                .par_iter()
+                .map(|lane_indices| {
+                    let _profile_context =
+                        profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+                    let admitted = |idx: usize, data: &[u8]| {
+                        admission_plan
+                            .and_then(|plan| plan.admission_for(idx))
+                            .unwrap_or_else(|| self.phase1_admission(data))
+                            == super::Phase1Admission::Admitted
+                    };
+                    let mut lane_triggers = vec![None; lane_indices.len()];
+                    prefilter.scanner().scan_many_each_result(
+                        lane_indices
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(lane_offset, &idx)| {
+                                let data = chunks[idx].data.as_bytes();
+                                admitted(idx, data).then_some((lane_offset, data))
+                            }),
+                        |lane_offset, hs_id| {
+                            let scratch = lane_triggers[lane_offset]
+                                .get_or_insert_with(|| vec![0u64; words_needed]);
+                            mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
+                        },
+                    )?;
+                    for (lane_offset, &idx) in lane_indices.iter().enumerate() {
+                        let data = chunks[idx].data.as_bytes();
+                        if admitted(idx, data) {
+                            prefilter.for_each_recovery_match(data, |pattern_index| {
+                                let scratch = lane_triggers[lane_offset]
+                                    .get_or_insert_with(|| vec![0u64; words_needed]);
+                                self.mark_triggered_pattern(scratch, pattern_index);
+                            });
+                        }
+                    }
+                    let res = lane_indices
+                        .iter()
+                        .zip(lane_triggers.into_iter())
+                        .map(|(&idx, tr)| (idx, tr))
+                        .collect();
+                    Ok(res)
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+
+            let mut combined = vec![None; chunks.len()];
+            for (idx, tr) in large_triggers {
+                combined[idx] = tr;
+            }
+            for lane_res in small_triggers {
+                for (idx, tr) in lane_res {
+                    combined[idx] = tr;
+                }
+            }
+            combined
         };
 
         if tracing::enabled!(tracing::Level::INFO) {
