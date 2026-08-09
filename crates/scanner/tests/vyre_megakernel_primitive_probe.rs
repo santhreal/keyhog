@@ -1,4 +1,4 @@
-#![cfg(feature = "gpu")]
+#![cfg(all(feature = "gpu", feature = "retired-megakernel"))]
 //! Smoke coverage for VYRE's retired per-rule megakernel primitive.
 //!
 //! This is deliberately not a KeyHog engine test. Production scanning routes
