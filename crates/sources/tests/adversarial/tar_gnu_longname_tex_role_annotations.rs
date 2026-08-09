@@ -14,27 +14,23 @@ fn tar_gnu_longname_tex_keeps_role_annotations() {
     let archive = dir.path().join("paper.tar");
 
     // Longer than the ustar 100-byte name field so GNU tar emits a long-link.
-    let long_dir = format!("chapters/{}", "very_long_segment/".repeat(8).trim_end_matches('/'));
-    let main_name = format!("{long_dir}/main.tex");
+    let long = format!("chapters/{}/main.tex", "very_long_segment/".repeat(8).trim_end_matches('/'));
     assert!(
-        main_name.len() > 100,
-        "fixture path must exceed ustar name field"
+        long.len() > 100,
+        "fixture path must exceed ustar name field ({})",
+        long.len()
     );
     let main = b"\\documentclass{article}\n\\begin{document}\nHello\n\\end{document}\n";
 
-    let mut bytes = Vec::new();
-    {
-        let mut builder = tar::Builder::new(&mut bytes);
-        let mut header = tar::Header::new_gnu();
-        header.set_path(&main_name).unwrap();
-        header.set_size(main.len() as u64);
-        header.set_mode(0o644);
-        header.set_cksum();
-        builder
-            .append_data(&mut header, main_name.as_str(), &main[..])
-            .unwrap();
-        builder.finish().unwrap();
-    }
+    let mut builder = tar::Builder::new(Vec::new());
+    let mut header = tar::Header::new_gnu();
+    header.set_size(main.len() as u64);
+    header.set_mode(0o644);
+    // Do not call set_path for long names; append_data emits the GNU long-link.
+    builder
+        .append_data(&mut header, long.as_str(), &main[..])
+        .unwrap();
+    let bytes = builder.into_inner().unwrap();
     std::fs::write(&archive, bytes).unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf());
