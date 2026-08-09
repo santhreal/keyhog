@@ -973,8 +973,16 @@ impl CompiledScanner {
                 &chunk.data,
             )
         {
+            // Keep absences from the prior clean proof, but report the live
+            // alphabet/bigram admission so autoroute workload keys stay stable
+            // across process history (do not fabricate BigramRejected).
+            let admission = if bypass_bigram {
+                self.phase1_admission_bypassing_bigram(chunk.data.as_bytes())
+            } else {
+                self.phase1_admission(chunk.data.as_bytes())
+            };
             return ReusablePhase1Evidence {
-                admission: Phase1Admission::BigramRejected,
+                admission,
                 keyword_trigger_count: 0,
                 keyword_hints: Vec::new(),
                 generic_positions: Vec::new(),

@@ -387,11 +387,12 @@ pub(crate) fn vocab_path_class(source_type: &str, path: Option<&str>) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = ahash::AHasher::default();
     source_type.hash(&mut hasher);
-    let ext = path
-        .and_then(|p| std::path::Path::new(p).extension())
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    ext.hash(&mut hasher);
+    // Full path participates so a clean/entropy absence proof recorded for
+    // `/tmp/notes.log` cannot short-circuit `/etc/secrets/prod.log` with the
+    // same line vocabulary (entropy thresholds follow is_sensitive_path).
+    path.unwrap_or("").hash(&mut hasher);
+    path.is_some_and(crate::confidence::is_sensitive_path)
+        .hash(&mut hasher);
     hasher.finish()
 }
 
