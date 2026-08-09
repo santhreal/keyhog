@@ -246,8 +246,8 @@ that distinction controls a gate.
 ### `scan_status` alone is not a gate
 
 Scanning any ordinary repository reports `"scan_status":"partial"`, because the
-default walker skips `.git/` and `node_modules/` and each skipped file counts
-as a coverage gap. Branch on the `coverage_gap_summary` reasons rather than on
+default walker prunes `.git/` and `node_modules/` during discovery and counts
+each pruned directory once as a coverage gap. Branch on the `coverage_gap_summary` reasons rather than on
 the status.
 
 A scan that read nothing is a third case. `--exclude-paths '**'`, a

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.69 - 2026-08-09
+
+- Filesystem discovery prunes default-excluded directories during the walk and
+  counts each pruned directory once, so vendored trees are not enumerated into
+  the reader pool. Explicit file scans and `--no-default-excludes` keep their
+  previous contracts.
+- Linux unbounded discovery prefers descriptor-relative, metadata-only walking
+  for deep trees that would otherwise hit the pathname limit, and aborts the
+  pathname walk at the first `ENAMETOOLONG` before rebuilding.
+- Extensionless content sniff uses a 512-byte prefix before merkle/full reads,
+  keeps UTF-16 BOM text on the decode path, and applies magic / NUL-run /
+  control-density heuristics before admitting unclassifiable names.
+
 ## 0.5.68 - 2026-08-05
 
 - Scanner source files freed of large co-located test suites.

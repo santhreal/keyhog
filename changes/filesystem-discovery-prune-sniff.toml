@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "Filesystem discovery prunes default-excluded directories during the walk, prefers descriptor-relative metadata-only traversal for deep Linux trees, and cheaply sniffs unclassifiable names before full reads."
+crates = ["sources"]

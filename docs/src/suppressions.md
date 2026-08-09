@@ -33,13 +33,17 @@ A directory scan skips some files before detection starts. Put a credential in
 ```
 
 ```text
-WARN 1 file(s) skipped by the DEFAULT exclusion policy (lock files, minified/bundled assets, vendored and build-output trees). Pass `--no-default-excludes` to scan them.
+WARN 1 path(s) skipped by the DEFAULT exclusion policy (lock files, minified/bundled assets, vendored and build-output trees). Default-excluded directories are pruned during discovery and counted once each; nested files under them are not enumerated. Pass `--no-default-excludes` to scan them.
 ```
 
 The warning goes to stderr and the exit code stays `0`, so a CI job that reads
 only stdout and the exit status sees a clean scan.
 
-A path is skipped when any segment of it, at any depth, is one of these names:
+Discovery prunes a default-excluded directory as soon as its name matches, so
+an 80,000-file `node_modules` tree contributes one Excluded path rather than
+eighty thousand. File-level default excludes (lock files, `.min.` / `.bundle.`
+names) are still counted one per file. A path is skipped when any segment of
+it, at any depth, is one of these names:
 
 ```text
 .git  node_modules  target  .cache  __pycache__  .venv  venv  .tox

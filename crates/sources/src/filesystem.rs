@@ -265,6 +265,13 @@ fn collect_walk_archive_symlink_errors(
     respect_default_excludes: bool,
     discovery_byte_limit: Option<u64>,
 ) -> Vec<SourceError> {
+    // Unbounded Linux scans use descriptor-relative audit from the start so
+    // deep trees never pay a PATH_MAX-bound pathname walk and then rebuild.
+    #[cfg(target_os = "linux")]
+    if discovery_byte_limit.is_none() {
+        return collect_descriptor_archive_symlink_errors(root, respect_default_excludes);
+    }
+
     let mut errors = Vec::new();
     let mut stack = Vec::new();
     let mut discovery_charge = 0_u64;
@@ -435,10 +442,15 @@ fn collect_descriptor_archive_symlink_errors(
 
     let mut errors = Vec::new();
     let result = walk_descriptor_relative(root, |entry| {
-        if respect_default_excludes
-            && filter::is_default_excluded_bytes(entry.path.as_os_str().as_bytes())
-        {
-            return Ok(false);
+        if respect_default_excludes {
+            let relative = entry
+                .path
+                .strip_prefix(root)
+                .unwrap_or(entry.path.as_path());
+            if filter::is_default_excluded_bytes(relative.as_os_str().as_bytes()) {
+                // Prune default-excluded directories; skip excluded non-dirs.
+                return Ok(false);
+            }
         }
         if let DescriptorEntryKind::Symlink { target } = &entry.kind {
             let resolved_target = if target.is_absolute() {

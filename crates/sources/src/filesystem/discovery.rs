@@ -158,6 +158,24 @@ fn configured_walk_builder(root: &Path, config: &FilesystemWalkConfig) -> ignore
             }
         }
     }
+
+    // Prune default-excluded directory names during descent so vendored trees
+    // are not enumerated into the reader pool. Each pruned directory records
+    // one Excluded event (nested files under it are not counted individually).
+    if config.respect_default_excludes {
+        let root_owned = root.to_path_buf();
+        builder.filter_entry(move |entry| {
+            if entry.path() == root_owned {
+                return true;
+            }
+            let is_dir = entry.file_type().is_some_and(|file_type| file_type.is_dir());
+            if is_dir && super::filter::is_default_excluded_dir_name(entry.file_name()) {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+                return false;
+            }
+            true
+        });
+    }
     builder
 }
 
@@ -189,7 +207,22 @@ fn validate_walk_root(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn path_is_default_excluded(root: &Path, path: &Path) -> bool {
+    let relative = path.strip_prefix(root).unwrap_or(path);
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        return super::filter::is_default_excluded_bytes(relative.as_os_str().as_bytes());
+    }
+    #[cfg(not(unix))]
+    {
+        super::filter::is_default_excluded(&relative.to_string_lossy())
+    }
+}
+
 fn metadata_walk_result(
+    root: &Path,
+    config: &FilesystemWalkConfig,
     result: Result<ignore::DirEntry, ignore::Error>,
 ) -> Option<MetadataWalkResult> {
     let entry = match result {
@@ -202,11 +235,15 @@ fn metadata_walk_result(
     {
         return None;
     }
+    let path = entry.into_path();
+    if config.respect_default_excludes && path_is_default_excluded(root, &path) {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+        return None;
+    }
     Some(
-        entry
-            .metadata()
+        std::fs::metadata(&path)
             .map(|metadata| FileEntry {
-                path: entry.into_path(),
+                path,
                 size: metadata.len(),
                 is_binary: false,
             })
@@ -223,11 +260,11 @@ pub(super) fn walk_metadata(
         visit(Err(error));
         return;
     }
-    for result in configured_walk_builder(root, config)
-        .build()
-        .filter_map(metadata_walk_result)
-    {
-        if !visit(result) {
+    for result in configured_walk_builder(root, config).build() {
+        let Some(mapped) = metadata_walk_result(root, config, result) else {
+            continue;
+        };
+        if !visit(mapped) {
             break;
         }
     }
@@ -244,6 +281,27 @@ pub(super) fn collect_unbounded_sorted(
     has_ignore_patterns: bool,
 ) -> (SortedEntries, Vec<SourceError>, usize, u64) {
     let _walk = crate::profile::walk_span();
+
+    #[cfg(target_os = "linux")]
+    if prefer_descriptor_primary(root, config, has_ignore_patterns) {
+        match collect_descriptor_entries(
+            root,
+            config,
+            has_ignore_patterns,
+            config.respect_gitignore,
+        ) {
+            Ok((builder, count, bytes)) => {
+                return finish_compact(root, Some(builder), Vec::new(), count, bytes);
+            }
+            Err(error) => {
+                // Fall through to the ignore-backed walk when descriptor-primary
+                // cannot prove ignore semantics; the ignore walk may still recover
+                // via ENAMETOOLONG rebuild for trees without ignore metadata.
+                let _ = error;
+            }
+        }
+    }
+
     let mut errors = Vec::new();
     let mut count = 0usize;
     let mut bytes = 0u64;
@@ -291,8 +349,10 @@ pub(super) fn collect_unbounded_sorted(
                 Err(error) => {
                     #[cfg(target_os = "linux")]
                     if is_name_too_long(&error) {
+                        // Stop the pathname walk immediately; continuing past the
+                        // first ENAMETOOLONG floods errors and then rebuilds.
                         path_limit_failed = true;
-                        return true;
+                        return false;
                     }
                     let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                     tracing::warn!(
@@ -310,7 +370,7 @@ pub(super) fn collect_unbounded_sorted(
 
     #[cfg(target_os = "linux")]
     if path_limit_failed {
-        match rebuild_descriptor_entries(root, config.respect_gitignore, has_ignore_patterns) {
+        match collect_descriptor_entries(root, config, has_ignore_patterns, true) {
             Ok((replacement, replacement_count, replacement_bytes)) => {
                 builder = Some(replacement);
                 count = replacement_count;
@@ -325,7 +385,31 @@ pub(super) fn collect_unbounded_sorted(
             }
         }
     }
+
     #[cfg(unix)]
+    {
+        return finish_compact(root, builder, errors, count, bytes);
+    }
+    #[cfg(not(unix))]
+    {
+        entries.sort_by(|left, right| left.path.cmp(&right.path));
+        (
+            SortedEntries::Native(entries.into_iter()),
+            errors,
+            count,
+            bytes,
+        )
+    }
+}
+
+#[cfg(unix)]
+fn finish_compact(
+    root: &Path,
+    builder: Option<CompactEntriesBuilder>,
+    mut errors: Vec<SourceError>,
+    mut count: usize,
+    mut bytes: u64,
+) -> (SortedEntries, Vec<SourceError>, usize, u64) {
     let sorted = match builder.and_then(|builder| match builder.finish() {
         Ok(entries) => Some(entries),
         Err(error) => {
@@ -341,12 +425,6 @@ pub(super) fn collect_unbounded_sorted(
             SortedEntries::Compact(CompactEntries::empty(root.to_path_buf()))
         }
     };
-    #[cfg(not(unix))]
-    let sorted = {
-        entries.sort_by(|left, right| left.path.cmp(&right.path));
-        SortedEntries::Native(entries.into_iter())
-    };
-
     (sorted, errors, count, bytes)
 }
 
@@ -357,10 +435,37 @@ fn is_name_too_long(error: &impl std::fmt::Display) -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn rebuild_descriptor_entries(
+fn prefer_descriptor_primary(
     root: &Path,
-    respect_gitignore: bool,
+    config: &FilesystemWalkConfig,
     has_ignore_patterns: bool,
+) -> bool {
+    if has_ignore_patterns {
+        return false;
+    }
+    if !config.respect_gitignore {
+        return true;
+    }
+    // Descriptor-primary preserves default-exclude pruning and metadata-only
+    // discovery without constructing PATH_MAX-bound pathnames. When the root
+    // carries ignore metadata, keep the ignore-backed walk so gitignore /
+    // .keyhogignore semantics stay exact.
+    let has_ignore_metadata = root.join(".gitignore").exists()
+        || root.join(".ignore").exists()
+        || root.join(".keyhogignore").exists()
+        || root.join(".git").exists();
+    match has_ignore_metadata {
+        true => false,
+        false => true,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn collect_descriptor_entries(
+    root: &Path,
+    config: &FilesystemWalkConfig,
+    has_ignore_patterns: bool,
+    require_ignore_proof: bool,
 ) -> Result<(CompactEntriesBuilder, usize, u64), SourceError> {
     if has_ignore_patterns {
         return Err(SourceError::Other(
@@ -371,26 +476,59 @@ fn rebuild_descriptor_entries(
     let mut count = 0usize;
     let mut bytes = 0u64;
     walk_descriptor_relative(root, |entry| {
-        let name = entry.path.file_name().and_then(OsStr::to_str);
-        let blocks_ignore_proof = name == Some(".keyhogignore")
-            || (respect_gitignore
-                && matches!(name, Some(".git") | Some(".gitignore") | Some(".ignore")));
-        if blocks_ignore_proof {
-            return Err(SourceError::Other(format!(
-                "descriptor-relative discovery encountered ignore metadata at '{}'; refusing to bypass ignore semantics for a path beyond the platform pathname limit",
-                entry.path.display()
-            )));
+        let name = entry.path.file_name();
+        match &entry.kind {
+            DescriptorEntryKind::Directory => {
+                if entry.path.as_path() != root {
+                    if let Some(dir_name) = name {
+                        if config.respect_default_excludes
+                            && super::filter::is_default_excluded_dir_name(dir_name)
+                        {
+                            let _event =
+                                crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+                            return Ok(false);
+                        }
+                    }
+                }
+                if require_ignore_proof {
+                    let name_str = name.and_then(OsStr::to_str);
+                    if name_str == Some(".git")
+                        || (config.respect_gitignore
+                            && matches!(name_str, Some(".gitignore") | Some(".ignore")))
+                    {
+                        return Err(SourceError::Other(format!(
+                            "descriptor-relative discovery encountered ignore metadata at '{}'; refusing to bypass ignore semantics for a path beyond the platform pathname limit",
+                            entry.path.display()
+                        )));
+                    }
+                }
+                Ok(true)
+            }
+            DescriptorEntryKind::File { size } => {
+                let name_str = name.and_then(OsStr::to_str);
+                if require_ignore_proof
+                    && matches!(name_str, Some(".gitignore") | Some(".ignore") | Some(".keyhogignore"))
+                {
+                    return Err(SourceError::Other(format!(
+                        "descriptor-relative discovery encountered ignore metadata at '{}'; refusing to bypass ignore semantics for a path beyond the platform pathname limit",
+                        entry.path.display()
+                    )));
+                }
+                if config.respect_default_excludes && path_is_default_excluded(root, &entry.path) {
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+                    return Ok(true);
+                }
+                builder.push(FileEntry {
+                    path: entry.path.clone(),
+                    size: *size,
+                    is_binary: false,
+                })?;
+                count = count.saturating_add(1);
+                bytes = bytes.saturating_add(*size);
+                Ok(true)
+            }
+            DescriptorEntryKind::Symlink { .. } | DescriptorEntryKind::Other => Ok(true),
         }
-        if let DescriptorEntryKind::File { size } = &entry.kind {
-            builder.push(FileEntry {
-                path: entry.path.clone(),
-                size: *size,
-                is_binary: false,
-            })?;
-            count = count.saturating_add(1);
-            bytes = bytes.saturating_add(*size);
-        }
-        Ok(true)
     })?;
     Ok((builder, count, bytes))
 }

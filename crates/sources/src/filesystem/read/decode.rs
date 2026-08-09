@@ -233,12 +233,24 @@ pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
     suspicious >= SUSPICIOUS_CONTROL_BINARY_MIN && suspicious * 20 > total
 }
 
+pub(in crate::filesystem) fn has_utf16_bom_prefix(bytes: &[u8]) -> bool {
+    has_utf16_nul_pattern(bytes)
+}
+
 pub(in crate::filesystem) fn looks_binary_prefix(bytes: &[u8]) -> bool {
+    // UTF-16 BOM text is handled by the decode path; do not reject it here on
+    // the strength of embedded NULs alone.
+    if has_utf16_nul_pattern(bytes) {
+        return false;
+    }
     has_unambiguous_prefix_magic(bytes)
         || crate::magic::has_bmp_header(bytes)
         || crate::magic::has_pe_header(bytes)
         || crate::magic::has_bzip2_header(bytes)
         || has_repeated_nul_run(bytes)
+        // Control-density on the already-read prefix catches high-entropy
+        // binary without a known magic, without a second full-file pass.
+        || looks_binary_header_check(bytes)
 }
 
 fn has_repeated_nul_run(bytes: &[u8]) -> bool {
