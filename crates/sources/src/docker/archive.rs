@@ -365,7 +365,8 @@ fn stream_layer_tar_reader(
         // Extensionless: sniff a bounded prefix first (process_entry parity) so a
         // large ELF/Mach-O/PE is not buffered up to the 100 MiB scan cap only to
         // be discarded as Binary. Containers still need a full buffer.
-        const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
+        // Keep parity with FilesystemSource process_entry (extract.rs = 512).
+        const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 512;
         let mut prebuffered: Option<Vec<u8>> = None;
         if ext.is_empty() {
             let prefix_len = std::cmp::min(

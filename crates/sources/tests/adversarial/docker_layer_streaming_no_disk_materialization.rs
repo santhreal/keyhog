@@ -304,8 +304,7 @@ fn stream_layer_skips_extensionless_elf_without_string_mining() {
 /// Extensionless text whose *prefix* is ordinary source must still be scanned
 /// even when a NUL run appears later in the member. `looks_binary_prefix` trips
 /// on any 4-byte NUL run in the slice it is given; the Docker streaming path
-/// sniffs only the opening 1024 bytes (not the whole member). FilesystemSource
-/// keeps its historical 512-byte extensionless sniff.
+/// and FilesystemSource both sniff only the opening 512 bytes (not the whole member).
 #[cfg(feature = "docker")]
 #[test]
 fn stream_layer_scans_extensionless_text_with_late_nul_run() {
@@ -341,6 +340,39 @@ fn stream_layer_scans_extensionless_text_with_late_nul_run() {
 /// windows — otherwise every other byte is garbled and secrets are missed.
 /// Signature-less high-C0 binaries must not take lossy plain windows. Density
 /// hits buffer into archive-binary / printable-strings (extensioned parity).
+/// A NUL run between offsets 512 and 1024 must not binary-skip under the shared
+/// 512-byte extensionless sniff (process_entry parity).
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_scans_extensionless_text_with_nul_after_512() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let secret = b"AWS_ACCESS_KEY_ID=AKIA0PERF2MIDNULSCAN001\n";
+    let mut payload = secret.to_vec();
+    payload.extend(vec![b'x'; 600usize.saturating_sub(payload.len())]);
+    payload.extend_from_slice(&[0, 0, 0, 0]);
+    payload.extend_from_slice(b"trailing\n");
+    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/appconfig", &payload)]);
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream");
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("AKIA0PERF2MIDNULSCAN001")),
+        "extensionless text with NUL after byte 512 must still be scanned; got {:?}",
+        chunks
+            .iter()
+            .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
+    );
+}
+
 #[cfg(feature = "docker")]
 #[test]
 fn stream_layer_density_binary_extensionless_uses_archive_binary() {
