@@ -31,7 +31,7 @@ pub(crate) use archive::validate_scan_archive_entry_name;
 pub(super) const UNCAPPED_ARCHIVE_BUDGET: u64 = 1024 * 1024 * 1024;
 // 512 covers zip/ELF/PE magic and tar's ustar marker at offset 257 without
 // reading a full KiB on every unclassifiable name.
-const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 512;
+const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
 
 /// Upper bound on a Git-LFS pointer file's size. A canonical pointer is the
 /// three short lines `version …` / `oid sha256:…` / `size …` (~130 bytes; a few
@@ -285,8 +285,9 @@ fn emit_archive_leaf_member(
     };
 
     // Mirror FilesystemSource's large-file policy:
-    //   * binary-prefix members take the archive-binary / printable-strings gate
-    //     (never lossy text windows - that was 2x RAM + detector noise);
+    //   * binary members (magic/NUL prefix OR C0-density header) take the
+    //     archive-binary / printable-strings gate - never lossy text windows
+    //     (that was junk matches + 2x RAM);
     //   * already-UTF-8 text windows on the RAW bytes (offsets == member bytes
     //     == size_bytes), matching the mmap window path;
     //   * UTF-16 / other encodings take the whole-member decode path (one chunk
@@ -297,12 +298,16 @@ fn emit_archive_leaf_member(
     let window_overlap = super::reader::DEFAULT_WINDOW_OVERLAP;
     if content.len() > window_size && provenance.is_none() {
         let raw_member_len = content.len() as u64;
-        let prefix_len = content.len().min(EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES);
-        let prefix = &content[..prefix_len];
-        // Same gate as process_entry / large_file_requires_whole_file_decode:
-        // confident binary prefixes must not enter the scanner as ordinary text.
-        // looks_binary_prefix already exempts UTF-16 BOM text.
-        if read::looks_binary_prefix(prefix) {
+        // Same 4 KiB header sample decode_text_file_owned_or_bytes uses for the
+        // C0-density gate, so control-heavy "valid UTF-8" blobs cannot enter the
+        // ordinary text window path.
+        let prefix = &content[..content.len().min(4096)];
+        let utf16 = read::has_utf16_bom_prefix(prefix);
+        // looks_binary treats UTF-16 NUL patterns as binary; check BOM first so
+        // UTF-16 members still reach the whole-member decoder.
+        let binary = matches!(utf16, false)
+            && (read::looks_binary_prefix(prefix) || read::looks_binary(prefix));
+        if utf16 || binary {
             match chunk_from_extracted_entry(
                 content,
                 member_display.to_string(),
@@ -313,33 +318,43 @@ fn emit_archive_leaf_member(
                 None => return true,
             }
         }
-        if std::str::from_utf8(&content).is_ok() {
-            return read::for_each_slice_window(&content, window_size, window_overlap, |window| {
-                if window.text.is_empty() {
-                    return true;
-                }
-                emit(Ok(Chunk {
-                    data: window.text,
-                    metadata: ChunkMetadata {
-                        source_type: text_source_type.into(),
-                        path: Some(member_display.to_owned().into()),
-                        base_offset: window.offset,
-                        base_line: window.base_line,
-                        size_bytes: Some(raw_member_len),
-                        decoded_span: None,
-                        ..Default::default()
+        // Consume the Vec into a String before windowing so the raw buffer is not
+        // kept alive alongside each emitted window allocation (the prior 2x peak
+        // from holding content while materializing window text).
+        match String::from_utf8(content) {
+            Ok(text) => {
+                return read::for_each_slice_window(
+                    text.as_bytes(),
+                    window_size,
+                    window_overlap,
+                    |window| {
+                        if window.text.is_empty() {
+                            return true;
+                        }
+                        emit(Ok(Chunk {
+                            data: window.text,
+                            metadata: ChunkMetadata {
+                                source_type: text_source_type.into(),
+                                path: Some(member_display.to_owned().into()),
+                                base_offset: window.offset,
+                                base_line: window.base_line,
+                                size_bytes: Some(raw_member_len),
+                                decoded_span: None,
+                                ..Default::default()
+                            },
+                        }))
                     },
-                }))
-            });
-        }
-        match chunk_from_extracted_entry(
-            content,
-            member_display.to_string(),
-            text_source_type,
-            binary_source_type,
-        ) {
-            Some(chunk) => return emit(chunk),
-            None => return true,
+                );
+            }
+            Err(err) => match chunk_from_extracted_entry(
+                err.into_bytes(),
+                member_display.to_string(),
+                text_source_type,
+                binary_source_type,
+            ) {
+                Some(chunk) => return emit(chunk),
+                None => return true,
+            },
         }
     }
 

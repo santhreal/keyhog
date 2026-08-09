@@ -706,6 +706,10 @@ pub(crate) fn looks_binary_prefix(bytes: &[u8]) -> bool {
     read::looks_binary_prefix_for_test(bytes)
 }
 
+pub(crate) fn looks_binary(bytes: &[u8]) -> bool {
+    read::looks_binary_for_test(bytes)
+}
+
 pub(crate) fn slice_into_windows_with_offsets_for_test(
     bytes: &[u8],
     window_size: usize,

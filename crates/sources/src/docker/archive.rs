@@ -428,30 +428,69 @@ fn stream_layer_tar_reader(
             && size > window_size as u64
             && !layer_member_requires_full_buffer(ext)
         {
-            if !stream_plain_layer_member_windows(
-                &mut entry,
-                size.min(member_scan_cap),
-                &entry_name,
-                window_size,
-                window_overlap,
-                Vec::new(),
-                emit,
-            )? {
-                return Ok(false);
+            // Prefix-sniff before lossy UTF-8 windows so control-heavy / magic
+            // binaries with a non-skip extension do not produce junk matches.
+            // Binary members fall through to the buffered emit_in_memory path
+            // (archive-binary / printable strings), matching extract.rs.
+            const PREFIX_SNIFF_BYTES: usize = 1024;
+            let sniff_len =
+                std::cmp::min(PREFIX_SNIFF_BYTES as u64, size.min(member_scan_cap)) as usize;
+            let mut prefix = vec![0_u8; sniff_len];
+            if sniff_len > 0 {
+                entry.read_exact(&mut prefix).map_err(SourceError::Io)?;
             }
-            // If the tar header size exceeded the scan cap, surface the same
-            // oversize skip the buffered path uses after read_to_cap truncates.
-            if size > member_scan_cap {
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-                if !emit(Err(docker_archive_entry_over_entry_cap_error(
-                    &path,
-                    size,
-                    member_scan_cap,
-                ))) {
+            let after_prefix = size.saturating_sub(sniff_len as u64);
+            if crate::filesystem::looks_binary_prefix(&prefix)
+                || crate::filesystem::looks_binary(&prefix)
+            {
+                let mut bytes = prefix;
+                let room = member_scan_cap.saturating_sub(bytes.len() as u64);
+                let to_take = after_prefix.min(room);
+                if to_take > 0 {
+                    let mut take = Read::take(&mut entry, to_take);
+                    take.read_to_end(&mut bytes).map_err(SourceError::Io)?;
+                }
+                let leftover = after_prefix.saturating_sub(to_take);
+                if leftover > 0 {
+                    drain_layer_member_remainder(&mut entry, leftover)?;
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                    if !emit(Err(docker_archive_entry_over_entry_cap_error(
+                        &path,
+                        size,
+                        member_scan_cap,
+                    ))) {
+                        return Ok(false);
+                    }
+                    continue;
+                }
+                prebuffered = Some(bytes);
+            } else {
+                let stream_size = size.min(member_scan_cap);
+                if !stream_plain_layer_member_windows(
+                    &mut entry,
+                    stream_size,
+                    &entry_name,
+                    window_size,
+                    window_overlap,
+                    prefix,
+                    emit,
+                )? {
                     return Ok(false);
                 }
+                let leftover = size.saturating_sub(stream_size);
+                if leftover > 0 {
+                    drain_layer_member_remainder(&mut entry, leftover)?;
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                    if !emit(Err(docker_archive_entry_over_entry_cap_error(
+                        &path,
+                        size,
+                        member_scan_cap,
+                    ))) {
+                        return Ok(false);
+                    }
+                }
+                continue;
             }
-            continue;
         }
 
         let read_bytes = if let Some(bytes) = prebuffered {
