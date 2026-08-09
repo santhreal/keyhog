@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 /// On-disk magic for MatcherArtifact cache files.
-pub const MATCHER_ARTIFACT_MAGIC: &[u8; 4] = b"KHMA";
+pub use keyhog_core::MATCHER_ARTIFACT_MAGIC;
 /// Cache format version. Bump when the envelope layout changes.
 ///
 /// v1 used a JSON body that expanded section blobs into number arrays and made
@@ -40,7 +40,7 @@ pub const MATCHER_ARTIFACT_MAGIC: &[u8; 4] = b"KHMA";
 /// in the outer identity header and inside each section envelope.
 pub const MATCHER_ARTIFACT_VERSION: u32 = 4;
 /// Filename suffix for MatcherArtifact cache files.
-pub const MATCHER_ARTIFACT_SUFFIX: &str = ".khm";
+pub use keyhog_core::MATCHER_ARTIFACT_SUFFIX;
 /// Hard cap for one MatcherArtifact cache file, including header.
 pub const MATCHER_ARTIFACT_FILE_BYTES: u64 = 256 * 1024 * 1024;
 
@@ -262,7 +262,8 @@ impl MatcherArtifactIdentity {
     /// On-disk filename for this identity.
     pub fn cache_filename(&self) -> String {
         format!(
-            "matcher-{}{}",
+            "{}{}{}",
+            keyhog_core::MATCHER_ARTIFACT_FILENAME_PREFIX,
             keyhog_core::hex_encode(&self.digest()),
             MATCHER_ARTIFACT_SUFFIX
         )
@@ -577,6 +578,25 @@ pub fn store_matcher_artifact(
             cache_dir.display()
         )
     })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(cache_dir)
+            .map_err(|error| {
+                format!(
+                    "cannot stat matcher-artifact cache dir {}: {error}",
+                    cache_dir.display()
+                )
+            })?
+            .permissions();
+        perms.set_mode(0o700);
+        std::fs::set_permissions(cache_dir, perms).map_err(|error| {
+            format!(
+                "cannot tighten matcher-artifact cache dir {}: {error}",
+                cache_dir.display()
+            )
+        })?;
+    }
     let path = cache_dir.join(identity.cache_filename());
     let identity_json = serde_json::to_vec(identity)
         .map_err(|error| format!("cannot serialize matcher artifact identity: {error}"))?;

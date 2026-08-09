@@ -132,6 +132,12 @@ pub(crate) const STALE_TMP_CUTOFF_SECS: u64 = 60 * 60;
 pub(crate) const KEYHOG_CACHE_SUBDIR: &str = "keyhog";
 /// Sibling of [`KEYHOG_CACHE_SUBDIR`] used for MatcherArtifact `.khm` files.
 pub(crate) const KEYHOG_MATCHER_ARTIFACTS_SUBDIR: &str = "keyhog-matcher-artifacts";
+/// On-disk magic for MatcherArtifact cache files (`KHMA`).
+pub const MATCHER_ARTIFACT_MAGIC: &[u8; 4] = b"KHMA";
+/// Filename prefix for MatcherArtifact cache files (`matcher-<hex>.khm`).
+pub const MATCHER_ARTIFACT_FILENAME_PREFIX: &str = "matcher-";
+/// Filename suffix for MatcherArtifact cache files.
+pub const MATCHER_ARTIFACT_SUFFIX: &str = ".khm";
 
 /// Absolute path of keyhog's per-user cache root (`<os-cache>/keyhog`), or
 /// `None` when the platform exposes no cache directory.

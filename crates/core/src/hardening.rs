@@ -430,8 +430,8 @@ fn matcher_artifact_cache_filename(name: &OsStr) -> bool {
         return false;
     };
     let Some(digest) = name
-        .strip_prefix("matcher-")
-        .and_then(|s| s.strip_suffix(".khm"))
+        .strip_prefix(crate::MATCHER_ARTIFACT_FILENAME_PREFIX)
+        .and_then(|s| s.strip_suffix(crate::MATCHER_ARTIFACT_SUFFIX))
     else {
         return false;
     };
@@ -446,11 +446,11 @@ fn compiled_pattern_cache_header_is_valid(path: &Path) -> std::io::Result<bool> 
     if path
         .extension()
         .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext == "khm")
+        .is_some_and(|ext| ext == crate::MATCHER_ARTIFACT_SUFFIX.trim_start_matches('.'))
     {
         let mut magic = [0_u8; 4];
         match file.read_exact(&mut magic) {
-            Ok(()) => Ok(&magic == b"KHMA"),
+            Ok(()) => Ok(&magic == crate::MATCHER_ARTIFACT_MAGIC),
             Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
             Err(error) => Err(error),
         }

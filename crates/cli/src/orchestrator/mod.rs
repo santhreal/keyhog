@@ -1537,14 +1537,10 @@ impl ScanOrchestrator {
                                 gpu_init_policy,
                                 &effective_config.scanner_tuning,
                             )?;
-                        // Pack hydration reuses an eager matcher graph, but only
-                        // attribute it to CacheId::MatcherArtifact when the
-                        // persistent matcher cache is enabled. Otherwise
-                        // `--matcher-cache off` / `--lockdown` would still show
-                        // a 100% MatcherArtifact hit rate in --profile.
-                        if effective_config.matcher_cache_path.is_some() {
-                            keyhog_scanner::record_matcher_artifact_pack_hit();
-                        }
+                        // Do not attribute pack hydration to
+                        // CacheId::MatcherArtifact. That counter is reserved for
+                        // the on-disk MatcherArtifact cache so --profile can
+                        // prove a real .khm hit/miss.
                         Ok(compiled)
                     }
                     None => {
