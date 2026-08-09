@@ -29,7 +29,7 @@ pub(crate) use decode::decode_text_file;
 /// packed in an archive keeps recall parity (Law 10) instead of each extractor
 /// reinventing a weaker `String::from_utf8` decode (no-duplication).
 pub(in crate::filesystem) use decode::decode_text_file_owned_or_bytes;
-pub(in crate::filesystem) use decode::{has_utf16_bom_prefix, looks_binary_prefix};
+pub(in crate::filesystem) use decode::{has_utf16_bom_prefix, looks_binary, looks_binary_prefix};
 pub(crate) use raw::open_file_safe;
 pub(super) use raw::{
     read_file_buffered, read_file_prefix_safe, read_file_safe, read_file_whole_capped,
@@ -83,6 +83,15 @@ pub(crate) fn read_file_windowed_mmap_len_for_test(
     overlap: usize,
 ) -> Option<usize> {
     window::read_file_windowed_mmap(path, window_size, overlap).map(|windows| windows.len())
+}
+
+pub(in crate::filesystem) fn for_each_slice_window(
+    bytes: &[u8],
+    window_size: usize,
+    overlap: usize,
+    emit: impl FnMut(window::FileWindow) -> bool,
+) -> bool {
+    window::for_each_window(bytes, window_size, overlap, emit, |_| {})
 }
 
 pub(crate) fn slice_into_windows_for_test(

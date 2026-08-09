@@ -14,6 +14,7 @@ mod corrupt_zip_truncated_no_panic;
 mod deeply_nested_dirs_scan_continues;
 mod docker_export_stderr_bounded;
 mod docker_image_unpack_budget_is_image_scoped;
+mod docker_layer_streaming_no_disk_materialization;
 mod docker_oci_manifest_layers;
 mod docker_tar_absolute_path_rejected;
 mod docker_tar_aggregate_cap_enforced;

@@ -42,19 +42,35 @@ pub(super) fn extract_seven_zip_chunks(
         }
     };
     let archive_display = display_path(path);
-    let cursor = Cursor::new(file_bytes.as_slice());
+    extract_seven_zip_chunks_from_bytes(
+        file_bytes.as_slice(),
+        &archive_display,
+        max_size,
+        respect_default_excludes,
+        emit,
+    );
+}
+
+pub(super) fn extract_seven_zip_chunks_from_bytes(
+    file_bytes: &[u8],
+    archive_display: &str,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) {
+    let cursor = Cursor::new(file_bytes);
     let mut reader = match ArchiveReader::new(cursor, Password::empty()) {
         Ok(reader) => reader,
         Err(error) => {
             tracing::warn!(
-                archive = %path.display(),
+                archive = %archive_display,
                 %error,
                 "cannot open 7z archive; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             emit(Err(SourceError::Other(format!(
                 "failed to scan 7z archive '{}': cannot open archive ({error}); archive was not scanned",
-                path.display()
+                archive_display
             ))));
             return;
         }
@@ -62,13 +78,13 @@ pub(super) fn extract_seven_zip_chunks(
 
     if archive_uses_unbounded_lzma(reader.archive()) {
         tracing::warn!(
-            archive = %path.display(),
+            archive = %archive_display,
             "refusing 7z archive using plain LZMA: sevenz-rust2 does not expose a dictionary memory limit for that method"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
         emit(Err(SourceError::Other(format!(
             "failed to scan 7z archive '{}': plain LZMA is refused because no dictionary memory limit is available",
-            path.display()
+            archive_display
         ))));
         return;
     }
@@ -301,17 +317,17 @@ pub(super) fn extract_seven_zip_chunks(
 
     if let Err(error) = result {
         tracing::warn!(
-            archive = %path.display(),
+            archive = %archive_display,
             %error,
             "7z archive extraction failed before all entries were scanned"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
         emit(Err(SourceError::Other(format!(
             "failed to scan 7z archive '{}': extraction failed before all entries were scanned ({error})",
-            path.display()
+            archive_display
         ))));
     } else if archive_truncated || consumer_stopped {
-        tracing::debug!(archive = %path.display(), "7z extraction stopped early");
+        tracing::debug!(archive = %archive_display, "7z extraction stopped early");
     }
 }
 
