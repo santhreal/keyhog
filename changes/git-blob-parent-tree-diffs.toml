@@ -1,0 +1,3 @@
+category = "Performance"
+summary = "`--git-blobs` now collects commit blobs by diffing each commit against its parents and scanning only added, changed, and deleted blob sides instead of rewalking every historical tree. Root commits and unreadable parents still fall back to a full tree walk so recall stays intact."
+crates = ["sources"]

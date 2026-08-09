@@ -5,6 +5,7 @@ mod binary_literal_decode;
 mod binary_literal_decode_escape_contract;
 mod compressed_open_errors_visible;
 mod git_blob_batch_streaming;
+mod git_blob_parent_diff_recall;
 mod max_file_size_cap;
 #[path = "../regression_oom_unbounded_read_caps.rs"]
 mod oom_unbounded_read_caps;
