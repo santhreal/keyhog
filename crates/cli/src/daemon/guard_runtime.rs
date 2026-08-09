@@ -39,6 +39,10 @@ pub struct GuardTransaction {
     pub scanned_oids: Vec<String>,
     /// Bytes scanned so far.
     pub bytes_scanned: u64,
+    /// Total bytes requested (sum of all object sizes in the plan).
+    pub bytes_requested: u64,
+    /// Bytes hit in the clean attestation cache (no payload scanned).
+    pub bytes_hit: u64,
     /// Findings count across all scanned blobs.
     pub findings_count: u64,
     /// Coverage gaps count.
@@ -243,6 +247,8 @@ impl GuardRuntime {
             required_blob_oids: t.required_blob_oids.clone(),
             scanned_oids: t.scanned_oids.clone(),
             bytes_scanned: t.bytes_scanned,
+            bytes_requested: t.bytes_requested,
+            bytes_hit: t.bytes_hit,
             findings_count: t.findings_count,
             coverage_gaps: t.coverage_gaps,
             objects_skipped: t.objects_skipped,
@@ -276,6 +282,7 @@ impl GuardRuntime {
             ));
         }
         txn.scanned_oids.push(oid.to_string());
+        txn.bytes_scanned += bytes;
         txn.findings_count += findings;
         self.touch_activity();
         Ok(())
@@ -573,6 +580,8 @@ mod tests {
             required_blob_oids: vec!["oid1".to_string()],
             scanned_oids: Vec::new(),
             bytes_scanned: 0,
+            bytes_requested: 0,
+            bytes_hit: 0,
             findings_count: 0,
             coverage_gaps: 0,
             objects_skipped: 0,

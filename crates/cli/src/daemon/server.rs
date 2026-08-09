@@ -1325,7 +1325,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             // Parse the hash algorithm.
             let git_hash = match hash_algorithm.as_str() {
                 "sha1" => keyhog_core::guard_state::GitHashAlgorithm::Sha1,
-                "sha256" => keyhog_core::guard_state::GitHashAlgorithm::Sha1,
+                "sha256" => keyhog_core::guard_state::GitHashAlgorithm::Sha256,
                 other => {
                     return Response::Error {
                         message: format!("daemon: guard commit: unsupported hash algorithm '{}'", other),
@@ -1387,6 +1387,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 required_blob_oids: required_blob_oids.clone(),
                 scanned_oids: Vec::new(),
                 bytes_scanned: 0,
+                bytes_requested,
+                bytes_hit,
                 findings_count: 0,
                 coverage_gaps: 0,
                 objects_skipped,
@@ -1548,7 +1550,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let total_objects = txn.clean_hits.len() as u64 + txn.scanned_oids.len() as u64 + txn.objects_skipped;
             let objects_hit = txn.clean_hits.len() as u64;
             let objects_scanned = txn.scanned_oids.len() as u64;
-            let bytes_hit: u64 = 0; // clean hit bytes tracked separately
+            let bytes_hit = txn.bytes_hit;
             let terminal_state = if txn.findings_count > 0 {
                 keyhog_core::guard_state::GuardRootState::Blocked
             } else if txn.coverage_gaps > 0 {
@@ -1562,7 +1564,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 objects_hit,
                 objects_scanned,
                 objects_skipped: txn.objects_skipped,
-                bytes_requested: txn.bytes_scanned + bytes_hit,
+                bytes_requested: txn.bytes_requested,
                 bytes_hit,
                 bytes_scanned: txn.bytes_scanned,
                 findings_count: txn.findings_count,
@@ -1588,7 +1590,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 objects_hit,
                 objects_scanned,
                 objects_skipped: txn.objects_skipped,
-                bytes_requested: txn.bytes_scanned + bytes_hit,
+                bytes_requested: txn.bytes_requested,
                 bytes_hit,
                 bytes_scanned: txn.bytes_scanned,
                 findings_count: txn.findings_count,
