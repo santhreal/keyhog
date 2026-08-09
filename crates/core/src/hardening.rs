@@ -257,9 +257,11 @@ fn apply_lockdown_protections() -> HardeningReport {
 /// credentials, and keyhog (re)creates it early in startup. Treating it as a
 /// violation made `--lockdown` self-defeating: the gate tripped on keyhog's own
 /// freshly-compiled pattern DB on every machine, so the flag could never run.
-/// Only files with keyhog's exact `hs-<sha256>.db` shard name and `KHHS` cache
-/// header are trusted as compiled-pattern caches; everything else is a
-/// potential findings-bearing cache and therefore a lockdown violation.
+/// Only compiled pattern/matcher artifacts are trusted under the cache root:
+/// Hyperscan `hs-<sha256>.db` shards with a `KHHS` header, and the
+/// `matcher-artifacts/` subdirectory holding MatcherArtifact `.khm` / tip `.kht`
+/// files. Everything else is a potential findings-bearing cache and therefore a
+/// lockdown violation.
 #[must_use]
 pub(crate) fn lockdown_disk_cache_violations() -> Vec<PathBuf> {
     lockdown_disk_cache_violations_for_paths(std::iter::empty::<PathBuf>())
@@ -376,13 +378,70 @@ where
 }
 
 fn trusted_compiled_pattern_cache_entry(entry: &std::fs::DirEntry) -> std::io::Result<bool> {
+    let file_type = entry.file_type()?;
+    if file_type.is_dir() {
+        return trusted_matcher_artifact_cache_dir(&entry);
+    }
     if !compiled_pattern_cache_filename(&entry.file_name()) {
+        return Ok(false);
+    }
+    if !file_type.is_file() {
+        return Ok(false);
+    }
+    compiled_pattern_cache_header_is_valid(&entry.path())
+}
+
+/// Trust the MatcherArtifact subdirectory when it contains only `.khm` / `.kht`
+/// compiled-matcher files (no findings, credentials, or reports).
+fn trusted_matcher_artifact_cache_dir(entry: &std::fs::DirEntry) -> std::io::Result<bool> {
+    if entry.file_name() != std::ffi::OsStr::new("matcher-artifacts") {
+        return Ok(false);
+    }
+    let path = entry.path();
+    // Refuse a symlinked cache root entry so lockdown cannot be redirected.
+    let meta = std::fs::symlink_metadata(&path)?;
+    if meta.file_type().is_symlink() {
+        return Ok(false);
+    }
+    let mut empty = true;
+    for child in std::fs::read_dir(&path)? {
+        let child = child?;
+        empty = false;
+        if !trusted_matcher_artifact_cache_file(&child)? {
+            return Ok(false);
+        }
+    }
+    // An empty matcher-artifacts dir is still not findings-bearing.
+    let _ = empty;
+    Ok(true)
+}
+
+fn trusted_matcher_artifact_cache_file(entry: &std::fs::DirEntry) -> std::io::Result<bool> {
+    let name = entry.file_name();
+    let Some(name) = name.to_str() else {
+        return Ok(false);
+    };
+    let is_khm = name.ends_with(".khm");
+    let is_kht = name.ends_with(".kht");
+    if !(is_khm || is_kht) {
         return Ok(false);
     }
     if !entry.file_type()?.is_file() {
         return Ok(false);
     }
-    compiled_pattern_cache_header_is_valid(&entry.path())
+    if is_kht {
+        // Tips are small JSON pointers; reject obvious non-JSON.
+        let bytes = std::fs::read(entry.path())?;
+        return Ok(bytes.first().copied() == Some(b'{'));
+    }
+    // MatcherArtifact envelope starts with magic KHMA.
+    let mut file = std::fs::File::open(entry.path())?;
+    let mut magic = [0_u8; 4];
+    match file.read_exact(&mut magic) {
+        Ok(()) => Ok(&magic == b"KHMA"),
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(error) => Err(error),
+    }
 }
 
 fn compiled_pattern_cache_filename(name: &OsStr) -> bool {

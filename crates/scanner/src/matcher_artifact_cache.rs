@@ -671,6 +671,16 @@ pub fn load_matcher_artifact_with_ir(
             path.display()
         ));
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if metadata.uid() != current_uid() {
+            return Err(format!(
+                "matcher artifact {} is not owned by the current user; refusing to load",
+                path.display()
+            ));
+        }
+    }
     if metadata.len() > MATCHER_ARTIFACT_FILE_BYTES {
         return Err(format!(
             "matcher artifact {} exceeds {} byte cap",
@@ -812,6 +822,32 @@ pub fn try_load_from_matcher_artifact_tip(
     let tip_name =
         matcher_artifact_tip_filename(resolved_config_digest, pack_generation, backend, runtime_identity)?;
     let tip_path = cache_dir.join(tip_name);
+    let tip_meta = match std::fs::symlink_metadata(&tip_path) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "cannot stat matcher artifact tip {}: {error}",
+                tip_path.display()
+            ))
+        }
+    };
+    if tip_meta.file_type().is_symlink() {
+        return Err(format!(
+            "matcher artifact tip {} is a symlink; refusing to load",
+            tip_path.display()
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if tip_meta.uid() != current_uid() {
+            return Err(format!(
+                "matcher artifact tip {} is not owned by the current user; refusing to load",
+                tip_path.display()
+            ));
+        }
+    }
     let tip_bytes = match std::fs::read(&tip_path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -881,11 +917,12 @@ fn record_outcome(outcome: &MatcherArtifactCacheOutcome) {
         MatcherArtifactCacheOutcome::Hit => {
             keyhog_profile::record_cache_hit(keyhog_profile::CacheId::MatcherArtifact);
         }
-        MatcherArtifactCacheOutcome::Miss
-        | MatcherArtifactCacheOutcome::Invalidated { .. }
-        | MatcherArtifactCacheOutcome::Disabled => {
+        MatcherArtifactCacheOutcome::Miss | MatcherArtifactCacheOutcome::Invalidated { .. } => {
             keyhog_profile::record_cache_miss(keyhog_profile::CacheId::MatcherArtifact);
         }
+        // Intentionally disabled: do not record a miss for a cache that was never
+        // consulted, so --profile does not look like a warm-cache failure.
+        MatcherArtifactCacheOutcome::Disabled => {}
     }
 }
 

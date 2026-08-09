@@ -1288,7 +1288,6 @@ impl ScanOrchestrator {
                 effective_config.autoroute_calibration,
             )
         };
-        let matcher_backend = keyhog_scanner::matcher_backend_for_gpu_policy(gpu_init_policy);
         let (mut loaded_corpus, detector_execution_pack) = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
             if !detectors_path.exists() && requested_detector_mode.is_none() {
@@ -1342,58 +1341,8 @@ impl ScanOrchestrator {
                             )
                             .context("loading effective detector corpus")
                         };
-                        let from_tip = if disabled_detectors.is_empty() {
-                            keyhog_scanner::configured_matcher_artifact_cache_dir().and_then(
-                                |cache_dir| {
-                                    let backend = matcher_backend?;
-                                    match keyhog_scanner::try_load_from_matcher_artifact_tip(
-                                        &cache_dir,
-                                        resolved_config_digest,
-                                        None,
-                                        backend,
-                                        runtime_identity.as_deref(),
-                                    ) {
-                                        Ok(Some((detectors, _loaded, _identity))) => {
-                                            tracing::debug!(
-                                                target: "keyhog::matcher_artifact_cache",
-                                                "loaded detector corpus from matcher artifact tip"
-                                            );
-                                            let embedded_count = detectors.len();
-                                            Some(LoadedDetectorCorpus {
-                                                detectors,
-                                                schema_version:
-                                                    keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
-                                                provenance: DetectorCorpusProvenance {
-                                                    mode: "embedded",
-                                                    source: format!(
-                                                        "matcher artifact tip {}",
-                                                        cache_dir.display()
-                                                    ),
-                                                    embedded_count,
-                                                    custom_count: 0,
-                                                },
-                                            })
-                                        }
-                                        Ok(None) => None,
-                                        Err(tip_error) => {
-                                            tracing::debug!(
-                                                target: "keyhog::matcher_artifact_cache",
-                                                error = %tip_error,
-                                                "matcher artifact tip unusable; loading embedded detectors"
-                                            );
-                                            None
-                                        }
-                                    }
-                                },
-                            )
-                        } else {
-                            None
-                        };
                         (
-                            Some(match from_tip {
-                                Some(corpus) => corpus,
-                                None => embedded()?,
-                            }),
+                            Some(embedded()?),
                             None,
                         )
                     }

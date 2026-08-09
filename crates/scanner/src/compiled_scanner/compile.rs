@@ -553,10 +553,10 @@ impl CompiledScanner {
         mut packed_detector_plan: Option<PackedDetectorPlanPrelude<'_>>,
     ) -> Result<Self> {
         if packed_detector_plan.is_none() {
-            if packed_state.is_none() {
-                super::validation::validate_detector_corpus(&detectors)
-                    .map_err(crate::error::ScanError::Config)?;
-            }
+            // Always validate detector quality/ids, including MatcherArtifact /
+            // execution-pack hydration paths that supply a packed CompileState.
+            super::validation::validate_detector_corpus(&detectors)
+                .map_err(crate::error::ScanError::Config)?;
             crate::entropy::policy::validate_feature_compatibility(&detectors)
                 .map_err(crate::error::ScanError::Config)?;
         }

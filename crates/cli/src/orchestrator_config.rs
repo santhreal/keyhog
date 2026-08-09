@@ -192,10 +192,18 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         runtime_input.autoroute_cache.as_deref(),
     )
     .map_err(anyhow::Error::msg)?;
-    let matcher_cache_path = crate::matcher_cache_path::resolve_matcher_cache_path(
+    let mut matcher_cache_path = crate::matcher_cache_path::resolve_matcher_cache_path(
         runtime_input.matcher_cache.as_deref(),
     )
     .map_err(anyhow::Error::msg)?;
+    // Lockdown forbids reading detector graphs from unsigned on-disk caches.
+    if args.lockdown && matcher_cache_path.is_some() {
+        tracing::warn!("lockdown mode: MatcherArtifact cache disabled");
+        eprintln!(
+            "warning: MatcherArtifact cache disabled because --lockdown forbids unsigned on-disk detector/matcher caches"
+        );
+        matcher_cache_path = None;
+    }
     configure_matcher_artifact_cache_dir(matcher_cache_path.clone())?;
     let backend_override = parse_backend_override(runtime_input.backend.as_deref())?;
     let scanner_tuning = outcome.scanner_tuning;
