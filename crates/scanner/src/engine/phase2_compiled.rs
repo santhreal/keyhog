@@ -316,6 +316,13 @@ impl CompiledScanner {
                 }
             }
         }
+        // Markerless single-line blobs without phase-2 keywords cannot usefully
+        // run always-active presence scans: every opaque alphanumeric token
+        // looks like a candidate and the non-anchorable set over-admits. Keyword
+        // hits above still admit; Stripe-style anchored secrets keep working.
+        if super::scan::text_is_markerless_single_line(data) {
+            return false;
+        }
         let _g = super::profile::span(keyhog_profile::Stage::Phase2Prefilter);
         match &self.phase2_always_active_prefilter {
             Some(prefilter) => {
@@ -401,6 +408,8 @@ impl CompiledScanner {
                 // The anchorless always-active RegexSet, the detectors that run
                 // on EVERY chunk. This span is the cost the old vague label hid.
                 let _g = super::profile::span(keyhog_profile::Stage::Phase2Prefilter);
+                let always_active_absence_proven = always_active_absence_proven
+                    || super::scan::text_is_markerless_single_line(match_text);
                 if !always_active_absence_proven {
                     #[cfg(debug_assertions)]
                     self.phase2_prefilter_scanned_bytes.fetch_add(

@@ -284,7 +284,15 @@ impl CompiledScanner {
 #[cfg(feature = "decode")]
 #[inline]
 pub(crate) fn chunk_is_markerless_single_line(chunk: &keyhog_core::Chunk) -> bool {
-    let bytes = chunk.data.as_bytes();
+    text_is_markerless_single_line(&chunk.data)
+}
+
+/// Single-line text with no classical encode markers. Used to skip decode-through
+/// and always-active phase-2 work on minified / dense JSON blobs where that work
+/// cannot distinguish opaque identifiers from nopad encodings.
+#[inline]
+pub(crate) fn text_is_markerless_single_line(text: &str) -> bool {
+    let bytes = text.as_bytes();
     if bytes.is_empty() || bytes.contains(&b'\n') {
         return false;
     }
