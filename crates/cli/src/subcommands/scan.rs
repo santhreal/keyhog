@@ -612,6 +612,7 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
     None
 }
 
+#[cfg(unix)]
 fn matcher_cache_directory_override(raw: Option<&str>) -> bool {
     raw.is_some_and(|value| {
         let trimmed = value.trim();
