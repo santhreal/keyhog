@@ -676,18 +676,21 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     match tmp.persist(path) {
         Ok(_) => Ok(()),
         Err(error) => {
-            std::fs::copy(error.file.path(), path)?;
-            // `std::fs::copy` inherits the process umask (often 0644). Tighten
-            // to owner-only so the cross-filesystem fallback matches the
-            // NamedTempFile/persist 0600 path.
+            // Cross-filesystem rename is the common case (`/tmp` vs `$HOME`).
+            // Create the destination already owner-only so there is no
+            // umask-0644 window before a later chmod.
+            let mut options = std::fs::OpenOptions::new();
+            options.create(true).write(true).truncate(true);
             #[cfg(unix)]
             {
-                use std::os::unix::fs::PermissionsExt;
-                let mut perms = std::fs::metadata(path)?.permissions();
-                perms.set_mode(0o600);
-                std::fs::set_permissions(path, perms)?;
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
             }
-            let file = std::fs::File::open(path)?;
+            let mut file = options.open(path)?;
+            {
+                let mut src = std::fs::File::open(error.file.path())?;
+                std::io::copy(&mut src, &mut file)?;
+            }
             file.sync_all()?;
             Ok(())
         }
