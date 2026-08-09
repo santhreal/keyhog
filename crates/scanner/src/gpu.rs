@@ -5,7 +5,7 @@
 //! VYRE and exposed through its backend-neutral interfaces.
 #[cfg(feature = "gpu")]
 mod adapter_probe;
-pub(crate) mod backend;
+mod backend;
 #[cfg(feature = "gpu")]
 pub(crate) mod evidence;
 #[cfg(all(test, feature = "gpu", target_os = "linux"))]

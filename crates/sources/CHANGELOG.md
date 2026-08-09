@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.69 - 2026-08-09
+
+- Report resettable counters from production filesystem discovery for root inspection, walk entries, metadata admission, errors, and early termination.
+
 ## 0.5.68 - 2026-08-05
 
 - Scanner source files freed of large co-located test suites.

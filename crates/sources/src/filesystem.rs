@@ -11,7 +11,7 @@ use std::sync::Arc;
 #[cfg(target_os = "linux")]
 mod descriptor_walk;
 mod discovery;
-pub use discovery::{DiscoverySyscallTracker, SyscallCounts};
+pub use discovery::DiscoveryCounts;
 mod extract;
 #[cfg(fuzzing)]
 pub use extract::fuzz_extract_pdf_text;
@@ -733,6 +733,7 @@ pub struct FilesystemSource {
     discovery_byte_limit: Option<u64>,
     /// Set when discovery admits the first file beyond the configured budget.
     discovery_limit_reached: Arc<AtomicBool>,
+    discovery_tracker: Arc<discovery::DiscoveryTracker>,
 }
 
 impl FilesystemSource {
@@ -755,6 +756,7 @@ impl FilesystemSource {
             reader_threads: None,
             discovery_byte_limit: None,
             discovery_limit_reached: Arc::new(AtomicBool::new(false)),
+            discovery_tracker: Arc::new(discovery::DiscoveryTracker::default()),
         }
     }
 
@@ -861,6 +863,12 @@ impl FilesystemSource {
     pub fn discovery_limit_reached(&self) -> bool {
         self.discovery_limit_reached.load(Ordering::Relaxed)
     }
+
+    /// Counters from the most recent production metadata discovery workflow.
+    #[must_use]
+    pub fn discovery_counts(&self) -> DiscoveryCounts {
+        self.discovery_tracker.snapshot()
+    }
 }
 
 impl Source for FilesystemSource {
@@ -881,6 +889,7 @@ impl Source for FilesystemSource {
         // the walk) records on this thread, so attribute it to this scan.
         let _attributed = scan_lease.enter();
         self.discovery_limit_reached.store(false, Ordering::Relaxed);
+        self.discovery_tracker.reset();
         let max_size = self.max_file_size;
         let mut config = walker_config(
             self.max_file_size,
@@ -894,6 +903,7 @@ impl Source for FilesystemSource {
             match self.root.try_exists() {
                 Ok(true) => {}
                 Ok(false) => {
+                    self.discovery_tracker.record_error();
                     let error = SourceError::Io(std::io::Error::new(
                         std::io::ErrorKind::NotFound,
                         format!(
@@ -904,6 +914,7 @@ impl Source for FilesystemSource {
                     return Box::new(std::iter::once(Err(error)));
                 }
                 Err(error) => {
+                    self.discovery_tracker.record_error();
                     let error = SourceError::Io(std::io::Error::new(
                         error.kind(),
                         format!(
@@ -929,6 +940,7 @@ impl Source for FilesystemSource {
             config: &FilesystemWalkConfig,
             discovery_budget: &mut Option<u64>,
             discovery_limit_reached: &AtomicBool,
+            tracker: &discovery::DiscoveryTracker,
         ) -> (Vec<codewalk::FileEntry>, Vec<SourceError>) {
             // Walking and walk-time filtering (gitignore, default excludes).
             let _walk = crate::profile::walk_span();
@@ -968,7 +980,7 @@ impl Source for FilesystemSource {
             };
             // A discovery budget is charged in arrival order and stops at the
             // first crossing entry, so bounded discovery remains serial.
-            discovery::walk_metadata(root, config, &mut admit);
+            discovery::walk_metadata_tracked(root, config, tracker, &mut admit);
             entries.sort_by(|left, right| left.path.cmp(&right.path));
             (entries, source_errors)
         }
@@ -1072,6 +1084,7 @@ impl Source for FilesystemSource {
                         &config,
                         &mut discovery_budget,
                         &self.discovery_limit_reached,
+                        &self.discovery_tracker,
                     );
                     include_entries.extend(sub_entries);
                     source_errors.extend(sub_errors);
@@ -1080,20 +1093,21 @@ impl Source for FilesystemSource {
                     }
                 } else if path.is_file() {
                     match std::fs::metadata(&path) {
-                        Ok(meta) => include_entries.push(codewalk::FileEntry {
-                            path,
-                            size: meta.len(),
-                            // `is_binary` is a walk-time hint codewalk fills for
-                            // directory walks. For an EXPLICITLY-included single
-                            // file the user asked us to scan, leave it false:
-                            // keyhog never reads this field (it does its own
-                            // null-byte binary check at read time in this same
-                            // file), so the hint is inert and `false` keeps the
-                            // requested file in the scan set. (Required field
-                            // since codewalk 0.2.5; omitting it broke every
-                            // fresh keyhog-sources compile.)
-                            is_binary: false,
-                        }),
+                        Ok(meta) => {
+                            self.discovery_tracker.record_file_metadata(true);
+                            include_entries.push(codewalk::FileEntry {
+                                path,
+                                size: meta.len(),
+                                // `is_binary` is a walk-time hint codewalk fills for
+                                // directory walks. For an EXPLICITLY-included single
+                                // file the user asked us to scan, leave it false:
+                                // keyhog never reads this field (it does its own
+                                // null-byte binary check at read time in this same
+                                // file), so the hint is inert and `false` keeps the
+                                // requested file in the scan set.
+                                is_binary: false,
+                            });
+                        }
                         // Law 10: the user EXPLICITLY --include'd this file but
                         // `stat` failed (permission / I/O / race-delete). A
                         // silent `empty()` here drops a requested file while the
@@ -1102,6 +1116,7 @@ impl Source for FilesystemSource {
                         // unreadable so `report_skip_summary` surfaces the gap
                         // (the same counter the archive-symlink refusal above uses).
                         Err(e) => {
+                            self.discovery_tracker.record_file_metadata(false);
                             tracing::warn!(
                                 path = %path.display(),
                                 error = %e,
@@ -1122,6 +1137,7 @@ impl Source for FilesystemSource {
                     // and this walk. The user named it, so a silent drop would
                     // again read as "clean", count it unreadable so the gap is
                     // surfaced rather than swallowed (Law 10).
+                    self.discovery_tracker.record_error();
                     tracing::warn!(
                         path = %path.display(),
                         "explicitly --include'd path is neither a file nor a directory; NOT scanned"
@@ -1151,6 +1167,7 @@ impl Source for FilesystemSource {
                     &config,
                     &mut discovery_budget,
                     &self.discovery_limit_reached,
+                    &self.discovery_tracker,
                 );
                 source_errors.extend(walk_errors);
                 crate::profile::add_input_units(walk_entries.len() as u64);
@@ -1164,6 +1181,7 @@ impl Source for FilesystemSource {
                         &self.root,
                         &config,
                         !self.ignore_paths.is_empty(),
+                        &self.discovery_tracker,
                     );
                 source_errors.extend(walk_errors);
                 crate::profile::add_input_units(input_units as u64);

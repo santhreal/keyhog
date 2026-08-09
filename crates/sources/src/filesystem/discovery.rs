@@ -162,7 +162,7 @@ fn configured_walk_builder(root: &Path, config: &FilesystemWalkConfig) -> ignore
     builder
 }
 
-fn validate_walk_root(root: &Path) -> Result<(), String> {
+fn validate_walk_root(root: &Path, tracker: Option<&DiscoveryTracker>) -> Result<(), String> {
     let mut current = PathBuf::new();
     for component in root.components() {
         current.push(component.as_os_str());
@@ -173,6 +173,11 @@ fn validate_walk_root(root: &Path) -> Result<(), String> {
                 | std::path::Component::CurDir
         ) {
             continue;
+        }
+        if let Some(tracker) = tracker {
+            tracker
+                .root_components_inspected
+                .fetch_add(1, AtomicOrdering::Relaxed);
         }
         let metadata = std::fs::symlink_metadata(&current).map_err(|error| {
             format!(
@@ -192,41 +197,63 @@ fn validate_walk_root(root: &Path) -> Result<(), String> {
 
 fn metadata_walk_result(
     result: Result<ignore::DirEntry, ignore::Error>,
+    tracker: Option<&DiscoveryTracker>,
 ) -> Option<MetadataWalkResult> {
     let entry = match result {
         Ok(entry) => entry,
-        Err(error) => return Some(Err(error.to_string())),
+        Err(error) => {
+            if let Some(tracker) = tracker {
+                tracker.errors.fetch_add(1, AtomicOrdering::Relaxed);
+            }
+            return Some(Err(error.to_string()));
+        }
     };
+    if entry
+        .file_type()
+        .is_some_and(|file_type| file_type.is_dir())
+    {
+        if let Some(tracker) = tracker {
+            tracker
+                .directories_seen
+                .fetch_add(1, AtomicOrdering::Relaxed);
+        }
+        return None;
+    }
     if !entry
         .file_type()
         .is_some_and(|file_type| file_type.is_file())
     {
         return None;
     }
-    Some(
-        entry
-            .metadata()
-            .map(|metadata| FileEntry {
+    if let Some(tracker) = tracker {
+        tracker
+            .file_metadata_requests
+            .fetch_add(1, AtomicOrdering::Relaxed);
+    }
+    Some(match entry.metadata() {
+        Ok(metadata) => {
+            if let Some(tracker) = tracker {
+                tracker.files_admitted.fetch_add(1, AtomicOrdering::Relaxed);
+            }
+            Ok(FileEntry {
                 path: entry.into_path(),
                 size: metadata.len(),
                 is_binary: false,
             })
-            .map_err(|error| error.to_string()),
-    )
-}
-
-pub(super) fn walk_metadata(
-    root: &Path,
-    config: &FilesystemWalkConfig,
-    visit: impl FnMut(MetadataWalkResult) -> bool,
-) {
-    walk_metadata_tracked_opt(root, config, None, visit);
+        }
+        Err(error) => {
+            if let Some(tracker) = tracker {
+                tracker.errors.fetch_add(1, AtomicOrdering::Relaxed);
+            }
+            Err(error.to_string())
+        }
+    })
 }
 
 pub(super) fn walk_metadata_tracked(
     root: &Path,
     config: &FilesystemWalkConfig,
-    tracker: &DiscoverySyscallTracker,
+    tracker: &DiscoveryTracker,
     visit: impl FnMut(MetadataWalkResult) -> bool,
 ) {
     walk_metadata_tracked_opt(root, config, Some(tracker), visit);
@@ -235,32 +262,30 @@ pub(super) fn walk_metadata_tracked(
 fn walk_metadata_tracked_opt(
     root: &Path,
     config: &FilesystemWalkConfig,
-    tracker: Option<&DiscoverySyscallTracker>,
+    tracker: Option<&DiscoveryTracker>,
     mut visit: impl FnMut(MetadataWalkResult) -> bool,
 ) {
-    if let Err(error) = validate_walk_root(root) {
-        if let Some(t) = tracker {
-            t.record_statx();
+    if let Err(error) = validate_walk_root(root, tracker) {
+        if let Some(tracker) = tracker {
+            tracker.errors.fetch_add(1, AtomicOrdering::Relaxed);
         }
         visit(Err(error));
         return;
     }
-    if let Some(t) = tracker {
-        t.record_open();
-    }
-    for result in configured_walk_builder(root, config)
-        .build()
-        .filter_map(metadata_walk_result)
-    {
-        if let Some(t) = tracker {
-            t.record_statx();
+    for result in configured_walk_builder(root, config).build() {
+        if let Some(tracker) = tracker {
+            tracker
+                .walk_entries_seen
+                .fetch_add(1, AtomicOrdering::Relaxed);
         }
-        if !visit(result) {
-            break;
+        if let Some(item) = metadata_walk_result(result, tracker) {
+            if !visit(item) {
+                if let Some(tracker) = tracker {
+                    tracker.early_stops.fetch_add(1, AtomicOrdering::Relaxed);
+                }
+                break;
+            }
         }
-    }
-    if let Some(t) = tracker {
-        t.record_close();
     }
 }
 
@@ -273,6 +298,7 @@ pub(super) fn collect_unbounded_sorted(
     root: &Path,
     config: &FilesystemWalkConfig,
     has_ignore_patterns: bool,
+    tracker: &DiscoveryTracker,
 ) -> (SortedEntries, Vec<SourceError>, usize, u64) {
     let _walk = crate::profile::walk_span();
     let mut errors = Vec::new();
@@ -297,7 +323,7 @@ pub(super) fn collect_unbounded_sorted(
     let can_walk = true;
 
     if can_walk {
-        walk_metadata(root, config, |result| {
+        walk_metadata_tracked(root, config, tracker, |result| {
             match result {
                 Ok(entry) => {
                     let size = entry.size;
@@ -782,59 +808,67 @@ fn metadata_limit_error() -> SourceError {
             .to_owned(),
     )
 }
-/// Syscall tracker for filesystem discovery benchmark harness.
-#[derive(Debug, Default)]
-pub struct DiscoverySyscallTracker {
-    pub statx_count: AtomicU64,
-    pub futex_count: AtomicU64,
-    pub open_count: AtomicU64,
-    pub read_count: AtomicU64,
-    pub close_count: AtomicU64,
+/// Source-level counters emitted by the production metadata discovery walk.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DiscoveryCounts {
+    pub root_components_inspected: u64,
+    pub walk_entries_seen: u64,
+    pub directories_seen: u64,
+    pub file_metadata_requests: u64,
+    pub files_admitted: u64,
+    pub errors: u64,
+    pub early_stops: u64,
 }
 
-impl DiscoverySyscallTracker {
-    pub fn new() -> Self {
-        Self::default()
-    }
+#[derive(Debug, Default)]
+pub(super) struct DiscoveryTracker {
+    root_components_inspected: AtomicU64,
+    walk_entries_seen: AtomicU64,
+    directories_seen: AtomicU64,
+    file_metadata_requests: AtomicU64,
+    files_admitted: AtomicU64,
+    errors: AtomicU64,
+    early_stops: AtomicU64,
+}
 
-    pub fn record_statx(&self) {
-        self.statx_count.fetch_add(1, AtomicOrdering::Relaxed);
-    }
-
-    pub fn record_futex(&self) {
-        self.futex_count.fetch_add(1, AtomicOrdering::Relaxed);
-    }
-
-    pub fn record_open(&self) {
-        self.open_count.fetch_add(1, AtomicOrdering::Relaxed);
-    }
-
-    pub fn record_read(&self) {
-        self.read_count.fetch_add(1, AtomicOrdering::Relaxed);
-    }
-
-    pub fn record_close(&self) {
-        self.close_count.fetch_add(1, AtomicOrdering::Relaxed);
-    }
-
-    pub fn snapshot(&self) -> SyscallCounts {
-        SyscallCounts {
-            statx: self.statx_count.load(AtomicOrdering::Relaxed),
-            futex: self.futex_count.load(AtomicOrdering::Relaxed),
-            open: self.open_count.load(AtomicOrdering::Relaxed),
-            read: self.read_count.load(AtomicOrdering::Relaxed),
-            close: self.close_count.load(AtomicOrdering::Relaxed),
+impl DiscoveryTracker {
+    pub(super) fn snapshot(&self) -> DiscoveryCounts {
+        DiscoveryCounts {
+            root_components_inspected: self.root_components_inspected.load(AtomicOrdering::Relaxed),
+            walk_entries_seen: self.walk_entries_seen.load(AtomicOrdering::Relaxed),
+            directories_seen: self.directories_seen.load(AtomicOrdering::Relaxed),
+            file_metadata_requests: self.file_metadata_requests.load(AtomicOrdering::Relaxed),
+            files_admitted: self.files_admitted.load(AtomicOrdering::Relaxed),
+            errors: self.errors.load(AtomicOrdering::Relaxed),
+            early_stops: self.early_stops.load(AtomicOrdering::Relaxed),
         }
     }
-}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SyscallCounts {
-    pub statx: u64,
-    pub futex: u64,
-    pub open: u64,
-    pub read: u64,
-    pub close: u64,
+    pub(super) fn record_error(&self) {
+        self.errors.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+
+    pub(super) fn record_file_metadata(&self, admitted: bool) {
+        self.file_metadata_requests
+            .fetch_add(1, AtomicOrdering::Relaxed);
+        if admitted {
+            self.files_admitted.fetch_add(1, AtomicOrdering::Relaxed);
+        } else {
+            self.errors.fetch_add(1, AtomicOrdering::Relaxed);
+        }
+    }
+
+    pub(super) fn reset(&self) {
+        self.root_components_inspected
+            .store(0, AtomicOrdering::Relaxed);
+        self.walk_entries_seen.store(0, AtomicOrdering::Relaxed);
+        self.directories_seen.store(0, AtomicOrdering::Relaxed);
+        self.file_metadata_requests
+            .store(0, AtomicOrdering::Relaxed);
+        self.files_admitted.store(0, AtomicOrdering::Relaxed);
+        self.errors.store(0, AtomicOrdering::Relaxed);
+        self.early_stops.store(0, AtomicOrdering::Relaxed);
+    }
 }
 
 #[cfg(test)]
@@ -842,34 +876,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_discovery_syscall_tracker() {
+    fn tracked_walk_counts_production_events_and_early_termination() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let file_path = temp_dir.path().join("sample.txt");
-        std::fs::write(&file_path, "hello world").unwrap();
+        let sub_dir = temp_dir.path().join("sub");
+        std::fs::create_dir(&sub_dir).unwrap();
+        std::fs::write(temp_dir.path().join("sample1.txt"), "hello world").unwrap();
+        std::fs::write(sub_dir.join("sample2.txt"), "nested hello").unwrap();
 
-        let tracker = DiscoverySyscallTracker::new();
+        let tracker = DiscoveryTracker::default();
         let config = super::super::filter::walker_config(0, &[], true);
-        walk_metadata_tracked(temp_dir.path(), &config, &tracker, |_| true);
+        walk_metadata_tracked(temp_dir.path(), &config, &tracker, |_| false);
 
-        let snap = tracker.snapshot();
-        assert!(
-            snap.statx > 0,
-            "statx count must be > 0 from real discovery walk, got {}",
-            snap.statx
-        );
-        assert!(
-            snap.open > 0,
-            "open count must be > 0 from real discovery walk, got {}",
-            snap.open
-        );
-        assert!(
-            snap.close > 0,
-            "close count must be > 0 from real discovery walk, got {}",
-            snap.close
-        );
-        assert_eq!(
-            snap.read, 0,
-            "metadata discovery must perform zero read(2) syscalls"
-        );
+        let counts = tracker.snapshot();
+        assert!(counts.root_components_inspected > 0);
+        assert!(counts.walk_entries_seen >= 2);
+        assert!(counts.directories_seen >= 1);
+        assert_eq!(counts.file_metadata_requests, 1);
+        assert_eq!(counts.files_admitted, 1);
+        assert_eq!(counts.errors, 0);
+        assert_eq!(counts.early_stops, 1);
+    }
+
+    #[test]
+    fn tracked_walk_records_root_validation_failure_without_walker_events() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let missing = temp_dir.path().join("missing");
+        let tracker = DiscoveryTracker::default();
+        let config = super::super::filter::walker_config(0, &[], true);
+        let mut errors = Vec::new();
+        walk_metadata_tracked(&missing, &config, &tracker, |result| {
+            errors.push(result.unwrap_err());
+            true
+        });
+
+        let counts = tracker.snapshot();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.walk_entries_seen, 0);
+        assert_eq!(counts.files_admitted, 0);
     }
 }

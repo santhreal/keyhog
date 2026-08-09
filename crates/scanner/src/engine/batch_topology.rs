@@ -67,11 +67,12 @@ impl BatchTopology {
             };
         }
 
-        // Deterministic lane width calculation based on small chunk distribution
+        // Scheduling groups contiguous chunks in one sequential lane. Bound
+        // every possible lane by the largest admitted chunk, not the average:
+        // averages let one skewed small-chunk batch exceed the lane ceiling.
         let raw_lane_width = evidence.total_chunks.div_ceil(workers);
-        let avg_bytes = evidence.total_bytes / evidence.total_chunks;
-        let bytes_bounded_width = if avg_bytes > 0 {
-            (MAX_LANE_BYTES_TARGET / avg_bytes).max(1)
+        let bytes_bounded_width = if evidence.max_chunk_bytes > 0 {
+            (MAX_LANE_BYTES_TARGET / evidence.max_chunk_bytes).max(1)
         } else {
             raw_lane_width
         };

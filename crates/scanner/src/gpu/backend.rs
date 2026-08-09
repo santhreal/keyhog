@@ -5,7 +5,7 @@
 
 mod acquisition;
 #[cfg(feature = "gpu")]
-pub(crate) mod resident_evidence;
+mod resident_evidence;
 
 #[cfg(all(test, feature = "gpu", target_os = "linux"))]
 pub(crate) use acquisition::load_dynamic_library;

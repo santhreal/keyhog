@@ -232,6 +232,14 @@ const MAX_IDLE_CANDIDATE_SCRATCH_BUFFERS: usize = 4;
 static CANDIDATE_SCRATCH_POOL: std::sync::Mutex<Vec<Vec<(u32, u32)>>> =
     std::sync::Mutex::new(Vec::new());
 
+fn release_idle_candidate_scratch() {
+    CANDIDATE_SCRATCH_POOL
+        .lock()
+        // LAW10: poison recovery still drops every idle scratch allocation.
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+}
+
 pub(crate) fn with_candidate_scratch<R>(f: impl FnOnce(&mut Vec<(u32, u32)>) -> R) -> R {
     let mut values = CANDIDATE_SCRATCH_POOL
         .lock()
@@ -489,15 +497,16 @@ impl CompiledScanner {
         self.backend_state.gpu_backend(backend)
     }
 
-    /// Bound per-partition state and release unused capacity so isolated max RSS
-    /// stays below 128 MiB across independent concurrent partitions.
-    pub fn bound_partition_memory(&mut self) {
-        self.ac_map.shrink_to_fit();
-        self.phase2_patterns.shrink_to_fit();
-        self.hot_confirmed_by_pattern.shrink_to_fit();
+    /// End one caller-defined scan partition.
+    ///
+    /// This clears the only mutable state whose contents cross scan calls:
+    /// fragment reassembly, reusable phase-one evidence, and idle candidate
+    /// scratch. Immutable detector programs and backend residency belong to the
+    /// scanner lifetime, not a partition, and remain available for the next call.
+    pub fn finish_partition(&self) {
         self.fragment_cache.clear();
-        let phase1_cache = self.reusable_phase1_evidence.get_mut();
-        phase1_cache.clear();
+        self.reusable_phase1_evidence.lock().clear();
+        release_idle_candidate_scratch();
     }
 }
 
@@ -739,8 +748,8 @@ mod max_inner_loop_iters_tests {
         assert_eq!(super::boundary::MAX_BOUNDARY_SEAM_BYTES, 128 * 1024);
     }
     #[test]
-    fn bound_partition_memory_clears_fragment_cache() {
-        let mut scanner = super::CompiledScanner::compile_for_backend(
+    fn finish_partition_clears_every_cross_call_cache() {
+        let scanner = super::CompiledScanner::compile_for_backend(
             vec![],
             crate::hw_probe::ScanBackend::CpuFallback,
         )
@@ -756,21 +765,19 @@ mod max_inner_loop_iters_tests {
                 path: Some("src/main.rs".into()),
             });
         let (len_before, _, _) = scanner.fragment_cache.storage_for_test();
-        assert!(
-            len_before > 0,
-            "fragment cache should contain recorded fragment before bounding"
-        );
+        assert!(len_before > 0);
 
-        scanner.bound_partition_memory();
+        super::with_candidate_scratch(|scratch| {
+            scratch.reserve_exact(1_024);
+            scratch.push((1, 2));
+        });
+        assert!(super::candidate_scratch_idle_count_for_test() > 0);
+
+        scanner.finish_partition();
 
         let (len_after, _, _) = scanner.fragment_cache.storage_for_test();
-        assert_eq!(
-            len_after, 0,
-            "bound_partition_memory must clear fragment cache"
-        );
-        assert!(
-            scanner.reusable_phase1_evidence.get_mut().is_empty(),
-            "bound_partition_memory must clear phase1 evidence cache"
-        );
+        assert_eq!(len_after, 0);
+        assert!(scanner.reusable_phase1_evidence.lock().is_empty());
+        assert_eq!(super::candidate_scratch_idle_count_for_test(), 0);
     }
 }

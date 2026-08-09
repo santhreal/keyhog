@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.69 - 2026-08-09
+
+- Bound batch lane memory by the largest chunk, expose `finish_partition` to release cross-partition caches, retain production GPU overlap evidence through dispatch retirement, and verify that linked or packaged GPU kernels remain VYRE-owned.
+
 ## 0.5.68 - 2026-08-05
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.
