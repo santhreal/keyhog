@@ -1351,7 +1351,6 @@ impl RegexKind {
     }
 }
 
-
 fn validate_regex_definition<'a>(
     kind: RegexKind,
     index: usize,

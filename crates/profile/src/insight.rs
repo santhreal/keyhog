@@ -802,14 +802,12 @@ fn derive_memory(
         match &profile.system {
             Evidence::Recorded { value } => {
                 let totals = match &value.allocation.totals {
-                    Evidence::Recorded { value } => {
-                        (
-                            value.allocations,
-                            value.allocated_bytes,
-                            value.deallocated_bytes,
-                            value.peak_live_bytes,
-                        )
-                    }
+                    Evidence::Recorded { value } => (
+                        value.allocations,
+                        value.allocated_bytes,
+                        value.deallocated_bytes,
+                        value.peak_live_bytes,
+                    ),
                     Evidence::Unavailable { .. } => (0, 0, 0, 0),
                 };
                 let mut stages: Vec<StageMemoryV2> = value
@@ -850,8 +848,7 @@ fn derive_memory(
         amplification_milli: milli(peak_resident_bytes, input_bytes),
         scanner_threads,
         resident_per_scanner_thread_bytes: peak_resident_bytes / scanner_threads.max(1),
-        input_driven_per_scanner_thread_bytes: input_driven_resident_bytes
-            / scanner_threads.max(1),
+        input_driven_per_scanner_thread_bytes: input_driven_resident_bytes / scanner_threads.max(1),
         allocations,
         allocated_bytes,
         deallocated_bytes,
@@ -884,10 +881,8 @@ fn overlapping_work_ns(
             // entered recursively on one thread cannot drown out a barrier it
             // sits inside.
             let density_milli = other.concurrency_milli;
-            let share = u64::try_from(
-                (u128::from(density_milli) * u128::from(overlap)) / 1_000,
-            )
-            .unwrap_or(u64::MAX);
+            let share = u64::try_from((u128::from(density_milli) * u128::from(overlap)) / 1_000)
+                .unwrap_or(u64::MAX);
             total.saturating_add(share)
         })
 }
@@ -919,48 +914,43 @@ fn derive_serial(
         .iter()
         .fold(0_u64, |total, region| total.saturating_add(region.wall_ns));
 
-    regions.extend(
-        profile
-            .stage_concurrency
-            .iter()
-            .filter_map(|stage| {
-                if stage.window_ns == 0 {
-                    return None;
-                }
-                let share_ppm = ppm(stage.window_ns, wall_ns);
-                if share_ppm < SERIAL_REPORT_SHARE_PPM {
-                    return None;
-                }
-                let other_ns = overlapping_work_ns(&profile.stage_concurrency, stage);
-                let own_ns = u64::try_from(
-                    (u128::from(stage.concurrency_milli) * u128::from(stage.window_ns)) / 1_000,
-                )
-                .unwrap_or(u64::MAX);
-                let exclusivity_ppm = ppm(own_ns, own_ns.saturating_add(other_ns));
-                // Three conditions, and all three are needed. Concurrency near
-                // one rules out a sparse stage that merely spans a long window.
-                // Exclusivity rules out an inclusive wrapper whose children are
-                // the parallel work. A declaration overrides both because the
-                // caller knows something the aggregates cannot show.
-                let looks_serial = stage.concurrency_milli >= SERIAL_FLOOR_MILLI
-                    && stage.concurrency_milli < SERIAL_CONCURRENCY_MILLI
-                    && exclusivity_ppm >= SERIAL_EXCLUSIVITY_PPM;
-                if !looks_serial && stage.declared_serial_calls == 0 {
-                    return None;
-                }
-                Some(SerialRegionV2 {
-                    version: RUN_INSIGHT_V2_VERSION,
-                    scope: SerialScopeV2::Stage,
-                    subject: stage.metric_id.as_str().to_owned(),
-                    wall_ns: stage.window_ns,
-                    share_ppm,
-                    concurrency_milli: stage.concurrency_milli,
-                    worker_count: stage.worker_count,
-                    exclusivity_ppm,
-                    declared: stage.declared_serial_calls != 0,
-                })
-            }),
-    );
+    regions.extend(profile.stage_concurrency.iter().filter_map(|stage| {
+        if stage.window_ns == 0 {
+            return None;
+        }
+        let share_ppm = ppm(stage.window_ns, wall_ns);
+        if share_ppm < SERIAL_REPORT_SHARE_PPM {
+            return None;
+        }
+        let other_ns = overlapping_work_ns(&profile.stage_concurrency, stage);
+        let own_ns = u64::try_from(
+            (u128::from(stage.concurrency_milli) * u128::from(stage.window_ns)) / 1_000,
+        )
+        .unwrap_or(u64::MAX);
+        let exclusivity_ppm = ppm(own_ns, own_ns.saturating_add(other_ns));
+        // Three conditions, and all three are needed. Concurrency near
+        // one rules out a sparse stage that merely spans a long window.
+        // Exclusivity rules out an inclusive wrapper whose children are
+        // the parallel work. A declaration overrides both because the
+        // caller knows something the aggregates cannot show.
+        let looks_serial = stage.concurrency_milli >= SERIAL_FLOOR_MILLI
+            && stage.concurrency_milli < SERIAL_CONCURRENCY_MILLI
+            && exclusivity_ppm >= SERIAL_EXCLUSIVITY_PPM;
+        if !looks_serial && stage.declared_serial_calls == 0 {
+            return None;
+        }
+        Some(SerialRegionV2 {
+            version: RUN_INSIGHT_V2_VERSION,
+            scope: SerialScopeV2::Stage,
+            subject: stage.metric_id.as_str().to_owned(),
+            wall_ns: stage.window_ns,
+            share_ppm,
+            concurrency_milli: stage.concurrency_milli,
+            worker_count: stage.worker_count,
+            exclusivity_ppm,
+            declared: stage.declared_serial_calls != 0,
+        })
+    }));
     regions.sort_by(|left, right| {
         right
             .wall_ns
@@ -1024,7 +1014,10 @@ fn derive_parallelism(
         idle_share_ppm: ppm(idle_ns, worker_capacity_ns),
         busiest_busy_ns,
         median_busy_ns,
-        imbalance_ppm: ppm(busiest_busy_ns.saturating_sub(median_busy_ns), busiest_busy_ns),
+        imbalance_ppm: ppm(
+            busiest_busy_ns.saturating_sub(median_busy_ns),
+            busiest_busy_ns,
+        ),
         busy_off_cpu_ns: instrumented_busy_ns.saturating_sub(process_cpu_ns),
         source_blocked_ns: blocked_ns_for(MetricId::SourceQueueWait),
         scanner_blocked_ns: blocked_ns_for(MetricId::ScannerQueueWait),
@@ -1105,13 +1098,15 @@ fn derive_backends(profile: &CausalProfileV2) -> Vec<BackendAttributionV2> {
     let batch_total = totals.iter().fold(0_u64, |total, entry| total + entry.1);
     let mut rows: Vec<BackendAttributionV2> = totals
         .into_iter()
-        .map(|(backend, batches, recovered_batches)| BackendAttributionV2 {
-            version: RUN_INSIGHT_V2_VERSION,
-            backend,
-            batches,
-            recovered_batches,
-            share_ppm: ppm(batches, batch_total),
-        })
+        .map(
+            |(backend, batches, recovered_batches)| BackendAttributionV2 {
+                version: RUN_INSIGHT_V2_VERSION,
+                backend,
+                batches,
+                recovered_batches,
+                share_ppm: ppm(batches, batch_total),
+            },
+        )
         .collect();
     rows.sort_by(|left, right| {
         right
@@ -1150,8 +1145,7 @@ fn derive_coverage(
     }
     let worker_occupancy = parallelism.worker_count != 0;
     if !worker_occupancy {
-        notes
-            .push("no worker shard registered, so busy versus idle time is absent".to_owned());
+        notes.push("no worker shard registered, so busy versus idle time is absent".to_owned());
     }
     if parallelism.process_cpu_ns == 0 {
         notes.push(

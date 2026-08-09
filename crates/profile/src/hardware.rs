@@ -22,8 +22,6 @@ mod windows;
 use linux as platform;
 #[cfg(all(feature = "hardware-counters", target_os = "macos"))]
 use macos as platform;
-#[cfg(all(feature = "hardware-counters", windows))]
-use windows as platform;
 #[cfg(any(
     not(feature = "hardware-counters"),
     all(
@@ -32,6 +30,8 @@ use windows as platform;
     )
 ))]
 use stubs as platform;
+#[cfg(all(feature = "hardware-counters", windows))]
+use windows as platform;
 
 pub const HARDWARE_EVIDENCE_V2_VERSION: u16 = 1;
 pub const SPAN_HARDWARE_V2_VERSION: u16 = 1;
@@ -109,16 +109,14 @@ pub fn milli_ratio(numerator: u64, denominator: u64) -> Option<u64> {
     if denominator == 0 {
         return None;
     }
-    Some(
-        u64::try_from(u128::from(numerator) * 1_000 / u128::from(denominator))
-            .unwrap_or(u64::MAX),
-    )
+    Some(u64::try_from(u128::from(numerator) * 1_000 / u128::from(denominator)).unwrap_or(u64::MAX))
 }
 
 fn milli_ratio_evidence(numerator: &Evidence<u64>, denominator: &Evidence<u64>) -> Evidence<u64> {
     match (numerator, denominator) {
         (Evidence::Recorded { value: top }, Evidence::Recorded { value: bottom }) => {
-            milli_ratio(*top, *bottom).map_or_else(|| gap(EvidenceGap::Unavailable), Evidence::recorded)
+            milli_ratio(*top, *bottom)
+                .map_or_else(|| gap(EvidenceGap::Unavailable), Evidence::recorded)
         }
         (Evidence::Unavailable { reason }, _) => gap(*reason),
         (_, Evidence::Unavailable { reason }) => gap(*reason),
@@ -780,7 +778,8 @@ impl HardwareSession {
         if self.utilization_samples.len() == MAX_UTILIZATION_SAMPLES {
             self.dropped_utilization_samples = self.dropped_utilization_samples.saturating_add(1);
         } else {
-            self.utilization_samples.push(self.utilization_collector.sample());
+            self.utilization_samples
+                .push(self.utilization_collector.sample());
         }
         if self.frequency_samples.len() == MAX_UTILIZATION_SAMPLES {
             self.dropped_frequency_samples = self.dropped_frequency_samples.saturating_add(1);
@@ -835,9 +834,10 @@ impl HardwareSession {
             &self.utilization_samples,
             self.dropped_utilization_samples,
             wall_ns,
-            self.topology
-                .as_ref()
-                .map_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get() as u32), |t| t.logical_cpus),
+            self.topology.as_ref().map_or_else(
+                || std::thread::available_parallelism().map_or(1, |n| n.get() as u32),
+                |t| t.logical_cpus,
+            ),
             std::mem::take(&mut self.frequency_samples),
             self.dropped_frequency_samples,
         );
@@ -863,14 +863,26 @@ fn record_hardware_counters(
 ) {
     let pairs: [(&SourcedEvidenceV2<u64>, crate::CounterId); 12] = [
         (&counters.cycles, crate::CounterId::HardwareCycles),
-        (&counters.instructions, crate::CounterId::HardwareInstructions),
-        (&counters.cache_references, crate::CounterId::HardwareCacheReferences),
-        (&counters.cache_misses, crate::CounterId::HardwareCacheMisses),
+        (
+            &counters.instructions,
+            crate::CounterId::HardwareInstructions,
+        ),
+        (
+            &counters.cache_references,
+            crate::CounterId::HardwareCacheReferences,
+        ),
+        (
+            &counters.cache_misses,
+            crate::CounterId::HardwareCacheMisses,
+        ),
         (
             &counters.branch_instructions,
             crate::CounterId::HardwareBranchInstructions,
         ),
-        (&counters.branch_misses, crate::CounterId::HardwareBranchMisses),
+        (
+            &counters.branch_misses,
+            crate::CounterId::HardwareBranchMisses,
+        ),
         (
             &counters.stalled_cycles_frontend,
             crate::CounterId::HardwareStalledCyclesFrontend,
@@ -887,8 +899,14 @@ fn record_hardware_counters(
             &scheduler.involuntary_context_switches,
             crate::CounterId::SchedulerInvoluntaryContextSwitches,
         ),
-        (&scheduler.cpu_migrations, crate::CounterId::SchedulerCpuMigrations),
-        (&scheduler.scheduler_delay_ns, crate::CounterId::SchedulerDelayNs),
+        (
+            &scheduler.cpu_migrations,
+            crate::CounterId::SchedulerCpuMigrations,
+        ),
+        (
+            &scheduler.scheduler_delay_ns,
+            crate::CounterId::SchedulerDelayNs,
+        ),
     ];
     for (field, counter) in pairs {
         if let Evidence::Recorded { value } = field.value {
@@ -931,8 +949,11 @@ fn compute_utilization(
         .iter()
         .map(|thread| (thread.thread_id, thread.cpu_time_ns))
         .collect();
-    let first_ids: std::collections::BTreeSet<u64> =
-        first.threads.iter().map(|thread| thread.thread_id).collect();
+    let first_ids: std::collections::BTreeSet<u64> = first
+        .threads
+        .iter()
+        .map(|thread| thread.thread_id)
+        .collect();
     let mut threads = Vec::new();
     let mut exited_threads = 0_u64;
     let mut total = 0_u64;
@@ -1112,7 +1133,8 @@ mod stubs {
 
     pub(super) fn capture_topology() -> TopologyEvidenceV2 {
         let reason = stub_reason();
-        let logical_cpus = std::thread::available_parallelism().map_or(1, |count| count.get() as u32);
+        let logical_cpus =
+            std::thread::available_parallelism().map_or(1, |count| count.get() as u32);
         TopologyEvidenceV2 {
             version: HARDWARE_EVIDENCE_V2_VERSION,
             logical_cpus,

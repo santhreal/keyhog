@@ -31,7 +31,7 @@
 //! Feature gate: `redact_url` is exposed on the facade under `feature = "web"`,
 //! which is a default source feature, so this runs in the base `all_tests` step.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use proptest::prelude::*;
 
 /// The sensitive query-parameter keys, mirrored from `url_redaction.rs`'s

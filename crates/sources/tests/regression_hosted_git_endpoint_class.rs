@@ -23,7 +23,7 @@
 //! exact `is_private_url` boolean.
 #![cfg(all(feature = "github", feature = "gitlab", feature = "bitbucket"))]
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_verifier::ssrf::is_private_url;
 
 // ---------------------------------------------------------------------------

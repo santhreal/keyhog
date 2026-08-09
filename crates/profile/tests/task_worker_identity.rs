@@ -2,7 +2,7 @@
 
 use keyhog_profile::{
     current_task_id, instrument_future, record_annotation, record_event, set_task_id, span,
-    AnnotationId, Evidence, EvidenceGap, EventId, MetricId, RunIdentity, RunState, Session,
+    AnnotationId, EventId, Evidence, EvidenceGap, MetricId, RunIdentity, RunState, Session,
     SpanRecordV2, Stage, WorkOrigin,
 };
 use std::future::Future;
@@ -121,10 +121,7 @@ fn task_identity_propagates_across_spawned_future() {
     let (events, _, _) = runtime.take_session_typed_events();
     assert_eq!(events.len(), 1);
     assert_eq!(recorded(&events[0].task_id), Some(7));
-    assert_eq!(
-        recorded(&events[0].worker_id),
-        recorded(&child.worker_id)
-    );
+    assert_eq!(recorded(&events[0].worker_id), recorded(&child.worker_id));
     let _ = session.finish(RunState::Completed);
 }
 
@@ -139,9 +136,15 @@ fn records_without_task_identity_report_unavailable() {
 
     let (spans, _) = runtime.take_session_span_records();
     assert_eq!(spans.len(), 1);
-    assert_eq!(spans[0].task_id, Evidence::unavailable(EvidenceGap::Unavailable));
+    assert_eq!(
+        spans[0].task_id,
+        Evidence::unavailable(EvidenceGap::Unavailable)
+    );
     let (events, _, _) = runtime.take_session_typed_events();
-    assert_eq!(events[0].task_id, Evidence::unavailable(EvidenceGap::Unavailable));
+    assert_eq!(
+        events[0].task_id,
+        Evidence::unavailable(EvidenceGap::Unavailable)
+    );
     let _ = session.finish(RunState::Completed);
 }
 

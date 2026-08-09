@@ -13,7 +13,6 @@
 //! alone is enough to suppress datadog. The question is now the one that
 //! matters, which is simply whether a prefixless pattern declares a literal.
 
-
 use keyhog_scanner::testing::extract_literal_prefixes;
 
 /// Patterns that genuinely cannot declare a routing literal.

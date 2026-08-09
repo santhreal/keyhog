@@ -10,7 +10,10 @@ use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
 fn aws_key_line() -> String {
-    format!("AWS_ACCESS_KEY_ID = \"{}\"\n", concat!("ASIA", "Y34FZKBOKMUTVV7A"))
+    format!(
+        "AWS_ACCESS_KEY_ID = \"{}\"\n",
+        concat!("ASIA", "Y34FZKBOKMUTVV7A")
+    )
 }
 
 /// Every caller of this helper drives the daemon route, so `--daemon=on` is
@@ -127,11 +130,7 @@ fn daemon_profile_renders_isolated_request_profile() {
 #[test]
 fn daemon_scan_without_profile_emits_no_request_profile_lines() {
     let daemon = DaemonGuard::start_cpu();
-    let out = daemon_scan(
-        daemon.runtime_dir(),
-        &[],
-        aws_key_line().as_bytes(),
-    );
+    let out = daemon_scan(daemon.runtime_dir(), &[], aws_key_line().as_bytes());
 
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(

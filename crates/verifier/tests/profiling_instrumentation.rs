@@ -17,7 +17,9 @@ use keyhog_core::{
     SensitiveString, Severity, SuccessSpec, VerificationResult, VerifySpec,
 };
 use keyhog_profile::{AnnotationId, Stage};
-use keyhog_verifier::testing::{TestApi, TestVerificationCache, VerifierTestApi, VerifierTestCache};
+use keyhog_verifier::testing::{
+    TestApi, TestVerificationCache, VerifierTestApi, VerifierTestCache,
+};
 use keyhog_verifier::{VerificationEngine, VerifyConfig};
 
 /// Run `f` with a recording runtime current on this thread, then drain the
@@ -201,8 +203,7 @@ async fn instrument_future_records_async_verify_work() {
     keyhog_profile::reset();
     let runtime = keyhog_profile::Runtime::new();
     let guard = runtime.enter();
-    let value =
-        keyhog_profile::instrument_future(Stage::LiveVerification, async { 7_u8 }).await;
+    let value = keyhog_profile::instrument_future(Stage::LiveVerification, async { 7_u8 }).await;
     assert_eq!(value, 7);
     let measurements = keyhog_profile::take_stage_measurements();
     drop(guard);
@@ -289,7 +290,12 @@ async fn retry_loop_records_retry_attempt_annotation() {
 fn sync_paths_are_silent_without_runtime() {
     keyhog_profile::reset();
     let cache = TestVerificationCache::new(Duration::from_secs(60));
-    cache.put("secret", "detector", VerificationResult::Live, HashMap::new());
+    cache.put(
+        "secret",
+        "detector",
+        VerificationResult::Live,
+        HashMap::new(),
+    );
     assert!(cache.get("secret", "detector").is_some());
     let spec = VerifySpec {
         service: "github".into(),

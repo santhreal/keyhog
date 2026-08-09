@@ -27,7 +27,7 @@
 mod support;
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{binary_unreadable, reset_binary_counters, skip_counts};
 use std::os::unix::fs::symlink;
 use std::os::unix::net::UnixListener;

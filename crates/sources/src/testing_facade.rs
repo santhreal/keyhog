@@ -135,7 +135,11 @@ pub mod testing {
         /// OCI/Docker manifest-vs-index classification (test accessor so the
         /// `src/docker/**` no-inline-tests contract holds; coverage lives in
         /// `tests/docker_oci_classification.rs`).
-        pub fn oci_descriptor_points_to_index(&self, media_type: Option<&str>, body: &[u8]) -> bool {
+        pub fn oci_descriptor_points_to_index(
+            &self,
+            media_type: Option<&str>,
+            body: &[u8],
+        ) -> bool {
             crate::docker::oci::descriptor_points_to_index_for_test(media_type, body)
         }
 
@@ -209,7 +213,9 @@ pub mod testing {
             crate::filesystem::reader_pool_thread_count_for_test(scanner_threads)
         }
 
-        pub fn reader_panic_rows(&self) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
+        pub fn reader_panic_rows(
+            &self,
+        ) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
             crate::filesystem::reader_panic_rows_for_test()
         }
 
@@ -735,7 +741,11 @@ pub mod testing {
         }
 
         #[cfg(feature = "binary")]
-        pub fn extract_sections(&self, bytes: &[u8], path: &str) -> Option<Vec<keyhog_core::Chunk>> {
+        pub fn extract_sections(
+            &self,
+            bytes: &[u8],
+            path: &str,
+        ) -> Option<Vec<keyhog_core::Chunk>> {
             crate::binary::sections::extract_sections(bytes, path)
         }
 
@@ -828,7 +838,10 @@ pub mod testing {
         }
 
         #[cfg(feature = "gitlab")]
-        pub fn validate_gitlab_group_path(&self, group: &str) -> Result<(), keyhog_core::SourceError> {
+        pub fn validate_gitlab_group_path(
+            &self,
+            group: &str,
+        ) -> Result<(), keyhog_core::SourceError> {
             crate::gitlab_group::validate_group_path(group)
         }
 
@@ -1109,7 +1122,11 @@ pub mod testing {
         }
 
         #[cfg(feature = "github")]
-        pub fn github_rate_limit_backoff_secs(&self, retry_after: Option<u64>, attempt: usize) -> u64 {
+        pub fn github_rate_limit_backoff_secs(
+            &self,
+            retry_after: Option<u64>,
+            attempt: usize,
+        ) -> u64 {
             crate::github_org::rate_limit_backoff_secs(retry_after, attempt)
         }
 

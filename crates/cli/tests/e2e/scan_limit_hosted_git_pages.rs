@@ -52,6 +52,8 @@ fn scan_group(server: &MockServer, pages_flag: &str) -> Output {
         .args([
             "scan",
             "--daemon=off",
+            "--backend",
+            "simd",
             "--no-suppress-test-fixtures",
             "--allow-private-cloud-endpoint",
             "--format",

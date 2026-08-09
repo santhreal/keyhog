@@ -35,6 +35,8 @@ fn scan_binary_target(target: &Path, config: Option<&Path>, extra: &[&str]) -> O
     command.args([
         "scan",
         "--daemon=off",
+        "--backend",
+        "simd",
         "--no-suppress-test-fixtures",
         "--show-secrets",
         "--format",

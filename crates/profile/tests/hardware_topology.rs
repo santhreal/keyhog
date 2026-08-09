@@ -76,8 +76,8 @@ mod linux {
         let mut packages = std::collections::BTreeSet::new();
         for cpu in &cpus {
             let base = format!("/sys/devices/system/cpu/cpu{cpu}/topology");
-            let package = read_u32(&format!("{base}/physical_package_id"))
-                .expect("physical package id");
+            let package =
+                read_u32(&format!("{base}/physical_package_id")).expect("physical package id");
             let core = read_u32(&format!("{base}/core_id")).expect("core id");
             packages.insert(package);
             cores.insert((package, core));
@@ -108,10 +108,7 @@ mod linux {
             })
             .count() as u32;
         assert_eq!(topology.numa_nodes.value, Evidence::recorded(expected_numa));
-        assert_eq!(
-            topology.numa_nodes.source,
-            HardwareFieldSourceV2::SysfsCpu
-        );
+        assert_eq!(topology.numa_nodes.source, HardwareFieldSourceV2::SysfsCpu);
     }
 
     /// Affinity must equal the process Cpus_allowed_list count parsed
@@ -132,7 +129,9 @@ mod linux {
             .split(',')
             .map(|part| {
                 if let Some((start, end)) = part.split_once('-') {
-                    end.parse::<u32>().expect("range end") - start.parse::<u32>().expect("range start") + 1
+                    end.parse::<u32>().expect("range end")
+                        - start.parse::<u32>().expect("range start")
+                        + 1
                 } else {
                     1
                 }
@@ -153,7 +152,11 @@ mod linux {
             (Some(contents), _) if !contents.starts_with("max") => {
                 let mut fields = contents.split_whitespace();
                 let quota: u64 = fields.next().expect("quota").parse().expect("quota value");
-                let period: u64 = fields.next().expect("period").parse().expect("period value");
+                let period: u64 = fields
+                    .next()
+                    .expect("period")
+                    .parse()
+                    .expect("period value");
                 assert_eq!(
                     topology.cpu_quota_milli.value,
                     Evidence::recorded(quota * 1_000 / period)

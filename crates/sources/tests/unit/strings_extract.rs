@@ -9,7 +9,7 @@
 //! separator between parts only.
 
 use keyhog_core::SensitiveString;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 fn as_strs(v: &[SensitiveString]) -> Vec<&str> {
     v.iter().map(|s| s.as_ref()).collect()

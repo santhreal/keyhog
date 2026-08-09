@@ -8,7 +8,7 @@
 //! different host OR port forces a rebuild (the pin carries the port). An
 //! unparseable URL yields no pin key.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 #[test]
 fn same_host_different_path_shares_one_pin_key() {

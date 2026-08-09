@@ -1,6 +1,6 @@
 //! reset_skipped_over_max_size must zero the global skip counter.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{reset_skipped_over_max_size, skip_counts};
 
 #[test]
