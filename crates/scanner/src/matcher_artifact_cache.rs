@@ -44,6 +44,38 @@ pub const MATCHER_ARTIFACT_TIP_SUFFIX: &str = ".kht";
 pub const MATCHER_ARTIFACT_FILE_BYTES: u64 = 256 * 1024 * 1024;
 
 static CONFIGURED_CACHE_DIR: OnceLock<parking_lot::RwLock<Option<PathBuf>>> = OnceLock::new();
+static PRELOADED_MATCHER_ARTIFACT: OnceLock<
+    parking_lot::Mutex<Option<(MatcherArtifactIdentity, LoadedMatcherArtifact)>>,
+> = OnceLock::new();
+
+fn preloaded_matcher_artifact_cell() -> &'static parking_lot::Mutex<
+    Option<(MatcherArtifactIdentity, LoadedMatcherArtifact)>,
+> {
+    PRELOADED_MATCHER_ARTIFACT.get_or_init(|| parking_lot::Mutex::new(None))
+}
+
+pub fn clear_preloaded_matcher_artifact() {
+    *preloaded_matcher_artifact_cell().lock() = None;
+}
+
+fn take_preloaded_matcher_artifact(
+    identity: &MatcherArtifactIdentity,
+) -> Option<LoadedMatcherArtifact> {
+    let mut guard = preloaded_matcher_artifact_cell().lock();
+    match guard.as_ref() {
+        Some((pre_identity, _)) if pre_identity == identity => {
+            guard.take().map(|(_, loaded)| loaded)
+        }
+        _ => None,
+    }
+}
+
+fn stash_preloaded_matcher_artifact(
+    identity: MatcherArtifactIdentity,
+    loaded: LoadedMatcherArtifact,
+) {
+    *preloaded_matcher_artifact_cell().lock() = Some((identity, loaded));
+}
 
 fn configured_cache_dir_cell() -> &'static parking_lot::RwLock<Option<PathBuf>> {
     CONFIGURED_CACHE_DIR.get_or_init(|| parking_lot::RwLock::new(None))
@@ -766,7 +798,9 @@ pub fn try_load_from_matcher_artifact_tip(
     if decoded.digest() != detector_digest {
         return Err("matcher artifact detector IR digest mismatch".to_owned());
     }
-    Ok(Some((decoded.into_detectors(), loaded, identity)))
+    let detectors = decoded.into_detectors();
+    stash_preloaded_matcher_artifact(identity.clone(), loaded.clone());
+    Ok(Some((detectors, loaded, identity)))
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -841,10 +875,15 @@ pub fn compile_shared_with_matcher_artifact_cache(
     .map_err(ScanError::Config)?;
 
     if let Some(cache_dir) = cache_dir.as_ref() {
-        match load_matcher_artifact(cache_dir, &identity) {
-            Ok(sections) => {
-                let state =
-                    hydrate_authenticated_state(&sections, detector_digest, sorted.as_ref())?;
+        let preloaded = take_preloaded_matcher_artifact(&identity);
+        let loaded = preloaded.map(Ok).unwrap_or_else(|| load_matcher_artifact_with_ir(cache_dir, &identity));
+        match loaded {
+            Ok(loaded) => {
+                let state = hydrate_authenticated_state(
+                    &loaded.sections,
+                    detector_digest,
+                    sorted.as_ref(),
+                )?;
                 let scanner = CompiledScanner::compile_shared_from_compile_state(
                     Arc::clone(&sorted),
                     gpu_policy,

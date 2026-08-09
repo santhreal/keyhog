@@ -18,7 +18,7 @@ pub(crate) use detectors::{
     validate_explicit_detector_path, DetectorCorpusProvenance, LoadedDetectorCorpus,
 };
 pub(crate) use effective::{
-    autoroute_config_digest, profiling_policy_digest, profiling_resolved_config_digest,
+    autoroute_config_digest, matcher_resolved_config_digest, profiling_policy_digest, profiling_resolved_config_digest,
     render_effective_config,
 };
 pub(crate) use engine_runtime::ResolvedEngineRuntimeSettings;

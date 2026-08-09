@@ -1277,7 +1277,7 @@ impl ScanOrchestrator {
             (requested_detector_mode, detectors_path)
         };
         let resolved_config_digest =
-            crate::orchestrator_config::profiling_resolved_config_digest(&effective_config);
+            crate::orchestrator_config::matcher_resolved_config_digest(&effective_config);
         let runtime_identity = keyhog_scanner::hw_probe::hyperscan_runtime_identity();
         let gpu_init_policy = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackSelect);
