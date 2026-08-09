@@ -494,22 +494,14 @@ fn emit_archive_member_with_tex_provenance(
         );
     }
 
-    // Path-backed extractors (7z/RAR) and structured HAR expansion used to run
-    // only after a layer was spilled to disk. Keep that coverage on the
-    // streaming/in-memory dispatcher so container findings stay complete.
-    let mut ext = std::path::Path::new(entry_name)
+    // Structured HAR expansion used to run only after a layer was spilled to
+    // disk. Keep that coverage on the streaming/in-memory dispatcher. Top-level
+    // 7z/RAR layer members are handled at the Docker boundary instead so nested
+    // archives cannot open a fresh bomb budget here.
+    let ext = std::path::Path::new(entry_name)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
-    // Extensionless OCI/layer blobs still need 7z/RAR extractors; sniff magic the
-    // same way process_entry does via container_extension_from_prefix.
-    if ext.is_empty() {
-        if let Some(sniffed) = container_extension_from_prefix(&content) {
-            if sniffed == "7z" || sniffed == "rar" {
-                ext = sniffed;
-            }
-        }
-    }
     if ext.eq_ignore_ascii_case("har") {
         let _decode = crate::profile::decode_span();
         match crate::har::try_expand_har(&content, member_display, max_size) {
@@ -535,68 +527,10 @@ fn emit_archive_member_with_tex_provenance(
                 );
             }
         }
-    } else if (ext.eq_ignore_ascii_case("7z") || ext.eq_ignore_ascii_case("rar"))
-        && nested_depth == 0
-    {
-        // Top-level members only (Docker layer / filesystem process_entry parity).
-        // Nested 7z/RAR inside zip/tar keep the prior leaf+coverage-gap behavior so
-        // they cannot open a fresh decompression-bomb budget per hop.
-        return emit_path_backed_archive_bytes(
-            ext,
-            content,
-            member_display,
-            max_size,
-            respect_default_excludes,
-            nested_depth,
-            emit,
-        );
     }
 
     emit_archive_leaf_member(content, member_display, provenance, emit)
 }
-
-fn emit_path_backed_archive_bytes(
-    ext: &str,
-    content: Vec<u8>,
-    member_display: &str,
-    max_size: u64,
-    respect_default_excludes: bool,
-    nested_depth: usize,
-    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
-) -> bool {
-    // Both extractors now accept already-buffered bytes, so attacker-controlled
-    // member payloads never land in the process-wide temp directory.
-    let mut keep_going = true;
-    run_derived_extractor(
-        |counted| {
-            if ext.eq_ignore_ascii_case("7z") {
-                seven_zip::extract_seven_zip_chunks_from_bytes(
-                    &content,
-                    member_display,
-                    max_size,
-                    respect_default_excludes,
-                    nested_depth,
-                    counted,
-                );
-            } else {
-                rar::extract_rar_chunks_from_bytes(
-                    &content,
-                    member_display.to_owned(),
-                    max_size,
-                    respect_default_excludes,
-                    nested_depth,
-                    counted,
-                );
-            }
-        },
-        &mut |chunk| {
-            keep_going = emit(chunk);
-            keep_going
-        },
-    );
-    keep_going
-}
-
 
 pub(crate) fn try_emit_image_metadata_member(
     entry_name: &str,
@@ -625,6 +559,45 @@ pub(crate) fn try_emit_image_metadata_member(
         }
     }
     Ok(Some(true))
+}
+
+pub(crate) fn emit_top_level_seven_zip_or_rar_member(
+    ext: &str,
+    content: Vec<u8>,
+    member_display: &str,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let mut keep_going = true;
+    run_derived_extractor(
+        |counted| {
+            if ext.eq_ignore_ascii_case("7z") {
+                seven_zip::extract_seven_zip_chunks_from_bytes(
+                    &content,
+                    member_display,
+                    max_size,
+                    respect_default_excludes,
+                    0,
+                    counted,
+                );
+            } else {
+                rar::extract_rar_chunks_from_bytes(
+                    &content,
+                    member_display.to_owned(),
+                    max_size,
+                    respect_default_excludes,
+                    0,
+                    counted,
+                );
+            }
+        },
+        &mut |chunk| {
+            keep_going = emit(chunk);
+            keep_going
+        },
+    );
+    keep_going
 }
 
 pub(crate) fn try_emit_pdf_member(

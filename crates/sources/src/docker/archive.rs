@@ -402,9 +402,29 @@ fn stream_layer_tar_reader(
             continue;
         }
 
-        // Nested 7z/RAR/HAR members are handled inside emit_in_memory_member
-        // (temp-staged path extractors / HAR expansion) so streaming keeps
-        // filesystem-unpack finding parity without materializing the whole layer.
+        // Top-level layer 7z/RAR (by extension or content sniff) uses the shared
+        // in-memory extractors — same coverage process_entry had after unpack.
+        // Require matching magic so a text file named keys.7z still leaf-scans.
+        let sniffed = crate::filesystem::container_extension_from_prefix(&read.bytes);
+        let archive_kind = match sniffed {
+            Some("7z") if ext.is_empty() || ext.eq_ignore_ascii_case("7z") => Some("7z"),
+            Some("rar") if ext.is_empty() || ext.eq_ignore_ascii_case("rar") => Some("rar"),
+            _ => None,
+        };
+        if let Some(archive_kind) = archive_kind {
+            if !crate::filesystem::emit_top_level_seven_zip_or_rar_member(
+                archive_kind,
+                read.bytes,
+                &entry_name,
+                keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
+                respect_default_excludes,
+                emit,
+            ) {
+                return Ok(false);
+            }
+            continue;
+        }
+
         if !crate::filesystem::emit_in_memory_member(
             &entry_name,
             read.bytes,

@@ -59,6 +59,26 @@ pub(crate) fn container_extension_from_prefix(bytes: &[u8]) -> Option<&'static s
 /// Scan one already-buffered archive/layer member through the shared in-memory
 /// dispatcher (nested tar/zip/compressed descent + leaf text/strings). Used by
 /// Docker layer streaming so a layer never has to hit the filesystem first.
+/// Extract a top-level Docker-layer 7z/RAR member from already-buffered bytes.
+/// Nested archive members must not use this helper.
+pub(crate) fn emit_top_level_seven_zip_or_rar_member(
+    ext: &str,
+    content: Vec<u8>,
+    member_display: &str,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    extract::emit_top_level_seven_zip_or_rar_member(
+        ext,
+        content,
+        member_display,
+        max_size,
+        respect_default_excludes,
+        emit,
+    )
+}
+
 pub(crate) fn emit_in_memory_member(
     entry_name: &str,
     content: Vec<u8>,
