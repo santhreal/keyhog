@@ -760,7 +760,11 @@ fn load_commit_blob_set(
     // credentials that were removed later. Root commits and unreadable parents
     // fall back to a full walk (recall-safe).
     let parent_ids: Vec<gix::ObjectId> = commit.parent_ids().map(|id| id.detach()).collect();
-    if parent_ids.is_empty() {
+    // Root-tree memoization is only valid after a FULL enumeration of that tree.
+    // Parent-tree diffs emit only changed sides; marking the root walked afterwards
+    // would let a later commit that reuses the same tree early-skip and drop blobs
+    // that were never collected on the first visit (e.g. revert-to-earlier-tree).
+    let root_fully_enumerated = if parent_ids.is_empty() {
         collect_tree_blobs_metadata(
             repo,
             &tree,
@@ -772,6 +776,7 @@ fn load_commit_blob_set(
             &mut errors,
             respect_default_excludes,
         );
+        true
     } else {
         collect_commit_blobs_via_parent_diffs(
             repo,
@@ -782,12 +787,11 @@ fn load_commit_blob_set(
             &mut blob_metadata,
             &mut errors,
             respect_default_excludes,
-        );
-    }
-    // Memoize the root tree only when its walk/diff recorded no error, so a
-    // corrupt subtree keeps re-reporting (and re-attempting) on later commits
-    // exactly as before.
-    if errors.is_empty() {
+        )
+    };
+    // Memoize the root tree only after a full walk with no error, so a corrupt
+    // subtree keeps re-reporting (and re-attempting) on later commits.
+    if root_fully_enumerated && errors.is_empty() {
         // LAW10: failing to read the tree id only skips memoization, so later commits
         // re-walk this tree instead of trusting a memo. Recall-safe by construction.
         if let Ok(root_tree_id) = commit.tree_id() {
@@ -1400,6 +1404,8 @@ fn commit_author_name(commit: &gix::Commit<'_>, commit_id: &str) -> Result<Strin
     }
 }
 
+/// Returns `true` when this commit fell back to a full tree walk (so the root
+/// may be memoized), and `false` when only parent-tree diff sides were collected.
 fn collect_commit_blobs_via_parent_diffs(
     repo: &gix::Repository,
     tree: &gix::Tree<'_>,
@@ -1409,7 +1415,7 @@ fn collect_commit_blobs_via_parent_diffs(
     blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
     errors: &mut Vec<SourceError>,
     respect_default_excludes: bool,
-) {
+) -> bool {
     let mut diff_state = gix::diff::tree::State::default();
     let mut records = Vec::new();
     for parent_id in parent_ids {
@@ -1428,7 +1434,7 @@ fn collect_commit_blobs_via_parent_diffs(
                 errors,
                 respect_default_excludes,
             );
-            return;
+            return true;
         };
         if parent_tree.id == tree.id {
             continue;
@@ -1459,7 +1465,7 @@ fn collect_commit_blobs_via_parent_diffs(
                 errors,
                 respect_default_excludes,
             );
-            return;
+            return true;
         }
         records.extend(recorder.records);
     }
@@ -1469,6 +1475,7 @@ fn collect_commit_blobs_via_parent_diffs(
         blob_metadata,
         respect_default_excludes,
     );
+    false
 }
 
 fn load_commit_tree_for_diff<'a>(

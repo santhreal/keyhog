@@ -90,3 +90,42 @@ fn git_blobs_recall_secret_added_then_removed_via_parent_diffs() {
         "recalled secret chunk must keep secrets.env path metadata"
     );
 }
+
+
+#[test]
+fn git_blobs_recall_secret_when_earlier_tree_is_reused() {
+    let repo = tempfile::tempdir().expect("create git fixture");
+    git(repo.path(), &["init", "--quiet", "-b", "main"]);
+
+    const SECRET: &str =
+        "GITHUB_TOKEN=ghp_parentDiffTreeReuseFixture0000000001\n";
+    std::fs::write(repo.path().join("keep.env"), SECRET).expect("write secret");
+    git(repo.path(), &["add", "keep.env"]);
+    git(repo.path(), &["commit", "--quiet", "-m", "add keep secret"]);
+
+    std::fs::write(repo.path().join("extra.txt"), "temporary side file\n").expect("write extra");
+    git(repo.path(), &["add", "extra.txt"]);
+    git(repo.path(), &["commit", "--quiet", "-m", "add extra"]);
+
+    // Revert the tree back to the first commit so the same root tree oid reappears
+    // after a parent-diff visit that did not fully enumerate it.
+    git(repo.path(), &["rm", "--quiet", "extra.txt"]);
+    git(repo.path(), &["commit", "--quiet", "-m", "remove extra; reuse earlier tree"]);
+
+    let rows = GitSource::new(repo.path().to_path_buf())
+        .chunks()
+        .collect::<Vec<_>>();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    assert!(
+        errors.is_empty(),
+        "complete fixture history must scan without gaps: {errors:?}"
+    );
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("ghp_parentDiffTreeReuseFixture")),
+        "reused earlier tree must still emit keep.env after parent-diff visits; got {} chunks",
+        chunks.len()
+    );
+}
