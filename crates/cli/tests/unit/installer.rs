@@ -292,6 +292,10 @@ fn gpu_literal_cache_transaction_commits_or_restores_exact_bytes() {
     .expect("stage transaction then roll back");
     assert_eq!(std::fs::read(&existing).unwrap(), b"old");
     assert!(!dir.path().join("added.bin").exists());
+    assert!(
+        !dir.path().join(".installed_manifest.json").exists(),
+        "rollback must not leave an identity manifest for reverted artifacts"
+    );
     assert!(dir.path().join(".keyhog-maintenance.lock").exists());
 
     API.install_gpu_literal_files_in_dir(
@@ -306,6 +310,30 @@ fn gpu_literal_cache_transaction_commits_or_restores_exact_bytes() {
         b"added"
     );
     assert!(dir.path().join(".keyhog-maintenance.lock").exists());
+    let manifest_path = dir.path().join(".installed_manifest.json");
+    let committed_manifest = std::fs::read(&manifest_path).expect("read committed manifest");
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&committed_manifest).expect("parse committed manifest");
+    assert_eq!(manifest["version"], 1);
+    assert_eq!(
+        manifest["artifacts"]
+            .as_array()
+            .expect("manifest artifacts")
+            .len(),
+        2
+    );
+
+    API.install_gpu_literal_files_in_dir(
+        dir.path(),
+        &[("matcher.bin", b"replacement"), ("added.bin", b"other")],
+        false,
+    )
+    .expect("stage replacement then roll back");
+    assert_eq!(
+        std::fs::read(&manifest_path).expect("read restored manifest"),
+        committed_manifest,
+        "artifact rollback must restore the matching identity manifest"
+    );
 }
 
 // ── Moved from src/installer.rs (#[cfg(test)] mod rename_away_tests) per the

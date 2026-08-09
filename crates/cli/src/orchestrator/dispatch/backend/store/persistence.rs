@@ -411,7 +411,6 @@ pub(crate) fn save_autoroute_cache(
         detector_digest,
         rules_digest: rules_digest.to_string(),
         gpu_sidecar_digest: super::artifact_identity::current_gpu_sidecar_sha256(),
-        vyre_artifact_digest: super::artifact_identity::current_vyre_artifact_sha256(),
         execution_pack_generation,
         configs,
     };

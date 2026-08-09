@@ -4,9 +4,9 @@ use super::evidence::{
 };
 use super::host::AutorouteHostProfile;
 use super::store::{
-    inspect_autoroute_cache, load_autoroute_cache, resolve_bucket, save_autoroute_cache,
-    AutorouteBuildFeatures, AutorouteCache, AutorouteCacheSaveOutcome, BucketResolution,
-    AUTOROUTE_CACHE_FILE_BYTES,
+    decision_requires_gpu_artifact_identity, inspect_autoroute_cache, installed_gpu_sidecar_digest,
+    load_autoroute_cache, resolve_bucket, save_autoroute_cache, AutorouteBuildFeatures,
+    AutorouteCache, AutorouteCacheSaveOutcome, BucketResolution, AUTOROUTE_CACHE_FILE_BYTES,
 };
 use super::workload::{
     autoroute_stable_bucket, autoroute_stable_decode_bucket, decode_workload_projection,
@@ -6444,6 +6444,10 @@ fn persistent_daemon_route_uses_warm_gpu_evidence_but_one_shot_uses_cold_cost() 
         "a preinitialized daemon must select from warm GPU evidence"
     );
     assert!(
+        decision_requires_gpu_artifact_identity(&decision),
+        "a CPU/SIMD one-shot decision with a GPU persistent route must retain GPU artifact identity"
+    );
+    assert!(
         decision.has_confidence_supported_route()
             && decision.has_confidence_supported_persistent_route(),
         "the fixture must provide separated evidence for both runtime classes"
@@ -6458,6 +6462,37 @@ fn persistent_daemon_route_uses_warm_gpu_evidence_but_one_shot_uses_cold_cost() 
         Some(9_000_000),
         "warm GPU beats persistent SIMD by 9 ms"
     );
+}
+
+/// Every persisted surface that can cause or prove a GPU route binds installed artifacts.
+#[test]
+fn gpu_artifact_identity_covers_selected_routes_receipts_and_timing_candidates() {
+    let mut decision = cpu_decision(ScanBackend::CpuFallback);
+    assert!(!decision_requires_gpu_artifact_identity(&decision));
+
+    decision.backend = ScanBackend::GpuWgpu.label().to_string();
+    assert!(decision_requires_gpu_artifact_identity(&decision));
+    decision.backend = ScanBackend::CpuFallback.label().to_string();
+
+    let point = decision
+        .calibration_points
+        .first_mut()
+        .expect("CPU fixture calibration point");
+    let receipt = point
+        .candidate_receipts
+        .first_mut()
+        .expect("CPU fixture candidate receipt");
+    receipt.backend = ScanBackend::GpuWgpu.label().to_string();
+    assert!(decision_requires_gpu_artifact_identity(&decision));
+    decision.calibration_points[0].candidate_receipts[0].backend =
+        ScanBackend::CpuFallback.label().to_string();
+
+    let timing = decision.calibration_points[0]
+        .route_timings
+        .first_mut()
+        .expect("CPU fixture route timing");
+    timing.backend = ScanBackend::GpuWgpu.label().to_string();
+    assert!(decision_requires_gpu_artifact_identity(&decision));
 }
 
 #[test]
@@ -7564,4 +7599,186 @@ fn merging_a_point_redeclares_the_reconciled_route() {
         ),
         "the declared route must equal the route the evidence resolves"
     );
+}
+
+/// Regression: autoroute binds only installer-owned GPU artifacts. Runtime cache
+/// growth is irrelevant, while any named artifact or manifest mutation fails closed.
+#[test]
+fn installed_gpu_artifact_identity_tracks_exact_manifest_members() {
+    use sha2::Digest as _;
+
+    let directory = tempfile::tempdir().expect("create GPU artifact directory");
+    let artifact = directory.path().join("installed.bin");
+    std::fs::write(&artifact, b"installed-v1").expect("write installed GPU artifact");
+    let sha256 = format!("{:x}", sha2::Sha256::digest(b"installed-v1"));
+    let manifest = serde_json::json!({
+        "version": 1,
+        "artifacts": [{"file_name": "installed.bin", "sha256": sha256}],
+    });
+    std::fs::write(
+        directory.path().join(".installed_manifest.json"),
+        serde_json::to_vec(&manifest).expect("serialize manifest"),
+    )
+    .expect("write installed manifest");
+
+    let identity =
+        installed_gpu_sidecar_digest(directory.path()).expect("valid installed identity");
+    std::fs::write(
+        directory.path().join("lazy-unrelated.bin"),
+        b"runtime-cache",
+    )
+    .expect("write unrelated runtime cache blob");
+    assert_eq!(
+        installed_gpu_sidecar_digest(directory.path()).as_deref(),
+        Some(identity.as_str()),
+        "unrelated lazy cache entries must not invalidate calibrated artifacts"
+    );
+
+    std::fs::write(&artifact, b"installed-v2").expect("mutate installed artifact");
+    assert!(
+        installed_gpu_sidecar_digest(directory.path()).is_none(),
+        "a named artifact mutation must invalidate calibration identity"
+    );
+
+    std::fs::write(&artifact, b"installed-v1").expect("restore installed artifact");
+    let duplicate_manifest = serde_json::json!({
+        "version": 1,
+        "artifacts": [
+            {"file_name": "installed.bin", "sha256": sha256},
+            {"file_name": "installed.bin", "sha256": sha256},
+        ],
+    });
+    std::fs::write(
+        directory.path().join(".installed_manifest.json"),
+        serde_json::to_vec(&duplicate_manifest).expect("serialize duplicate manifest"),
+    )
+    .expect("write duplicate manifest");
+    assert!(
+        installed_gpu_sidecar_digest(directory.path()).is_none(),
+        "duplicate manifest members must fail closed"
+    );
+}
+
+/// Every manifest boundary fails closed before an untrusted member can affect routing.
+#[test]
+fn installed_gpu_artifact_identity_rejects_invalid_manifests_and_size_limits() {
+    let directory = tempfile::tempdir().expect("create GPU artifact directory");
+    std::fs::write(directory.path().join("installed.bin"), b"installed")
+        .expect("write installed artifact");
+    let manifest_path = directory.path().join(".installed_manifest.json");
+    let invalid_manifests = [
+        serde_json::json!({
+            "version": 1,
+            "artifacts": [{"file_name": "missing.bin", "sha256": "0".repeat(64)}],
+        }),
+        serde_json::json!({
+            "version": 1,
+            "artifacts": [{"file_name": "../installed.bin", "sha256": "0".repeat(64)}],
+        }),
+        serde_json::json!({
+            "version": 1,
+            "artifacts": [{"file_name": "installed.bin", "sha256": "z".repeat(64)}],
+        }),
+        serde_json::json!({
+            "version": 1,
+            "artifacts": [{"file_name": "installed.bin", "sha256": "0".repeat(64), "extra": true}],
+        }),
+        serde_json::json!({"version": 2, "artifacts": []}),
+    ];
+    for manifest in invalid_manifests {
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_vec(&manifest).expect("serialize invalid manifest"),
+        )
+        .expect("write invalid manifest");
+        assert!(
+            installed_gpu_sidecar_digest(directory.path()).is_none(),
+            "invalid manifest must not produce an artifact identity: {manifest}"
+        );
+    }
+
+    let oversized_manifest = std::fs::File::create(&manifest_path).expect("create manifest");
+    oversized_manifest
+        .set_len(1024 * 1024 + 1)
+        .expect("make sparse oversized manifest");
+    assert!(installed_gpu_sidecar_digest(directory.path()).is_none());
+
+    let oversized_artifact = directory.path().join("oversized.bin");
+    let file = std::fs::File::create(&oversized_artifact).expect("create oversized artifact");
+    file.set_len(256 * 1024 * 1024 + 1)
+        .expect("make sparse oversized artifact");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec(&serde_json::json!({
+            "version": 1,
+            "artifacts": [{"file_name": "oversized.bin", "sha256": "0".repeat(64)}],
+        }))
+        .expect("serialize oversized artifact manifest"),
+    )
+    .expect("write oversized artifact manifest");
+    assert!(installed_gpu_sidecar_digest(directory.path()).is_none());
+}
+
+/// Manifest order is presentation only; the same installed set has one identity.
+#[test]
+fn installed_gpu_artifact_identity_is_order_independent() {
+    use sha2::Digest as _;
+
+    let directory = tempfile::tempdir().expect("create GPU artifact directory");
+    let digest_a = format!("{:x}", sha2::Sha256::digest(b"a"));
+    let digest_b = format!("{:x}", sha2::Sha256::digest(b"b"));
+    std::fs::write(directory.path().join("a.bin"), b"a").expect("write a");
+    std::fs::write(directory.path().join("b.bin"), b"b").expect("write b");
+    let manifest_path = directory.path().join(".installed_manifest.json");
+    let entry_a = serde_json::json!({"file_name": "a.bin", "sha256": digest_a});
+    let entry_b = serde_json::json!({"file_name": "b.bin", "sha256": digest_b});
+
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec(&serde_json::json!({
+            "version": 1,
+            "artifacts": [entry_b.clone(), entry_a.clone()],
+        }))
+        .expect("serialize first order"),
+    )
+    .expect("write first order");
+    let first = installed_gpu_sidecar_digest(directory.path()).expect("first identity");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec(&serde_json::json!({
+            "version": 1,
+            "artifacts": [entry_a, entry_b],
+        }))
+        .expect("serialize second order"),
+    )
+    .expect("write second order");
+    assert_eq!(
+        installed_gpu_sidecar_digest(directory.path()).as_deref(),
+        Some(first.as_str())
+    );
+}
+
+/// A symlinked installed member is not an installer-owned regular file.
+#[cfg(unix)]
+#[test]
+fn installed_gpu_artifact_identity_rejects_symlink_members() {
+    use sha2::Digest as _;
+    use std::os::unix::fs::symlink;
+
+    let directory = tempfile::tempdir().expect("create GPU artifact directory");
+    std::fs::write(directory.path().join("target"), b"artifact").expect("write target");
+    symlink("target", directory.path().join("installed.bin")).expect("create member symlink");
+    std::fs::write(
+        directory.path().join(".installed_manifest.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "version": 1,
+            "artifacts": [{
+                "file_name": "installed.bin",
+                "sha256": format!("{:x}", sha2::Sha256::digest(b"artifact")),
+            }],
+        }))
+        .expect("serialize manifest"),
+    )
+    .expect("write manifest");
+    assert!(installed_gpu_sidecar_digest(directory.path()).is_none());
 }

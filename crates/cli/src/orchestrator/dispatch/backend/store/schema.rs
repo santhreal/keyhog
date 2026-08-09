@@ -28,8 +28,6 @@ pub(crate) struct AutorouteCache {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) gpu_sidecar_digest: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) vyre_artifact_digest: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) execution_pack_generation:
         Option<crate::execution_pack_install::ExecutionPackGenerationBinding>,
     pub(crate) configs: Vec<AutorouteConfigDecisions>,

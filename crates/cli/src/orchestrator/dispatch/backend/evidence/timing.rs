@@ -62,95 +62,28 @@ impl BackendTimingEvidence {
         self.trials_ns.len() == expected_trials && self.trials_ns.iter().all(|&trial| trial > 0)
     }
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ColdWarmStatisticalModel {
     pub(crate) cold_one_shot_ns: u128,
     pub(crate) warm_trials_ns: Vec<u128>,
     pub(crate) warm_median_ns: u128,
-    pub(crate) warm_ci: TimingConfidenceInterval,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct PairedDifferenceDistribution {
-    pub(crate) count: usize,
-    pub(crate) mean_diff_ns: f64,
-    pub(crate) variance: f64,
-    pub(crate) ci_half_width_ns: f64,
-    pub(crate) is_statistically_faster_95: bool,
 }
 
 impl ColdWarmStatisticalModel {
     pub(crate) fn from_timing(timing: &BackendTimingEvidence) -> Option<Self> {
-        if timing.trials_ns.len()
-            < crate::orchestrator::dispatch::backend::AUTOROUTE_CALIBRATION_TRIALS
-        {
+        let expected_trials = crate::orchestrator::dispatch::backend::AUTOROUTE_CALIBRATION_TRIALS;
+        if !timing.is_valid_for_trials(expected_trials) {
             return None;
         }
         let cold_one_shot_ns = timing.trials_ns[0];
-        let warm_trials = &timing.trials_ns[1..];
-        let warm_timing = BackendTimingEvidence::from_trial_ns(warm_trials.to_vec())?;
-        let warm_median_ns = warm_timing.median_ns();
-        let warm_ci = warm_timing.confidence_interval_95_ns();
+        let warm_trials_ns = timing.trials_ns[1..].to_vec();
+        let warm_median_ns =
+            BackendTimingEvidence::from_trial_ns(warm_trials_ns.clone())?.median_ns();
         Some(Self {
             cold_one_shot_ns,
-            warm_trials_ns: warm_trials.to_vec(),
+            warm_trials_ns,
             warm_median_ns,
-            warm_ci,
         })
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn paired_difference(
-        &self,
-        competitor: &ColdWarmStatisticalModel,
-    ) -> PairedDifferenceDistribution {
-        if self.warm_trials_ns.len() != competitor.warm_trials_ns.len() {
-            return PairedDifferenceDistribution {
-                count: 0,
-                mean_diff_ns: 0.0,
-                variance: 0.0,
-                ci_half_width_ns: 0.0,
-                is_statistically_faster_95: false,
-            };
-        }
-        let count = self.warm_trials_ns.len();
-        if count < 2 {
-            return PairedDifferenceDistribution {
-                count,
-                mean_diff_ns: 0.0,
-                variance: 0.0,
-                ci_half_width_ns: 0.0,
-                is_statistically_faster_95: false,
-            };
-        }
-        let paired_diffs: Vec<f64> = self
-            .warm_trials_ns
-            .iter()
-            .zip(&competitor.warm_trials_ns)
-            .map(|(&cand, &comp)| comp as f64 - cand as f64)
-            .collect();
-        let count_f64 = count as f64;
-        let mean = paired_diffs.iter().sum::<f64>() / count_f64;
-        let variance = paired_diffs
-            .iter()
-            .map(|&diff| {
-                let d = diff - mean;
-                d * d
-            })
-            .sum::<f64>()
-            / (count_f64 - 1.0);
-        let half_width =
-            two_sided_95_student_t_critical(count) * variance.max(0.0).sqrt() / count_f64.sqrt();
-        PairedDifferenceDistribution {
-            count,
-            mean_diff_ns: mean,
-            variance,
-            ci_half_width_ns: half_width,
-            is_statistically_faster_95: mean - half_width > 0.0,
-        }
     }
 }
 
@@ -175,7 +108,13 @@ pub(crate) fn paired_candidate_is_faster_95(
         candidate_trials_ns
             .iter()
             .zip(competitor_trials_ns)
-            .map(|(&candidate, &competitor)| competitor as f64 - candidate as f64)
+            .map(|(&candidate, &competitor)| {
+                if competitor >= candidate {
+                    (competitor - candidate) as f64
+                } else {
+                    -((candidate - competitor) as f64)
+                }
+            })
     };
     let count_f64 = count as f64;
     let mean = paired_differences().sum::<f64>() / count_f64;

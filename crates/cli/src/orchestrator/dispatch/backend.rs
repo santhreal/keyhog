@@ -147,6 +147,8 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
 // Older sequential-trial rows could encode host drift as backend performance.
 // v41: phase-two Hyperscan is owned only by the measured SIMD route. Older
 // scalar and GPU rows included unreported SIMD work and are not comparable.
+// v53: GPU-capable decisions bind the exact installer-owned artifact manifest
+// and reject stale one-shot, persistent, receipt, or calibration-point routes.
 // v52: every calibration generation can bind the authenticated manifest plus exact
 // policy/backend pack identities. Pack replacement now invalidates routing evidence.
 // v40: SIMD timing adopts the same first-materialization plus warm-trial model

@@ -10,11 +10,9 @@ pub(super) use match_identity::{
     canonical_match_differences, canonical_match_digest, canonical_matches,
     canonical_matches_equal_reference, differing_canonical_match_fields, CanonicalMatch,
 };
-#[allow(unused_imports)]
-pub(super) use timing::{
-    paired_candidate_is_faster_95, BackendTimingEvidence, ColdWarmStatisticalModel,
-    PairedDifferenceDistribution, TimingConfidenceInterval,
-};
+#[cfg(test)]
+pub(super) use timing::{paired_candidate_is_faster_95, ColdWarmStatisticalModel};
+pub(super) use timing::{BackendTimingEvidence, TimingConfidenceInterval};
 
 use super::workload::MeasurementShapeEvidence;
 use super::{AUTOROUTE_ACCELERATOR_WARM_TRIALS, AUTOROUTE_CALIBRATION_TRIALS};

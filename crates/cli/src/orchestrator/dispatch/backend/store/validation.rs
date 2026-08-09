@@ -14,37 +14,31 @@ use super::super::workload::{
     validate_workload_source_mixture, workload_evidence_digest, WorkloadKey,
 };
 use super::super::AUTOROUTE_CALIBRATION_TRIALS;
-use super::artifact_identity::current_executable_sha256;
-use super::artifact_identity::{current_gpu_sidecar_sha256, current_vyre_artifact_sha256};
+use super::artifact_identity::{current_executable_sha256, current_gpu_sidecar_sha256};
 use super::schema::{AutorouteBuildFeatures, AutorouteCache};
 
-#[allow(dead_code)]
-pub(super) fn cache_has_gpu_decisions(cache: &AutorouteCache) -> bool {
-    cache.configs.iter().any(|config| {
-        config
-            .decisions
-            .iter()
-            .any(|d| d.decision.backend.starts_with("gpu"))
-    })
-}
-
-pub(super) fn is_gpu_decision_valid(cache: &AutorouteCache, backend_str: &str) -> bool {
-    if !backend_str.starts_with("gpu") {
-        return true;
-    }
-    let (Some(expected_sidecar), Some(expected_vyre)) =
-        (&cache.gpu_sidecar_digest, &cache.vyre_artifact_digest)
-    else {
+fn gpu_artifact_identity_matches(cache: &AutorouteCache) -> bool {
+    let Some(expected_sidecar) = &cache.gpu_sidecar_digest else {
         return false;
     };
-    let current_sidecar = current_gpu_sidecar_sha256();
-    let current_vyre = current_vyre_artifact_sha256();
-    if current_sidecar.as_ref() != Some(expected_sidecar)
-        || current_vyre.as_ref() != Some(expected_vyre)
-    {
-        return false;
-    }
-    true
+    current_gpu_sidecar_sha256().as_ref() == Some(expected_sidecar)
+}
+
+pub(crate) fn decision_requires_gpu_artifact_identity(decision: &AutorouteDecision) -> bool {
+    decision.backend.starts_with("gpu")
+        || decision
+            .resolved_persistent_backend()
+            .is_some_and(ScanBackend::is_gpu)
+        || decision.calibration_points.iter().any(|point| {
+            point
+                .candidate_receipts
+                .iter()
+                .any(|receipt| receipt.backend.starts_with("gpu"))
+                || point
+                    .route_timings
+                    .iter()
+                    .any(|timing| timing.backend.starts_with("gpu"))
+        })
 }
 
 pub(super) fn validate_cache_global_identity(
@@ -132,7 +126,9 @@ pub(super) fn validate_cache_structure_at(
             })?;
             validate_decision_route_evidence_at(decision, current_unix_ms, &expected_backends)?;
             validate_decision_workload_binding(key, decision)?;
-            if !is_gpu_decision_valid(cache, &decision.backend) {
+            if decision_requires_gpu_artifact_identity(decision)
+                && !gpu_artifact_identity_matches(cache)
+            {
                 return Err(format!(
                     "autoroute cache config {:016x} decision for {} has invalid GPU artifact identity binding",
                     config.config_digest,
@@ -552,26 +548,6 @@ pub(super) fn current_unix_time_ms() -> Result<u128, Box<dyn std::error::Error +
 mod tests {
     use super::*;
     use crate::orchestrator::dispatch::backend::AUTOROUTE_CACHE_VERSION;
-    #[test]
-    fn gpu_decision_validation_allows_host_backends_without_gpu_artifacts() {
-        let cache = AutorouteCache {
-            version: AUTOROUTE_CACHE_VERSION,
-            binary_version: "0.5.68".into(),
-            git_hash: "test".into(),
-            executable_sha256: "test".into(),
-            build_features: AutorouteBuildFeatures::default(),
-            detector_digest: 0,
-            rules_digest: "test".into(),
-            gpu_sidecar_digest: Some("mismatched_sidecar".into()),
-            vyre_artifact_digest: Some("mismatched_vyre".into()),
-            execution_pack_generation: None,
-            configs: vec![],
-        };
-
-        assert!(is_gpu_decision_valid(&cache, "cpu-fallback"));
-        assert!(is_gpu_decision_valid(&cache, "simd-cpu"));
-        assert!(!is_gpu_decision_valid(&cache, "gpu-cuda"));
-    }
 
     #[test]
     fn v52_serialized_cache_rejected_and_v53_round_trip_preserves_identities() {
@@ -600,7 +576,6 @@ mod tests {
             detector_digest: 123,
             rules_digest: "rules".into(),
             gpu_sidecar_digest: Some("sidecar_digest_val".into()),
-            vyre_artifact_digest: Some("vyre_digest_val".into()),
             execution_pack_generation: None,
             configs: vec![],
         };
@@ -608,7 +583,6 @@ mod tests {
         let parsed = super::super::codec::parse_autoroute_cache(serialized.as_bytes())
             .unwrap_or_else(|e| panic!("parse v53 cache: {}", e.diagnostic()));
         assert_eq!(parsed.gpu_sidecar_digest, Some("sidecar_digest_val".into()));
-        assert_eq!(parsed.vyre_artifact_digest, Some("vyre_digest_val".into()));
     }
 
     #[test]
@@ -622,23 +596,17 @@ mod tests {
             detector_digest: 0,
             rules_digest: "test".into(),
             gpu_sidecar_digest: Some("valid_sidecar".into()),
-            vyre_artifact_digest: Some("valid_vyre".into()),
             execution_pack_generation: None,
             configs: vec![],
         };
 
         // Removing gpu_sidecar_digest independently -> rejected for GPU decision
         cache.gpu_sidecar_digest = None;
-        assert!(!is_gpu_decision_valid(&cache, "gpu-cuda"));
+        assert!(!gpu_artifact_identity_matches(&cache));
 
-        // Restoring sidecar, removing vyre_artifact_digest independently -> rejected
-        cache.gpu_sidecar_digest = Some("valid_sidecar".into());
-        cache.vyre_artifact_digest = None;
-        assert!(!is_gpu_decision_valid(&cache, "gpu-cuda"));
-
-        // Mismatched digests -> rejected
-        cache.vyre_artifact_digest = Some("invalid_vyre".into());
-        assert!(!is_gpu_decision_valid(&cache, "gpu-cuda"));
+        // Any identity other than the verified installed set is rejected.
+        cache.gpu_sidecar_digest = Some("invalid_sidecar".into());
+        assert!(!gpu_artifact_identity_matches(&cache));
     }
 
     #[test]
@@ -657,12 +625,8 @@ mod tests {
         let ev2 = BackendTimingEvidence::from_trial_ns(t2).unwrap();
         let ev3 = BackendTimingEvidence::from_trial_ns(t3).unwrap();
 
-        let m1 = ColdWarmStatisticalModel::from_timing(&ev1).unwrap();
+        assert!(ColdWarmStatisticalModel::from_timing(&ev1).is_some());
         assert!(ColdWarmStatisticalModel::from_timing(&ev2).is_none());
-        let m3 = ColdWarmStatisticalModel::from_timing(&ev3).unwrap();
-
-        let diff = m1.paired_difference(&m3);
-        assert!(!diff.is_statistically_faster_95);
-        assert_eq!(diff.count, 0);
+        assert!(ColdWarmStatisticalModel::from_timing(&ev3).is_none());
     }
 }
