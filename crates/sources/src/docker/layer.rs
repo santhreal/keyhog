@@ -281,13 +281,21 @@ fn normalize_streamed_layer_path(path: &str) -> Result<String, SourceError> {
             "docker layer chunk has an empty member path".into(),
         ));
     }
-    // HAR expansion labels chunks `{member}#{url}`. Peel the opaque URL BEFORE
-    // splitting nested-archive `//` separators — otherwise `https://...` in the
+    // HAR expansion labels chunks `{member}#{url}`. Peel an opaque URL BEFORE
+    // splitting nested-archive `//` separators; otherwise `https://...` in the
     // captured URL becomes a false nested member and `/../` segments refuse the
     // whole request/response body.
+    //
+    // Only peel when the body is non-empty AND the suffix looks like HAR/URL
+    // provenance. A real member named `#config` (or `zip//#config`) must stay
+    // intact: naive `split_once('#')` would otherwise leave an empty path body.
     let (path_body, har_url) = match path.split_once('#') {
-        Some((body, url)) => (body, Some(url)),
-        None => (path, None),
+        Some((body, url))
+            if !body.is_empty() && (url.contains("://") || path_body_looks_like_har(body)) =>
+        {
+            (body, Some(url))
+        }
+        _ => (path, None),
     };
     let mut normalized = Vec::new();
     for member in path_body.split("//") {
@@ -324,6 +332,13 @@ fn normalize_streamed_layer_path(path: &str) -> Result<String, SourceError> {
         Some(url) => format!("{joined}#{url}"),
         None => joined,
     })
+}
+
+fn path_body_looks_like_har(body: &str) -> bool {
+    Path::new(body)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("har"))
 }
 
 fn validate_virtual_member_path(member: &str) -> Result<(), SourceError> {

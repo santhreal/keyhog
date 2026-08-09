@@ -729,9 +729,9 @@ fn stream_plain_layer_member_windows<R: Read>(
             if got < to_read {
                 // Real EOF before declared size (truncated layer).
                 // - got==0 and absolute_offset>0: buf is overlap carry already
-                //   emitted as the tail of the previous window — do not re-emit.
+                //   emitted as the tail of the previous window; do not re-emit.
                 // - got==0 and absolute_offset==0: buf still holds the never-
-                //   emitted sniff prefix — fall through and emit it once.
+                //   emitted sniff prefix; fall through and emit it once.
                 // - got>0: emit the truncated window that includes new bytes.
                 remaining = 0;
                 if got == 0 && absolute_offset > 0 {
