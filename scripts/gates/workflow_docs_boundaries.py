@@ -136,6 +136,13 @@ def canonical_texts() -> dict[str, str]:
     return {name: path.read_text(encoding="utf-8") for name, path in PATHS.items()}
 
 
+def published_crates() -> tuple[str, ...]:
+    """Return the publication-order crate list owned by scripts/publish.sh."""
+    publish_script = PUBLISH_SCRIPT.read_text(encoding="utf-8")
+    publish_match = re.search(r"^CRATES=\(([^)]*)\)$", publish_script, re.MULTILINE)
+    return tuple(publish_match.group(1).split()) if publish_match else ()
+
+
 def boundary_issues(texts: dict[str, str]) -> list[str]:
     """Return missing use-case routes and headings that cross workflow boundaries."""
     issues: list[str] = []
@@ -149,12 +156,11 @@ def boundary_issues(texts: dict[str, str]) -> list[str]:
         if match := pattern.search(text):
             issues.append(f"{name}: heading belongs to another workflow: {match.group(0)!r}")
     release = texts.get("release", "")
-    publish_script = PUBLISH_SCRIPT.read_text(encoding="utf-8")
-    publish_match = re.search(r"^CRATES=\(([^)]*)\)$", publish_script, re.MULTILINE)
-    if publish_match is None:
+    crates = published_crates()
+    if not crates:
         issues.append("release: scripts/publish.sh does not expose the canonical CRATES list")
     else:
-        for crate in publish_match.group(1).split():
+        for crate in crates:
             if f"`{crate}`" not in release:
                 issues.append(
                     f"release: published crate {crate!r} is missing from the release guide"

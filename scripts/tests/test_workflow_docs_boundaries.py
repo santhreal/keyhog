@@ -103,11 +103,12 @@ class WorkflowDocumentationBoundaryTests(unittest.TestCase):
                 self.assertEqual(len(issues), 1)
                 self.assertIn(document, issues[0])
                 self.assertIn(route, issues[0])
-    def test_release_guide_keeps_ci_trigger_and_recovery_routes(self) -> None:
-        """Maintainers must retain the only credential and failed-upload recovery path."""
+
+    def test_release_guide_keeps_trusted_publisher_and_recovery_routes(self) -> None:
+        """Maintainers must retain the trusted-publishing and failed-upload recovery path."""
         broken = dict(self.texts)
         broken["release"] = broken["release"].replace(
-            "`CARGO_REGISTRY_TOKEN`",
+            "`rust-lang/crates-io-auth-action`",
             "unspecified registry credential",
         )
 
@@ -115,7 +116,35 @@ class WorkflowDocumentationBoundaryTests(unittest.TestCase):
 
         self.assertEqual(len(issues), 1)
         self.assertIn("release: missing canonical workflow route", issues[0])
-        self.assertIn("CARGO_REGISTRY_TOKEN", issues[0])
+        self.assertIn("crates-io-auth-action", issues[0])
+
+    def test_release_guide_covers_every_published_crate(self) -> None:
+        """Every publish-list member must turn the documentation gate red when omitted."""
+        for crate in workflow_docs_boundaries.published_crates():
+            with self.subTest(crate=crate):
+                broken = dict(self.texts)
+                broken["release"] = broken["release"].replace(f"`{crate}`", "")
+
+                issues = workflow_docs_boundaries.boundary_issues(broken)
+
+                self.assertIn(
+                    f"release: published crate {crate!r} is missing from the release guide",
+                    issues,
+                )
+
+    def test_release_guide_rejects_long_lived_registry_secret_instructions(self) -> None:
+        """Trusted publishing must not regress to a long-lived repository secret."""
+        broken = dict(self.texts)
+        broken["release"] += (
+            "\nSet the repository Actions secret `CARGO_REGISTRY_TOKEN`.\n"
+        )
+
+        issues = workflow_docs_boundaries.boundary_issues(broken)
+
+        self.assertIn(
+            "release: guide still requires a long-lived crates.io token instead of trusted publishing",
+            issues,
+        )
 
     def test_action_guide_cannot_absorb_provider_specific_ci_recipes(self) -> None:
         """GitLab or Jenkins recipes in the Action guide would recreate two conflicting CI manuals."""
