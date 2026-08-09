@@ -873,6 +873,20 @@ pub fn is_likely_innocuous_line_for_test(line: &str) -> bool {
 pub fn is_keyword_assignment_line_for_test(line: &str, secret_keywords: &[String]) -> bool {
     crate::entropy::keywords::is_keyword_assignment_line(line, secret_keywords)
 }
+/// `find_keyword_assignment_line_ids_for_test`: returns `usize` line indices for keyword assignments.
+pub fn find_keyword_assignment_line_ids_for_test(text: &str) -> Vec<usize> {
+    let line_index = crate::context::LineContextIndex::try_new(text).expect("valid line index");
+    let detector_keywords: Vec<String> = crate::assignment_keywords::assignment_keywords().to_vec();
+    let matcher = crate::assignment_keyword_matcher::AssignmentKeywordMatcher::compile(
+        &[],
+        &detector_keywords,
+    );
+    crate::entropy::keywords::find_keyword_assignment_line_ids_with_matcher(
+        text,
+        &line_index,
+        &matcher,
+    )
+}
 
 /// `is_import_like_prefix`: true when a trimmed line begins with an
 /// import/use/include/require/package/from declaration prefix (the single owner

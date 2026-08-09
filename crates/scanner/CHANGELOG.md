@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.69 - 2026-08-09
+
+- Preserve line indices as `usize` throughout entropy keyword discovery, context checks, and candidate scanning, preventing silent line drops or panics on large inputs.
+- Add `chunk_lane_threshold` configuration knob to CLI configuration schema, section mapping, and effective-config routing identity.
+- Cap scratch set capacity retention to prevent pathological bucket growth in worker-local scratch pools.
 ## 0.5.68 - 2026-08-05
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.

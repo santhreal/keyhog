@@ -265,5 +265,6 @@ pub(super) fn apply_tuning_section(
         scanner_tuning.no_candidate_gate = tuning.no_candidate_gate;
         scanner_tuning.fallback_localizer = tuning.fallback_localizer;
         scanner_tuning.gpu_recall_floor = tuning.gpu_recall_floor;
+        scanner_tuning.chunk_lane_threshold = tuning.chunk_lane_threshold;
     }
 }

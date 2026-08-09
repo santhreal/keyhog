@@ -4,6 +4,7 @@
 //! folder contract (KH-GAP-013 `entropy_keywords_inline_tests_in_src`).
 
 use keyhog_scanner::testing::{
+    find_keyword_assignment_line_ids_for_test,
     is_import_like_prefix_for_test as is_import_like_prefix,
     is_keyword_assignment_line_for_test as is_keyword_assignment_line,
     is_likely_innocuous_line_for_test as is_likely_innocuous_line,
@@ -88,4 +89,10 @@ fn credential_assignment_surface_preserves_boundaries_across_short_and_long_keys
     ] {
         assert!(!is_keyword_assignment_line(line, &[]), "{line:?}");
     }
+}
+#[test]
+fn keyword_line_ids_are_usize_without_u32_truncation() {
+    let text = "line0 = non_keyword\nDB_PASS = hunter2\nline2 = non_keyword\n";
+    let line_ids = find_keyword_assignment_line_ids_for_test(text);
+    assert_eq!(line_ids, vec![1]);
 }

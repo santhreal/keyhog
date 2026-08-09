@@ -905,7 +905,8 @@ fn config_effective_prints_scanner_tuning_from_toml() {
          confirmed_suffix_gate = false\n\
          no_candidate_gate = false\n\
          fallback_localizer = true\n\
-         gpu_recall_floor = true\n",
+         gpu_recall_floor = true\n\
+         chunk_lane_threshold = 32768\n",
     );
 
     assert_eq!(code, Some(0), "stderr={stderr}");
@@ -924,6 +925,7 @@ fn config_effective_prints_scanner_tuning_from_toml() {
         "tuning_no_candidate_gate = false",
         "tuning_fallback_localizer = true",
         "tuning_gpu_recall_floor = true",
+        "tuning_chunk_lane_threshold = 32768",
     ] {
         assert!(
             stdout.contains(required),
