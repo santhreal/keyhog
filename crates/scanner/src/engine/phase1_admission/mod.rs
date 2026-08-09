@@ -189,9 +189,6 @@ impl ReusablePhase1EvidenceCache {
                 .as_ref()
                 .map_or(0, |index| index.storage_bytes()),
         );
-        if resident_bytes > REUSABLE_EVIDENCE_MAX_BYTES {
-            return;
-        }
         if let Some(position) = self.entries.iter().position(|entry| {
             entry.fingerprint == fingerprint
                 && entry.bypass_bigram == bypass_bigram
@@ -202,11 +199,11 @@ impl ReusablePhase1EvidenceCache {
         }) {
             if let Some(mut entry) = self.entries.remove(position) {
                 self.resident_bytes = self.resident_bytes.saturating_sub(entry.resident_bytes());
-                entry.evidence = evidence;
-                let updated_bytes = entry.resident_bytes();
-                if updated_bytes > REUSABLE_EVIDENCE_MAX_BYTES {
+                if resident_bytes > REUSABLE_EVIDENCE_MAX_BYTES {
                     return;
                 }
+                entry.evidence = evidence;
+                let updated_bytes = entry.resident_bytes();
                 while self.entries.len() >= REUSABLE_EVIDENCE_MAX_ENTRIES
                     || self.resident_bytes.saturating_add(updated_bytes)
                         > REUSABLE_EVIDENCE_MAX_BYTES
@@ -220,6 +217,9 @@ impl ReusablePhase1EvidenceCache {
                 self.resident_bytes = self.resident_bytes.saturating_add(updated_bytes);
                 self.entries.push_back(entry);
             }
+            return;
+        }
+        if resident_bytes > REUSABLE_EVIDENCE_MAX_BYTES {
             return;
         }
         while self.entries.len() >= REUSABLE_EVIDENCE_MAX_ENTRIES

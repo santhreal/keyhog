@@ -2568,48 +2568,61 @@ pub use crate::engine::{
 };
 #[cfg(test)]
 pub(crate) use crate::homoglyph::expand_homoglyphs;
+/// Test wrapper around [`crate::context::LineContextIndex`].
 #[derive(Clone)]
 pub struct CompactLineIndexForTest(pub(crate) std::sync::Arc<crate::context::LineContextIndex>);
 
+/// Construct a line index fixture for unit tests.
 pub fn compact_line_index_for_test(text: &str) -> Result<CompactLineIndexForTest, &'static str> {
     crate::context::LineContextIndex::try_new(text)
         .map(std::sync::Arc::new)
         .map(CompactLineIndexForTest)
         .map_err(|_| "text exceeds compact line-index capacity")
 }
+
 impl CompactLineIndexForTest {
+    /// Retrieve line number for a byte offset.
     pub fn line_number_for_offset(&self, offset: usize) -> usize {
         self.0.line_number_for_offset(offset)
     }
+
+    /// Retrieve total allocated storage bytes for the line index.
     pub fn storage_bytes(&self) -> usize {
         self.0.storage_bytes()
     }
 }
 
+/// Test wrapper around [`crate::types::LazyRegex`].
 pub struct LazyCompanionForTest {
     regex: crate::types::LazyRegex,
 }
 
 impl LazyCompanionForTest {
+    /// Query whether the underlying regex has been lazily compiled.
     pub fn is_compiled(&self) -> bool {
         self.regex.is_compiled()
     }
+
+    /// Access the compiled regex reference, compiling if needed.
     pub fn get(&self) -> &regex::Regex {
         self.regex.get()
     }
 }
 
+/// Construct a lazy companion regex for test verification.
 pub fn companion_lazy_regex_for_test(pattern: &str) -> LazyCompanionForTest {
     LazyCompanionForTest {
         regex: crate::types::LazyRegex::companion(pattern),
     }
 }
 
+/// Test wrapper around Hyperscan SIMD scanner instance.
 #[cfg(feature = "simd")]
 pub struct HsScannerForTest(crate::simd::backend::HsScanner);
 
 #[cfg(feature = "simd")]
 impl HsScannerForTest {
+    /// Compile pattern specs into a test scanner instance.
     pub fn compile(patterns: &[(usize, usize, &str, bool)]) -> Result<Self, String> {
         crate::simd::backend::HsScanner::compile_with_opts(
             patterns,
@@ -2617,6 +2630,8 @@ impl HsScannerForTest {
         )
         .map(|(scanner, _)| Self(scanner))
     }
+
+    /// Report memory attribution for the compiled test scanner instance.
     pub fn memory_attribution(
         &self,
     ) -> crate::execution_pack::simd_program::SimdPackMemoryAttribution {
@@ -6039,12 +6054,14 @@ pub fn stream_detector_plan_for_test(
             crate::execution_pack::detector_plan::detector_plan_peak_live_wire_rows(),
     })
 }
+/// Test facade around [`crate::engine::phase1_admission::ReusablePhase1EvidenceCache`].
 #[derive(Default)]
 pub struct TestEvidenceCache {
     inner: crate::engine::phase1_admission::ReusablePhase1EvidenceCache,
 }
 
 impl TestEvidenceCache {
+    /// Insert payload evidence into test evidence cache.
     pub fn insert(
         &mut self,
         fingerprint: [u8; 32],
@@ -6080,14 +6097,17 @@ impl TestEvidenceCache {
         );
     }
 
+    /// Retrieve current resident bytes in test evidence cache.
     pub fn resident_bytes(&self) -> usize {
         self.inner.resident_bytes()
     }
 
+    /// Retrieve current entry count in test evidence cache.
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
+    /// Query whether test evidence cache is empty.
     pub fn is_empty(&self) -> bool {
         self.inner.len() == 0
     }
