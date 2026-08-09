@@ -104,15 +104,64 @@ async fn run_remove(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
 }
 
 async fn run_list() -> anyhow::Result<ExitCode> {
-    // List is not yet a daemon frame; report that the guard runtime is
-    // not yet available. This will be replaced when Lane E ships the
-    // root registry status aggregation.
-    let palette = style::for_stderr();
-    eprintln!(
-        "{} guard list: the guard runtime is not yet available on this daemon",
-        style::warn("WARN", &palette)
-    );
-    Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
+    let socket = default_socket_path();
+    let mut conn = match client::connect_any_version(&socket).await {
+        Ok(c) => c,
+        Err(e) => {
+            anyhow::bail!(
+                "guard list: no compatible daemon at {} (start one with `keyhog daemon start`): {e}",
+                socket.display()
+            );
+        }
+    };
+
+    let request = Request::GuardList;
+    match conn.round_trip(&request).await? {
+        Response::GuardListResult { roots } => {
+            if roots.is_empty() {
+                let palette = style::for_stderr();
+                eprintln!(
+                    "{} no guard roots registered",
+                    style::pass("OK", &palette)
+                );
+            } else {
+                let palette = style::for_stderr();
+                eprintln!(
+                    "{} {} guard root{} registered",
+                    style::pass("OK", &palette),
+                    roots.len(),
+                    if roots.len() == 1 { "" } else { "s" }
+                );
+                for entry in &roots {
+                    eprintln!(
+                        "  {}  {}  seq={}",
+                        entry.root,
+                        entry.state,
+                        entry.terminal_sequence
+                    );
+                }
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Response::Error { message } => {
+            let palette = style::for_stderr();
+            eprintln!(
+                "{} guard list: {}",
+                style::warn("WARN", &palette),
+                message
+            );
+            Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
+        }
+        other => {
+            let palette = style::for_stderr();
+            eprintln!(
+                "{} guard list: unexpected daemon response: {}",
+                style::warn("WARN", &palette),
+                response_kind(&other)
+            );
+            Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
+        }
+    }
 }
 
 async fn run_status(

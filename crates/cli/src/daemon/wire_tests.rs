@@ -444,3 +444,59 @@ async fn daemon_wire_v12_scan_results_roundtrips_request_profile() {
         other => panic!("expected ScanResults, got {other:?}"),
     }
 }
+
+/// The v13 `GuardList` request and `GuardListResult` response must round-trip
+/// through the frame boundary with all root entries preserved.
+#[tokio::test]
+async fn daemon_wire_v13_guard_list_roundtrips() {
+    use crate::daemon::protocol::{GuardListEntry, Request, Response};
+
+    let (mut client, mut server) = tokio::io::duplex(64 * 1024);
+
+    frame::write_request(&mut client, &Request::GuardList)
+        .await
+        .expect("write GuardList");
+    let req = frame::read_request(&mut server)
+        .await
+        .expect("read request")
+        .expect("GuardList frame");
+    assert!(matches!(req, Request::GuardList));
+
+    let response = Response::GuardListResult {
+        roots: vec![
+            GuardListEntry {
+                root: "/work/project".to_string(),
+                mode: "repo".to_string(),
+                state: "current".to_string(),
+                terminal_sequence: 42,
+            },
+            GuardListEntry {
+                root: "/srv/data".to_string(),
+                mode: "filesystem".to_string(),
+                state: "indexing".to_string(),
+                terminal_sequence: 0,
+            },
+        ],
+    };
+    frame::write_response(&mut server, &response)
+        .await
+        .expect("write GuardListResult");
+    let resp = frame::read_response(&mut client)
+        .await
+        .expect("read response")
+        .expect("GuardListResult frame");
+    match resp {
+        Response::GuardListResult { roots } => {
+            assert_eq!(roots.len(), 2);
+            assert_eq!(roots[0].root, "/work/project");
+            assert_eq!(roots[0].mode, "repo");
+            assert_eq!(roots[0].state, "current");
+            assert_eq!(roots[0].terminal_sequence, 42);
+            assert_eq!(roots[1].root, "/srv/data");
+            assert_eq!(roots[1].mode, "filesystem");
+            assert_eq!(roots[1].state, "indexing");
+            assert_eq!(roots[1].terminal_sequence, 0);
+        }
+        other => panic!("expected GuardListResult, got {other:?}"),
+    }
+}

@@ -248,6 +248,8 @@ struct ServerState {
     // Work requests currently between dispatch and a written response. Separate
     // from `active_scans`, which covers scanner execution only.
     active_requests: AtomicU32,
+    /// Guard runtime: root registry, attestation index, policy identity.
+    guard: Arc<crate::daemon::guard_runtime::GuardRuntime>,
 }
 
 impl ServerState {
@@ -288,6 +290,7 @@ impl ServerState {
             draining: AtomicBool::new(false),
             scans_drained: Notify::new(),
             active_requests: AtomicU32::new(0),
+            guard: Arc::new(crate::daemon::guard_runtime::GuardRuntime::new()),
         }
     }
 
@@ -1221,13 +1224,101 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
         },
         Request::GuardCommitBegin { .. }
         | Request::GuardCommitBlob { .. }
-        | Request::GuardCommitFinish { .. }
-        | Request::GuardAdd { .. }
-        | Request::GuardRemove { .. }
-        | Request::GuardStatus { .. }
-        | Request::GuardReconcile { .. } => Response::Error {
-            message: "daemon: guard runtime is not yet initialized on this daemon".to_string(),
+        | Request::GuardCommitFinish { .. } => Response::Error {
+            message: "daemon: guard commit transaction is not yet implemented on this daemon".to_string(),
         },
+        Request::GuardAdd { root, mode } => {
+            let guard_mode = match mode.as_str() {
+                "repo" => keyhog_core::guard_state::GuardRootMode::Repo,
+                "filesystem" => keyhog_core::guard_state::GuardRootMode::Filesystem,
+                other => {
+                    return Response::Error {
+                        message: format!("daemon: invalid guard mode '{}': expected 'repo' or 'filesystem'", other),
+                    }
+                }
+            };
+            let canonical = std::fs::canonicalize(&root)
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| root.clone());
+            let fs_identity = keyhog_core::guard_state::FilesystemIdentity {
+                device: 0,
+                inode: 0,
+            };
+            match state.guard.add_root(canonical.as_bytes().to_vec(), fs_identity, guard_mode) {
+                Ok(record) => Response::GuardAdded {
+                    root: canonical.clone(),
+                    state: format!("{:?}", record.state).to_lowercase(),
+                    terminal_sequence: record.terminal_sequence,
+                },
+                Err(msg) => Response::Error { message: format!("daemon: guard add failed: {}", msg) },
+            }
+        }
+        Request::GuardRemove { root } => {
+            let canonical = std::fs::canonicalize(&root)
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| root.clone());
+            match state.guard.remove_root(canonical.as_bytes()) {
+                Some(_) => Response::GuardRemoved,
+                None => Response::Error {
+                    message: format!("daemon: guard root not registered: {}", canonical),
+                },
+            }
+        }
+        Request::GuardStatus { root } => {
+            let canonical = std::fs::canonicalize(&root)
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| root.clone());
+            match state.guard.root_record(canonical.as_bytes()) {
+                Some(record) => Response::GuardStatusResult {
+                    root: canonical.clone(),
+                    mode: format!("{:?}", record.mode).to_lowercase(),
+                    state: format!("{:?}", record.state).to_lowercase(),
+                    terminal_sequence: record.terminal_sequence,
+                    pending_events: 0,
+                    files_scanned: 0,
+                    bytes_scanned: 0,
+                    attestation_hits: 0,
+                    attestation_misses: 0,
+                    findings_count: 0,
+                    coverage_gaps: 0,
+                    scanner_residency: "idle-unload".to_string(),
+                    repair_command: format!("keyhog guard reconcile {}", canonical),
+                },
+                None => Response::Error {
+                    message: format!("daemon: guard root not registered: {}", canonical),
+                },
+            }
+        }
+        Request::GuardReconcile { root } => {
+            let canonical = std::fs::canonicalize(&root)
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| root.clone());
+            if state.guard.root_state(canonical.as_bytes()).is_none() {
+                return Response::Error {
+                    message: format!("daemon: guard root not registered: {}", canonical),
+                };
+            }
+            match state.guard.transition_root(canonical.as_bytes(), &keyhog_core::guard_state::GuardTransition::ReconciliationStarted) {
+                Ok(_) => Response::GuardReconcileStarted { root: canonical },
+                Err(e) => Response::Error {
+                    message: format!("daemon: guard reconcile failed: {:?}", e),
+                },
+            }
+        }
+        Request::GuardList => {
+            let roots: Vec<crate::daemon::protocol::GuardListEntry> = state
+                .guard
+                .list_roots()
+                .into_iter()
+                .map(|r| crate::daemon::protocol::GuardListEntry {
+                    root: String::from_utf8_lossy(&r.canonical_path).into_owned(),
+                    mode: format!("{:?}", r.mode).to_lowercase(),
+                    state: format!("{:?}", r.state).to_lowercase(),
+                    terminal_sequence: r.terminal_sequence,
+                })
+                .collect();
+            Response::GuardListResult { roots }
+        }
         // The wire contract says Shutdown flushes in-flight scans. Refuse new
         // work, wait for the running scans, and only then acknowledge, so a
         // client whose scan is mid-flight gets its results instead of a dropped

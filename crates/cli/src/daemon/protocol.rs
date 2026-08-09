@@ -277,6 +277,8 @@ pub(crate) enum Request {
         /// Canonical root path.
         root: String,
     },
+    /// List all registered guard roots.
+    GuardList,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -465,6 +467,11 @@ pub(crate) enum Response {
         /// Canonical root path.
         root: String,
     },
+    /// List of all registered guard roots with their states.
+    GuardListResult {
+        /// All registered roots, each with path, mode, and state.
+        roots: Vec<GuardListEntry>,
+    },
 }
 
 /// One entry in the staged manifest sent over the wire in
@@ -482,6 +489,20 @@ pub(crate) struct GuardWireManifestEntry {
     pub object_size: u64,
     /// Raw file mode from the index.
     pub raw_mode: u32,
+}
+
+/// One root entry in a `GuardListResult`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GuardListEntry {
+    /// Canonical root path.
+    pub root: String,
+    /// Mode label: "repo" or "filesystem".
+    pub mode: String,
+    /// Current state label.
+    pub state: String,
+    /// Terminal event sequence.
+    pub terminal_sequence: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -847,6 +868,7 @@ pub(crate) fn request_kind(request: &Request) -> &'static str {
         Request::GuardRemove { .. } => "GuardRemove",
         Request::GuardStatus { .. } => "GuardStatus",
         Request::GuardReconcile { .. } => "GuardReconcile",
+        Request::GuardList => "GuardList",
     }
 }
 /// One-word kind label for a daemon [`Response`]. Use this in user-facing
@@ -869,5 +891,6 @@ pub(crate) fn response_kind(response: &Response) -> &'static str {
         Response::GuardRemoved => "GuardRemoved",
         Response::GuardStatusResult { .. } => "GuardStatusResult",
         Response::GuardReconcileStarted { .. } => "GuardReconcileStarted",
+        Response::GuardListResult { .. } => "GuardListResult",
     }
 }
