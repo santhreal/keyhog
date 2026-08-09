@@ -1014,6 +1014,9 @@ impl CompiledScanner {
         // expensive CPU-trigger / absence classification work. Admission and
         // keyword-trigger census still run live: those fields feed autoroute
         // WorkloadKey and must not flip after the first clean window.
+        // Safe to publish into a reusable evidence row only because
+        // representative grouping for filesystem/windowed also requires the
+        // same path class (see phase1_admission_plan_with_bigram_mode).
         if chunk.metadata.decoded_span.is_none()
             && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
             && super::scan::vocab_previously_clean(
@@ -1186,11 +1189,25 @@ impl CompiledScanner {
         for (index, chunk) in chunks.iter().enumerate() {
             let data = chunk.data.as_bytes();
             let fingerprint = phase1_payload_fingerprint(data);
+            let windowed_path = (chunk.metadata.source_type.as_ref() == "filesystem/windowed")
+                .then_some(chunk.metadata.path.as_deref());
             let mut representative_position = None;
             for (position, (candidate, representative_index)) in representatives.iter().enumerate()
             {
+                let representative = &chunks[*representative_index];
+                let same_windowed_path = match windowed_path {
+                    // Non-windowed payloads keep content-only reuse (path-independent
+                    // absence fields only). Windowed rows also require the same path
+                    // so a path-scoped vocab-clean proof cannot jump to another file.
+                    None => true,
+                    Some(path) => {
+                        representative.metadata.source_type.as_ref() == "filesystem/windowed"
+                            && representative.metadata.path.as_deref() == path
+                    }
+                };
                 if *candidate == fingerprint
-                    && chunks[*representative_index].data.as_bytes() == data
+                    && same_windowed_path
+                    && representative.data.as_bytes() == data
                 {
                     representative_position = Some(position);
                     break;

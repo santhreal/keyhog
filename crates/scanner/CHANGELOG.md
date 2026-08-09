@@ -2,36 +2,6 @@
 
 ## 0.5.68 - 2026-08-05
 
-- Restore reusable phase-1 absence proofs for *small rejected* repeated payloads (≤128 KiB) so identical inert files do not redo no-hit analysis, without taxing large rejected windows on one_long_line.
-- Size-gate markerless bounded-window decode skips with `text_is_dense_markerless_single_line` so short trailing slices of a long single line still decode.
-- Expose `confirmed_companion_gate` on `[tuning]` / resolved config / autoroute identity (default on), matching the other recall-identical confirmed-pass gates.
-- Fix cfg(test) `scalar_overlaps_reference` to call `contains_anchor_ascii8` after the hot-path reject probe stopped exposing `contains_anchor`, so `cargo test -p keyhog-scanner --lib` compiles again (macOS CI).
-- Extract vocabulary-stage absence helpers into `engine/vocab_absence.rs` so `engine/scan.rs` stays under the STANDARD 500 LOC cap; register `companion_gate` in FILE_GATE_MATRIX and migrate its inline tests to `tests/unit`.
-- Add a per-scanner confirmed companion-gate test override so suffix-gate cold-regex differential coverage can isolate itself from mid-literal denial.
-- Speed up decode-through on repetitive single-line JSON: memoize base64 trial-decode by candidate value, intern extracted candidate strings as `Arc<str>`, and skip duplicate Caesar inputs that would emit identical bare chunks.
-- Bound the base64 success memo to second-sighting retention: failures stay memoized immediately, but successful UTF-8 text is retained only after a candidate repeats, so unique-blob corpora do not keep a second full-size copy of every decode for the whole chunk.
-- Skip decode-through on *dense* markerless single-line chunks (≥64 KiB, no classical encode markers `+`, `/`, `=`, `%`, `\`). Short markerless lines still decode so postprocess truncation/suppression telemetry and small encoded payloads keep working; marker-bearing windows still decode.
-- Keep the confirmed companion gate's allow-set in the per-worker scratch bitset instead of allocating a full `ac_map`-sized `Vec<bool>` each chunk.
-- Speed the confirmed companion gate with a first-bigram absence prescreen and a thread-local Aho-Corasick cache for repeated active literal sets across windows.
-- Skip entropy-only no-hit admission on markerless single-line chunks after phase-2/generic keywords miss, so one_long_line windows rejected by the direct-literal bloom do not re-enter the entropy storm.
-- Collect phase-1 trigger/absence hints for every admitted unique window during admission planning, and tighten the selective-anchor bloom reject probe so multi-MiB window walks avoid per-window scratch copies.
-- Memoize empty decode-through outcomes by unique-line vocabulary (keyed by detector digest) so overlapping windows of repetitive multi-line corpora (one_large) do not re-run hex/base64 trial decode after the first empty result.
-- Memoize confirmed-pattern and entropy absence by the same detector-scoped unique-line vocabulary so later overlapping windows of repetitive multi-line corpora skip those stages after the first empty proof.
-- Short-circuit the prepared scan (and phase-1 classification) for detector-scoped vocabularies already proven clean so later overlapping windows of repetitive multi-line corpora skip preprocess/phase2/hot-pattern work after the first empty proof.
-- Keep markerless no-hit skips from bypassing Unicode de-obfuscation: fall through to `should_scan_no_hit_chunk` when the raw window still carries evasion characters.
-- Record vocab confirmed/entropy absence from accepted match/ML push events instead of heap `len()` deltas, so capacity-bounded replacement cannot forge an empty proof.
-- Skip unique-line vocabulary fingerprint hashing when the per-scanner absence cache is empty (cold lookups cannot hit).
-- Bound confirmed-anchor sparse collect to a small unique-literal budget and keep the shared first-bigram reject in front of both collect paths.
-- Cache companion-gate derived literal/AC/bigram state across chunks that share the same active pattern set, and attribute companion time to its own profiler stage.
-- On vocab-clean windowed shortcuts, return empty matches and let the parent coalesced post-process own decode/fragment work (avoid double decode).
-- Key the companion-gate derived cache by `detector_digest` as well as active pattern indices so thread-local reuse cannot cross CompiledScanner instances.
-- Guard decode-vocab empty memo lookups/marks to parent `filesystem/windowed` slices, reuse the batch entropy config digest in the phase-1 clean short-circuit, and drop new vocab-memo keys at capacity instead of clearing unrelated stage proofs (unique-line fingerprints retained so overlapping windows still hit).
-- After autoroute selects CpuFallback, fill deferred CPU trigger-hint rows on the route-neutral phase-1 plan so the scalar hot lane reuses them (production automatic route, not only `--backend cpu`).
-- Fill those CPU trigger hints before autoroute calibration timing so measured CpuFallback matches the executed production plan.
-- Bound markerless no-hit / always-active skips to dense windows (≥64 KiB) so short unterminated bare secrets still reach keyword-free entropy admission.
-- Avoid hashing `entropy_evidence_config_digest` on non-windowed prepared scans (digest still tracks live public `config` mutations).
-- Do not record vocab confirmed/entropy absence when the per-chunk match heap is already at capacity (rejected candidates must not forge empty proofs).
-
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.
 - Make scanner construction route-specific. The default library constructor owns only the scalar reference route, `compile_for_backend` owns one explicit route, and cross-route dispatch fails instead of materializing or substituting a backend.
 - Store each interned detector metadata string in one lookup-map key instead of a parallel arena and index, and reuse those allocations for resolution and cross-detector relation identities.

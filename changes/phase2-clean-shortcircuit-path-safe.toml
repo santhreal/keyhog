@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Keep filesystem/windowed phase-1 representative reuse path-scoped so vocab-clean proofs cannot jump to a byte-identical file at another path."
+crates = ["scanner"]
