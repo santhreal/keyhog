@@ -359,6 +359,9 @@ test_positive = "custom_vendor_test_token = \"custom_token_0123456789abcdef01234
         metadata: keyhog_core::ChunkMetadata::default(),
     };
     let findings = scanner.scan(&chunk).expect("scan succeeds");
-    assert!(!findings.is_empty(), "custom detector without scanner source edits must fire");
+    assert!(
+        !findings.is_empty(),
+        "custom detector without scanner source edits must fire"
+    );
     assert_eq!(findings[0].detector_id.as_ref(), "custom-vendor-test-token");
 }

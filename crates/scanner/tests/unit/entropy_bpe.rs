@@ -319,7 +319,10 @@ fn sweep_eligible_detector_families_with_recall_boundary_evidence() {
                     assert!(
                         cpt <= bound,
                         "Detector {} BPE bound {} must admit real secret {} (cpt {:.3})",
-                        spec.id, bound, secret, cpt
+                        spec.id,
+                        bound,
+                        secret,
+                        cpt
                     );
                 }
 
@@ -328,7 +331,10 @@ fn sweep_eligible_detector_families_with_recall_boundary_evidence() {
                     assert!(
                         cpt > bound,
                         "Detector {} BPE bound {} must suppress word-like FP {} (cpt {:.3})",
-                        spec.id, bound, fp, cpt
+                        spec.id,
+                        bound,
+                        fp,
+                        cpt
                     );
                 }
             }

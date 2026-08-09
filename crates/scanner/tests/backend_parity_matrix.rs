@@ -281,9 +281,10 @@ fn backend_parity_matrix_all_fixtures_all_backends() {
         .expect("load detectors from the required on-disk detector directory");
     let mut config = ScannerConfig::default();
     config.penalize_test_paths = false;
-    let reference_scanner = CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
-        .expect("scanner compile")
-        .with_config(config.clone());
+    let reference_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
+            .expect("scanner compile")
+            .with_config(config.clone());
     let fixtures = build_fixtures();
 
     let backends = [
@@ -358,9 +359,10 @@ fn gpu_fused_always_anchor_positions_match_cpu_when_keyword_localization_is_disa
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
     let mut config = ScannerConfig::default();
     config.penalize_test_paths = false;
-    let cpu_scanner = CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::CpuFallback)
-        .expect("compile cpu scanner")
-        .with_config(config.clone());
+    let cpu_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::CpuFallback)
+            .expect("compile cpu scanner")
+            .with_config(config.clone());
     let gpu_scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::GpuWgpu)
         .expect("compile gpu scanner")
         .with_config(config);

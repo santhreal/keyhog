@@ -110,8 +110,14 @@ fn high_entropy_base64_secret_recall_and_negative_suppression_boundaries() {
     let base64_secret = "qA9zM4nB7vC2xL8pR5tY1uI6oP3sD0fG9hJ2kL7mN4bV8cX1zQ6wE5rT0yU3iO";
     let entropy_secret = 5.2;
 
-    assert!(!looks_like_generic_random_base64_blob_decoy(base64_secret, entropy_secret));
-    assert!(generic_base64_candidate_is_ambiguous(base64_secret, entropy_secret));
+    assert!(!looks_like_generic_random_base64_blob_decoy(
+        base64_secret,
+        entropy_secret
+    ));
+    assert!(generic_base64_candidate_is_ambiguous(
+        base64_secret,
+        entropy_secret
+    ));
 
     let doc_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE_123456";
     let hex_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -119,5 +125,8 @@ fn high_entropy_base64_secret_recall_and_negative_suppression_boundaries() {
 
     assert!(suppression_stage(doc_negative).is_some() || doc_negative.contains("PLACEHOLDER"));
     assert!(looks_like_entropy_canonical_hex_digest(hex_digest));
-    assert!(looks_like_generic_random_base64_blob_decoy(low_entropy_b64, 1.0));
+    assert!(looks_like_generic_random_base64_blob_decoy(
+        low_entropy_b64,
+        1.0
+    ));
 }
