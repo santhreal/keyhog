@@ -39,12 +39,23 @@ fn every_detector_appears_and_lists_at_least_one_mechanism() {
     let detectors = doc["detectors"].as_array().expect("detectors array");
     let count = doc["detector_count"].as_u64().expect("detector_count");
 
-    assert_eq!(detectors.len() as u64, count, "row count must equal the count it reports");
-    assert!(count > 100, "the embedded corpus should be large, got {count}");
+    assert_eq!(
+        detectors.len() as u64,
+        count,
+        "row count must equal the count it reports"
+    );
+    assert!(
+        count > 100,
+        "the embedded corpus should be large, got {count}"
+    );
 
     let silent: Vec<&str> = detectors
         .iter()
-        .filter(|row| row["mechanisms"].as_array().is_some_and(|list| list.is_empty()))
+        .filter(|row| {
+            row["mechanisms"]
+                .as_array()
+                .is_some_and(|list| list.is_empty())
+        })
         .filter_map(|row| row["id"].as_str())
         .collect();
     assert!(
@@ -72,11 +83,7 @@ fn a_mechanism_keyhog_cannot_express_is_reported_not_omitted() {
         let reason = row["unavailable_reason"]
             .as_str()
             .expect("an unavailable mechanism must carry its reason");
-        assert!(
-            !reason.trim().is_empty(),
-            "empty reason on {}",
-            row["id"]
-        );
+        assert!(!reason.trim().is_empty(), "empty reason on {}", row["id"]);
         assert_eq!(
             row["detectors"], 0,
             "a mechanism nothing can declare must count zero detectors"
@@ -84,7 +91,10 @@ fn a_mechanism_keyhog_cannot_express_is_reported_not_omitted() {
     }
 
     // The row must still be present in the vocabulary, not dropped.
-    let ids: Vec<&str> = summary.iter().filter_map(|row| row["id"].as_str()).collect();
+    let ids: Vec<&str> = summary
+        .iter()
+        .filter_map(|row| row["id"].as_str())
+        .collect();
     assert!(ids.contains(&"byte_pair_likelihood"), "{ids:?}");
 }
 
@@ -133,7 +143,10 @@ fn the_manifest_is_derived_from_the_corpus_not_from_a_table() {
 
     let full_count = full["detector_count"].as_u64().expect("count");
     let scoped_count = scoped["detector_count"].as_u64().expect("count");
-    assert!(scoped_count > 0, "the search must match something to be a test");
+    assert!(
+        scoped_count > 0,
+        "the search must match something to be a test"
+    );
     assert!(
         scoped_count < full_count,
         "scoping must shrink the corpus: {scoped_count} vs {full_count}"
@@ -191,7 +204,10 @@ fn the_manifest_is_derived_from_the_corpus_not_from_a_table() {
                 .iter()
                 .any(|full_row| &full_row["id"] == id && full_row["detectors"] != row["detectors"])
         });
-    assert!(moved, "no mechanism count changed under --search, so nothing was derived");
+    assert!(
+        moved,
+        "no mechanism count changed under --search, so nothing was derived"
+    );
 }
 
 #[test]

@@ -95,7 +95,10 @@ fn scan_inner_timings_flow_through_runtime_once_per_chunk() {
             phase1_calls, 3,
             "exactly one Phase1Triggers span per scanned chunk, no duplicate counter"
         );
-        assert!(preprocess_ns > 0, "prepare_chunk wall time must be recorded");
+        assert!(
+            preprocess_ns > 0,
+            "prepare_chunk wall time must be recorded"
+        );
         assert!(phase1_ns > 0, "phase-1 wall time must be recorded");
     });
 }
@@ -146,7 +149,10 @@ fn decode_generation_and_rescan_flow_through_runtime() {
             decode_calls, 1,
             "exactly one decode-generation span per parent chunk"
         );
-        assert!(decode_ns > 0, "decode generation wall time must be recorded");
+        assert!(
+            decode_ns > 0,
+            "decode generation wall time must be recorded"
+        );
         let attributed_ns: u64 = measurements
             .iter()
             .map(|measurement| measurement.attributed_ns)

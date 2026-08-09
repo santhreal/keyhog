@@ -1,8 +1,8 @@
-use super::*;
-use super::fixtures::decode_workload_sketch;
-use super::fixtures::workload_key;
 use super::super::workload::decode_workload_sketch as decode_workload_sketch_with_plan;
 use super::super::workload::workload_key as workload_key_with_plan;
+use super::fixtures::decode_workload_sketch;
+use super::fixtures::workload_key;
+use super::*;
 
 #[test]
 fn eligible_backend_labels_use_the_simd_plan_without_materializing_it() {
@@ -3250,10 +3250,11 @@ fn backend_timing_evidence_rejects_empty_trial_sets_at_construction() {
 fn immutable_gpu_preparation_costs_change_only_the_cold_trial() {
     let literal_preparation_ns = 60;
     let phase2_preparation_ns = 30;
-    let evidence =
-        super::super::evidence::BackendTimingEvidence::from_trial_ns(vec![10, 20, 20, 20, 20, 20, 20])
-            .expect("timing evidence")
-            .add_to_first_trial(literal_preparation_ns + phase2_preparation_ns);
+    let evidence = super::super::evidence::BackendTimingEvidence::from_trial_ns(vec![
+        10, 20, 20, 20, 20, 20, 20,
+    ])
+    .expect("timing evidence")
+    .add_to_first_trial(literal_preparation_ns + phase2_preparation_ns);
     assert_eq!(evidence.trials_ns, vec![100, 20, 20, 20, 20, 20, 20]);
     let (cold_ns, warm, one_shot_ns) =
         super::super::evidence::gpu_cold_warm_route_evidence(&evidence).expect("cold/warm split");
@@ -4800,7 +4801,8 @@ fn bucket_resolution_does_not_clamp_an_uncalibrated_class() {
 
 #[test]
 fn cuda_and_wgpu_are_independent_measured_candidates() {
-    let timing = |ms| BackendTimingEvidence::constant_ms(ms, super::super::AUTOROUTE_CALIBRATION_TRIALS);
+    let timing =
+        |ms| BackendTimingEvidence::constant_ms(ms, super::super::AUTOROUTE_CALIBRATION_TRIALS);
     let cuda_wins = AutorouteDecision::from_peer_timing_evidence(
         ScanBackend::GpuCuda,
         8 * 1024 * 1024,

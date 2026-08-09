@@ -22,7 +22,7 @@
 
 use keyhog_core::{Chunk, SourceError};
 use keyhog_sources::skip_counts;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 const BIG: u64 = 1_000_000;
 

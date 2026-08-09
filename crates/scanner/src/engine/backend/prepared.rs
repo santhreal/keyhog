@@ -34,7 +34,9 @@ impl<'a> PreparedChunk<'a> {
                 }
                 match crate::context::LineContextIndex::try_new(&self.preprocessed.text) {
                     Ok(line_index) => std::sync::Arc::new(line_index),
-                    Err(_) => panic!("preprocessed chunk length exceeds the checked u32 line-index boundary"),
+                    Err(_) => panic!(
+                        "preprocessed chunk length exceeds the checked u32 line-index boundary"
+                    ),
                 }
             })
             .as_ref()
@@ -406,14 +408,25 @@ pub(crate) fn build_packed_simd_compile_plan(
         ));
     }
 
-    let unsupported: Vec<usize> = program.unsupported_pattern_ids.iter().map(|&id| id as usize).collect();
+    let unsupported: Vec<usize> = program
+        .unsupported_pattern_ids
+        .iter()
+        .map(|&id| id as usize)
+        .collect();
     let unsupported_set: std::collections::HashSet<usize> = unsupported.iter().copied().collect();
     let pattern_map = program
         .patterns
         .iter()
         .enumerate()
         .filter(|(id, _)| !unsupported_set.contains(id))
-        .map(|(id, p)| (id, p.detector_index as usize, p.pattern_index as usize, p.reports_start))
+        .map(|(id, p)| {
+            (
+                id,
+                p.detector_index as usize,
+                p.pattern_index as usize,
+                p.reports_start,
+            )
+        })
         .collect();
     let pattern_count = program.patterns.len();
 

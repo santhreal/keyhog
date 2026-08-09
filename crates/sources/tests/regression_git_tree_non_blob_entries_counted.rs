@@ -3,7 +3,7 @@
 mod support;
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{git_object_unreadable, GitSource};
 use std::path::Path;
 use std::process::Command;

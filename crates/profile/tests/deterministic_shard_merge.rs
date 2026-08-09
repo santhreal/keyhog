@@ -1,8 +1,6 @@
 //! Deterministic shard merging at session finish.
 
-use keyhog_profile::{
-    add_counter, add_input_units, span, CounterId, MetricId, Runtime, Stage,
-};
+use keyhog_profile::{add_counter, add_input_units, span, CounterId, MetricId, Runtime, Stage};
 use std::sync::{Arc, Barrier};
 use std::time::Duration;
 
@@ -60,8 +58,11 @@ fn run_work(stagger: bool) -> MergedSnapshot {
         .map(|metric| (metric.metric_id, metric.value))
         .collect();
     let imbalance = runtime.take_session_worker_imbalance();
-    let mut sorted_worker_calls: Vec<u64> =
-        imbalance.workers.iter().map(|worker| worker.calls).collect();
+    let mut sorted_worker_calls: Vec<u64> = imbalance
+        .workers
+        .iter()
+        .map(|worker| worker.calls)
+        .collect();
     sorted_worker_calls.sort_unstable();
     let stage_calls = vec![(Stage::BackendDispatch, imbalance.total_calls)];
     MergedSnapshot {
@@ -86,10 +87,7 @@ fn different_thread_scheduling_produces_identical_merged_outputs() {
     assert_eq!(simultaneous, staggered);
     assert_eq!(simultaneous.total_calls, 1_000);
     assert_eq!(simultaneous.worker_count, 4);
-    assert_eq!(
-        simultaneous.typed_metrics,
-        vec![(MetricId::InputUnits, 14)]
-    );
+    assert_eq!(simultaneous.typed_metrics, vec![(MetricId::InputUnits, 14)]);
     assert_eq!(
         simultaneous.latency_call_counts,
         vec![(MetricId::BackendDispatch, 1_000)]
@@ -130,7 +128,11 @@ fn worker_records_are_sorted_by_stable_shard_sequence() {
         .map(|worker| worker.worker_id)
         .collect();
     assert_eq!(worker_ids, vec![1, 2, 3]);
-    let mut calls: Vec<u64> = imbalance.workers.iter().map(|worker| worker.calls).collect();
+    let mut calls: Vec<u64> = imbalance
+        .workers
+        .iter()
+        .map(|worker| worker.calls)
+        .collect();
     calls.sort_unstable();
     assert_eq!(calls, vec![10, 20, 30]);
 }

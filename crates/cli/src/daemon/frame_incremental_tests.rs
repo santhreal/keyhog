@@ -40,4 +40,3 @@ async fn daemon_frame_reports_truncated_length_prefix_as_error() {
         "partial header must report observed prefix bytes; got {message}"
     );
 }
-

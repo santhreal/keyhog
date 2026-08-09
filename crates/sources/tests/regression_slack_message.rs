@@ -15,7 +15,7 @@ use keyhog_core::Source;
 #[cfg(feature = "slack")]
 use keyhog_sources::skip_counts;
 #[cfg(feature = "slack")]
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 #[cfg(feature = "slack")]
 mod support;

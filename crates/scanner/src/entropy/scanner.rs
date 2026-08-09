@@ -613,9 +613,7 @@ fn scan_keyword_contexts(
         for line_idx in start..end {
             if line_idx != keyword_line_index
                 && keyword_line_ids
-                    .binary_search(
-                        &u32::try_from(line_idx).unwrap_or(u32::MAX),
-                    )
+                    .binary_search(&u32::try_from(line_idx).unwrap_or(u32::MAX))
                     .is_ok()
             {
                 continue;

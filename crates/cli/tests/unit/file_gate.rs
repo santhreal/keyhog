@@ -391,7 +391,8 @@ fn sources_wires_no_default_excludes_into_git_sources() {
             .expect("source factory call must close with `)?`");
         let call = &call[..call_end];
         let name = call
-            .split(['"']).nth(1)
+            .split(['"'])
+            .nth(1)
             .expect("source factory call names its source")
             .to_owned();
         assert!(

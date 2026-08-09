@@ -18,7 +18,7 @@
 
 use keyhog_core::Source;
 use keyhog_sources::skip_counts;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::FilesystemSource;
 use std::fs;
 use std::os::unix::fs::symlink;

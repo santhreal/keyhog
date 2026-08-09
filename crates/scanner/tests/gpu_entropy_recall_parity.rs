@@ -51,8 +51,7 @@ const ANCHORED: &str = "AKIAQYLPMN5HFIQR7XYA";
 /// is caught ONLY by the entropy isolated-bare pass, never by a named detector.
 /// (Same shape proven detectable by the SimdCpu entropy path in the
 /// `keyword_free_scan_detects_isolated_bare_high_entropy_token` unit test.)
-const ENTROPY_ONLY: &str =
-    "qA9zM4nB7vC2xL8pR5tY1uI6oP3sD0fG9hJ2kL7mN4bV8cX1zQ6wE5rT0yU3iO";
+const ENTROPY_ONLY: &str = "qA9zM4nB7vC2xL8pR5tY1uI6oP3sD0fG9hJ2kL7mN4bV8cX1zQ6wE5rT0yU3iO";
 
 fn compile_scanner(backend: ScanBackend) -> CompiledScanner {
     let detectors =
@@ -90,7 +89,10 @@ fn gpu_runs_entropy_fallback_for_triggered_large_chunks() {
     let simd_scanner = compile_scanner(ScanBackend::SimdCpu);
     let gpu_scanner = compile_scanner(ScanBackend::GpuWgpu);
 
-    let chunks = vec![make_chunk(&big_mixed_corpus(), "fixtures/mixed_secrets.env")];
+    let chunks = vec![make_chunk(
+        &big_mixed_corpus(),
+        "fixtures/mixed_secrets.env",
+    )];
 
     let simd_results = simd_scanner
         .scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu)
@@ -150,7 +152,10 @@ fn no_hit_entropy_only_small_chunk_has_backend_parity() {
     // Sensitive credential path plus a lone high-entropy token. No detector
     // literal is present, and the input stays well below the small-chunk bound.
     let corpus = format!("{ENTROPY_ONLY}\n");
-    assert!(corpus.len() <= 32 * 1024, "must stay in the small-chunk class");
+    assert!(
+        corpus.len() <= 32 * 1024,
+        "must stay in the small-chunk class"
+    );
 
     let chunks = vec![make_chunk(&corpus, "fixtures/credentials.txt")];
 

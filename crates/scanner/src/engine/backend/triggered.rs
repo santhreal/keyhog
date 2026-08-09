@@ -1,5 +1,5 @@
-use super::phase2::Phase2AlwaysActiveGpuEvidence;
 use super::super::*;
+use super::phase2::Phase2AlwaysActiveGpuEvidence;
 use crate::hw_probe::ScanBackend;
 use keyhog_core::RawMatch;
 
@@ -424,12 +424,16 @@ impl CompiledScanner {
 
     #[cfg(feature = "gpu")]
     pub(crate) fn phase2_keyword_hints_from_gpu_presence(&self, presence: &[u32]) -> Vec<u32> {
-        if self.phase2_keyword_count == 0 { return Vec::new(); }
+        if self.phase2_keyword_count == 0 {
+            return Vec::new();
+        }
         let base = self.ac_map.len();
         (0..self.phase2_keyword_count)
             .filter(|&kw_idx| {
                 let idx = base + kw_idx;
-                presence.get(idx / 32).is_some_and(|w| (w & (1u32 << (idx % 32))) != 0)
+                presence
+                    .get(idx / 32)
+                    .is_some_and(|w| (w & (1u32 << (idx % 32))) != 0)
             })
             .map(|kw_idx| kw_idx as u32)
             .collect()
@@ -437,11 +441,15 @@ impl CompiledScanner {
 
     #[cfg(feature = "gpu")]
     pub(crate) fn phase2_always_anchor_present_from_gpu_presence(&self, presence: &[u32]) -> bool {
-        if self.phase2_always_anchor_literal_count == 0 { return false; }
+        if self.phase2_always_anchor_literal_count == 0 {
+            return false;
+        }
         let base = self.ac_map.len() + self.phase2_keyword_count;
         (0..self.phase2_always_anchor_literal_count).any(|anchor_idx| {
             let idx = base + anchor_idx;
-            presence.get(idx / 32).is_some_and(|w| (w & (1u32 << (idx % 32))) != 0)
+            presence
+                .get(idx / 32)
+                .is_some_and(|w| (w & (1u32 << (idx % 32))) != 0)
         })
     }
 
@@ -467,26 +475,30 @@ impl CompiledScanner {
     #[doc(hidden)]
     #[cfg(debug_assertions)]
     pub fn reset_confirmed_pattern_scanned_bytes_for_diagnostics(&self) {
-        self.confirmed_pattern_scanned_bytes.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.confirmed_pattern_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     #[doc(hidden)]
     #[cfg(debug_assertions)]
     #[must_use]
     pub fn confirmed_pattern_scanned_bytes_for_diagnostics(&self) -> u64 {
-        self.confirmed_pattern_scanned_bytes.load(std::sync::atomic::Ordering::Relaxed)
+        self.confirmed_pattern_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     #[doc(hidden)]
     #[cfg(debug_assertions)]
     pub fn reset_entropy_scanned_bytes_for_diagnostics(&self) {
-        self.entropy_scanned_bytes.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.entropy_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     #[doc(hidden)]
     #[cfg(debug_assertions)]
     #[must_use]
     pub fn entropy_scanned_bytes_for_diagnostics(&self) -> u64 {
-        self.entropy_scanned_bytes.load(std::sync::atomic::Ordering::Relaxed)
+        self.entropy_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }

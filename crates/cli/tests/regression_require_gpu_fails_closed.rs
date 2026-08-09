@@ -127,7 +127,13 @@ fn the_gpu_refusal_names_every_route_that_required_it() {
 
     for demand in [
         vec!["scan", "--no-config", "--daemon=off", "--require-gpu"],
-        vec!["scan", "--no-config", "--daemon=off", "--backend", "gpu-cuda"],
+        vec![
+            "scan",
+            "--no-config",
+            "--daemon=off",
+            "--backend",
+            "gpu-cuda",
+        ],
     ] {
         let (_dir, path) = aws_leak_fixture();
         let output = Command::new(binary())

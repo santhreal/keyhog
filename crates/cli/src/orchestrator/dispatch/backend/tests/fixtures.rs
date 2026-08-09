@@ -1,9 +1,9 @@
 use super::super::evidence::*;
 use super::super::host::*;
 use super::super::store::*;
-use super::super::workload::*;
 use super::super::workload::decode_workload_sketch as decode_workload_sketch_with_plan;
 use super::super::workload::workload_key as workload_key_with_plan;
+use super::super::workload::*;
 use super::super::*;
 use std::result::Result as StdResult;
 pub(crate) fn route_timings(
@@ -178,7 +178,9 @@ pub(crate) fn repeated_to_len(seed: &str, len: usize) -> String {
     value
 }
 
-pub(crate) fn decode_workload_sketch(batch: &[Chunk]) -> keyhog_scanner::decode::DecodeAdmissionSketch {
+pub(crate) fn decode_workload_sketch(
+    batch: &[Chunk],
+) -> keyhog_scanner::decode::DecodeAdmissionSketch {
     decode_workload_sketch_with_plan(batch, test_decode_workload_plan())
 }
 

@@ -23,7 +23,7 @@
 
 mod support;
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use std::path::Path;
 use std::process::Command;
 use std::sync::{Mutex, MutexGuard};

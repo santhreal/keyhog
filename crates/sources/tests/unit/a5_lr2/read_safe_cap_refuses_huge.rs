@@ -1,4 +1,4 @@
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 #[test]
 fn read_safe_cap_refuses_huge() {
     let dir = tempfile::tempdir().unwrap();

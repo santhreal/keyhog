@@ -35,4 +35,3 @@ fn doctor_runs_gpu_self_tests_for_physical_hardware() {
         "physical GPU hosts must retain the production GPU health gate"
     );
 }
-

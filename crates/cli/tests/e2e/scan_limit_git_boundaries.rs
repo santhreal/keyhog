@@ -308,7 +308,10 @@ fn limit_git_chunks_cuts_deterministically_and_only_reports_a_real_gap() {
          reporting a gap would be crying wolf; stderr={exact_stderr}"
     );
     let all = findings(&exact);
-    assert!(all >= 2, "fixture must yield several chunks worth of findings");
+    assert!(
+        all >= 2,
+        "fixture must yield several chunks worth of findings"
+    );
 
     let one = scan(
         repo,
@@ -336,7 +339,14 @@ fn limit_git_chunks_cuts_deterministically_and_only_reports_a_real_gap() {
     // a budget of zero can only ever produce a false clean.
     let zero = scan(
         repo,
-        &["--git-history", ".", "--limit-git-chunks", "0", "--format", "jsonl"],
+        &[
+            "--git-history",
+            ".",
+            "--limit-git-chunks",
+            "0",
+            "--format",
+            "jsonl",
+        ],
     );
     assert_ne!(
         zero.status.code(),

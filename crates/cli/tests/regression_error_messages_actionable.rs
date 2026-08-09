@@ -61,4 +61,3 @@ fn unknown_dynamic_source_error_includes_fix() {
         "unknown source failure must include the fix; output={text}"
     );
 }
-
