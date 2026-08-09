@@ -152,7 +152,7 @@ impl ExecutionPack {
                 path: path.to_path_buf(),
                 source,
             })?;
-        Self::from_mapping(mapping, path.to_path_buf(), expected, true)
+        Self::from_mapping(mapping, path.to_path_buf(), expected, None, true)
     }
 
     /// Maps and authenticates one immutable pack generation before exposing any section.
@@ -174,9 +174,13 @@ impl ExecutionPack {
                 path: path.to_path_buf(),
                 source,
             })?;
-        let mut pack = Self::from_mapping(mapping, path.to_path_buf(), expected, false)?;
-        authenticate_pack_signature(&pack, signature_path.as_ref(), signing_key)?;
-        pack.signature_authenticated = true;
+        let pack = Self::from_mapping(
+            mapping,
+            path.to_path_buf(),
+            expected,
+            Some((signature_path.as_ref(), signing_key)),
+            false,
+        )?;
         pack.release_resident_pages()?;
         Ok(pack)
     }
@@ -201,9 +205,13 @@ impl ExecutionPack {
                 source,
             })?;
         let expected = decode_identity_header(mapping.as_ref(), path)?;
-        let mut pack = Self::from_mapping(mapping, path.to_path_buf(), expected, false)?;
-        authenticate_pack_signature(&pack, signature_path.as_ref(), signing_key)?;
-        pack.signature_authenticated = true;
+        let pack = Self::from_mapping(
+            mapping,
+            path.to_path_buf(),
+            expected,
+            Some((signature_path.as_ref(), signing_key)),
+            false,
+        )?;
         pack.release_resident_pages()?;
         Ok(pack)
     }
@@ -343,6 +351,7 @@ impl ExecutionPack {
         mapping: Mmap,
         path: PathBuf,
         expected: ExecutionPackIdentity,
+        signature_auth: Option<(&Path, &ExecutionPackSigningKey)>,
         verify_content_digest: bool,
     ) -> Result<Self, ExecutionPackError> {
         let bytes = mapping.as_ref();
@@ -405,6 +414,31 @@ impl ExecutionPack {
                 bytes.len()
             )));
         }
+        let identity = decode_identity_header(bytes, &path)?;
+        let stored_identity_digest = array32(bytes, 280);
+        if stored_identity_digest != identity.digest() {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} execution-pack identity digest mismatch; reinstall this generation",
+                path.display()
+            )));
+        }
+        validate_identity(&path, identity, expected)?;
+        let content_digest = array32(bytes, 248);
+
+        let mut signature_authenticated = false;
+        if let Some((signature_path, signing_key)) = signature_auth {
+            authenticate_pack_signature(
+                &mapping,
+                &path,
+                content_digest,
+                signature_path,
+                signing_key,
+            )?;
+            signature_authenticated = true;
+        } else if verify_content_digest {
+            verify_content_digest_mapping(&mapping, &path, content_digest)?;
+        }
+
         let table_end = EXECUTION_PACK_HEADER_LEN
             .checked_add(section_count * EXECUTION_PACK_SECTION_ENTRY_LEN)
             .ok_or_else(|| {
@@ -420,16 +454,6 @@ impl ExecutionPack {
             )));
         }
 
-        let identity = decode_identity_header(bytes, &path)?;
-        let stored_identity_digest = array32(bytes, 280);
-        if stored_identity_digest != identity.digest() {
-            return Err(ExecutionPackError::InvalidPack(format!(
-                "{} execution-pack identity digest mismatch; reinstall this generation",
-                path.display()
-            )));
-        }
-        validate_identity(&path, identity, expected)?;
-        let content_digest = array32(bytes, 248);
         let mut seen = BTreeSet::new();
         let mut sections = Vec::with_capacity(section_count);
         let mut previous_end = table_end;
@@ -505,34 +529,39 @@ impl ExecutionPack {
             }
         }
 
-        if verify_content_digest {
-            let mut content_hasher = blake3::Hasher::new();
-            update_mapping_and_release(
-                &mapping,
-                &path,
-                EXECUTION_PACK_HEADER_LEN..bytes.len(),
-                "discard content-authentication pages",
-                |chunk| {
-                    content_hasher.update(chunk);
-                },
-            )?;
-            let actual_digest = *content_hasher.finalize().as_bytes();
-            if actual_digest != content_digest {
-                return Err(ExecutionPackError::InvalidPack(format!(
-                    "{} content digest mismatch; reinstall or recalibrate this generation",
-                    path.display()
-                )));
-            }
-        }
         Ok(Self {
             mapping: std::sync::Arc::new(mapping),
             path,
             identity,
             content_digest,
-            signature_authenticated: false,
+            signature_authenticated,
             sections,
         })
     }
+
+fn verify_content_digest_mapping(
+    mapping: &Mmap,
+    path: &Path,
+    content_digest: [u8; 32],
+) -> Result<(), ExecutionPackError> {
+    let mut content_hasher = blake3::Hasher::new();
+    update_mapping_and_release(
+        mapping,
+        path,
+        EXECUTION_PACK_HEADER_LEN..mapping.len(),
+        "discard content-authentication pages",
+        |chunk| {
+            content_hasher.update(chunk);
+        },
+    )?;
+    let actual_digest = *content_hasher.finalize().as_bytes();
+    if actual_digest != content_digest {
+        return Err(ExecutionPackError::InvalidPack(format!(
+            "{} content digest mismatch; reinstall or recalibrate this generation",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 fn decode_identity_header(
@@ -573,7 +602,9 @@ fn decode_identity_header(
 }
 
 fn authenticate_pack_signature(
-    pack: &ExecutionPack,
+    mapping: &Mmap,
+    path: &Path,
+    content_digest: [u8; 32],
     signature_path: &Path,
     signing_key: &ExecutionPackSigningKey,
 ) -> Result<(), ExecutionPackError> {
@@ -603,11 +634,11 @@ fn authenticate_pack_signature(
     let signature = ExecutionPackSignature::decode(&bytes)?;
     let mut pack_hasher = blake3::Hasher::new();
     let mut content_hasher = blake3::Hasher::new();
-    pack_hasher.update(&pack.mapping[..EXECUTION_PACK_HEADER_LEN]);
+    pack_hasher.update(&mapping[..EXECUTION_PACK_HEADER_LEN]);
     update_mapping_and_release(
-        &pack.mapping,
-        &pack.path,
-        EXECUTION_PACK_HEADER_LEN..pack.mapping.len(),
+        mapping,
+        path,
+        EXECUTION_PACK_HEADER_LEN..mapping.len(),
         "discard pack-authentication pages",
         |chunk| {
             pack_hasher.update(chunk);
@@ -615,10 +646,10 @@ fn authenticate_pack_signature(
         },
     )?;
     let actual_content_digest = *content_hasher.finalize().as_bytes();
-    if actual_content_digest != pack.content_digest {
+    if actual_content_digest != content_digest {
         return Err(ExecutionPackError::InvalidPack(format!(
             "{} content digest mismatch; reinstall or recalibrate this generation",
-            pack.path.display()
+            path.display()
         )));
     }
     signing_key.verify_digest(&signature, *pack_hasher.finalize().as_bytes())

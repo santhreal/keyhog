@@ -698,10 +698,10 @@ fn runtime_rejects_mismatched_section_schema_version_with_rebuild_suggestion() {
     .expect("compile pack");
 
     let mut tampered_bytes = compiled.as_bytes().to_vec();
-    // Section header table starts at offset 320. Section 0 is DetectorIr.
-    // Base is 320, schema_version is u16 at base + 2.
     let version_offset = EXECUTION_PACK_HEADER_LEN + 2;
-    tampered_bytes[version_offset] = 99; // Set invalid schema version 99
+    tampered_bytes[version_offset] = 99;
+    let digest = blake3::hash(&tampered_bytes[EXECUTION_PACK_HEADER_LEN..]);
+    tampered_bytes[248..280].copy_from_slice(digest.as_bytes());
 
     let directory = tempfile::tempdir().expect("temporary directory");
     let path = directory.path().join("invalid_version.khpack");
@@ -712,6 +712,7 @@ fn runtime_rejects_mismatched_section_schema_version_with_rebuild_suggestion() {
     assert!(err_msg.contains("uses schema 99"), "error must mention invalid schema version; got: {err_msg}");
     assert!(err_msg.contains("keyhog compile-execution-packs to rebuild"), "error must suggest rebuild command; got: {err_msg}");
 }
+
 #[test]
 fn runtime_rejects_version_zero_section_schema() {
     let compiled = compile_execution_pack(ExecutionPackCompileInput {
@@ -724,6 +725,8 @@ fn runtime_rejects_version_zero_section_schema() {
     let version_offset = EXECUTION_PACK_HEADER_LEN + 2;
     tampered_bytes[version_offset] = 0;
     tampered_bytes[version_offset + 1] = 0;
+    let digest = blake3::hash(&tampered_bytes[EXECUTION_PACK_HEADER_LEN..]);
+    tampered_bytes[248..280].copy_from_slice(digest.as_bytes());
 
     let directory = tempfile::tempdir().expect("temporary directory");
     let path = directory.path().join("zero_version.khpack");
@@ -736,19 +739,67 @@ fn runtime_rejects_version_zero_section_schema() {
 }
 
 #[test]
-fn detector_spec_reconstruction_counter_is_zero_for_prelude_hydration() {
-    let before = keyhog_scanner::execution_pack::detector_spec_schema_reconstructions();
-    let ir = CanonicalDetectorExecutionIr::compile(&[detector("zero-recon")]).expect("compile IR");
-    let plan_section = keyhog_scanner::execution_pack::CompiledDetectorPlanSection::compile(&ir).expect("compile plan section");
+fn unauthenticated_section_table_mutation_fails_at_content_authentication() {
+    let compiled = compile_execution_pack(ExecutionPackCompileInput {
+        identity: identity(),
+        sections: &sections(),
+    })
+    .expect("compile pack");
 
-    let header = keyhog_scanner::execution_pack::CompiledDetectorPlanSection::stream_prelude_records(
-        plan_section.as_bytes(),
-        ir.digest(),
-        |_, _record| Ok(std::sync::Arc::from("zero-recon")),
-    )
-    .expect("stream prelude records");
+    // Offsets to mutate in section table without updating content_digest:
+    // [12: section_count, 320: section 0 kind, 322: section 0 schema, 324: section 0 offset, 332: section 0 len, 340: section 0 alignment]
+    let test_offsets = [12, 320, 322, 324, 332, 340];
 
-    assert_eq!(header.detector_count, 1);
-    let after = keyhog_scanner::execution_pack::detector_spec_schema_reconstructions();
-    assert_eq!(after, before, "prelude streaming must not increment detector spec schema reconstructions");
+    for offset in test_offsets {
+        let mut tampered_bytes = compiled.as_bytes().to_vec();
+        tampered_bytes[offset] = tampered_bytes[offset].wrapping_add(1);
+
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join(format!("unauth_mutation_{offset}.khpack"));
+        fs::write(&path, tampered_bytes).expect("publish tampered pack");
+
+        let error = ExecutionPack::open(&path, identity())
+            .expect_err("unauthenticated section table mutation must fail content authentication");
+        let err_msg = error.to_string();
+        assert!(
+            err_msg.contains("content digest mismatch"),
+            "load must fail at content authentication before section semantic parsing; got: {err_msg}"
+        );
+    }
+}
+
+#[test]
+fn runtime_rejects_stale_section_schema_version_at_persisted_boundary() {
+    let compiled = compile_execution_pack(ExecutionPackCompileInput {
+        identity: identity(),
+        sections: &sections(),
+    })
+    .expect("compile pack");
+
+    // Construct stale pack independently by modifying section schema version and re-authenticating content_digest
+    let mut stale_bytes = compiled.as_bytes().to_vec();
+    let version_offset = EXECUTION_PACK_HEADER_LEN + 2;
+    // Set section 0 schema version to stale value 0
+    stale_bytes[version_offset] = 0;
+    stale_bytes[version_offset + 1] = 0;
+
+    // Re-authenticate content digest over stale payload
+    let content_digest = blake3::hash(&stale_bytes[EXECUTION_PACK_HEADER_LEN..]);
+    stale_bytes[248..280].copy_from_slice(content_digest.as_bytes());
+
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("stale_persisted_schema.khpack");
+    fs::write(&path, stale_bytes).expect("publish stale pack");
+
+    let error = ExecutionPack::open(&path, identity())
+        .expect_err("stale section schema version at persisted boundary must fail with rebuild suggestion");
+    let err_msg = error.to_string();
+    assert!(
+        err_msg.contains("uses schema 0") || err_msg.contains("uses schema"),
+        "error must state section schema version mismatch; got: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("keyhog compile-execution-packs to rebuild"),
+        "error must suggest rebuild command; got: {err_msg}"
+    );
 }
