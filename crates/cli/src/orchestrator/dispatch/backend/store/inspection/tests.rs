@@ -73,7 +73,7 @@ fn readiness_distinguishes_absent_invalid_stale_and_ready_cache_states() {
 }
 #[test]
 fn remediation_schema_produces_stable_json_and_terminal_output() {
-    let mut inspection = AutorouteCacheInspection {
+    let inspection = AutorouteCacheInspection {
         path: Some("/cache/autoroute.json".to_string()),
         calibration_required: true,
         present: true,
