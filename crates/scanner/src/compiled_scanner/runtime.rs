@@ -947,6 +947,9 @@ impl CompiledScanner {
     /// Reset the cross-file fragment-reassembly cache.
     pub fn clear_fragment_cache(&self) {
         self.fragment_cache.clear();
+        // Config may have been mutated in place (tests / advanced callers);
+        // drop the cached entropy digest so absence keys track live policy.
+        *self.entropy_config_digest_cache.lock() = None;
     }
 
     /// Scan a chunk of text against all compiled detectors.
