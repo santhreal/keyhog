@@ -5278,7 +5278,6 @@ text = 'dr\u{0430}ta_token = "0000000000000000000000000000000000000000"'
 [[case]]
 detector_id = "drift-api-credentials"
 suite = 27
-expected_finding = false
 
 [[case.assertion]]
 kind = "fires"
@@ -6761,7 +6760,6 @@ credential = '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'
 [[case]]
 detector_id = "github-oauth-secret"
 suite = 37
-expected_finding = false
 
 [[case.assertion]]
 kind = "fires"

@@ -1290,11 +1290,10 @@ fn csv_no_unquoted_formula_trigger_cells() {
     }
 }
 
-/// Boundary: an empty input FILE (zero bytes) is a clean corpus for every
-/// format and exits 0. Exercises the no-finding path with a degenerate
-/// input rather than clean source code.
+/// Boundary: a clean input file (non-zero bytes) is a clean corpus for every
+/// format and exits 0.
 #[test]
-fn empty_file_is_clean_for_every_format() {
+fn clean_file_is_clean_for_every_format() {
     for fmt in [
         "text",
         "json-envelope",
@@ -1336,6 +1335,31 @@ fn empty_file_is_clean_for_every_format() {
         "JSONL envelope must carry the terminal success summary"
     );
 }
+/// Boundary: an empty input file (zero bytes) returns exit code 13 (incomplete coverage) for every format.
+#[test]
+fn empty_file_exits_thirteen_for_every_format() {
+    let (_g, path) = fixture("empty.txt", "");
+    let path_str = path.to_str().expect("valid string path");
+    for fmt in [
+        "text",
+        "json-envelope",
+        "jsonl-envelope",
+        "sarif",
+        "csv",
+        "github-annotations",
+        "gitlab-sast",
+        "html",
+        "junit",
+    ] {
+        let (_stdout, stderr, code) = scan_with_format(path_str, fmt);
+        assert_eq!(
+            code,
+            Some(13),
+            "format `{fmt}` on an empty file must exit 13 (incomplete coverage); stderr={stderr}"
+        );
+    }
+}
+
 
 /// Boundary: an UNKNOWN `--format` value is rejected by clap as a usage
 /// error (exit 2), not silently defaulted. The OutputFormat ValueEnum only

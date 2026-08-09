@@ -66,3 +66,14 @@ fn missing_buckets_are_listed_most_expensive_first() {
         ]
     );
 }
+#[test]
+fn reset_for_test_zeroes_all_telemetry_counters() {
+    record_hit();
+    record_miss(AutorouteCacheMiss::BucketAbsent);
+    record_missing_bucket("bucket-test");
+    reset_for_test();
+    let snap = snapshot();
+    assert_eq!(snap.hits, 0);
+    assert_eq!(snap.misses, 0);
+    assert!(snap.missing_buckets.is_empty());
+}

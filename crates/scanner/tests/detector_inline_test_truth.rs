@@ -285,9 +285,9 @@ fn anchored_generic_service_detectors_remain_named_through_resolution() {
         checked += 1;
     }
     assert_eq!(
-        checked, 7,
+        checked, 8,
         "every anchored generic-service detector's inline positives are checked \
-         (oauth-client-secret ships two, the rest one each)"
+         (oauth-client-secret ships three, the rest one each)"
     );
 }
 
@@ -297,9 +297,14 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
     let acquired_gpu_backends: Vec<_> = scanner
         .gpu_backend_candidates()
         .into_iter()
-        .filter(|candidate| candidate.available)
+        .filter(|candidate| candidate.acquired)
         .map(|candidate| candidate.backend)
         .collect();
+    assert!(
+        !keyhog_scanner::hw_probe::probe_hardware().gpu_available
+            || !acquired_gpu_backends.is_empty(),
+        "physical GPU probe succeeded but no compiled GPU peer was acquired"
+    );
     let corrected: std::collections::BTreeSet<&str> = [
         "alertmanager-credentials",
         "amazon-music-api-credentials",
@@ -331,13 +336,13 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
         let mut cpu = scanner
             .scan_with_backend(&chunk, ScanBackend::CpuFallback)
             .expect("selected backend scan succeeds");
-        if let Ok(mut simd) = scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu) {
-            cpu.sort();
-            simd.sort();
-            assert_eq!(cpu, simd, "CPU/SIMD finding drift for {}", case.detector_id);
-        } else {
-            cpu.sort();
-        }
+        scanner.clear_fragment_cache();
+        let mut simd = scanner
+            .scan_with_backend(&chunk, ScanBackend::SimdCpu)
+            .expect("selected backend scan succeeds");
+        cpu.sort();
+        simd.sort();
+        assert_eq!(cpu, simd, "CPU/SIMD finding drift for {}", case.detector_id);
         for backend in &acquired_gpu_backends {
             scanner.clear_fragment_cache();
             let mut gpu = scanner
