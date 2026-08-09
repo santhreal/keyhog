@@ -33,7 +33,7 @@
 //! feeding an inverted pair would test the panic, not the arithmetic.
 //! Base build: the slicer facade needs no cargo feature.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use proptest::prelude::*;
 
 /// A valid `(window_size, overlap)` pair with `1 <= overlap < window_size`.

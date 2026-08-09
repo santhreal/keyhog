@@ -49,9 +49,7 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
                 println!(
                     "  {dim}Automatic releases publish crates.io packages only, so a newer{reset}"
                 );
-                println!(
-                    "  {dim}KeyHog can exist with no binary asset for it.{reset}"
-                );
+                println!("  {dim}KeyHog can exist with no binary asset for it.{reset}");
                 return Ok(ExitCode::SUCCESS);
             }
             installer::ReleaseChannelState::ChannelBehind => {
@@ -59,9 +57,7 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
                     "\n{} this build is newer than the newest binary release asset.",
                     style::warn("WARN", &palette)
                 );
-                println!(
-                    "  The binary-asset channel stopped at {latest}, so it cannot tell you"
-                );
+                println!("  The binary-asset channel stopped at {latest}, so it cannot tell you");
                 println!("  whether a newer KeyHog exists. Automatic releases publish");
                 println!("  crates.io packages only. Update with:");
                 println!("\n      {bold}cargo install --locked --force keyhog{reset}\n");

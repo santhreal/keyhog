@@ -260,7 +260,10 @@ fn repetition_is_exact(kind: &ast::RepetitionKind) -> bool {
     )
 }
 
-pub(super) fn is_pure_character_class<'a>(regex_cache: &mut RegexAstCache<'a>, pattern: &'a str) -> bool {
+pub(super) fn is_pure_character_class<'a>(
+    regex_cache: &mut RegexAstCache<'a>,
+    pattern: &'a str,
+) -> bool {
     match regex_cache.parse(pattern) {
         Ok(ast) => pure_character_class_ast(ast).is_some(),
         Err(_) => false, // LAW10: invalid regex already emits a QualityIssue::Error; no recall impact

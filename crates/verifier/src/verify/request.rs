@@ -504,15 +504,15 @@ pub(crate) async fn execute_request(
     keyhog_profile::instrument_future(keyhog_profile::Stage::LiveVerification, request.send())
         .await
         .map_err(|e| RequestError {
-        result: if e.is_timeout() {
-            VerificationResult::Error(TIMEOUT_ERROR.into())
-        } else if e.is_redirect() {
-            VerificationResult::Error(REDIRECT_LIMIT_ERROR.into())
-        } else if e.is_connect() {
-            VerificationResult::Error(CONNECTION_FAILED_ERROR.into())
-        } else {
-            VerificationResult::Error(REQUEST_FAILED_ERROR.into())
-        },
-        transient: e.is_timeout() || e.is_connect(),
-    })
+            result: if e.is_timeout() {
+                VerificationResult::Error(TIMEOUT_ERROR.into())
+            } else if e.is_redirect() {
+                VerificationResult::Error(REDIRECT_LIMIT_ERROR.into())
+            } else if e.is_connect() {
+                VerificationResult::Error(CONNECTION_FAILED_ERROR.into())
+            } else {
+                VerificationResult::Error(REQUEST_FAILED_ERROR.into())
+            },
+            transient: e.is_timeout() || e.is_connect(),
+        })
 }

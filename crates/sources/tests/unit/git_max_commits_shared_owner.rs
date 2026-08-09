@@ -9,7 +9,7 @@
 //! valid explicit "scan no commits" cap (`git log --max-count 0`), never clamped
 //! to `None` (unlimited).
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 #[test]
 fn git_source_routes_max_commits_through_the_shared_owner() {

@@ -47,7 +47,10 @@ fn git_blob_source_retains_at_most_one_decoded_batch() {
     let chunks = rows.len() - errors;
 
     assert_eq!(errors, 0, "complete fixture history must scan without gaps");
-    assert_eq!(chunks, 4097, "every committed blob must be emitted exactly once");
+    assert_eq!(
+        chunks, 4097,
+        "every committed blob must be emitted exactly once"
+    );
     let peak = TestApi.max_buffered_git_blob_chunks();
     assert!(
         peak <= 4096,

@@ -7,8 +7,8 @@ pub use crate::access_target::{
     access_target_rule_ids, associate_access_targets, associate_access_targets_with,
     validate_access_target_policy, AccessTarget, AccessTargetCoverage, AccessTargetKind,
     AccessTargetReport, ConfidenceProvenance, ContentError, CoverageGap, CoverageGapReason,
-    FileContent, FileContentSource, FilesystemContent, Redaction, TargetEvidence,
-    TargetRelation, TargetedLocation,
+    FileContent, FileContentSource, FilesystemContent, Redaction, TargetEvidence, TargetRelation,
+    TargetedLocation,
 };
 pub use crate::allowlist::*;
 pub use crate::ascii_ci::{

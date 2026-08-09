@@ -39,7 +39,6 @@ async fn fatal_listener_failure_cleans_socket_and_maps_to_system_exit() {
     );
 }
 
-
 #[tokio::test]
 async fn cleanup_failure_cannot_mask_the_typed_terminal_failure() {
     let dir = tempfile::TempDir::new().expect("temporary daemon directory");

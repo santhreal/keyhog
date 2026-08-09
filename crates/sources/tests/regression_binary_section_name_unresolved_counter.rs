@@ -18,7 +18,7 @@
 #[cfg(feature = "binary")]
 use keyhog_sources::skip_counts;
 #[cfg(feature = "binary")]
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 #[cfg(feature = "binary")]
 #[test]

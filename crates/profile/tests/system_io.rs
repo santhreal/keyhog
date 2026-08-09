@@ -68,8 +68,16 @@ mod linux {
         let stat = std::fs::read_to_string("/proc/self/stat").expect("proc stat");
         let command_end = stat.rfind(')').expect("stat command end");
         let mut fields = stat[command_end + 2..].split_whitespace();
-        let minor: u64 = fields.nth(7).expect("minflt").parse().expect("minflt value");
-        let major: u64 = fields.nth(1).expect("majflt").parse().expect("majflt value");
+        let minor: u64 = fields
+            .nth(7)
+            .expect("minflt")
+            .parse()
+            .expect("minflt value");
+        let major: u64 = fields
+            .nth(1)
+            .expect("majflt")
+            .parse()
+            .expect("majflt value");
         (minor, major)
     }
 
@@ -108,7 +116,10 @@ mod linux {
         };
         assert!(minor >= recorded_minor && minor - recorded_minor <= 256);
         assert!(major >= recorded_major);
-        assert_eq!(sample.minor_faults.source, HardwareFieldSourceV2::ProcSelfStat);
+        assert_eq!(
+            sample.minor_faults.source,
+            HardwareFieldSourceV2::ProcSelfStat
+        );
 
         let read_syscalls = io_field("syscr:");
         let recorded_read_syscalls = match &sample.read_syscalls.value {
@@ -119,7 +130,10 @@ mod linux {
         // strictly ahead of the collector sample.
         assert!(read_syscalls > recorded_read_syscalls);
         assert!(read_syscalls - recorded_read_syscalls <= 64);
-        assert_eq!(sample.read_syscalls.source, HardwareFieldSourceV2::ProcSelfIo);
+        assert_eq!(
+            sample.read_syscalls.source,
+            HardwareFieldSourceV2::ProcSelfIo
+        );
         for field in [
             &sample.read_bytes,
             &sample.write_bytes,

@@ -178,8 +178,10 @@ fn allowlist_eval_records_one_suppression_span_and_filters() {
 
     let mut kept_len = usize::MAX;
     let measurements = measure(|| {
-        let kept =
-            keyhog::profiling_test_seams::filter_rule_suppressed(&suppressor, vec![raw_match("demo")]);
+        let kept = keyhog::profiling_test_seams::filter_rule_suppressed(
+            &suppressor,
+            vec![raw_match("demo")],
+        );
         kept_len = kept.len();
     });
 
@@ -330,7 +332,8 @@ fn paths_are_silent_without_runtime() {
     let suppressor =
         keyhog::profiling_test_seams::load_rule_suppressor(Some(suppressor_dir.path()))
             .expect("suppressor must load");
-    let kept = keyhog::profiling_test_seams::filter_rule_suppressed(&suppressor, vec![raw_match("demo")]);
+    let kept =
+        keyhog::profiling_test_seams::filter_rule_suppressed(&suppressor, vec![raw_match("demo")]);
     assert!(kept.is_empty());
 
     keyhog::profiling_test_seams::load_detector_corpus(Path::new("detectors"))
@@ -345,9 +348,11 @@ fn paths_are_silent_without_runtime() {
     )
     .expect("checksum must verify");
     let install_dir = private_tempdir();
-    API.install_with_rollback(&install_dir.path().join("keyhog"), b"candidate-bytes", |_| {
-        true
-    })
+    API.install_with_rollback(
+        &install_dir.path().join("keyhog"),
+        b"candidate-bytes",
+        |_| true,
+    )
     .expect("install must succeed");
     keyhog::profiling_test_seams::doctor_host_probe();
 

@@ -10,10 +10,7 @@ fn recorded_pair(begin: u64, end: u64) -> (Evidence<u64>, Evidence<u64>) {
     (Evidence::recorded(begin), Evidence::recorded(end))
 }
 
-fn span_hardware(
-    cycles: (u64, u64),
-    instructions: (u64, u64),
-) -> Evidence<SpanHardwareV2> {
+fn span_hardware(cycles: (u64, u64), instructions: (u64, u64)) -> Evidence<SpanHardwareV2> {
     let (cycles_begin, cycles_end) = recorded_pair(cycles.0, cycles.1);
     let (instructions_begin, instructions_end) = recorded_pair(instructions.0, instructions.1);
     Evidence::recorded(SpanHardwareV2 {
@@ -105,18 +102,9 @@ fn counter_set_between_computes_exact_ratios() {
             cache_misses: SourcedEvidenceV2::recorded(cache_misses, source),
             branch_instructions: SourcedEvidenceV2::recorded(branches, source),
             branch_misses: SourcedEvidenceV2::recorded(branch_misses, source),
-            stalled_cycles_frontend: SourcedEvidenceV2::gapped(
-                source,
-                EvidenceGap::Unsupported,
-            ),
-            stalled_cycles_backend: SourcedEvidenceV2::gapped(
-                source,
-                EvidenceGap::Unsupported,
-            ),
-            stalled_cycles_memory: SourcedEvidenceV2::gapped(
-                source,
-                EvidenceGap::Unsupported,
-            ),
+            stalled_cycles_frontend: SourcedEvidenceV2::gapped(source, EvidenceGap::Unsupported),
+            stalled_cycles_backend: SourcedEvidenceV2::gapped(source, EvidenceGap::Unsupported),
+            stalled_cycles_memory: SourcedEvidenceV2::gapped(source, EvidenceGap::Unsupported),
         }
     };
     let start = sample(1_000, 2_000, 500, 100, 800, 40);
@@ -154,8 +142,18 @@ fn counter_set_between_computes_exact_ratios() {
 #[test]
 fn aggregation_joins_stage_thread_and_run_cpi() {
     let spans = vec![
-        span_record(1, MetricId::SourceRead, 7, span_hardware((0, 900), (0, 300))),
-        span_record(2, MetricId::SourceRead, 7, span_hardware((900, 2_100), (300, 900))),
+        span_record(
+            1,
+            MetricId::SourceRead,
+            7,
+            span_hardware((0, 900), (0, 300)),
+        ),
+        span_record(
+            2,
+            MetricId::SourceRead,
+            7,
+            span_hardware((900, 2_100), (300, 900)),
+        ),
         span_record(3, MetricId::Decode, 9, span_hardware((0, 400), (0, 800))),
         span_record(
             4,

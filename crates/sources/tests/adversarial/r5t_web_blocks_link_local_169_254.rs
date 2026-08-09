@@ -1,6 +1,6 @@
 //! R5-T http adversarial: blocks link-local 169.254.0.0/16.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 #[cfg(feature = "web")]
 #[test]
 fn r5t_web_blocks_link_local_169_254() {

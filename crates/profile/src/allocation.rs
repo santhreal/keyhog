@@ -37,14 +37,12 @@ mod tracked {
     static DEALLOCATION_BYTES: AtomicU64 = AtomicU64::new(0);
     static LIVE_BYTES: AtomicU64 = AtomicU64::new(0);
     static PEAK_LIVE_BYTES: AtomicU64 = AtomicU64::new(0);
-    static SLOT_ALLOCATIONS: [AtomicU64; STAGE_SLOTS] =
-        [const { AtomicU64::new(0) }; STAGE_SLOTS];
+    static SLOT_ALLOCATIONS: [AtomicU64; STAGE_SLOTS] = [const { AtomicU64::new(0) }; STAGE_SLOTS];
     static SLOT_ALLOCATION_BYTES: [AtomicU64; STAGE_SLOTS] =
         [const { AtomicU64::new(0) }; STAGE_SLOTS];
     static SLOT_DEALLOCATION_BYTES: [AtomicU64; STAGE_SLOTS] =
         [const { AtomicU64::new(0) }; STAGE_SLOTS];
-    static SLOT_LIVE_BYTES: [AtomicU64; STAGE_SLOTS] =
-        [const { AtomicU64::new(0) }; STAGE_SLOTS];
+    static SLOT_LIVE_BYTES: [AtomicU64; STAGE_SLOTS] = [const { AtomicU64::new(0) }; STAGE_SLOTS];
     static SLOT_PEAK_LIVE_BYTES: [AtomicU64; STAGE_SLOTS] =
         [const { AtomicU64::new(0) }; STAGE_SLOTS];
 
@@ -135,8 +133,10 @@ mod tracked {
     pub(super) fn reset_peaks() {
         PEAK_LIVE_BYTES.store(LIVE_BYTES.load(Ordering::Relaxed), Ordering::Relaxed);
         for slot in 0..STAGE_SLOTS {
-            SLOT_PEAK_LIVE_BYTES[slot]
-                .store(SLOT_LIVE_BYTES[slot].load(Ordering::Relaxed), Ordering::Relaxed);
+            SLOT_PEAK_LIVE_BYTES[slot].store(
+                SLOT_LIVE_BYTES[slot].load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
         }
     }
 
@@ -192,9 +192,8 @@ mod tracked {
         record_dealloc(usize::from(header.stage), header.bytes);
         // SAFETY: header.bytes came from a valid layout at allocation and
         // offset is a nonzero power of two.
-        let real = unsafe {
-            Layout::from_size_align_unchecked(header.bytes as usize + offset, offset)
-        };
+        let real =
+            unsafe { Layout::from_size_align_unchecked(header.bytes as usize + offset, offset) };
         // SAFETY: base/real match the allocation that produced ptr.
         unsafe { System.dealloc(base, real) };
     }
