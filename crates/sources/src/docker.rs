@@ -611,7 +611,6 @@ pub(crate) fn stream_layers_with_shared_budget_for_test(
     Ok(rows)
 }
 
-
 pub(crate) fn rewrite_layer_chunks_for_test<I>(
     chunks: I,
     image: &str,

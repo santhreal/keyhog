@@ -204,7 +204,12 @@ fn rewrite_streamed_chunk(
     Ok(chunk)
 }
 
-fn apply_docker_chunk_identity(chunk: &mut Chunk, image: &str, layer_name: &str, relative_path: &str) {
+fn apply_docker_chunk_identity(
+    chunk: &mut Chunk,
+    image: &str,
+    layer_name: &str,
+    relative_path: &str,
+) {
     if chunk.metadata.source_type.starts_with("binary:")
         || chunk.metadata.source_type.contains("binary-strings")
         || chunk.metadata.source_type.contains("archive-binary")

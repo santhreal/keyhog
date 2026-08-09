@@ -9,7 +9,11 @@
 use keyhog_sources::testing::TestApi;
 
 #[cfg(feature = "docker")]
-fn layer_tar_with_entries(dir: &std::path::Path, name: &str, entries: &[(&str, &[u8])]) -> std::path::PathBuf {
+fn layer_tar_with_entries(
+    dir: &std::path::Path,
+    name: &str,
+    entries: &[(&str, &[u8])],
+) -> std::path::PathBuf {
     let path = dir.join(name);
     let file = std::fs::File::create(&path).expect("create layer tar");
     let mut builder = tar::Builder::new(file);
@@ -27,7 +31,11 @@ fn layer_tar_with_entries(dir: &std::path::Path, name: &str, entries: &[(&str, &
 }
 
 #[cfg(feature = "docker")]
-fn gzip_layer_tar(dir: &std::path::Path, name: &str, entries: &[(&str, &[u8])]) -> std::path::PathBuf {
+fn gzip_layer_tar(
+    dir: &std::path::Path,
+    name: &str,
+    entries: &[(&str, &[u8])],
+) -> std::path::PathBuf {
     use std::io::Write;
     let raw = layer_tar_with_entries(dir, &format!("{name}.raw"), entries);
     let raw_bytes = std::fs::read(&raw).expect("read raw");
@@ -59,9 +67,14 @@ fn stream_gzip_layer_surfaces_secret_without_disk_unpack() {
 
     let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
     assert!(
-        chunks.iter().any(|chunk| chunk.data.contains("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")),
+        chunks.iter().any(|chunk| chunk
+            .data
+            .contains("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")),
         "streamed gzip layer must surface the planted secret, got {:?}",
-        chunks.iter().map(|c| c.metadata.path.as_deref()).collect::<Vec<_>>()
+        chunks
+            .iter()
+            .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
     );
     assert!(
         chunks.iter().any(|chunk| {
@@ -110,7 +123,9 @@ fn stream_layers_preserve_independent_whiteout_semantics() {
 
     let chunks_a: Vec<_> = rows_a.into_iter().filter_map(Result::ok).collect();
     assert!(
-        chunks_a.iter().any(|chunk| chunk.data.contains("AKIAIOSFODNN7EXAMPLE")),
+        chunks_a
+            .iter()
+            .any(|chunk| chunk.data.contains("AKIAIOSFODNN7EXAMPLE")),
         "layer A secret must remain visible even when a later layer carries a whiteout"
     );
     // Empty whiteout/opaque markers emit no text chunks; the important contract is
@@ -271,5 +286,82 @@ fn stream_layer_emits_png_text_metadata_for_image_extensions() {
                 .is_some_and(|path| path.contains("PNG:tEXt@"))
         }),
         "streamed PNG metadata chunks must keep the tagged path provenance"
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_emits_tiff_metadata_without_skip_extension() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // Minimal little-endian TIFF with one XMP packet tag (0x02BC). TIFF is not
+    // on the binary skip-extension list, so metadata probing must not be gated
+    // on skip_extension alone.
+    let secret = b"TIFF_STREAM_SECRET=ghp_TiffStreamMetadataToken000000001";
+    let mut tiff = Vec::new();
+    tiff.extend_from_slice(b"II");
+    tiff.extend_from_slice(&42u16.to_le_bytes());
+    tiff.extend_from_slice(&8u32.to_le_bytes()); // IFD offset
+    tiff.extend_from_slice(&1u16.to_le_bytes()); // one entry
+    tiff.extend_from_slice(&0x02BCu16.to_le_bytes()); // XMP
+    tiff.extend_from_slice(&1u16.to_le_bytes()); // BYTE
+    tiff.extend_from_slice(&(secret.len() as u32).to_le_bytes());
+    tiff.extend_from_slice(&26u32.to_le_bytes()); // value offset
+    tiff.extend_from_slice(&0u32.to_le_bytes()); // next IFD
+    tiff.extend_from_slice(secret);
+
+    let layer = layer_tar_with_entries(dir.path(), "layer.tar", &[("opt/scan.tif", &tiff)]);
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream");
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().any(|chunk| chunk
+            .data
+            .contains("TIFF_STREAM_SECRET=ghp_TiffStreamMetadataToken000000001")),
+        "TIFF metadata must emit even though tif is not a skip-extension, got {:?}",
+        chunks
+            .iter()
+            .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_extracts_pdf_text_without_disk_unpack() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let secret = "PDF_STREAM_SECRET=ghp_PdfStreamToken00000000000000001";
+    // Minimal PDF with a literal string the extractor can recover.
+    let pdf = format!(
+        "%PDF-1.4\n1 0 obj<<>>endobj\n2 0 obj<< /Length {} >>stream\n({})\nendstream\nendobj\ntrailer<<>>\n%%EOF\n",
+        secret.len() + 2,
+        secret
+    );
+    let layer = layer_tar_with_entries(
+        dir.path(),
+        "layer.tar",
+        &[("opt/notes.pdf", pdf.as_bytes())],
+    );
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream");
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().any(|chunk| chunk.data.contains(secret)),
+        "PDF text must be extracted on the streaming path, got {:?}",
+        chunks
+            .iter()
+            .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
     );
 }

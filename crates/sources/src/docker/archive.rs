@@ -311,6 +311,11 @@ fn stream_layer_tar_reader(
             continue;
         }
 
+        // Match FilesystemSource walk accounting: every admitted file member is an
+        // input unit even when a later Binary/image/PDF route skips emission.
+        crate::profile::add_input_units(1);
+        crate::profile::add_input_bytes(size);
+
         let entry_name = path.to_string_lossy().replace('\\', "/");
         if respect_default_excludes && crate::filesystem::is_default_excluded_path(&entry_name) {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
@@ -322,19 +327,18 @@ fn stream_layer_tar_reader(
             .and_then(|ext| ext.to_str())
             .unwrap_or("");
         let skip_extension = !ext.is_empty() && crate::filesystem::is_default_skip_extension(ext);
+        let may_image = layer_member_may_carry_image_metadata(ext);
         // Non-image skip-extensions match FilesystemSource: counted Binary and
-        // never read. Image extensions still need their bytes for metadata.
-        if skip_extension && !layer_member_may_carry_image_metadata(ext) {
+        // never read. Image extensions (including TIFF, which is not on the skip
+        // list) still need their bytes for metadata.
+        if skip_extension && !may_image {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
             continue;
         }
 
-        let read = crate::capped_read::read_to_cap(
-            &mut entry,
-            limits.docker_tar_entry_bytes,
-            Some(size),
-        )
-        .map_err(SourceError::Io)?;
+        let read =
+            crate::capped_read::read_to_cap(&mut entry, limits.docker_tar_entry_bytes, Some(size))
+                .map_err(SourceError::Io)?;
         if read.truncated {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             if !emit(Err(docker_archive_entry_over_entry_cap_error(
@@ -347,7 +351,7 @@ fn stream_layer_tar_reader(
             continue;
         }
 
-        if skip_extension {
+        if may_image {
             match crate::filesystem::try_emit_image_metadata_member(
                 &entry_name,
                 &read.bytes,
@@ -357,8 +361,10 @@ fn stream_layer_tar_reader(
                 Some(false) => return Ok(false),
                 Some(true) => continue,
                 None => {
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                    continue;
+                    if skip_extension {
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                        continue;
+                    }
                 }
             }
         }
@@ -371,6 +377,32 @@ fn stream_layer_tar_reader(
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
                 continue;
             }
+        }
+
+        // PDF keeps the dedicated extractor FilesystemSource used after unpack.
+        if ext.eq_ignore_ascii_case("pdf") {
+            if !crate::filesystem::try_emit_pdf_member(&entry_name, read.bytes, emit) {
+                return Ok(false);
+            }
+            continue;
+        }
+
+        // 7z/RAR have no in-memory extractor on this path; record the coverage gap
+        // the way emit_archive_leaf_member does for magic-matched containers so the
+        // miss cannot read as a silent clean.
+        if ext.eq_ignore_ascii_case("7z") || ext.eq_ignore_ascii_case("rar") {
+            let format = if ext.eq_ignore_ascii_case("7z") {
+                "7z"
+            } else {
+                "RAR"
+            };
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit(Err(SourceError::Other(format!(
+                "embedded {format} container '{entry_name}' has no in-memory extractor; its entries were not scanned"
+            )))) {
+                return Ok(false);
+            }
+            continue;
         }
 
         if !crate::filesystem::emit_in_memory_member(

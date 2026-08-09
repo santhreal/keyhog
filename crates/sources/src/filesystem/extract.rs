@@ -471,6 +471,22 @@ pub(crate) fn try_emit_image_metadata_member(
     Ok(Some(true))
 }
 
+pub(crate) fn try_emit_pdf_member(
+    entry_name: &str,
+    bytes: Vec<u8>,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let file_size = bytes.len() as u64;
+    pdf::extract_pdf_chunks_from_bytes(
+        entry_name,
+        bytes,
+        None,
+        file_size,
+        keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
+        emit,
+    )
+}
+
 pub(super) fn report_archive_truncation(
     archive_display: &str,
     attempted_total: u64,

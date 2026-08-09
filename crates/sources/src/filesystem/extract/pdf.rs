@@ -60,11 +60,36 @@ pub(super) fn extract_pdf_chunks(
             return;
         }
     };
-    let path_display = display_path(path);
+    let _ = extract_pdf_chunks_from_bytes(
+        &display_path(path),
+        bytes,
+        live_mtime_ns,
+        file_size,
+        max_size,
+        emit,
+    );
+}
 
+/// In-memory PDF route used by Docker layer streaming (and other already-buffered
+/// members). Mirrors [`extract_pdf_chunks`] after the safe read so layer members
+/// keep PDF text coverage without a temporary unpack.
+pub(super) fn extract_pdf_chunks_from_bytes(
+    path_display: &str,
+    bytes: Vec<u8>,
+    live_mtime_ns: Option<u64>,
+    file_size: u64,
+    max_size: u64,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
     if !crate::magic::starts_with_pdf(&bytes) {
-        emit_non_pdf_extension_fallback(bytes, path_display, live_mtime_ns, file_size, emit);
-        return;
+        emit_non_pdf_extension_fallback(
+            bytes,
+            path_display.to_owned(),
+            live_mtime_ns,
+            file_size,
+            emit,
+        );
+        return true;
     }
 
     let budget = pdf_decode_budget(max_size);
@@ -73,21 +98,21 @@ pub(super) fn extract_pdf_chunks(
         || extracted.unreadable_gap.is_some()
         || extracted.truncated;
     if extracted.recovered_after_error {
-        let error = report_pdf_recovered_after_error(&path_display);
+        let error = report_pdf_recovered_after_error(path_display);
         if !emit(Err(error)) {
-            return;
+            return false;
         }
     }
     if let Some(gap) = extracted.unreadable_gap {
-        let error = report_pdf_unreadable_gap(&path_display, gap);
+        let error = report_pdf_unreadable_gap(path_display, gap);
         if !emit(Err(error)) {
-            return;
+            return false;
         }
     }
     if extracted.truncated {
-        let error = report_pdf_truncation(&path_display, budget);
+        let error = report_pdf_truncation(path_display, budget);
         if !emit(Err(error)) {
-            return;
+            return false;
         }
     }
 
@@ -98,21 +123,19 @@ pub(super) fn extract_pdf_chunks(
             // silent clean miss; count it like other binary-without-strings skips.
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
         }
-        return;
+        return true;
     }
-    if !emit(Ok(Chunk {
+    emit(Ok(Chunk {
         data: text.to_owned().into(),
         metadata: ChunkMetadata {
             source_type: "filesystem/pdf".into(),
-            path: Some(path_display.into()),
+            path: Some(path_display.to_owned().into()),
             mtime_ns: live_mtime_ns,
             size_bytes: Some(file_size),
             decoded_span: None,
             ..Default::default()
         },
-    })) {
-        tracing::debug!("PDF chunk consumer stopped before final chunk");
-    }
+    }))
 }
 
 fn report_pdf_recovered_after_error(path_display: &str) -> SourceError {

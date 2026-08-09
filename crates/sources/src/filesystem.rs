@@ -42,6 +42,14 @@ pub(crate) fn try_emit_image_metadata_member(
     extract::try_emit_image_metadata_member(entry_name, bytes, ext, emit)
 }
 
+pub(crate) fn try_emit_pdf_member(
+    entry_name: &str,
+    bytes: Vec<u8>,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    extract::try_emit_pdf_member(entry_name, bytes, emit)
+}
+
 /// Scan one already-buffered archive/layer member through the shared in-memory
 /// dispatcher (nested tar/zip/compressed descent + leaf text/strings). Used by
 /// Docker layer streaming so a layer never has to hit the filesystem first.
