@@ -488,40 +488,90 @@ pub fn load_matcher_artifact_with_ir(
     identity: &MatcherArtifactIdentity,
 ) -> std::result::Result<LoadedMatcherArtifact, String> {
     let path = cache_dir.join(identity.cache_filename());
-    let metadata = std::fs::symlink_metadata(&path).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
-            format!("matcher artifact cache miss: {}", path.display())
-        } else {
-            format!("cannot stat matcher artifact {}: {error}", path.display())
-        }
-    })?;
-    if metadata.file_type().is_symlink() {
-        return Err(format!(
-            "matcher artifact {} is a symlink; refusing to load",
-            path.display()
-        ));
-    }
+    let bytes = read_matcher_artifact_bytes(&path)?;
+    let (_identity, loaded) = parse_loaded_matcher_artifact(&path, &bytes, Some(identity))?;
+    Ok(loaded)
+}
+
+fn read_matcher_artifact_bytes(path: &Path) -> std::result::Result<Vec<u8>, String> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::MetadataExt;
+        use std::io::Read;
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true);
+        options.custom_flags(libc::O_NOFOLLOW);
+        let mut file = match options.open(path) {
+            Ok(file) => file,
+            Err(error) => {
+                if error.raw_os_error() == Some(libc::ELOOP) {
+                    return Err(format!(
+                        "matcher artifact {} is a symlink; refusing to load",
+                        path.display()
+                    ));
+                }
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    return Err(format!("matcher artifact cache miss: {}", path.display()));
+                }
+                return Err(format!(
+                    "cannot open matcher artifact {}: {error}",
+                    path.display()
+                ));
+            }
+        };
+        let metadata = file.metadata().map_err(|error| {
+            format!("cannot fstat matcher artifact {}: {error}", path.display())
+        })?;
+        if !metadata.file_type().is_file() {
+            return Err(format!(
+                "matcher artifact {} is not a regular file; refusing to load",
+                path.display()
+            ));
+        }
         if metadata.uid() != current_uid() {
             return Err(format!(
                 "matcher artifact {} is not owned by the current user; refusing to load",
                 path.display()
             ));
         }
+        if metadata.len() > MATCHER_ARTIFACT_FILE_BYTES {
+            return Err(format!(
+                "matcher artifact {} exceeds {} byte cap",
+                path.display(),
+                MATCHER_ARTIFACT_FILE_BYTES
+            ));
+        }
+        let mut bytes = Vec::with_capacity(metadata.len() as usize);
+        file.read_to_end(&mut bytes)
+            .map_err(|error| format!("cannot read matcher artifact {}: {error}", path.display()))?;
+        return Ok(bytes);
     }
-    if metadata.len() > MATCHER_ARTIFACT_FILE_BYTES {
-        return Err(format!(
-            "matcher artifact {} exceeds {} byte cap",
-            path.display(),
-            MATCHER_ARTIFACT_FILE_BYTES
-        ));
+    #[cfg(not(unix))]
+    {
+        let metadata = std::fs::symlink_metadata(path).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                format!("matcher artifact cache miss: {}", path.display())
+            } else {
+                format!("cannot stat matcher artifact {}: {error}", path.display())
+            }
+        })?;
+        if metadata.file_type().is_symlink() {
+            return Err(format!(
+                "matcher artifact {} is a symlink; refusing to load",
+                path.display()
+            ));
+        }
+        if metadata.len() > MATCHER_ARTIFACT_FILE_BYTES {
+            return Err(format!(
+                "matcher artifact {} exceeds {} byte cap",
+                path.display(),
+                MATCHER_ARTIFACT_FILE_BYTES
+            ));
+        }
+        std::fs::read(path)
+            .map_err(|error| format!("cannot read matcher artifact {}: {error}", path.display()))
     }
-    let bytes = std::fs::read(&path)
-        .map_err(|error| format!("cannot read matcher artifact {}: {error}", path.display()))?;
-    let (_identity, loaded) = parse_loaded_matcher_artifact(&path, &bytes, Some(identity))?;
-    Ok(loaded)
 }
 
 /// Persist `sections` under `identity`.
