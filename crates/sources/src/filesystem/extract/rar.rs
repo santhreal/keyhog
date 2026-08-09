@@ -80,7 +80,12 @@ pub(super) fn extract_rar_chunks_from_bytes(
         }
     };
 
-    let mut state = RarExtractionState::new(archive_display.clone(), max_size, respect_default_excludes, nested_depth);
+    let mut state = RarExtractionState::new(
+        archive_display.clone(),
+        max_size,
+        respect_default_excludes,
+        nested_depth,
+    );
     match &archive {
         Archive::Rar13(archive) => {
             for entry in &archive.entries {

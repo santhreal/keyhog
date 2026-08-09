@@ -1,3 +1,3 @@
 category = "Performance"
-summary = "Docker image scans stream each layer's tar members through the shared in-memory archive dispatcher with one inflate pass and image-scoped unpack budgets, instead of validating by full decompress, materializing layer files, and re-walking them with FilesystemSource. Large in-memory archive text members emit as filesystem/windowed (one window at a time); nested 7z/rar/HAR keep path-extractor/HAR parity."
+summary = "Docker image scans stream each layer tar through the shared in-memory archive dispatcher with one inflate pass and image-scoped unpack budgets, instead of full decompress plus FilesystemSource re-walk. Large in-memory archive text members emit as filesystem/windowed one window at a time. Top-level layer 7z/RAR extract from bytes when content magic matches; HAR expands in memory; nested 7z/RAR inside other archives keep the prior leaf/coverage-gap path."
 crates = ["sources"]

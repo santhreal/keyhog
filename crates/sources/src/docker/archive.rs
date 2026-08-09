@@ -386,7 +386,10 @@ fn stream_layer_tar_reader(
                 // Fall through to the shared archive dispatcher.
             } else {
                 const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
-                let prefix = &read.bytes[..read.bytes.len().min(EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES)];
+                let prefix = &read.bytes[..read
+                    .bytes
+                    .len()
+                    .min(EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES)];
                 if crate::filesystem::looks_binary_prefix(prefix) {
                     let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
                     continue;
@@ -403,7 +406,7 @@ fn stream_layer_tar_reader(
         }
 
         // Top-level layer 7z/RAR (by extension or content sniff) uses the shared
-        // in-memory extractors — same coverage process_entry had after unpack.
+        // in-memory extractors, matching process_entry coverage after unpack.
         // Require matching magic so a text file named keys.7z still leaf-scans.
         let sniffed = crate::filesystem::container_extension_from_prefix(&read.bytes);
         let archive_kind = match sniffed {

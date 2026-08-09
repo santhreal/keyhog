@@ -509,8 +509,7 @@ fn emit_archive_member_with_tex_provenance(
                 let mut derived_bytes = 0_u64;
                 for chunk in har_chunks {
                     if let Ok(chunk_ok) = &chunk {
-                        derived_bytes =
-                            derived_bytes.saturating_add(chunk_ok.data.len() as u64);
+                        derived_bytes = derived_bytes.saturating_add(chunk_ok.data.len() as u64);
                     }
                     if !emit(chunk) {
                         crate::profile::add_derived_bytes(derived_bytes);
@@ -853,7 +852,9 @@ pub(super) fn process_entry(
         return;
     } else if ext.eq_ignore_ascii_case("rar") {
         run_derived_extractor(
-            |counted| rar::extract_rar_chunks(&path, max_size, respect_default_excludes, 0, counted),
+            |counted| {
+                rar::extract_rar_chunks(&path, max_size, respect_default_excludes, 0, counted)
+            },
             emit,
         );
         return;
