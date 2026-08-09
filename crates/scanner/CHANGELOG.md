@@ -19,6 +19,7 @@
 - On vocab-clean windowed shortcuts, return empty matches and let the parent coalesced post-process own decode/fragment work (avoid double decode).
 - Key the companion-gate derived cache by `detector_digest` as well as active pattern indices so thread-local reuse cannot cross CompiledScanner instances.
 - Guard decode-vocab empty memo lookups/marks to parent `filesystem/windowed` slices, reuse the batch entropy config digest in the phase-1 clean short-circuit, and drop new vocab-memo keys at capacity instead of clearing unrelated stage proofs (unique-line fingerprints retained so overlapping windows still hit).
+- After autoroute selects CpuFallback, fill deferred CPU trigger-hint rows on the route-neutral phase-1 plan so the scalar hot lane reuses them (production automatic route, not only `--backend cpu`).
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.
 - Make scanner construction route-specific. The default library constructor owns only the scalar reference route, `compile_for_backend` owns one explicit route, and cross-route dispatch fails instead of materializing or substituting a backend.

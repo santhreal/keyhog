@@ -388,16 +388,33 @@ pub(super) fn autoroute_required() -> bool {
     keyhog_scanner::hw_probe::multiple_backends_compiled()
 }
 
+/// Attach a phase-1 plan for a known backend, filling deferred CPU trigger
+/// hints when the automatic route lands on CpuFallback.
+pub(super) fn phase1_plan_for_selected_backend(
+    scanner: &CompiledScanner,
+    backend: ScanBackend,
+    mut plan: Phase1AdmissionPlan,
+    batch: &[Chunk],
+) -> Phase1AdmissionPlan {
+    if matches!(backend, ScanBackend::CpuFallback) {
+        scanner.fill_cpu_trigger_hints_for_plan(&mut plan, batch);
+    }
+    plan
+}
+
 pub(super) fn autoroute_state_recovery_selection(
     scanner: &CompiledScanner,
     phase1_plan: Phase1AdmissionPlan,
+    batch: &[Chunk],
     reason: String,
     announce: bool,
 ) -> BackendSelection {
     let backend = ScanBackend::CpuFallback;
     BackendSelection {
         backend,
-        phase1_plan: Some(phase1_plan),
+        phase1_plan: Some(phase1_plan_for_selected_backend(
+            scanner, backend, phase1_plan, batch,
+        )),
         execution_route: scanner.execution_route_for_backend(backend),
         recovery_plan: None,
         runtime_route: None,

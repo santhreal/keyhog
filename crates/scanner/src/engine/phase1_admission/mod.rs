@@ -763,8 +763,9 @@ impl CompiledScanner {
     /// Reuse avoids duplicate gates; malformed or mismatched identity is recomputed
     /// with an exact recovery receipt.
     pub fn phase1_admission_plan(&self, chunks: &[Chunk]) -> Phase1AdmissionPlan {
-        // Autoroute / route-neutral callers do not consume CPU trigger hints.
-        // Fused CPU dispatch uses `phase1_admission_plan_for_backend`.
+        // Route-neutral: defer CPU trigger hints until backend selection. After
+        // CpuFallback is chosen, call `fill_cpu_trigger_hints_for_plan`. Explicit
+        // CPU / fused dispatch uses `phase1_admission_plan_for_backend`.
         self.phase1_admission_plan_with_bigram_mode(chunks, false, false)
     }
 
@@ -776,6 +777,50 @@ impl CompiledScanner {
         let collect_cpu_trigger_hints =
             matches!(backend, crate::hw_probe::ScanBackend::CpuFallback);
         self.phase1_admission_plan_with_bigram_mode(chunks, false, collect_cpu_trigger_hints)
+    }
+
+    /// Fill missing CPU trigger-hint rows on a route-neutral autoroute plan once
+    /// the selected backend is known to be [`ScanBackend::CpuFallback`].
+    ///
+    /// Autoroute must build a plan before backend selection (workload keys need
+    /// phase-1 summary), so [`Self::phase1_admission_plan`] leaves these rows
+    /// empty. Without this fill, the production automatic route re-derives
+    /// triggers in the scalar hot lane even after CPU is chosen.
+    pub fn fill_cpu_trigger_hints_for_plan(
+        &self,
+        plan: &mut Phase1AdmissionPlan,
+        chunks: &[Chunk],
+    ) {
+        if chunks.len() != plan.chunk_shapes.len()
+            || plan.cpu_trigger_hints.len() != plan.phase2_keyword_hints.len()
+            || plan.phase2_keyword_hint_rows.len() != plan.chunk_shapes.len()
+            || plan.admissions.len() != plan.chunk_shapes.len()
+        {
+            return;
+        }
+        let mut row_rep: Vec<Option<usize>> = vec![None; plan.cpu_trigger_hints.len()];
+        for (chunk_idx, &row) in plan.phase2_keyword_hint_rows.iter().enumerate() {
+            if let Some(slot) = row_rep.get_mut(row) {
+                if slot.is_none() {
+                    *slot = Some(chunk_idx);
+                }
+            }
+        }
+        for (row, hint) in plan.cpu_trigger_hints.iter_mut().enumerate() {
+            if hint.is_some() {
+                continue;
+            }
+            let Some(chunk_idx) = row_rep.get(row).copied().flatten() else {
+                continue;
+            };
+            if plan.admissions.get(chunk_idx) != Some(&Phase1Admission::Admitted) {
+                continue;
+            }
+            let Some(chunk) = chunks.get(chunk_idx) else {
+                continue;
+            };
+            *hint = Some(self.collect_triggered_patterns_cpu(&chunk.data));
+        }
     }
 
     /// Build admission evidence with only the bigram gate bypassed.
