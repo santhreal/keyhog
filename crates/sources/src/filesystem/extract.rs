@@ -497,10 +497,19 @@ fn emit_archive_member_with_tex_provenance(
     // Path-backed extractors (7z/RAR) and structured HAR expansion used to run
     // only after a layer was spilled to disk. Keep that coverage on the
     // streaming/in-memory dispatcher so container findings stay complete.
-    let ext = std::path::Path::new(entry_name)
+    let mut ext = std::path::Path::new(entry_name)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
+    // Extensionless OCI/layer blobs still need 7z/RAR extractors; sniff magic the
+    // same way process_entry does via container_extension_from_prefix.
+    if ext.is_empty() {
+        if let Some(sniffed) = container_extension_from_prefix(&content) {
+            if sniffed == "7z" || sniffed == "rar" {
+                ext = sniffed;
+            }
+        }
+    }
     if ext.eq_ignore_ascii_case("har") {
         let _decode = crate::profile::decode_span();
         match crate::har::try_expand_har(&content, member_display, max_size) {
@@ -558,15 +567,59 @@ fn emit_path_backed_archive_bytes(
 ) -> bool {
     use std::io::Write;
 
-    let suffix = if ext.eq_ignore_ascii_case("7z") {
-        ".7z"
-    } else {
-        ".rar"
-    };
-    let mut tmp = match tempfile::Builder::new()
+    // Prefer in-memory extractors so attacker-controlled member bytes never land
+    // in the shared system temp directory outside the scan's private workspace.
+    if ext.eq_ignore_ascii_case("7z") {
+        let mut keep_going = true;
+        run_derived_extractor(
+            |counted| {
+                seven_zip::extract_seven_zip_chunks_from_bytes(
+                    &content,
+                    member_display,
+                    max_size,
+                    respect_default_excludes,
+                    nested_depth,
+                    counted,
+                );
+            },
+            &mut |chunk| {
+                keep_going = emit(chunk);
+                keep_going
+            },
+        );
+        return keep_going;
+    }
+
+    // RAR still needs a path today; stage under a private 0o700 directory rather
+    // than the process-wide temp root.
+    let staging_dir = match tempfile::Builder::new()
         .prefix("keyhog-mem-arch-")
-        .suffix(suffix)
-        .tempfile()
+        .tempdir()
+    {
+        Ok(dir) => dir,
+        Err(error) => {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return emit(Err(SourceError::Other(format!(
+                "failed to scan embedded {ext} container '{member_display}': cannot create private extract staging ({error}); container was not scanned"
+            ))));
+        }
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(error) =
+            std::fs::set_permissions(staging_dir.path(), std::fs::Permissions::from_mode(0o700))
+        {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return emit(Err(SourceError::Other(format!(
+                "failed to scan embedded {ext} container '{member_display}': cannot harden extract staging ({error}); container was not scanned"
+            ))));
+        }
+    }
+    let mut tmp = match tempfile::Builder::new()
+        .prefix("member-")
+        .suffix(".rar")
+        .tempfile_in(staging_dir.path())
     {
         Ok(tmp) => tmp,
         Err(error) => {
@@ -583,31 +636,18 @@ fn emit_path_backed_archive_bytes(
         ))));
     }
 
-    // Preserve the logical member path in findings by extracting against a
-    // display-aware wrapper once path extractors gain from_bytes helpers. Until
-    // then, stage on disk (bytes already buffered) and rewrite emitted paths.
     let staged_path = tmp.path().to_path_buf();
     let staged_display = display_path(&staged_path);
     let mut keep_going = true;
     run_derived_extractor(
         |counted| {
-            if ext.eq_ignore_ascii_case("7z") {
-                seven_zip::extract_seven_zip_chunks(
-                    &staged_path,
-                    max_size,
-                    respect_default_excludes,
-                    nested_depth,
-                    counted,
-                );
-            } else {
-                rar::extract_rar_chunks(
-                    &staged_path,
-                    max_size,
-                    respect_default_excludes,
-                    nested_depth,
-                    counted,
-                );
-            }
+            rar::extract_rar_chunks(
+                &staged_path,
+                max_size,
+                respect_default_excludes,
+                nested_depth,
+                counted,
+            );
         },
         &mut |chunk| {
             let chunk = match chunk {

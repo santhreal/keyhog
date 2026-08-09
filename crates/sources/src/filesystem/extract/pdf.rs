@@ -82,14 +82,13 @@ pub(super) fn extract_pdf_chunks_from_bytes(
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
     if !crate::magic::starts_with_pdf(&bytes) {
-        emit_non_pdf_extension_fallback(
+        return emit_non_pdf_extension_fallback(
             bytes,
             path_display.to_owned(),
             live_mtime_ns,
             file_size,
             emit,
         );
-        return true;
     }
 
     let budget = pdf_decode_budget(max_size);
@@ -175,7 +174,7 @@ fn emit_non_pdf_extension_fallback(
     live_mtime_ns: Option<u64>,
     file_size: u64,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
-) {
+) -> bool {
     let (data, source_type) = match read::decode_text_file(&bytes) {
         Some(text) if !text.is_empty() => (text.into(), "filesystem"),
         _ => {
@@ -185,7 +184,7 @@ fn emit_non_pdf_extension_fallback(
             );
             if strings.is_empty() {
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                return;
+                return true;
             }
             (
                 crate::strings::join_printable_runs(&strings),
@@ -194,7 +193,7 @@ fn emit_non_pdf_extension_fallback(
         }
     };
 
-    if !emit(Ok(Chunk {
+    emit(Ok(Chunk {
         data,
         metadata: ChunkMetadata {
             source_type: source_type.into(),
@@ -204,9 +203,7 @@ fn emit_non_pdf_extension_fallback(
             decoded_span: None,
             ..Default::default()
         },
-    })) {
-        return;
-    }
+    }))
 }
 
 fn pdf_decode_budget(max_size: u64) -> usize {
