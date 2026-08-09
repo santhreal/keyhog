@@ -399,7 +399,7 @@ the [`scan --help` output](./cli.md) for the current `--lockdown` checks.
 trusted_bin_dirs = ["/nix/store/example-system-bin/bin"]
 cache_dir = "/home/alice/.cache/keyhog"
 autoroute_cache = "/home/alice/.cache/keyhog/autoroute.json"
-matcher_cache = "/home/alice/.cache/keyhog/matcher-artifacts"
+matcher_cache = "/home/alice/.cache/keyhog-matcher-artifacts"
 calibration_cache = "/home/alice/.cache/keyhog/calibration.json"
 gpu = "auto"
 autoroute_gpu = false

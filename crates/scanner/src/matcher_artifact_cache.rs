@@ -74,7 +74,7 @@ pub fn default_matcher_artifact_cache_dir_from_base(
          --matcher-cache <DIR|off> or [system].matcher_cache"
             .to_owned()
     })?;
-    Ok(base.join("keyhog").join("matcher-artifacts"))
+    Ok(base.join("keyhog-matcher-artifacts"))
 }
 
 /// Validate an explicit MatcherArtifact cache directory.
@@ -628,8 +628,36 @@ pub fn store_matcher_artifact(
     }
     atomic_write(&path, &bytes)
         .map_err(|error| format!("cannot write matcher artifact {}: {error}", path.display()))?;
-
+    evict_old_matcher_artifacts(cache_dir);
     Ok(())
+}
+
+const MATCHER_ARTIFACT_MAX_ENTRIES: usize = 8;
+
+fn evict_old_matcher_artifacts(cache_dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(cache_dir) else {
+        return;
+    };
+    let mut artifacts = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("khm") {
+            continue;
+        }
+        let modified = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        artifacts.push((modified, path));
+    }
+    if artifacts.len() <= MATCHER_ARTIFACT_MAX_ENTRIES {
+        return;
+    }
+    artifacts.sort_by_key(|(modified, _)| *modified);
+    let stale = artifacts.len() - MATCHER_ARTIFACT_MAX_ENTRIES;
+    for (_, path) in artifacts.into_iter().take(stale) {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 
@@ -705,11 +733,25 @@ pub fn compile_shared_with_matcher_artifact_cache(
     // Identity keys on the canonical detector-IR digest (same digest packs use).
     // Computing it requires IR normalization; the avoided cost on hit is the
     // route-matcher section compile + eager CompileState construction.
-    let ir = CanonicalDetectorExecutionIr::compile(detectors.as_ref()).map_err(|error| {
-        ScanError::Config(format!(
-            "cannot compile detector execution IR for matcher cache: {error}"
-        ))
-    })?;
+    let ir = match CanonicalDetectorExecutionIr::compile(detectors.as_ref()) {
+        Ok(ir) => ir,
+        Err(error) => {
+            // Cache prep must not fail a scan that would have worked without the
+            // cache: degrade to the historical compile path.
+            tracing::warn!(
+                target: "keyhog::matcher_artifact_cache",
+                "matcher artifact cache unavailable ({error}); compiling without cache"
+            );
+            let outcome = MatcherArtifactCacheOutcome::Disabled;
+            record_outcome(&outcome);
+            let scanner = CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
+                detectors,
+                gpu_policy,
+                tuning_config,
+            )?;
+            return Ok((scanner, outcome));
+        }
+    };
     let detector_digest = ir.digest();
     let sorted: Arc<[keyhog_core::DetectorSpec]> = ir.detectors().to_vec().into();
     let identity = MatcherArtifactIdentity::new(

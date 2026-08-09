@@ -158,24 +158,3 @@ fn cache_entry_read_error_is_lockdown_violation() {
     );
 }
 
-#[test]
-fn matcher_artifacts_dir_is_not_lockdown_violation() {
-    with_xdg_cache_home(|cache_home| {
-        let keyhog_cache = cache_home.path().join("keyhog");
-        let matcher = keyhog_cache.join("matcher-artifacts");
-        std::fs::create_dir_all(&matcher).expect("matcher dir");
-        // Minimal KHMA envelope header (magic + version) is enough for trust.
-        let mut khm = b"KHMA".to_vec();
-        khm.extend_from_slice(&3u32.to_le_bytes());
-        khm.extend_from_slice(b"pad");
-        std::fs::write(matcher.join("artifact.khm"), khm).expect("khm");
-        std::fs::write(matcher.join("tip.kht"), br#"{"embedded_set":"x"}"#).expect("kht");
-        assert!(
-            keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
-                &keyhog_core::testing::TestApi,
-            )
-            .is_empty(),
-            "matcher-artifacts should be trusted like hs-*.db"
-        );
-    });
-}

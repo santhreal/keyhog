@@ -713,57 +713,15 @@ pub(crate) fn profiling_resolved_config_digest(resolved: &ResolvedScanConfig) ->
 
 /// Config identity for MatcherArtifact cache keys.
 ///
-/// Same fields as [`profiling_resolved_config_digest`], except volatile
-/// calibration *contents* (`calibration_entry_count` / `calibration_digest`)
-/// which change after the first calibrated run and must not invalidate an
-/// otherwise identical matcher graph.
+/// Only fields that change the compiled matcher graph participate. Report
+/// formatting, verification policy, and volatile cache *paths* are excluded so
+/// ordinary flag changes do not multiply on-disk artifacts.
 pub(crate) fn matcher_resolved_config_digest(resolved: &ResolvedScanConfig) -> [u8; 32] {
     let policy_digest = profiling_policy_digest(resolved);
-    let mut h = StableHasher::new("matcher-resolved-config-digest-v1");
+    let mut h = StableHasher::new("matcher-resolved-config-digest-v2");
     h.field_bytes("performance_policy_digest", &policy_digest);
     h.field_bool("autoroute_gpu", resolved.autoroute_gpu);
     h.field_bool("autoroute_calibration", resolved.autoroute_calibration);
-    h.field_option_path(
-        "autoroute_cache_path",
-        resolved.autoroute_cache_path.as_deref(),
-    );
-    h.field_option_path(
-        "matcher_cache_path",
-        resolved.matcher_cache_path.as_deref(),
-    );
-    h.field_option_path(
-        "calibration_cache_path",
-        resolved.calibration_cache_path.as_deref(),
-    );
-
-    let report = &resolved.report;
-    h.field_str("report.format", &report.format.to_string());
-    let severity = report.severity.as_ref().map(ToString::to_string);
-    h.field_option_str("report.severity", severity.as_deref());
-    h.field_str("report.dedup", &report.dedup.to_string());
-    h.field_bool("report.verify", report.verify);
-    h.field_bool("report.lockdown", report.lockdown);
-    h.field_bool("report.show_secrets", report.show_secrets);
-    h.field_bool(
-        "report.no_suppress_test_fixtures",
-        report.no_suppress_test_fixtures,
-    );
-    h.field_bool("report.hide_client_safe", report.hide_client_safe);
-
-    let verify = &resolved.verify;
-    h.field_f64_bits("verify.rate", verify.rate);
-    h.field_usize(
-        "verify.max_concurrent_per_service",
-        verify.max_concurrent_per_service,
-    );
-    h.field_u64("verify.timeout_secs", verify.timeout_secs);
-    h.field_option_str("verify.proxy", verify.proxy.as_deref());
-    h.field_bool("verify.insecure_tls", verify.insecure_tls);
-    h.field_bool("verify.allow_script_verify", verify.allow_script_verify);
-    h.field_bool("verify.oob.enabled", verify.oob.enabled);
-    #[cfg(feature = "verify")]
-    h.field_str("verify.oob.server", &verify.oob.server);
-    h.field_u64("verify.oob.timeout_secs", verify.oob.timeout_secs);
     h.finish_256()
 }
 

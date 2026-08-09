@@ -10,7 +10,7 @@ fn matcher_cache_path_config_overrides_and_disable() {
         .expect("default matcher cache");
     assert_eq!(
         default,
-        Some(home.join("keyhog").join("matcher-artifacts"))
+        Some(home.join("keyhog-matcher-artifacts"))
     );
 
     // Unusable automatic defaults soft-fail to disabled.

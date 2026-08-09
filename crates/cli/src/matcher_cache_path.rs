@@ -4,7 +4,7 @@ use std::path::PathBuf;
 ///
 /// Resolution order:
 ///   1. explicit `--matcher-cache <DIR|off>` / `[system].matcher_cache`
-///   2. `dirs::cache_dir()/keyhog/matcher-artifacts`
+///   2. `dirs::cache_dir()/keyhog-matcher-artifacts`
 ///
 /// `off` / `0` / empty disables persistence.
 ///
