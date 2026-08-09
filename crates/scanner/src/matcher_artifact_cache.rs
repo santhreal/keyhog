@@ -38,18 +38,18 @@ pub const MATCHER_ARTIFACT_MAGIC: &[u8; 4] = b"KHMA";
 pub const MATCHER_ARTIFACT_VERSION: u32 = 3;
 /// Filename suffix for MatcherArtifact cache files.
 pub const MATCHER_ARTIFACT_SUFFIX: &str = ".khm";
-/// Filename suffix for detector-digest tip files (no corpus digest in the key).
+/// Filename suffix for tip files (embedded-default shortcut; corpus digest lives in tip body).
 pub const MATCHER_ARTIFACT_TIP_SUFFIX: &str = ".kht";
 /// Hard cap for one MatcherArtifact cache file, including header.
 pub const MATCHER_ARTIFACT_FILE_BYTES: u64 = 256 * 1024 * 1024;
 
 static CONFIGURED_CACHE_DIR: OnceLock<parking_lot::RwLock<Option<PathBuf>>> = OnceLock::new();
 static PRELOADED_MATCHER_ARTIFACT: OnceLock<
-    parking_lot::Mutex<Option<(MatcherArtifactIdentity, LoadedMatcherArtifact)>>,
+    parking_lot::Mutex<Option<(MatcherArtifactIdentity, LoadedMatcherArtifact, [u8; 32])>>,
 > = OnceLock::new();
 
 fn preloaded_matcher_artifact_cell() -> &'static parking_lot::Mutex<
-    Option<(MatcherArtifactIdentity, LoadedMatcherArtifact)>,
+    Option<(MatcherArtifactIdentity, LoadedMatcherArtifact, [u8; 32])>,
 > {
     PRELOADED_MATCHER_ARTIFACT.get_or_init(|| parking_lot::Mutex::new(None))
 }
@@ -58,16 +58,32 @@ pub fn clear_preloaded_matcher_artifact() {
     *preloaded_matcher_artifact_cell().lock() = None;
 }
 
+fn detector_corpus_fingerprint(detectors: &[keyhog_core::DetectorSpec]) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    update_tagged(&mut hasher, b"domain", b"keyhog-matcher-artifact-detector-fp-v1");
+    hasher.update(&(detectors.len() as u64).to_le_bytes());
+    for detector in detectors {
+        update_tagged(&mut hasher, b"id", detector.id.as_bytes());
+        hasher.update(&(detector.patterns.len() as u64).to_le_bytes());
+        for pattern in &detector.patterns {
+            update_tagged(&mut hasher, b"regex", pattern.regex.as_bytes());
+        }
+    }
+    *hasher.finalize().as_bytes()
+}
+
 fn take_any_preloaded_matcher_artifact()
--> Option<(MatcherArtifactIdentity, LoadedMatcherArtifact)> {
+-> Option<(MatcherArtifactIdentity, LoadedMatcherArtifact, [u8; 32])> {
     preloaded_matcher_artifact_cell().lock().take()
 }
 
 fn stash_preloaded_matcher_artifact(
     identity: MatcherArtifactIdentity,
     loaded: LoadedMatcherArtifact,
+    detectors: &[keyhog_core::DetectorSpec],
 ) {
-    *preloaded_matcher_artifact_cell().lock() = Some((identity, loaded));
+    let fingerprint = detector_corpus_fingerprint(detectors);
+    *preloaded_matcher_artifact_cell().lock() = Some((identity, loaded, fingerprint));
 }
 
 fn configured_cache_dir_cell() -> &'static parking_lot::RwLock<Option<PathBuf>> {
@@ -186,17 +202,29 @@ impl MatcherArtifactCacheOutcome {
 /// Identity that must match exactly before a cached matcher may be reused.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MatcherArtifactIdentity {
+    /// On-disk envelope version.
     pub version: u32,
+    /// SHA-256 of the running keyhog executable.
     pub binary_digest: String,
+    /// `CARGO_PKG_VERSION` of the running binary.
     pub binary_version: String,
+    /// Git commit stamped into the binary.
     pub git_hash: String,
+    /// Host target triple class (`arch-os`).
     pub target: String,
+    /// Scanner feature identity string.
     pub features: String,
+    /// Hex digest of the canonical detector execution IR.
     pub detector_corpus_digest: String,
+    /// Hex digest of matcher-relevant resolved scan config.
     pub resolved_config_digest: String,
+    /// Authenticated pack generation id, or `"none"`.
     pub pack_generation: String,
+    /// Matcher backend name (`Cpu`, `Simd`, …).
     pub backend: String,
+    /// Hyperscan/runtime identity, or `"none"`.
     pub runtime_identity: String,
+    /// Route-matcher section schema version.
     pub route_matcher_section_version: u16,
 }
 
@@ -399,7 +427,10 @@ fn read_u32_le(bytes: &[u8], offset: &mut usize, path: &Path) -> std::result::Re
         .checked_add(4)
         .filter(|end| *end <= bytes.len())
         .ok_or_else(|| format!("matcher artifact {} is truncated", path.display()))?;
-    let value = u32::from_le_bytes(bytes[*offset..end].try_into().expect("4 bytes"));
+    let arr: [u8; 4] = bytes[*offset..end].try_into().map_err(|_| {
+        format!("matcher artifact {} is truncated", path.display())
+    })?;
+    let value = u32::from_le_bytes(arr);
     *offset = end;
     Ok(value)
 }
@@ -422,18 +453,23 @@ fn read_exact<'a>(
 /// Loaded MatcherArtifact payload (route matcher sections + canonical detector IR).
 #[derive(Clone, Debug)]
 pub struct LoadedMatcherArtifact {
+    /// Authenticated route-matcher sections.
     pub sections: CompiledRouteMatcherSections,
+    /// Canonical detector execution IR bytes.
     pub detector_ir: Vec<u8>,
 }
 
 /// Tip that locates a MatcherArtifact without first loading the detector corpus.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MatcherArtifactTip {
+    /// Build-time embedded corpus stamp (`keyhog_core::detector_digest()`).
+    /// Tips are only valid for the default embedded corpus of this binary.
+    pub embedded_set: String,
     pub detector_corpus_digest: String,
     pub identity_digest: String,
 }
 
-/// Build the tip filename for the default-embedded corpus path (detector digest omitted).
+/// Build the tip filename for the embedded-default corpus shortcut path.
 pub fn matcher_artifact_tip_filename(
     resolved_config_digest: [u8; 32],
     pack_generation: Option<&str>,
@@ -537,7 +573,7 @@ fn parse_loaded_matcher_artifact(
     }
     let stored_identity_digest: [u8; 32] = read_exact(bytes, &mut offset, 32, path)?
         .try_into()
-        .expect("32 bytes");
+        .map_err(|_| format!("matcher artifact {} is truncated", path.display()))?;
     let expected_digest = decoded_identity.digest();
     if stored_identity_digest != expected_digest {
         return Err(format!(
@@ -547,7 +583,7 @@ fn parse_loaded_matcher_artifact(
     }
     let stored_content_digest: [u8; 32] = read_exact(bytes, &mut offset, 32, path)?
         .try_into()
-        .expect("32 bytes");
+        .map_err(|_| format!("matcher artifact {} is truncated", path.display()))?;
     let literal_len = read_u32_le(bytes, &mut offset, path)? as usize;
     let literal_index = read_exact(bytes, &mut offset, literal_len, path)?.to_vec();
     let regex_len = read_u32_le(bytes, &mut offset, path)? as usize;
@@ -640,12 +676,14 @@ pub fn store_matcher_artifact(
     identity: &MatcherArtifactIdentity,
     sections: &CompiledRouteMatcherSections,
     detector_ir: &[u8],
+    write_embedded_tip: bool,
 ) -> std::result::Result<(), String> {
     let expected_backend =
         parse_backend_name(&identity.backend).ok_or_else(|| "unknown identity backend".to_owned())?;
     if sections.backend != expected_backend {
         return Err("matcher artifact backend does not match identity".to_owned());
     }
+    validate_matcher_artifact_cache_dir(cache_dir)?;
     std::fs::create_dir_all(cache_dir).map_err(|error| {
         format!(
             "cannot create matcher-artifact cache dir {}: {error}",
@@ -692,7 +730,12 @@ pub fn store_matcher_artifact(
     atomic_write(&path, &bytes)
         .map_err(|error| format!("cannot write matcher artifact {}: {error}", path.display()))?;
 
-    // Tip lets the next process resolve detector digest without TOML load.
+    // Tips are an embedded-default-only shortcut. Never publish them for custom
+    // `--detectors` / overlay corpora or a later default scan can silently load
+    // the wrong detector set.
+    if !write_embedded_tip {
+        return Ok(());
+    }
     let tip_name = matcher_artifact_tip_filename(
         parse_hex_digest(&identity.resolved_config_digest)?,
         if identity.pack_generation == "none" {
@@ -708,6 +751,7 @@ pub fn store_matcher_artifact(
         },
     )?;
     let tip = MatcherArtifactTip {
+        embedded_set: keyhog_core::detector_digest().to_owned(),
         detector_corpus_digest: identity.detector_corpus_digest.clone(),
         identity_digest: keyhog_core::hex_encode(&identity_digest),
     };
@@ -770,6 +814,12 @@ pub fn try_load_from_matcher_artifact_tip(
             tip_path.display()
         )
     })?;
+    if tip.embedded_set != keyhog_core::detector_digest() {
+        return Err(format!(
+            "matcher artifact tip {} is not for this binary's embedded detector set",
+            tip_path.display()
+        ));
+    }
     let detector_digest = parse_hex_digest(&tip.detector_corpus_digest)?;
     let identity = MatcherArtifactIdentity::new(
         detector_digest,
@@ -792,7 +842,7 @@ pub fn try_load_from_matcher_artifact_tip(
         return Err("matcher artifact detector IR digest mismatch".to_owned());
     }
     let detectors = decoded.into_detectors();
-    stash_preloaded_matcher_artifact(identity.clone(), loaded.clone());
+    stash_preloaded_matcher_artifact(identity.clone(), loaded.clone(), &detectors);
     Ok(Some((detectors, loaded, identity)))
 }
 
@@ -838,9 +888,11 @@ pub fn compile_shared_with_matcher_artifact_cache(
     resolved_config_digest: [u8; 32],
     pack_generation: Option<&str>,
     runtime_identity: Option<&str>,
+    write_embedded_tip: bool,
 ) -> Result<(CompiledScanner, MatcherArtifactCacheOutcome)> {
     let cache_dir = configured_matcher_artifact_cache_dir();
     let Some(backend) = matcher_backend_for_gpu_policy(gpu_policy) else {
+        clear_preloaded_matcher_artifact();
         let outcome = MatcherArtifactCacheOutcome::Disabled;
         record_outcome(&outcome);
         let scanner = CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
@@ -851,13 +903,27 @@ pub fn compile_shared_with_matcher_artifact_cache(
         return Ok((scanner, outcome));
     };
 
+    // Cache disabled: keep the historical compile cost (no IR round-trip).
+    if cache_dir.is_none() {
+        clear_preloaded_matcher_artifact();
+        let outcome = MatcherArtifactCacheOutcome::Disabled;
+        record_outcome(&outcome);
+        let scanner = CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
+            detectors,
+            gpu_policy,
+            tuning_config,
+        )?;
+        return Ok((scanner, outcome));
+    }
+
     // Tip path already loaded the artifact once; reuse it and skip IR recompile.
-    if let Some((pre_identity, loaded)) = take_any_preloaded_matcher_artifact() {
+    if let Some((pre_identity, loaded, fingerprint)) = take_any_preloaded_matcher_artifact() {
         let tip_matches = pre_identity.resolved_config_digest
             == keyhog_core::hex_encode(&resolved_config_digest)
             && pre_identity.backend == backend_name(backend)
             && pre_identity.pack_generation == pack_generation.unwrap_or("none")
-            && pre_identity.runtime_identity == runtime_identity.unwrap_or("none");
+            && pre_identity.runtime_identity == runtime_identity.unwrap_or("none")
+            && fingerprint == detector_corpus_fingerprint(detectors.as_ref());
         if tip_matches {
             let detector_digest = parse_hex32(&pre_identity.detector_corpus_digest).ok_or_else(|| {
                 ScanError::Config("preloaded matcher artifact has a malformed detector digest".into())
@@ -935,7 +1001,13 @@ pub fn compile_shared_with_matcher_artifact_cache(
                         ))
                     })?;
                 if let Err(store_error) =
-                    store_matcher_artifact(cache_dir, &identity, &sections, ir.as_bytes())
+                    store_matcher_artifact(
+                        cache_dir,
+                        &identity,
+                        &sections,
+                        ir.as_bytes(),
+                        write_embedded_tip,
+                    )
                 {
                     tracing::warn!(
                         target: "keyhog::matcher_artifact_cache",

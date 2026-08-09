@@ -7,6 +7,10 @@ use std::path::PathBuf;
 ///   2. `dirs::cache_dir()/keyhog/matcher-artifacts`
 ///
 /// `off` / `0` / empty disables persistence.
+///
+/// An explicit path that fails validation is a hard error. The automatic
+/// default soft-fails to `None` (cache disabled) when the platform cache root
+/// is missing or outside the allowlist, matching Hyperscan's default behaviour.
 pub(crate) fn resolve_matcher_cache_path(raw: Option<&str>) -> Result<Option<PathBuf>, String> {
     resolve_matcher_cache_path_with_default(raw, dirs::cache_dir())
 }
@@ -27,8 +31,28 @@ pub(crate) fn resolve_matcher_cache_path_with_default(
                  Configure with --matcher-cache <DIR|off> or [system].matcher_cache"
             ));
         }
+        keyhog_scanner::validate_matcher_artifact_cache_dir(&path)?;
         return Ok(Some(path));
     }
 
-    keyhog_scanner::default_matcher_artifact_cache_dir_from_base(default_cache_dir).map(Some)
+    match keyhog_scanner::default_matcher_artifact_cache_dir_from_base(default_cache_dir) {
+        Ok(path) => match keyhog_scanner::validate_matcher_artifact_cache_dir(&path) {
+            Ok(()) => Ok(Some(path)),
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    path = %path.display(),
+                    "matcher-artifact cache disabled: default cache location is unusable"
+                );
+                Ok(None)
+            }
+        },
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                "matcher-artifact cache disabled: no default cache location"
+            );
+            Ok(None)
+        }
+    }
 }
