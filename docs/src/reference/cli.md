@@ -67,7 +67,7 @@ or coverage incomplete.
 | `--gcs-bucket` | `BUCKET` |  | Scan a Google Cloud Storage bucket via the JSON API |
 | `--gcs-endpoint` | `URL` |  | Optional GCS endpoint override for compatible APIs or tests |
 | `--gcs-prefix` | `PREFIX` |  | Optional GCS object prefix to limit the scan |
-| `--git-blobs` | `GIT_BLOBS` |  | Scan repository blobs from refs, reflogs, stashes, and unreachable objects |
+| `--git-blobs` | `GIT_BLOBS` |  | Scan repository blobs from refs, reflogs, stashes, and unreachable objects. Commit blobs are collected by parent-tree diff (added, changed, and deleted sides); every ref tip under refs/ plus HEAD, root commits, and unreadable parents fall back to a full tree walk |
 | `--git-diff` | `BASE_REF` |  | Scan only changed lines between two git refs (e.g., --git-diff main) |
 | `--git-diff-path` | `GIT_DIFF_PATH` |  | Path to git repository for --git-diff (defaults to current directory) |
 | `--git-history` | `PATH` |  | Scan reachable commits using added lines from each commit patch |
@@ -250,7 +250,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--gcs-bucket` | `BUCKET` |  | Scan a Google Cloud Storage bucket via the JSON API |
 | `--gcs-endpoint` | `URL` |  | Optional GCS endpoint override for compatible APIs or tests |
 | `--gcs-prefix` | `PREFIX` |  | Optional GCS object prefix to limit the scan |
-| `--git-blobs` | `GIT_BLOBS` |  | Scan repository blobs from refs, reflogs, stashes, and unreachable objects |
+| `--git-blobs` | `GIT_BLOBS` |  | Scan repository blobs from refs, reflogs, stashes, and unreachable objects. Commit blobs are collected by parent-tree diff (added, changed, and deleted sides); every ref tip under refs/ plus HEAD, root commits, and unreadable parents fall back to a full tree walk |
 | `--git-diff` | `BASE_REF` |  | Scan only changed lines between two git refs (e.g., --git-diff main) |
 | `--git-diff-path` | `GIT_DIFF_PATH` |  | Path to git repository for --git-diff (defaults to current directory) |
 | `--git-history` | `PATH` |  | Scan reachable commits using added lines from each commit patch |

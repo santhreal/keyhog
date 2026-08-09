@@ -32,7 +32,7 @@ Choose the Git boundary before changing anything else:
 | Boundary | Command | Covers | Does not cover |
 |---|---|---|---|
 | Added lines in reachable commits | `keyhog scan --git-history .` | Patch additions from the ancestry of the current checkout, with commit, author, and date on every finding. | Other branches, tags, stashes, notes, and objects no ref reaches. |
-| Every reachable blob | `keyhog scan --git-blobs .` | Deduplicated blobs from every ref, including branches you have not checked out and refs that only exist in `packed-refs`, plus annotated tag messages, stashes, notes, and dangling objects that a rewrite or an amend left behind. | Blobs that decode as binary, including committed archives. |
+| Every reachable blob | `keyhog scan --git-blobs .` | Deduplicated blobs from every ref, including branches you have not checked out and refs that only exist in `packed-refs`, plus annotated tag messages, stashes, notes, and dangling objects that a rewrite or an amend left behind. Enumeration diffs each commit against its parents and keeps added, changed, and deleted blob sides, so a credential that was committed and later removed stays visible without rewalking every historical tree. Every ref tip under `refs/` plus HEAD is still fully walked once so `--max-commits` cannot hide untouched blobs on non-newest branches, custom ref namespaces, or detached CI checkouts. | Blobs that decode as binary, including committed archives. |
 | Both | `keyhog scan --git-history . --git-blobs .` | The recursive recovery workflow. Use it for a release or incident review. | |
 
 The two boundaries differ by more than cost. A credential committed on a

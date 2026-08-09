@@ -179,7 +179,7 @@ pub struct ScanArgs {
     #[arg(skip)]
     pub(crate) buffered_stdin: Option<std::sync::Arc<[u8]>>,
 
-    /// Scan repository blobs from refs, reflogs, stashes, and unreachable objects
+    /// Scan repository blobs from refs, reflogs, stashes, and unreachable objects. Commit blobs are collected by parent-tree diff (added, changed, and deleted sides); every ref tip under refs/ plus HEAD, root commits, and unreadable parents fall back to a full tree walk
     #[cfg(feature = "git")]
     #[arg(long)]
     pub git_blobs: Option<PathBuf>,
