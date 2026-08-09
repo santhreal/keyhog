@@ -27,8 +27,7 @@ const MAX_DOCKER_TAR_ENTRIES: usize = 500_000;
 fn docker_archive_entry_count_error(archive_kind: &str) -> SourceError {
     let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
     SourceError::Other(format!(
-        "docker archive {archive_kind} exceeds the {MAX_DOCKER_TAR_ENTRIES}-entry cap \
-         (likely a tar-header bomb); remaining entries were not scanned"
+        "docker archive {archive_kind} exceeds the {MAX_DOCKER_TAR_ENTRIES}-entry cap (likely a tar-header bomb); remaining entries were not scanned"
     ))
 }
 
@@ -77,8 +76,7 @@ impl DockerUnpackBudget {
 fn docker_image_budget_error(path: &Path, total_bytes: u64) -> SourceError {
     let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
     SourceError::Other(format!(
-        "docker image unpack exceeded the {total_bytes}-byte image-wide budget at entry '{}' \
-         (likely zip-bomb); remaining entries were not scanned",
+        "docker image unpack exceeded the {total_bytes}-byte image-wide budget at entry '{}' (likely zip-bomb); remaining entries were not scanned",
         path.display()
     ))
 }
@@ -566,7 +564,10 @@ fn stream_layer_tar_reader(
                     continue;
                 }
                 None => {
-                    tracing::info!(path = entry_name.as_str(), "HAR parse failed; scanning as plain layer member");
+                    tracing::info!(
+                        path = entry_name.as_str(),
+                        "HAR parse failed; scanning as plain layer member"
+                    );
                 }
             }
         }
@@ -585,8 +586,6 @@ fn stream_layer_tar_reader(
 
     Ok(true)
 }
-
-
 
 fn drain_layer_member_remainder<R: Read>(entry: &mut R, remaining: u64) -> Result<(), SourceError> {
     if remaining == 0 {
@@ -716,7 +715,6 @@ fn stream_plain_layer_member_windows<R: Read>(
     }
 }
 
-
 fn layer_member_may_carry_image_metadata(ext: &str) -> bool {
     matches!(
         ext.to_ascii_lowercase().as_str(),
@@ -779,8 +777,7 @@ fn validate_extracted_tree_with_limits<R: Read>(
         if cumulative_bytes > budget.remaining() {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
             return Err(SourceError::Other(format!(
-                "docker archive cumulative size exceeds {} bytes at entry '{}' \
-                 (likely zip-bomb)",
+                "docker archive cumulative size exceeds {} bytes at entry '{}' (likely zip-bomb)",
                 limits.docker_tar_total_bytes,
                 path.display(),
             )));
@@ -811,8 +808,7 @@ fn validate_docker_archive_plan<R: Read>(
         if cumulative_bytes > budget.remaining() {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
             return Err(SourceError::Other(format!(
-                "docker archive cumulative size exceeds {} bytes at entry '{}' \
-                 (likely zip-bomb)",
+                "docker archive cumulative size exceeds {} bytes at entry '{}' (likely zip-bomb)",
                 limits.docker_tar_total_bytes,
                 path.display(),
             )));

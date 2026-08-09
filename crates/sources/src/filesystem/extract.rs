@@ -285,7 +285,9 @@ fn emit_archive_leaf_member(
     };
 
     // Mirror FilesystemSource's large-file policy:
-    //   * already-UTF-8 members window on the RAW bytes (offsets == member bytes
+    //   * binary-prefix members take the archive-binary / printable-strings gate
+    //     (never lossy text windows - that was 2x RAM + detector noise);
+    //   * already-UTF-8 text windows on the RAW bytes (offsets == member bytes
     //     == size_bytes), matching the mmap window path;
     //   * UTF-16 / other encodings take the whole-member decode path (one chunk
     //     at base_offset 0), matching large_file_requires_whole_file_decode.
@@ -295,29 +297,40 @@ fn emit_archive_leaf_member(
     let window_overlap = super::reader::DEFAULT_WINDOW_OVERLAP;
     if content.len() > window_size && provenance.is_none() {
         let raw_member_len = content.len() as u64;
+        let prefix_len = content.len().min(EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES);
+        let prefix = &content[..prefix_len];
+        // Same gate as process_entry / large_file_requires_whole_file_decode:
+        // confident binary prefixes must not enter the scanner as ordinary text.
+        // looks_binary_prefix already exempts UTF-16 BOM text.
+        if read::looks_binary_prefix(prefix) {
+            match chunk_from_extracted_entry(
+                content,
+                member_display.to_string(),
+                text_source_type,
+                binary_source_type,
+            ) {
+                Some(chunk) => return emit(chunk),
+                None => return true,
+            }
+        }
         if std::str::from_utf8(&content).is_ok() {
-            return read::for_each_slice_window(
-                &content,
-                window_size,
-                window_overlap,
-                |window| {
-                    if window.text.is_empty() {
-                        return true;
-                    }
-                    emit(Ok(Chunk {
-                        data: window.text,
-                        metadata: ChunkMetadata {
-                            source_type: text_source_type.into(),
-                            path: Some(member_display.to_owned().into()),
-                            base_offset: window.offset,
-                            base_line: window.base_line,
-                            size_bytes: Some(raw_member_len),
-                            decoded_span: None,
-                            ..Default::default()
-                        },
-                    }))
-                },
-            );
+            return read::for_each_slice_window(&content, window_size, window_overlap, |window| {
+                if window.text.is_empty() {
+                    return true;
+                }
+                emit(Ok(Chunk {
+                    data: window.text,
+                    metadata: ChunkMetadata {
+                        source_type: text_source_type.into(),
+                        path: Some(member_display.to_owned().into()),
+                        base_offset: window.offset,
+                        base_line: window.base_line,
+                        size_bytes: Some(raw_member_len),
+                        decoded_span: None,
+                        ..Default::default()
+                    },
+                }))
+            });
         }
         match chunk_from_extracted_entry(
             content,
@@ -485,7 +498,6 @@ fn emit_archive_member_with_tex_provenance(
             emit,
         );
     }
-
 
     emit_archive_leaf_member(content, member_display, provenance, emit)
 }
