@@ -5,6 +5,7 @@
 - Speed up decode-through on repetitive single-line JSON: memoize base64 trial-decode by candidate value, intern extracted candidate strings as `Arc<str>`, and skip duplicate Caesar inputs that would emit identical bare chunks.
 - Skip decode-through (and always-active phase-2 presence work) on markerless single-line chunks/windows that lack classical encode markers (`+`, `/`, `=`, `%`, `\`). Plaintext credentials still match; windows that carry markers still decode.
 - Keep the confirmed companion gate's allow-set in the per-worker scratch bitset instead of allocating a full `ac_map`-sized `Vec<bool>` each chunk.
+- Speed the confirmed companion gate with a first-bigram absence prescreen and a thread-local Aho-Corasick cache for repeated active literal sets across windows.
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.
 - Make scanner construction route-specific. The default library constructor owns only the scalar reference route, `compile_for_backend` owns one explicit route, and cross-route dispatch fails instead of materializing or substituting a backend.
