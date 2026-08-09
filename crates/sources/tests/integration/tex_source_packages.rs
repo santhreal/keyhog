@@ -206,9 +206,18 @@ fn oversized_tex_provenance_is_loud_while_the_member_remains_scannable() {
         }),
         "bounded provenance loss must be operator-visible: {errors:?}"
     );
-    let chunks: Vec<_> = chunks.into_iter().cloned().collect();
-    let chunk = chunk_for(&chunks, "large-paper.zip//main.tex", "filesystem/archive");
-    assert!(chunk.data.contains("OVERSIZE_SOURCE_TOKEN"));
+    assert!(
+        chunks.iter().any(|chunk| {
+            chunk.metadata.source_type.as_ref() == "filesystem/archive"
+                && chunk
+                    .metadata
+                    .path
+                    .as_deref()
+                    .is_some_and(|path| path.ends_with("large-paper.zip//main.tex"))
+                && chunk.data.contains("OVERSIZE_SOURCE_TOKEN")
+        }),
+        "the oversized TeX member must remain scannable across archive windows"
+    );
 }
 
 #[test]
