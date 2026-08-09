@@ -348,13 +348,95 @@ fn stream_layer_tar_reader(
         // peak RSS vs the prior unpack+mmap path).
         let window_size = 1024 * 1024; // matches filesystem::reader::DEFAULT_WINDOW_SIZE
         let window_overlap = 128 * 1024; // matches filesystem::reader::DEFAULT_WINDOW_OVERLAP
-        if size > window_size as u64 && !layer_member_requires_full_buffer(ext) {
+
+        // Extensionless: sniff a bounded prefix first (process_entry parity) so a
+        // large ELF/Mach-O/PE is not buffered up to the 100 MiB scan cap only to
+        // be discarded as Binary. Containers still need a full buffer.
+        const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
+        let mut prebuffered: Option<Vec<u8>> = None;
+        if ext.is_empty() {
+            let prefix_len = std::cmp::min(
+                EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES as u64,
+                size.min(member_scan_cap),
+            ) as usize;
+            let mut prefix = vec![0_u8; prefix_len];
+            if prefix_len > 0 {
+                entry.read_exact(&mut prefix).map_err(SourceError::Io)?;
+            }
+            let after_prefix = size.saturating_sub(prefix_len as u64);
+            if layer_member_looks_like_container(&prefix) {
+                let mut bytes = prefix;
+                let room = member_scan_cap.saturating_sub(bytes.len() as u64);
+                let to_take = after_prefix.min(room);
+                if to_take > 0 {
+                    let mut take = Read::take(&mut entry, to_take);
+                    take.read_to_end(&mut bytes).map_err(SourceError::Io)?;
+                }
+                let leftover = after_prefix.saturating_sub(to_take);
+                if leftover > 0 {
+                    drain_layer_member_remainder(&mut entry, leftover)?;
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                    if !emit(Err(docker_archive_entry_over_entry_cap_error(
+                        &path,
+                        size,
+                        member_scan_cap,
+                    ))) {
+                        return Ok(false);
+                    }
+                    continue;
+                }
+                prebuffered = Some(bytes);
+            } else if crate::filesystem::looks_binary_prefix(&prefix) {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                drain_layer_member_remainder(&mut entry, after_prefix)?;
+                continue;
+            } else if size > window_size as u64 {
+                let stream_size = size.min(member_scan_cap);
+                if !stream_plain_layer_member_windows(
+                    &mut entry,
+                    stream_size,
+                    &entry_name,
+                    window_size,
+                    window_overlap,
+                    prefix,
+                    emit,
+                )? {
+                    return Ok(false);
+                }
+                let leftover = size.saturating_sub(stream_size);
+                if leftover > 0 {
+                    drain_layer_member_remainder(&mut entry, leftover)?;
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                    if !emit(Err(docker_archive_entry_over_entry_cap_error(
+                        &path,
+                        size,
+                        member_scan_cap,
+                    ))) {
+                        return Ok(false);
+                    }
+                }
+                continue;
+            } else {
+                let mut bytes = prefix;
+                if after_prefix > 0 {
+                    let mut take = Read::take(&mut entry, after_prefix);
+                    take.read_to_end(&mut bytes).map_err(SourceError::Io)?;
+                }
+                prebuffered = Some(bytes);
+            }
+        }
+
+        if prebuffered.is_none()
+            && size > window_size as u64
+            && !layer_member_requires_full_buffer(ext)
+        {
             if !stream_plain_layer_member_windows(
                 &mut entry,
                 size.min(member_scan_cap),
                 &entry_name,
                 window_size,
                 window_overlap,
+                Vec::new(),
                 emit,
             )? {
                 return Ok(false);
@@ -374,24 +456,29 @@ fn stream_layer_tar_reader(
             continue;
         }
 
-        let read = crate::capped_read::read_to_cap(&mut entry, member_scan_cap, Some(size))
-            .map_err(SourceError::Io)?;
-        if read.truncated {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            if !emit(Err(docker_archive_entry_over_entry_cap_error(
-                &path,
-                size.max(member_scan_cap.saturating_add(1)),
-                member_scan_cap,
-            ))) {
-                return Ok(false);
+        let read_bytes = if let Some(bytes) = prebuffered {
+            bytes
+        } else {
+            let read = crate::capped_read::read_to_cap(&mut entry, member_scan_cap, Some(size))
+                .map_err(SourceError::Io)?;
+            if read.truncated {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                if !emit(Err(docker_archive_entry_over_entry_cap_error(
+                    &path,
+                    size.max(member_scan_cap.saturating_add(1)),
+                    member_scan_cap,
+                ))) {
+                    return Ok(false);
+                }
+                continue;
             }
-            continue;
-        }
+            read.bytes
+        };
 
         if may_image {
             match crate::filesystem::try_emit_image_metadata_member(
                 &entry_name,
-                &read.bytes,
+                &read_bytes,
                 ext,
                 emit,
             )? {
@@ -406,31 +493,9 @@ fn stream_layer_tar_reader(
             }
         }
 
-        // Extensionless members: same container-or-binary sniff as process_entry.
-        // Sniff only the opening prefix (FilesystemSource uses
-        // EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES == 1024). looks_binary_prefix
-        // trips on any 4-byte NUL run in the slice it is given; feeding the
-        // whole member would drop ordinary text that happens to contain NULs
-        // later (false Binary skip, silent miss).
-        if ext.is_empty() {
-            if layer_member_looks_like_container(&read.bytes) {
-                // Fall through to the shared archive dispatcher.
-            } else {
-                const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
-                let prefix = &read.bytes[..read
-                    .bytes
-                    .len()
-                    .min(EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES)];
-                if crate::filesystem::looks_binary_prefix(prefix) {
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                    continue;
-                }
-            }
-        }
-
         // PDF keeps the dedicated extractor FilesystemSource used after unpack.
         if ext.eq_ignore_ascii_case("pdf") {
-            if !crate::filesystem::try_emit_pdf_member(&entry_name, read.bytes, emit) {
+            if !crate::filesystem::try_emit_pdf_member(&entry_name, read_bytes, emit) {
                 return Ok(false);
             }
             continue;
@@ -439,7 +504,7 @@ fn stream_layer_tar_reader(
         // Top-level layer 7z/RAR (by extension or content sniff) uses the shared
         // in-memory extractors, matching process_entry coverage after unpack.
         // Require matching magic so a text file named keys.7z still leaf-scans.
-        let sniffed = crate::filesystem::container_extension_from_prefix(&read.bytes);
+        let sniffed = crate::filesystem::container_extension_from_prefix(&read_bytes);
         let archive_kind = match sniffed {
             Some("7z") if ext.is_empty() || ext.eq_ignore_ascii_case("7z") => Some("7z"),
             Some("rar") if ext.is_empty() || ext.eq_ignore_ascii_case("rar") => Some("rar"),
@@ -448,7 +513,7 @@ fn stream_layer_tar_reader(
         if let Some(archive_kind) = archive_kind {
             if !crate::filesystem::emit_top_level_seven_zip_or_rar_member(
                 archive_kind,
-                read.bytes,
+                read_bytes,
                 &entry_name,
                 keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
                 respect_default_excludes,
@@ -463,7 +528,7 @@ fn stream_layer_tar_reader(
         // path-backed openpack extractor. Count them as unreadable on the
         // streaming path rather than silently leaf-scanning as clean.
         if crate::filesystem::is_openpack_archive_ext(ext)
-            && !crate::magic::starts_with_zip_container_prefix(&read.bytes)
+            && !crate::magic::starts_with_zip_container_prefix(&read_bytes)
         {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             if !emit(Err(SourceError::Other(format!(
@@ -481,7 +546,7 @@ fn stream_layer_tar_reader(
         if ext.eq_ignore_ascii_case("har") {
             let _decode = crate::profile::decode_span();
             match crate::har::try_expand_har(
-                &read.bytes,
+                &read_bytes,
                 &entry_name,
                 keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
             ) {
@@ -508,7 +573,7 @@ fn stream_layer_tar_reader(
 
         if !crate::filesystem::emit_in_memory_member(
             &entry_name,
-            read.bytes,
+            read_bytes,
             &entry_name,
             keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
             respect_default_excludes,
@@ -522,12 +587,21 @@ fn stream_layer_tar_reader(
 }
 
 
-fn layer_member_requires_full_buffer(ext: &str) -> bool {
-    if ext.is_empty() {
-        // Extensionless members may be containers; sniff needs a buffered prefix
-        // and nested dispatch needs the full member when the sniff hits.
-        return true;
+
+fn drain_layer_member_remainder<R: Read>(entry: &mut R, remaining: u64) -> Result<(), SourceError> {
+    if remaining == 0 {
+        return Ok(());
     }
+    let mut take = Read::take(entry, remaining);
+    std::io::copy(&mut take, &mut std::io::sink()).map_err(SourceError::Io)?;
+    Ok(())
+}
+
+fn layer_member_requires_full_buffer(ext: &str) -> bool {
+    // Extensionless members are prefix-sniffed by the caller so large binaries are
+    // not buffered whole only to be discarded. lz4/sz must be here: they are real
+    // compressed formats in CompressedFormat::from_ext, and routing them to the
+    // plain UTF-8 window path would silently miss secrets in their payloads.
     if crate::filesystem::is_openpack_archive_ext(ext) {
         return true;
     }
@@ -554,6 +628,8 @@ fn layer_member_requires_full_buffer(ext: &str) -> bool {
             | "xz"
             | "zst"
             | "zstd"
+            | "lz4"
+            | "sz"
             | "png"
             | "jpg"
             | "jpeg"
@@ -571,14 +647,21 @@ fn stream_plain_layer_member_windows<R: Read>(
     entry_name: &str,
     window_size: usize,
     window_overlap: usize,
+    initial: Vec<u8>,
     emit: &mut dyn FnMut(Result<keyhog_core::Chunk, SourceError>) -> bool,
 ) -> Result<bool, SourceError> {
     use keyhog_core::{Chunk, ChunkMetadata};
 
-    let mut carry: Vec<u8> = Vec::new();
+    let initial_len = initial.len() as u64;
+    if initial_len > size {
+        return Err(SourceError::Other(
+            "layer member prefix longer than declared size".into(),
+        ));
+    }
+    let mut carry: Vec<u8> = initial;
     let mut absolute_offset: usize = 0;
     let mut base_line: usize = 0;
-    let mut remaining = size;
+    let mut remaining = size - initial_len;
     loop {
         let need = window_size.saturating_sub(carry.len());
         let mut buf = carry;
@@ -586,8 +669,18 @@ fn stream_plain_layer_member_windows<R: Read>(
             let to_read = std::cmp::min(need as u64, remaining) as usize;
             let start = buf.len();
             buf.resize(start + to_read, 0);
-            entry.read_exact(&mut buf[start..]).map_err(SourceError::Io)?;
-            remaining = remaining.saturating_sub(to_read as u64);
+            // Short reads are partial coverage (truncated tar member), not a hard
+            // Io failure: keep the bytes we got and stop asking for more.
+            let got = entry.read(&mut buf[start..]).map_err(SourceError::Io)?;
+            buf.truncate(start + got);
+            if got < to_read {
+                remaining = 0;
+                if got == 0 && start == 0 {
+                    return Ok(true);
+                }
+            } else {
+                remaining = remaining.saturating_sub(got as u64);
+            }
         }
         if buf.is_empty() {
             return Ok(true);

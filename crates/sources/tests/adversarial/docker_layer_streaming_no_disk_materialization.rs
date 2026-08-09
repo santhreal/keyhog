@@ -104,35 +104,37 @@ fn stream_layers_preserve_independent_whiteout_semantics() {
         &[(".wh.secret.env", b""), ("app/.wh..wh..opq", b"")],
     );
 
-    let rows_a = TestApi
-        .stream_docker_layer_archive_chunks(
-            &layer_a,
-            keyhog_sources::SourceLimits::default(),
+    // One ordered session so layer B cannot retroactively hide layer A content.
+    let rows = TestApi
+        .stream_docker_layers_with_shared_budget(
+            &[&layer_a, &layer_b],
             1024 * 1024,
             true,
         )
-        .expect("stream layer a");
-    let rows_b = TestApi
-        .stream_docker_layer_archive_chunks(
-            &layer_b,
-            keyhog_sources::SourceLimits::default(),
-            1024 * 1024,
-            true,
-        )
-        .expect("stream layer b");
+        .expect("stream both layers");
 
-    let chunks_a: Vec<_> = rows_a.into_iter().filter_map(Result::ok).collect();
     assert!(
-        chunks_a
+        rows.iter().all(|row| row.is_ok()),
+        "whiteout/opaque markers must not abort the shared layer stream: {rows:?}"
+    );
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks
             .iter()
             .any(|chunk| chunk.data.contains("AKIAIOSFODNN7EXAMPLE")),
         "layer A secret must remain visible even when a later layer carries a whiteout"
     );
-    // Empty whiteout/opaque markers emit no text chunks; the important contract is
-    // that streaming them does not fail the layer or invent a deletion side effect.
+    // Empty whiteout/opaque markers emit no text chunks of their own.
+    let whiteout_chunk = chunks.iter().any(|chunk| {
+        chunk
+            .metadata
+            .path
+            .as_ref()
+            .is_some_and(|p| p.contains(".wh."))
+    });
     assert!(
-        rows_b.into_iter().all(|row| row.is_ok()),
-        "whiteout/opaque markers must not abort the layer stream"
+        whiteout_chunk == false,
+        "whiteout/opaque marker paths must not produce text chunks: {chunks:?}"
     );
 }
 
