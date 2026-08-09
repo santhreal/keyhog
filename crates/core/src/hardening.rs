@@ -449,18 +449,15 @@ fn compiled_pattern_cache_header_is_valid(path: &Path) -> std::io::Result<bool> 
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext == crate::MATCHER_ARTIFACT_SUFFIX.trim_start_matches('.'))
     {
-        // Magic + format version (same width class as Hyperscan's header check).
+        // Magic + current format version (parity with Hyperscan's exact
+        // header check). Stale versions fail closed under lockdown; operators
+        // clear leftover `.khm` files (uninstall surfaces the cache root).
         let mut header = [0_u8; 8];
         match file.read_exact(&mut header) {
             Ok(()) => {
-                // Magic alone marks a recognizable MatcherArtifact. A non-current
-                // format version is a stale keyhog cache file, not a findings-
-                // bearing artifact. Requiring the live format version stranded
-                // --lockdown after upgrades because lockdown disables the cache
-                // and cannot self-evict foreign-version .khm files.
                 let magic_ok = &header[..4] == crate::MATCHER_ARTIFACT_MAGIC;
-                let _version = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
-                Ok(magic_ok)
+                let version = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
+                Ok(magic_ok && version == crate::MATCHER_ARTIFACT_FORMAT_VERSION)
             }
             Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
             Err(error) => Err(error),

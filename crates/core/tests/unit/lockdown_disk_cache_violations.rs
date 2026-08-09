@@ -198,6 +198,28 @@ fn matcher_artifact_without_magic_is_lockdown_violation() {
 }
 
 #[test]
+fn matcher_artifact_stale_version_is_lockdown_violation() {
+    with_xdg_cache_home(|cache_home| {
+        let root = cache_home.path().join("keyhog-matcher-artifacts");
+        std::fs::create_dir_all(&root).expect("matcher artifacts dir");
+        let name = format!("matcher-{}.khm", "e".repeat(64));
+        let mut bytes = keyhog_core::MATCHER_ARTIFACT_MAGIC.to_vec();
+        let stale = keyhog_core::MATCHER_ARTIFACT_FORMAT_VERSION.wrapping_add(1);
+        bytes.extend_from_slice(&stale.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 64]);
+        std::fs::write(root.join(name), bytes).expect("write stale khm");
+        let hits = keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+            &keyhog_core::testing::TestApi,
+        );
+        assert_eq!(
+            hits.is_empty(),
+            false,
+            "stale MatcherArtifact format version must violate lockdown: {hits:?}"
+        );
+    });
+}
+
+#[test]
 fn matcher_artifact_under_keyhog_root_is_lockdown_violation() {
     with_xdg_cache_home(|cache_home| {
         let keyhog_cache = cache_home.path().join("keyhog");

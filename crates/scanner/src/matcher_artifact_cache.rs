@@ -106,6 +106,14 @@ pub fn validate_matcher_artifact_cache_dir(path: &Path) -> std::result::Result<(
                     "matcher-artifact cache directory is not owned by the current user".to_owned(),
                 );
             }
+            // Refuse group/world-writable roots even when the operator pre-
+            // created the directory (we deliberately do not chmod those).
+            if meta.mode() & 0o022 != 0 {
+                return Err(
+                    "matcher-artifact cache directory must not be group- or world-writable"
+                        .to_owned(),
+                );
+            }
         }
     }
     Ok(())
