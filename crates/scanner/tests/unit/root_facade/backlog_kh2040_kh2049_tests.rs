@@ -2,6 +2,24 @@
 
 use keyhog_scanner::testing as scan_testing;
 
+#[test]
+fn test_kh2040_simd_memory_attribution_struct() {
+    use keyhog_scanner::simd::backend::SimdPackMemoryAttribution;
+    let attr = SimdPackMemoryAttribution {
+        native_database_bytes: 1024,
+        serialized_shard_bytes: 512,
+        scratch_bytes: 256,
+        mapping_residency_bytes: 1536,
+    };
+    let clone = attr.clone();
+    assert_eq!(attr, clone);
+    assert_eq!(attr.native_database_bytes, 1024);
+    assert_eq!(attr.serialized_shard_bytes, 512);
+    assert_eq!(attr.scratch_bytes, 256);
+    assert_eq!(attr.mapping_residency_bytes, 1536);
+    assert!(format!("{:?}", attr).contains("SimdPackMemoryAttribution"));
+}
+
 #[cfg(feature = "simd")]
 #[test]
 fn test_kh2040_simd_memory_attribution() {
@@ -39,6 +57,14 @@ fn test_kh2042_coordinate_line_index_reuse_passthrough() {
         assert_eq!(index.line_number_for_offset(47), 4);
         // Out-of-bounds offset returns bounded line count
         assert_eq!(index.line_number_for_offset(1000), 4);
+    }
+
+    // Boundary check for single line text
+    let single_line = "no_newline_text";
+    if let Ok(index) = scan_testing::compact_line_index_for_test(single_line) {
+        assert_eq!(index.line_number_for_offset(0), 1);
+        assert_eq!(index.line_number_for_offset(5), 1);
+        assert_eq!(index.line_number_for_offset(100), 1);
     }
 }
 
