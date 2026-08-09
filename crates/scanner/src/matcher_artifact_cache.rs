@@ -713,7 +713,12 @@ pub fn compile_shared_with_matcher_artifact_cache(
                 target: "keyhog::matcher_artifact_cache",
                 "matcher artifact cache unavailable ({error}); compiling without cache"
             );
-            return compile_without_matcher_artifact_cache(detectors, gpu_policy, tuning_config);
+            return compile_with_matcher_artifact_outcome(
+                detectors,
+                gpu_policy,
+                tuning_config,
+                MatcherArtifactCacheOutcome::Miss,
+            );
         }
     };
     let detector_digest = ir.digest();
@@ -731,7 +736,12 @@ pub fn compile_shared_with_matcher_artifact_cache(
                 target: "keyhog::matcher_artifact_cache",
                 "matcher artifact cache unavailable ({error}); compiling without cache"
             );
-            return compile_without_matcher_artifact_cache(sorted, gpu_policy, tuning_config);
+            return compile_with_matcher_artifact_outcome(
+                sorted,
+                gpu_policy,
+                tuning_config,
+                MatcherArtifactCacheOutcome::Miss,
+            );
         }
     };
 
@@ -824,7 +834,12 @@ pub fn compile_shared_with_matcher_artifact_cache(
                 "matcher artifact section compile failed ({}); compiling without cache",
                 error
             );
-            return compile_without_matcher_artifact_cache(sorted, gpu_policy, tuning_config);
+            return compile_with_matcher_artifact_outcome(
+                sorted,
+                gpu_policy,
+                tuning_config,
+                MatcherArtifactCacheOutcome::Miss,
+            );
         }
     };
     if let Err(store_error) = store_matcher_artifact(cache_dir, &identity, &sections) {
@@ -834,14 +849,30 @@ pub fn compile_shared_with_matcher_artifact_cache(
             store_error
         );
     }
-    let scanner = CompiledScanner::compile_shared_from_compile_state(
+    match CompiledScanner::compile_shared_from_compile_state(
         sorted,
         gpu_policy,
         tuning_config,
         state,
-    )?;
-    record_outcome(&rebuild_outcome);
-    Ok((scanner, rebuild_outcome))
+    ) {
+        Ok(scanner) => {
+            record_outcome(&rebuild_outcome);
+            Ok((scanner, rebuild_outcome))
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "keyhog::matcher_artifact_cache",
+                "matcher artifact rebuild compile failed ({}); compiling without cache",
+                error
+            );
+            compile_with_matcher_artifact_outcome(
+                sorted,
+                gpu_policy,
+                tuning_config,
+                rebuild_outcome,
+            )
+        }
+    }
 }
 
 fn compile_without_matcher_artifact_cache(
@@ -849,7 +880,20 @@ fn compile_without_matcher_artifact_cache(
     gpu_policy: GpuInitPolicy,
     tuning_config: &ScannerTuningConfig,
 ) -> Result<(CompiledScanner, MatcherArtifactCacheOutcome)> {
-    let outcome = MatcherArtifactCacheOutcome::Disabled;
+    compile_with_matcher_artifact_outcome(
+        detectors,
+        gpu_policy,
+        tuning_config,
+        MatcherArtifactCacheOutcome::Disabled,
+    )
+}
+
+fn compile_with_matcher_artifact_outcome(
+    detectors: Arc<[keyhog_core::DetectorSpec]>,
+    gpu_policy: GpuInitPolicy,
+    tuning_config: &ScannerTuningConfig,
+    outcome: MatcherArtifactCacheOutcome,
+) -> Result<(CompiledScanner, MatcherArtifactCacheOutcome)> {
     record_outcome(&outcome);
     let scanner = CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
         detectors,
