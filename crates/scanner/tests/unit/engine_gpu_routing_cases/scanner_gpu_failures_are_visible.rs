@@ -7,12 +7,19 @@ use std::fs;
 use std::path::PathBuf;
 
 fn engine_src(name: &str) -> String {
-    fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src/engine")
+        .join(name);
+    if !path.exists() && name.ends_with(".rs") {
+        let mod_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("src/engine")
-            .join(name),
-    )
-    .unwrap_or_else(|_| panic!("{name} should be readable"))
+            .join(name.trim_end_matches(".rs"))
+            .join("mod.rs");
+        if mod_path.exists() {
+            path = mod_path;
+        }
+    }
+    fs::read_to_string(&path).unwrap_or_else(|_| panic!("{name} should be readable"))
 }
 
 fn compiled_scanner_src(name: &str) -> String {

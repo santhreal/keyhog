@@ -231,7 +231,11 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
             .and_then(|embedded| embedded.match_confidence),
         ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).expect("compile WGPU shard scanner");
+    let scanner = CompiledScanner::compile_with_gpu_policy(
+        vec![detector],
+        keyhog_scanner::GpuInitPolicy::FromRuntimePolicy,
+    )
+    .expect("compile WGPU shard scanner");
     if !crate::hw_probe::probe_hardware().gpu_available {
         eprintln!("GPU parity fixture requires a physical GPU");
         return;
@@ -331,7 +335,11 @@ fn production_cuda_windows_seam_tail_and_mixed_rows_with_cpu_parity() {
         keywords: vec!["KHCUDAX_".into()],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).expect("compile CUDA window scanner");
+    let scanner = CompiledScanner::compile_with_gpu_policy(
+        vec![detector],
+        keyhog_scanner::GpuInitPolicy::FromRuntimePolicy,
+    )
+    .expect("compile CUDA window scanner");
     let cuda = scanner
         .gpu_backend_candidates()
         .into_iter()

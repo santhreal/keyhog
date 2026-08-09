@@ -19,7 +19,15 @@ use keyhog_scanner::testing::segment_attribution::{
 };
 
 fn engine_src(rel: &str) -> String {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel);
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel);
+    if !path.exists() && rel.ends_with(".rs") {
+        let mod_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(rel.trim_end_matches(".rs"))
+            .join("mod.rs");
+        if mod_path.exists() {
+            path = mod_path;
+        }
+    }
     fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{rel} not readable ({e}); path moved - update this gate"))
 }
