@@ -515,6 +515,10 @@ fn stream_git_blobs(
     // recur across commits (most of a tree is untouched by any one commit),
     // so memoizing them prunes nearly all repeated descents.
     let mut walked_trees: HashSet<gix::ObjectId> = HashSet::new();
+    // First reachable commit (newest tip under newest-first `git log`) must be
+    // fully enumerated so `--max-commits` still sees every blob in that tip tree.
+    // Later commits use parent-tree diffs for O(changed) work.
+    let mut tip_tree_fully_enumerated = false;
     let mut unreachable_objects: Option<UnreachableGitObjects> = None;
     let mut pending_blob_decode: Option<PendingGitBlobDecode> = None;
     let mut total_bytes = 0usize;
@@ -605,14 +609,21 @@ fn stream_git_blobs(
                     continue;
                 }
 
+                let force_full_walk = !tip_tree_fully_enumerated;
                 let commit_blobs = match load_commit_blob_set(
                     &repo_handle,
                     id,
                     &mut seen_blob_paths,
                     &mut walked_trees,
                     respect_default_excludes,
+                    force_full_walk,
                 ) {
-                    Ok(Some(commit_blobs)) => commit_blobs,
+                    Ok(Some(commit_blobs)) => {
+                        if force_full_walk {
+                            tip_tree_fully_enumerated = true;
+                        }
+                        commit_blobs
+                    }
                     Ok(None) => continue,
                     Err(error) => {
                         done = true;
@@ -678,6 +689,7 @@ fn load_commit_blob_set(
     seen_blob_paths: &mut HashSet<GitBlobPathKey>,
     walked_trees: &mut HashSet<gix::ObjectId>,
     respect_default_excludes: bool,
+    force_full_walk: bool,
 ) -> Result<Option<GitCommitBlobSet>, SourceError> {
     let commit_id = id.to_string();
     // Law 10: `git log` already enumerated this commit, so a gix failure to
@@ -757,14 +769,15 @@ fn load_commit_blob_set(
     // root entry per commit) otherwise re-scan O(n) entries per commit → O(n²)
     // object-header traffic. Diffs emit only added/changed paths; deletions'
     // old blob sides are kept so newest-first `git log` order still recalls
-    // credentials that were removed later. Root commits and unreadable parents
-    // fall back to a full walk (recall-safe).
+    // credentials that were removed later. The scan tip, root commits, and
+    // unreadable parents fall back to a full walk (recall-safe under
+    // `--max-commits`: untouched tip blobs must still be scanned).
     let parent_ids: Vec<gix::ObjectId> = commit.parent_ids().map(|id| id.detach()).collect();
     // Root-tree memoization is only valid after a FULL enumeration of that tree.
     // Parent-tree diffs emit only changed sides; marking the root walked afterwards
     // would let a later commit that reuses the same tree early-skip and drop blobs
     // that were never collected on the first visit (e.g. revert-to-earlier-tree).
-    let root_fully_enumerated = if parent_ids.is_empty() {
+    let root_fully_enumerated = if force_full_walk || parent_ids.is_empty() {
         collect_tree_blobs_metadata(
             repo,
             &tree,

@@ -129,3 +129,47 @@ fn git_blobs_recall_secret_when_earlier_tree_is_reused() {
         chunks.len()
     );
 }
+
+#[test]
+fn git_blobs_recall_untouched_tip_blob_under_max_commits() {
+    let repo = tempfile::tempdir().expect("create git fixture");
+    git(repo.path(), &["init", "--quiet", "-b", "main"]);
+
+    const SECRET: &str =
+        "GITHUB_TOKEN=ghp_parentDiffMaxCommitsTipFixture00000001\n";
+    std::fs::write(repo.path().join("keep.env"), SECRET).expect("write secret");
+    git(repo.path(), &["add", "keep.env"]);
+    git(repo.path(), &["commit", "--quiet", "-m", "add keep secret"]);
+
+    for index in 0..6 {
+        std::fs::write(
+            repo.path().join(format!("later-{index}.txt")),
+            format!("later row {index}\n"),
+        )
+        .expect("write later blob");
+        git(repo.path(), &["add", &format!("later-{index}.txt")]);
+        git(
+            repo.path(),
+            &["commit", "--quiet", "-m", &format!("later {index}")],
+        );
+    }
+
+    // Window excludes the introducing commit; tip full-walk must still emit keep.env.
+    let rows = GitSource::new(repo.path().to_path_buf())
+        .with_max_commits(3)
+        .chunks()
+        .collect::<Vec<_>>();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    assert!(
+        errors.is_empty(),
+        "complete fixture history must scan without gaps: {errors:?}"
+    );
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("ghp_parentDiffMaxCommitsTipFixture")),
+        "max-commits tip full-walk must still emit untouched keep.env; got {} chunks",
+        chunks.len()
+    );
+}
