@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Size-gate markerless decode-through skips to dense windows (≥64 KiB) so short regression fixtures still record decode truncation and reverse-placeholder suppression telemetry; extract vocab absence helpers under the 500 LOC cap; register companion_gate in FILE_GATE_MATRIX; add a companion-gate test override so suffix-gate cold-regex differentials stay measurable."
+crates = ["scanner"]
