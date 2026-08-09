@@ -185,16 +185,18 @@ The stderr trace names the reason `vendored_minified_path`.
 
 ### Scan a bundle you own
 
-Copy it to a path that is not vendored-shaped, then scan the copy:
+Pass one first-party bundle as an explicit file, or disable default exclusions
+for the directory that owns it:
 
 ```sh
-mkdir -p /tmp/bundle-audit
-cp dist/app.min.js /tmp/bundle-audit/app.js
-keyhog scan /tmp/bundle-audit --format json-envelope -o keyhog.json
+keyhog scan dist/app.min.js --format json-envelope -o keyhog.json
+keyhog scan dist/ --no-default-excludes --format json-envelope -o keyhog-dist.json
 ```
 
-The same bytes report the finding at that path. Keep the mapping from the copy
-back to the original so a finding can be traced to a real file.
+An explicit file request is not removed by the directory walker's default path
+policy. Use `--no-default-excludes` when the scan must cover several minified or
+vendored-shaped paths. Review that broader scope first: it also enables
+third-party bundles that the repository default intentionally omits.
 
 This matters most for a first-party bundle you ship. A vendored third-party
 bundle you did not write is what the suppression is for, and leaving it
