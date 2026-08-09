@@ -1,7 +1,7 @@
 //! Empty docker tar file must not panic validation.
 
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 #[cfg(feature = "docker")]
 #[test]
 fn docker_tar_empty_archive_no_panic() {

@@ -591,17 +591,10 @@ fn daemon_start_status_stop_reports_exact_lines_and_codes() {
     let detector_identity = detectors_field
         .strip_prefix("detectors ")
         .expect("ordered detector identity field");
-    let embedded_detectors =
-        keyhog_core::load_embedded_detectors_or_fail().expect("load embedded detector identity");
-    assert_eq!(
-        embedded_detectors.len(),
-        923,
-        "the lifecycle must use the canonical embedded detector corpus"
-    );
     assert_eq!(
         detector_identity,
-        keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&embedded_detectors)),
-        "status must attest the exact detector corpus loaded by the daemon"
+        keyhog_core::detector_digest(),
+        "status must attest the exact embedded detector corpus loaded by the daemon"
     );
 
     let config_identity = config_field
@@ -616,9 +609,14 @@ fn daemon_start_status_stop_reports_exact_lines_and_codes() {
         "a forced CPU daemon must not claim a GPU artifact identity"
     );
 
+    let embedded_detector_count = keyhog_core::load_embedded_detectors_or_fail()
+        .expect("load embedded detector count")
+        .len();
+    let uptime_suffix =
+        format!("s · 0 scans served · 0 active · {embedded_detector_count} detectors");
     let uptime = uptime_line
         .strip_prefix("keyhog daemon: uptime ")
-        .and_then(|line| line.strip_suffix("s · 0 scans served · 0 active · 923 detectors"))
+        .and_then(|line| line.strip_suffix(&uptime_suffix))
         .and_then(|seconds| seconds.parse::<u64>().ok())
         .unwrap_or_else(|| panic!("uptime line must carry exact idle counters; got {uptime_line}"));
     assert!(

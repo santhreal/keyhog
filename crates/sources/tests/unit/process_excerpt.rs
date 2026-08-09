@@ -1,4 +1,4 @@
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use std::io::{Error, ErrorKind, Read};
 
 struct InterruptedThenBytes {

@@ -19,7 +19,7 @@
 #![cfg(feature = "web")]
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use std::time::{Duration, Instant};
 
 const ENDPOINTS: usize = 8;
@@ -41,7 +41,8 @@ fn delayed_server() -> httpmock::MockServer {
     let server = httpmock::MockServer::start();
     for index in 0..ENDPOINTS {
         server.mock(|when, then| {
-            when.method(httpmock::Method::GET).path(format!("/ep{index}.js"));
+            when.method(httpmock::Method::GET)
+                .path(format!("/ep{index}.js"));
             then.status(200)
                 .header("content-type", "application/javascript")
                 .delay(ENDPOINT_DELAY)
@@ -105,9 +106,7 @@ fn web_parallel_fetch_beats_serial_floor() {
     }
     trials.sort();
     let median = trials[TRIALS / 2];
-    eprintln!(
-        "web fetch median over {TRIALS} trials: {median:?} (serial floor {serial_floor:?})"
-    );
+    eprintln!("web fetch median over {TRIALS} trials: {median:?} (serial floor {serial_floor:?})");
     assert!(
         median * 2 < serial_floor,
         "median {median:?} must beat half the serial floor {serial_floor:?}"

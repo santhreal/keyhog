@@ -190,4 +190,3 @@ fn aws_sts_non_403_failure_remains_transient_rate_limited() {
         keyhog_core::VerificationResult::RateLimited
     ));
 }
-

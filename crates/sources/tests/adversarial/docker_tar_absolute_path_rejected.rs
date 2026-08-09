@@ -1,7 +1,7 @@
 //! Docker tar absolute paths must be rejected.
 
 #[cfg(feature = "docker")]
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 #[cfg(feature = "docker")]
 #[test]
 fn docker_tar_absolute_path_rejected() {

@@ -1104,6 +1104,20 @@ pub(crate) fn scanner_panic_notice_for_test(panicked: bool) -> Option<String> {
     reporting::scanner_panic_notice(panicked)
 }
 
+#[doc(hidden)]
+pub(crate) fn resolve_scan_exit_for_test(
+    has_new_entries: bool,
+    incremental_cache_failed: bool,
+    source_coverage_incomplete: bool,
+) -> u8 {
+    run::resolve_scan_exit(run::ScanOutcome {
+        has_new_entries,
+        incremental_cache_failed,
+        source_coverage_incomplete,
+        ..run::ScanOutcome::default()
+    })
+}
+
 fn execution_pack_policy_for_args(
     args: &ScanArgs,
 ) -> keyhog_scanner::execution_pack::ExecutionPackPolicy {
@@ -1266,6 +1280,9 @@ impl ScanOrchestrator {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
             if !detectors_path.exists() && requested_detector_mode.is_none() {
                 let policy = execution_pack_policy_for_args(&args);
+                let execution_pack_directory =
+                    crate::execution_pack_install::installed_execution_pack_directory()
+                        .context("resolving the installed execution-pack directory")?;
                 let installed = match effective_config.backend_override {
                     Some(backend) => {
                         let pack_backend = match backend {
@@ -1299,13 +1316,10 @@ impl ScanOrchestrator {
                 };
                 match installed {
                     Ok(pack) => (None, Some(pack)),
-                    Err(error)
-                        if cfg!(debug_assertions)
-                            && std::env::var_os("KEYHOG_REQUIRE_EXECUTION_PACKS").is_none() =>
-                    {
+                    Err(error) if !execution_pack_directory.exists() => {
                         tracing::warn!(
                             error = %error,
-                            "debug build has no matching installed execution pack; parsing embedded detectors for development only"
+                            "no installed execution-pack generation; parsing embedded detectors"
                         );
                         (
                             Some(
@@ -1345,9 +1359,9 @@ impl ScanOrchestrator {
         let verifier_enabled = false;
         let schemas_required = !disabled_detectors.is_empty() || verifier_enabled;
         if loaded_corpus.is_none() && schemas_required {
-            let pack = detector_execution_pack
-                .as_ref()
-                .expect("an installed corpus without schemas retains its execution pack");
+            let pack = detector_execution_pack.as_ref().context(
+                "installed detector schemas are required, but the authenticated execution pack was not retained",
+            )?;
             let ir_bytes = pack
                 .section(keyhog_scanner::execution_pack::ExecutionPackSectionKind::DetectorIr)
                 .context("installed execution pack has no detector IR section")?;
@@ -1377,9 +1391,9 @@ impl ScanOrchestrator {
             match loaded_corpus {
                 Some(loaded) => (loaded.schema_version, loaded.provenance, loaded.detectors),
                 None => {
-                    let pack = detector_execution_pack
-                        .as_ref()
-                        .expect("direct hydration retains its execution pack");
+                    let pack = detector_execution_pack.as_ref().context(
+                        "direct scanner hydration requires a retained authenticated execution pack",
+                    )?;
                     (
                         keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
                         DetectorCorpusProvenance {
@@ -1519,21 +1533,23 @@ impl ScanOrchestrator {
                             &effective_config.scanner_tuning,
                         )
                     }
-                    None => CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
-                        Arc::clone(detectors.as_ref().expect(
-                            "embedded/debug scanner construction retains detector schemas",
-                        )),
-                        gpu_init_policy,
-                        &effective_config.scanner_tuning,
-                    ),
+                    None => {
+                        let detectors = detectors.as_ref().context(
+                            "embedded/debug scanner construction requires detector schemas",
+                        )?;
+                        CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
+                            Arc::clone(detectors),
+                            gpu_init_policy,
+                            &effective_config.scanner_tuning,
+                        )
+                    }
                 }
             } else {
+                let detectors = detectors
+                    .as_ref()
+                    .context("disabled-detector scanner construction requires detector schemas")?;
                 CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
-                    Arc::clone(
-                        detectors
-                            .as_ref()
-                            .expect("disabled-detector construction retains detector schemas"),
-                    ),
+                    Arc::clone(detectors),
                     gpu_init_policy,
                     &effective_config.scanner_tuning,
                 )
@@ -1565,9 +1581,9 @@ impl ScanOrchestrator {
 
             let runtime = scanner.runtime_status();
             detector_rules_digest = keyhog_core::hex_encode(&runtime.compiled_plan_digest);
-            let pack = detector_execution_pack
-                .as_ref()
-                .expect("direct hydration retains its execution pack");
+            let pack = detector_execution_pack.as_ref().context(
+                "direct scanner hydration requires a retained authenticated execution pack",
+            )?;
             detector_corpus_digest = keyhog_core::hex_encode(&pack.identity().detector_digest);
             detector_corpus_provenance.embedded_count = detector_count;
 

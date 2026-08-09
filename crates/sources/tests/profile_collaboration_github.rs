@@ -14,7 +14,7 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_profile::{AnnotationId, Stage};
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{GitHubCollaborationSelection, SourceLimits};
 use support::profile::{run_with_profile, run_with_profile_annotations, stage_calls};
 
@@ -100,21 +100,18 @@ fn collaboration_rate_limit_records_retry_annotations() {
             .body(r#"{"message":"API rate limit exceeded"}"#);
     });
 
-    let (profile, retries, rows) = run_with_profile_annotations(
-        AnnotationId::RetryAttempt,
-        || {
-            TestApi
-                .github_collaboration_source_with_endpoint(
-                    "owner/repo",
-                    &server.url(""),
-                    issues_only(),
-                    SourceLimits::default(),
-                )
-                .expect("collaboration source")
-                .chunks()
-                .collect::<Vec<_>>()
-        },
-    );
+    let (profile, retries, rows) = run_with_profile_annotations(AnnotationId::RetryAttempt, || {
+        TestApi
+            .github_collaboration_source_with_endpoint(
+                "owner/repo",
+                &server.url(""),
+                issues_only(),
+                SourceLimits::default(),
+            )
+            .expect("collaboration source")
+            .chunks()
+            .collect::<Vec<_>>()
+    });
 
     // Four attempts total; the three retries before the final failure record
     // their 1-based attempt numbers.

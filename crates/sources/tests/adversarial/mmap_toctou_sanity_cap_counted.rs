@@ -1,5 +1,5 @@
 use keyhog_sources::skip_counts;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 #[test]
 fn mmap_toctou_sanity_cap_counted_as_over_max_size() {

@@ -31,6 +31,7 @@ path:benchmarks/results/; reason="transient: per-run RunResult JSONs, reproducib
 # The default filesystem source does not scan their bytes as text, so dogfood
 # names them explicitly instead of reporting an incomplete clean scan.
 path:crates/scanner/data/english_bigram_logprob.bin; reason="reviewed binary model blob; not scanned as text, named explicitly so the lane never reports an incomplete clean"; approved_by="keyhog-maintainers"
+path:crates/scanner/data/cl100k_base.tiktoken; reason="reviewed tokenizer rank table; vocabulary data is not source content and contains 489 high-entropy token fragments under the portable Action build"; approved_by="keyhog-maintainers"
 path:crates/scanner/src/weights.bin; reason="reviewed binary ML weight blob; not scanned as text, named explicitly so the lane never reports an incomplete clean"; approved_by="keyhog-maintainers"
 path:docs/assets/keyhog-banner.svg; reason="reviewed docs banner asset; not scanned as text, named explicitly so the lane never reports an incomplete clean"; approved_by="keyhog-maintainers"
 
@@ -101,6 +102,8 @@ hash:17a0fc073490eff77d13c8d89df03d57c0768bfd286f2d2e4052f72894dac39f; reason="d
 hash:34355e0e1382e75703841bd426f79d7262518ca513a87767503f5786741dd4eb; reason="pinned action commit id in action.yml; measured entropy-token at /media/mukund-thiru/SanthData/Santh/software/keyhog/action.yml:264; surfaced by preset(s) deep"; approved_by="keyhog-maintainers"
 hash:6f51d59249d3572763961fb02371c80e2ab8dce0caa1877393e25c2b3f07e0e9; reason="generated source-contract test template value; measured generic-keyword-secret at /media/mukund-thiru/SanthData/Santh/software/keyhog/scripts/generate_source_contract_tests.py:114; surfaced by preset(s) decode,deep,fast,nodecode,noexcl"; approved_by="keyhog-maintainers"
 hash:a47a2ee957d9f3aa349ceb0ceb4ecf5d221023181176beef222e0a58fe16c17b; reason="generated source-contract test template value; measured postgresql-connection-string at /media/mukund-thiru/SanthData/Santh/software/keyhog/scripts/generate_source_contract_tests.py:104; surfaced by preset(s) decode,deep,fast,nodecode,noexcl"; approved_by="keyhog-maintainers"
+hash:48d076f42d07588a5d2db7cf2542b8e310a8027bcd590decdcc1bf4bf924cbba; reason="bounded decompiler-output fixture generates indexed synthetic AWS access-key shapes; measured aws-access-key at crates/sources/src/binary/analyzers/tests.rs:295 by the portable Action build"; approved_by="keyhog-maintainers"
+hash:d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71; reason="canonical performance workload canary used to generate deterministic secret-scanning inputs; measured github-classic-pat at benchmarks/bench/workload_fixtures.py:19 by the portable Action build"; approved_by="keyhog-maintainers"
 
 # --- Retained but unproven on this build --------------------------------------
 # These suppressed nothing under the seven presets measured on the release-fast

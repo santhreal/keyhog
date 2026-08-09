@@ -47,8 +47,7 @@ fn synthetic_consts() -> Vec<(&'static str, &'static str)> {
 
 #[test]
 fn every_corpus_backed_const_names_a_real_embedded_detector() {
-    let corpus =
-        bundled_detector_ids().expect("embedded detector corpus must load fail-closed");
+    let corpus = bundled_detector_ids().expect("embedded detector corpus must load fail-closed");
     let missing: Vec<String> = corpus_backed_consts()
         .into_iter()
         .filter(|(_, id)| !corpus.contains(*id))

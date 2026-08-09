@@ -81,7 +81,7 @@ fn scanner_gpu_feature_does_not_pull_hyperscan_transitively() {
         vec!["keyhog-scanner/gpu"],
         "CLI GPU opt-in must not acquire the scanner default feature bundle"
     );
-    assert!(gpu.contains(&"ml"), "GPU must retain its ML parity gate");
+    assert!(!gpu.contains(&"ml"), "GPU must remain detection-only");
     assert!(
         !gpu.contains(&"simd") && !gpu.contains(&"dep:hyperscan"),
         "native Metal/WGPU builds must not acquire Hyperscan through `gpu`"

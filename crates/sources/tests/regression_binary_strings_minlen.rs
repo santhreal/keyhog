@@ -28,14 +28,16 @@
 #![cfg(feature = "binary")]
 
 use keyhog_core::{Chunk, Source, SourceError};
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 /// Scan `bytes` as a strings-only binary and return every row (chunks + errors).
-fn source_rows(bytes: &[u8]) -> Vec<Result<Chunk, SourceError>> {let dir = tempfile::tempdir().expect("create tempdir");
+fn source_rows(bytes: &[u8]) -> Vec<Result<Chunk, SourceError>> {
+    let dir = tempfile::tempdir().expect("create tempdir");
     let path = dir.path().join("fixture.bin");
     std::fs::write(&path, bytes).expect("write fixture bytes");
     // `dir` stays alive until end of fn; `.chunks().collect()` reads the file now.
-    TestApi.binary_strings_only(path.clone()).chunks().collect()}
+    TestApi.binary_strings_only(path.clone()).chunks().collect()
+}
 
 /// The exact extracted-run list: the `binary:strings` chunk body split on the
 /// run separator.

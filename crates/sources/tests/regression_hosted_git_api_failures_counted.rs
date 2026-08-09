@@ -57,7 +57,7 @@ fn assert_one_unreadable_error(
 #[cfg(feature = "github")]
 #[test]
 fn github_api_transport_error_is_counted_unreadable() {
-    use keyhog_sources::testing::{TestApi};
+    use keyhog_sources::testing::TestApi;
 
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
@@ -75,7 +75,7 @@ fn github_api_transport_error_is_counted_unreadable() {
 #[cfg(feature = "gitlab")]
 #[test]
 fn gitlab_api_transport_error_is_counted_unreadable() {
-    use keyhog_sources::testing::{TestApi};
+    use keyhog_sources::testing::TestApi;
 
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
@@ -93,7 +93,7 @@ fn gitlab_api_transport_error_is_counted_unreadable() {
 #[cfg(feature = "gitlab")]
 #[test]
 fn gitlab_oversized_api_response_is_counted_unreadable() {
-    use keyhog_sources::testing::{TestApi};
+    use keyhog_sources::testing::TestApi;
 
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
@@ -134,7 +134,7 @@ fn gitlab_oversized_api_response_is_counted_unreadable() {
 #[cfg(feature = "bitbucket")]
 #[test]
 fn bitbucket_api_transport_error_is_counted_unreadable() {
-    use keyhog_sources::testing::{TestApi};
+    use keyhog_sources::testing::TestApi;
 
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
@@ -152,7 +152,7 @@ fn bitbucket_api_transport_error_is_counted_unreadable() {
 #[cfg(feature = "bitbucket")]
 #[test]
 fn bitbucket_oversized_api_response_is_counted_unreadable() {
-    use keyhog_sources::testing::{TestApi};
+    use keyhog_sources::testing::TestApi;
 
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();

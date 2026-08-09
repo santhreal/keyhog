@@ -1,6 +1,6 @@
 //! WebSource SSRF gate must block redirect-target host `http://vault.internal/secret.js`.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 #[cfg(feature = "web")]
 #[test]
 fn web_redirect_target_internal_suffix_blocked() {

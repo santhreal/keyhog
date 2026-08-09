@@ -41,11 +41,13 @@ pub(crate) fn parse_policy(raw: &str) -> Result<HexDigestPolicy, String> {
         toml::from_str(raw).map_err(|error| format!("invalid hex-digest-policy.toml: {error}"))?;
     let section = parsed.hex_digest_policy;
     let canonical_lengths = validate_lengths("canonical_lengths", section.canonical_lengths)?;
-    let bare_digest_lengths =
-        validate_lengths("bare_digest_lengths", section.bare_digest_lengths)?;
-    let service_key_lengths =
-        validate_lengths("service_key_lengths", section.service_key_lengths)?;
-    require_subset("canonical_lengths", &canonical_lengths, &bare_digest_lengths)?;
+    let bare_digest_lengths = validate_lengths("bare_digest_lengths", section.bare_digest_lengths)?;
+    let service_key_lengths = validate_lengths("service_key_lengths", section.service_key_lengths)?;
+    require_subset(
+        "canonical_lengths",
+        &canonical_lengths,
+        &bare_digest_lengths,
+    )?;
     require_subset(
         "service_key_lengths",
         &service_key_lengths,
@@ -107,18 +109,19 @@ fn require_subset(field: &str, subset: &[usize], superset: &[usize]) -> Result<(
     Ok(())
 }
 
-static POLICY: std::sync::LazyLock<HexDigestPolicy> = std::sync::LazyLock::new(|| {
-    match parse_policy(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rules/hex-digest-policy.toml"
-    ))) {
-        Ok(policy) => policy,
-        Err(error) => panic!(
-            "rules/hex-digest-policy.toml is invalid: {error}. \
+static POLICY: std::sync::LazyLock<HexDigestPolicy> =
+    std::sync::LazyLock::new(|| {
+        match parse_policy(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/hex-digest-policy.toml"
+        ))) {
+            Ok(policy) => policy,
+            Err(error) => panic!(
+                "rules/hex-digest-policy.toml is invalid: {error}. \
              Fix the bundled Tier-B hex-digest policy."
-        ),
-    }
-});
+            ),
+        }
+    });
 
 pub(crate) fn policy() -> &'static HexDigestPolicy {
     &POLICY

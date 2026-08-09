@@ -23,23 +23,9 @@ type MachPort = u32;
 
 extern "C" {
     fn mach_task_self() -> MachPort;
-    fn task_info(
-        task: MachPort,
-        flavor: c_int,
-        info: *mut c_int,
-        count: *mut u32,
-    ) -> c_int;
-    fn task_threads(
-        task: MachPort,
-        threads: *mut *mut MachPort,
-        count: *mut u32,
-    ) -> c_int;
-    fn thread_info(
-        thread: MachPort,
-        flavor: c_int,
-        info: *mut c_int,
-        count: *mut u32,
-    ) -> c_int;
+    fn task_info(task: MachPort, flavor: c_int, info: *mut c_int, count: *mut u32) -> c_int;
+    fn task_threads(task: MachPort, threads: *mut *mut MachPort, count: *mut u32) -> c_int;
+    fn thread_info(thread: MachPort, flavor: c_int, info: *mut c_int, count: *mut u32) -> c_int;
     fn vm_deallocate(task: MachPort, address: usize, size: usize) -> c_int;
     fn sysctlbyname(
         name: *const c_char,
@@ -169,9 +155,8 @@ pub(super) fn empty_scheduler_sample() -> SchedulerSampleV2 {
 }
 
 pub(super) fn sample_scheduler(_state: &mut SchedulerState) -> SchedulerSampleV2 {
-    let mach_gap = || {
-        SourcedEvidenceV2::gapped(HardwareFieldSourceV2::MacOsApi, EvidenceGap::Unsupported)
-    };
+    let mach_gap =
+        || SourcedEvidenceV2::gapped(HardwareFieldSourceV2::MacOsApi, EvidenceGap::Unsupported);
     SchedulerSampleV2 {
         version: HARDWARE_EVIDENCE_V2_VERSION,
         voluntary_context_switches: mach_gap(),
@@ -180,10 +165,9 @@ pub(super) fn sample_scheduler(_state: &mut SchedulerState) -> SchedulerSampleV2
             Some(switches) => {
                 SourcedEvidenceV2::recorded(switches, HardwareFieldSourceV2::MacOsApi)
             }
-            None => SourcedEvidenceV2::gapped(
-                HardwareFieldSourceV2::MacOsApi,
-                EvidenceGap::Unavailable,
-            ),
+            None => {
+                SourcedEvidenceV2::gapped(HardwareFieldSourceV2::MacOsApi, EvidenceGap::Unavailable)
+            }
         },
         cpu_migrations: mach_gap(),
         runqueue_delay_ns: mach_gap(),
@@ -236,14 +220,22 @@ pub(super) fn frequency_availability() -> Evidence<HardwareFieldSourceV2> {
 pub(super) fn capture_topology() -> TopologyEvidenceV2 {
     let logical_cpus = sysctl_u64(b"hw.ncpu\0")
         .and_then(|value| u32::try_from(value).ok())
-        .or_else(|| std::thread::available_parallelism().ok().map(|count| count.get() as u32))
+        .or_else(|| {
+            std::thread::available_parallelism()
+                .ok()
+                .map(|count| count.get() as u32)
+        })
         .unwrap_or(1);
     let sysctl_u32 = |name: &'static [u8]| {
-        sysctl_u64(name).and_then(|value| u32::try_from(value).ok()).filter(|value| *value > 0)
+        sysctl_u64(name)
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0)
     };
     let sourced = |value: Option<u32>| match value {
         Some(value) => SourcedEvidenceV2::recorded(value, HardwareFieldSourceV2::MacOsApi),
-        None => SourcedEvidenceV2::gapped(HardwareFieldSourceV2::MacOsApi, EvidenceGap::Unsupported),
+        None => {
+            SourcedEvidenceV2::gapped(HardwareFieldSourceV2::MacOsApi, EvidenceGap::Unsupported)
+        }
     };
     TopologyEvidenceV2 {
         version: HARDWARE_EVIDENCE_V2_VERSION,
