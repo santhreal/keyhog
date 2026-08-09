@@ -34,9 +34,11 @@ pub const MATCHER_ARTIFACT_MAGIC: &[u8; 4] = b"KHMA";
 ///
 /// v1 used a JSON body that expanded section blobs into number arrays and made
 /// second-run deserialize dominate tiny-file CPU. v2 stores raw section bytes.
-/// v3 appends canonical detector-IR bytes (retained for artifact self-description;
-/// hydrate uses the live process corpus + section digests).
-pub const MATCHER_ARTIFACT_VERSION: u32 = 3;
+/// v3 appended canonical detector-IR bytes for self-description, but the hit
+/// path never consumed them and paid multi-MiB read/copy on every reuse.
+/// v4 stores section blobs only; detector identity remains the live IR digest
+/// in the outer identity header and inside each section envelope.
+pub const MATCHER_ARTIFACT_VERSION: u32 = 4;
 /// Filename suffix for MatcherArtifact cache files.
 pub const MATCHER_ARTIFACT_SUFFIX: &str = ".khm";
 /// Hard cap for one MatcherArtifact cache file, including header.
@@ -377,7 +379,7 @@ fn current_executable_sha256() -> std::result::Result<String, String> {
 /// MatcherArtifact v3 body layout (after the 8-byte magic/version header):
 /// `identity_json_len:u32` + identity JSON + `identity_digest:[u8;32]` +
 /// `content_digest:[u8;32]` + length-prefixed raw `literal_index` /
-/// `regex_programs` / `suppression_policy` / `detector_ir` blobs.
+/// `regex_programs` / `suppression_policy` blobs.
 
 fn read_u32_le(bytes: &[u8], offset: &mut usize, path: &Path) -> std::result::Result<u32, String> {
     let end = offset
@@ -407,13 +409,11 @@ fn read_exact<'a>(
     Ok(slice)
 }
 
-/// Loaded MatcherArtifact payload (route matcher sections + canonical detector IR).
+/// Loaded MatcherArtifact payload (eager route-matcher sections only).
 #[derive(Clone, Debug)]
 pub struct LoadedMatcherArtifact {
-    /// Authenticated route-matcher sections.
+    /// Route-matcher sections validated against the outer content digest.
     pub sections: CompiledRouteMatcherSections,
-    /// Canonical detector execution IR bytes.
-    pub detector_ir: Vec<u8>,
 }
 
 fn parse_loaded_matcher_artifact(
@@ -475,8 +475,8 @@ fn parse_loaded_matcher_artifact(
     let regex_programs = read_exact(bytes, &mut offset, regex_len, path)?.to_vec();
     let supp_len = read_u32_le(bytes, &mut offset, path)? as usize;
     let suppression_policy = read_exact(bytes, &mut offset, supp_len, path)?.to_vec();
-    let ir_len = read_u32_le(bytes, &mut offset, path)? as usize;
-    let detector_ir = read_exact(bytes, &mut offset, ir_len, path)?.to_vec();
+    // v4: no trailing detector-IR blob. Reject unexpected trailing bytes so a
+    // truncated/extended file cannot be accepted after the section digests.
     if offset != bytes.len() {
         return Err(format!(
             "matcher artifact {} has trailing bytes after the envelope",
@@ -506,13 +506,7 @@ fn parse_loaded_matcher_artifact(
     // Intentionally skip validate_canonical here: hydrate/decode re-parses the
     // section envelopes and fails closed. Avoiding a second 2.8 MiB JSON parse
     // keeps second-run tiny-file CPU near the warm-daemon reference.
-    Ok((
-        decoded_identity,
-        LoadedMatcherArtifact {
-            sections,
-            detector_ir,
-        },
-    ))
+    Ok((decoded_identity, LoadedMatcherArtifact { sections }))
 }
 
 /// Load a MatcherArtifact for `identity` from `cache_dir`.
@@ -565,12 +559,11 @@ pub fn load_matcher_artifact_with_ir(
     Ok(loaded)
 }
 
-/// Persist `sections` and `detector_ir` under `identity`.
+/// Persist `sections` under `identity`.
 pub fn store_matcher_artifact(
     cache_dir: &Path,
     identity: &MatcherArtifactIdentity,
     sections: &CompiledRouteMatcherSections,
-    detector_ir: &[u8],
 ) -> std::result::Result<(), String> {
     let expected_backend = parse_backend_name(&identity.backend)
         .ok_or_else(|| "unknown identity backend".to_owned())?;
@@ -594,11 +587,10 @@ pub fn store_matcher_artifact(
         8 + 4
             + identity_json.len()
             + 64
-            + 16
+            + 12
             + sections.literal_index.len()
             + sections.regex_programs.len()
-            + sections.suppression_policy.len()
-            + detector_ir.len(),
+            + sections.suppression_policy.len(),
     );
     bytes.extend_from_slice(MATCHER_ARTIFACT_MAGIC);
     bytes.extend_from_slice(&MATCHER_ARTIFACT_VERSION.to_le_bytes());
@@ -612,8 +604,6 @@ pub fn store_matcher_artifact(
     bytes.extend_from_slice(&sections.regex_programs);
     bytes.extend_from_slice(&(sections.suppression_policy.len() as u32).to_le_bytes());
     bytes.extend_from_slice(&sections.suppression_policy);
-    bytes.extend_from_slice(&(detector_ir.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(detector_ir);
 
     if (bytes.len() as u64) > MATCHER_ARTIFACT_FILE_BYTES {
         return Err(format!(
@@ -700,127 +690,154 @@ pub fn compile_shared_with_matcher_artifact_cache(
 ) -> Result<(CompiledScanner, MatcherArtifactCacheOutcome)> {
     let cache_dir = configured_matcher_artifact_cache_dir();
     let Some(backend) = matcher_backend_for_gpu_policy(gpu_policy) else {
-        let outcome = MatcherArtifactCacheOutcome::Disabled;
-        record_outcome(&outcome);
-        let scanner = CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
-            detectors,
-            gpu_policy,
-            tuning_config,
-        )?;
-        return Ok((scanner, outcome));
+        return compile_without_matcher_artifact_cache(detectors, gpu_policy, tuning_config);
     };
 
     // Cache disabled: keep the historical compile cost (no IR round-trip).
     if cache_dir.is_none() {
-        let outcome = MatcherArtifactCacheOutcome::Disabled;
-        record_outcome(&outcome);
-        let scanner = CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
-            detectors,
-            gpu_policy,
-            tuning_config,
-        )?;
-        return Ok((scanner, outcome));
+        return compile_without_matcher_artifact_cache(detectors, gpu_policy, tuning_config);
     }
 
     // Identity keys on the canonical detector-IR digest (same digest packs use).
     // Computing it requires IR normalization; the avoided cost on hit is the
-    // route-matcher section compile + eager CompileState construction.
+    // route-matcher section compile + eager CompileState construction. The
+    // normalized detector list is also required to hydrate companions against
+    // the live corpus, so this work is not optional bookkeeping.
     let ir = match CanonicalDetectorExecutionIr::compile(detectors.as_ref()) {
         Ok(ir) => ir,
         Err(error) => {
-            // Cache prep must not fail a scan that would have worked without the
-            // cache: degrade to the historical compile path.
             tracing::warn!(
                 target: "keyhog::matcher_artifact_cache",
                 "matcher artifact cache unavailable ({error}); compiling without cache"
             );
-            let outcome = MatcherArtifactCacheOutcome::Disabled;
-            record_outcome(&outcome);
-            let scanner = CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
-                detectors,
-                gpu_policy,
-                tuning_config,
-            )?;
-            return Ok((scanner, outcome));
+            return compile_without_matcher_artifact_cache(detectors, gpu_policy, tuning_config);
         }
     };
     let detector_digest = ir.digest();
     let sorted: Arc<[keyhog_core::DetectorSpec]> = ir.detectors().to_vec().into();
-    let identity = MatcherArtifactIdentity::new(
+    let identity = match MatcherArtifactIdentity::new(
         detector_digest,
         resolved_config_digest,
         pack_generation,
         backend,
         runtime_identity,
-    )
-    .map_err(ScanError::Config)?;
+    ) {
+        Ok(identity) => identity,
+        Err(error) => {
+            tracing::warn!(
+                target: "keyhog::matcher_artifact_cache",
+                "matcher artifact cache unavailable ({error}); compiling without cache"
+            );
+            return compile_without_matcher_artifact_cache(sorted, gpu_policy, tuning_config);
+        }
+    };
 
-    if let Some(cache_dir) = cache_dir.as_ref() {
-        match load_matcher_artifact_with_ir(cache_dir, &identity) {
-            Ok(loaded) => {
-                let state = hydrate_matcher_artifact_state(
-                    &loaded.sections,
-                    detector_digest,
-                    sorted.as_ref(),
-                )?;
-                let scanner = CompiledScanner::compile_shared_from_compile_state(
-                    Arc::clone(&sorted),
-                    gpu_policy,
-                    tuning_config,
-                    state,
-                )?;
-                let outcome = MatcherArtifactCacheOutcome::Hit;
-                record_outcome(&outcome);
-                return Ok((scanner, outcome));
-            }
-            Err(reason) => {
-                let path = cache_dir.join(identity.cache_filename());
-                let outcome = if path.exists() {
-                    MatcherArtifactCacheOutcome::Invalidated {
-                        reason: reason.clone(),
-                    }
-                } else {
-                    MatcherArtifactCacheOutcome::Miss
-                };
-                tracing::debug!(
-                    target: "keyhog::matcher_artifact_cache",
-                    %reason,
-                    outcome = outcome.as_str(),
-                    "matcher artifact cache miss"
-                );
-                let sections =
-                    CompiledRouteMatcherSections::compile(&ir, backend).map_err(|error| {
-                        ScanError::Config(format!(
-                            "cannot compile matcher artifact sections: {error}"
-                        ))
-                    })?;
-                if let Err(store_error) =
-                    store_matcher_artifact(cache_dir, &identity, &sections, ir.as_bytes())
-                {
+    let Some(cache_dir) = cache_dir.as_ref() else {
+        return compile_without_matcher_artifact_cache(sorted, gpu_policy, tuning_config);
+    };
+
+    match load_matcher_artifact_with_ir(cache_dir, &identity) {
+        Ok(loaded) => {
+            match hydrate_matcher_artifact_state(&loaded.sections, detector_digest, sorted.as_ref())
+            {
+                Ok(state) => {
+                    let scanner = CompiledScanner::compile_shared_from_compile_state(
+                        Arc::clone(&sorted),
+                        gpu_policy,
+                        tuning_config,
+                        state,
+                    )?;
+                    let outcome = MatcherArtifactCacheOutcome::Hit;
+                    record_outcome(&outcome);
+                    return Ok((scanner, outcome));
+                }
+                Err(error) => {
                     tracing::warn!(
                         target: "keyhog::matcher_artifact_cache",
-                        error = %store_error,
-                        "failed to persist matcher artifact cache entry"
+                        error = %error,
+                        "matcher artifact hydrate failed; rebuilding without cached graph"
                     );
                 }
-                let state =
-                    hydrate_matcher_artifact_state(&sections, detector_digest, sorted.as_ref())?;
-                let scanner = CompiledScanner::compile_shared_from_compile_state(
-                    sorted,
-                    gpu_policy,
-                    tuning_config,
-                    state,
-                )?;
-                record_outcome(&outcome);
-                return Ok((scanner, outcome));
+            }
+        }
+        Err(reason) => {
+            let path = cache_dir.join(identity.cache_filename());
+            let outcome = if path.exists() {
+                MatcherArtifactCacheOutcome::Invalidated {
+                    reason: reason.clone(),
+                }
+            } else {
+                MatcherArtifactCacheOutcome::Miss
+            };
+            tracing::debug!(
+                target: "keyhog::matcher_artifact_cache",
+                %reason,
+                outcome = outcome.as_str(),
+                "matcher artifact cache miss"
+            );
+            let sections = match CompiledRouteMatcherSections::compile(&ir, backend) {
+                Ok(sections) => sections,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "keyhog::matcher_artifact_cache",
+                        error = %error,
+                        "matcher artifact section compile failed; compiling without cache"
+                    );
+                    return compile_without_matcher_artifact_cache(
+                        sorted,
+                        gpu_policy,
+                        tuning_config,
+                    );
+                }
+            };
+            if let Err(store_error) = store_matcher_artifact(cache_dir, &identity, &sections) {
+                tracing::warn!(
+                    target: "keyhog::matcher_artifact_cache",
+                    error = %store_error,
+                    "failed to persist matcher artifact cache entry"
+                );
+            }
+            match hydrate_matcher_artifact_state(&sections, detector_digest, sorted.as_ref()) {
+                Ok(state) => {
+                    let scanner = CompiledScanner::compile_shared_from_compile_state(
+                        sorted,
+                        gpu_policy,
+                        tuning_config,
+                        state,
+                    )?;
+                    record_outcome(&outcome);
+                    return Ok((scanner, outcome));
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        target: "keyhog::matcher_artifact_cache",
+                        error = %error,
+                        "matcher artifact hydrate failed after miss; compiling without cache"
+                    );
+                    return compile_without_matcher_artifact_cache(
+                        sorted,
+                        gpu_policy,
+                        tuning_config,
+                    );
+                }
             }
         }
     }
 
+    // Hit-path hydrate failed above: fall back to an ordinary compile so the
+    // scan still succeeds even when a cache entry is unusable.
+    compile_without_matcher_artifact_cache(sorted, gpu_policy, tuning_config)
+}
+
+fn compile_without_matcher_artifact_cache(
+    detectors: Arc<[keyhog_core::DetectorSpec]>,
+    gpu_policy: GpuInitPolicy,
+    tuning_config: &ScannerTuningConfig,
+) -> Result<(CompiledScanner, MatcherArtifactCacheOutcome)> {
     let outcome = MatcherArtifactCacheOutcome::Disabled;
     record_outcome(&outcome);
     let scanner = CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
-        sorted,
+        detectors,
         gpu_policy,
         tuning_config,
     )?;

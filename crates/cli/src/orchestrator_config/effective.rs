@@ -710,15 +710,29 @@ pub(crate) fn profiling_resolved_config_digest(resolved: &ResolvedScanConfig) ->
 
 /// Config identity for MatcherArtifact cache keys.
 ///
-/// Only fields that change the compiled matcher graph participate. Report
-/// formatting, verification policy, and volatile cache *paths* are excluded so
-/// ordinary flag changes do not multiply on-disk artifacts.
+/// Only fields that change the compiled matcher graph participate. Thread counts,
+/// exclude paths, Hyperscan/incremental/autoroute cache *paths*, report/verify
+/// policy, and other scan-orchestration knobs are excluded so ordinary flag
+/// changes do not miss and multiply on-disk artifacts.
 pub(crate) fn matcher_resolved_config_digest(resolved: &ResolvedScanConfig) -> [u8; 32] {
-    let policy_digest = profiling_policy_digest(resolved);
-    let mut h = StableHasher::new("matcher-resolved-config-digest-v2");
-    h.field_bytes("performance_policy_digest", &policy_digest);
-    h.field_bool("autoroute_gpu", resolved.autoroute_gpu);
-    h.field_bool("autoroute_calibration", resolved.autoroute_calibration);
+    let mut h = StableHasher::new("matcher-resolved-config-digest-v3");
+    hash_scanner_tuning(&mut h, &resolved.scanner_tuning);
+    let mut disabled: Vec<_> = resolved.disabled_detectors.iter().collect();
+    disabled.sort();
+    h.field_usize("disabled_detectors.len", disabled.len());
+    for id in disabled {
+        h.field_str("disabled_detectors.id", id);
+    }
+    // Confidence floors can drop detectors from the effective graph before
+    // compile when paired with corpus filtering; bind them explicitly.
+    let mut floors: Vec<_> = resolved.detector_min_confidence.iter().collect();
+    floors.sort_by(|a, b| a.0.cmp(b.0));
+    h.field_usize("detector_min_confidence.len", floors.len());
+    for (id, floor) in floors {
+        h.field_str("detector_min_confidence.id", id);
+        h.field_f64_bits("detector_min_confidence.floor", *floor);
+    }
+    h.field_option_usize("regex_dfa_limit", resolved.regex_dfa_limit);
     h.finish_256()
 }
 

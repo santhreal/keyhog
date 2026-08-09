@@ -58,7 +58,7 @@ fn second_load_reuses_exact_matcher_bytes() {
         None,
     )
     .expect("identity");
-    store_matcher_artifact(dir.path(), &identity, &sections, ir.as_bytes()).expect("store");
+    store_matcher_artifact(dir.path(), &identity, &sections).expect("store");
     let loaded = load_matcher_artifact(dir.path(), &identity).expect("load");
     assert_eq!(loaded.content_digest(), sections.content_digest());
     assert_eq!(loaded.literal_index, sections.literal_index);
@@ -80,7 +80,7 @@ fn mismatched_binary_identity_never_loads() {
         None,
     )
     .expect("identity");
-    store_matcher_artifact(dir.path(), &identity, &sections, ir.as_bytes()).expect("store");
+    store_matcher_artifact(dir.path(), &identity, &sections).expect("store");
 
     let mut foreign = identity.clone();
     foreign.binary_digest = "0".repeat(64);
@@ -106,7 +106,7 @@ fn mismatched_config_digest_never_loads() {
         None,
     )
     .expect("identity");
-    store_matcher_artifact(dir.path(), &identity, &sections, ir.as_bytes()).expect("store");
+    store_matcher_artifact(dir.path(), &identity, &sections).expect("store");
 
     let foreign = MatcherArtifactIdentity::new(
         ir.digest(),
