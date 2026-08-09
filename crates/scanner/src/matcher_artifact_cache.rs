@@ -850,7 +850,7 @@ pub fn compile_shared_with_matcher_artifact_cache(
         );
     }
     match CompiledScanner::compile_shared_from_compile_state(
-        sorted,
+        Arc::clone(&sorted),
         gpu_policy,
         tuning_config,
         state,
