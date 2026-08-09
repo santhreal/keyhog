@@ -572,9 +572,10 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
         || args.regex_dfa_limit.is_some()
         || args.gpu_batch_input_limit.is_some()
         || args.cache_dir.is_some()
-        // MatcherArtifact cache path is compiled into the scanner; daemon
-        // cannot honor a per-request --matcher-cache / off override.
-        || args.matcher_cache.is_some()
+        // Directory override relocates MatcherArtifact persistence; daemon
+        // cannot honor a per-request path. `off`/`0`/empty already matches the
+        // daemon's precompiled scanner (no MatcherArtifact consult).
+        || matcher_cache_directory_override(args.matcher_cache.as_deref())
         || args.ml_threshold.is_some()
         // Per-chunk timeout is compiled into the daemon's long-lived scanner
         // config. A daemon-served scan would silently run without the deadline
@@ -609,6 +610,13 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
         );
     }
     None
+}
+
+fn matcher_cache_directory_override(raw: Option<&str>) -> bool {
+    raw.is_some_and(|value| {
+        let trimmed = value.trim();
+        !(trimmed.is_empty() || trimmed.eq_ignore_ascii_case("off") || trimmed == "0")
+    })
 }
 
 #[cfg(unix)]

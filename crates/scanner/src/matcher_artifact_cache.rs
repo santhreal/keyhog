@@ -633,58 +633,27 @@ fn evict_old_matcher_artifacts(cache_dir: &Path) {
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent)?;
-    }
-    // Create the scratch file outside the MatcherArtifact cache root so an
-    // in-flight `.tmp*` cannot trip lockdown's past-findings audit of that
-    // directory. Fall back to copy when rename crosses filesystems.
-    let mut tmp = tempfile::NamedTempFile::new()?;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "matcher artifact path has no parent directory",
+            )
+        })?;
+    std::fs::create_dir_all(parent)?;
+    // Same-directory tempfile + rename (parity with HS shard cache). Keeps
+    // publish atomic on the common `/tmp` vs `$HOME` layout. In-flight
+    // tempfile names are not trusted by lockdown's compiled-pattern filename
+    // check, so a concurrent `--lockdown` audit still fails closed rather than
+    // treating a partial graph as clean.
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
     {
         tmp.write_all(bytes)?;
         tmp.as_file().sync_all()?;
     }
-    match tmp.persist(path) {
-        Ok(_) => Ok(()),
-        Err(error) => {
-            // Cross-filesystem rename is the common case (`/tmp` vs `$HOME`).
-            // Open with O_NOFOLLOW + mode 0600 so a symlink swapped in between
-            // check and open cannot be followed, and so there is no umask-0644
-            // window before a later chmod.
-            let mut options = std::fs::OpenOptions::new();
-            options.create(true).write(true).truncate(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(0o600);
-                options.custom_flags(libc::O_NOFOLLOW);
-            }
-            let mut file = match options.open(path) {
-                Ok(file) => file,
-                Err(open_error) => {
-                    #[cfg(unix)]
-                    {
-                        if open_error.raw_os_error() == Some(libc::ELOOP) {
-                            return Err(std::io::Error::new(
-                                std::io::ErrorKind::AlreadyExists,
-                                format!(
-                                    "matcher artifact {} is a symlink; refusing to overwrite",
-                                    path.display()
-                                ),
-                            ));
-                        }
-                    }
-                    return Err(open_error);
-                }
-            };
-            {
-                let mut src = std::fs::File::open(error.file.path())?;
-                std::io::copy(&mut src, &mut file)?;
-            }
-            file.sync_all()?;
-            Ok(())
-        }
-    }
+    tmp.persist(path).map(|_| ()).map_err(|error| error.error)
 }
 
 fn record_outcome(outcome: &MatcherArtifactCacheOutcome) {
