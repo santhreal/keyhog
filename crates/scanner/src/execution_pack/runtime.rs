@@ -220,10 +220,6 @@ impl ExecutionPack {
         }
         Ok(())
     }
-    /// Defer page faults for all pack sections by releasing resident mapping pages (KH-2039).
-    pub fn defer_section_page_faults(&self) -> Result<(), ExecutionPackError> {
-        self.release_resident_pages()
-    }
     /// Drop full pages covered by one decoded section field while retaining the
     /// immutable mapping and any partial edge pages. Callers must pass a slice
     /// borrowed from this pack; rejecting foreign slices prevents `madvise`

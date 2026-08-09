@@ -1,6 +1,6 @@
 //! Read-only, operator-facing projection of persisted autoroute evidence.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::artifact_identity::current_executable_sha256;
 use super::codec::{
@@ -116,59 +116,6 @@ impl AutorouteCacheInspection {
             AutorouteReadiness::Ready
         } else {
             AutorouteReadiness::Invalid
-        }
-    }
-}
-#[allow(dead_code)]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct AutorouteRemediationSchema {
-    pub(crate) readiness: String,
-    pub(crate) invalid_classes: Vec<String>,
-    pub(crate) recalibration_command: String,
-}
-impl AutorouteRemediationSchema {
-    #[allow(dead_code)]
-    pub(crate) fn render_terminal_output(&self) -> String {
-        let mut out = format!("Readiness: {}\n", self.readiness);
-        if !self.invalid_classes.is_empty() {
-            out.push_str(&format!(
-                "Invalid classes ({}):\n",
-                self.invalid_classes.len()
-            ));
-            for cls in &self.invalid_classes {
-                out.push_str(&format!("  - {cls}\n"));
-            }
-        }
-        out.push_str(&format!(
-            "Recalibration command: {}\n",
-            self.recalibration_command
-        ));
-        out
-    }
-}
-impl AutorouteCacheInspection {
-    #[allow(dead_code)]
-    pub(crate) fn remediation_schema(&self) -> AutorouteRemediationSchema {
-        let readiness = self.readiness();
-        let recalibration_command = readiness
-            .repair_command()
-            .unwrap_or("keyhog calibrate-autoroute")
-            .to_string();
-
-        let mut invalid_classes = Vec::new();
-        for config in &self.configs {
-            for decision in &config.decisions {
-                if decision.runtime_quarantined || !decision.confidence_separated {
-                    invalid_classes.push(decision.workload.clone());
-                }
-            }
-        }
-
-        AutorouteRemediationSchema {
-            readiness: readiness.as_str().to_string(),
-            invalid_classes,
-            recalibration_command,
         }
     }
 }

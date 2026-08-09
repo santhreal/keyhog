@@ -138,33 +138,3 @@ fn macro_stage_identifiers_are_stable_and_round_trip() {
         assert_eq!(decoded, macro_stage);
     }
 }
-/// Startup RSS component attribution totals all constituent layers (KH-2035).
-#[test]
-fn startup_rss_attribution_computes_saturating_total() {
-    use keyhog_profile::StartupRssAttribution;
-
-    let attr = StartupRssAttribution::new(10_000, 20_000, 5_000, 1_000);
-    assert_eq!(attr.engine_init_floor_bytes, 10_000);
-    assert_eq!(attr.execution_pack_mapping_bytes, 20_000);
-    assert_eq!(attr.regex_lazy_dfa_bytes, 5_000);
-    assert_eq!(attr.allocated_scratch_bytes, 1_000);
-    assert_eq!(attr.total_startup_rss_bytes, 36_000);
-}
-
-/// Quarter historical peak memory proof verifies memory bounds (KH-2038).
-#[test]
-fn historical_peak_memory_proof_verifies_quarter_ratio() {
-    use keyhog_profile::HistoricalPeakMemoryProof;
-
-    let valid_proof = HistoricalPeakMemoryProof::verify(25, 100);
-    assert_eq!(valid_proof.ratio_milli, 250);
-    assert!(valid_proof.is_quarter_or_less);
-
-    let invalid_proof = HistoricalPeakMemoryProof::verify(26, 100);
-    assert_eq!(invalid_proof.ratio_milli, 260);
-    assert!(!invalid_proof.is_quarter_or_less);
-
-    let zero_proof = HistoricalPeakMemoryProof::verify(0, 0);
-    assert_eq!(zero_proof.ratio_milli, 0);
-    assert!(zero_proof.is_quarter_or_less);
-}

@@ -71,26 +71,3 @@ fn readiness_distinguishes_absent_invalid_stale_and_ready_cache_states() {
     inspection.identity_matches_build = Some(true);
     assert_eq!(inspection.readiness(), AutorouteReadiness::Ready);
 }
-#[test]
-fn remediation_schema_produces_stable_json_and_terminal_output() {
-    let inspection = AutorouteCacheInspection {
-        path: Some("/cache/autoroute.json".to_string()),
-        calibration_required: true,
-        present: true,
-        identity_matches_build: Some(true),
-        ..AutorouteCacheInspection::default()
-    };
-    let schema = inspection.remediation_schema();
-    assert_eq!(schema.readiness, "ready");
-    assert!(schema.invalid_classes.is_empty());
-    assert_eq!(schema.recalibration_command, "keyhog calibrate-autoroute");
-
-    let terminal = schema.render_terminal_output();
-    assert!(terminal.contains("Readiness: ready"));
-    assert!(terminal.contains("Recalibration command: keyhog calibrate-autoroute"));
-
-    let json = serde_json::to_string(&schema).expect("serialize remediation schema");
-    let deserialized: AutorouteRemediationSchema =
-        serde_json::from_str(&json).expect("deserialize remediation schema");
-    assert_eq!(deserialized, schema);
-}

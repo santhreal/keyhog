@@ -177,8 +177,3 @@ fn exact_ready_status_json_is_stable() {
         "{\"kind\":\"health\",\"uptime_secs\":12,\"scans_served\":3,\"active_scans\":1,\"detector_count\":923,\"backend_recoveries\":0,\"last_backend_fault\":null,\"warm_backend\":{\"ready\":true,\"daemon_generation\":\"gen-a\",\"identity\":{\"engine\":\"engine-a\",\"gpu_artifact\":\"gpu-a\",\"binary_sha256\":\"binary-a\",\"detector_rules_digest\":\"detectors-a\",\"config_digest\":\"config-a\"},\"required_backends\":[\"gpu-wgpu\"],\"initialized_backends\":[\"gpu-wgpu\"],\"reason\":null,\"repair_command\":null}}"
     );
 }
-#[test]
-fn daemon_readiness_bound_is_five_seconds() {
-    use super::warm_identity::DAEMON_READINESS_BOUND;
-    assert_eq!(DAEMON_READINESS_BOUND.as_secs(), 5);
-}

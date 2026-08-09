@@ -4,8 +4,6 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const REPAIR_COMMAND: &str = "keyhog daemon stop && keyhog daemon start";
-#[allow(dead_code)]
-pub(crate) const DAEMON_READINESS_BOUND: std::time::Duration = std::time::Duration::from_secs(5);
 static DAEMON_GENERATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) struct WarmBackendReadiness {

@@ -130,10 +130,9 @@ pub use identity::{
     WorkloadIdentityInput,
 };
 pub use insight::{
-    BackendAttributionV2, BottleneckKindV2, FindingV2, HistoricalPeakMemoryProof,
-    InsightCoverageV2, MemoryInsightV2, ParallelismInsightV2, PhaseInsightV2, RunInsightV2,
-    SerialRegionV2, SerialScopeV2, StageAttributionV2, StageMemoryV2, StartupRssAttribution,
-    ThroughputInsightV2, RUN_INSIGHT_V2_VERSION,
+    BackendAttributionV2, BottleneckKindV2, FindingV2, InsightCoverageV2, MemoryInsightV2,
+    ParallelismInsightV2, PhaseInsightV2, RunInsightV2, SerialRegionV2, SerialScopeV2,
+    StageAttributionV2, StageMemoryV2, ThroughputInsightV2, RUN_INSIGHT_V2_VERSION,
 };
 pub use metrics::{
     AnnotationId, CacheId, CounterId, EventId, GaugeId, IndexedCounterId, MacroStageId,
