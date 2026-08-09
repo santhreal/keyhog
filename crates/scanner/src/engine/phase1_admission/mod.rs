@@ -967,6 +967,10 @@ impl CompiledScanner {
             && super::scan::vocab_previously_clean(
                 self.detector_digest,
                 self.entropy_evidence_config_digest(),
+                super::scan::vocab_path_class(
+                    chunk.metadata.source_type.as_ref(),
+                    chunk.metadata.path.as_deref(),
+                ),
                 &chunk.data,
             )
         {
@@ -1121,6 +1125,10 @@ impl CompiledScanner {
                 && super::scan::vocab_previously_clean(
                     self.detector_digest,
                     self.entropy_evidence_config_digest(),
+                    super::scan::vocab_path_class(
+                        chunk.metadata.source_type.as_ref(),
+                        chunk.metadata.path.as_deref(),
+                    ),
                     &chunk.data,
                 ) {
                 let mut fp = [0u8; 32];

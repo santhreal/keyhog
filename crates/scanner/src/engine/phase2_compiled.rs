@@ -408,8 +408,10 @@ impl CompiledScanner {
                 // The anchorless always-active RegexSet, the detectors that run
                 // on EVERY chunk. This span is the cost the old vague label hid.
                 let _g = super::profile::span(keyhog_profile::Stage::Phase2Prefilter);
-                let always_active_absence_proven = always_active_absence_proven
-                    || super::scan::text_is_markerless_single_line(match_text);
+                // Markerless single-line shape may skip decode / no-hit entropy,
+                // but admitted chunks must still run always-active phase-2
+                // (prefix-less detectors such as asana-pat).
+                let always_active_absence_proven = always_active_absence_proven;
                 if !always_active_absence_proven {
                     #[cfg(debug_assertions)]
                     self.phase2_prefilter_scanned_bytes.fetch_add(

@@ -106,6 +106,10 @@ impl CompiledScanner {
                         if super::scan::vocab_previously_clean(
                             self.detector_digest,
                             self.entropy_evidence_config_digest(),
+                            super::scan::vocab_path_class(
+                                window_chunk.metadata.source_type.as_ref(),
+                                window_chunk.metadata.path.as_deref(),
+                            ),
                             &window_chunk.data,
                         ) {
                             // Matcher proven empty for this vocab; still allow

@@ -1090,7 +1090,16 @@ impl CompiledScanner {
         }
         if admission != Phase1Admission::Admitted {
             if chunk.metadata.decoded_span.is_none()
-                && crate::engine::vocab_previously_clean(self.detector_digest, self.entropy_evidence_config_digest(), &chunk.data)
+                && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
+                && crate::engine::vocab_previously_clean(
+                self.detector_digest,
+                self.entropy_evidence_config_digest(),
+                crate::engine::vocab_path_class(
+                    chunk.metadata.source_type.as_ref(),
+                    chunk.metadata.path.as_deref(),
+                ),
+                &chunk.data,
+            )
             {
                 // Matcher stages are proven empty; still decode-through.
                 if self.chunk_needs_decode_postprocess_with_absence(chunk, decoder_absence) {

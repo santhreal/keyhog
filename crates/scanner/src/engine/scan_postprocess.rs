@@ -93,7 +93,15 @@ impl CompiledScanner {
                 // Empty decode-through on this line vocabulary: later windows
                 // with the same unique-line fingerprint can skip the pipeline.
                 if decoded_chunks.is_empty() {
-                    super::scan::mark_decode_vocab_empty(self.detector_digest, self.entropy_evidence_config_digest(), &chunk.data);
+                    super::scan::mark_decode_vocab_empty(
+                        self.detector_digest,
+                        self.entropy_evidence_config_digest(),
+                        super::scan::vocab_path_class(
+                            chunk.metadata.source_type.as_ref(),
+                            chunk.metadata.path.as_deref(),
+                        ),
+                        &chunk.data,
+                    );
                 }
                 if !decoded_chunks.is_empty() {
                     keyhog_profile::add_counter(keyhog_profile::CounterId::DecodeParentChunks, 1);

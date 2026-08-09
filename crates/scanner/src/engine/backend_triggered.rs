@@ -62,11 +62,17 @@ impl CompiledScanner {
         }
         let line_index = prepared.line_index();
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
+        let vocab_path_class = super::scan::vocab_path_class(
+            prepared.chunk.metadata.source_type.as_ref(),
+            prepared.chunk.metadata.path.as_deref(),
+        );
+        let vocab_cfg = self.entropy_evidence_config_digest();
 
         // Parent windows only: decode sub-chunks create new adjacencies and must
         // not inherit a parent vocabulary clean proof.
         if prepared.chunk.metadata.decoded_span.is_none()
-            && super::scan::vocab_previously_clean(self.detector_digest, self.entropy_evidence_config_digest(), &prepared.chunk.data)
+            && prepared.chunk.metadata.source_type.as_ref() == "filesystem/windowed"
+            && super::scan::vocab_previously_clean(self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data)
         {
             return scan_state;
         }
@@ -128,7 +134,7 @@ impl CompiledScanner {
         // overlapping windows. After the first window proves confirmed/entropy
         // absence for that vocabulary, later windows skip those stages.
         let vocab_absence = raw_text_unchanged
-            .then(|| super::scan::vocab_stage_absence(self.detector_digest, self.entropy_evidence_config_digest(), &prepared.chunk.data))
+            .then(|| super::scan::vocab_stage_absence(self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data))
             .flatten();
         let confirmed_patterns_absence = confirmed_patterns_absence
             || vocab_absence.is_some_and(|absence| absence.confirmed);
@@ -191,8 +197,11 @@ impl CompiledScanner {
             let confirmed_empty = scan_state.matches.len() == matches_before;
             #[cfg(feature = "ml")]
             let confirmed_empty = confirmed_empty && scan_state.ml_pending.len() == ml_before;
-            if confirmed_empty && raw_text_unchanged {
-                super::scan::mark_vocab_confirmed_absent(self.detector_digest, self.entropy_evidence_config_digest(), &prepared.chunk.data);
+            if confirmed_empty
+                && raw_text_unchanged
+                && !crate::deadline::expired(deadline)
+            {
+                super::scan::mark_vocab_confirmed_absent(self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data);
             }
         }
 
@@ -288,8 +297,11 @@ impl CompiledScanner {
             let entropy_empty = scan_state.matches.len() == matches_before;
             #[cfg(feature = "ml")]
             let entropy_empty = entropy_empty && scan_state.ml_pending.len() == ml_before;
-            if entropy_empty && raw_text_unchanged {
-                super::scan::mark_vocab_entropy_absent(self.detector_digest, self.entropy_evidence_config_digest(), &prepared.chunk.data);
+            if entropy_empty
+                && raw_text_unchanged
+                && !crate::deadline::expired(deadline)
+            {
+                super::scan::mark_vocab_entropy_absent(self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data);
             }
         }
         if crate::deadline::expired(deadline) {
@@ -302,8 +314,9 @@ impl CompiledScanner {
         if clean
             && raw_text_unchanged
             && prepared.chunk.metadata.decoded_span.is_none()
+            && prepared.chunk.metadata.source_type.as_ref() == "filesystem/windowed"
         {
-            super::scan::mark_vocab_clean(self.detector_digest, self.entropy_evidence_config_digest(), &prepared.chunk.data);
+            super::scan::mark_vocab_clean(self.detector_digest, vocab_cfg, vocab_path_class, &prepared.chunk.data);
         }
 
         scan_state
