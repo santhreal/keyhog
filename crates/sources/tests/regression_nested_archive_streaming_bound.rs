@@ -42,6 +42,10 @@ fn compressed_tar_attempts_streaming_before_full_decompress() {
         src.contains("path_looks_like_compressed_tar"),
         "bundle.tar.gz must be recognized as a tarball even though Path::extension is only gz"
     );
+    assert!(
+        src.contains("BudgetLimitedReader"),
+        "streaming compressed-tar must wrap the decoder in a decompressed-byte ceiling"
+    );
 }
 
 #[test]
