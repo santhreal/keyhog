@@ -42,7 +42,7 @@ KeyHog streams compressed tarballs (`.tar.gz`, `.tgz`, and nested compressed tar
 members) into the member scanner. It does not keep a full decompressed tarball
 resident while walking entries. Peak resident memory for archive extraction is
 bounded by the compressed input, decoder window state, and the largest single
-member under the active size caps — not by the sum of every decompressed layer.
+member under the active size caps, not by the sum of every decompressed layer.
 
 TeX role annotations need member source bytes up front. Uncompressed `.tar` and
 ZIP-family packages still run the buffered provenance pass when header/central

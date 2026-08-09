@@ -200,61 +200,31 @@ pub(super) fn member_needs_source_bytes(name: &str) -> bool {
         .unwrap_or(false) // LAW10: a member without an extension is not TeX source; recall-preserving ordinary archive scanning still handles the member.
 }
 
-/// True when any ustar/GNU tar **header name field** looks like TeX source.
+/// True when any tar member **path** looks like TeX source.
 ///
-/// Payload bytes are ignored on purpose: a nested compressed member (the common
-/// `outer.tar` → `nested.tar.gz` layout) can contain the four-byte sequence
-/// `.tex` / `.sty` / … inside DEFLATE output without any TeX source existing.
-/// Scanning payloads for those bytes false-triggered a full TeX provenance pass
-/// that re-read every member. Header names are the same signal the zip path
-/// already uses (`file_names().any(member_needs_source_bytes)`).
+/// Uses `tar::Archive` so GNU long-name (`././@LongLink`) and pax extended
+/// header paths resolve the same way the subsequent provenance pass does.
+/// Payload *content* bytes are still ignored on purpose: a nested compressed
+/// member can contain the four-byte sequence `.tex` / `.sty` / … inside DEFLATE
+/// output without any TeX source existing. Header/path names are the same
+/// signal the zip path already uses (`file_names().any(member_needs_source_bytes)`).
 pub(super) fn tar_header_names_might_need_tex(bytes: &[u8]) -> bool {
-    let mut offset = 0usize;
-    while offset + 512 <= bytes.len() {
-        let header = &bytes[offset..offset + 512];
-        if header.iter().all(|&byte| byte == 0) {
-            break;
-        }
-        if tar_name_field_needs_tex(&header[0..100]) {
-            return true;
-        }
-        if header.get(257..262) == Some(&b"ustar"[..]) {
-            if let Some(prefix) = header.get(345..500) {
-                if tar_name_field_needs_tex(prefix) {
-                    return true;
-                }
-            }
-        }
-        let size = parse_tar_octal_size(&header[124..136]);
-        let data_blocks = size.div_ceil(512);
-        let Some(next) = offset
-            .checked_add(512)
-            .and_then(|base| base.checked_add(data_blocks.saturating_mul(512)))
-        else {
-            break;
-        };
-        offset = next;
-    }
-    false
-}
-
-fn tar_name_field_needs_tex(field: &[u8]) -> bool {
-    let end = field.iter().position(|&byte| byte == 0).unwrap_or(field.len());
-    let Ok(name) = std::str::from_utf8(&field[..end]) else {
+    let mut archive = tar::Archive::new(std::io::Cursor::new(bytes));
+    let Ok(entries) = archive.entries() else {
         return false;
     };
-    member_needs_source_bytes(name)
-}
-
-fn parse_tar_octal_size(field: &[u8]) -> usize {
-    let end = field
-        .iter()
-        .position(|&byte| byte == 0 || byte == b' ')
-        .unwrap_or(field.len());
-    let Ok(text) = std::str::from_utf8(&field[..end]) else {
-        return 0;
-    };
-    usize::from_str_radix(text.trim(), 8).unwrap_or(0)
+    for entry in entries {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let Ok(path) = entry.path() else {
+            continue;
+        };
+        if member_needs_source_bytes(&path.to_string_lossy()) {
+            return true;
+        }
+    }
+    false
 }
 
 #[derive(Debug)]

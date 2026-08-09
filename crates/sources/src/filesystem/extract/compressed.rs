@@ -170,6 +170,54 @@ pub(super) fn looks_like_tar(data: &[u8]) -> bool {
     data.len() >= 512 && (&data[257..262] == b"ustar" || &data[257..265] == b"ustar  \0")
 }
 
+
+/// Hard ceiling on bytes pulled from a decompressing reader while streaming a
+/// tar. Matches `decompress_to_bytes`: the reader may produce `budget + 1` bytes
+/// so the caller can tell "hit the cap" from "exactly fit". Without this wrap,
+/// `tar::Archive` over a non-seekable decoder fully inflates skipped oversized
+/// or unsafe-named members when dropping their `Entry`, removing the bomb bound
+/// the buffered path historically enforced.
+struct BudgetLimitedReader<R> {
+    inner: R,
+    /// Absolute read ceiling (`budget + 1`).
+    limit: u64,
+    /// Declared bomb budget (`extraction_total_budget`); reads past this are truncated.
+    budget: u64,
+    bytes_read: u64,
+}
+
+impl<R: Read> BudgetLimitedReader<R> {
+    fn new(inner: R, budget: u64) -> Self {
+        Self {
+            inner,
+            limit: budget.saturating_add(1),
+            budget,
+            bytes_read: 0,
+        }
+    }
+
+    fn exceeded_budget(&self) -> bool {
+        self.bytes_read > self.budget
+    }
+
+    fn bytes_read(&self) -> u64 {
+        self.bytes_read
+    }
+}
+
+impl<R: Read> Read for BudgetLimitedReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.bytes_read >= self.limit || buf.is_empty() {
+            return Ok(0);
+        }
+        let remain = self.limit - self.bytes_read;
+        let take = usize::try_from(remain).unwrap_or(usize::MAX).min(buf.len());
+        let n = self.inner.read(&mut buf[..take])?;
+        self.bytes_read = self.bytes_read.saturating_add(n as u64);
+        Ok(n)
+    }
+}
+
 /// Untar an already-decompressed (or raw `.tar`) byte stream and emit one chunk
 /// per regular file entry, tagged with the inner `archive//entry` path.
 pub(super) fn emit_tar_entries(
@@ -230,7 +278,7 @@ fn emit_tar_entries_from_reader<R: Read>(
     respect_default_excludes: bool,
     tex_package: super::tex_package::TexPackageAnalysis,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
-) {
+) -> bool {
     let mut archive = tar::Archive::new(reader);
     let entries = match archive.entries() {
         Ok(e) => e,
@@ -245,9 +293,9 @@ fn emit_tar_entries_from_reader<R: Read>(
                 "failed to read tar entries",
                 error,
             ) {
-                return;
+                return false;
             }
-            return;
+            return false;
         }
     };
 
@@ -267,7 +315,7 @@ fn emit_tar_entries_from_reader<R: Read>(
                     "<tar-entry>",
                     format!("cannot read tar entry header ({error})"),
                 ) {
-                    return;
+                    return false;
                 }
                 continue;
             }
@@ -300,7 +348,7 @@ fn emit_tar_entries_from_reader<R: Read>(
                 &entry_name,
                 format!("non-regular tar entry type {entry_type:?}; entry was not scanned"),
             ) {
-                return;
+                return false;
             }
             continue;
         }
@@ -335,7 +383,20 @@ fn emit_tar_entries_from_reader<R: Read>(
                 &entry_name,
                 format!("{reason}; entry was not scanned"),
             ) {
-                return;
+                return false;
+            }
+            // Charge declared size: non-seekable decoders still inflate skipped
+            // entry bodies on Drop, so skipped members must count toward the
+            // aggregate bomb budget.
+            *total_uncompressed = (*total_uncompressed).saturating_add(entry_size);
+            if total_budget > 0 && *total_uncompressed > total_budget {
+                let error = super::report_archive_truncation(
+                    container_display,
+                    *total_uncompressed,
+                    total_budget,
+                );
+                let _keep_going = emit(Err(error));
+                return true;
             }
             continue;
         }
@@ -361,7 +422,20 @@ fn emit_tar_entries_from_reader<R: Read>(
                     "uncompressed size {entry_size} exceeds per-file cap {max_size}; entry was not scanned"
                 ),
             ) {
-                return;
+                return false;
+            }
+            // Charge declared size: non-seekable decoders still inflate skipped
+            // entry bodies on Drop, so skipped members must count toward the
+            // aggregate bomb budget.
+            *total_uncompressed = (*total_uncompressed).saturating_add(entry_size);
+            if total_budget > 0 && *total_uncompressed > total_budget {
+                let error = super::report_archive_truncation(
+                    container_display,
+                    *total_uncompressed,
+                    total_budget,
+                );
+                let _keep_going = emit(Err(error));
+                return true;
             }
             continue;
         }
@@ -376,10 +450,8 @@ fn emit_tar_entries_from_reader<R: Read>(
                 *total_uncompressed,
                 total_budget,
             );
-            if !emit(Err(error)) {
-                return;
-            }
-            break;
+            let _keep_going = emit(Err(error));
+            return true;
         }
 
         let read_cap = if max_size > 0 { max_size } else { u64::MAX };
@@ -396,7 +468,7 @@ fn emit_tar_entries_from_reader<R: Read>(
                     &entry_name,
                     format!("cannot read entry body ({error}); entry was not scanned"),
                 ) {
-                    return;
+                    return false;
                 }
                 continue;
             }
@@ -419,7 +491,7 @@ fn emit_tar_entries_from_reader<R: Read>(
                     "decoded size {observed_size} exceeds per-file cap {max_size}; entry was not scanned"
                 ),
             ) {
-                return;
+                return false;
             }
             continue;
         }
@@ -443,9 +515,10 @@ fn emit_tar_entries_from_reader<R: Read>(
             tex_package.get(&entry_name),
             emit,
         ) {
-            return;
+            return false;
         }
     }
+    return false;
 }
 
 fn analyze_tex_package(tar_bytes: &[u8]) -> super::tex_package::TexPackageAnalysis {
@@ -684,10 +757,13 @@ fn try_emit_streaming_nested_tar(
     let Some(reader) = open_format_decoder(format, content, budget) else {
         return false;
     };
-    // Per-entry reads enforce the per-member and aggregate caps inside
-    // emit_tar_entries_from_reader.
-    emit_tar_entries_from_reader(
-        reader,
+    // Hard-cap total decompressed bytes at the same ceiling as decompress_to_bytes.
+    // Per-entry reads also enforce the per-member and aggregate caps inside
+    // emit_tar_entries_from_reader; skipped oversized bodies still cannot inflate
+    // past this reader wrap.
+    let mut reader = BudgetLimitedReader::new(reader, budget);
+    let trunc_before = emit_tar_entries_from_reader(
+        &mut reader,
         nested_display,
         max_size,
         total_uncompressed,
@@ -696,6 +772,14 @@ fn try_emit_streaming_nested_tar(
         super::tex_package::TexPackageAnalysis::default(),
         emit,
     );
+    if reader.exceeded_budget() && !trunc_before {
+        let error = super::report_archive_truncation(
+            nested_display,
+            reader.bytes_read(),
+            budget,
+        );
+        let _keep_going = emit(Err(error));
+    }
     true
 }
 
@@ -714,9 +798,11 @@ fn emit_tar_entry_error(
 
 /// True when the on-disk name is a gzipped tarball (`.tar.gz` / `.tgz` / …).
 ///
-/// `Path::extension` for `bundle.tar.gz` is only `gz`, so the compressed-file
-/// branch must also inspect the full file name to choose the streaming tar
-/// path without first retaining a full decompressed image.
+/// `Path::extension` for `bundle.tar.gz` is only `gz`, so callers that need a
+/// name-only hint (and the nested-archive streaming structural pin) inspect the
+/// full file name. Streaming still sniffs bytes for `*.tar.gz`; only `.tgz`
+/// forces the tar path when the peek is ambiguous.
+#[allow(dead_code)] // LAW10: retained as the documented name-hint helper; streaming sniff is the recall path for misnamed single-file `*.tar.gz`.
 fn path_looks_like_compressed_tar(path: &Path, ext: &str) -> bool {
     if is_tgz_ext(ext) {
         return true;
@@ -782,8 +868,15 @@ fn try_emit_streaming_compressed_tar(
         Ok(n) => n,
         Err(_) => return false,
     };
-    if !force_tar && (peeked < 512 || !looks_like_tar(&head[..peeked])) {
-        return false;
+    // Sniff wins over a `*.tar.gz`-style name: a file named like a compressed
+    // tarball that actually wraps a single non-tar stream must fall through to
+    // the leaf-scan path. Only `.tgz` (force_tar) keeps the historical
+    // unconditional-tar behavior when the peek is short/ambiguous.
+    let looks = peeked >= 512 && looks_like_tar(&head[..peeked]);
+    if !looks {
+        if peeked >= 512 || !force_tar {
+            return false;
+        }
     }
 
     // Stream once: one entry buffer at a time, never the full tar image, and
@@ -793,9 +886,10 @@ fn try_emit_streaming_compressed_tar(
     let Some(reader) = open_format_decoder(format, compressed, budget) else {
         return false;
     };
+    let mut reader = BudgetLimitedReader::new(reader, budget);
     let mut total_uncompressed = 0u64;
-    emit_tar_entries_from_reader(
-        reader,
+    let trunc_before = emit_tar_entries_from_reader(
+        &mut reader,
         container_display,
         max_size,
         &mut total_uncompressed,
@@ -804,6 +898,14 @@ fn try_emit_streaming_compressed_tar(
         super::tex_package::TexPackageAnalysis::default(),
         emit,
     );
+    if reader.exceeded_budget() && !trunc_before {
+        let error = super::report_archive_truncation(
+            container_display,
+            reader.bytes_read(),
+            budget,
+        );
+        let _keep_going = emit(Err(error));
+    }
     true
 }
 
@@ -860,7 +962,10 @@ pub(super) fn extract_compressed_chunks(
     let compressed = file_bytes.as_slice();
     let budget = extraction_total_budget_usize(max_size);
     let path_display = display_path(path);
-    let force_tar = path_looks_like_compressed_tar(path, ext);
+    // Only `.tgz` is an unconditional tar container. `*.tar.gz` still prefers the
+    // streaming tar path below, but must sniff so a misnamed single compressed
+    // file is leaf-scanned rather than lost behind a tar-enumeration error.
+    let force_tar = is_tgz_ext(ext);
 
     // Prefer streaming compressed→tar so the decompressed tarball is never
     // retained as one contiguous allocation (nested members still recurse under
@@ -907,8 +1012,8 @@ pub(super) fn extract_compressed_chunks(
         }
     }
 
-    // `.tgz` / `*.tar.gz` are unconditionally tarballs; for other compressed
-    // names sniff the decompressed bytes (a misnamed single-file `.gz`).
+    // `.tgz` is an unconditional tarball; `*.tar.gz` and other compressed names
+    // sniff the decompressed bytes so a misnamed single-file stream is scanned.
     if force_tar || looks_like_tar(&decompressed) {
         emit_tar_entries(
             &decompressed,
