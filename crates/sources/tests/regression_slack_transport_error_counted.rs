@@ -2,7 +2,7 @@
 #[test]
 fn slack_transport_error_is_counted_unreadable() {
     use keyhog_sources::http::HttpClientConfig;
-    use keyhog_sources::testing::{TestApi};
+    use keyhog_sources::testing::TestApi;
     use keyhog_sources::{create_source_with_http_config, skip_counts};
     use std::net::TcpListener;
 
@@ -56,7 +56,7 @@ fn slack_transport_error_is_counted_unreadable() {
 fn slack_api_error_is_counted_unreadable() {
     use keyhog_core::Source;
     use keyhog_sources::skip_counts;
-    use keyhog_sources::testing::{TestApi};
+    use keyhog_sources::testing::TestApi;
 
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
@@ -106,7 +106,7 @@ fn slack_api_error_is_counted_unreadable() {
 fn slack_channel_failure_preserves_sibling_chunks() {
     use keyhog_core::Source;
     use keyhog_sources::skip_counts;
-    use keyhog_sources::testing::{TestApi};
+    use keyhog_sources::testing::TestApi;
 
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
@@ -186,7 +186,7 @@ fn slack_channel_failure_preserves_sibling_chunks() {
 fn slack_late_history_failure_preserves_prior_channel_chunks() {
     use keyhog_core::Source;
     use keyhog_sources::skip_counts;
-    use keyhog_sources::testing::{TestApi};
+    use keyhog_sources::testing::TestApi;
 
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();

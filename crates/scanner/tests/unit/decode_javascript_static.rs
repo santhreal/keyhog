@@ -534,7 +534,8 @@ fn recovers_xor_through_let_and_var_bindings() {
 #[test]
 fn rejects_xor_binding_reassigned_after_declaration() {
     for mutation in ["_d = [1, 2, 3];", "_d[0] = 1;", "_d.push(1);"] {
-        let source = xor_program(false, true).replace("return String", &format!("{mutation} return String"));
+        let source =
+            xor_program(false, true).replace("return String", &format!("{mutation} return String"));
         assert!(
             decode(source).is_empty(),
             "a written-to binding must fail closed; mutation was {mutation}"
@@ -584,7 +585,8 @@ fn recovers_raw_template_literals_and_rejects_interpolated_ones() {
     let raw = xor_program(true, true).replace('\'', "`");
     assert_single_spliced_recovery(&decode(raw));
 
-    let interpolated = xor_program(true, true).replace(".toString('utf8')", ".toString(`utf${x}8`)");
+    let interpolated =
+        xor_program(true, true).replace(".toString('utf8')", ".toString(`utf${x}8`)");
     assert!(
         decode(interpolated).is_empty(),
         "an interpolated encoding label must fail closed"

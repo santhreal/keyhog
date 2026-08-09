@@ -576,13 +576,13 @@ jobs:
       # Pin the fuzz compiler so toolchain changes cannot silently alter this
       # sanitizer gate between otherwise identical commits.
       - name: Install pinned nightly toolchain
-        run: rustup toolchain install nightly-2026-07-24 --profile minimal
+        run: rustup toolchain install nightly-2026-08-07 --profile minimal
       - name: Install cargo-fuzz
-        run: cargo +nightly-2026-07-24 install cargo-fuzz --locked
+        run: cargo +nightly-2026-08-07 install cargo-fuzz --locked
       - name: Run bounded fuzz smoke
         run: |
-          cargo +nightly-2026-07-24 fuzz run decode_target -- -runs=64
-          cargo +nightly-2026-07-24 fuzz run scanner_target -- -runs=32
+          cargo +nightly-2026-08-07 fuzz run decode_target -- -runs=64
+          cargo +nightly-2026-08-07 fuzz run scanner_target -- -runs=32
 
   fmt:
     name: Format

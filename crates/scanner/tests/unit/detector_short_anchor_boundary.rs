@@ -48,7 +48,6 @@ const GUARD: &str = "(?:^|[^A-Za-z])";
 /// with a bare short anchor should fail against something that already exists.
 const KNOWN_UNANCHORED: &[(&str, usize)] = &[];
 
-
 fn detector_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors")
 }

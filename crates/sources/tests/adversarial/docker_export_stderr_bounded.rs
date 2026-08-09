@@ -1,7 +1,7 @@
 //! Docker image export failures must drain stderr without buffering it unboundedly.
 
 #[cfg(all(feature = "docker", unix))]
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 #[cfg(all(feature = "docker", unix))]
 #[test]

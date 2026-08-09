@@ -10,7 +10,7 @@
 mod support;
 
 use keyhog_core::{Chunk, Source};
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{skip_counts, FilesystemSource, SkipCounts};
 use std::fs;
 use std::path::Path;

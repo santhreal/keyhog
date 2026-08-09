@@ -30,7 +30,11 @@ fn session(name: &str) -> Session {
     .expect("start profile")
 }
 
-fn slot_delta(end: &AllocationSnapshotV2, start: &AllocationSnapshotV2, stage: Stage) -> (u64, u64) {
+fn slot_delta(
+    end: &AllocationSnapshotV2,
+    start: &AllocationSnapshotV2,
+    stage: Stage,
+) -> (u64, u64) {
     (
         end.slot(stage).allocations - start.slot(stage).allocations,
         end.slot(stage)
@@ -178,10 +182,7 @@ mod tracked {
             std::hint::black_box(&first);
             std::hint::black_box(&second);
             let mid = allocation_snapshot();
-            assert_eq!(
-                mid.slot(Stage::Entropy).live_bytes,
-                baseline_live + 12_288
-            );
+            assert_eq!(mid.slot(Stage::Entropy).live_bytes, baseline_live + 12_288);
             assert_eq!(
                 mid.slot(Stage::Entropy).peak_live_bytes,
                 baseline_live + 12_288
@@ -296,10 +297,7 @@ mod tracked {
             find(MetricId::AllocationBytes),
             Some(totals.allocated_bytes)
         );
-        assert_eq!(
-            find(MetricId::AllocationLiveBytes),
-            Some(totals.live_bytes)
-        );
+        assert_eq!(find(MetricId::AllocationLiveBytes), Some(totals.live_bytes));
         assert_eq!(
             find(MetricId::AllocationPeakLiveBytes),
             Some(totals.peak_live_bytes)

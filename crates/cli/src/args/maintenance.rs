@@ -11,7 +11,6 @@ pub struct CompileExecutionPacksArgs {
     pub signing_key: PathBuf,
 }
 
-
 #[derive(Parser)]
 pub struct CompletionArgs {
     /// Shell to generate completions for.

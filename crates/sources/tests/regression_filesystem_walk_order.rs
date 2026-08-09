@@ -171,6 +171,50 @@ fn direct_file_root_survives_empty_relative_path_reconstruction() {
     );
 }
 
+/// Compact discovery on Linux uses an anonymous memory-backed spool, so a scan
+/// remains read-only with respect to the container filesystem.
+#[cfg(target_os = "linux")]
+#[test]
+fn compact_discovery_does_not_require_a_writable_temp_directory() {
+    const CHILD_ENV: &str = "KEYHOG_TEST_READ_ONLY_DISCOVERY_CHILD";
+    const ROOT_ENV: &str = "KEYHOG_TEST_READ_ONLY_DISCOVERY_ROOT";
+
+    if std::env::var_os(CHILD_ENV).is_some() {
+        let root = std::env::var_os(ROOT_ENV).expect("child scan root");
+        let chunks = FilesystemSource::new(std::path::PathBuf::from(root))
+            .chunks()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("discovery must not write through TMPDIR");
+        assert_eq!(chunks.len(), 1, "the planted file must be scanned");
+        assert_eq!(chunks[0].data.as_str(), "read-only discovery\n");
+        return;
+    }
+
+    let tree = TempDir::new().expect("tempdir");
+    let root = tree.path().join("scan-root");
+    std::fs::create_dir(&root).expect("create scan root");
+    std::fs::write(root.join("input.txt"), b"read-only discovery\n").expect("write fixture");
+    let not_a_directory = tree.path().join("not-a-directory");
+    std::fs::write(&not_a_directory, b"blocks tempfile creation").expect("write TMPDIR blocker");
+
+    let status = std::process::Command::new(std::env::current_exe().expect("current test binary"))
+        .args([
+            "--exact",
+            "compact_discovery_does_not_require_a_writable_temp_directory",
+            "--nocapture",
+        ])
+        .env(CHILD_ENV, "1")
+        .env(ROOT_ENV, &root)
+        .env("TMPDIR", &not_a_directory)
+        .status()
+        .expect("run isolated discovery child");
+
+    assert!(
+        status.success(),
+        "filesystem discovery attempted to create a scratch file through TMPDIR"
+    );
+}
+
 /// A single reader thread does not change what is enumerated.
 ///
 /// Reader width and walk width are separate knobs, and constraining one must

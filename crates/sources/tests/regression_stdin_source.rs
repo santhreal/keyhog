@@ -16,7 +16,7 @@
 //! them with a closed pipe.
 
 use keyhog_core::{Source, SourceError};
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{SourceLimits, StdinSource};
 
 // ---------------------------------------------------------------------------

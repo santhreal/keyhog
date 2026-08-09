@@ -555,7 +555,7 @@ of those and not others. Ask which:
 keyhog detectors --mechanisms
 ```
 
-```
+```text
 Mechanism manifest: 926 detectors from detectors
 
   regex                    925  phase-1 pattern anchors

@@ -10,7 +10,7 @@
 //! `REPOS_PER_PAGE` (100, GitHub's documented max) is the single owner the
 //! list-repos query and the last-page check both read.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 #[test]
 fn hostile_retry_after_is_clamped_to_the_ceiling() {

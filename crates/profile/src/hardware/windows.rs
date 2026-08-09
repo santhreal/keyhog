@@ -242,9 +242,8 @@ pub(super) fn empty_scheduler_sample() -> SchedulerSampleV2 {
 }
 
 pub(super) fn sample_scheduler(_state: &mut SchedulerState) -> SchedulerSampleV2 {
-    let etw_gap = || {
-        SourcedEvidenceV2::gapped(HardwareFieldSourceV2::WindowsApi, EvidenceGap::Unsupported)
-    };
+    let etw_gap =
+        || SourcedEvidenceV2::gapped(HardwareFieldSourceV2::WindowsApi, EvidenceGap::Unsupported);
     SchedulerSampleV2 {
         version: HARDWARE_EVIDENCE_V2_VERSION,
         voluntary_context_switches: etw_gap(),
@@ -301,9 +300,8 @@ pub(super) fn capture_topology() -> TopologyEvidenceV2 {
         };
         (ok != 0).then(|| process_mask.count_ones())
     };
-    let processor_info_gap = || {
-        SourcedEvidenceV2::gapped(HardwareFieldSourceV2::WindowsApi, EvidenceGap::Unsupported)
-    };
+    let processor_info_gap =
+        || SourcedEvidenceV2::gapped(HardwareFieldSourceV2::WindowsApi, EvidenceGap::Unsupported);
     TopologyEvidenceV2 {
         version: HARDWARE_EVIDENCE_V2_VERSION,
         logical_cpus,

@@ -18,8 +18,8 @@
 mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::sync::OnceLock;
+use keyhog_scanner::ScanBackend;
+use std::sync::LazyLock;
 
 /// Realistic 20-char AWS access key id (AKIA + 16), proven reportable by
 /// `all_detectors_self_validate`; not an `…EXAMPLE` placeholder.
@@ -32,14 +32,14 @@ const OPENAI_LEGACY: &str = "sk-AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUv
 const DETECTOR_IDS: &[&str] = &["aws-access-key", "openai-api-key"];
 const CPU_BACKENDS: [ScanBackend; 2] = [ScanBackend::SimdCpu, ScanBackend::CpuFallback];
 
-fn scanner() -> &'static CompiledScanner {
-    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
-    SCANNER.get_or_init(|| {
+fn scanner() -> &'static support::ExactCpuScanners {
+    static SCANNER: LazyLock<support::ExactCpuScanners> = LazyLock::new(|| {
         let mut detectors =
             keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
         detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
-        CompiledScanner::compile(detectors).expect("compile")
-    })
+        support::ExactCpuScanners::compile(detectors).expect("compile exact CPU scanners")
+    });
+    &SCANNER
 }
 
 fn chunk(text: &str) -> Chunk {

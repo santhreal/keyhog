@@ -18,7 +18,7 @@
 #![cfg(any(feature = "s3", feature = "gcs", feature = "azure"))]
 
 use keyhog_core::Source;
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use std::time::{Duration, Instant};
 
 const PAGES: usize = 4;
@@ -150,9 +150,8 @@ mod s3 {
         let _ = server;
         (1..=PAGES)
             .flat_map(|page| {
-                (1..=OBJECTS_PER_PAGE).map(move |index| {
-                    (format!("{BUCKET}/{}", key(page, index)), body(page, index))
-                })
+                (1..=OBJECTS_PER_PAGE)
+                    .map(move |index| (format!("{BUCKET}/{}", key(page, index)), body(page, index)))
             })
             .collect()
     }
@@ -223,7 +222,10 @@ mod gcs {
         if page == PAGES {
             format!(r#"{{"items": [{items}]}}"#)
         } else {
-            format!(r#"{{"items": [{items}], "nextPageToken": "tok{}"}}"#, page + 1)
+            format!(
+                r#"{{"items": [{items}], "nextPageToken": "tok{}"}}"#,
+                page + 1
+            )
         }
     }
 

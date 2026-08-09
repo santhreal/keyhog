@@ -14,7 +14,7 @@
 //! lookalikes `..env`, `foo..`, `./foo`) are accepted, over-rejection here
 //! would silently drop a real archived secret from the scan.
 
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 
 fn validate(name: &str) -> Result<(), String> {
     TestApi.validate_archive_entry_name(name)

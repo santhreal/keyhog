@@ -2,7 +2,7 @@
 
 use httpmock::{Method, MockServer};
 use keyhog_core::{Source, SourceCoverageGapKind, SourceError};
-use keyhog_sources::testing::{TestApi};
+use keyhog_sources::testing::TestApi;
 use keyhog_sources::{GitHubCollaborationSelection, SourceLimits};
 
 mod support;
@@ -591,16 +591,15 @@ fn release_selection_scans_draft_notes_and_asset_labels() {
         chunk.metadata.commit.as_deref(),
         Some("RE_draft@2026-07-13T00:00:00Z")
     );
-    assert_eq!(
-        chunk.metadata.date.as_deref(),
-        Some("2026-07-13T00:00:00Z")
-    );
+    assert_eq!(chunk.metadata.date.as_deref(), Some("2026-07-13T00:00:00Z"));
     assert_eq!(chunk.metadata.author.as_deref(), Some("alice"));
     assert!(chunk.data.contains("v2.0.0-rc1"), "{:?}", chunk.data);
     assert!(chunk.data.contains("DEPLOY_TOKEN=release-body-secret"));
     // Asset bytes are out of contract, but the enumerated asset names and
     // labels are scanned so an asset is never absent from the record.
-    assert!(chunk.data.contains("keyhog-linux-release-asset-secret.tar.gz"));
+    assert!(chunk
+        .data
+        .contains("keyhog-linux-release-asset-secret.tar.gz"));
     assert!(chunk.data.contains("signed with release-label-secret"));
     releases.assert_calls(1);
 }
