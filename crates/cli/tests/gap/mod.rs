@@ -8,6 +8,7 @@ pub mod detectors_dry_run_leaves_filesystem_unchanged;
 pub mod detectors_list_phantom_subcommand_in_errors;
 pub mod detectors_search_help_detector_count_drift;
 pub mod doc_detector_ids_resolve_in_registry;
+pub mod doc_guard_state_labels_match_code;
 pub mod dogfood_summary_no_pass_dogfood_when_active;
 pub mod exclude_paths_flag_not_wired;
 pub mod exit_code_system_vs_user;
