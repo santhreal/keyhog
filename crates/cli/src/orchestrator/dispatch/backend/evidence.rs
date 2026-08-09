@@ -12,8 +12,8 @@ pub(super) use match_identity::{
 };
 #[allow(unused_imports)]
 pub(super) use timing::{
-    BackendTimingEvidence, ColdWarmStatisticalModel, PairedDifferenceDistribution,
-    TimingConfidenceInterval,
+    paired_candidate_is_faster_95, BackendTimingEvidence, ColdWarmStatisticalModel,
+    PairedDifferenceDistribution, TimingConfidenceInterval,
 };
 
 use super::workload::MeasurementShapeEvidence;
@@ -55,18 +55,12 @@ const fn backend_route_complexity(backend: ScanBackend) -> u8 {
 }
 
 fn paired_route_trials_are_faster(selected: &[u128], competitor: &[u128]) -> bool {
-    if selected.len().abs_diff(competitor.len()) > 1 {
+    if selected.len() != competitor.len() || selected.is_empty() {
         return false;
     }
-    let shared_rounds = selected.len().min(competitor.len());
-    if shared_rounds == 0 {
-        return false;
-    }
-    let selected_trials = selected[selected.len() - shared_rounds..].to_vec();
-    let competitor_trials = competitor[competitor.len() - shared_rounds..].to_vec();
     if let (Some(selected_ev), Some(competitor_ev)) = (
-        BackendTimingEvidence::from_trial_ns(selected_trials),
-        BackendTimingEvidence::from_trial_ns(competitor_trials),
+        BackendTimingEvidence::from_trial_ns(selected.to_vec()),
+        BackendTimingEvidence::from_trial_ns(competitor.to_vec()),
     ) {
         if let (Some(selected_model), Some(competitor_model)) = (
             ColdWarmStatisticalModel::from_timing(&selected_ev),
@@ -77,10 +71,7 @@ fn paired_route_trials_are_faster(selected: &[u128], competitor: &[u128]) -> boo
                 .is_statistically_faster_95;
         }
     }
-    timing::paired_candidate_is_faster_95(
-        &selected[selected.len() - shared_rounds..],
-        &competitor[competitor.len() - shared_rounds..],
-    )
+    timing::paired_candidate_is_faster_95(selected, competitor)
 }
 
 fn selected_route_margin_ns(

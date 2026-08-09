@@ -42,6 +42,7 @@ impl HsSubEngine {
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         indices: &[usize],
     ) -> Option<Self> {
+        let _ = crate::enforce_simd_rss_ceiling(indices.len() * std::mem::size_of::<usize>());
         let mut refs: Vec<(usize, usize, &str, bool)> = Vec::with_capacity(indices.len());
         let mut caseless: Vec<bool> = Vec::with_capacity(indices.len());
         let mut dropped = Vec::new();

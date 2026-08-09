@@ -7,6 +7,8 @@ use std::time::Duration;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct BackendTimingEvidence {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) cold_trial_ns: Option<u128>,
     pub(crate) trials_ns: Vec<u128>,
 }
 
@@ -14,6 +16,9 @@ impl BackendTimingEvidence {
     pub(crate) fn add_to_first_trial(mut self, overhead_ns: u128) -> Self {
         if let Some(first) = self.trials_ns.first_mut() {
             *first = first.saturating_add(overhead_ns);
+        }
+        if let Some(cold) = self.cold_trial_ns.as_mut() {
+            *cold = cold.saturating_add(overhead_ns);
         }
         self
     }
@@ -36,7 +41,15 @@ impl BackendTimingEvidence {
         if trials_ns.is_empty() {
             return None;
         }
-        Some(Self { trials_ns })
+        let cold_trial_ns = if trials_ns.len() >= 7 {
+            Some(trials_ns[0])
+        } else {
+            None
+        };
+        Some(Self {
+            cold_trial_ns,
+            trials_ns,
+        })
     }
 
     pub(crate) fn median_ns(&self) -> u128 {
@@ -83,7 +96,20 @@ pub(crate) struct PairedDifferenceDistribution {
 
 impl ColdWarmStatisticalModel {
     pub(crate) fn from_timing(timing: &BackendTimingEvidence) -> Option<Self> {
-        let (&cold_one_shot_ns, warm_trials) = timing.trials_ns.split_first()?;
+        if timing.trials_ns.is_empty() {
+            return None;
+        }
+        let (cold_one_shot_ns, warm_trials) = if timing.trials_ns.len() >= 7 {
+            (
+                timing.cold_trial_ns.unwrap_or(timing.trials_ns[0]),
+                &timing.trials_ns[1..],
+            )
+        } else {
+            (
+                timing.cold_trial_ns.unwrap_or(timing.trials_ns[0]),
+                &timing.trials_ns[..],
+            )
+        };
         if warm_trials.is_empty() {
             return None;
         }
@@ -102,10 +128,16 @@ impl ColdWarmStatisticalModel {
         &self,
         competitor: &ColdWarmStatisticalModel,
     ) -> PairedDifferenceDistribution {
-        let count = self
-            .warm_trials_ns
-            .len()
-            .min(competitor.warm_trials_ns.len());
+        if self.warm_trials_ns.len() != competitor.warm_trials_ns.len() {
+            return PairedDifferenceDistribution {
+                count: 0,
+                mean_diff_ns: 0.0,
+                variance: 0.0,
+                ci_half_width_ns: 0.0,
+                is_statistically_faster_95: false,
+            };
+        }
+        let count = self.warm_trials_ns.len();
         if count < 2 {
             return PairedDifferenceDistribution {
                 count,
@@ -115,9 +147,10 @@ impl ColdWarmStatisticalModel {
                 is_statistically_faster_95: false,
             };
         }
-        let paired_diffs: Vec<f64> = self.warm_trials_ns[..count]
+        let paired_diffs: Vec<f64> = self
+            .warm_trials_ns
             .iter()
-            .zip(&competitor.warm_trials_ns[..count])
+            .zip(&competitor.warm_trials_ns)
             .map(|(&cand, &comp)| comp as f64 - cand as f64)
             .collect();
         let count_f64 = count as f64;
@@ -152,7 +185,10 @@ pub(crate) fn paired_candidate_is_faster_95(
     candidate_trials_ns: &[u128],
     competitor_trials_ns: &[u128],
 ) -> bool {
-    let count = candidate_trials_ns.len().min(competitor_trials_ns.len());
+    if candidate_trials_ns.len() != competitor_trials_ns.len() {
+        return false;
+    }
+    let count = candidate_trials_ns.len();
     if count < 2 {
         return false;
     }
@@ -160,7 +196,6 @@ pub(crate) fn paired_candidate_is_faster_95(
         candidate_trials_ns
             .iter()
             .zip(competitor_trials_ns)
-            .take(count)
             .map(|(&candidate, &competitor)| competitor as f64 - candidate as f64)
     };
     let count_f64 = count as f64;

@@ -248,6 +248,10 @@ pub struct MemoryInsightV2 {
     pub allocated_per_input_byte_milli: u64,
     /// Allocation owners sorted by attributed bytes, largest first.
     pub stages: Vec<StageMemoryV2>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startup_rss_attribution: Option<StartupRssAttribution>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub historical_peak_proof: Option<HistoricalPeakMemoryProof>,
 }
 /// Startup RSS component attribution (KH-2035).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -855,6 +859,8 @@ fn derive_memory(
         allocation_peak_live_bytes,
         allocated_per_input_byte_milli: milli(allocated_bytes, input_bytes),
         stages,
+        startup_rss_attribution: None,
+        historical_peak_proof: None,
     }
 }
 

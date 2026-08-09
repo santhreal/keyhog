@@ -163,6 +163,9 @@ impl ActivePatternsScratch {
     /// sparse list (retaining its capacity). On generation wraparound the
     /// stamp vector is reset so a stale `u32::MAX` stamp can't alias.
     pub(crate) fn begin(&mut self, len: usize) {
+        let requested_bytes = len * std::mem::size_of::<u32>()
+            + self.active.capacity() * std::mem::size_of::<usize>();
+        let _ = crate::enforce_cpu_rss_ceiling(requested_bytes);
         if self.stamp.len() < len {
             self.stamp.resize(len, 0);
         }
