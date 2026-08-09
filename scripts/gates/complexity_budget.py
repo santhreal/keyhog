@@ -43,7 +43,7 @@ BUDGET = {
     "phase2_lanes": 10,          # engine/phase2*.rs files
     "scan_backends": 5,          # ScanBackend:: variants
     "engine_files": 32,          # top-level *.rs coordination modules under engine/
-    "engine_loc": 9952,         # non-blank LOC in those top-level modules
+    "engine_loc": 9916,         # non-blank LOC in those top-level modules
 }
 
 

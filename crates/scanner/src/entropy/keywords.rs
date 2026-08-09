@@ -61,6 +61,7 @@ pub(crate) fn find_keyword_assignment_line_ids_with_matcher(
             if !is_declared_keyword_assignment_line(line, matcher) {
                 return None;
             }
+            // LAW10: line index past u32::MAX is skipped from keyword line ID filtering (recall preserved, line stays in candidate pool).
             u32::try_from(line_idx).ok()
         })
         .collect()

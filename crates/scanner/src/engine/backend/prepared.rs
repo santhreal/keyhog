@@ -34,6 +34,7 @@ impl<'a> PreparedChunk<'a> {
                 }
                 match crate::context::LineContextIndex::try_new(&self.preprocessed.text) {
                     Ok(line_index) => std::sync::Arc::new(line_index),
+                    // LAW10: fail-closed; exceeding u32 line boundary panics cleanly rather than truncating offsets.
                     Err(_) => panic!(
                         "preprocessed chunk length exceeds the checked u32 line-index boundary"
                     ),
@@ -59,7 +60,7 @@ impl CompiledScanner {
         #[cfg(debug_assertions)]
         if self.config.unicode_normalization && !normalization_passthrough {
             self.normalization_scanned_bytes.fetch_add(
-                u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
+                u64::try_from(chunk.data.len()).unwrap_or(u64::MAX), // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; normalization accounting is unchanged.
                 std::sync::atomic::Ordering::Relaxed,
             );
         }
@@ -94,7 +95,7 @@ impl CompiledScanner {
                 #[cfg(debug_assertions)]
                 if !multiline_absence {
                     self.multiline_admission_scanned_bytes.fetch_add(
-                        u64::try_from(data_to_pp.len()).unwrap_or(u64::MAX),
+                        u64::try_from(data_to_pp.len()).unwrap_or(u64::MAX), // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; multiline admission accounting is unchanged.
                         std::sync::atomic::Ordering::Relaxed,
                     );
                 }
@@ -105,6 +106,7 @@ impl CompiledScanner {
                             let matcher = self
                                 .assignment_keyword_matcher
                                 .lock()
+                                // LAW10: poisoned mutex recovery retains inner matcher; findings are unchanged.
                                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                                 .resolve(
                                     &self.config.secret_keywords,

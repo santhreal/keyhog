@@ -473,6 +473,7 @@ pub(crate) fn find_classified_entropy_secrets_with_precomputed_keywords_and_poli
     );
     let keyword_line_ids: Vec<u32> = keyword_lines
         .iter()
+        // LAW10: recall-preserving; line index > u32::MAX maps to u32::MAX sentinel, which will not match valid line search.
         .map(|(line_idx, _)| u32::try_from(*line_idx).unwrap_or(u32::MAX))
         .collect();
     find_classified_entropy_secrets_from_lines(
@@ -613,6 +614,7 @@ fn scan_keyword_contexts(
         for line_idx in start..end {
             if line_idx != keyword_line_index
                 && keyword_line_ids
+                    // LAW10: recall-preserving; line index > u32::MAX maps to u32::MAX sentinel, which will not match binary search.
                     .binary_search(&u32::try_from(line_idx).unwrap_or(u32::MAX))
                     .is_ok()
             {
@@ -761,6 +763,7 @@ fn scan_keyword_free_candidates(
     for line_idx in 0..lines.len() {
         let line_id = match u32::try_from(line_idx) {
             Ok(line_id) => line_id,
+            // LAW10: fail-closed; exceeding u32 line boundary panics cleanly rather than truncating offsets.
             Err(_) => panic!("entropy input exceeds the checked u32 line-index boundary"),
         };
         let Some(line) = lines.line(line_idx) else {

@@ -388,7 +388,8 @@ impl CompiledScanner {
         let reusable_triggers = admission_plan.map(|plan| {
             (0..plan.payload_evidence_row_count())
                 .map(|_| std::sync::OnceLock::new())
-                .collect::<Vec<std::sync::OnceLock<Result<Option<Vec<u64>>, String>>>>()
+                .collect::<Vec<std::sync::OnceLock<Result<Option<std::sync::Arc<[u64]>>, String>>>>(
+                )
         });
         let lane_width = super::batch_topology::coalesced_lane_width(chunks);
         let triggers = if lane_width == 1 {
@@ -415,23 +416,35 @@ impl CompiledScanner {
                                 rows.get(row)
                             });
                     if let Some(reusable) = reusable {
-                        return reusable
-                            .get_or_init(|| {
-                                self.reusable_simd_triggers.lock().get_or_compute(
-                                    &chunk.data,
-                                    || {
-                                        self.compute_one_coalesced_simd_trigger(
-                                            data,
-                                            prefilter,
-                                            ac_len,
-                                            words_needed,
-                                        )
-                                    },
-                                )
-                            })
-                            .clone();
+                        let res = reusable.get_or_init(|| {
+                            self.reusable_simd_triggers
+                                .lock()
+                                .get_or_compute(&chunk.data, || {
+                                    self.compute_one_coalesced_simd_trigger(
+                                        data,
+                                        prefilter,
+                                        ac_len,
+                                        words_needed,
+                                    )
+                                })
+                        });
+                        return res
+                            .as_ref()
+                            .map(|opt| opt.as_ref().map(|arc| arc.as_ref().to_vec()))
+                            .map_err(Clone::clone);
                     }
-                    self.compute_one_coalesced_simd_trigger(data, prefilter, ac_len, words_needed)
+                    let res =
+                        self.reusable_simd_triggers
+                            .lock()
+                            .get_or_compute(&chunk.data, || {
+                                self.compute_one_coalesced_simd_trigger(
+                                    data,
+                                    prefilter,
+                                    ac_len,
+                                    words_needed,
+                                )
+                            })?;
+                    Ok(res.map(|arc| arc.as_ref().to_vec()))
                 })
                 .collect::<Result<Vec<_>, String>>()?
         } else {

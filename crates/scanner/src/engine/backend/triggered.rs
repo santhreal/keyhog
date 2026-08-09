@@ -30,18 +30,13 @@ impl CompiledScanner {
             route,
         );
         #[cfg(feature = "ml")]
-        {
+        if !crate::deadline::expired(deadline) {
             let mut scan_state = scan_state;
-            if !crate::deadline::expired(deadline) {
-                let _g = profile::span(keyhog_profile::Stage::MachineLearning);
-                self.apply_ml_batch_scores(&mut scan_state)?;
-            }
-            Ok(scan_state.into_matches())
+            let _g = profile::span(keyhog_profile::Stage::MachineLearning);
+            self.apply_ml_batch_scores(&mut scan_state)?;
+            return Ok(scan_state.into_matches());
         }
-        #[cfg(not(feature = "ml"))]
-        {
-            Ok(scan_state.into_matches())
-        }
+        Ok(scan_state.into_matches())
     }
 
     pub(crate) fn scan_prepared_state_with_triggered(

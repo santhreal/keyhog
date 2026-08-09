@@ -152,6 +152,18 @@ impl CompiledScanner {
     pub fn reusable_simd_trigger_hits_for_diagnostics(&self) -> u64 {
         self.reusable_simd_triggers.lock().hits()
     }
+    #[doc(hidden)]
+    #[cfg(feature = "simd")]
+    pub fn clear_reusable_simd_triggers(&self) {
+        self.reusable_simd_triggers.lock().clear();
+    }
+
+    #[doc(hidden)]
+    #[cfg(feature = "simd")]
+    #[must_use]
+    pub fn reusable_simd_triggers_contain_payload_bytes(&self) -> bool {
+        self.reusable_simd_triggers.lock().contains_payload_bytes()
+    }
 
     /// Surface a decode-through pass declined because its source cannot use
     /// bounded decode windows and exceeds `max_decode_bytes`.

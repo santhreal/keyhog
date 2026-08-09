@@ -1,4 +1,4 @@
-#![cfg(feature = "gpu")]
+#![cfg(all(feature = "gpu", feature = "retired-megakernel"))]
 //! Smoke coverage for VYRE's retired per-rule megakernel primitive.
 //!
 //! This is deliberately not a KeyHog engine test. Production scanning routes
@@ -9,11 +9,11 @@
 
 use std::time::Duration;
 
-use vyre_driver_wgpu::megakernel::{
-    BatchDispatchConfig, BatchDispatcher, BatchFile, FileBatch, HitRecord,
-};
+#[cfg(feature = "gpu")]
 use vyre_driver_wgpu::WgpuBackend;
 use vyre_libs::scan::build_regex_dfa_unanchored;
+#[cfg(feature = "gpu")]
+use vyre_runtime::megakernel::batch::DummySymbol;
 use vyre_runtime::megakernel::rule_catalog::pack_rule_catalog;
 use vyre_runtime::megakernel::BatchRuleProgram;
 

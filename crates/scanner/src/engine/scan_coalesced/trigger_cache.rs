@@ -2,6 +2,8 @@
 
 #[cfg(feature = "simd")]
 use std::cell::RefCell;
+#[cfg(feature = "simd")]
+use std::sync::Arc;
 
 #[cfg(feature = "simd")]
 const REUSABLE_SIMD_TRIGGER_MAX_BYTES: usize = 1024 * 1024;
@@ -11,18 +13,17 @@ const REUSABLE_SIMD_TRIGGER_MAX_ENTRIES: usize = 16;
 #[cfg(feature = "simd")]
 struct ReusableSimdTriggerEntry {
     fingerprint: [u8; 32],
-    payload: keyhog_core::SensitiveString,
-    triggers: Option<Vec<u64>>,
+    payload_hash: [u8; 32],
+    payload_len: usize,
+    triggers: Option<Arc<[u64]>>,
 }
 
 #[cfg(feature = "simd")]
 impl ReusableSimdTriggerEntry {
     fn resident_bytes(&self) -> usize {
-        self.payload
-            .len()
-            .saturating_add(self.triggers.as_ref().map_or(0, |row| {
-                row.len().saturating_mul(std::mem::size_of::<u64>())
-            }))
+        std::mem::size_of::<Self>().saturating_add(self.triggers.as_ref().map_or(0, |row| {
+            row.len().saturating_mul(std::mem::size_of::<u64>())
+        }))
     }
 }
 
@@ -41,13 +42,16 @@ impl ReusableSimdTriggerCache {
         &mut self,
         payload: &keyhog_core::SensitiveString,
         compute: impl FnOnce() -> Result<Option<Vec<u64>>, String>,
-    ) -> Result<Option<Vec<u64>>, String> {
+    ) -> Result<Option<Arc<[u64]>>, String> {
         let fingerprint = super::phase1_admission::phase1_payload_fingerprint(payload.as_bytes());
-        if let Some(position) = self
-            .entries
-            .iter()
-            .position(|entry| entry.fingerprint == fingerprint && entry.payload.eq(payload))
-        {
+        let payload_hash: [u8; 32] = *blake3::hash(payload.as_bytes()).as_bytes();
+        let payload_len = payload.len();
+
+        if let Some(position) = self.entries.iter().position(|entry| {
+            entry.fingerprint == fingerprint
+                && entry.payload_len == payload_len
+                && entry.payload_hash == payload_hash
+        }) {
             if let Some(entry) = self.entries.remove(position) {
                 let triggers = entry.triggers.clone();
                 self.entries.push_back(entry);
@@ -59,15 +63,16 @@ impl ReusableSimdTriggerCache {
             }
         }
 
-        let triggers = compute()?;
+        let computed_triggers: Option<Arc<[u64]>> = compute()?.map(Into::into);
         let entry = ReusableSimdTriggerEntry {
             fingerprint,
-            payload: payload.clone(),
-            triggers: triggers.clone(),
+            payload_hash,
+            payload_len,
+            triggers: computed_triggers.clone(),
         };
         let resident_bytes = entry.resident_bytes();
         if resident_bytes > REUSABLE_SIMD_TRIGGER_MAX_BYTES {
-            return Ok(triggers);
+            return Ok(computed_triggers);
         }
         while self.entries.len() >= REUSABLE_SIMD_TRIGGER_MAX_ENTRIES
             || self.resident_bytes.saturating_add(resident_bytes) > REUSABLE_SIMD_TRIGGER_MAX_BYTES
@@ -79,7 +84,16 @@ impl ReusableSimdTriggerCache {
         }
         self.resident_bytes = self.resident_bytes.saturating_add(resident_bytes);
         self.entries.push_back(entry);
-        Ok(triggers)
+        Ok(computed_triggers)
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+        self.resident_bytes = 0;
+    }
+
+    pub(crate) fn contains_payload_bytes(&self) -> bool {
+        false
     }
 
     #[cfg(debug_assertions)]
