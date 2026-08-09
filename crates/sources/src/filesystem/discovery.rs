@@ -254,7 +254,6 @@ fn walk_metadata_tracked_opt(
     {
         if let Some(t) = tracker {
             t.record_statx();
-            t.record_read();
         }
         if !visit(result) {
             break;
@@ -867,6 +866,10 @@ mod tests {
             snap.close > 0,
             "close count must be > 0 from real discovery walk, got {}",
             snap.close
+        );
+        assert_eq!(
+            snap.read, 0,
+            "metadata discovery must perform zero read(2) syscalls"
         );
     }
 }

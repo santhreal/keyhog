@@ -1,12 +1,3 @@
-pub mod gpu_region_batch {
-    pub use crate::engine::gpu_region_batch::{GpuPipelineOverlapTrace, GpuSlotOccupancy};
-}
-
-pub mod resident_evidence {
-    pub use crate::gpu::backend::resident_evidence::{
-        CudaTimelineEvidence, WgpuQueueOverlapProof, METAL_ASYNC_UNPROVED_BOUNDARY_DOC,
-    };
-}
 // Doc-hidden scanner test facade. Kept out of lib.rs so the crate root
 // remains a module map and public API surface, not a test-probe dumping ground.
 
