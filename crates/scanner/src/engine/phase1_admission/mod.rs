@@ -889,9 +889,11 @@ impl CompiledScanner {
 
     pub(crate) fn entropy_evidence_config_digest(&self) -> [u8; 32] {
         // Recomputed from live config: `config` is a public field and callers
-        // (including tests) may mutate entropy policy in place. Hot paths must
-        // avoid calling this unless a vocab/absence memo can actually hit
-        // (parent filesystem/windowed slices).
+        // (including tests) may mutate policy in place. This digest also keys
+        // vocab-stage absence memos, so it covers every scan setting that can
+        // change clean/confirmed/entropy/decode proofs (not only entropy).
+        // Hot paths must avoid calling this unless a vocab/absence memo can
+        // actually hit (parent filesystem/windowed slices).
         fn update_strings(hasher: &mut blake3::Hasher, values: &[String]) {
             hasher.update(&(values.len() as u64).to_le_bytes());
             for value in values {
@@ -908,6 +910,13 @@ impl CompiledScanner {
         update_strings(&mut hasher, &self.config.secret_keywords);
         update_strings(&mut hasher, &self.config.test_keywords);
         update_strings(&mut hasher, &self.config.placeholder_keywords);
+        // Vocab clean/absence proofs also depend on these mutable scan knobs.
+        hasher.update(&[u8::from(self.config.unicode_normalization)]);
+        hasher.update(&self.config.min_confidence.to_bits().to_le_bytes());
+        hasher.update(&(self.config.max_matches_per_chunk as u64).to_le_bytes());
+        hasher.update(&(self.config.max_decode_depth as u64).to_le_bytes());
+        hasher.update(&(self.config.max_decode_bytes as u64).to_le_bytes());
+        hasher.update(&[u8::from(self.config.penalize_test_paths)]);
         *hasher.finalize().as_bytes()
     }
 

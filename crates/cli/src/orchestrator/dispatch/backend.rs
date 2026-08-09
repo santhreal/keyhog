@@ -813,12 +813,11 @@ impl MeasuredBackendRouter {
                 "eligible backend set changed after calibration started; rerun calibration so every candidate is measured under one stable peer census",
             ));
         }
-        // Time CPU with the same filled trigger hints production will use;
-        // otherwise calibration under-states CpuFallback relative to the
-        // executed route and can persist a slower backend.
-        let mut calibration_plan = phase1_plan;
-        scanner.fill_cpu_trigger_hints_for_plan(&mut calibration_plan, batch);
-        let phase1_plan = calibration_plan;
+        // Keep the route-neutral plan for calibration timing. Prefilling CPU
+        // trigger hints here would remove the phase-1 AC pass from the CpuFallback
+        // clock while SIMD/GPU candidates still pay theirs inside timed scans,
+        // biasing the persisted winner toward scalar CPU. Production still fills
+        // via phase1_plan_for_selected_backend after selection below.
         let decision = calibrate_fastest_correct_backend(
             scanner,
             self.pattern_count,

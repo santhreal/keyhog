@@ -411,7 +411,6 @@ impl CompiledScanner {
                 // Markerless single-line shape may skip decode / no-hit entropy,
                 // but admitted chunks must still run always-active phase-2
                 // (prefix-less detectors such as asana-pat).
-                let always_active_absence_proven = always_active_absence_proven;
                 if !always_active_absence_proven {
                     #[cfg(debug_assertions)]
                     self.phase2_prefilter_scanned_bytes.fetch_add(
