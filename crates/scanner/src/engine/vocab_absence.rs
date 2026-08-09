@@ -2,12 +2,6 @@
 //! decode admission, backend_triggered skips, and windowed/postprocess paths.
 //! Extracted from `scan.rs` to keep that file under the STANDARD 500 LOC cap.
 
-#[cfg(feature = "decode")]
-#[inline]
-pub(crate) fn chunk_is_markerless_single_line(chunk: &keyhog_core::Chunk) -> bool {
-    text_is_markerless_single_line(&chunk.data)
-}
-
 /// Single-line text with no classical encode markers. Used to skip decode-through
 /// and always-active phase-2 work on minified / dense JSON blobs where that work
 /// cannot distinguish opaque identifiers from nopad encodings.

@@ -19,7 +19,7 @@ Warm-daemon competitive bars (`one_long_line` ≤0.50, `one_large` ≤3.5, `many
 
 | Item | Severity | Decision | Mitigations |
 | --- | --- | --- | --- |
-| Vocab fingerprint ignores line order / multiplicity | YELLOW (Devin) | **Accepted residual** — keep unique-line fingerprint | Path-scoped keys (`vocab_path_class`); memo lookup/mark only for parent `filesystem/windowed` slices; no autoroute short-circuit on these proofs; detector + entropy-config digests in the key; capacity drops new keys instead of clearing unrelated stage proofs |
+| Vocab fingerprint ignores line order / multiplicity | YELLOW (Devin) | **Accepted residual**: keep unique-line fingerprint | Path-scoped keys (`vocab_path_class`); memo lookup/mark only for parent `filesystem/windowed` slices; no autoroute short-circuit on these proofs; detector + entropy-config digests in the key; capacity drops new keys instead of clearing unrelated stage proofs |
 
 Do **not** "fix" this YELLOW by switching to ordered/multiplicity fingerprints: that trade loses the `one_large` residual win. Keep the mitigations above; treat the YELLOW as documented residual.
 

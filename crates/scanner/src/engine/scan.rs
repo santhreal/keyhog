@@ -57,7 +57,7 @@ impl CompiledScanner {
             // vocabulary across overlapping windows. Once a vocab has been
             // decode-through'd to an empty child set, later windows with the
             // same unique-line fingerprint skip decode-through entirely.
-            // Only consult the memo for parent filesystem/windowed slices —
+            // Only consult the memo for parent filesystem/windowed slices;
             // other sources would pay a full content fingerprint for a miss.
             && !(chunk.metadata.decoded_span.is_none()
                 && chunk.metadata.source_type.as_ref() == "filesystem/windowed"

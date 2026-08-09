@@ -10,7 +10,7 @@
 //! This gate parses each regex once (thread-local cache) into an OR-of-AND of
 //! lowercase ASCII literal runs (at least [`MIN_COMPANION_BYTES`]). A pattern is
 //! skipped only when every alternation arm is missing at least one required
-//! run — fail-open on parse/empty so recall is preserved.
+//! run. Fail-open on parse/empty so recall is preserved.
 //!
 //! Per-chunk evaluation builds one temporary Aho-Corasick over the unique
 //! companion literals of the active set and marks presence in a single pass,
@@ -30,7 +30,7 @@ use super::phase2_first_bigram::FirstBigramSet;
 pub(crate) const MIN_COMPANION_BYTES: usize = 3;
 
 struct CompanionDerived {
-    /// Owning scanner identity — indices alone are scanner-local.
+    /// Owning scanner identity: indices alone are scanner-local.
     detector_digest: u64,
     /// Active pattern indices that contributed companion arms (cache key).
     pattern_key: Vec<usize>,
@@ -364,7 +364,7 @@ mod presence_scratch_tests {
         );
 
         // Grow the active literal set on the same thread. Haystack has none of
-        // the companions — every armed pattern must be denied. Under the old
+        // the companions: every armed pattern must be denied. Under the old
         // grow-skips-clear bug, stale true bits from the seed chunk over-admit.
         let large = [
             (0usize, r"formbuilder"),

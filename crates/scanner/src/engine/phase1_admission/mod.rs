@@ -1097,7 +1097,7 @@ impl CompiledScanner {
         // reuse map.
         let admitted = admission == Phase1Admission::Admitted;
         // Rejected repeated payloads still take the no-hit lane and benefit from
-        // reusable absence — but only when classification is cheaper than the
+        // reusable absence, but only when classification is cheaper than the
         // repeated work (many_small-sized chunks). Large rejected windows
         // (one_long_line) must not build LineContextIndex / CPU triggers just to
         // publish absence that a single-digit reuse count cannot amortize.
