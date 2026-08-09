@@ -137,6 +137,7 @@ pub(crate) struct ReusablePhase1EvidenceCache {
 impl ReusablePhase1EvidenceCache {
     pub(crate) fn clear(&mut self) {
         self.entries.clear();
+        self.entries.shrink_to_fit();
         self.resident_bytes = 0;
     }
     fn get(
