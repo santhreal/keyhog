@@ -264,6 +264,7 @@ impl ServerState {
         options: ServerOptions,
         backend_override: Option<ScanBackend>,
         warm_backend: WarmBackendReadiness,
+        guard_hot_index_budget: Option<usize>,
     ) -> Self {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -292,7 +293,10 @@ impl ServerState {
             draining: AtomicBool::new(false),
             scans_drained: Notify::new(),
             active_requests: AtomicU32::new(0),
-            guard: Arc::new(crate::daemon::guard_runtime::GuardRuntime::new()),
+            guard: Arc::new(match guard_hot_index_budget {
+                Some(budget) => crate::daemon::guard_runtime::GuardRuntime::with_hot_index_budget(budget),
+                None => crate::daemon::guard_runtime::GuardRuntime::new(),
+            }),
             guard_watcher: Arc::new(parking_lot::Mutex::new(
                 crate::daemon::guard_watcher::GuardWatcher::new(
                     keyhog_sources::guard::GuardReconciliationConfig::default(),
@@ -442,6 +446,7 @@ pub(crate) async fn run_with_backend_override(
     detector_rules_digest: String,
     options: ServerOptions,
     backend_override: Option<ScanBackend>,
+    guard_hot_index_budget: Option<usize>,
 ) -> Result<()> {
     ignore_sigpipe_while_serving();
     // Tell the operator the daemon is working before scanner compile and warmup.
@@ -464,6 +469,7 @@ pub(crate) async fn run_with_backend_override(
         options,
         backend_override,
         warm_backend,
+        guard_hot_index_budget,
     ));
 
     // Set the guard policy identity from the daemon's scanner and build

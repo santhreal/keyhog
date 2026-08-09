@@ -4,7 +4,7 @@ use std::path::PathBuf;
 /// flags override the corresponding file value.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct ConfigFile {
+pub(crate) struct ConfigFile {
     /// Path to detector TOMLs directory.
     pub detectors: Option<String>,
     /// Composition policy for an explicitly selected detector directory.
@@ -221,7 +221,7 @@ pub(super) struct TuningSection {
 /// requires a version bump and a stale-copy rejection test.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct GuardSection {
+pub(crate) struct GuardSection {
     /// Hot clean attestation index memory budget (e.g. "64MiB").
     pub hot_index_memory: Option<String>,
     /// Maximum queued events per root.
