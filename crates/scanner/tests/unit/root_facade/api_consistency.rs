@@ -24,19 +24,23 @@ use std::sync::OnceLock;
 
 const DETECTOR_IDS: &[&str] = &["aws-access-key", "github-classic-pat", "stripe-secret-key"];
 
+fn detectors() -> Vec<keyhog_core::DetectorSpec> {
+    let mut detectors =
+        keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
+    detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
+    for id in DETECTOR_IDS {
+        assert!(
+            detectors.iter().any(|detector| detector.id == *id),
+            "API consistency detector subset missing shipped detector {id}"
+        );
+    }
+    detectors
+}
+
 fn scanner() -> &'static CompiledScanner {
     static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
     SCANNER.get_or_init(|| {
-        let mut detectors =
-            keyhog_core::load_detectors(&support::paths::detector_dir()).expect("detectors");
-        detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
-        for id in DETECTOR_IDS {
-            assert!(
-                detectors.iter().any(|detector| detector.id == *id),
-                "API consistency detector subset missing shipped detector {id}"
-            );
-        }
-        CompiledScanner::compile(detectors).expect("compile")
+        CompiledScanner::compile(detectors()).expect("compile")
     })
 }
 
@@ -110,6 +114,7 @@ fn daemon_style_stdin_aws_chunk_reports_named_detector() {
         },
     };
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
+        let scanner = CompiledScanner::compile_for_backend(detectors(), backend).expect("compile");
         let matches = scanner
             .scan_with_backend(&chunk, backend)
             .expect("selected backend scan succeeds");
@@ -155,6 +160,7 @@ fn scan_with_backend_each_matches_scan_chunks_with_backend() {
         "fixtures/stripe_aws.yml",
     );
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
+        let scanner = CompiledScanner::compile_for_backend(detectors(), backend).expect("compile");
         let single = key(&scanner
             .scan_with_backend(&chunk, backend)
             .expect("selected backend scan succeeds"));
@@ -198,14 +204,13 @@ fn empty_chunks_slice_returns_empty_results() {
     let scanner = scanner();
     scanner.clear_fragment_cache();
     let r = scanner
-        .scan_chunks_with_backend(&[], ScanBackend::SimdCpu)
+        .scan_chunks_with_backend(&[], ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
     assert!(
         r.is_empty(),
         "empty input slice must return empty result slice"
     );
 }
-
 #[test]
 fn multi_chunk_input_preserves_per_chunk_attribution() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
@@ -221,7 +226,7 @@ fn multi_chunk_input_preserves_per_chunk_attribution() {
         ),
     ];
     let results = scanner
-        .scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu)
+        .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
     assert_eq!(
         results.len(),
