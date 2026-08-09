@@ -29,7 +29,9 @@ pub(crate) use archive::validate_scan_archive_entry_name;
 /// per-file cap. Extraction/decoding still needs a hard bomb guard so an archive,
 /// compressed stream, or PDF cannot expand without bound.
 pub(super) const UNCAPPED_ARCHIVE_BUDGET: u64 = 1024 * 1024 * 1024;
-const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
+// 512 covers zip/ELF/PE magic and tar's ustar marker at offset 257 without
+// reading a full KiB on every unclassifiable name.
+const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 512;
 
 /// Upper bound on a Git-LFS pointer file's size. A canonical pointer is the
 /// three short lines `version …` / `oid sha256:…` / `size …` (~130 bytes; a few
@@ -589,6 +591,48 @@ pub(super) fn process_entry(
         }
     }
 
+    if ext.is_empty() {
+        // Cheap content sniff for unclassifiable names after the incremental
+        // unchanged-file gate and before full reads (KH-50 / KH-213x).
+        let mut buf = [0u8; EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES];
+        if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
+            // LAW10: failed prefix probe leaves binary hint false; the full safe read path below is the loud, recall-preserving path that still surfaces unreadable files.
+            let head = &buf[..n];
+            match container_extension_from_prefix(head) {
+                // The file has NO extension but its own bytes ARE a container, so
+                // adopt the extension the dispatcher below already routes, and the
+                // container reaches the same extractor under the same per-entry,
+                // bomb-ratio and depth caps as its named twin. Without this the
+                // `looks_binary_prefix` arm ended the scan right here and the
+                // container's entire contents went unread, recorded only as a
+                // generic binary skip with no sign a container was there. That
+                // naming is the normal case for the highest-value target: an
+                // OCI/Docker layer blob is `blobs/sha256/<hex>` on disk, in a
+                // registry cache, or in an extracted `docker save` (Law 10).
+                Some(sniffed) => ext = sniffed,
+                // UTF-16 BOM text must reach the decoder even when the body has
+                // embedded NULs; reject only confident binary prefixes.
+                None if read::has_utf16_bom_prefix(head) => {
+                    if n < buf.len() && n as u64 == file_size {
+                        prefetched_extensionless_bytes = Some(head.to_vec());
+                    }
+                }
+                None if read::looks_binary_prefix(head) => {
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                    return;
+                }
+                None => {
+                    // The safe prefix read reached EOF for this stable tiny-file
+                    // snapshot. Reuse those owned bytes below instead of opening,
+                    // fstat'ing, and reading the same file a second time.
+                    if n < buf.len() && n as u64 == file_size {
+                        prefetched_extensionless_bytes = Some(head.to_vec());
+                    }
+                }
+            }
+        }
+    }
+
     if let Some(kind) = image_kind {
         match image_metadata::extract(&path, kind, file_size, live_mtime_ns, max_size) {
             Ok(extraction) => {
@@ -611,44 +655,6 @@ pub(super) fn process_entry(
             }
         }
         return;
-    }
-
-    if ext.is_empty() {
-        // Sniff a small structural prefix of files without extensions to quickly
-        // skip binary structures without full content reads (KH-50). Use the same
-        // no-follow safe open as the real file reader: an extensionless symlink
-        // must not get a pre-guard `File::open` of its target just because this
-        // is only a header sniff.
-        let mut buf = [0u8; EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES];
-        if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
-            // LAW10: failed prefix probe leaves binary hint false; the full safe read path below is the loud, recall-preserving path that still surfaces unreadable files.
-            let head = &buf[..n];
-            match container_extension_from_prefix(head) {
-                // The file has NO extension but its own bytes ARE a container, so
-                // adopt the extension the dispatcher below already routes, and the
-                // container reaches the same extractor under the same per-entry,
-                // bomb-ratio and depth caps as its named twin. Without this the
-                // `looks_binary_prefix` arm ended the scan right here and the
-                // container's entire contents went unread, recorded only as a
-                // generic binary skip with no sign a container was there. That
-                // naming is the normal case for the highest-value target: an
-                // OCI/Docker layer blob is `blobs/sha256/<hex>` on disk, in a
-                // registry cache, or in an extracted `docker save` (Law 10).
-                Some(sniffed) => ext = sniffed,
-                None if read::looks_binary_prefix(head) => {
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                    return;
-                }
-                None => {
-                    // The safe prefix read reached EOF for this stable tiny-file
-                    // snapshot. Reuse those owned bytes below instead of opening,
-                    // fstat'ing, and reading the same file a second time.
-                    if n < buf.len() && n as u64 == file_size {
-                        prefetched_extensionless_bytes = Some(head.to_vec());
-                    }
-                }
-            }
-        }
     }
 
     if ext.eq_ignore_ascii_case("pdf") {
