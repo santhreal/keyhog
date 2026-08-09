@@ -61,7 +61,10 @@ pub(crate) fn find_keyword_assignment_line_ids_with_matcher(
             if !is_declared_keyword_assignment_line(line, matcher) {
                 return None;
             }
-            Some(u32::try_from(line_idx).expect("chunk-bounded line index must fit u32"))
+            Some(match u32::try_from(line_idx) {
+                Ok(line_id) => line_id,
+                Err(_) => panic!("LineContextIndex admitted more than u32::MAX lines"),
+            })
         })
         .collect()
 }

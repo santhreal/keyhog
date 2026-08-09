@@ -8,10 +8,10 @@ from a first scan to a passing gate. The provider recipes below keep scanning,
 enforcement, and report retention explicit so a missing upload or unsupported
 source cannot look like a clean run.
 
-The shell recipes use an Ubuntu worker. Published Action refs install KeyHog
-from crates.io and build the full default feature set. Branch and commit Action
-refs build the portable profile from their checked-out source and require
-`backend: cpu`.
+The shell recipes use an Ubuntu worker and install the full default `portable`
+crate profile. The GitHub Action has a different installation contract:
+published refs install the lean `ci` feature, while branch and commit refs build
+the portable profile from checked-out source and require `backend: cpu`.
 
 | Workflow | Recommended scan | Boundary |
 |---|---|---|
@@ -19,7 +19,7 @@ refs build the portable profile from their checked-out source and require
 | Pull-request checkout | `keyhog scan . --baseline <FILE>` | Scans the checked-out tree and suppresses only reviewed baseline findings. See [Fail only on new secrets](#fail-only-on-new-secrets). |
 | Pull-request changes only | `keyhog scan --git-diff <BASE>` | Scans changed lines relative to the selected base. This is narrower than the checkout. |
 | Main branch commit additions | `keyhog scan --git-history .` | Scans added patch lines from reachable commits present in the checkout, bounded by `max_commits`. |
-| Complete reachable blob gate | `keyhog scan --git-blobs .` | Scans deduplicated reachable blobs when patch additions are not complete enough. |
+| Repository object database | `keyhog scan --git-blobs .` | Scans deduplicated blobs from refs, reflogs, stashes, tags, and unreachable objects still present in the clone. |
 | Release verification | `keyhog scan --git-history . --git-blobs . --verify` | Adds live checks for eligible detectors. Unverifiable findings remain unverified, and verification sends credential-derived requests to providers. |
 | Large scheduled inventory | Partitioned repository or cloud scopes | Keeps ownership, coverage, reports, and retries independent. |
 
@@ -232,7 +232,7 @@ keyhog:
     - cargo install --locked --version '=0.5.68' keyhog
   script:
     # Exits non-zero on findings, which fails the job and gates the MR.
-    - ~/.local/bin/keyhog scan . --format gitlab-sast --output gl-sast-report.json
+    - keyhog scan . --format gitlab-sast --output gl-sast-report.json
   artifacts:
     when: always           # keep the report even when the scan fails the job
     reports:
@@ -291,7 +291,7 @@ steps:
       - cargo install --locked --version '=0.5.68' keyhog
       - |
         scan_status=0
-        $HOME/.local/bin/keyhog scan . --format json-envelope --output keyhog.json \
+        keyhog scan . --format json-envelope --output keyhog.json \
           2>keyhog.stderr || scan_status=$?
         printf '%s\n' "$scan_status" > keyhog.exit-code
         cat keyhog.stderr >&2 || true
@@ -339,10 +339,11 @@ exit "$scan_status"
 ```
 
 Configure the CI artifact publisher to retain `keyhog.json`, `keyhog.stderr`,
-and `keyhog.exit-code` on both success and failure. KeyHog always writes the
-report, including when every source failed to read: that report then carries
-`scan covered nothing` and the reason each source failed. Always evaluate the
-report together with `keyhog.exit-code`.
+and `keyhog.exit-code` on both success and failure. When the output path is
+writable, KeyHog writes the report even when every source failed to read; that
+report then carries `scan covered nothing` and the reason each source failed.
+An output-path failure exits `2` and cannot produce that report. Evaluate a
+present report together with `keyhog.exit-code`.
 
 ## Buildkite
 
@@ -401,8 +402,9 @@ releases](./github-action.md#pin-action-code-and-scanner-releases).
 ## Scan commit additions on main and release, not per PR
 
 An added-line history scan is useful on `main` post-merge and on release tags,
-but it is overkill for every PR. Add `--git-blobs .` when the policy must cover
-the complete set of blobs reachable from the selected repository. A typical setup:
+but it is overkill for every PR. Add `--git-blobs .` when the policy must also
+cover reflogs, stashes, tag messages, and unreachable objects that remain in the
+repository object database. A typical setup:
 
 | Trigger        | Scan                            | Purpose |
 |----------------|----------------------------------|---------|
@@ -446,11 +448,12 @@ raw exit code, source inventory, and coverage state before aggregating results.
   of a single-commit repository stays clean and correct, because its boundary
   is the root commit and hides no parent.
 - **`--git-history` misses branches you did not check out:** it covers the
-  ancestry of the current checkout only. A credential on a branch this job
-  never checked out, or one left behind by `git commit --amend`, is reported by
-  `--git-blobs` and missed by `--git-history` with no coverage gap. Use
-  `--git-blobs` when the policy has to cover the whole repository, not just one
-  line of history.
+  ancestry present in the current checkout only. A credential on another local
+  ref, in a reflog or stash, or left behind by `git commit --amend` can be
+  reported by `--git-blobs` and missed by `--git-history` with no coverage gap.
+  Use `--git-blobs` when the policy has to cover the repository object database,
+  not only reachable added-line history. Objects already pruned from the clone
+  cannot be scanned.
 - **A base ref that resolves to HEAD:** `keyhog scan --git-diff <BASE>` exits
   `0` after scanning zero bytes when `<BASE>` and `HEAD` are the same commit,
   which is what a shallow clone gives you for `origin/main`. The gate passes

@@ -489,14 +489,21 @@ fn normalized_triggered_rows_discard_raw_gpu_evidence_and_recompute_admission() 
             ..keyhog_scanner::testing::named_detector_fixture_defaults()
         },
     ];
-    let scanner = CompiledScanner::compile(detectors).expect("compile normalization fixtures");
+    let simd_scanner = CompiledScanner::compile_for_backend(
+        detectors.clone(),
+        crate::hw_probe::ScanBackend::SimdCpu,
+    )
+    .expect("compile normalization fixtures for SIMD");
+    let scanner =
+        CompiledScanner::compile_for_backend(detectors, crate::hw_probe::ScanBackend::CpuFallback)
+            .expect("compile normalization fixtures for scalar phase two");
     let chunk = keyhog_core::Chunk::from(concat!(
         "rawhit_ABCD\n",
         "required=0123abcd:\u{ff46}\u{ff58}\n",
         "\u{ff43}\u{ff52}\u{ff45}\u{ff44}\u{ff45}\u{ff4e}\u{ff54}\u{ff49}\u{ff41}\u{ff4c}",
         " = aB3dE5gH7jK9mN2pQ4sT6vW8xY1zC0fR\n"
     ));
-    let raw_triggers = scanner
+    let raw_triggers = simd_scanner
         .collect_triggered_patterns_for_backend(&chunk.data, crate::hw_probe::ScanBackend::SimdCpu)
         .expect("SIMD trigger collection succeeds");
     assert!(raw_triggers.iter().any(|&word| word != 0));

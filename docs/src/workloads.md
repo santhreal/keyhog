@@ -8,23 +8,28 @@ quiet when it fails.
 Find your shape in the table, run the command, then run the coverage check for
 that shape. The default command is right for exactly one shape.
 
-| Input shape | Command | Page | Check first |
-|---|---|---|---|
-| A repository working tree | `keyhog scan .` | [Your first scan](./first-scan.md) | `source_bytes_scanned` is close to the tree size |
-| Many small files, hundreds of thousands | `keyhog scan <root>` | [File shapes and sizes](./guides/file-shapes.md#many-small-files) | `source_chunks_scanned` matches the file count |
-| One very large file | `keyhog scan --max-file-size <SIZE> <file>` | [File shapes and sizes](./guides/file-shapes.md#one-very-large-file) | No `exceeded --max-file-size` gap |
-| A minified or single-line file | copy it to a non-vendored path first | [File shapes and sizes](./guides/file-shapes.md#minified-and-single-line-files) | `source_bytes_scanned` is not `0` |
-| Git history | `keyhog scan --git-history <repo>` | [Deep recovery](./guides/deep-recovery.md) | `source_chunks_scanned` is more than the working tree alone |
-| Container images and OCI layers | `keyhog scan --docker-image <ref>` | [Container images](./guides/container-images.md) | You passed a reference, not a saved tarball |
-| Cloud object stores | `keyhog scan --s3-bucket`, `--gcs-bucket`, `--azure-container-url` | [Mass scanning](./guides/mass-scanning.md) | No object or page cap in `coverage_gap_summary` |
-| Archives and nested archives | `keyhog scan <path>` | [Source archives](./source-archives.md) | No truncation gap |
-| Changed files, continuously | `keyhog watch <dir>` | [Watch mode](./guides/watch-mode.md) | You ran a full scan first |
-| A pipe or a here-string | `keyhog scan --stdin` | [Standard input and pipelines](./guides/stdin-and-pipelines.md) | `source_bytes_scanned` is not `0` |
-| A CI job | `keyhog scan . --format sarif` | [CI secret scanning](./workflows/ci.md) | The job fails on exit `13`, not only on exit `1` |
-| A whole estate, partitioned | one job per partition | [Mass scanning](./guides/mass-scanning.md) | Every partition produced its own report and exit code |
-| A whole host | `keyhog scan-system` | [System-wide triage](./guides/system-wide-triage.md) | `--space` was not the binding limit |
-| A URL, response, or HAR capture | `keyhog scan --url`, `keyhog scan capture.har` | [HTTP and wire](./http-wire.md) | The fetch succeeded |
-| A native binary or firmware image | `keyhog scan --binary <file>`, on a build with the `binary` feature | [Choose a scanning workflow](./capabilities.md) | A plain directory scan does not cover binaries. It records a `binary (extension or content sniff)` gap and scans zero bytes. |
+| Input shape | Command | Required build | Page | Check first |
+|---|---|---|---|---|
+| A repository working tree | `keyhog scan .` | `portable` or `ci` | [Your first scan](./first-scan.md) | Bytes are nonzero; review exclusion and binary gap rows |
+| Many small files | `keyhog scan <root>` | `portable` or `ci` | [File shapes and sizes](./guides/file-shapes.md#many-small-files) | Chunks are plausible for the eligible files; large files produce several chunks |
+| One very large file | `keyhog scan <file> --max-file-size <SIZE>` | `portable` or `ci` | [File shapes and sizes](./guides/file-shapes.md#one-very-large-file) | No `exceeded --max-file-size` or source-error gap |
+| A first-party minified or bundled file | `keyhog scan <file>` or `keyhog scan <root> --no-default-excludes` | `portable` or `ci` | [File shapes and sizes](./guides/file-shapes.md#minified-and-single-line-files) | Bytes are nonzero; directory scans need the explicit exclusion override |
+| Git additions or repository objects | `--git-history <repo>` or `--git-blobs <repo>` | `portable` or `ci,git` | [Deep recovery](./guides/deep-recovery.md) | Use a full clone; reject shallow-history and object-read gaps |
+| Container images and OCI layers | `keyhog scan --docker-image <ref>` | `portable` or the `docker` feature | [Container images](./guides/container-images.md) | Extraction completed within its byte and member budgets |
+| Cloud object stores | `--s3-bucket <name>`, `--gcs-bucket <name>`, or `--azure-container-url <url>` | `portable` or the matching provider feature | [Mass scanning](./guides/mass-scanning.md) | No page, object, or byte cap left inventory uncovered |
+| Archives and nested archives | `keyhog scan <path>` | `portable` or `ci` | [Source archives](./source-archives.md) | No encrypted, unsafe, corrupt, or truncation gap |
+| Changed files, continuously | `keyhog watch <dir>` | `portable` or `ci` | [Watch mode](./guides/watch-mode.md) | Run one full scan before starting the watcher |
+| A pipe or here-string | `keyhog scan --stdin` | `portable` or `ci` | [Standard input and pipelines](./guides/stdin-and-pipelines.md) | Bytes are nonzero and the producer's exit is preserved with `pipefail` |
+| One checked-out repository in CI | Action `path: .` or `keyhog scan .` | Action `ci`, or a Cargo `portable`/`ci` build | [CI secret scanning](./workflows/ci.md) | Retain the report and raw exit code; do not accept zero scanned bytes |
+| A whole estate, partitioned | One job per provider, repository, or bucket partition | `portable` or the matching provider features | [Mass scanning](./guides/mass-scanning.md) | Every partition produced its own report, exit code, and coverage state |
+| A whole host | `keyhog scan-system --space <SIZE>` | `portable` for filesystem plus Git-history coverage | [System-wide triage](./guides/system-wide-triage.md) | Mount policy and the space ceiling did not exclude required input |
+| A URL, response, or HAR capture | `keyhog scan --url <url>` or `keyhog scan capture.har` | `portable` or the `web` feature | [HTTP and wire](./http-wire.md) | Fetch/parse completed and the selected response bytes were scanned |
+| A native binary or firmware image | `keyhog scan --binary <file>` | `portable` or the `binary` feature | [Choose a scanning workflow](./capabilities.md) | Printable strings or supported sections reached the scanner; no binary source error |
+
+The small `ci` profile intentionally omits Git, cloud, web, container, binary,
+and verification flags. Add only the named source feature you need, or use the
+default `portable` profile. `keyhog scan --help` is authoritative for the
+installed binary.
 
 ## Why the shape matters
 
@@ -81,5 +86,7 @@ keyhog scan --git-history . --format json-envelope -o history.json
 keyhog scan --docker-image registry/app:v1 --format json-envelope -o image.json
 ```
 
-Check the exit code of each. Exit `13` on any of the three means that input was
-not covered, whatever the other two reported.
+Check the exit code and envelope of each run. A failing source or coverage gap
+returns `13` when no finding outcome takes precedence. Advisory skips can leave
+`scan_status: partial` with exit `0`, so automation must also inspect the gap
+reasons it treats as unacceptable.
