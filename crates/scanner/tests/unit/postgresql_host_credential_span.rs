@@ -1,30 +1,28 @@
-use crate::testing::named_detector_fixture_defaults;
 use crate::CompiledScanner;
 use keyhog_core::Chunk;
 
 #[test]
 fn test_postgresql_connection_string_host_credential_span() {
-    let spec = keyhog_core::DetectorSpec {
-        id: "postgresql-connection-string".into(),
-        name: "PostgreSQL Connection String".into(),
-        service: "postgresql".into(),
-        severity: keyhog_core::Severity::Critical,
-        patterns: vec![keyhog_core::PatternSpec {
-            regex: r#"(?:postgresql|postgres)://[^:]*:[^@\s"'']+@[a-zA-Z0-9._-]+"#.into(),
-            ..Default::default()
-        }],
-        ..named_detector_fixture_defaults()
-    };
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../detectors");
+    let specs = keyhog_core::load_detectors(&dir).expect("load detectors");
+    let scanner = CompiledScanner::compile(specs).expect("compile scanner");
 
-    let scanner = CompiledScanner::compile(vec![spec]).expect("compile postgresql spec");
-    let chunk = Chunk::from("pg-url: postgres://user:secret_pass_12345@db.internal.example.com:5432/app_db?sslmode=require#readonly");
+    let chunk = Chunk::from(
+        "pg-url: postgres://user:secret_pass_12345@db.internal.example.com:5432/app_db?sslmode=require#readonly",
+    );
     let matches = scanner.scan_coalesced(&[chunk]).expect("scan chunk");
 
+    let postgres_matches: Vec<_> = matches
+        .into_iter()
+        .flatten()
+        .filter(|m| m.detector_id.as_ref() == "postgresql-connection-string")
+        .collect();
+
     assert!(
-        !matches.is_empty() && !matches[0].is_empty(),
-        "postgres url pattern must match"
+        !postgres_matches.is_empty(),
+        "postgres url pattern must match postgresql-connection-string detector"
     );
-    let matched_cred = matches[0][0].credential.as_ref();
+    let matched_cred = postgres_matches[0].credential.as_ref();
     assert_eq!(
         matched_cred,
         "postgres://user:secret_pass_12345@db.internal.example.com",
