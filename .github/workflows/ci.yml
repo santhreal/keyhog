@@ -18,8 +18,12 @@ permissions:
 # Without this a rapid succession of pushes stacks 5+ deep, each one
 # burning ~25 minutes of macOS + linux runner time on already-stale
 # code. Burned through that 5-deep queue 2026-05-23.
+# Temporarily unique per-SHA concurrency: GitHub left tip CI runs pending with
+# zero jobs after the Actions backlog; a sticky ref-level group prevented
+# redispatches from expanding. Restore ref-level cancel-in-progress once tip
+# CI forms jobs again.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 env:
