@@ -184,7 +184,7 @@ async fn run_status(
     };
     match conn.round_trip(&request).await? {
         Response::GuardStatusResult {
-            root: _,
+            root: daemon_root,
             mode,
             state,
             terminal_sequence,
@@ -200,7 +200,7 @@ async fn run_status(
         } => {
             if format == "json" {
                 let json = serde_json::json!({
-                    "root": root.to_string_lossy(),
+                    "root": daemon_root,
                     "mode": mode,
                     "state": state,
                     "terminal_sequence": terminal_sequence,
@@ -217,7 +217,7 @@ async fn run_status(
                 println!("{json}");
             } else {
                 let palette = style::for_stderr();
-                eprintln!("root:           {}", root.display());
+                eprintln!("root:           {}", daemon_root);
                 eprintln!("mode:           {mode}");
                 eprintln!("state:          {state}");
                 eprintln!("sequence:       {terminal_sequence}");
