@@ -958,13 +958,15 @@ impl CompiledScanner {
         entropy_config_digest: [u8; 32],
         decoder_admission_context: Option<u8>,
     ) -> ReusablePhase1Evidence {
-        // Only windowed filesystem slices may inherit a prior clean proof at
-        // phase-1: overlapping 1 MiB windows share vocabulary, while ordinary
-        // path/source_type differences (structured formats, decoder context)
-        // must still classify fully.
+        // Windowed filesystem slices may reuse a prior clean proof to skip the
+        // expensive CPU-trigger / absence classification work. Admission and
+        // keyword-trigger census still run live: those fields feed autoroute
+        // WorkloadKey and must not flip after the first clean window.
         if chunk.metadata.decoded_span.is_none()
             && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
-            && super::scan::vocab_previously_clean(&self.vocab_stage_absence_cache, self.detector_digest,
+            && super::scan::vocab_previously_clean(
+                &self.vocab_stage_absence_cache,
+                self.detector_digest,
                 self.entropy_evidence_config_digest(),
                 super::scan::vocab_path_class(
                     chunk.metadata.source_type.as_ref(),
@@ -973,19 +975,26 @@ impl CompiledScanner {
                 &chunk.data,
             )
         {
-            // Keep absences from the prior clean proof, but report the live
-            // alphabet/bigram admission so autoroute workload keys stay stable
-            // across process history (do not fabricate BigramRejected).
             let admission = if bypass_bigram {
                 self.phase1_admission_bypassing_bigram(chunk.data.as_bytes())
             } else {
                 self.phase1_admission(chunk.data.as_bytes())
             };
+            let (keyword_trigger_count, keyword_hints) =
+                self.phase2_keyword_triggers(&chunk.data);
+            let mut generic_positions = Vec::new();
+            if let Some(generic_plan) = self.detector_plans.generic_assignment() {
+                crate::engine::phase2_generic::keywords::collect_generic_keyword_positions_with(
+                    generic_plan.stems(),
+                    &chunk.data,
+                    &mut generic_positions,
+                );
+            }
             return ReusablePhase1Evidence {
                 admission,
-                keyword_trigger_count: 0,
-                keyword_hints: Vec::new(),
-                generic_positions: Vec::new(),
+                keyword_trigger_count,
+                keyword_hints,
+                generic_positions,
                 phase2_always_active_absence: true,
                 cpu_trigger_hints: None,
                 normalization_passthrough: true,
@@ -1128,25 +1137,7 @@ impl CompiledScanner {
         let mut representative_for = Vec::with_capacity(chunks.len());
         for (index, chunk) in chunks.iter().enumerate() {
             let data = chunk.data.as_bytes();
-            let fingerprint = if chunk.metadata.decoded_span.is_none()
-                && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
-                && super::scan::vocab_previously_clean(&self.vocab_stage_absence_cache, self.detector_digest,
-                    self.entropy_evidence_config_digest(),
-                    super::scan::vocab_path_class(
-                        chunk.metadata.source_type.as_ref(),
-                        chunk.metadata.path.as_deref(),
-                    ),
-                    &chunk.data,
-                ) {
-                let mut fp = [0u8; 32];
-                if let Some(vocab) = super::scan::decode_vocab_fingerprint(&chunk.data) {
-                    fp[..16].copy_from_slice(&vocab);
-                    fp[16] = 0xC1;
-                }
-                fp
-            } else {
-                phase1_payload_fingerprint(data)
-            };
+            let fingerprint = phase1_payload_fingerprint(data);
             let mut representative_position = None;
             for (position, (candidate, representative_index)) in representatives.iter().enumerate()
             {

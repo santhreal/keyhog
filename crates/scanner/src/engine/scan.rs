@@ -354,6 +354,11 @@ pub(crate) struct VocabAbsenceKey {
 /// Every unique line participates, including first/last lines, so a one-off
 /// secret on an edge line cannot alias onto a previously proven-clean filler
 /// vocabulary. Returns `None` when the text is empty or too diverse to memoize.
+///
+/// Clean short-circuits that consume this fingerprint are limited to
+/// `filesystem/windowed` parent windows and are path-scoped, so a reordering on
+/// another path cannot inherit a clean proof. Autoroute classification does not
+/// short-circuit on these proofs.
 #[inline]
 pub(crate) fn decode_vocab_fingerprint(text: &str) -> Option<[u8; 16]> {
     if text.is_empty() {
@@ -381,7 +386,6 @@ pub(crate) fn decode_vocab_fingerprint(text: &str) -> Option<[u8; 16]> {
     out.copy_from_slice(&full.as_bytes()[..16]);
     Some(out)
 }
-
 #[inline]
 pub(crate) fn vocab_path_class(source_type: &str, path: Option<&str>) -> u64 {
     use std::hash::{Hash, Hasher};
