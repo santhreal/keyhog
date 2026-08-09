@@ -210,31 +210,31 @@ pub(crate) use engine::floor_char_boundary;
 pub(crate) use keyhog_core::sha256_hash;
 pub(crate) use pipeline::compute_line_offsets;
 
-/// Hard 128MB RSS memory ceiling for CPU scan scratch allocations (KH-2036).
-pub const CPU_MAX_RSS_CEILING_BYTES: usize = 128 * 1024 * 1024;
-/// Hard 128MB RSS memory ceiling for SIMD prefilter/scratch allocations (KH-2037).
-pub const SIMD_MAX_RSS_CEILING_BYTES: usize = 128 * 1024 * 1024;
+/// Hard 128 MiB ceiling for one CPU scan-scratch allocation (KH-2036).
+pub(crate) const CPU_SCRATCH_CEILING_BYTES: usize = 128 * 1024 * 1024;
+/// Hard 128 MiB ceiling for one SIMD prefilter/scratch allocation (KH-2037).
+pub(crate) const SIMD_SCRATCH_CEILING_BYTES: usize = 128 * 1024 * 1024;
 
-/// Enforce the 128MB CPU RSS ceiling on scratch memory allocations.
-pub fn enforce_cpu_rss_ceiling(
+/// Reject one CPU scratch allocation above the per-allocation ceiling.
+pub(crate) fn enforce_cpu_scratch_ceiling(
     requested_bytes: usize,
 ) -> std::result::Result<(), error::ScanError> {
-    if requested_bytes > CPU_MAX_RSS_CEILING_BYTES {
+    if requested_bytes > CPU_SCRATCH_CEILING_BYTES {
         Err(error::ScanError::MemoryCeilingExceeded(format!(
-            "CPU scratch allocation requested {requested_bytes} bytes, above 128MB RSS ceiling ({CPU_MAX_RSS_CEILING_BYTES} bytes)"
+            "CPU scratch allocation requested {requested_bytes} bytes, above 128MB ceiling ({CPU_SCRATCH_CEILING_BYTES} bytes)"
         )))
     } else {
         Ok(())
     }
 }
 
-/// Enforce the 128MB SIMD RSS ceiling on prefilter/scratch memory allocations.
-pub fn enforce_simd_rss_ceiling(
+/// Reject one SIMD scratch allocation above the per-allocation ceiling.
+pub(crate) fn enforce_simd_scratch_ceiling(
     requested_bytes: usize,
 ) -> std::result::Result<(), error::ScanError> {
-    if requested_bytes > SIMD_MAX_RSS_CEILING_BYTES {
+    if requested_bytes > SIMD_SCRATCH_CEILING_BYTES {
         Err(error::ScanError::MemoryCeilingExceeded(format!(
-            "SIMD scratch allocation requested {requested_bytes} bytes, above 128MB RSS ceiling ({SIMD_MAX_RSS_CEILING_BYTES} bytes)"
+            "SIMD scratch allocation requested {requested_bytes} bytes, above 128MB ceiling ({SIMD_SCRATCH_CEILING_BYTES} bytes)"
         )))
     } else {
         Ok(())

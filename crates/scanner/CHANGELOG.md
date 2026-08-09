@@ -13,8 +13,7 @@
 - Return freed compiler arenas to the allocator once scanner construction completes. Mimalloc builds collect every Rayon worker heap and the caller heap; Linux glibc builds trim the process heap before runtime health measurement.
 - Keep GPU literal rows, regex-bound rows, matcher programs, peers, and dispatch scratch absent from exact CPU and SIMD scanners.
 - Make worker scratch lazy and bounded: uppercase, checksum-decode, generic-keyword, and decode-fact pools no longer retain hostile-input or eager per-thread allocations.
-- Add 128MB RSS memory ceiling enforcement helpers (`CPU_MAX_RSS_CEILING_BYTES`, `SIMD_MAX_RSS_CEILING_BYTES`, `enforce_cpu_rss_ceiling`, `enforce_simd_rss_ceiling`) and `ScanError::MemoryCeilingExceeded` error variant to protect against unexpected scratch memory allocations.
-- Add `ExecutionPack::defer_section_page_faults` API for page fault management.
+- Add 128 MiB per-allocation ceilings for CPU and SIMD scratch, return `ScanError::MemoryCeilingExceeded` through the production phase-two scan boundary, and clear active-pattern scratch before any rejected growth so a failed reset cannot reuse the prior chunk's detector set.
 
 - Move two large co-located test suites out of scanner source files and into the tests tree, shrinking `detector_ids.rs` from 414 lines to 127 and the Hyperscan scratch backend from 767 to 341. Both keep running against the crate-private state they exist to check, and both leave the inline-test allowlist, so the allowlist now names two fewer permanent exceptions.
 

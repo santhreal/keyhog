@@ -83,7 +83,7 @@ pub enum ScanError {
     #[error("scanner configuration failure: {0}. Fix: correct the bundled scanner rules")]
     Config(String),
     #[error(
-        "scanner memory ceiling exceeded: {0}. Fix: split the batch or adjust execution limits"
+        "scanner memory ceiling exceeded: {0}. Fix: reduce the enabled detector set so scanner scratch remains within its 128 MiB bound"
     )]
     MemoryCeilingExceeded(String),
 }

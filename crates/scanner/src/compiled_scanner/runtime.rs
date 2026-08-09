@@ -315,7 +315,9 @@ impl CompiledScanner {
         let tuning = self.tuning().resolve();
         // Warm: one call to initialise any thread-local state before timing.
         let mut scratch = phase2::ActivePatternsScratch::new();
-        let _ = scratch.begin(self.phase2_patterns.len());
+        scratch
+            .begin(self.phase2_patterns.len())
+            .expect("scratch begin");
         prefilter.mark_matches(
             &self.phase2_patterns,
             text,
@@ -328,7 +330,9 @@ impl CompiledScanner {
         // Timed loop.
         let t0 = std::time::Instant::now();
         for _ in 0..n_calls {
-            let _ = scratch.begin(self.phase2_patterns.len());
+            scratch
+                .begin(self.phase2_patterns.len())
+                .expect("scratch begin");
             prefilter.mark_matches(
                 &self.phase2_patterns,
                 text,
@@ -375,13 +379,17 @@ impl CompiledScanner {
             .expect("HS engine");
         let mut scratch = ActivePatternsScratch::new();
         let mut time_one = |skip_homoglyph_ascii: bool| -> f64 {
-            let _ = scratch.begin(self.phase2_patterns.len());
+            scratch
+                .begin(self.phase2_patterns.len())
+                .expect("scratch begin");
             if let Err(error) = engine.mark(haystack, &mut scratch, skip_homoglyph_ascii) {
                 panic!("HS benchmark warmup failed: {error}");
             }
             let t0 = std::time::Instant::now();
             for _ in 0..n_calls {
-                let _ = scratch.begin(self.phase2_patterns.len());
+                scratch
+                    .begin(self.phase2_patterns.len())
+                    .expect("scratch begin");
                 if let Err(error) = engine.mark(haystack, &mut scratch, skip_homoglyph_ascii) {
                     panic!("HS benchmark trial failed: {error}");
                 }
@@ -417,12 +425,16 @@ impl CompiledScanner {
             .expect("HS engine build")
             .expect("HS engine");
         let mut scratch = ActivePatternsScratch::new();
-        let _ = scratch.begin(self.phase2_patterns.len());
+        scratch
+            .begin(self.phase2_patterns.len())
+            .expect("scratch begin");
         engine
             .mark(ascii_text, &mut scratch, false)
             .expect("full mark");
         let full: HashSet<usize> = scratch.active.iter().copied().collect();
-        let _ = scratch.begin(self.phase2_patterns.len());
+        scratch
+            .begin(self.phase2_patterns.len())
+            .expect("scratch begin");
         engine
             .mark(ascii_text, &mut scratch, true)
             .expect("lean mark");
