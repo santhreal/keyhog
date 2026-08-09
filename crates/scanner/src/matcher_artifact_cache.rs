@@ -649,29 +649,35 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         Ok(_) => Ok(()),
         Err(error) => {
             // Cross-filesystem rename is the common case (`/tmp` vs `$HOME`).
-            // Refuse a symlink at the destination (same rule as the load path)
-            // and create the destination already owner-only so there is no
-            // umask-0644 window before a later chmod.
-            match std::fs::symlink_metadata(path) {
-                Ok(meta) if meta.file_type().is_symlink() => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::AlreadyExists,
-                        format!(
-                            "matcher artifact {} is a symlink; refusing to overwrite",
-                            path.display()
-                        ),
-                    ));
-                }
-                Ok(_) | Err(_) => {}
-            }
+            // Open with O_NOFOLLOW + mode 0600 so a symlink swapped in between
+            // check and open cannot be followed, and so there is no umask-0644
+            // window before a later chmod.
             let mut options = std::fs::OpenOptions::new();
             options.create(true).write(true).truncate(true);
             #[cfg(unix)]
             {
                 use std::os::unix::fs::OpenOptionsExt;
                 options.mode(0o600);
+                options.custom_flags(libc::O_NOFOLLOW);
             }
-            let mut file = options.open(path)?;
+            let mut file = match options.open(path) {
+                Ok(file) => file,
+                Err(open_error) => {
+                    #[cfg(unix)]
+                    {
+                        if open_error.raw_os_error() == Some(libc::ELOOP) {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::AlreadyExists,
+                                format!(
+                                    "matcher artifact {} is a symlink; refusing to overwrite",
+                                    path.display()
+                                ),
+                            ));
+                        }
+                    }
+                    return Err(open_error);
+                }
+            };
             {
                 let mut src = std::fs::File::open(error.file.path())?;
                 std::io::copy(&mut src, &mut file)?;
