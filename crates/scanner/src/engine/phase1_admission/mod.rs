@@ -964,8 +964,7 @@ impl CompiledScanner {
         // must still classify fully.
         if chunk.metadata.decoded_span.is_none()
             && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
-            && super::scan::vocab_previously_clean(
-                self.detector_digest,
+            && super::scan::vocab_previously_clean(&self.vocab_stage_absence_cache, self.detector_digest,
                 self.entropy_evidence_config_digest(),
                 super::scan::vocab_path_class(
                     chunk.metadata.source_type.as_ref(),
@@ -1097,8 +1096,9 @@ impl CompiledScanner {
 
     #[doc(hidden)]
     pub fn clear_vocab_stage_absence_cache_for_diagnostics(&self) {
-        let _ = self;
-        super::scan::clear_vocab_stage_absence_cache_for_diagnostics();
+        super::scan::clear_vocab_stage_absence_cache_for_diagnostics(
+            &self.vocab_stage_absence_cache,
+        );
     }
 
     #[doc(hidden)]
@@ -1122,8 +1122,7 @@ impl CompiledScanner {
             let data = chunk.data.as_bytes();
             let fingerprint = if chunk.metadata.decoded_span.is_none()
                 && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
-                && super::scan::vocab_previously_clean(
-                    self.detector_digest,
+                && super::scan::vocab_previously_clean(&self.vocab_stage_absence_cache, self.detector_digest,
                     self.entropy_evidence_config_digest(),
                     super::scan::vocab_path_class(
                         chunk.metadata.source_type.as_ref(),

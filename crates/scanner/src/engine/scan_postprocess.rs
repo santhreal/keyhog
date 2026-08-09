@@ -93,8 +93,7 @@ impl CompiledScanner {
                 // Empty decode-through on this line vocabulary: later windows
                 // with the same unique-line fingerprint can skip the pipeline.
                 if decoded_chunks.is_empty() {
-                    super::scan::mark_decode_vocab_empty(
-                        self.detector_digest,
+                    super::scan::mark_decode_vocab_empty(&self.vocab_stage_absence_cache, self.detector_digest,
                         self.entropy_evidence_config_digest(),
                         super::scan::vocab_path_class(
                             chunk.metadata.source_type.as_ref(),

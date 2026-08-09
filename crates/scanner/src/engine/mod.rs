@@ -497,6 +497,14 @@ pub struct CompiledScanner {
     /// Autoroute and runtime receipts consume this stored identity so every
     /// execution-affecting detector policy change invalidates stale evidence.
     pub(crate) detector_digest: u64,
+    /// Per-scanner memo of empty decode / confirmed / entropy / clean proofs for
+    /// repetitive windowed corpora. Kept off the process-global heap so distinct
+    /// CompiledScanner instances cannot inherit each other's proofs.
+    pub(crate) vocab_stage_absence_cache: dashmap::DashMap<
+        crate::engine::scan::VocabAbsenceKey,
+        crate::engine::scan::VocabStageAbsence,
+        ahash::RandomState,
+    >,
     /// Complete BLAKE3 identity for the compiled detector and decoder execution plan.
     pub(crate) compiled_plan_digest: [u8; 32],
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,

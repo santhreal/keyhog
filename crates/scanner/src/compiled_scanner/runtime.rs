@@ -1091,8 +1091,7 @@ impl CompiledScanner {
         if admission != Phase1Admission::Admitted {
             if chunk.metadata.decoded_span.is_none()
                 && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
-                && crate::engine::vocab_previously_clean(
-                self.detector_digest,
+                && crate::engine::vocab_previously_clean(&self.vocab_stage_absence_cache, self.detector_digest,
                 self.entropy_evidence_config_digest(),
                 crate::engine::vocab_path_class(
                     chunk.metadata.source_type.as_ref(),

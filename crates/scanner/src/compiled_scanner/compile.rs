@@ -1249,6 +1249,7 @@ impl CompiledScanner {
         let scanner = Self {
             backend_state,
             detector_digest,
+            vocab_stage_absence_cache: dashmap::DashMap::with_hasher(ahash::RandomState::new()),
             compiled_plan_digest,
             ac,
             gpu_literals,

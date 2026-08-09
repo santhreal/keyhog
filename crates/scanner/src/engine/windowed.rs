@@ -103,8 +103,7 @@ impl CompiledScanner {
                             return Ok((offset, window_len, Vec::new()));
                         }
                         let window_chunk = window_chunk(chunk, offset, end);
-                        if super::scan::vocab_previously_clean(
-                            self.detector_digest,
+                        if super::scan::vocab_previously_clean(&self.vocab_stage_absence_cache, self.detector_digest,
                             self.entropy_evidence_config_digest(),
                             super::scan::vocab_path_class(
                                 window_chunk.metadata.source_type.as_ref(),

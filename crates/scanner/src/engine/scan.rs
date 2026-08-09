@@ -55,8 +55,7 @@ impl CompiledScanner {
             // vocabulary across overlapping windows. Once a vocab has been
             // decode-through'd to an empty child set, later windows with the
             // same unique-line fingerprint skip decode-through entirely.
-            && !decode_vocab_previously_empty(
-                self.detector_digest,
+            && !decode_vocab_previously_empty(&self.vocab_stage_absence_cache, self.detector_digest,
                 self.entropy_evidence_config_digest(),
                 vocab_path_class(
                     chunk.metadata.source_type.as_ref(),
@@ -262,8 +261,7 @@ impl CompiledScanner {
         // Preprocess / Phase1Triggers leaf spans (opened inside those calls).
         if chunk.metadata.decoded_span.is_none()
             && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
-            && vocab_previously_clean(
-                self.detector_digest,
+            && vocab_previously_clean(&self.vocab_stage_absence_cache, self.detector_digest,
                 self.entropy_evidence_config_digest(),
                 vocab_path_class(
                     chunk.metadata.source_type.as_ref(),
@@ -344,16 +342,12 @@ pub(crate) struct VocabStageAbsence {
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash)]
-struct VocabAbsenceKey {
-    detector_digest: u64,
-    entropy_config_digest: [u8; 32],
-    path_class: u64,
-    vocab_fp: [u8; 16],
+pub(crate) struct VocabAbsenceKey {
+    pub(crate) detector_digest: u64,
+    pub(crate) entropy_config_digest: [u8; 32],
+    pub(crate) path_class: u64,
+    pub(crate) vocab_fp: [u8; 16],
 }
-
-static VOCAB_STAGE_ABSENCE_CACHE: std::sync::LazyLock<
-    dashmap::DashMap<VocabAbsenceKey, VocabStageAbsence, ahash::RandomState>,
-> = std::sync::LazyLock::new(|| dashmap::DashMap::with_hasher(ahash::RandomState::new()));
 
 /// Order-independent fingerprint of the unique-line vocabulary in `text`.
 ///
@@ -417,19 +411,23 @@ fn vocab_absence_key(
     })
 }
 
+type VocabAbsenceMap = dashmap::DashMap<VocabAbsenceKey, VocabStageAbsence, ahash::RandomState>;
+
 #[inline]
 pub(crate) fn vocab_stage_absence(
+    cache: &VocabAbsenceMap,
     detector_digest: u64,
     entropy_config_digest: [u8; 32],
     path_class: u64,
     text: &str,
 ) -> Option<VocabStageAbsence> {
     let key = vocab_absence_key(detector_digest, entropy_config_digest, path_class, text)?;
-    VOCAB_STAGE_ABSENCE_CACHE.get(&key).map(|entry| *entry)
+    cache.get(&key).map(|entry| *entry)
 }
 
 #[inline]
 fn mark_vocab_stage_absence(
+    cache: &VocabAbsenceMap,
     detector_digest: u64,
     entropy_config_digest: [u8; 32],
     path_class: u64,
@@ -439,34 +437,35 @@ fn mark_vocab_stage_absence(
     let Some(key) = vocab_absence_key(detector_digest, entropy_config_digest, path_class, text) else {
         return;
     };
-    if VOCAB_STAGE_ABSENCE_CACHE.len() >= DECODE_VOCAB_EMPTY_CACHE_CAP
-        && !VOCAB_STAGE_ABSENCE_CACHE.contains_key(&key)
-    {
-        VOCAB_STAGE_ABSENCE_CACHE.clear();
+    if cache.len() >= DECODE_VOCAB_EMPTY_CACHE_CAP && !cache.contains_key(&key) {
+        cache.clear();
     }
-    let mut entry = VOCAB_STAGE_ABSENCE_CACHE.entry(key).or_default();
+    let mut entry = cache.entry(key).or_default();
     update(entry.value_mut());
 }
 
 #[inline]
 pub(crate) fn decode_vocab_previously_empty(
+    cache: &VocabAbsenceMap,
     detector_digest: u64,
     entropy_config_digest: [u8; 32],
     path_class: u64,
     text: &str,
 ) -> bool {
-    vocab_stage_absence(detector_digest, entropy_config_digest, path_class, text)
+    vocab_stage_absence(cache, detector_digest, entropy_config_digest, path_class, text)
         .is_some_and(|absence| absence.decode_empty)
 }
 
 #[inline]
 pub(crate) fn mark_decode_vocab_empty(
+    cache: &VocabAbsenceMap,
     detector_digest: u64,
     entropy_config_digest: [u8; 32],
     path_class: u64,
     text: &str,
 ) {
     mark_vocab_stage_absence(
+        cache,
         detector_digest,
         entropy_config_digest,
         path_class,
@@ -477,12 +476,14 @@ pub(crate) fn mark_decode_vocab_empty(
 
 #[inline]
 pub(crate) fn mark_vocab_confirmed_absent(
+    cache: &VocabAbsenceMap,
     detector_digest: u64,
     entropy_config_digest: [u8; 32],
     path_class: u64,
     text: &str,
 ) {
     mark_vocab_stage_absence(
+        cache,
         detector_digest,
         entropy_config_digest,
         path_class,
@@ -493,12 +494,14 @@ pub(crate) fn mark_vocab_confirmed_absent(
 
 #[inline]
 pub(crate) fn mark_vocab_entropy_absent(
+    cache: &VocabAbsenceMap,
     detector_digest: u64,
     entropy_config_digest: [u8; 32],
     path_class: u64,
     text: &str,
 ) {
     mark_vocab_stage_absence(
+        cache,
         detector_digest,
         entropy_config_digest,
         path_class,
@@ -509,23 +512,26 @@ pub(crate) fn mark_vocab_entropy_absent(
 
 #[inline]
 pub(crate) fn vocab_previously_clean(
+    cache: &VocabAbsenceMap,
     detector_digest: u64,
     entropy_config_digest: [u8; 32],
     path_class: u64,
     text: &str,
 ) -> bool {
-    vocab_stage_absence(detector_digest, entropy_config_digest, path_class, text)
+    vocab_stage_absence(cache, detector_digest, entropy_config_digest, path_class, text)
         .is_some_and(|absence| absence.clean)
 }
 
 #[inline]
 pub(crate) fn mark_vocab_clean(
+    cache: &VocabAbsenceMap,
     detector_digest: u64,
     entropy_config_digest: [u8; 32],
     path_class: u64,
     text: &str,
 ) {
     mark_vocab_stage_absence(
+        cache,
         detector_digest,
         entropy_config_digest,
         path_class,
@@ -539,8 +545,8 @@ pub(crate) fn mark_vocab_clean(
 }
 
 #[doc(hidden)]
-pub(crate) fn clear_vocab_stage_absence_cache_for_diagnostics() {
-    VOCAB_STAGE_ABSENCE_CACHE.clear();
+pub(crate) fn clear_vocab_stage_absence_cache_for_diagnostics(cache: &VocabAbsenceMap) {
+    cache.clear();
 }
 
 
