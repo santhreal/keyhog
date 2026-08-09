@@ -1,3 +1,4 @@
+#![cfg(feature = "gpu")]
 //! Migrated from src/engine/gpu_region_batch.rs
 
 use keyhog_scanner::engine::gpu_region_batch::{GpuPipelineOverlapTrace, GpuSlotOccupancy};

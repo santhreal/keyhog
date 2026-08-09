@@ -1,3 +1,4 @@
+#![cfg(feature = "gpu")]
 //! Migrated from src/gpu/backend/resident_evidence.rs
 
 use keyhog_scanner::gpu::backend::resident_evidence::{

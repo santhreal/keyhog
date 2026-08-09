@@ -4,7 +4,7 @@
 //! only backend-neutral VYRE handles and compact execution evidence.
 
 mod acquisition;
-#[cfg(any(feature = "gpu", test))]
+#[cfg(feature = "gpu")]
 pub(crate) mod resident_evidence;
 
 #[cfg(all(test, feature = "gpu", target_os = "linux"))]
