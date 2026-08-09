@@ -2566,16 +2566,21 @@ pub use crate::engine::{
 };
 #[cfg(test)]
 pub(crate) use crate::homoglyph::expand_homoglyphs;
-pub struct CompactLineIndexForTest(crate::context::LineContextIndex);
+#[derive(Clone)]
+pub struct CompactLineIndexForTest(pub(crate) std::sync::Arc<crate::context::LineContextIndex>);
 
 pub fn compact_line_index_for_test(text: &str) -> Result<CompactLineIndexForTest, &'static str> {
     crate::context::LineContextIndex::try_new(text)
+        .map(std::sync::Arc::new)
         .map(CompactLineIndexForTest)
         .map_err(|_| "text exceeds compact line-index capacity")
 }
 impl CompactLineIndexForTest {
     pub fn line_number_for_offset(&self, offset: usize) -> usize {
         self.0.line_number_for_offset(offset)
+    }
+    pub fn storage_bytes(&self) -> usize {
+        self.0.storage_bytes()
     }
 }
 
@@ -6032,6 +6037,56 @@ pub fn stream_detector_plan_for_test(
             crate::execution_pack::detector_plan::detector_plan_peak_live_wire_rows(),
     })
 }
-pub fn test_reusable_phase1_evidence_cache_bounds_for_test() {
-    crate::engine::phase1_admission::ReusablePhase1EvidenceCache::test_replacements_and_bounds();
+#[derive(Default)]
+pub struct TestEvidenceCache {
+    inner: crate::engine::phase1_admission::ReusablePhase1EvidenceCache,
+}
+
+impl TestEvidenceCache {
+    pub fn insert(
+        &mut self,
+        fingerprint: [u8; 32],
+        bypass_bigram: bool,
+        unicode_normalization_enabled: bool,
+        entropy_config_digest: [u8; 32],
+        decoder_admission_context: Option<u8>,
+        payload: keyhog_core::SensitiveString,
+        index: Option<std::sync::Arc<CompactLineIndexForTest>>,
+    ) {
+        let evidence = crate::engine::phase1_admission::ReusablePhase1Evidence {
+            admission: crate::engine::phase1_admission::Phase1Admission::Admitted,
+            keyword_trigger_count: 0,
+            keyword_hints: Vec::new(),
+            generic_positions: Vec::new(),
+            phase2_always_active_absence: false,
+            cpu_trigger_hints: None,
+            normalization_passthrough: false,
+            confirmed_patterns_absence: false,
+            entropy_absence: false,
+            multiline_absence: false,
+            line_context_index: index.map(|idx| std::sync::Arc::clone(&idx.0)),
+            decoder_absence: false,
+        };
+        self.inner.insert(
+            fingerprint,
+            bypass_bigram,
+            unicode_normalization_enabled,
+            entropy_config_digest,
+            decoder_admission_context,
+            payload,
+            evidence,
+        );
+    }
+
+    pub fn resident_bytes(&self) -> usize {
+        self.inner.resident_bytes()
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.len() == 0
+    }
 }

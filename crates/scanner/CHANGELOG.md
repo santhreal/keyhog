@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.69 - 2026-08-09
+
+- Correct resident-bytes memory accounting during replacement in `ReusablePhase1EvidenceCache` and expand SIMD memory-attribution and backlog item regression tests (KH-2040 through KH-2049).
+
 ## 0.5.68 - 2026-08-05
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.

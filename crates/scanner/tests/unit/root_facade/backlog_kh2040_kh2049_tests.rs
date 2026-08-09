@@ -71,26 +71,124 @@ fn test_kh2042_coordinate_line_index_reuse_passthrough() {
 #[test]
 fn test_kh2043_payload_evidence_cache_bounding() {
     use keyhog_core::SensitiveString;
-    // Verify payload equality and bounding invariants for evidence caching
-    let data1 = SensitiveString::from("AKIAIOSFODNN7EXAMPLE");
-    let data2 = SensitiveString::from("AKIAIOSFODNN7EXAMPLE");
-    let data3 = SensitiveString::from("DIFFERENT_PAYLOAD_DATA");
+    use std::sync::Arc;
 
-    assert_eq!(data1, data2);
-    assert_ne!(data1, data3);
-    assert_eq!(data1.len(), 20);
-    assert_eq!(data3.len(), 22);
+    let mut cache = scan_testing::TestEvidenceCache::default();
+    assert!(cache.is_empty());
+    assert_eq!(cache.resident_bytes(), 0);
 
-    // Exercise production ReusablePhase1EvidenceCache replacements and bounds
-    scan_testing::test_reusable_phase1_evidence_cache_bounds_for_test();
+    let fp = [1u8; 32];
+    let digest = [2u8; 32];
+
+    let index_large = scan_testing::compact_line_index_for_test(
+        "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10",
+    )
+    .ok()
+    .map(Arc::new);
+
+    let index_small = scan_testing::compact_line_index_for_test("line1\n")
+        .ok()
+        .map(Arc::new);
+
+    let payload = SensitiveString::from("entry_1");
+    let base_len = payload.len();
+    let bytes_large = base_len + index_large.as_ref().map_or(0, |idx| idx.storage_bytes());
+    let bytes_small = base_len + index_small.as_ref().map_or(0, |idx| idx.storage_bytes());
+
+    // 1. Initial insert
+    cache.insert(
+        fp,
+        false,
+        false,
+        digest,
+        None,
+        payload.clone(),
+        index_large.clone(),
+    );
+    assert_eq!(cache.len(), 1);
+    assert_eq!(cache.resident_bytes(), bytes_large);
+
+    // 2. Smaller replacement: updates resident bytes down to bytes_small
+    cache.insert(
+        fp,
+        false,
+        false,
+        digest,
+        None,
+        payload.clone(),
+        index_small.clone(),
+    );
+    assert_eq!(cache.len(), 1);
+    assert_eq!(cache.resident_bytes(), bytes_small);
+
+    // 3. Equal replacement: stays bytes_small
+    cache.insert(
+        fp,
+        false,
+        false,
+        digest,
+        None,
+        payload.clone(),
+        index_small.clone(),
+    );
+    assert_eq!(cache.len(), 1);
+    assert_eq!(cache.resident_bytes(), bytes_small);
+
+    // 4. Larger replacement: updates resident bytes up to bytes_large
+    cache.insert(
+        fp,
+        false,
+        false,
+        digest,
+        None,
+        payload.clone(),
+        index_large.clone(),
+    );
+    assert_eq!(cache.len(), 1);
+    assert_eq!(cache.resident_bytes(), bytes_large);
+
+    // 5. Over-limit payload (> 1 MiB) rejected on initial insert without modifying existing cache
+    let huge_payload = SensitiveString::from("x".repeat(1024 * 1024 + 100));
+    cache.insert(
+        [2u8; 32],
+        false,
+        false,
+        digest,
+        None,
+        huge_payload,
+        index_small.clone(),
+    );
+    assert_eq!(cache.len(), 1);
+    assert_eq!(cache.resident_bytes(), bytes_large);
+
+    // 6. Over-limit replacement: existing payload replaced with evidence exceeding 1 MiB ceiling removes entry
+    let huge_lines: String = (0..50_000)
+        .map(|i| format!("line_{i}: data_padding_for_index\n"))
+        .collect();
+    if let Ok(huge_idx) = scan_testing::compact_line_index_for_test(&huge_lines) {
+        let huge_arc = Arc::new(huge_idx);
+        if base_len + huge_arc.storage_bytes() > 1024 * 1024 {
+            cache.insert(
+                fp,
+                false,
+                false,
+                digest,
+                None,
+                payload.clone(),
+                Some(huge_arc),
+            );
+            assert_eq!(cache.resident_bytes(), 0);
+            assert_eq!(cache.len(), 0);
+        }
+    }
 }
 
 #[test]
 fn test_kh2044_decoder_policy_unknown_fails_open() {
     let chunk = keyhog_core::Chunk {
-        data: keyhog_core::SensitiveString::from("dGVzdA=="),
+        data: keyhog_core::SensitiveString::from("dGVzdF9zZWNyZXRfZGF0YQ=="),
         metadata: keyhog_core::ChunkMetadata {
-            path: Some("test.txt".into()),
+            path: Some("custom_source.txt".into()),
             base_offset: 0,
             base_line: 1,
             source_type: "unknown/custom_decoder".into(),
@@ -101,7 +199,11 @@ fn test_kh2044_decoder_policy_unknown_fails_open() {
     assert_eq!(&*chunk.metadata.source_type, "unknown/custom_decoder");
     assert_eq!(chunk.metadata.base_offset, 0);
     assert_eq!(chunk.metadata.base_line, 1);
-    assert_eq!(chunk.data.as_str(), "dGVzdA==");
+    assert_eq!(chunk.data.as_str(), "dGVzdF9zZWNyZXRfZGF0YQ==");
+
+    // Verify decodable payload check for non-binary text data
+    let decodable = scan_testing::has_decodable_payload_for_test(chunk.data.as_bytes());
+    assert!(decodable);
 }
 
 #[test]
@@ -125,11 +227,25 @@ fn test_kh2045_filesystem_reader_rendezvous_streaming() {
 
 #[test]
 fn test_kh2046_windowed_reading_gapless_byte_coverage() {
-    let content = "line1: secret_data_1\nline2: secret_data_2\nline3: secret_data_3\n";
-    assert!(content.len() > 30);
-    // Verify multiline content length and newline counts
-    let newline_count = content.bytes().filter(|&b| b == b'\n').count();
-    assert_eq!(newline_count, 3);
+    let text =
+        "line1: secret_data_1\nline2: secret_data_2\nline3: secret_data_3\nline4: secret_data_4\n";
+
+    // Newline counting and local context window bounds
+    let newline_count = scan_testing::bytecount_newlines_for_test(text.as_bytes());
+    assert_eq!(newline_count, 4);
+
+    let window_line_2 = scan_testing::local_context_window_for_test(text, 2, 1);
+    assert!(window_line_2.contains("line1"));
+    assert!(window_line_2.contains("line2"));
+    assert!(window_line_2.contains("line3"));
+
+    // Context window at line 1 (file start boundary) clamps to top of file without underflowing
+    let window_line_1 = scan_testing::local_context_window_for_test(text, 1, 2);
+    assert!(window_line_1.starts_with("line1"));
+
+    // Context window past total lines returns empty string safely without panicking
+    let window_past_end = scan_testing::local_context_window_for_test(text, 100, 1);
+    assert_eq!(window_past_end, "");
 }
 
 #[test]

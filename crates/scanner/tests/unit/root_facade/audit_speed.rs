@@ -143,7 +143,7 @@ fn find_companion_window_lookup_is_not_linear_in_file_lines() {
 fn windowed_line_attribution_is_not_linear_in_offset() {
     const LINES: usize = 500_000;
     const CALLS: usize = 5_000;
-    const FLOOR_MS: f64 = 1500.0;
+    const FLOOR_MS: f64 = 300.0;
 
     let mut text = String::with_capacity(LINES * 8);
     for i in 0..LINES {
