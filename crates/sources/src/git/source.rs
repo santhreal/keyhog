@@ -166,7 +166,11 @@ enum GitBlobBatchItem {
 /// Minimum unique blobs in one batch before parallel decode pays for its
 /// per-worker `gix::open` and fork/join; below it serial decode on the
 /// already-open handle is strictly cheaper.
-const GIT_PARALLEL_DECODE_MIN_BLOBS: usize = 8;
+///
+/// Kept above the tip full-walk batch size so a 400-blob tip enumerate stays
+/// on the serial handle. Parallel per-worker opens have been observed to stall
+/// at near-idle CPU under pack/lock contention on busy hosts.
+const GIT_PARALLEL_DECODE_MIN_BLOBS: usize = 65_536;
 
 #[derive(Debug)]
 enum GitBlobSkip {
