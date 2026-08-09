@@ -14,7 +14,10 @@ fn tar_gnu_longname_tex_keeps_role_annotations() {
     let archive = dir.path().join("paper.tar");
 
     // Longer than the ustar 100-byte name field so GNU tar emits a long-link.
-    let long = format!("chapters/{}/main.tex", "very_long_segment/".repeat(8).trim_end_matches('/'));
+    let long = format!(
+        "chapters/{}/main.tex",
+        "very_long_segment/".repeat(8).trim_end_matches('/')
+    );
     assert!(
         long.len() > 100,
         "fixture path must exceed ustar name field ({})",

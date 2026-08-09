@@ -170,7 +170,6 @@ pub(super) fn looks_like_tar(data: &[u8]) -> bool {
     data.len() >= 512 && (&data[257..262] == b"ustar" || &data[257..265] == b"ustar  \0")
 }
 
-
 /// Hard ceiling on bytes pulled from a decompressing reader while streaming a
 /// tar. Matches `decompress_to_bytes`: the reader may produce `budget + 1` bytes
 /// so the caller can tell "hit the cap" from "exactly fit". Without this wrap,
@@ -267,7 +266,6 @@ pub(super) fn emit_tar_entries_with_state(
         emit,
     );
 }
-
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TarWalkOutcome {
@@ -728,11 +726,8 @@ fn try_emit_streaming_nested_tar(
     // Draw from the SHARED aggregate remaining budget, not a fresh full ceiling
     // per nested member. Otherwise K nested bombs each get a full 4x allowance.
     if total_budget > 0 && *total_uncompressed >= total_budget {
-        let error = super::report_archive_truncation(
-            nested_display,
-            *total_uncompressed,
-            total_budget,
-        );
+        let error =
+            super::report_archive_truncation(nested_display, *total_uncompressed, total_budget);
         return Some(emit(Err(error)));
     }
     let member_budget = if total_budget == 0 {
@@ -776,8 +771,7 @@ fn try_emit_streaming_nested_tar(
         TarWalkOutcome::ConsumerStopped => false,
         TarWalkOutcome::Truncated { keep_going } => keep_going,
         TarWalkOutcome::Continue => {
-            if total_budget > 0
-                && (*total_uncompressed > total_budget || reader.exceeded_budget())
+            if total_budget > 0 && (*total_uncompressed > total_budget || reader.exceeded_budget())
             {
                 let error = super::report_archive_truncation(
                     nested_display,
@@ -793,7 +787,6 @@ fn try_emit_streaming_nested_tar(
     Some(keep_going)
 }
 
-
 fn emit_tar_entry_error(
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
     container_display: &str,
@@ -805,8 +798,6 @@ fn emit_tar_entry_error(
     ))))
 }
 
-
-
 fn open_format_decoder<'a>(
     format: CompressedFormat,
     compressed: &'a [u8],
@@ -816,8 +807,10 @@ fn open_format_decoder<'a>(
         CompressedFormat::Gzip => Some(Box::new(flate2::read::MultiGzDecoder::new(compressed))),
         CompressedFormat::Zstd => {
             let mut dec = zstd::stream::read::Decoder::new(compressed).ok()?;
-            dec.window_log_max(crate::compression_limits::zstd_window_log_max_for_budget(budget))
-                .ok()?;
+            dec.window_log_max(crate::compression_limits::zstd_window_log_max_for_budget(
+                budget,
+            ))
+            .ok()?;
             Some(Box::new(dec))
         }
         CompressedFormat::Lz4 => Some(Box::new(lz4_flex::frame::FrameDecoder::new(compressed))),
@@ -825,7 +818,9 @@ fn open_format_decoder<'a>(
         CompressedFormat::Bzip2 => Some(Box::new(bzip2::read::MultiBzDecoder::new(compressed))),
         CompressedFormat::Xz => {
             let stream = xz2::stream::Stream::new_stream_decoder(budget, 0).ok()?;
-            Some(Box::new(xz2::read::XzDecoder::new_stream(compressed, stream)))
+            Some(Box::new(xz2::read::XzDecoder::new_stream(
+                compressed, stream,
+            )))
         }
     }
 }

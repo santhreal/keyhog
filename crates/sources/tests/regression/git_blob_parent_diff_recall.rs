@@ -47,8 +47,7 @@ fn git_blobs_recall_secret_added_then_removed_via_parent_diffs() {
         );
     }
 
-    const SECRET: &str =
-        "GITHUB_TOKEN=ghp_parentDiffRecallFixture00000000000001\n";
+    const SECRET: &str = "GITHUB_TOKEN=ghp_parentDiffRecallFixture00000000000001\n";
     std::fs::write(repo.path().join("secrets.env"), SECRET).expect("write secret");
     git(repo.path(), &["add", "secrets.env"]);
     git(repo.path(), &["commit", "--quiet", "-m", "add secrets"]);
@@ -91,14 +90,12 @@ fn git_blobs_recall_secret_added_then_removed_via_parent_diffs() {
     );
 }
 
-
 #[test]
 fn git_blobs_recall_secret_when_earlier_tree_is_reused() {
     let repo = tempfile::tempdir().expect("create git fixture");
     git(repo.path(), &["init", "--quiet", "-b", "main"]);
 
-    const SECRET: &str =
-        "GITHUB_TOKEN=ghp_parentDiffTreeReuseFixture0000000001\n";
+    const SECRET: &str = "GITHUB_TOKEN=ghp_parentDiffTreeReuseFixture0000000001\n";
     std::fs::write(repo.path().join("keep.env"), SECRET).expect("write secret");
     git(repo.path(), &["add", "keep.env"]);
     git(repo.path(), &["commit", "--quiet", "-m", "add keep secret"]);
@@ -110,7 +107,15 @@ fn git_blobs_recall_secret_when_earlier_tree_is_reused() {
     // Revert the tree back to the first commit so the same root tree oid reappears
     // after a parent-diff visit that did not fully enumerate it.
     git(repo.path(), &["rm", "--quiet", "extra.txt"]);
-    git(repo.path(), &["commit", "--quiet", "-m", "remove extra; reuse earlier tree"]);
+    git(
+        repo.path(),
+        &[
+            "commit",
+            "--quiet",
+            "-m",
+            "remove extra; reuse earlier tree",
+        ],
+    );
 
     let rows = GitSource::new(repo.path().to_path_buf())
         .chunks()
@@ -135,8 +140,7 @@ fn git_blobs_recall_untouched_tip_blob_under_max_commits() {
     let repo = tempfile::tempdir().expect("create git fixture");
     git(repo.path(), &["init", "--quiet", "-b", "main"]);
 
-    const SECRET: &str =
-        "GITHUB_TOKEN=ghp_parentDiffMaxCommitsTipFixture00000001\n";
+    const SECRET: &str = "GITHUB_TOKEN=ghp_parentDiffMaxCommitsTipFixture00000001\n";
     std::fs::write(repo.path().join("keep.env"), SECRET).expect("write secret");
     git(repo.path(), &["add", "keep.env"]);
     git(repo.path(), &["commit", "--quiet", "-m", "add keep secret"]);
@@ -174,7 +178,6 @@ fn git_blobs_recall_untouched_tip_blob_under_max_commits() {
     );
 }
 
-
 #[test]
 fn git_blobs_recall_side_branch_tip_under_max_commits() {
     let repo = tempfile::tempdir().expect("create git fixture");
@@ -185,8 +188,7 @@ fn git_blobs_recall_side_branch_tip_under_max_commits() {
     git(repo.path(), &["commit", "--quiet", "-m", "base"]);
 
     git(repo.path(), &["checkout", "--quiet", "-b", "side"]);
-    const SECRET: &str =
-        "GITHUB_TOKEN=ghp_parentDiffSideBranchTipFixture0000001\n";
+    const SECRET: &str = "GITHUB_TOKEN=ghp_parentDiffSideBranchTipFixture0000001\n";
     std::fs::write(repo.path().join("side-secret.env"), SECRET).expect("write side secret");
     git(repo.path(), &["add", "side-secret.env"]);
     git(repo.path(), &["commit", "--quiet", "-m", "add side secret"]);
@@ -235,14 +237,18 @@ fn git_blobs_recall_detached_head_tip_under_max_commits() {
     let repo = tempfile::tempdir().expect("create git fixture");
     git(repo.path(), &["init", "--quiet", "-b", "main"]);
 
-    const SECRET: &str =
-        "GITHUB_TOKEN=ghp_parentDiffDetachedHeadTipFixture000001\n";
+    const SECRET: &str = "GITHUB_TOKEN=ghp_parentDiffDetachedHeadTipFixture000001\n";
     std::fs::write(repo.path().join("keep.env"), SECRET).expect("write secret");
     git(repo.path(), &["add", "keep.env"]);
     git(repo.path(), &["commit", "--quiet", "-m", "add keep secret"]);
     let tip = String::from_utf8(
         std::process::Command::new("git")
-            .args(["-C", repo.path().to_str().expect("utf8 path"), "rev-parse", "HEAD"])
+            .args([
+                "-C",
+                repo.path().to_str().expect("utf8 path"),
+                "rev-parse",
+                "HEAD",
+            ])
             .output()
             .expect("rev-parse tip")
             .stdout,
@@ -298,7 +304,6 @@ fn git_blobs_recall_detached_head_tip_under_max_commits() {
     );
 }
 
-
 #[test]
 fn git_blobs_skip_excluded_unsupported_diff_entries() {
     // Parent-diff collection must honor default excludes before unsupported-mode
@@ -314,7 +319,10 @@ fn git_blobs_skip_excluded_unsupported_diff_entries() {
     std::os::unix::fs::symlink("../keep.txt", repo.path().join("node_modules/link"))
         .expect("symlink under node_modules");
     git(repo.path(), &["add", "node_modules/link"]);
-    git(repo.path(), &["commit", "--quiet", "-m", "add excluded symlink"]);
+    git(
+        repo.path(),
+        &["commit", "--quiet", "-m", "add excluded symlink"],
+    );
 
     let rows = GitSource::new(repo.path().to_path_buf())
         .chunks()
@@ -330,8 +338,6 @@ fn git_blobs_skip_excluded_unsupported_diff_entries() {
         "seed blob should still be scanned"
     );
 }
-
-
 
 #[test]
 fn git_blobs_recall_custom_ref_tip_under_max_commits() {

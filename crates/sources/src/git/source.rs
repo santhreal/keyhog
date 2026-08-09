@@ -1410,9 +1410,8 @@ fn collect_commit_blobs_via_parent_diffs(
         if parent_tree.id == tree.id {
             continue;
         }
-        let mut recorder = gix::diff::tree::Recorder::default().track_location(Some(
-            gix::diff::tree::recorder::Location::Path,
-        ));
+        let mut recorder = gix::diff::tree::Recorder::default()
+            .track_location(Some(gix::diff::tree::recorder::Location::Path));
         if let Err(error) = gix::diff::tree(
             gix::objs::TreeRefIter::from_bytes(&parent_tree.data),
             gix::objs::TreeRefIter::from_bytes(&tree.data),
@@ -1663,12 +1662,9 @@ fn collect_ref_tip_oids(repo_arg: &str) -> Result<HashSet<gix::ObjectId>, Source
     let mut line_buf = Vec::new();
     let mut tips = HashSet::new();
     loop {
-        let record = super::read_capped_line(
-            &mut reader,
-            &mut line_buf,
-            super::GIT_PLUMBING_LINE_BYTES,
-        )
-        .map_err(SourceError::Io)?;
+        let record =
+            super::read_capped_line(&mut reader, &mut line_buf, super::GIT_PLUMBING_LINE_BYTES)
+                .map_err(SourceError::Io)?;
         if record.consumed == 0 {
             break;
         }
@@ -1688,7 +1684,11 @@ fn collect_ref_tip_oids(repo_arg: &str) -> Result<HashSet<gix::ObjectId>, Source
         let mut fields = line.split_whitespace();
         let objectname = fields.next().unwrap_or("");
         let peeled = fields.next().unwrap_or("");
-        let tip = if peeled.is_empty() { objectname } else { peeled };
+        let tip = if peeled.is_empty() {
+            objectname
+        } else {
+            peeled
+        };
         if let Some(id) = parse_git_object_id_line(tip, "ref tip") {
             tips.insert(id);
         }
@@ -1712,9 +1712,7 @@ fn collect_ref_tip_oids(repo_arg: &str) -> Result<HashSet<gix::ObjectId>, Source
                     &mut line_buf,
                     super::GIT_PLUMBING_LINE_BYTES,
                 ) {
-                    if record.consumed > 0
-                        && record.content <= super::GIT_PLUMBING_LINE_BYTES
-                    {
+                    if record.consumed > 0 && record.content <= super::GIT_PLUMBING_LINE_BYTES {
                         let line = String::from_utf8_lossy(&line_buf);
                         let line = line.trim_end_matches('\n').trim_end_matches('\r');
                         if let Some(id) = parse_git_object_id_line(line, "HEAD tip") {
@@ -1724,7 +1722,8 @@ fn collect_ref_tip_oids(repo_arg: &str) -> Result<HashSet<gix::ObjectId>, Source
                 }
             }
             // Unborn/empty repos fail rev-parse; tip set simply stays without HEAD.
-            let _ = super::wait_for_git_child(&mut head_child, "git rev-parse", "resolving HEAD tip");
+            let _ =
+                super::wait_for_git_child(&mut head_child, "git rev-parse", "resolving HEAD tip");
         }
         Err(error) => {
             tracing::warn!(%error, "git HEAD tip could not be resolved; detached checkout may miss untouched blobs under --max-commits");
