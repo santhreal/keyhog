@@ -1,2 +1,3 @@
-type = "fixed"
-description = "Base64 decode memo retains successful UTF-8 text only after a second sighting of the same candidate, so unique-blob corpora no longer keep a second full-size copy of every decode for the whole chunk. Failures stay memoized immediately."
+category = "Fixed"
+summary = "Base64 decode memo retains successful UTF-8 text only after a second sighting of the same candidate, so unique-blob corpora no longer keep a second full-size copy of every decode for the whole chunk. Failures stay memoized immediately."
+crates = ["scanner"]
