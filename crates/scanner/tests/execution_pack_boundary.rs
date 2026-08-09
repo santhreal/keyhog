@@ -783,23 +783,49 @@ fn unauthenticated_section_table_mutation_fails_at_content_authentication() {
     }
 }
 
+fn generate_stale_schema_v1_fixture(identity: &ExecutionPackIdentity) -> Vec<u8> {
+    let header_len = 320;
+    let section_entry_len = 24;
+    let payload = b"stale_detector_plan_payload";
+    let total_len = header_len + section_entry_len + payload.len();
+
+    let mut bytes = vec![0u8; total_len];
+    bytes[0..8].copy_from_slice(b"KHPACK\0\x02");
+    bytes[8..10].copy_from_slice(&2u16.to_le_bytes());
+    bytes[10..12].copy_from_slice(&(header_len as u16).to_le_bytes());
+    bytes[12..16].copy_from_slice(&1u32.to_le_bytes());
+    bytes[16..24].copy_from_slice(&(total_len as u64).to_le_bytes());
+
+    bytes[24..56].copy_from_slice(&identity.detector_digest);
+    bytes[56..88].copy_from_slice(&identity.config_digest);
+    bytes[88..120].copy_from_slice(&identity.target_digest);
+    bytes[120..152].copy_from_slice(&identity.compiler_abi);
+    bytes[152..184].copy_from_slice(&identity.binary_digest);
+    bytes[184..216].copy_from_slice(&identity.feature_digest);
+    bytes[216..248].copy_from_slice(&identity.backend_digest);
+    bytes[312] = identity.policy as u8;
+    bytes[313] = identity.backend as u8;
+
+    let section_base = header_len;
+    bytes[section_base..section_base + 2].copy_from_slice(&6u16.to_le_bytes());
+    bytes[section_base + 2..section_base + 4].copy_from_slice(&1u16.to_le_bytes());
+    bytes[section_base + 4..section_base + 12]
+        .copy_from_slice(&((header_len + section_entry_len) as u64).to_le_bytes());
+    bytes[section_base + 12..section_base + 20]
+        .copy_from_slice(&(payload.len() as u64).to_le_bytes());
+
+    bytes[header_len + section_entry_len..].copy_from_slice(payload);
+
+    let content_digest = blake3::hash(&bytes[header_len..]);
+    bytes[248..280].copy_from_slice(content_digest.as_bytes());
+    bytes[280..312].copy_from_slice(&identity.digest());
+
+    bytes
+}
+
 #[test]
 fn runtime_rejects_stale_section_schema_version_at_persisted_boundary() {
-    let compiled = compile_execution_pack(ExecutionPackCompileInput {
-        identity: identity(),
-        sections: &sections(),
-    })
-    .expect("compile pack");
-
-    // Construct stale pack independently by modifying section 0 schema version to previous accepted version 1
-    let mut stale_bytes = compiled.as_bytes().to_vec();
-    let version_offset = EXECUTION_PACK_HEADER_LEN + 2;
-    stale_bytes[version_offset] = 0;
-    stale_bytes[version_offset + 1] = 0;
-
-    // Re-authenticate content digest over stale payload so content digest authentication passes
-    let content_digest = blake3::hash(&stale_bytes[EXECUTION_PACK_HEADER_LEN..]);
-    stale_bytes[248..280].copy_from_slice(content_digest.as_bytes());
+    let stale_bytes = generate_stale_schema_v1_fixture(&identity());
 
     let directory = tempfile::tempdir().expect("temporary directory");
     let path = directory.path().join("stale_persisted_schema.khpack");
@@ -810,11 +836,40 @@ fn runtime_rejects_stale_section_schema_version_at_persisted_boundary() {
     );
     let err_msg = error.to_string();
     assert!(
-        err_msg.contains("uses schema 0"),
+        err_msg.contains("uses schema 1"),
         "error must state section schema version mismatch; got: {err_msg}"
     );
     assert!(
         err_msg.contains("keyhog compile-execution-packs to rebuild"),
         "error must suggest rebuild command; got: {err_msg}"
+    );
+}
+
+#[test]
+fn runtime_rejects_pack_with_declared_length_mismatch() {
+    let compiled = compile_execution_pack(ExecutionPackCompileInput {
+        identity: identity(),
+        sections: &sections(),
+    })
+    .expect("compile pack");
+
+    let mut tampered_bytes = compiled.as_bytes().to_vec();
+    let fake_len = (tampered_bytes.len() + 100) as u64;
+    tampered_bytes[16..24].copy_from_slice(&fake_len.to_le_bytes());
+
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("length_mismatch.khpack");
+    fs::write(&path, tampered_bytes).expect("publish pack");
+
+    let error = ExecutionPack::open(&path, identity())
+        .expect_err("pack with declared length mismatch must be rejected");
+    let err_msg = error.to_string();
+    assert!(
+        err_msg.contains("declares"),
+        "error message must mention declared length mismatch; got: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("bytes but maps"),
+        "error message must state mapped bytes mismatch; got: {err_msg}"
     );
 }

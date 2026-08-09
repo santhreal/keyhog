@@ -131,20 +131,24 @@ fn committed_generation_retains_published_artifacts() {
     );
     assert_eq!(fs::read(&signing_key).expect("published key"), vec![5; 32]);
 }
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 #[test]
 fn signing_key_debug_formatting_does_not_leak_key_bytes() {
     let raw_key = [0xab; 32];
     let key = ExecutionPackSigningKey::from_bytes(raw_key).expect("valid signing key");
     let debug_str = format!("{key:?}");
     assert!(
-        !debug_str.contains(&hex::encode(raw_key)),
+        !debug_str.contains(&hex_encode(&raw_key)),
         "debug output must not leak secret key bytes"
     );
     assert_eq!(
         debug_str,
         format!(
             "ExecutionPackSigningKey {{ key_id: {:?}, .. }}",
-            hex::encode(key.key_id())
+            hex_encode(&key.key_id())
         ),
         "debug output must match expected key_id formatting"
     );

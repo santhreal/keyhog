@@ -155,7 +155,7 @@ impl ExecutionPack {
                 path: path.to_path_buf(),
                 source,
             })?;
-        Self::from_mapping(mapping, path.to_path_buf(), expected, None, true)
+        Self::from_mapping(mapping, path.to_path_buf(), Some(expected), None, true)
     }
 
     /// Maps and authenticates one immutable pack generation before exposing any section.
@@ -180,7 +180,7 @@ impl ExecutionPack {
         let pack = Self::from_mapping(
             mapping,
             path.to_path_buf(),
-            expected,
+            Some(expected),
             Some((signature_path.as_ref(), signing_key)),
             false,
         )?;
@@ -207,11 +207,10 @@ impl ExecutionPack {
                 path: path.to_path_buf(),
                 source,
             })?;
-        let expected = decode_identity_header(mapping.as_ref(), path)?;
         let pack = Self::from_mapping(
             mapping,
             path.to_path_buf(),
-            expected,
+            None,
             Some((signature_path.as_ref(), signing_key)),
             false,
         )?;
@@ -353,7 +352,7 @@ impl ExecutionPack {
     fn from_mapping(
         mapping: Mmap,
         path: PathBuf,
-        expected: ExecutionPackIdentity,
+        expected: Option<ExecutionPackIdentity>,
         signature_auth: Option<(&Path, &ExecutionPackSigningKey)>,
         verify_content_digest: bool,
     ) -> Result<Self, ExecutionPackError> {
@@ -413,6 +412,19 @@ impl ExecutionPack {
             verify_content_digest_mapping(&mapping, &path, content_digest)?;
         }
 
+        let declared_len = usize::try_from(read_u64(bytes, 16)).map_err(|_| {
+            ExecutionPackError::InvalidPack(format!(
+                "{} length does not fit this target",
+                path.display()
+            ))
+        })?;
+        if declared_len != bytes.len() {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} declares {declared_len} bytes but maps {} bytes",
+                path.display(),
+                bytes.len()
+            )));
+        }
         let section_count = read_u32(bytes, 12) as usize;
         if section_count == 0 || section_count > 64 {
             return Err(ExecutionPackError::InvalidPack(format!(
@@ -428,7 +440,9 @@ impl ExecutionPack {
                 path.display()
             )));
         }
-        validate_identity(&path, identity, expected)?;
+        if let Some(expected) = expected {
+            validate_identity(&path, identity, expected)?;
+        }
 
         let table_end = EXECUTION_PACK_HEADER_LEN
             .checked_add(section_count * EXECUTION_PACK_SECTION_ENTRY_LEN)
