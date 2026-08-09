@@ -200,7 +200,8 @@ impl ReusablePhase1EvidenceCache {
                     return;
                 }
                 while self.entries.len() >= REUSABLE_EVIDENCE_MAX_ENTRIES
-                    || self.resident_bytes.saturating_add(updated_bytes) > REUSABLE_EVIDENCE_MAX_BYTES
+                    || self.resident_bytes.saturating_add(updated_bytes)
+                        > REUSABLE_EVIDENCE_MAX_BYTES
                 {
                     let Some(evicted) = self.entries.pop_front() else {
                         break;
@@ -328,7 +329,9 @@ impl ReusablePhase1EvidenceCache {
         assert_eq!(cache.resident_bytes, bytes_large);
 
         // 6. Over-limit replacement: existing payload replaced with evidence exceeding ceiling
-        let huge_lines: String = (0..50_000).map(|i| format!("line_{i}: data_padding_for_index\n")).collect();
+        let huge_lines: String = (0..50_000)
+            .map(|i| format!("line_{i}: data_padding_for_index\n"))
+            .collect();
         if let Ok(huge_idx) = crate::context::LineContextIndex::try_new(&huge_lines) {
             let huge_arc = Arc::new(huge_idx);
             if base_len + huge_arc.storage_bytes() > REUSABLE_EVIDENCE_MAX_BYTES {

@@ -159,7 +159,9 @@ fn test_kh2049_git_history_streaming_object_limits() {
     assert_eq!(commit_limit, Some(10));
 
     let chunk = keyhog_core::Chunk {
-        data: keyhog_core::SensitiveString::from("diff --git a/file.txt b/file.txt\n+secret=AKIAIOSFODNN7EXAMPLE\n"),
+        data: keyhog_core::SensitiveString::from(
+            "diff --git a/file.txt b/file.txt\n+secret=AKIAIOSFODNN7EXAMPLE\n",
+        ),
         metadata: keyhog_core::ChunkMetadata {
             path: Some("file.txt".into()),
             base_offset: 0,
@@ -172,5 +174,8 @@ fn test_kh2049_git_history_streaming_object_limits() {
     };
     assert_eq!(&*chunk.metadata.source_type, "git-history");
     assert_eq!(chunk.metadata.commit.as_deref(), Some("a1b2c3d4e5f6"));
-    assert_eq!(chunk.metadata.author.as_deref(), Some("Developer <dev@example.com>"));
+    assert_eq!(
+        chunk.metadata.author.as_deref(),
+        Some("Developer <dev@example.com>")
+    );
 }

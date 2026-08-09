@@ -299,11 +299,7 @@ impl HyperscanSimdExecutionProgram {
         Ok(program)
     }
     pub fn memory_attribution(&self) -> SimdPackMemoryAttribution {
-        let serialized_shard_bytes = self
-            .serialized_shards
-            .iter()
-            .map(|shard| shard.len())
-            .sum();
+        let serialized_shard_bytes = self.serialized_shards.iter().map(|shard| shard.len()).sum();
         let mapping_residency_bytes = self
             .patterns
             .iter()

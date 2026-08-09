@@ -173,7 +173,13 @@ impl<'a> ScratchBatch<'a> {
     #[inline]
     fn scratch(&self, shard_idx: usize) -> &Scratch {
         debug_assert!(shard_idx < self.initialized);
-        unsafe { &self.slots.get_unchecked(shard_idx).assume_init_ref().scratch }
+        unsafe {
+            &self
+                .slots
+                .get_unchecked(shard_idx)
+                .assume_init_ref()
+                .scratch
+        }
     }
 }
 

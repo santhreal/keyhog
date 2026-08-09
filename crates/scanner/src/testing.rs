@@ -2610,7 +2610,9 @@ impl HsScannerForTest {
         )
         .map(|(scanner, _)| Self(scanner))
     }
-    pub fn memory_attribution(&self) -> crate::execution_pack::simd_program::SimdPackMemoryAttribution {
+    pub fn memory_attribution(
+        &self,
+    ) -> crate::execution_pack::simd_program::SimdPackMemoryAttribution {
         self.0.memory_attribution()
     }
 }
