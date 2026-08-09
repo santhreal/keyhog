@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "BufferedStdinSource now records the same SourceAcquire and SourceRead profile spans as spooling stdin, so pre-owned stdin payloads no longer appear unprofiled while still charging input totals."
+crates = ["sources", "profile"]
