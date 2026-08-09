@@ -13,6 +13,8 @@ use std::collections::BinaryHeap;
 use std::ffi::OsStr;
 #[cfg(unix)]
 use std::io::{BufWriter, Write};
+#[cfg(target_os = "linux")]
+use std::os::fd::FromRawFd;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
@@ -37,9 +39,10 @@ struct EntryRow {
 
 /// Path-sorted walk metadata without resident state proportional to the tree.
 ///
-/// Unix sorts bounded native-byte path runs into a private temporary file and
-/// merges them through a small heap. Other targets retain `FileEntry` values
-/// and preserve their native path representation.
+/// Linux sorts bounded native-byte path runs into an anonymous memory-backed
+/// file; other Unix targets use a private temporary file. Both merge through a
+/// small heap. Other targets retain `FileEntry` values and preserve their
+/// native path representation.
 pub(super) enum SortedEntries {
     #[cfg(unix)]
     Compact(CompactEntries),
@@ -459,10 +462,32 @@ impl CompactEntries {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn discovery_spool() -> Result<std::fs::File, SourceError> {
+    let name = b"keyhog-discovery\0";
+    // SAFETY: `name` is a static NUL-terminated byte string. A successful call
+    // returns a new owned descriptor, transferred exactly once into `File`.
+    let fd = unsafe {
+        libc::memfd_create(
+            name.as_ptr().cast(),
+            libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING,
+        )
+    };
+    if fd < 0 {
+        return Err(SourceError::Io(std::io::Error::last_os_error()));
+    }
+    Ok(unsafe { std::fs::File::from_raw_fd(fd) })
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn discovery_spool() -> Result<std::fs::File, SourceError> {
+    tempfile::tempfile().map_err(SourceError::Io)
+}
+
 #[cfg(unix)]
 impl CompactEntriesBuilder {
     fn new(root: PathBuf) -> Result<Self, SourceError> {
-        let spool = tempfile::tempfile().map_err(SourceError::Io)?;
+        let spool = discovery_spool()?;
         Ok(Self {
             root,
             spool: BufWriter::new(spool),
