@@ -18,7 +18,7 @@ use crate::compiler::compiler_build::CompileState;
 use crate::engine::CompiledScanner;
 use crate::error::{Result, ScanError};
 use crate::execution_pack::matcher_sections::{
-    decode_compile_state_sections, CompiledRouteMatcherSections,
+    decode_authenticated_compile_state_sections, CompiledRouteMatcherSections,
 };
 use crate::execution_pack::{CanonicalDetectorExecutionIr, ExecutionPackBackend};
 use crate::hw_probe::ScanBackend;
@@ -845,11 +845,12 @@ fn hydrate_matcher_artifact_state(
     detector_digest: [u8; 32],
     detectors: &[keyhog_core::DetectorSpec],
 ) -> Result<CompileState> {
-    // MatcherArtifact files are digest-authenticated (identity + content digests
-    // bound to the running binary), not signature-authenticated execution packs.
-    // Use the canonical re-encode path so section envelopes cannot skip integrity
-    // checks that unsigned on-disk bytes must still pass.
-    decode_compile_state_sections(
+    // Integrity for MatcherArtifact is the outer identity/content digests plus
+    // binary-bound identity (and lockdown disables the cache). Re-running the
+    // untrusted-pack canonical JSON re-encode here reintroduced ~1 CPU-s on the
+    // tiny-file warm hit, erasing the lane's floor win — so hydrate uses the
+    // authenticated section decoder after those outer checks succeed.
+    decode_authenticated_compile_state_sections(
         sections.backend,
         &sections.literal_index,
         &sections.regex_programs,
