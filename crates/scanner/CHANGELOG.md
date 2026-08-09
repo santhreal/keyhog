@@ -20,6 +20,7 @@
 - Key the companion-gate derived cache by `detector_digest` as well as active pattern indices so thread-local reuse cannot cross CompiledScanner instances.
 - Guard decode-vocab empty memo lookups/marks to parent `filesystem/windowed` slices, reuse the batch entropy config digest in the phase-1 clean short-circuit, and drop new vocab-memo keys at capacity instead of clearing unrelated stage proofs (unique-line fingerprints retained so overlapping windows still hit).
 - After autoroute selects CpuFallback, fill deferred CPU trigger-hint rows on the route-neutral phase-1 plan so the scalar hot lane reuses them (production automatic route, not only `--backend cpu`).
+- Fill those CPU trigger hints before autoroute calibration timing so measured CpuFallback matches the executed production plan.
 - Bound markerless no-hit / always-active skips to dense windows (≥64 KiB) so short unterminated bare secrets still reach keyword-free entropy admission.
 - Cache `entropy_evidence_config_digest` on the scanner (cleared by `with_config` and `clear_fragment_cache`) and avoid hashing it for non-windowed prepared scans.
 - Do not record vocab confirmed/entropy absence when the per-chunk match heap is already at capacity (rejected candidates must not forge empty proofs).

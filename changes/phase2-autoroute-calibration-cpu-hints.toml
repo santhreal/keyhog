@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Autoroute calibration now fills CPU trigger hints before timing candidates so measured CpuFallback matches the executed production plan."
+crates = ["cli"]
