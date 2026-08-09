@@ -46,6 +46,16 @@ pub enum GuardRootMode {
     Filesystem,
 }
 
+impl GuardRootMode {
+    /// Stable string label for status output and documentation.
+    pub fn label(self) -> &'static str {
+        match self {
+            GuardRootMode::Repo => "repo",
+            GuardRootMode::Filesystem => "filesystem",
+        }
+    }
+}
+
 // ── Root state ───────────────────────────────────────────────────────────
 
 /// The explicit state of one registered guard root.

@@ -170,7 +170,9 @@ fn manifest_fingerprint_matches_after_recompute() {
     stage_file(&repo, "file.py", "content\n");
 
     let manifest = StagedManifest::acquire(&repo).unwrap();
-    assert!(manifest.fingerprint_matches());
+    // The index has not changed since acquisition, so the fingerprint
+    // should match when re-read from the repository.
+    assert!(manifest.fingerprint_matches(&repo));
 }
 
 #[test]

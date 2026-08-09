@@ -34,8 +34,9 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
         }
     };
 
+    let canonical = canonicalize_root(&root)?;
     let request = Request::GuardAdd {
-        root: root.to_string_lossy().to_string(),
+        root: canonical,
         mode,
     };
     match conn.round_trip(&request).await? {
@@ -52,7 +53,16 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
                 state,
                 terminal_sequence
             );
-            Ok(ExitCode::SUCCESS)
+            // Exit 13 for stopped/indexing/degraded/stale states.
+            // The root is registered but not yet reconciled.
+            if matches!(
+                state.as_str(),
+                "stopped" | "indexing" | "degraded" | "stale-policy"
+            ) {
+                Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
+            } else {
+                Ok(ExitCode::SUCCESS)
+            }
         }
         Response::Error { message } => {
             anyhow::bail!("{message}");
@@ -78,8 +88,9 @@ async fn run_remove(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
         }
     };
 
+    let canonical = canonicalize_root(&root)?;
     let request = Request::GuardRemove {
-        root: root.to_string_lossy().to_string(),
+        root: canonical,
     };
     match conn.round_trip(&request).await? {
         Response::GuardRemoved => {
@@ -179,8 +190,9 @@ async fn run_status(
         }
     };
 
+    let canonical = canonicalize_root(&root)?;
     let request = Request::GuardStatus {
-        root: root.to_string_lossy().to_string(),
+        root: canonical,
     };
     match conn.round_trip(&request).await? {
         Response::GuardStatusResult {
@@ -271,9 +283,9 @@ async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
             );
         }
     };
-
+    let canonical = canonicalize_root(&root)?;
     let request = Request::GuardReconcile {
-        root: root.to_string_lossy().to_string(),
+        root: canonical,
     };
     match conn.round_trip(&request).await? {
         Response::GuardReconcileStarted { root: _ } => {
@@ -295,4 +307,13 @@ async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
             );
         }
     }
+}
+
+/// Canonicalize a root path on the client side before sending it to the
+/// daemon. The daemon must not re-resolve relative paths against its own
+/// working directory.
+fn canonicalize_root(root: &std::path::Path) -> anyhow::Result<String> {
+    let canonical = std::fs::canonicalize(root)
+        .map_err(|e| anyhow::anyhow!("guard: cannot canonicalize {}: {}", root.display(), e))?;
+    Ok(canonical.to_string_lossy().into_owned())
 }

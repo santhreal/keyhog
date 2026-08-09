@@ -60,7 +60,9 @@ impl GuardRuntime {
             if !existing.is_compatible_with(&identity) {
                 // Invalidate all stale attestations.
                 self.attestations.invalidate_for_policy(&identity);
-                // Transition all active roots to stale-policy.
+                // Transition active roots to stale-policy through the
+                // state machine. Degraded roots stay degraded: their
+                // coverage loss must not be masked by a lesser label.
                 let mut roots = self.roots.write();
                 let paths: Vec<Vec<u8>> = roots
                     .list()
@@ -70,7 +72,16 @@ impl GuardRuntime {
                     .collect();
                 for path in paths {
                     if let Some(r) = roots.get_mut(&path) {
-                        r.state = GuardRootState::StalePolicy;
+                        match r.state.transition(&GuardTransition::PolicyChanged) {
+                            Ok(new_state) => {
+                                r.state = new_state;
+                                r.terminal_sequence = r.terminal_sequence.saturating_add(1);
+                            }
+                            Err(_) => {
+                                // Transition is illegal (e.g. Degraded).
+                                // Leave the root in its current state.
+                            }
+                        }
                     }
                 }
             }

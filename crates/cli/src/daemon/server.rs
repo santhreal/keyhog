@@ -1237,39 +1237,49 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     }
                 }
             };
-            let canonical_path = std::fs::canonicalize(&root)
-                .unwrap_or_else(|_| std::path::PathBuf::from(&root));
-            let canonical = canonical_path.to_string_lossy().into_owned();
+            // The client canonicalizes the path before sending. The daemon
+            // must not re-resolve it against its own working directory.
+            let canonical = root;
+            let canonical_path = std::path::PathBuf::from(&canonical);
+            if !canonical_path.is_absolute() {
+                return Response::Error {
+                    message: format!("daemon: guard add: path must be absolute and canonical: {}", canonical),
+                };
+            }
+            if !canonical_path.exists() {
+                return Response::Error {
+                    message: format!("daemon: guard add: path does not exist: {}", canonical),
+                };
+            }
+            if !canonical_path.is_dir() {
+                return Response::Error {
+                    message: format!("daemon: guard add: path is not a directory: {}", canonical),
+                };
+            }
             let fs_identity = filesystem_identity(&canonical_path);
             match state.guard.add_root(canonical.as_bytes().to_vec(), fs_identity, guard_mode) {
                 Ok(record) => Response::GuardAdded {
                     root: canonical.clone(),
-                    state: format!("{:?}", record.state).to_lowercase(),
+                    state: record.state.label().to_string(),
                     terminal_sequence: record.terminal_sequence,
                 },
                 Err(msg) => Response::Error { message: format!("daemon: guard add failed: {}", msg) },
             }
         }
         Request::GuardRemove { root } => {
-            let canonical = std::fs::canonicalize(&root)
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| root.clone());
-            match state.guard.remove_root(canonical.as_bytes()) {
+            match state.guard.remove_root(root.as_bytes()) {
                 Some(_) => Response::GuardRemoved,
                 None => Response::Error {
-                    message: format!("daemon: guard root not registered: {}", canonical),
+                    message: format!("daemon: guard root not registered: {}", root),
                 },
             }
         }
         Request::GuardStatus { root } => {
-            let canonical = std::fs::canonicalize(&root)
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| root.clone());
-            match state.guard.root_record(canonical.as_bytes()) {
+            match state.guard.root_record(root.as_bytes()) {
                 Some(record) => Response::GuardStatusResult {
-                    root: canonical.clone(),
-                    mode: format!("{:?}", record.mode).to_lowercase(),
-                    state: format!("{:?}", record.state).to_lowercase(),
+                    root: root.clone(),
+                    mode: record.mode.label().to_string(),
+                    state: record.state.label().to_string(),
                     terminal_sequence: record.terminal_sequence,
                     pending_events: 0,
                     files_scanned: 0,
@@ -1279,26 +1289,58 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     findings_count: 0,
                     coverage_gaps: 0,
                     scanner_residency: "idle-unload".to_string(),
-                    repair_command: format!("keyhog guard reconcile {}", canonical),
+                    repair_command: format!("keyhog guard reconcile {}", root),
                 },
                 None => Response::Error {
-                    message: format!("daemon: guard root not registered: {}", canonical),
+                    message: format!("daemon: guard root not registered: {}", root),
                 },
             }
         }
         Request::GuardReconcile { root } => {
-            let canonical = std::fs::canonicalize(&root)
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| root.clone());
-            if state.guard.root_state(canonical.as_bytes()).is_none() {
-                return Response::Error {
-                    message: format!("daemon: guard root not registered: {}", canonical),
-                };
-            }
-            match state.guard.transition_root(canonical.as_bytes(), &keyhog_core::guard_state::GuardTransition::ReconciliationStarted) {
-                Ok(_) => Response::GuardReconcileStarted { root: canonical },
+            let current_state = match state.guard.root_state(root.as_bytes()) {
+                Some(s) => s,
+                None => {
+                    return Response::Error {
+                        message: format!("daemon: guard root not registered: {}", root),
+                    };
+                }
+            };
+            // Choose the correct transition based on current state.
+            // Stopped -> ReconciliationStarted -> Indexing.
+            // Degraded/StalePolicy -> RepairStarted -> Indexing.
+            // Current/Dirty/Blocked -> Stopped -> ReconciliationStarted.
+            let transition = match current_state {
+                keyhog_core::guard_state::GuardRootState::Stopped => {
+                    keyhog_core::guard_state::GuardTransition::ReconciliationStarted
+                }
+                keyhog_core::guard_state::GuardRootState::Degraded
+                | keyhog_core::guard_state::GuardRootState::StalePolicy => {
+                    keyhog_core::guard_state::GuardTransition::RepairStarted
+                }
+                keyhog_core::guard_state::GuardRootState::Current
+                | keyhog_core::guard_state::GuardRootState::Dirty
+                | keyhog_core::guard_state::GuardRootState::Blocked => {
+                    // Stop first, then start reconciliation. The stop
+                    // transition is always legal from active states.
+                    match state.guard.transition_root(root.as_bytes(), &keyhog_core::guard_state::GuardTransition::Stopped) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            return Response::Error {
+                                message: format!("daemon: guard reconcile: stop failed: {}", e),
+                            };
+                        }
+                    }
+                    keyhog_core::guard_state::GuardTransition::ReconciliationStarted
+                }
+                keyhog_core::guard_state::GuardRootState::Indexing => {
+                    // Already indexing; report started without a transition.
+                    return Response::GuardReconcileStarted { root: root.clone() };
+                }
+            };
+            match state.guard.transition_root(root.as_bytes(), &transition) {
+                Ok(_) => Response::GuardReconcileStarted { root: root.clone() },
                 Err(e) => Response::Error {
-                    message: format!("daemon: guard reconcile failed: {:?}", e),
+                    message: format!("daemon: guard reconcile failed: {}", e),
                 },
             }
         }
@@ -1309,8 +1351,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 .into_iter()
                 .map(|r| crate::daemon::protocol::GuardListEntry {
                     root: String::from_utf8_lossy(&r.canonical_path).into_owned(),
-                    mode: format!("{:?}", r.mode).to_lowercase(),
-                    state: format!("{:?}", r.state).to_lowercase(),
+                    mode: r.mode.label().to_string(),
+                    state: r.state.label().to_string(),
                     terminal_sequence: r.terminal_sequence,
                 })
                 .collect();

@@ -1159,10 +1159,11 @@ pub(crate) fn staged_manifest_acquire(
 
         let mut entry = parse_raw_diff_header(header_str, &raw_path)?;
         // Look up the object size for non-deletion entries that have a blob OID.
+        // Use find_header to avoid loading the full object payload into memory.
         if entry.kind != manifest::StagedEntryKind::Deletion && !entry.object_oid.is_empty() {
             if let Ok(oid) = gix::ObjectId::from_hex(entry.object_oid.as_bytes()) {
-                if let Ok(object) = repo.find_object(oid) {
-                    entry.object_size = object.data.len() as u64;
+                if let Ok(header) = repo.find_header(oid) {
+                    entry.object_size = header.size();
                 }
             }
         }

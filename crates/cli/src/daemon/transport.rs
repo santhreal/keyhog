@@ -47,11 +47,30 @@ mod windows {
 
     pub(crate) struct DaemonListener {
         pipe_name: String,
+        // The first pipe instance is kept alive to hold the exclusive
+        // owner reservation. Dropping it would free the name and allow
+        // another process to claim the same endpoint.
+        pending: Option<named_pipe::NamedPipeServer>,
     }
 
     impl DaemonListener {
         pub(crate) fn pipe_name(&self) -> &str {
             &self.pipe_name
+        }
+
+        /// Take the pending server instance for the accept loop. The
+        /// caller must create the next instance before awaiting the
+        /// next connection to maintain exclusivity.
+        pub(crate) fn take_pending(&mut self) -> Option<named_pipe::NamedPipeServer> {
+            self.pending.take()
+        }
+
+        /// Create the next pipe instance. Called by the accept loop
+        /// after taking the pending instance.
+        pub(crate) fn create_next(&self) -> io::Result<named_pipe::NamedPipeServer> {
+            named_pipe::ServerOptions::new()
+                .owner_only(true)
+                .create(&self.pipe_name)
         }
     }
 
@@ -61,9 +80,13 @@ mod windows {
             .first_pipe_instance(true)
             .owner_only(true)
             .create(&pipe_name)?;
-        // Drop the first instance; accept loop will create new ones.
-        drop(server);
-        Ok(DaemonListener { pipe_name })
+        // Keep the first instance alive in the listener to hold the
+        // exclusive-owner reservation. The accept loop takes it and
+        // creates the next instance before awaiting the next connection.
+        Ok(DaemonListener {
+            pipe_name,
+            pending: Some(server),
+        })
     }
 
     pub(crate) async fn connect_transport(path: &Path) -> io::Result<DaemonStream> {

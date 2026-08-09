@@ -96,9 +96,15 @@ impl StagedManifest {
         hex::encode(hasher.finalize().as_bytes())
     }
 
-    /// Whether the index fingerprint matches a recomputed fingerprint.
-    pub fn fingerprint_matches(&self) -> bool {
-        let recomputed = self.recompute_fingerprint();
-        self.index_fingerprint == recomputed
+    /// Whether the Git index still matches the fingerprint captured at
+    /// acquisition time. Re-reads the staged manifest from the repository
+    /// and compares the fresh fingerprint against the stored one. This
+    /// detects concurrent index mutations between the start of a guard
+    /// transaction and receipt validation.
+    pub fn fingerprint_matches(&self, repo_path: &std::path::Path) -> bool {
+        match super::staged_manifest_acquire(repo_path) {
+            Ok(fresh) => fresh.index_fingerprint == self.index_fingerprint,
+            Err(_) => false,
+        }
     }
 }
