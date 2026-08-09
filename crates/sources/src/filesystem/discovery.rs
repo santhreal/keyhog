@@ -287,6 +287,10 @@ pub(super) fn collect_unbounded_sorted(
     let mut bytes = 0u64;
     #[cfg(target_os = "linux")]
     let mut path_limit_failed = false;
+    #[cfg(target_os = "linux")]
+    let excluded_baseline = crate::skip_counts().excluded;
+    #[cfg(target_os = "linux")]
+    let rebuild_viable = descriptor_rebuild_viable(root, config, has_ignore_patterns);
 
     #[cfg(unix)]
     let mut builder = match CompactEntriesBuilder::new(root.to_path_buf()) {
@@ -304,73 +308,67 @@ pub(super) fn collect_unbounded_sorted(
     let can_walk = true;
 
     if can_walk {
-        if let Err(error) = validate_walk_root(root) {
-            errors.push(SourceError::Other(error));
-        } else {
-            for result in configured_walk_builder(root, config).build() {
-                #[cfg(target_os = "linux")]
-                if let Ok(ref entry) = result {
-                    // Abandon pathname walking before PATH_MAX syscalls fail on
-                    // extremely deep trees; finish via descriptor-relative
-                    // discovery. Normal repositories stay on WalkBuilder so
-                    // gitignore / .keyhogignore / global excludes remain exact.
-                    const DESCRIPTOR_DEPTH_TRIGGER: usize = 1024;
-                    if entry.depth() >= DESCRIPTOR_DEPTH_TRIGGER {
-                        path_limit_failed = true;
-                        break;
+        walk_metadata(root, config, |result| {
+            match result {
+                Ok(entry) => {
+                    let size = entry.size;
+                    #[cfg(unix)]
+                    {
+                        let Some(active_builder) = builder.as_mut() else {
+                            return false;
+                        };
+                        if let Err(error) = active_builder.push(entry) {
+                            let _event =
+                                crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                            errors.push(error);
+                            builder = None;
+                            return false;
+                        }
                     }
+                    #[cfg(not(unix))]
+                    entries.push(entry);
+                    count = count.saturating_add(1);
+                    bytes = bytes.saturating_add(size);
                 }
-                let Some(mapped) = metadata_walk_result(root, config, result) else {
-                    continue;
-                };
-                match mapped {
-                    Ok(entry) => {
-                        let size = entry.size;
-                        #[cfg(unix)]
-                        {
-                            let Some(active_builder) = builder.as_mut() else {
-                                break;
-                            };
-                            if let Err(error) = active_builder.push(entry) {
-                                let _event =
-                                    crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                                errors.push(error);
-                                builder = None;
-                                break;
-                            }
-                        }
-                        #[cfg(not(unix))]
-                        entries.push(entry);
-                        count = count.saturating_add(1);
-                        bytes = bytes.saturating_add(size);
+                Err(error) => {
+                    #[cfg(target_os = "linux")]
+                    if is_name_too_long(&error) && rebuild_viable {
+                        // Abort only when descriptor-relative rebuild can replace
+                        // the incomplete walk. Custom --exclude-paths force the
+                        // pathname walk to continue so coverage is not truncated.
+                        path_limit_failed = true;
+                        return false;
                     }
-                    Err(error) => {
-                        #[cfg(target_os = "linux")]
-                        if is_name_too_long(&error) {
-                            path_limit_failed = true;
-                            break;
-                        }
-                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                        tracing::warn!(
-                            error = %error,
-                            "skipping unreadable filesystem entry; scan continues"
-                        );
-                        errors.push(SourceError::Other(format!(
-                            "failed to inspect filesystem entry: {error}; entry was not scanned"
-                        )));
-                    }
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    tracing::warn!(
+                        error = %error,
+                        "skipping unreadable filesystem entry; scan continues"
+                    );
+                    errors.push(SourceError::Other(format!(
+                        "failed to inspect filesystem entry: {error}; entry was not scanned"
+                    )));
                 }
             }
-        }
+            true
+        });
     }
 
     #[cfg(target_os = "linux")]
     if path_limit_failed {
-        match collect_descriptor_entries(root, config, has_ignore_patterns, true, false) {
+        let excluded_before_rebuild = crate::skip_counts().excluded;
+        match collect_descriptor_entries(root, config, has_ignore_patterns, true, true) {
             Ok((replacement, replacement_count, replacement_bytes)) => {
                 builder = Some(replacement);
                 count = replacement_count;
                 bytes = replacement_bytes;
+                // WalkBuilder may have recorded shallow Excluded events before
+                // ENAMETOOLONG; keep baseline + descriptor contribution only.
+                let after = crate::skip_counts();
+                let descriptor_added =
+                    after.excluded.saturating_sub(excluded_before_rebuild);
+                let mut fixed = after;
+                fixed.excluded = excluded_baseline.saturating_add(descriptor_added);
+                crate::skip::store_skip_counts(fixed);
             }
             Err(error) => {
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
@@ -428,6 +426,40 @@ fn finish_compact(
 fn is_name_too_long(error: &impl std::fmt::Display) -> bool {
     let rendered = error.to_string();
     rendered.contains("File name too long") || rendered.contains("os error 36")
+}
+
+
+#[cfg(target_os = "linux")]
+fn descriptor_rebuild_viable(
+    root: &Path,
+    config: &FilesystemWalkConfig,
+    has_ignore_patterns: bool,
+) -> bool {
+    if has_ignore_patterns {
+        return false;
+    }
+    if !config.respect_gitignore {
+        return true;
+    }
+    // When gitignore is respected, only abandon the pathname walk for a
+    // descriptor rebuild when no ignore metadata exists in the root or its
+    // ancestors. Otherwise keep walking so ignore semantics stay exact and
+    // coverage is not truncated when the rebuild would refuse.
+    let mut current = root;
+    loop {
+        if current.join(".gitignore").is_file()
+            || current.join(".ignore").is_file()
+            || current.join(".keyhogignore").is_file()
+            || current.join(".git").exists()
+        {
+            return false;
+        }
+        match current.parent() {
+            Some(parent) if parent != current => current = parent,
+            _ => break,
+        }
+    }
+    true
 }
 
 #[cfg(target_os = "linux")]

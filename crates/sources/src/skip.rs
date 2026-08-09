@@ -522,7 +522,7 @@ pub(crate) fn gate_scan<'a, T: 'a>(
     attach_scan_lease(lease, inner)
 }
 
-pub(crate) fn set_skip_counts_for_test(counts: SkipCounts) {
+pub(crate) fn store_skip_counts(counts: SkipCounts) {
     SKIPPED_OVER_MAX_SIZE.store(counts.over_max_size, Relaxed);
     SKIPPED_BINARY.store(counts.binary, Relaxed);
     SKIPPED_EXCLUDED.store(counts.excluded, Relaxed);

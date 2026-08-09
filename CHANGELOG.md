@@ -6,8 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - Filesystem discovery prunes default-excluded directories (for example
   `node_modules/`) during the walk and counts each pruned directory once in the
-  Excluded coverage signal. Linux deep trees prefer descriptor-relative
-  metadata-only discovery, and extensionless names get a cheaper content sniff
+  Excluded coverage signal. Linux unbounded walks abort at the first
+  `ENAMETOOLONG` and finish via descriptor-relative metadata-only discovery when
+  ignore overrides allow it, and extensionless names get a cheaper content sniff
   before full reads.
 
 - Build route-scoped CPU, SIMD, and acquired VYRE GPU execution packs during verified POSIX installation, prove their exact findings against the scalar oracle, authenticate every pack with an installation-local key, measure every bundled source execution class in streamed and known-size form, persist the authenticated manifest and exact policy/backend pack identities with calibration evidence, and restore the previous binary, pack generation, and autoroute cache together when compilation, identity validation, health checking, interruption, or autoroute calibration fails. Binary self-update now rebuilds candidate detector packs and pack-bound calibration before committing the replacement, with the same rollback contract. `keyhog doctor` now authenticates the installed pack generation and verifies the exact route-cache binding. Pack publication now reaps dead-process stages and replaced backups, while recovering an unambiguous interrupted backup before recompilation. Installed scans now load the embedded detector corpus from the authenticated policy execution pack and fail closed when that exact pack is absent or corrupt. Scanner construction now shares that decoded corpus instead of cloning every detector specification. Normal scan startup no longer warms global regex caches unconditionally.

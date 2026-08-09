@@ -382,7 +382,7 @@ fn default_excludes_prune_counts_directory_once() {
         "non-excluded sibling must still scan"
     );
     assert!(
-        body_contains(&skipped, SENTINEL) == false,
+        !body_contains(&skipped, SENTINEL),
         "files under pruned node_modules must not scan"
     );
     assert_eq!(
