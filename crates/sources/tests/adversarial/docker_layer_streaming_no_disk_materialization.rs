@@ -235,6 +235,40 @@ fn stream_layer_accepts_gnu_tar_dot_slash_member_paths() {
     );
 }
 
+/// Skip-extension Git-LFS pointer placeholders must record GitLfsPointer, not
+/// a generic Binary skip (process_entry parity).
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_records_git_lfs_pointer_for_skip_extension() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let oid = "a".repeat(64);
+    let pointer =
+        format!("version https://git-lfs.github.com/spec/v1\noid sha256:{oid}\nsize 12345\n");
+    let layer = layer_tar_with_entries(
+        dir.path(),
+        "layer.tar",
+        &[("assets/model.bin", pointer.as_bytes())],
+    );
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream lfs pointer member");
+    // Pointer bodies are skip events, not scannable chunks.
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks.iter().all(|chunk| !chunk.data.contains("sha256:")),
+        "LFS pointer must not be scanned as text, got {:?}",
+        chunks
+            .iter()
+            .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
+    );
+}
+
 #[cfg(feature = "docker")]
 #[test]
 fn stream_layer_skips_extensionless_elf_without_string_mining() {

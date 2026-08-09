@@ -333,10 +333,25 @@ fn stream_layer_tar_reader(
             .unwrap_or("");
         let skip_extension = !ext.is_empty() && crate::filesystem::is_default_skip_extension(ext);
         let may_image = layer_member_may_carry_image_metadata(ext);
-        // Non-image skip-extensions match FilesystemSource: counted Binary and
-        // never read. Image extensions (including TIFF, which is not on the skip
-        // list) still need their bytes for metadata.
+        // Non-image skip-extensions match FilesystemSource: normally Binary and
+        // unread. Pointer-sized skip-extension bodies may be Git-LFS placeholders
+        // that kept the asset extension (`model.bin`); probe those so the skip
+        // is GitLfsPointer (remedy: git lfs pull) instead of a generic Binary.
+        // Image extensions still need their bytes for metadata.
         if skip_extension && !may_image {
+            const GIT_LFS_POINTER_MAX_BYTES: u64 = 1024;
+            if size <= GIT_LFS_POINTER_MAX_BYTES {
+                let mut bytes = vec![0_u8; size as usize];
+                if size > 0 {
+                    entry.read_exact(&mut bytes).map_err(SourceError::Io)?;
+                }
+                if keyhog_core::git_lfs::is_git_lfs_pointer(&bytes) {
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::GitLfsPointer);
+                    continue;
+                }
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                continue;
+            }
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
             continue;
         }
