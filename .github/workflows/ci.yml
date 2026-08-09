@@ -17,7 +17,7 @@ permissions:
 # repo: random GitHub users must not be able to schedule jobs onto our
 # machines. macOS/Windows stay GitHub-hosted for all events.
 # Residual risk: a same-repo collaborator with push can edit workflow
-# `runs-on` on their branch — keep the collaborator set to santhreal only,
+# `runs-on` on their branch, so keep the collaborator set to santhreal only,
 # and require approval for outside-collaborator / fork workflow runs.
 # Cancel older in-flight CI when a newer push lands on the same ref.
 # Without this a rapid succession of pushes stacks 5+ deep, each one
