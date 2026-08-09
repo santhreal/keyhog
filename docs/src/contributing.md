@@ -54,6 +54,22 @@ cargo build               # debug build
 cargo test -p keyhog-scanner --lib
 ```
 
+Reproduce the two scanner library closures used by hosted CI before changing
+feature ownership:
+
+```sh
+# Broad CPU/SIMD closure used on GPU-less hosted runners.
+cargo test -p keyhog-scanner --lib \
+  --no-default-features --features ci-lean -- --test-threads=4
+
+# Default scanner closure, including compiled GPU dispatch.
+cargo test -p keyhog-scanner --lib -- --nocapture
+```
+
+`ci-lean` is a maintainer profile: it keeps the broad data and SIMD detection
+surface while omitting GPU dispatch. The smaller user-facing CI edition is the
+CLI's `ci` feature.
+
 ## Adding a detector
 
 Detector truth has two layers. The compact positive/negative pair lives beside

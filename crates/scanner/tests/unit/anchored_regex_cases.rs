@@ -1,4 +1,4 @@
-use super::AnchoredRegex;
+use crate::anchored_regex::AnchoredRegex;
 
 #[test]
 fn get_returns_a_working_anchor_at_start() {

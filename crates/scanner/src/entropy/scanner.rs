@@ -763,8 +763,9 @@ fn scan_keyword_free_candidates(
     let dogfood_enabled = crate::telemetry::is_dogfood_enabled();
     let mut keyword_line_cursor = 0usize;
     for line_idx in 0..lines.len() {
-        let Ok(line_id) = u32::try_from(line_idx) else {
-            return;
+        let line_id = match u32::try_from(line_idx) {
+            Ok(line_id) => line_id,
+            Err(_) => panic!("entropy input exceeds the checked u32 line-index boundary"),
         };
         let Some(line) = lines.line(line_idx) else {
             continue;
