@@ -376,12 +376,21 @@ fn stream_layer_tar_reader(
         }
 
         // Extensionless members: same container-or-binary sniff as process_entry.
+        // Sniff only the opening prefix (FilesystemSource uses
+        // EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES == 1024). looks_binary_prefix
+        // trips on any 4-byte NUL run in the slice it is given; feeding the
+        // whole member would drop ordinary text that happens to contain NULs
+        // later (false Binary skip, silent miss).
         if ext.is_empty() {
             if layer_member_looks_like_container(&read.bytes) {
                 // Fall through to the shared archive dispatcher.
-            } else if crate::filesystem::looks_binary_prefix(&read.bytes) {
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                continue;
+            } else {
+                const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
+                let prefix = &read.bytes[..read.bytes.len().min(EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES)];
+                if crate::filesystem::looks_binary_prefix(prefix) {
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                    continue;
+                }
             }
         }
 

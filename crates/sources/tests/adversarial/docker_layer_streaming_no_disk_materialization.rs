@@ -234,6 +234,45 @@ fn stream_layer_skips_extensionless_elf_without_string_mining() {
     );
 }
 
+/// Extensionless text whose *prefix* is ordinary source must still be scanned
+/// even when a NUL run appears later in the member. `looks_binary_prefix` trips
+/// on any 4-byte NUL run in the slice it is given; the streaming path must sniff
+/// only the opening 1024 bytes (same as FilesystemSource), not the whole member.
+#[cfg(feature = "docker")]
+#[test]
+fn stream_layer_scans_extensionless_text_with_late_nul_run() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let secret = b"AWS_ACCESS_KEY_ID=AKIA0PERF2LATENULSCAN01\n";
+    let mut payload = secret.to_vec();
+    payload.extend(vec![b'x'; 2048]);
+    payload.extend_from_slice(&[0, 0, 0, 0]);
+    payload.extend_from_slice(b"trailing\n");
+    let layer = layer_tar_with_entries(
+        dir.path(),
+        "layer.tar",
+        &[("opt/appconfig", &payload)],
+    );
+    let rows = TestApi
+        .stream_docker_layer_archive_chunks(
+            &layer,
+            keyhog_sources::SourceLimits::default(),
+            keyhog_sources::SourceLimits::default().docker_tar_total_bytes,
+            true,
+        )
+        .expect("stream");
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("AKIA0PERF2LATENULSCAN01")),
+        "extensionless text with late NUL run must still be scanned; got {:?}",
+        chunks
+            .iter()
+            .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
+    );
+}
+
 #[cfg(feature = "docker")]
 #[test]
 fn stream_layer_emits_png_text_metadata_for_image_extensions() {
