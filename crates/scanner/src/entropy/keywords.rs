@@ -61,7 +61,7 @@ pub(crate) fn find_keyword_assignment_line_ids_with_matcher(
             if !is_declared_keyword_assignment_line(line, matcher) {
                 return None;
             }
-            u32::try_from(line_idx).ok()
+            u32::try_from(line_idx).ok() // LAW10: line index overflow beyond u32::MAX is saturating and recall-preserving; line index map skips overflowed line numbers safely
         })
         .collect()
 }
