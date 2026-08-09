@@ -22,10 +22,11 @@ use crate::types::CompiledPattern;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind};
 use std::sync::OnceLock;
 
-/// Above this many active eligible patterns, the full shared automaton is the
-/// cheaper collect path. Below it, per-literal `ci_find_iter` over the active
-/// needles avoids scanning the whole confirmed-anchor literal set.
-const SPARSE_ACTIVE_ELIGIBLE_MAX: usize = 32;
+/// Sparse collect is only cheaper when the active needle set is tiny. Gate on
+/// unique required-prefix literals (not patterns): each literal is one full
+/// haystack walk, and a pattern may carry up to
+/// `CONFIRMED_MAX_LITERALS_PER_PATTERN` of them.
+const SPARSE_ACTIVE_LITERAL_MAX: usize = 8;
 
 impl CompiledScanner {
     #[cfg(test)]
@@ -200,22 +201,29 @@ impl ConfirmedAnchorIndex {
     ) {
         out.clear();
         let mut sparse: Vec<usize> = Vec::new();
+        let mut sparse_literal_ids: Vec<u32> = Vec::new();
         for &pat_idx in active_patterns {
-            if self.is_eligible(pat_idx) && is_active(pat_idx) {
-                sparse.push(pat_idx);
-                if sparse.len() > SPARSE_ACTIVE_ELIGIBLE_MAX {
-                    break;
+            if !(self.is_eligible(pat_idx) && is_active(pat_idx)) {
+                continue;
+            }
+            sparse.push(pat_idx);
+            if let Some(literal_ids) = self.pattern_literals.get(pat_idx) {
+                for &literal_id in literal_ids {
+                    sparse_literal_ids.push(literal_id);
                 }
             }
         }
         if sparse.is_empty() {
             return;
         }
-        if sparse.len() <= SPARSE_ACTIVE_ELIGIBLE_MAX {
-            self.collect_candidates_sparse(text, &sparse, out);
+        // Shared bigram reject applies to both collect paths.
+        if !self.anchor_first_bigram.may_have_match(text) {
             return;
         }
-        if !self.anchor_first_bigram.may_have_match(text) {
+        sparse_literal_ids.sort_unstable();
+        sparse_literal_ids.dedup();
+        if sparse_literal_ids.len() <= SPARSE_ACTIVE_LITERAL_MAX {
+            self.collect_candidates_sparse(text, &sparse, &sparse_literal_ids, out);
             return;
         }
         for mat in self.anchor().find_overlapping_iter(text) {
@@ -238,19 +246,24 @@ impl ConfirmedAnchorIndex {
         &self,
         text: &str,
         active_eligible: &[usize],
+        unique_literal_ids: &[u32],
         out: &mut Vec<(u32, u32)>,
     ) {
         let haystack = text.as_bytes();
-        for &pat_idx in active_eligible {
-            let Some(literal_ids) = self.pattern_literals.get(pat_idx) else {
+        // Search each unique literal once, then fan out to active eligible owners.
+        for &literal_id in unique_literal_ids {
+            let Some(literal) = self.anchor_literals.get(literal_id as usize) else {
                 continue;
             };
-            for &literal_id in literal_ids {
-                let Some(literal) = self.anchor_literals.get(literal_id as usize) else {
-                    continue;
-                };
-                for pos in crate::ascii_ci::ci_find_iter(haystack, literal.as_bytes()) {
-                    out.push((pat_idx as u32, pos as u32));
+            let Some(owners) = self.literal_patterns.get(literal_id as usize) else {
+                continue;
+            };
+            for pos in crate::ascii_ci::ci_find_iter(haystack, literal.as_bytes()) {
+                for &pattern in owners {
+                    let pattern = pattern as usize;
+                    if active_eligible.contains(&pattern) {
+                        out.push((pattern as u32, pos as u32));
+                    }
                 }
             }
         }

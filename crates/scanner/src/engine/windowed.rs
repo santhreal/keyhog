@@ -111,17 +111,12 @@ impl CompiledScanner {
                             ),
                             &window_chunk.data,
                         ) {
-                            // Matcher proven empty for this vocab; still allow
-                            // decode-through on the window body.
-                            let mut matches = Vec::new();
-                            self.post_process_matches_with_decoder_absence(
-                                &window_chunk,
-                                &mut matches,
-                                deadline,
-                                route,
-                                false,
-                            )?;
-                            return Ok((offset, window_len, matches));
+                            // Matcher proven empty for this vocab. Do not
+                            // post-process here: the coalesced caller marks
+                            // needs_postprocess and owns decode/fragment work
+                            // once on the parent chunk (same split as the
+                            // ordinary per-window path and scan_inner clean).
+                            return Ok((offset, window_len, Vec::new()));
                         }
                         let prepared = self.prepare_chunk(&window_chunk);
                         let window_phase2_always_anchor_matches;

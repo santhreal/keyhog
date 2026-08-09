@@ -29,13 +29,24 @@ use super::phase2_first_bigram::FirstBigramSet;
 /// too common in ordinary text to reject work on their own.
 pub(crate) const MIN_COMPANION_BYTES: usize = 3;
 
+struct CompanionDerived {
+    /// Active pattern indices that contributed companion arms (cache key).
+    pattern_key: Vec<usize>,
+    literals: Vec<String>,
+    armed: Vec<(usize, Vec<Vec<usize>>)>,
+    bigrams: FirstBigramSet,
+    ac: AhoCorasick,
+}
+
 thread_local! {
     static COMPANION_ARMS_CACHE: RefCell<HashMap<String, Arc<Vec<Vec<String>>>>> =
         RefCell::new(HashMap::new());
-    /// Reuse the per-chunk companion AC when consecutive chunks share the same
-    /// literal set (common on multi-window scans of one large file).
-    static COMPANION_AC_CACHE: RefCell<Option<(Vec<String>, AhoCorasick)>> =
+    /// Reuse derived companion gate structures across consecutive chunks that
+    /// share the same active pattern set (common on multi-window scans).
+    static COMPANION_DERIVED_CACHE: RefCell<Option<CompanionDerived>> =
         const { RefCell::new(None) };
+    /// Reusable presence bitset for the companion AC walk.
+    static COMPANION_PRESENT_SCRATCH: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
 }
 
 /// OR-of-AND companion arms for `src`. Empty means "no gate" (fail-open).
@@ -129,80 +140,98 @@ pub(crate) fn companions_deny_absent(
         return;
     }
 
-    let mut literal_ids: HashMap<String, usize> = HashMap::new();
-    let mut literals: Vec<String> = Vec::new();
-    let mut armed: Vec<(usize, Vec<Vec<usize>>)> = Vec::with_capacity(patterns.len());
-
-    for &(pat_idx, src) in patterns {
-        let arms = companion_arms(src);
-        if arms.is_empty() {
-            continue;
-        }
-        let mut id_arms: Vec<Vec<usize>> = Vec::with_capacity(arms.len());
-        for conj in arms.iter() {
-            let mut ids = Vec::with_capacity(conj.len());
-            for lit in conj {
-                let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
-                    literals.push(lit.clone());
-                    literals.len() - 1
-                });
-                ids.push(id);
-            }
-            id_arms.push(ids);
-        }
-        armed.push((pat_idx, id_arms));
-    }
-
-    if literals.is_empty() || armed.is_empty() {
-        return;
-    }
-
-    // Exact first-bigram absence => no companion literal can match. Deny every
-    // gated pattern without building or walking the Aho-Corasick.
-    let bigrams = FirstBigramSet::from_literals(literals.iter().map(String::as_bytes), true);
-    if !bigrams.may_have_match(text) {
-        for (pat_idx, _) in &armed {
-            deny(*pat_idx);
-        }
-        return;
-    }
-
-    let Some(ac) = companion_ac_cached(&literals) else {
-        return;
-    };
-
-    let mut present = vec![false; literals.len()];
-    for mat in ac.find_overlapping_iter(text) {
-        present[mat.pattern().as_usize()] = true;
-    }
-
-    for (pat_idx, id_arms) in armed {
-        let allow = id_arms
-            .iter()
-            .any(|conj| conj.iter().all(|&id| present[id]));
-        if !allow {
-            deny(pat_idx);
-        }
-    }
-}
-
-fn companion_ac_cached(literals: &[String]) -> Option<AhoCorasick> {
-    COMPANION_AC_CACHE.with(|cell| {
+    let pattern_key: Vec<usize> = patterns.iter().map(|(idx, _)| *idx).collect();
+    COMPANION_DERIVED_CACHE.with(|cell| {
         let mut slot = cell.borrow_mut();
-        if let Some((cached, ac)) = slot.as_ref() {
-            if cached.as_slice() == literals {
-                return Some(ac.clone());
+        let needs_rebuild = slot
+            .as_ref()
+            .is_none_or(|cached| cached.pattern_key != pattern_key);
+        if needs_rebuild {
+            let mut literal_ids: HashMap<String, usize> = HashMap::new();
+            let mut literals: Vec<String> = Vec::new();
+            let mut armed: Vec<(usize, Vec<Vec<usize>>)> = Vec::with_capacity(patterns.len());
+
+            for &(pat_idx, src) in patterns {
+                let arms = companion_arms(src);
+                if arms.is_empty() {
+                    continue;
+                }
+                let mut id_arms: Vec<Vec<usize>> = Vec::with_capacity(arms.len());
+                for conj in arms.iter() {
+                    let mut ids = Vec::with_capacity(conj.len());
+                    for lit in conj {
+                        let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
+                            literals.push(lit.clone());
+                            literals.len() - 1
+                        });
+                        ids.push(id);
+                    }
+                    id_arms.push(ids);
+                }
+                armed.push((pat_idx, id_arms));
             }
+
+            if literals.is_empty() || armed.is_empty() {
+                *slot = None;
+                return;
+            }
+
+            let bigrams = FirstBigramSet::from_literals(literals.iter().map(String::as_bytes), true);
+            let Ok(ac) = AhoCorasickBuilder::new()
+                .match_kind(MatchKind::Standard)
+                .kind(Some(AhoCorasickKind::ContiguousNFA))
+                .ascii_case_insensitive(true)
+                .build(&literals)
+            else {
+                // Fail-open: keep every pattern allowed.
+                *slot = None;
+                return;
+            };
+            *slot = Some(CompanionDerived {
+                pattern_key,
+                literals,
+                armed,
+                bigrams,
+                ac,
+            });
         }
-        let ac = AhoCorasickBuilder::new()
-            .match_kind(MatchKind::Standard)
-            .kind(Some(AhoCorasickKind::ContiguousNFA))
-            .ascii_case_insensitive(true)
-            .build(literals)
-            .ok()?;
-        *slot = Some((literals.to_vec(), ac.clone()));
-        Some(ac)
-    })
+
+        let Some(derived) = slot.as_ref() else {
+            return;
+        };
+
+        // Exact first-bigram absence => no companion literal can match.
+        if !derived.bigrams.may_have_match(text) {
+            for (pat_idx, _) in &derived.armed {
+                deny(*pat_idx);
+            }
+            return;
+        }
+
+        COMPANION_PRESENT_SCRATCH.with(|present_cell| {
+            let mut present = present_cell.borrow_mut();
+            if present.len() < derived.literals.len() {
+                present.resize(derived.literals.len(), false);
+            } else {
+                for bit in present.iter_mut().take(derived.literals.len()) {
+                    *bit = false;
+                }
+            }
+            let present = &mut present[..derived.literals.len()];
+            for mat in derived.ac.find_overlapping_iter(text) {
+                present[mat.pattern().as_usize()] = true;
+            }
+
+            for (pat_idx, id_arms) in &derived.armed {
+                let allow = id_arms
+                    .iter()
+                    .any(|conj| conj.iter().all(|&id| present[id]));
+                if !allow {
+                    deny(*pat_idx);
+                }
+            }
+        });
+    });
 }
 
 /// True when the pattern may still match: no gate, or at least one arm has

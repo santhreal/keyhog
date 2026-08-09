@@ -174,7 +174,7 @@ impl CompiledScanner {
         );
         if let Some(companion_t0) = companion_t0 {
             scan_postprocess_profile::confirmed_prof_record(
-                scan_postprocess_profile::ConfirmedStage::SuffixGate,
+                scan_postprocess_profile::ConfirmedStage::CompanionGate,
                 companion_t0.elapsed(),
             );
         }

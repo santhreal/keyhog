@@ -14,6 +14,9 @@
 - Keep markerless no-hit skips from bypassing Unicode de-obfuscation: fall through to `should_scan_no_hit_chunk` when the raw window still carries evasion characters.
 - Record vocab confirmed/entropy absence from accepted match/ML push events instead of heap `len()` deltas, so capacity-bounded replacement cannot forge an empty proof.
 - Skip unique-line vocabulary fingerprint hashing when the per-scanner absence cache is empty (cold lookups cannot hit).
+- Bound confirmed-anchor sparse collect to a small unique-literal budget and keep the shared first-bigram reject in front of both collect paths.
+- Cache companion-gate derived literal/AC/bigram state across chunks that share the same active pattern set, and attribute companion time to its own profiler stage.
+- On vocab-clean windowed shortcuts, return empty matches and let the parent coalesced post-process own decode/fragment work (avoid double decode).
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.
 - Make scanner construction route-specific. The default library constructor owns only the scalar reference route, `compile_for_backend` owns one explicit route, and cross-route dispatch fails instead of materializing or substituting a backend.

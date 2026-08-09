@@ -22,16 +22,25 @@ pub(crate) fn confirmed_prof_enabled() -> bool {
 }
 static CONFIRMED_PAT_NS: OnceLock<Vec<AtomicU64>> = OnceLock::new();
 static CONFIRMED_PAT_RUNS: OnceLock<Vec<AtomicU64>> = OnceLock::new();
-static CONFIRMED_STAGE_NS: [AtomicU64; 3] =
-    [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
-static CONFIRMED_STAGE_RUNS: [AtomicU64; 3] =
-    [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+static CONFIRMED_STAGE_NS: [AtomicU64; 4] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+];
+static CONFIRMED_STAGE_RUNS: [AtomicU64; 4] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+];
 
 #[derive(Clone, Copy)]
 pub(crate) enum ConfirmedStage {
     SuffixGate = 0,
     AnchorCollect = 1,
     Extract = 2,
+    CompanionGate = 3,
 }
 
 pub(crate) fn confirmed_prof_record(stage: ConfirmedStage, elapsed: Duration) {
@@ -40,7 +49,7 @@ pub(crate) fn confirmed_prof_record(stage: ConfirmedStage, elapsed: Duration) {
     CONFIRMED_STAGE_RUNS[idx].fetch_add(1, Relaxed);
 }
 
-pub(crate) fn confirmed_prof_stage_take() -> [(u64, u64); 3] {
+pub(crate) fn confirmed_prof_stage_take() -> [(u64, u64); 4] {
     std::array::from_fn(|idx| {
         (
             CONFIRMED_STAGE_NS[idx].swap(0, Relaxed),
@@ -95,7 +104,7 @@ impl super::CompiledScanner {
         let stages = confirmed_prof_stage_take();
         let stage_total: u64 = stages.iter().map(|(ns, _)| *ns).sum();
         if stage_total > 0 {
-            let labels = ["suffix-gate", "anchor-collect", "extract"];
+            let labels = ["suffix-gate", "anchor-collect", "extract", "companion-gate"];
             eprintln!(
                 "=== CONFIRMED stages [{label}] total={:.1} ms ===",
                 stage_total as f64 / 1e6
