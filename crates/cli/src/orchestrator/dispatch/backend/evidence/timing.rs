@@ -102,7 +102,10 @@ impl ColdWarmStatisticalModel {
         &self,
         competitor: &ColdWarmStatisticalModel,
     ) -> PairedDifferenceDistribution {
-        let count = self.warm_trials_ns.len().min(competitor.warm_trials_ns.len());
+        let count = self
+            .warm_trials_ns
+            .len()
+            .min(competitor.warm_trials_ns.len());
         if count < 2 {
             return PairedDifferenceDistribution {
                 count,
@@ -127,7 +130,8 @@ impl ColdWarmStatisticalModel {
             })
             .sum::<f64>()
             / (count_f64 - 1.0);
-        let half_width = two_sided_95_student_t_critical(count) * variance.max(0.0).sqrt() / count_f64.sqrt();
+        let half_width =
+            two_sided_95_student_t_critical(count) * variance.max(0.0).sqrt() / count_f64.sqrt();
         PairedDifferenceDistribution {
             count,
             mean_diff_ns: mean,
@@ -168,7 +172,8 @@ pub(crate) fn paired_candidate_is_faster_95(
         })
         .sum::<f64>()
         / (count_f64 - 1.0);
-    let half_width = two_sided_95_student_t_critical(count) * variance.max(0.0).sqrt() / count_f64.sqrt();
+    let half_width =
+        two_sided_95_student_t_critical(count) * variance.max(0.0).sqrt() / count_f64.sqrt();
     mean - half_width > 0.0
 }
 
@@ -200,8 +205,9 @@ impl TimingConfidenceInterval {
         } else {
             0.0
         };
-        let half_width =
-            two_sided_95_student_t_critical(trials_ns.len()) * variance.max(0.0).sqrt() / count.sqrt();
+        let half_width = two_sided_95_student_t_critical(trials_ns.len())
+            * variance.max(0.0).sqrt()
+            / count.sqrt();
         Self {
             low_ns: (mean - half_width).max(0.0).floor() as u128,
             high_ns: (mean + half_width).ceil() as u128,

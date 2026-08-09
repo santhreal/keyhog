@@ -82,7 +82,9 @@ pub enum ScanError {
     AdmissionPlanIdentity(String),
     #[error("scanner configuration failure: {0}. Fix: correct the bundled scanner rules")]
     Config(String),
-    #[error("scanner memory ceiling exceeded: {0}. Fix: split the batch or adjust execution limits")]
+    #[error(
+        "scanner memory ceiling exceeded: {0}. Fix: split the batch or adjust execution limits"
+    )]
     MemoryCeilingExceeded(String),
 }
 

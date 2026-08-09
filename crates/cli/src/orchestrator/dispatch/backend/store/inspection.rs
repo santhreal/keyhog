@@ -132,12 +132,18 @@ impl AutorouteRemediationSchema {
     pub(crate) fn render_terminal_output(&self) -> String {
         let mut out = format!("Readiness: {}\n", self.readiness);
         if !self.invalid_classes.is_empty() {
-            out.push_str(&format!("Invalid classes ({}):\n", self.invalid_classes.len()));
+            out.push_str(&format!(
+                "Invalid classes ({}):\n",
+                self.invalid_classes.len()
+            ));
             for cls in &self.invalid_classes {
                 out.push_str(&format!("  - {cls}\n"));
             }
         }
-        out.push_str(&format!("Recalibration command: {}\n", self.recalibration_command));
+        out.push_str(&format!(
+            "Recalibration command: {}\n",
+            self.recalibration_command
+        ));
         out
     }
 }

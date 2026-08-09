@@ -1,5 +1,4 @@
 pub mod a3_decode;
-pub mod memory_ceiling_and_page_fault_tests;
 #[cfg(feature = "multiline")]
 pub mod a3_multiline;
 pub mod a3_pipeline;
@@ -121,6 +120,7 @@ pub mod flaw_investigation;
 pub mod gates;
 pub mod gpu_cases;
 pub mod gpu_input_budget;
+pub mod memory_ceiling_and_page_fault_tests;
 pub mod phase1_admission;
 pub mod phase2_truncate_prefilter;
 // gpu_regex_dfa_basic: requires `keyhog_scanner::engine::{build_regex_dfa, RegexDfaError}`

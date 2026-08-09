@@ -15,8 +15,8 @@ use super::super::workload::{
 };
 use super::super::AUTOROUTE_CALIBRATION_TRIALS;
 use super::artifact_identity::current_executable_sha256;
-use super::schema::{AutorouteBuildFeatures, AutorouteCache};
 use super::artifact_identity::{current_gpu_sidecar_sha256, current_vyre_artifact_sha256};
+use super::schema::{AutorouteBuildFeatures, AutorouteCache};
 
 pub(super) fn is_gpu_decision_valid(cache: &AutorouteCache, backend_str: &str) -> bool {
     if !backend_str.starts_with("gpu") {
