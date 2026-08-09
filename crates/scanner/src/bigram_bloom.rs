@@ -284,7 +284,6 @@ impl BigramBloom {
         false
     }
 
-
     pub(crate) fn popcount(&self) -> u32 {
         self.bits.iter().map(|word| word.count_ones()).sum()
     }
@@ -362,7 +361,7 @@ impl BigramBloom {
         self.width_mask != 0
             && chunk
                 .windows(MAX_ANCHOR_BYTES)
-                .any(|window| self.contains_anchor(window))
+                .any(|window| contains_anchor_ascii8(self.bits.as_ref(), window))
     }
 
     #[cfg(test)]
@@ -417,7 +416,6 @@ fn width_bit(width: usize) -> u8 {
     1 << (width - 1)
 }
 
-
 #[inline(always)]
 fn contains_anchor_ascii8(bits: &[u64; 1024], anchor: &[u8]) -> bool {
     debug_assert_eq!(anchor.len(), MAX_ANCHOR_BYTES);
@@ -437,7 +435,6 @@ fn contains_anchor_ascii8(bits: &[u64; 1024], anchor: &[u8]) -> bool {
     (bits[slot0 >> 6] & (1u64 << (slot0 & 63))) != 0
         && (bits[slot1 >> 6] & (1u64 << (slot1 & 63))) != 0
 }
-
 
 /// Two stable 16-bit slots for an anchor of one to eight bytes. Requiring both
 /// bits keeps long real-corpus lines selective without enlarging the public

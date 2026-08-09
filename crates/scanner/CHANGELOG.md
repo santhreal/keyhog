@@ -2,6 +2,7 @@
 
 ## 0.5.68 - 2026-08-05
 
+- Fix cfg(test) `scalar_overlaps_reference` to call `contains_anchor_ascii8` after the hot-path reject probe stopped exposing `contains_anchor`, so `cargo test -p keyhog-scanner --lib` compiles again (macOS CI).
 - Speed up decode-through on repetitive single-line JSON: memoize base64 trial-decode by candidate value, intern extracted candidate strings as `Arc<str>`, and skip duplicate Caesar inputs that would emit identical bare chunks.
 - Bound the base64 success memo to second-sighting retention: failures stay memoized immediately, but successful UTF-8 text is retained only after a candidate repeats, so unique-blob corpora do not keep a second full-size copy of every decode for the whole chunk.
 - Skip decode-through (and always-active phase-2 presence work) on markerless single-line chunks/windows that lack classical encode markers (`+`, `/`, `=`, `%`, `\`). Plaintext credentials still match; windows that carry markers still decode.
