@@ -54,7 +54,7 @@ impl CompiledScanner {
             // Repetitive multi-line corpora (one_large) share a tiny line
             // vocabulary across overlapping windows. Once a vocab has been
             // decode-through'd to an empty child set, later windows with the
-            // same ordered-line fingerprint skip decode-through entirely.
+            // same unique-line fingerprint skip decode-through entirely.
             // Only consult the memo for parent filesystem/windowed slices —
             // other sources would pay a full content fingerprint for a miss.
             && !(chunk.metadata.decoded_span.is_none()
@@ -355,35 +355,39 @@ pub(crate) struct VocabAbsenceKey {
     pub(crate) vocab_fp: [u8; 16],
 }
 
-/// Order- and multiplicity-sensitive fingerprint of the line sequence in `text`.
+/// Order-independent fingerprint of the unique-line vocabulary in `text`.
 ///
-/// Lines are hashed in encounter order, and repeated lines contribute repeatedly,
-/// so PEM-style multiline secrets and cross-line decode candidates cannot alias
-/// onto a differently ordered or differently repeated arrangement of the same
-/// distinct lines. Returns `None` when the text is empty or has too many lines to
-/// memoize.
+/// Every unique line participates, including first/last lines, so a one-off
+/// secret on an edge line cannot alias onto a previously proven-clean filler
+/// vocabulary. Returns `None` when the text is empty or too diverse to memoize.
 ///
 /// Clean short-circuits that consume this fingerprint are limited to
 /// `filesystem/windowed` parent windows and are path-scoped, so a reordering on
 /// another path cannot inherit a clean proof. Autoroute classification does not
-/// short-circuit on these proofs.
+/// short-circuit on these proofs. Overlapping windows of repetitive corpora share
+/// the same unique-line set; an ordered/multiplicity-sensitive fingerprint would
+/// miss those hits and erase the one_large residual win.
 #[inline]
 pub(crate) fn decode_vocab_fingerprint(text: &str) -> Option<[u8; 16]> {
     if text.is_empty() {
         return None;
     }
-    let mut hasher = blake3::Hasher::new();
-    let mut line_count = 0usize;
+    let mut unique: ahash::AHashSet<&str> = ahash::AHashSet::with_capacity(16);
     for line in text.lines() {
-        line_count = line_count.saturating_add(1);
-        if line_count > DECODE_VOCAB_FINGERPRINT_MAX_UNIQUE_LINES {
+        if unique.len() >= DECODE_VOCAB_FINGERPRINT_MAX_UNIQUE_LINES && !unique.contains(line) {
             return None;
         }
+        unique.insert(line);
+    }
+    if unique.is_empty() {
+        return None;
+    }
+    let mut lines: Vec<&str> = unique.into_iter().collect();
+    lines.sort_unstable();
+    let mut hasher = blake3::Hasher::new();
+    for line in &lines {
         hasher.update(line.as_bytes());
         hasher.update(&[0]);
-    }
-    if line_count == 0 {
-        return None;
     }
     let full = hasher.finalize();
     let mut out = [0u8; 16];
