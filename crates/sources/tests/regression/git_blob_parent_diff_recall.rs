@@ -173,3 +173,59 @@ fn git_blobs_recall_untouched_tip_blob_under_max_commits() {
         chunks.len()
     );
 }
+
+
+#[test]
+fn git_blobs_recall_side_branch_tip_under_max_commits() {
+    let repo = tempfile::tempdir().expect("create git fixture");
+    git(repo.path(), &["init", "--quiet", "-b", "main"]);
+
+    std::fs::write(repo.path().join("base.txt"), "base\n").expect("write base");
+    git(repo.path(), &["add", "base.txt"]);
+    git(repo.path(), &["commit", "--quiet", "-m", "base"]);
+
+    git(repo.path(), &["checkout", "--quiet", "-b", "side"]);
+    const SECRET: &str =
+        "GITHUB_TOKEN=ghp_parentDiffSideBranchTipFixture0000001\n";
+    std::fs::write(repo.path().join("side-secret.env"), SECRET).expect("write side secret");
+    git(repo.path(), &["add", "side-secret.env"]);
+    git(repo.path(), &["commit", "--quiet", "-m", "add side secret"]);
+    std::fs::write(repo.path().join("side-noise.txt"), "noise\n").expect("write side noise");
+    git(repo.path(), &["add", "side-noise.txt"]);
+    git(repo.path(), &["commit", "--quiet", "-m", "side noise tip"]);
+
+    git(repo.path(), &["checkout", "--quiet", "main"]);
+    for index in 0..6 {
+        std::fs::write(
+            repo.path().join(format!("main-{index}.txt")),
+            format!("main row {index}\n"),
+        )
+        .expect("write main blob");
+        git(repo.path(), &["add", &format!("main-{index}.txt")]);
+        git(
+            repo.path(),
+            &["commit", "--quiet", "-m", &format!("main {index}")],
+        );
+    }
+
+    // Newest commits are on main; the side tip is still inside the window but
+    // older than main tip. Parent-diff on the side tip alone would only see
+    // side-noise.txt — full-walking every ref tip must still emit the secret.
+    let rows = GitSource::new(repo.path().to_path_buf())
+        .with_max_commits(8)
+        .chunks()
+        .collect::<Vec<_>>();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    assert!(
+        errors.is_empty(),
+        "complete fixture history must scan without gaps: {errors:?}"
+    );
+    let chunks: Vec<_> = rows.into_iter().filter_map(Result::ok).collect();
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("ghp_parentDiffSideBranchTipFixture")),
+        "side-branch tip full-walk must emit untouched side-secret.env; got {} chunks",
+        chunks.len()
+    );
+}

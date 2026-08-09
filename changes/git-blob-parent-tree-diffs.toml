@@ -1,3 +1,3 @@
 category = "Performance"
-summary = "`--git-blobs` now collects commit blobs by diffing each commit against its parents and scanning only added, changed, and deleted blob sides instead of rewalking every historical tree. Root commits and unreadable parents still fall back to a full tree walk so recall stays intact."
+summary = "`--git-blobs` collects commit blobs by parent-tree diff (added/changed/deleted sides) instead of rewalking every historical tree. Every ref tip (heads/tags/remotes/stash), root commits, and unreadable parents still get a full tree walk so `--max-commits` keeps untouched tip blobs — including side-branch tips — and unsupported non-blob tree entries stay coverage gaps. Blob decode stays on the already-open repository handle (no per-worker `gix::open`) so tip-sized batches cannot stall near-idle."
 crates = ["sources"]

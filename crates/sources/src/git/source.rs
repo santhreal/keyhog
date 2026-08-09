@@ -10,7 +10,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use gix::objs::Kind;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
-use rayon::prelude::*;
 
 use super::tag_messages::{
     collect_reachable_tag_messages, decode_next_tag_message, decode_next_unreachable_tag_message,
@@ -76,7 +75,6 @@ struct SharedDecodedBlob {
 /// to every referencing (oid, path) slot, which re-attaches its own path so
 /// per-path skip accounting is unchanged.
 enum GitBlobOidSkipKind {
-    RepositoryOpen(String),
     ObjectUnreadable(String),
     Binary,
 }
@@ -84,11 +82,6 @@ enum GitBlobOidSkipKind {
 impl GitBlobOidSkipKind {
     fn with_identity(&self, oid: gix::ObjectId, filepath: Vec<u8>) -> GitBlobSkip {
         match self {
-            Self::RepositoryOpen(error) => GitBlobSkip::RepositoryOpen {
-                oid,
-                filepath,
-                error: error.clone(),
-            },
             Self::ObjectUnreadable(error) => GitBlobSkip::ObjectUnreadable {
                 oid,
                 filepath,
@@ -163,15 +156,6 @@ enum GitBlobBatchItem {
     Skip(GitBlobSkip),
 }
 
-/// Minimum unique blobs in one batch before parallel decode pays for its
-/// per-worker `gix::open` and fork/join; below it serial decode on the
-/// already-open handle is strictly cheaper.
-///
-/// Intentionally above `GIT_PARALLEL_BLOB_BATCH_ITEMS` so the parallel path is
-/// disabled: per-worker `gix::open` has stalled at near-idle CPU under pack/lock
-/// contention on busy hosts, including tip full-walk batches.
-const GIT_PARALLEL_DECODE_MIN_BLOBS: usize = GIT_PARALLEL_BLOB_BATCH_ITEMS + 1;
-
 #[derive(Debug)]
 enum GitBlobSkip {
     HeaderUnreadable {
@@ -189,11 +173,6 @@ enum GitBlobSkip {
         filepath: Vec<u8>,
         size: u64,
         cap: u64,
-    },
-    RepositoryOpen {
-        oid: gix::ObjectId,
-        filepath: Vec<u8>,
-        error: String,
     },
     ObjectUnreadable {
         oid: gix::ObjectId,
@@ -1023,30 +1002,17 @@ fn next_git_blob_batch(
 
 fn decode_git_blob_candidates(
     repo: &gix::Repository,
-    repo_path: &Path,
+    _repo_path: &Path,
     candidates: Vec<GitBlobCandidate>,
 ) -> Vec<Option<Result<SharedDecodedBlob, GitBlobOidSkipKind>>> {
-    // Small batches (the common case near history tips, where a commit
-    // touches a handful of blobs) decode serially on the already-open
-    // repository handle: the rayon fork/join plus a fresh `gix::open` per
-    // worker costs more than the decode itself there. Large batches keep the
-    // parallel path.
-    if candidates.len() < GIT_PARALLEL_DECODE_MIN_BLOBS {
-        return candidates
-            .into_iter()
-            .map(|candidate| Some(decode_one_git_blob(repo, candidate)))
-            .collect();
-    }
-    let repo_path = repo_path.to_path_buf();
+    // Always decode on the already-open repository handle. A prior parallel
+    // path reopened the repo per rayon worker (`gix::open`) and stalled at
+    // near-idle CPU under pack/lock contention on busy hosts, including tip
+    // full-walk batches. Serial decode on the shared handle stays recall-safe
+    // and avoids that hang class.
     candidates
-        .into_par_iter()
-        .map_init(
-            || gix::open(&repo_path).map_err(|error| error.to_string()),
-            |repo_state, candidate| match repo_state {
-                Ok(repo) => Some(decode_one_git_blob(repo, candidate)),
-                Err(error) => Some(Err(GitBlobOidSkipKind::RepositoryOpen(error.clone()))),
-            },
-        )
+        .into_iter()
+        .map(|candidate| Some(decode_one_git_blob(repo, candidate)))
         .collect()
 }
 
@@ -1116,21 +1082,6 @@ fn record_git_blob_skip(skip: GitBlobSkip, pending_errors: &mut VecDeque<SourceE
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             pending_errors.push_back(git_unscanned_object_error(format!(
                 "git blob {oid} at {} exceeds per-blob size cap ({size} bytes > {cap} bytes); blob was not scanned",
-                git_blob_path_display(&filepath)
-            )));
-        }
-        GitBlobSkip::RepositoryOpen {
-            oid,
-            filepath,
-            error,
-        } => {
-            tracing::warn!(
-                %error, %oid,
-                "git repository could not be opened by a blob decode worker; blob NOT scanned"
-            );
-            record_git_object_unreadable();
-            pending_errors.push_back(git_unscanned_object_error(format!(
-                "git repository could not be opened while decoding blob {oid} at {} ({error}); blob was not scanned",
                 git_blob_path_display(&filepath)
             )));
         }
@@ -1617,17 +1568,17 @@ fn consider_diff_blob_path(
         return;
     }
     if !entry_mode.is_blob() {
-        let display = git_blob_path_display(path);
+        let path_display = git_blob_path_display(path);
         let mode = format!("{entry_mode:?}");
         tracing::warn!(
             %oid,
-            path = %display,
-            mode = %mode,
+            path = %path_display,
+            %mode,
             "git tree diff entry is not a blob or tree; referenced content was NOT scanned"
         );
         record_git_object_unreadable();
         errors.push(git_unscanned_object_error(format!(
-            "git tree entry '{display}' has unsupported mode {mode}; referenced content was not scanned"
+            "git tree entry '{path_display}' has unsupported mode {mode}; referenced content was not scanned"
         )));
         return;
     }
@@ -1679,7 +1630,7 @@ fn collect_ref_tip_oids(repo_arg: &str) -> Result<HashSet<gix::ObjectId>, Source
         "-C",
         repo_arg,
         "for-each-ref",
-        "--format=%(objectname:peel)",
+        "--format=%(objectname) %(*objectname)",
         "--end-of-options",
         "refs/heads",
         "refs/tags",
@@ -1715,7 +1666,14 @@ fn collect_ref_tip_oids(repo_arg: &str) -> Result<HashSet<gix::ObjectId>, Source
         }
         let line = String::from_utf8_lossy(&line_buf);
         let line = line.trim_end_matches('\n').trim_end_matches('\r');
-        if let Some(id) = parse_git_object_id_line(line, "ref tip") {
+        // Prefer the peeled target for annotated tags (`%(*objectname)`); fall
+        // back to `%(objectname)` for commits/lightweight tags. Avoids the
+        // newer `%(objectname:peel)` atom, which older git rejects.
+        let mut fields = line.split_whitespace();
+        let objectname = fields.next().unwrap_or("");
+        let peeled = fields.next().unwrap_or("");
+        let tip = if peeled.is_empty() { objectname } else { peeled };
+        if let Some(id) = parse_git_object_id_line(tip, "ref tip") {
             tips.insert(id);
         }
     }
