@@ -3,7 +3,7 @@
 ## 0.5.69 - 2026-08-09
 
 - Include retained keyword, generic-position, CPU-trigger, payload, and line-index storage in evidence-cache replacement accounting, reject individually oversized entries, and enforce aggregate residency and entry-count ceilings.
-- Use checked page alignment before releasing authenticated execution-pack mapping slices.
+- Use checked page alignment for interior mapping slices while discarding the trailing partial page when releasing whole authenticated execution packs.
 - Wire the production-path cache, decoder-admission, and context-window regressions into the aggregate scanner test binary.
 
 ## 0.5.68 - 2026-08-05

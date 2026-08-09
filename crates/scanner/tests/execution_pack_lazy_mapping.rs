@@ -49,13 +49,15 @@ fn mapped_rss_kib(path: &Path) -> u64 {
     mapped_metric_kib(path, "Rss:")
 }
 
-fn large_authenticated_pack() -> (
+fn authenticated_pack(
+    backend_program: &[u8],
+    stem: &str,
+) -> (
     tempfile::TempDir,
     std::path::PathBuf,
     std::path::PathBuf,
     ExecutionPackSigningKey,
 ) {
-    let backend_program = vec![0xA5; LARGE_PROGRAM_BYTES];
     let sections = [
         CompileSection {
             kind: ExecutionPackSectionKind::DetectorIr,
@@ -80,7 +82,7 @@ fn large_authenticated_pack() -> (
         CompileSection {
             kind: ExecutionPackSectionKind::BackendProgram,
             alignment: 4096,
-            bytes: &backend_program,
+            bytes: backend_program,
         },
         CompileSection {
             kind: ExecutionPackSectionKind::DetectorPlan,
@@ -92,12 +94,12 @@ fn large_authenticated_pack() -> (
         identity: identity(),
         sections: &sections,
     })
-    .expect("compile large pack");
+    .expect("compile execution pack");
     let signing_key = ExecutionPackSigningKey::from_bytes([0x5A; 32]).expect("signing key");
     let signature = signing_key.sign(&compiled);
     let directory = tempfile::tempdir().expect("temporary pack directory");
-    let pack_path = directory.path().join("large.khpack");
-    let signature_path = directory.path().join("large.sig");
+    let pack_path = directory.path().join(format!("{stem}.khpack"));
+    let signature_path = directory.path().join(format!("{stem}.sig"));
     fs::write(&pack_path, compiled.as_bytes()).expect("write pack");
     fs::write(
         &signature_path,
@@ -105,6 +107,42 @@ fn large_authenticated_pack() -> (
     )
     .expect("write signature");
     (directory, pack_path, signature_path, signing_key)
+}
+
+fn large_authenticated_pack() -> (
+    tempfile::TempDir,
+    std::path::PathBuf,
+    std::path::PathBuf,
+    ExecutionPackSigningKey,
+) {
+    authenticated_pack(&vec![0xA5; LARGE_PROGRAM_BYTES], "large")
+}
+
+/// WHY: whole-pack release owns the trailing partial page; routing it through the
+/// interior-slice trimmer leaves that page resident and retains every tiny pack.
+#[test]
+fn authenticated_pack_discards_trailing_partial_page() {
+    let (_directory, pack_path, signature_path, signing_key) =
+        authenticated_pack(b"backend-program", "partial-page");
+    let page = usize::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) })
+        .expect("positive host page size");
+    let pack_len = usize::try_from(fs::metadata(&pack_path).expect("pack metadata").len())
+        .expect("pack length fits usize");
+    assert_ne!(
+        pack_len % page,
+        0,
+        "control pack must end in a partial page"
+    );
+
+    let pack =
+        ExecutionPack::open_authenticated(&pack_path, &signature_path, identity(), &signing_key)
+            .expect("open authenticated pack");
+    std::hint::black_box(&pack);
+    assert_eq!(
+        mapped_rss_kib(&pack_path),
+        0,
+        "authenticated whole-pack release must discard its trailing partial page"
+    );
 }
 
 /// WHY: authenticating a large native backend program must not leave every pack page resident while decoded scanner state is built; only a section the runtime actually touches may fault back into RSS.
