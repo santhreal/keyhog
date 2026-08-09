@@ -243,14 +243,13 @@ pub(in crate::filesystem) fn looks_binary_prefix(bytes: &[u8]) -> bool {
     if has_utf16_nul_pattern(bytes) {
         return false;
     }
+    // Prefix reject stays magic/NUL-run only so extensionless binaries without
+    // a known signature still reach printable-string extraction.
     has_unambiguous_prefix_magic(bytes)
         || crate::magic::has_bmp_header(bytes)
         || crate::magic::has_pe_header(bytes)
         || crate::magic::has_bzip2_header(bytes)
         || has_repeated_nul_run(bytes)
-        // Control-density on the already-read prefix catches high-entropy
-        // binary without a known magic, without a second full-file pass.
-        || looks_binary_header_check(bytes)
 }
 
 fn has_repeated_nul_run(bytes: &[u8]) -> bool {
