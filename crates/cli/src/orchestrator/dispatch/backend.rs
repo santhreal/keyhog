@@ -485,7 +485,7 @@ impl CachedBackendRouter {
                             })
                         })
                 });
-            let pipeline_check = self
+            let pipeline_check: Result<(), String> = self
                 .decisions
                 .get(&key)
                 .and_then(|decision| decision.gpu_pipeline_identity_for_route(route))
