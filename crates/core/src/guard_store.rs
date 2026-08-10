@@ -358,9 +358,44 @@ pub struct DurableGuardStore {
 
 impl DurableGuardStore {
     /// Open or create the durable store at the given path.
+    ///
+    /// The path is validated for safety: it must not be a symlink, and
+    /// the file (once created) is set to owner-only permissions (0600).
+    /// The parent directory is created with 0700 permissions if needed.
     pub fn open(path: &std::path::Path) -> Result<Self, GuardStoreError> {
+        // Reject symlinked state paths. A symlink could point outside the
+        // intended state directory, leaking guard state to an attacker.
+        if path.exists() {
+            let meta = std::fs::symlink_metadata(path)
+                .map_err(|e| GuardStoreError::Io(format!("stat guard store path: {e}")))?;
+            if meta.file_type().is_symlink() {
+                return Err(GuardStoreError::Io(
+                    "guard store path is a symlink; refusing to open".to_string(),
+                ));
+            }
+        }
+        // Create parent directory with owner-only permissions.
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| GuardStoreError::Io(format!("create guard store dir: {e}")))?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
+                        .map_err(|e| GuardStoreError::Io(format!("set guard store dir perms: {e}")))?;
+                }
+            }
+        }
         let db = redb::Database::create(path)
             .map_err(|e| GuardStoreError::Io(format!("open guard store: {e}")))?;
+        // Enforce owner-only file permissions on the store file.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| GuardStoreError::Io(format!("set guard store perms: {e}")))?;
+        }
         let store = Self {
             db,
             path: path.to_path_buf(),
@@ -402,6 +437,17 @@ impl DurableGuardStore {
                         .map_err(|e| GuardStoreError::Io(format!("write schema_version: {e}")))?;
                 }
             }
+        }
+        // Create all tables so they exist for reads even before first write.
+        {
+            let _ = txn.open_table(ROOTS_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("create roots table: {e}")))?;
+            let _ = txn.open_table(ATTESTATIONS_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("create attestations table: {e}")))?;
+            let _ = txn.open_table(ROOT_GAPS_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("create root_gaps table: {e}")))?;
+            let _ = txn.open_table(SERVICE_STATE_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("create service_state table: {e}")))?;
         }
         txn.commit()
             .map_err(|e| GuardStoreError::Io(format!("commit schema: {e}")))?;

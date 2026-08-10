@@ -3,7 +3,7 @@
 
 use keyhog_core::guard_state::{
     FilesystemIdentity, GitCleanAttestation, GitHashAlgorithm, GuardPolicyIdentity,
-    GuardRootMode, GuardRootState, GUARD_SCHEMA_VERSION,
+    GuardRootMode, GuardRootRecord, GuardRootState, GUARD_SCHEMA_VERSION,
 };
 use keyhog_core::guard_store::{
     check_schema_version, DurableGuardStore, GuardStoreError, HotAttestationIndex,
@@ -31,6 +31,22 @@ fn sample_attestation(oid: &str, seq: u64) -> GitCleanAttestation {
         object_size: 1024,
         policy_identity: sample_identity(),
         last_seen_sequence: seq,
+    }
+}
+
+fn sample_root_record(path: &str) -> GuardRootRecord {
+    GuardRootRecord {
+        canonical_path: path.as_bytes().to_vec(),
+        filesystem_identity: FilesystemIdentity { device: 1, inode: 2 },
+        mode: GuardRootMode::Repo,
+        state: GuardRootState::Current,
+        terminal_sequence: 0,
+        accepted_event_sequence: 0,
+        completed_event_sequence: 0,
+        initial_reconciliation_time: None,
+        last_reconciliation_time: None,
+        backend_route_label: "scalar-cpu".to_string(),
+        last_receipt: None,
     }
 }
 
@@ -431,4 +447,112 @@ fn durable_store_remove_attestation() {
     assert_eq!(store.load_attestations().expect("load").len(), 1);
     store.remove_attestation(&att).expect("remove attestation");
     assert_eq!(store.load_attestations().expect("load").len(), 0);
+}
+
+#[test]
+fn durable_store_rejects_symlinked_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let real_path = dir.path().join("real.redb");
+    let link_path = dir.path().join("link.redb");
+    // Create the real file first so the symlink target exists.
+    {
+        let _store = DurableGuardStore::open(&real_path).expect("open real store");
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&real_path, &link_path).expect("create symlink");
+        let result = DurableGuardStore::open(&link_path);
+        assert!(result.is_err(), "symlinked store path should be rejected");
+        let err = result.err().unwrap();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("symlink"),
+            "error should mention symlink, got: {msg}"
+        );
+    }
+}
+
+#[test]
+fn durable_store_service_state_unclean_default() {
+    let (_dir, path) = temp_store_path();
+    let store = DurableGuardStore::open(&path).expect("open store");
+    // A fresh store has no clean_shutdown marker, so it should report unclean.
+    let clean = store.was_clean_shutdown().expect("check clean shutdown");
+    assert!(!clean, "fresh store should report unclean shutdown");
+}
+
+#[test]
+fn durable_store_service_state_mark_clean_then_unclean() {
+    let (_dir, path) = temp_store_path();
+    let store = DurableGuardStore::open(&path).expect("open store");
+
+    store.mark_clean_shutdown().expect("mark clean");
+    assert!(
+        store.was_clean_shutdown().expect("check clean"),
+        "after mark_clean_shutdown, was_clean_shutdown should be true"
+    );
+
+    store.mark_unclean_shutdown().expect("mark unclean");
+    assert!(
+        !store.was_clean_shutdown().expect("check unclean"),
+        "after mark_unclean_shutdown, was_clean_shutdown should be false"
+    );
+}
+
+#[test]
+fn durable_store_root_gaps_save_load_clear() {
+    let (_dir, path) = temp_store_path();
+    let store = DurableGuardStore::open(&path).expect("open store");
+
+    let root_key = b"/repo/path";
+    store
+        .save_root_gap(root_key, "oid1", "unscanned blob")
+        .expect("save gap 1");
+    store
+        .save_root_gap(root_key, "oid2", "missing from index")
+        .expect("save gap 2");
+
+    let gaps = store.load_root_gaps(root_key).expect("load gaps");
+    assert_eq!(gaps.len(), 2);
+
+    // Clear gaps for the root.
+    let removed = store.clear_root_gaps(root_key).expect("clear gaps");
+    assert_eq!(removed, 2);
+    assert_eq!(store.load_root_gaps(root_key).expect("load after clear").len(), 0);
+}
+
+#[test]
+fn durable_store_save_root_with_gaps_atomic() {
+    let (_dir, path) = temp_store_path();
+    let store = DurableGuardStore::open(&path).expect("open store");
+
+    let record = sample_root_record("/repo/test");
+    let gaps = vec![
+        ("oid_a".to_string(), "gap a".to_string()),
+        ("oid_b".to_string(), "gap b".to_string()),
+    ];
+    store
+        .save_root_with_gaps(&record, &gaps)
+        .expect("save root with gaps");
+
+    // Root should be loadable.
+    let registry = store.load_roots().expect("load roots");
+    assert_eq!(registry.len(), 1);
+
+    // Gaps should be loadable.
+    let loaded_gaps = store
+        .load_root_gaps(record.canonical_path.as_slice())
+        .expect("load gaps");
+    assert_eq!(loaded_gaps.len(), 2);
+
+    // Replacing with fewer gaps should remove the old ones.
+    let gaps2 = vec![("oid_c".to_string(), "gap c".to_string())];
+    store
+        .save_root_with_gaps(&record, &gaps2)
+        .expect("save root with gaps 2");
+    let loaded_gaps2 = store
+        .load_root_gaps(record.canonical_path.as_slice())
+        .expect("load gaps 2");
+    assert_eq!(loaded_gaps2.len(), 1);
+    assert_eq!(loaded_gaps2[0].0, "oid_c");
 }
