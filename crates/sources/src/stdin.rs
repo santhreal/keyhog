@@ -132,14 +132,18 @@ fn buffered_chunks_with_limit(
     bytes: std::sync::Arc<[u8]>,
     max_bytes: usize,
 ) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>>> {
+    // Same acquire/read boundary as spooling stdin: accepting a pre-owned
+    // payload is still one acquisition, and preparing its scan windows is one
+    // buffering read. Without these spans BufferedStdinSource looked unprofiled
+    // while still charging input totals.
     let _acquire = crate::profile::acquire_span();
-    let _buffering = crate::profile::read_span();
     if bytes.len() > max_bytes {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Box::new(std::iter::once(Err(SourceError::Io(
             std::io::Error::other(format!("stdin exceeds {max_bytes} byte limit")),
         ))));
     }
+    let _buffering = crate::profile::read_span();
     crate::profile::add_input_units(1);
     crate::profile::add_input_bytes(bytes.len() as u64);
     Box::new(BufferedStdinChunks {

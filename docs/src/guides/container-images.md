@@ -6,10 +6,14 @@ Scan an image by reference:
 keyhog scan --docker-image registry/app:v1 --format json-envelope -o image.json
 ```
 
-KeyHog runs `docker image save` for that reference, unpacks the resulting layer
-tarballs in memory, and scans every readable member. A credential baked into a
-layer is found even when a later layer deletes the file, because every layer is
-scanned.
+KeyHog runs `docker image save` for that reference, then streams each layer
+tarball through the shared in-memory archive scanner. Layer members are not
+materialized onto disk before scanning. A credential baked into a layer is found
+even when a later layer deletes the file, because every layer is scanned
+independently: whiteout and opaque-dir markers are ordinary members, not a
+reason to hide earlier-layer content.
+
+Nested members keep the same coverage as an unpack-then-walk scan: gzip/zip/tar/compressed payloads descend in memory, `.7z`/`.rar` use the shared path extractors (staged from the already-buffered member), and layer `.har` files expand at the Docker boundary with `wire:har` labels. Nested `.har` inside ordinary zip/tar/7z/RAR keep the historical `filesystem/archive` leaf identity. Large already-UTF-8 plain layer members stream in ~1 MiB windows from the tar entry; UTF-16 and other encodings keep the whole-member decode path. Windowed members keep the `filesystem/archive` source identity.
 
 ## What you need
 
@@ -112,7 +116,7 @@ Three caps bound image expansion. Each one fails loudly when it binds.
 
 | Flag | Bounds |
 |---|---|
-| `--limit-docker-tar-total-bytes` | Cumulative bytes unpacked for one image, summed across the outer image tar and every layer tar. |
+| `--limit-docker-tar-total-bytes` | Cumulative bytes admitted for one image, summed across the outer image tar and every streamed layer tar. Partial coverage is reported as a gap; it is never a silent clean. |
 | `--limit-docker-tar-entry-bytes` | Bytes accepted for one entry inside a layer. |
 | `--limit-docker-image-config-bytes` | Bytes accepted for the image config and manifest JSON. |
 
