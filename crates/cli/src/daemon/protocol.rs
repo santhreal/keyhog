@@ -492,6 +492,10 @@ pub(crate) enum Response {
         config_digest_short: String,
         /// Autoroute evidence status label.
         autoroute_evidence_status: String,
+        /// Guard store schema version.
+        store_schema_version: u32,
+        /// Guard store path (or empty if in-memory only).
+        store_path: String,
         /// Exact repair command.
         repair_command: String,
     },

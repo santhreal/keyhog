@@ -1924,6 +1924,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                             .map(|id| id.config_digest.get(..12).unwrap_or(&id.config_digest).to_string())
                             .unwrap_or_default(),
                         autoroute_evidence_status: state.guard.autoroute_evidence_status().to_string(),
+                        store_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
+                        store_path: String::new(),
                         repair_command: format!("keyhog guard reconcile {}", root),
                     }
                 }

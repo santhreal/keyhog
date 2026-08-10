@@ -260,6 +260,8 @@ async fn run_status(
             suppression_digest_short,
             config_digest_short,
             autoroute_evidence_status,
+            store_schema_version,
+            store_path,
             repair_command,
         } => {
             if format != "human" && format != "json" {
@@ -292,6 +294,8 @@ async fn run_status(
                     "suppression_digest_short": suppression_digest_short,
                     "config_digest_short": config_digest_short,
                     "autoroute_evidence_status": autoroute_evidence_status,
+                    "store_schema_version": store_schema_version,
+                    "store_path": store_path,
                     "repair_command": repair_command,
                 });
                 println!("{json}");
@@ -331,6 +335,10 @@ async fn run_status(
                     eprintln!("config:         {config_digest_short}");
                 }
                 eprintln!("autoroute:      {autoroute_evidence_status}");
+                eprintln!("store schema:   {store_schema_version}");
+                if !store_path.is_empty() {
+                    eprintln!("store path:     {store_path}");
+                }
                 if state == "degraded" || state == "stale-policy" {
                     eprintln!(
                         "{} repair: {repair_command}",
