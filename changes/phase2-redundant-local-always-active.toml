@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Remove a redundant always_active_absence_proven self-assignment that tripped clippy::redundant_locals under -D warnings."
+crates = ["scanner"]

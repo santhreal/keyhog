@@ -36,6 +36,9 @@ struct ConfirmedScratch {
     suffix: Vec<u64>,
     /// Set of `(detector_index, offset)` pairs already emitted by earlier direct lanes.
     hot_direct_offsets: std::collections::HashSet<(usize, usize)>,
+    /// One bit per `ac_map` index, set when the companion gate still allows the
+    /// pattern. Replaces a per-chunk `vec![true; ac_map.len()]`.
+    companion: Vec<u64>,
 }
 
 impl ConfirmedScratch {
@@ -83,6 +86,27 @@ impl ConfirmedScratch {
         self.suffix
             .get(literal_id / 64)
             .is_some_and(|word| word & (1u64 << (literal_id % 64)) != 0)
+    }
+
+    /// Allow every pattern (companion fail-open default), then denials clear bits.
+    fn reset_companion_allow_all(&mut self, pattern_count: usize) {
+        let words = crate::engine::trigger_bitmap::words_for(pattern_count);
+        self.companion.clear();
+        self.companion.resize(words, u64::MAX);
+    }
+
+    #[inline]
+    fn deny_companion(&mut self, pat_idx: usize) {
+        if let Some(slot) = self.companion.get_mut(pat_idx / 64) {
+            *slot &= !(1u64 << (pat_idx % 64));
+        }
+    }
+
+    #[inline]
+    fn companion_allows(&self, pat_idx: usize) -> bool {
+        self.companion
+            .get(pat_idx / 64)
+            .is_some_and(|word| word & (1u64 << (pat_idx % 64)) != 0)
     }
 }
 
@@ -145,10 +169,39 @@ impl CompiledScanner {
             scan_state,
             &mut scratch_owned.hot_direct_offsets,
         );
+        // Companion gate: skip patterns whose required mid-literals are all
+        // absent (short phase-1 triggers like "123"/"ip" on inert padding).
+        let companion_t0 = prof.then(std::time::Instant::now);
+        scratch_owned.reset_companion_allow_all(self.ac_map.len());
+        if self.tuning.confirmed_companion_gate_enabled() {
+            let companion_patterns: Vec<(usize, &str)> = confirmed_patterns
+                .iter()
+                .filter_map(|&pat_idx| {
+                    self.ac_map
+                        .get(pat_idx)
+                        .map(|entry| (pat_idx, entry.regex.as_str()))
+                })
+                .collect();
+            super::scan_postprocess_companion_gate::companions_deny_absent(
+                self.detector_digest,
+                &companion_patterns,
+                &preprocessed.text,
+                |pat_idx| scratch_owned.deny_companion(pat_idx),
+            );
+        }
+        if let Some(companion_t0) = companion_t0 {
+            scan_postprocess_profile::confirmed_prof_record(
+                scan_postprocess_profile::ConfirmedStage::CompanionGate,
+                companion_t0.elapsed(),
+            );
+        }
         // Freeze the scratch for the rest of the pass: every use below is a
         // read, so the closures share one immutable borrow.
         let scratch = &scratch_owned;
-        let suffix_allows = |pat_idx: usize| -> bool {
+        let pattern_allows = |pat_idx: usize| -> bool {
+            if !scratch.companion_allows(pat_idx) {
+                return false;
+            }
             if !suffix_gate_active {
                 return true;
             }
@@ -162,7 +215,7 @@ impl CompiledScanner {
         if let Some(anchor_index) = &self.confirmed_anchor_index {
             let has_active_anchored = confirmed_patterns
                 .iter()
-                .any(|&pat_idx| anchor_index.is_eligible(pat_idx) && suffix_allows(pat_idx));
+                .any(|&pat_idx| anchor_index.is_eligible(pat_idx) && pattern_allows(pat_idx));
             if has_active_anchored {
                 super::with_candidate_scratch(|candidates| {
                     let collect_t0 = prof.then(std::time::Instant::now);
@@ -170,8 +223,9 @@ impl CompiledScanner {
                     // trigger bitmap, so membership is one word load instead of
                     // the binary search this probe used to run for every
                     // (literal hit x pattern sharing that literal).
-                    let is_active =
-                        |pat_idx: usize| scratch.contains_active(pat_idx) && suffix_allows(pat_idx);
+                    let is_active = |pat_idx: usize| {
+                        scratch.contains_active(pat_idx) && pattern_allows(pat_idx)
+                    };
                     if let Some(literal_matches) = confirmed_anchor_literal_matches {
                         anchor_index.collect_candidates_from_literal_matches(
                             literal_matches,
@@ -179,7 +233,12 @@ impl CompiledScanner {
                             candidates,
                         );
                     } else {
-                        anchor_index.collect_candidates(&preprocessed.text, is_active, candidates);
+                        anchor_index.collect_candidates(
+                            &preprocessed.text,
+                            confirmed_patterns,
+                            is_active,
+                            candidates,
+                        );
                     }
                     if let Some(collect_t0) = collect_t0 {
                         scan_postprocess_profile::confirmed_prof_record(
@@ -289,7 +348,7 @@ impl CompiledScanner {
                 break;
             }
             // Skip a gated ac_map pattern whose required suffix literal is absent.
-            if !suffix_allows(pat_idx) {
+            if !pattern_allows(pat_idx) {
                 continue;
             }
             if self

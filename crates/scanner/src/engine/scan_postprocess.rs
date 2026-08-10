@@ -90,6 +90,25 @@ impl CompiledScanner {
                 if crate::deadline::expired(deadline) {
                     return Ok(());
                 }
+                // Empty decode-through on this line vocabulary: later windows
+                // with the same unique-line fingerprint can skip the pipeline.
+                // Only record proofs for parent filesystem/windowed slices so
+                // unrelated sources cannot fill/clear the shared memo.
+                if decoded_chunks.is_empty()
+                    && chunk.metadata.decoded_span.is_none()
+                    && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
+                {
+                    super::scan::mark_decode_vocab_empty(
+                        &self.vocab_stage_absence_cache,
+                        self.detector_digest,
+                        self.entropy_evidence_config_digest(),
+                        super::scan::vocab_path_class(
+                            chunk.metadata.source_type.as_ref(),
+                            chunk.metadata.path.as_deref(),
+                        ),
+                        &chunk.data,
+                    );
+                }
                 if !decoded_chunks.is_empty() {
                     keyhog_profile::add_counter(keyhog_profile::CounterId::DecodeParentChunks, 1);
                     keyhog_profile::add_counter(
@@ -217,7 +236,16 @@ impl CompiledScanner {
                     decode_parent(chunk, matches)?;
                 }
             } else if self.chunk_uses_bounded_decode_windows(chunk) {
+                // Parent may be a multi-megabyte single line that still carries a
+                // few encode markers somewhere. Gate each bounded window on its
+                // own marker surface so markerless windows skip decode-through.
+                let parent_single_line = !chunk.data.as_bytes().contains(&b'\n');
                 self.decode_source_windows(chunk, |window| {
+                    if parent_single_line
+                        && super::scan::text_is_dense_markerless_single_line(&window.data)
+                    {
+                        return Ok(());
+                    }
                     if self.chunk_needs_decode_postprocess(window) {
                         decode_parent(window, matches)
                     } else {

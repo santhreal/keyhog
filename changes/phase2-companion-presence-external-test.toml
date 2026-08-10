@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Move companion presence-scratch growth regression out of src into tests/unit/root_facade and expose companions_deny_absent via the testing facade so KH-GAP-004 no-inline-tests stays green."
+crates = ["scanner"]

@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Re-cache entropy_evidence_config_digest on CompiledScanner (widened vocab key) and invalidate on with_config / clear_fragment_cache so hot windowed lookups avoid rehash without ignoring the known in-place config mutation path."
+crates = ["scanner"]

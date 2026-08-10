@@ -538,6 +538,10 @@ pub(crate) struct ScanState {
     /// slot so duplicates cannot consume `max_matches_per_chunk` capacity before
     /// final output deduplication runs.
     claimed_match_identities: HashSet<OwnedMatchIdentity>,
+    /// Count of successful `push_match` accepts (including in-place heap
+    /// replacements and same-identity upgrades). Heap `len()` alone cannot
+    /// detect stage progress once `max_matches_per_chunk` is reached.
+    pub(crate) accepted_match_events: u64,
     /// Optional reference to the scanner's frozen static-string
     /// interner. When `Some`, `intern_metadata` checks here first
     /// before falling through to the per-scan `metadata_interner`.
@@ -552,6 +556,9 @@ pub(crate) struct ScanState {
     /// still checked before a row is replaced.
     #[cfg(feature = "ml")]
     ml_pending_index: HashMap<PendingMatchIdentity, usize>,
+    /// Successful ML-pending accepts, including in-place identity upgrades.
+    #[cfg(feature = "ml")]
+    pub(crate) accepted_ml_events: u64,
 }
 
 /// Borrowed identity view shared by finalized and ML-pending candidates.
@@ -692,6 +699,7 @@ impl ScanState {
                 ) == std::cmp::Ordering::Less
                 {
                     *existing = candidate;
+                    self.accepted_ml_events = self.accepted_ml_events.saturating_add(1);
                     return true;
                 }
                 return false;
@@ -701,6 +709,7 @@ impl ScanState {
         let index = self.ml_pending.len();
         self.ml_pending.push(candidate);
         self.ml_pending_index.insert(identity, index);
+        self.accepted_ml_events = self.accepted_ml_events.saturating_add(1);
         true
     }
 
@@ -751,12 +760,17 @@ impl ScanState {
     pub(crate) fn push_match(&mut self, m: keyhog_core::RawMatch, limit: usize) -> bool {
         let identity = OwnedMatchIdentity::from(&m);
         if self.claimed_match_identities.contains(&identity) {
-            return self.replace_claimed_match_if_better(&identity, m);
+            let accepted = self.replace_claimed_match_if_better(&identity, m);
+            if accepted {
+                self.accepted_match_events = self.accepted_match_events.saturating_add(1);
+            }
+            return accepted;
         }
 
         if self.matches.len() < limit {
             self.claimed_match_identities.insert(identity);
             self.matches.push(m);
+            self.accepted_match_events = self.accepted_match_events.saturating_add(1);
             return true;
         }
 
@@ -767,6 +781,7 @@ impl ScanState {
                 drop(worst);
                 self.claimed_match_identities.remove(&displaced);
                 self.claimed_match_identities.insert(identity);
+                self.accepted_match_events = self.accepted_match_events.saturating_add(1);
                 return true;
             }
         }
@@ -843,7 +858,9 @@ impl ScanState {
                 return;
             }
             let m = build(self);
-            self.replace_claimed_match_if_better(&identity, m);
+            if self.replace_claimed_match_if_better(&identity, m) {
+                self.accepted_match_events = self.accepted_match_events.saturating_add(1);
+            }
             return;
         }
 
@@ -851,6 +868,7 @@ impl ScanState {
             let m = build(self);
             self.claimed_match_identities.insert(identity);
             self.matches.push(m);
+            self.accepted_match_events = self.accepted_match_events.saturating_add(1);
             return;
         }
 
@@ -864,6 +882,7 @@ impl ScanState {
                 drop(worst);
                 self.claimed_match_identities.remove(&displaced);
                 self.claimed_match_identities.insert(identity);
+                self.accepted_match_events = self.accepted_match_events.saturating_add(1);
             }
         }
     }

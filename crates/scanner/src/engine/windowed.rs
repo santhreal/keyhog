@@ -106,6 +106,23 @@ impl CompiledScanner {
                             return Ok((offset, window_len, Vec::new()));
                         }
                         let window_chunk = window_chunk(chunk, offset, end);
+                        if super::scan::vocab_previously_clean(
+                            &self.vocab_stage_absence_cache,
+                            self.detector_digest,
+                            self.entropy_evidence_config_digest(),
+                            super::scan::vocab_path_class(
+                                window_chunk.metadata.source_type.as_ref(),
+                                window_chunk.metadata.path.as_deref(),
+                            ),
+                            &window_chunk.data,
+                        ) {
+                            // Matcher proven empty for this vocab. Do not
+                            // post-process here: the coalesced caller marks
+                            // needs_postprocess and owns decode/fragment work
+                            // once on the parent chunk (same split as the
+                            // ordinary per-window path and scan_inner clean).
+                            return Ok((offset, window_len, Vec::new()));
+                        }
                         let prepared = self.prepare_chunk(&window_chunk);
                         let window_phase2_always_anchor_matches;
                         let phase2_always_evidence =

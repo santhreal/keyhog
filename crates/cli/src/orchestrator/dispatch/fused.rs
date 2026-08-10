@@ -520,7 +520,7 @@ impl ScanOrchestrator {
                 ActiveBackendRouter::Explicit(backend) => Ok(super::backend::BackendSelection {
                     backend: *backend,
                     phase1_plan: (!backend.is_gpu())
-                        .then(|| scanner_ref.phase1_admission_plan(&batch)),
+                        .then(|| scanner_ref.phase1_admission_plan_for_backend(&batch, *backend)),
                     execution_route: scanner_ref.execution_route_for_backend(*backend),
                     recovery_plan: None,
                     runtime_route: None,

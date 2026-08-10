@@ -1312,6 +1312,8 @@ impl CompiledScanner {
         let scanner = Self {
             backend_state,
             detector_digest,
+            vocab_stage_absence_cache: dashmap::DashMap::with_hasher(ahash::RandomState::new()),
+            entropy_config_digest_cache: parking_lot::Mutex::new(None),
             compiled_plan_digest,
             ac,
             gpu_literals,
@@ -1417,6 +1419,7 @@ impl CompiledScanner {
     pub fn with_config(mut self, config: ScannerConfig) -> Self {
         keyhog_profile::set_detail(config.profile_detail());
         self.config = config;
+        *self.entropy_config_digest_cache.lock() = None;
         self
     }
 

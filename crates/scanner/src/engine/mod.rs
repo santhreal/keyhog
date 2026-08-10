@@ -127,6 +127,11 @@ pub(crate) use crate::scan_profile as profile;
 mod recovery;
 pub use recovery::{BackendRecoveryReceipt, CoalescedScanOutcome, RecoveredInputRange};
 mod scan;
+mod vocab_absence;
+pub(crate) use scan::{
+    text_is_dense_markerless_single_line, text_is_markerless_single_line, vocab_path_class,
+    vocab_previously_clean, MARKERLESS_NO_HIT_MIN_BYTES,
+};
 mod scan_coalesced;
 #[cfg(feature = "simd")]
 pub(crate) use scan_coalesced::ReusableSimdTriggerCache;
@@ -147,6 +152,8 @@ mod scan_postprocess_fragments;
 mod scan_postprocess_ml;
 #[cfg(all(test, feature = "ml"))]
 pub(crate) use scan_postprocess_ml::finalize_pending_match_for_test;
+#[path = "scan_postprocess/companion_gate.rs"]
+mod scan_postprocess_companion_gate;
 #[path = "scan_postprocess/profile.rs"]
 mod scan_postprocess_profile;
 #[path = "scan_postprocess/suffix_gate.rs"]
@@ -172,6 +179,9 @@ pub(crate) use boundary::scan_chunk_boundaries;
 pub(crate) use gpu_forced_helpers::gpu_forced_unavailable_message;
 #[cfg(test)]
 pub(crate) use phase2::{phase2_gate_stats_dump, take_mark_stats};
+pub(crate) use scan_postprocess_companion_gate::{
+    companion_arms, companions_allow, companions_deny_absent,
+};
 pub(crate) use scan_postprocess_suffix_gate::suffix_gate_literals;
 pub(crate) use windowed::{reject_oversized_window_chunk, MAX_WINDOW_CHUNK_BYTES};
 pub(crate) use windowed_support::{absolute_line, absolute_offset, ceil_char_boundary};
@@ -517,6 +527,19 @@ pub struct CompiledScanner {
     /// Autoroute and runtime receipts consume this stored identity so every
     /// execution-affecting detector policy change invalidates stale evidence.
     pub(crate) detector_digest: u64,
+    /// Per-scanner memo of empty decode / confirmed / entropy / clean proofs for
+    /// repetitive windowed corpora. Kept off the process-global heap so distinct
+    /// CompiledScanner instances cannot inherit each other's proofs.
+    pub(crate) vocab_stage_absence_cache: dashmap::DashMap<
+        crate::engine::scan::VocabAbsenceKey,
+        crate::engine::scan::VocabStageAbsence,
+        ahash::RandomState,
+    >,
+    /// Cached [`Self::entropy_evidence_config_digest`]. Cleared by `with_config`
+    /// and `clear_fragment_cache` (the latter covers the known in-place config
+    /// mutation test path). Callers that mutate `config` in place must clear
+    /// via one of those entry points so absence keys track live policy.
+    pub(crate) entropy_config_digest_cache: parking_lot::Mutex<Option<[u8; 32]>>,
     /// Complete BLAKE3 identity for the compiled detector and decoder execution plan.
     pub(crate) compiled_plan_digest: [u8; 32],
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,

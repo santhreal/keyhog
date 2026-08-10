@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Drop unused chunk_is_markerless_single_line helper and replace em dashes in scanner comments/SPEC with ASCII punctuation so the zero-warnings / prose gates stay green."
+crates = ["scanner"]

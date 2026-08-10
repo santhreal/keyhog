@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Dense-only markerless no-hit skips, cached entropy config digests, and capacity-aware vocab absence marks so short bare secrets, hot-path hashing, and capped heaps stay correct."
+crates = ["scanner"]

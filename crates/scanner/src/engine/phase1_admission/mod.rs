@@ -827,7 +827,67 @@ impl CompiledScanner {
     /// Reuse avoids duplicate gates; malformed or mismatched identity is recomputed
     /// with an exact recovery receipt.
     pub fn phase1_admission_plan(&self, chunks: &[Chunk]) -> Phase1AdmissionPlan {
-        self.phase1_admission_plan_with_bigram_mode(chunks, false)
+        // Route-neutral: defer CPU trigger hints until backend selection. After
+        // CpuFallback is chosen, call `fill_cpu_trigger_hints_for_plan`. Explicit
+        // CPU / fused dispatch uses `phase1_admission_plan_for_backend`.
+        self.phase1_admission_plan_with_bigram_mode(chunks, false, false)
+    }
+
+    /// Build admission evidence for one known backend. CPU trigger hints are
+    /// collected only for [`ScanBackend::CpuFallback`], the sole route that
+    /// consumes them; other routes produce their own phase-1 triggers.
+    pub fn phase1_admission_plan_for_backend(
+        &self,
+        chunks: &[Chunk],
+        backend: crate::hw_probe::ScanBackend,
+    ) -> Phase1AdmissionPlan {
+        let collect_cpu_trigger_hints =
+            matches!(backend, crate::hw_probe::ScanBackend::CpuFallback);
+        self.phase1_admission_plan_with_bigram_mode(chunks, false, collect_cpu_trigger_hints)
+    }
+
+    /// Fill missing CPU trigger-hint rows on a route-neutral autoroute plan once
+    /// the selected backend is known to be [`ScanBackend::CpuFallback`].
+    ///
+    /// Autoroute must build a plan before backend selection (workload keys need
+    /// phase-1 summary), so [`Self::phase1_admission_plan`] leaves these rows
+    /// empty. Without this fill, the production automatic route re-derives
+    /// triggers in the scalar hot lane even after CPU is chosen.
+    pub fn fill_cpu_trigger_hints_for_plan(
+        &self,
+        plan: &mut Phase1AdmissionPlan,
+        chunks: &[Chunk],
+    ) {
+        if chunks.len() != plan.chunk_shapes.len()
+            || plan.cpu_trigger_hints.len() != plan.phase2_keyword_hints.len()
+            || plan.phase2_keyword_hint_rows.len() != plan.chunk_shapes.len()
+            || plan.admissions.len() != plan.chunk_shapes.len()
+        {
+            return;
+        }
+        let mut row_rep: Vec<Option<usize>> = vec![None; plan.cpu_trigger_hints.len()];
+        for (chunk_idx, &row) in plan.phase2_keyword_hint_rows.iter().enumerate() {
+            if let Some(slot) = row_rep.get_mut(row) {
+                if slot.is_none() {
+                    *slot = Some(chunk_idx);
+                }
+            }
+        }
+        for (row, hint) in plan.cpu_trigger_hints.iter_mut().enumerate() {
+            if hint.is_some() {
+                continue;
+            }
+            let Some(chunk_idx) = row_rep.get(row).copied().flatten() else {
+                continue;
+            };
+            if plan.admissions.get(chunk_idx) != Some(&Phase1Admission::Admitted) {
+                continue;
+            }
+            let Some(chunk) = chunks.get(chunk_idx) else {
+                continue;
+            };
+            *hint = Some(self.collect_triggered_patterns_cpu(&chunk.data));
+        }
     }
 
     /// Build admission evidence with only the bigram gate bypassed.
@@ -840,7 +900,7 @@ impl CompiledScanner {
         &self,
         chunks: &[Chunk],
     ) -> Phase1AdmissionPlan {
-        self.phase1_admission_plan_with_bigram_mode(chunks, true)
+        self.phase1_admission_plan_with_bigram_mode(chunks, true, true)
     }
 
     fn phase2_always_active_absence(&self, data: &str) -> bool {
@@ -892,6 +952,15 @@ impl CompiledScanner {
     }
 
     pub(crate) fn entropy_evidence_config_digest(&self) -> [u8; 32] {
+        // Cached on the scanner. `with_config` and `clear_fragment_cache` clear
+        // it. This digest keys vocab-stage absence memos and covers every scan
+        // setting that can change clean/confirmed/entropy/decode proofs (not
+        // only entropy). Callers that mutate `config` in place must clear via
+        // one of those entry points. Hot paths still avoid calling this unless
+        // a vocab/absence memo can actually hit (parent filesystem/windowed).
+        if let Some(cached) = *self.entropy_config_digest_cache.lock() {
+            return cached;
+        }
         fn update_strings(hasher: &mut blake3::Hasher, values: &[String]) {
             hasher.update(&(values.len() as u64).to_le_bytes());
             for value in values {
@@ -908,7 +977,16 @@ impl CompiledScanner {
         update_strings(&mut hasher, &self.config.secret_keywords);
         update_strings(&mut hasher, &self.config.test_keywords);
         update_strings(&mut hasher, &self.config.placeholder_keywords);
-        *hasher.finalize().as_bytes()
+        // Vocab clean/absence proofs also depend on these mutable scan knobs.
+        hasher.update(&[u8::from(self.config.unicode_normalization)]);
+        hasher.update(&self.config.min_confidence.to_bits().to_le_bytes());
+        hasher.update(&(self.config.max_matches_per_chunk as u64).to_le_bytes());
+        hasher.update(&(self.config.max_decode_depth as u64).to_le_bytes());
+        hasher.update(&(self.config.max_decode_bytes as u64).to_le_bytes());
+        hasher.update(&[u8::from(self.config.penalize_test_paths)]);
+        let digest = *hasher.finalize().as_bytes();
+        *self.entropy_config_digest_cache.lock() = Some(digest);
+        digest
     }
 
     #[cfg(feature = "entropy")]
@@ -1006,9 +1084,61 @@ impl CompiledScanner {
         fingerprint: [u8; 32],
         bypass_bigram: bool,
         classify_reusable_evidence: bool,
+        collect_cpu_trigger_hints: bool,
         entropy_config_digest: [u8; 32],
         decoder_admission_context: Option<u8>,
     ) -> ReusablePhase1Evidence {
+        // Windowed filesystem slices may reuse a prior clean proof to skip the
+        // expensive CPU-trigger / absence classification work. Admission and
+        // keyword-trigger census still run live: those fields feed autoroute
+        // WorkloadKey and must not flip after the first clean window.
+        // Safe to publish into a reusable evidence row only because
+        // representative grouping is symmetric: mixed windowed/non-windowed never
+        // share, and filesystem/windowed pairs also require the same path
+        // (see phase1_admission_plan_with_bigram_mode).
+        if chunk.metadata.decoded_span.is_none()
+            && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
+            && super::scan::vocab_previously_clean(
+                &self.vocab_stage_absence_cache,
+                self.detector_digest,
+                entropy_config_digest,
+                super::scan::vocab_path_class(
+                    chunk.metadata.source_type.as_ref(),
+                    chunk.metadata.path.as_deref(),
+                ),
+                &chunk.data,
+            )
+        {
+            let admission = if bypass_bigram {
+                self.phase1_admission_bypassing_bigram(chunk.data.as_bytes())
+            } else {
+                self.phase1_admission(chunk.data.as_bytes())
+            };
+            let (keyword_trigger_count, keyword_hints) = self.phase2_keyword_triggers(&chunk.data);
+            let mut generic_positions = Vec::new();
+            if let Some(generic_plan) = self.detector_plans.generic_assignment() {
+                crate::engine::phase2_generic::keywords::collect_generic_keyword_positions_with(
+                    generic_plan.stems(),
+                    &chunk.data,
+                    &mut generic_positions,
+                );
+            }
+            return ReusablePhase1Evidence {
+                admission,
+                keyword_trigger_count,
+                keyword_hints,
+                generic_positions,
+                phase2_always_active_absence: true,
+                cpu_trigger_hints: None,
+                normalization_passthrough: true,
+                confirmed_patterns_absence: true,
+                entropy_absence: true,
+                multiline_absence: true,
+                line_context_index: None,
+                decoder_absence: false,
+            };
+        }
+
         let mut reusable_cache =
             classify_reusable_evidence.then(|| self.reusable_phase1_evidence.lock());
         if let Some(evidence) = reusable_cache.as_mut().and_then(|cache| {
@@ -1038,21 +1168,39 @@ impl CompiledScanner {
                 &mut generic_positions,
             );
         }
-        let cpu_trigger_hints =
-            classify_reusable_evidence.then(|| self.collect_triggered_patterns_cpu(&chunk.data));
-        let confirmed_patterns_absence = cpu_trigger_hints
-            .as_deref()
-            .is_some_and(|triggers| self.confirmed_patterns_absent(&chunk.data, triggers));
+        // Always collect CPU triggers/absence for every representative so unique
+        // filesystem windows (one_long_line) can skip re-scanning in the hot
+        // lane. Cache insertion below stays gated on classify_reusable_evidence
+        // so one-off payloads do not clone multi-MiB chunk bodies into the
+        // reuse map.
+        let admitted = admission == Phase1Admission::Admitted;
+        // Rejected repeated payloads still take the no-hit lane and benefit from
+        // reusable absence, but only when classification is cheaper than the
+        // repeated work (many_small-sized chunks). Large rejected windows
+        // (one_long_line) must not build LineContextIndex / CPU triggers just to
+        // publish absence that a single-digit reuse count cannot amortize.
+        const REJECTED_REUSE_ABSENCE_MAX_BYTES: usize = 128 * 1024;
+        let reuse_nohit_absence = classify_reusable_evidence
+            && (admitted || chunk.data.len() <= REJECTED_REUSE_ABSENCE_MAX_BYTES);
+        // Unique admitted CPU windows need trigger hints for the scalar lane.
+        // Reusable no-hit absences need them to prove confirmed-pattern absence.
+        // Unique SIMD/GPU windows pay neither.
+        let cpu_trigger_hints = ((collect_cpu_trigger_hints && admitted) || reuse_nohit_absence)
+            .then(|| self.collect_triggered_patterns_cpu(&chunk.data));
+        let confirmed_patterns_absence = reuse_nohit_absence
+            && cpu_trigger_hints
+                .as_deref()
+                .is_some_and(|triggers| self.confirmed_patterns_absent(&chunk.data, triggers));
         let normalization_passthrough =
-            classify_reusable_evidence && self.normalization_passthrough(&chunk.data);
-        let built_line_context_index = classify_reusable_evidence
-            // LAW10: line-index construction failure disables evidence reuse; the later scan rebuilds context normally.
+            reuse_nohit_absence && self.normalization_passthrough(&chunk.data);
+        let built_line_context_index = reuse_nohit_absence
             .then(|| crate::context::LineContextIndex::try_new(&chunk.data).ok())
             .flatten()
             .map(Arc::new);
-        let entropy_absence = built_line_context_index
-            .as_deref()
-            .is_some_and(|index| self.entropy_absent(&chunk.data, index));
+        let entropy_absence = reuse_nohit_absence
+            && built_line_context_index
+                .as_deref()
+                .is_some_and(|index| self.entropy_absent(&chunk.data, index));
         let line_context_index = normalization_passthrough
             .then(|| built_line_context_index)
             .flatten();
@@ -1061,14 +1209,14 @@ impl CompiledScanner {
             keyword_trigger_count,
             keyword_hints,
             generic_positions,
-            phase2_always_active_absence: classify_reusable_evidence
+            phase2_always_active_absence: reuse_nohit_absence
                 && self.phase2_always_active_absence(&chunk.data),
             cpu_trigger_hints,
             normalization_passthrough,
             confirmed_patterns_absence,
             entropy_absence,
-            multiline_absence: classify_reusable_evidence && self.multiline_absent(&chunk.data),
-            decoder_absence: classify_reusable_evidence
+            multiline_absence: reuse_nohit_absence && self.multiline_absent(&chunk.data),
+            decoder_absence: reuse_nohit_absence
                 && decoder_admission_context.is_some()
                 && self.decoder_admission_absent(chunk),
             line_context_index,
@@ -1094,6 +1242,13 @@ impl CompiledScanner {
     }
 
     #[doc(hidden)]
+    pub fn clear_vocab_stage_absence_cache_for_diagnostics(&self) {
+        super::scan::clear_vocab_stage_absence_cache_for_diagnostics(
+            &self.vocab_stage_absence_cache,
+        );
+    }
+
+    #[doc(hidden)]
     #[cfg(debug_assertions)]
     #[must_use]
     pub fn reusable_phase1_evidence_hits_for_diagnostics(&self) -> u64 {
@@ -1104,6 +1259,7 @@ impl CompiledScanner {
         &self,
         chunks: &[Chunk],
         bypass_bigram: bool,
+        collect_cpu_trigger_hints: bool,
     ) -> Phase1AdmissionPlan {
         let entropy_config_digest = self.entropy_evidence_config_digest();
 
@@ -1112,11 +1268,27 @@ impl CompiledScanner {
         for (index, chunk) in chunks.iter().enumerate() {
             let data = chunk.data.as_bytes();
             let fingerprint = phase1_payload_fingerprint(data);
+            let current_windowed = chunk.metadata.source_type.as_ref() == "filesystem/windowed";
             let mut representative_position = None;
             for (position, (candidate, representative_index)) in representatives.iter().enumerate()
             {
+                let representative = &chunks[*representative_index];
+                let representative_windowed =
+                    representative.metadata.source_type.as_ref() == "filesystem/windowed";
+                // Symmetric: both non-windowed may share content-only reuse; both
+                // filesystem/windowed require the same path so a path-scoped
+                // vocab-clean proof cannot jump to another file or source class.
+                // Mixed windowed/non-windowed never share a representative.
+                let same_windowed_path = match (current_windowed, representative_windowed) {
+                    (true, true) => {
+                        chunk.metadata.path.as_deref() == representative.metadata.path.as_deref()
+                    }
+                    (false, false) => true,
+                    _ => false,
+                };
                 if *candidate == fingerprint
-                    && chunks[*representative_index].data.as_bytes() == data
+                    && same_windowed_path
+                    && representative.data.as_bytes() == data
                 {
                     representative_position = Some(position);
                     break;
@@ -1160,6 +1332,7 @@ impl CompiledScanner {
                         *fingerprint,
                         bypass_bigram,
                         representative_counts[position] > 1,
+                        collect_cpu_trigger_hints,
                         entropy_config_digest,
                         representative_decoder_contexts[position],
                     )
@@ -1175,6 +1348,7 @@ impl CompiledScanner {
                         *fingerprint,
                         bypass_bigram,
                         representative_counts[position] > 1,
+                        collect_cpu_trigger_hints,
                         entropy_config_digest,
                         representative_decoder_contexts[position],
                     )

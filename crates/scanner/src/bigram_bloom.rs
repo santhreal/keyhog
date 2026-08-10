@@ -261,20 +261,27 @@ impl BigramBloom {
         if self.width_mask == 0 {
             return false;
         }
-        chunk
-            .windows(MAX_ANCHOR_BYTES)
-            .any(|window| self.contains_anchor(window))
+        // Reject path walks every 8-byte window. one_long_line / many_small pay
+        // this per filesystem window; keep the probe allocation-free and avoid
+        // per-window scratch copies on the ASCII-dominated hot path.
+        self.any_long_anchor(chunk)
     }
 
     #[inline]
-    fn contains_anchor(&self, anchor: &[u8]) -> bool {
-        let mut folded = [0u8; MAX_ANCHOR_BYTES];
-        for (target, byte) in folded.iter_mut().zip(anchor.iter().copied()) {
-            *target = byte.to_ascii_lowercase();
+    fn any_long_anchor(&self, chunk: &[u8]) -> bool {
+        if chunk.len() < MAX_ANCHOR_BYTES {
+            return false;
         }
-        ngram_slots(&folded[..anchor.len()])
-            .into_iter()
-            .all(|slot| self.bits[slot >> 6] & (1u64 << (slot & 63)) != 0)
+        let bits = self.bits.as_ref();
+        let last = chunk.len() - MAX_ANCHOR_BYTES;
+        let mut i = 0usize;
+        while i <= last {
+            if contains_anchor_ascii8(bits, &chunk[i..i + MAX_ANCHOR_BYTES]) {
+                return true;
+            }
+            i += 1;
+        }
+        false
     }
 
     pub(crate) fn popcount(&self) -> u32 {
@@ -354,7 +361,7 @@ impl BigramBloom {
         self.width_mask != 0
             && chunk
                 .windows(MAX_ANCHOR_BYTES)
-                .any(|window| self.contains_anchor(window))
+                .any(|window| contains_anchor_ascii8(self.bits.as_ref(), window))
     }
 
     #[cfg(test)]
@@ -407,6 +414,26 @@ fn share_basis_points(numerator: u64, denominator: u64) -> u16 {
 #[inline(always)]
 fn width_bit(width: usize) -> u8 {
     1 << (width - 1)
+}
+
+#[inline(always)]
+fn contains_anchor_ascii8(bits: &[u64; 1024], anchor: &[u8]) -> bool {
+    debug_assert_eq!(anchor.len(), MAX_ANCHOR_BYTES);
+    // Inline `to_ascii_lowercase` + `ngram_slots` so the reject path does not
+    // allocate an 8-byte scratch array on every window of a multi-MiB chunk.
+    let mut first = 0x811c_9dc5u32 ^ MAX_ANCHOR_BYTES as u32;
+    let mut second = 0x9e37_79b9u32 ^ (MAX_ANCHOR_BYTES as u32).rotate_left(16);
+    for &byte in anchor {
+        let folded = byte.to_ascii_lowercase();
+        first ^= u32::from(folded);
+        first = first.wrapping_mul(0x0100_0193);
+        second ^= u32::from(folded);
+        second = second.rotate_left(5).wrapping_mul(0x85eb_ca6b);
+    }
+    let slot0 = usize::from(((first ^ (first >> 16)) & 0xffff) as u16);
+    let slot1 = usize::from(((second ^ (second >> 16)) & 0xffff) as u16);
+    (bits[slot0 >> 6] & (1u64 << (slot0 & 63))) != 0
+        && (bits[slot1 >> 6] & (1u64 << (slot1 & 63))) != 0
 }
 
 /// Two stable 16-bit slots for an anchor of one to eight bytes. Requiring both

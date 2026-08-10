@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Lock dense (≥64 KiB) markerless skips so short single-line secrets without a trailing newline still scan; orphan ungated skips rejected."
+crates = ["scanner"]

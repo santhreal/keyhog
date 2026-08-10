@@ -408,13 +408,15 @@ fn repeated_payloads_share_generic_keyword_positions() {
         chunk("ordinary-2.txt", ordinary_payload.clone()),
     ];
     scanner.reset_reusable_phase1_evidence_hits_for_diagnostics();
-    let initial_ordinary_plan = scanner.phase1_admission_plan(&ordinary_chunks);
+    let initial_ordinary_plan =
+        scanner.phase1_admission_plan_for_backend(&ordinary_chunks, ScanBackend::CpuFallback);
     assert_eq!(
         scanner.reusable_phase1_evidence_hits_for_diagnostics(),
         0,
         "the first exact payload classification must populate rather than hit the cache"
     );
-    let ordinary_plan = scanner.phase1_admission_plan(&ordinary_chunks);
+    let ordinary_plan =
+        scanner.phase1_admission_plan_for_backend(&ordinary_chunks, ScanBackend::CpuFallback);
     assert_eq!(ordinary_plan.summary(), initial_ordinary_plan.summary());
     assert!(
         scanner.reusable_phase1_evidence_hits_for_diagnostics() > 0,
@@ -474,6 +476,7 @@ fn repeated_payloads_share_generic_keyword_positions() {
     );
 
     scanner.clear_fragment_cache();
+    scanner.clear_vocab_stage_absence_cache_for_diagnostics();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
     scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
     scanner.reset_normalization_scanned_bytes_for_diagnostics();
@@ -643,6 +646,7 @@ fn repeated_payloads_share_generic_keyword_positions() {
     }
 
     scanner.clear_fragment_cache();
+    scanner.clear_vocab_stage_absence_cache_for_diagnostics();
     scanner.reset_phase2_prefilter_scanned_bytes_for_diagnostics();
     scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
     scanner.reset_normalization_scanned_bytes_for_diagnostics();

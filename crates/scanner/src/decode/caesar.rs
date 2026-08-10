@@ -372,6 +372,11 @@ impl CaesarDecoder {
         let credential_url_line_spans = credential_url_line_spans(&chunk.data);
         let private_key_spans = private_key_material_spans(&chunk.data);
         with_extracted_value_spans(&chunk.data, |candidates| {
+            // Caesar emits bare shifted candidate text (not spliced). Identical
+            // input values therefore produce identical outputs that the BFS
+            // content-dedup would drop anyway, so process each distinct value
+            // once per chunk.
+            let mut seen_values = std::collections::HashSet::<std::sync::Arc<str>>::new();
             for candidate in candidates {
                 if candidate_inside_spans(candidate.span(), &credential_url_line_spans) {
                     continue;
@@ -379,7 +384,10 @@ impl CaesarDecoder {
                 if candidate_inside_spans(candidate.span(), &private_key_spans) {
                     continue;
                 }
-                let candidate = candidate.value.as_str();
+                if !seen_values.insert(std::sync::Arc::clone(&candidate.value)) {
+                    continue;
+                }
+                let candidate = candidate.value.as_ref();
                 // SHIFT-INVARIANT PRECONDITION (sound; a true superset of "some
                 // shift is credential-shaped"). `caesar_shift` maps letter->letter,
                 // digit->digit, other->other, so the two structural gates inside

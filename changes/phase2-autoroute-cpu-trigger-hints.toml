@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Autoroute CpuFallback selections now fill deferred CPU trigger hints on the route-neutral phase-1 plan so production automatic scans reuse them."
+crates = ["scanner", "cli"]

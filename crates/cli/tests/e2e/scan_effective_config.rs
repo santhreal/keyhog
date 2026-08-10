@@ -903,6 +903,7 @@ fn config_effective_prints_scanner_tuning_from_toml() {
          fallback_prefix_gate = true\n\
          decode_focus = false\n\
          confirmed_suffix_gate = false\n\
+         confirmed_companion_gate = false\n\
          no_candidate_gate = false\n\
          fallback_localizer = true\n\
          gpu_recall_floor = true\n\
@@ -922,6 +923,7 @@ fn config_effective_prints_scanner_tuning_from_toml() {
         "tuning_fallback_prefix_gate = true",
         "tuning_decode_focus = false",
         "tuning_confirmed_suffix_gate = false",
+        "tuning_confirmed_companion_gate = false",
         "tuning_no_candidate_gate = false",
         "tuning_fallback_localizer = true",
         "tuning_gpu_recall_floor = true",
@@ -971,6 +973,7 @@ fn config_effective_ignores_legacy_detection_tuning_env() {
         "tuning_fallback_prefix_gate = false",
         "tuning_decode_focus = true",
         "tuning_confirmed_suffix_gate = true",
+        "tuning_confirmed_companion_gate = true",
         "tuning_no_candidate_gate = true",
         "tuning_fallback_localizer = true",
         "tuning_chunk_lane_threshold = 65536",

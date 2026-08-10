@@ -107,7 +107,7 @@ pub(crate) fn octal_escape_decode(input: &str) -> Result<String, ()> {
 
 pub(crate) fn extracted_value_strings_for_test(text: &str) -> Vec<String> {
     pipeline::with_extracted_value_spans(text, |values| {
-        values.iter().map(|value| value.value.clone()).collect()
+        values.iter().map(|value| value.value.to_string()).collect()
     })
 }
 

@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Vocab-stage absence memo keys include mutable scan settings (unicode_normalization, min_confidence, match/decode caps, penalize_test_paths) so clean proofs cannot survive in-place config edits."
+crates = ["scanner"]

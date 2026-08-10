@@ -43,6 +43,7 @@ pub struct ScannerTuningConfig {
     pub decode_focus: Option<bool>,
     /// Skip confirmed patterns when every required suffix literal is absent.
     pub confirmed_suffix_gate: Option<bool>,
+    pub confirmed_companion_gate: Option<bool>,
     /// Skip always-active phase-two work after proving that the chunk has no
     /// candidate for any member of the batch.
     pub no_candidate_gate: Option<bool>,
@@ -81,6 +82,7 @@ impl ScannerTuningConfig {
     pub(crate) const FALLBACK_PREFIX_GATE_DEFAULT: bool = false;
     pub(crate) const DECODE_FOCUS_DEFAULT: bool = true;
     pub(crate) const CONFIRMED_SUFFIX_GATE_DEFAULT: bool = true;
+    pub(crate) const CONFIRMED_COMPANION_GATE_DEFAULT: bool = true;
     pub(crate) const NO_CANDIDATE_GATE_DEFAULT: bool = true;
     pub(crate) const FALLBACK_LOCALIZER_DEFAULT: bool = true;
     pub(crate) const GPU_RECALL_FLOOR_DEFAULT: bool = false;
@@ -121,6 +123,7 @@ impl ScannerTuningConfig {
             fallback_prefix_gate: self.fallback_prefix_gate_effective(),
             decode_focus: self.decode_focus_effective(),
             confirmed_suffix_gate: self.confirmed_suffix_gate_effective(),
+            confirmed_companion_gate: self.confirmed_companion_gate_effective(),
             no_candidate_gate: self.no_candidate_gate_effective(),
             fallback_localizer: self.fallback_localizer_effective(),
             gpu_recall_floor: self.gpu_recall_floor_effective(),
@@ -179,6 +182,11 @@ impl ScannerTuningConfig {
             .unwrap_or(Self::CONFIRMED_SUFFIX_GATE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
 
+    pub(crate) fn confirmed_companion_gate_effective(&self) -> bool {
+        self.confirmed_companion_gate
+            .unwrap_or(Self::CONFIRMED_COMPANION_GATE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
     pub(crate) fn no_candidate_gate_effective(&self) -> bool {
         self.no_candidate_gate
             .unwrap_or(Self::NO_CANDIDATE_GATE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
@@ -224,6 +232,7 @@ pub struct ResolvedScannerTuningConfig {
     pub decode_focus: bool,
     /// Whether confirmed patterns with absent required suffixes are skipped.
     pub confirmed_suffix_gate: bool,
+    pub confirmed_companion_gate: bool,
     /// Whether proven no-candidate chunks skip always-active phase two.
     pub no_candidate_gate: bool,
     /// Whether eligible plain phase-two patterns use localized extraction.
@@ -274,6 +283,7 @@ pub(crate) struct ResolvedRuntimeTuningConfig {
     pub fallback_prefix_gate: bool,
     pub decode_focus: bool,
     pub confirmed_suffix_gate: bool,
+    pub confirmed_companion_gate: bool,
     pub no_candidate_gate: bool,
     pub fallback_localizer: bool,
     pub gpu_recall_floor: bool,

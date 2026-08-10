@@ -11,7 +11,7 @@
 /// one memory walk and shared cache lines.
 //
 // Every backend uses this from the shared no-trigger admission gate.
-pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
+pub(crate) fn has_secret_keyword_fast(data: &[u8]) -> bool {
     use aho_corasick::AhoCorasick;
     use std::sync::LazyLock;
     // Hold an `Option` instead of `.expect()`-unwrapping at LazyLock-init

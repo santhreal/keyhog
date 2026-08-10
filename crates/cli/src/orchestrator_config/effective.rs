@@ -438,6 +438,10 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         tuning.confirmed_suffix_gate
     ));
     out.push_str(&format!(
+        "tuning_confirmed_companion_gate = {}\n",
+        tuning.confirmed_companion_gate
+    ));
+    out.push_str(&format!(
         "tuning_no_candidate_gate = {}\n",
         tuning.no_candidate_gate
     ));
@@ -774,6 +778,10 @@ fn hash_scanner_tuning(h: &mut StableHasher, tuning: &keyhog_scanner::ScannerTun
     h.field_bool(
         "scanner_tuning.confirmed_suffix_gate",
         tuning.confirmed_suffix_gate,
+    );
+    h.field_bool(
+        "scanner_tuning.confirmed_companion_gate",
+        tuning.confirmed_companion_gate,
     );
     h.field_bool("scanner_tuning.no_candidate_gate", tuning.no_candidate_gate);
     h.field_bool(

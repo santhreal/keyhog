@@ -210,6 +210,7 @@ pub(super) struct TuningSection {
     pub fallback_prefix_gate: Option<bool>,
     pub decode_focus: Option<bool>,
     pub confirmed_suffix_gate: Option<bool>,
+    pub confirmed_companion_gate: Option<bool>,
     pub no_candidate_gate: Option<bool>,
     pub fallback_localizer: Option<bool>,
     pub gpu_recall_floor: Option<bool>,

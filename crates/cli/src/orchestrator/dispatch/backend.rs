@@ -51,7 +51,8 @@ use self::host::{host_identity_digest, AutorouteHostProfile};
 use self::routing::sole_compiled_backend;
 use self::routing::{
     automatic_recovery_plan, autoroute_required, autoroute_state_recovery_selection,
-    direct_backend_selection, resolve_persisted_route, AutorouteRuntimeClass, RuntimeRouteFault,
+    direct_backend_selection, phase1_plan_for_selected_backend, resolve_persisted_route,
+    AutorouteRuntimeClass, RuntimeRouteFault,
 };
 pub(crate) use self::routing::{
     AutorouteRoutingError, AutorouteRoutingErrorKind, AutorouteStateRecovery, BackendRecoveryPlan,
@@ -399,6 +400,7 @@ impl CachedBackendRouter {
                 return Ok(autoroute_state_recovery_selection(
                     scanner,
                     phase1_plan,
+                    batch,
                     reason,
                     announce,
                 ));
@@ -414,6 +416,7 @@ impl CachedBackendRouter {
                 return Ok(autoroute_state_recovery_selection(
                     scanner,
                     phase1_plan,
+                    batch,
                     reason,
                     announce,
                 ));
@@ -428,6 +431,7 @@ impl CachedBackendRouter {
             return Ok(autoroute_state_recovery_selection(
                 scanner,
                 phase1_plan,
+                batch,
                 reason,
                 announce,
             ));
@@ -453,6 +457,7 @@ impl CachedBackendRouter {
                 return Ok(autoroute_state_recovery_selection(
                     scanner,
                     phase1_plan,
+                    batch,
                     error.to_string(),
                     announce,
                 ));
@@ -493,6 +498,7 @@ impl CachedBackendRouter {
                 return Ok(autoroute_state_recovery_selection(
                     scanner,
                     phase1_plan,
+                    batch,
                     reason,
                     announce,
                 ));
@@ -501,7 +507,12 @@ impl CachedBackendRouter {
         record_hit();
         Ok(BackendSelection {
             backend: route.backend,
-            phase1_plan: Some(phase1_plan),
+            phase1_plan: Some(phase1_plan_for_selected_backend(
+                scanner,
+                route.backend,
+                phase1_plan,
+                batch,
+            )),
             execution_route: route.execution_route(),
             recovery_plan: automatic_recovery_plan(
                 self.decisions.get(&key),
@@ -677,6 +688,7 @@ impl MeasuredBackendRouter {
                 return Ok(autoroute_state_recovery_selection(
                     scanner,
                     phase1_plan,
+                    batch,
                     reason,
                     announce,
                 ));
@@ -698,6 +710,7 @@ impl MeasuredBackendRouter {
                 return Ok(autoroute_state_recovery_selection(
                     scanner,
                     phase1_plan,
+                    batch,
                     reason,
                     announce,
                 ));
@@ -719,7 +732,12 @@ impl MeasuredBackendRouter {
             }
             return Ok(BackendSelection {
                 backend: route.backend,
-                phase1_plan: Some(phase1_plan),
+                phase1_plan: Some(phase1_plan_for_selected_backend(
+                    scanner,
+                    route.backend,
+                    phase1_plan,
+                    batch,
+                )),
                 execution_route: route.execution_route(),
                 recovery_plan: if self.calibration_mode {
                     None
@@ -761,6 +779,7 @@ impl MeasuredBackendRouter {
                     return Ok(autoroute_state_recovery_selection(
                         scanner,
                         phase1_plan,
+                        batch,
                         error.to_string(),
                         announce,
                     ));
@@ -769,7 +788,12 @@ impl MeasuredBackendRouter {
             record_hit();
             return Ok(BackendSelection {
                 backend: route.backend,
-                phase1_plan: Some(phase1_plan),
+                phase1_plan: Some(phase1_plan_for_selected_backend(
+                    scanner,
+                    route.backend,
+                    phase1_plan,
+                    batch,
+                )),
                 execution_route: route.execution_route(),
                 recovery_plan: automatic_recovery_plan(
                     self.decisions.get(&key),
@@ -791,6 +815,11 @@ impl MeasuredBackendRouter {
                 "eligible backend set changed after calibration started; rerun calibration so every candidate is measured under one stable peer census",
             ));
         }
+        // Keep the route-neutral plan for calibration timing. Prefilling CPU
+        // trigger hints here would remove the phase-1 AC pass from the CpuFallback
+        // clock while SIMD/GPU candidates still pay theirs inside timed scans,
+        // biasing the persisted winner toward scalar CPU. Production still fills
+        // via phase1_plan_for_selected_backend after selection below.
         let decision = calibrate_fastest_correct_backend(
             scanner,
             self.pattern_count,
@@ -828,7 +857,12 @@ impl MeasuredBackendRouter {
         self.cache_dirty = true;
         Ok(BackendSelection {
             backend: route.backend,
-            phase1_plan: Some(phase1_plan),
+            phase1_plan: Some(phase1_plan_for_selected_backend(
+                scanner,
+                route.backend,
+                phase1_plan,
+                batch,
+            )),
             execution_route: route.execution_route(),
             recovery_plan: None,
             runtime_route: None,

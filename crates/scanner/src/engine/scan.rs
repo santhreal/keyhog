@@ -42,6 +42,35 @@ impl CompiledScanner {
             && (chunk.data.len() <= self.config.max_decode_bytes
                 || self.chunk_uses_bounded_decode_windows(chunk))
             && !decoder_absence
+            // Single-line blobs without classical encode markers (`+`, `/`, `=`,
+            // `%`, `\`) are dominated by opaque alphanumeric JSON/minified
+            // tokens. Trial-decoding every repeated value is pure waste: the
+            // root plaintext scan already covers bare credentials, and nopad
+            // base64 without those markers is not distinguishable from ordinary
+            // identifiers at admission time. Skip decode-through on that shape
+            // so one_long_line residual stays bounded; windows that do carry a
+            // marker still decode normally.
+            && !text_is_dense_markerless_single_line(&chunk.data)
+            // Size-gated: short markerless lines still decode (regression fixtures
+            // and small encoded payloads). Dense minified JSON (one_long_line) skips.
+            // Repetitive multi-line corpora (one_large) share a tiny line
+            // vocabulary across overlapping windows. Once a vocab has been
+            // decode-through'd to an empty child set, later windows with the
+            // same unique-line fingerprint skip decode-through entirely.
+            // Only consult the memo for parent filesystem/windowed slices;
+            // other sources would pay a full content fingerprint for a miss.
+            && !(chunk.metadata.decoded_span.is_none()
+                && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
+                && decode_vocab_previously_empty(
+                    &self.vocab_stage_absence_cache,
+                    self.detector_digest,
+                    self.entropy_evidence_config_digest(),
+                    vocab_path_class(
+                        chunk.metadata.source_type.as_ref(),
+                        chunk.metadata.path.as_deref(),
+                    ),
+                    &chunk.data,
+                ))
             && {
                 #[cfg(debug_assertions)]
                 self.decoder_admission_scanned_bytes.fetch_add(
@@ -250,6 +279,21 @@ impl CompiledScanner {
         }
         // prepare_chunk and phase-1 timing are owned by the unified profiler's
         // Preprocess / Phase1Triggers leaf spans (opened inside those calls).
+        if chunk.metadata.decoded_span.is_none()
+            && chunk.metadata.source_type.as_ref() == "filesystem/windowed"
+            && vocab_previously_clean(
+                &self.vocab_stage_absence_cache,
+                self.detector_digest,
+                self.entropy_evidence_config_digest(),
+                vocab_path_class(
+                    chunk.metadata.source_type.as_ref(),
+                    chunk.metadata.path.as_deref(),
+                ),
+                &chunk.data,
+            )
+        {
+            return Ok(Vec::new());
+        }
         let prepared = self.prepare_chunk_with_normalization_passthrough(
             chunk,
             normalization_passthrough,
@@ -282,3 +326,5 @@ impl CompiledScanner {
         )
     }
 }
+
+pub(crate) use super::vocab_absence::*;

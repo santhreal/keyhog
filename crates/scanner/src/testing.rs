@@ -240,7 +240,7 @@ pub fn extract_encoded_value_spans_for_test(text: &str) -> Vec<(String, usize, u
             .iter()
             .map(|value| {
                 let (start, end) = value.span();
-                (value.value.clone(), start, end)
+                (value.value.to_string(), start, end)
             })
             .collect()
     })
@@ -2699,6 +2699,39 @@ pub fn has_fragment_assignment_syntax_for_test(data: &[u8]) -> bool {
 pub fn suffix_gate_literals_for_test(src: &str) -> Vec<String> {
     crate::engine::suffix_gate_literals(src)
 }
+
+pub fn companion_arms_for_test(src: &str) -> Vec<Vec<String>> {
+    crate::engine::companion_arms(src).as_ref().clone()
+}
+
+pub fn companions_allow_for_test(src: &str, text: &str) -> bool {
+    crate::engine::companions_allow(src, text)
+}
+
+/// Deny-callback companion gate used by the presence-scratch growth regression.
+pub fn companions_deny_absent_for_test(
+    detector_digest: u64,
+    patterns: &[(usize, &str)],
+    text: &str,
+    deny: impl FnMut(usize),
+) {
+    crate::engine::companions_deny_absent(detector_digest, patterns, text, deny)
+}
+
+/// Size gate for markerless no-hit / always-active / decode skips (64 KiB).
+pub fn markerless_no_hit_min_bytes_for_test() -> usize {
+    crate::engine::MARKERLESS_NO_HIT_MIN_BYTES
+}
+
+/// Dense markerless predicate used by production skip sites.
+pub fn text_is_dense_markerless_single_line_for_test(text: &str) -> bool {
+    crate::engine::text_is_dense_markerless_single_line(text)
+}
+
+/// Shape-only markerless predicate (no size gate).
+pub fn text_is_markerless_single_line_for_test(text: &str) -> bool {
+    crate::engine::text_is_markerless_single_line(text)
+}
 pub fn new_trigger_bitmap_for_test(n_patterns: usize) -> Vec<u64> {
     crate::engine::trigger_bitmap::new_trigger_bitmap(n_patterns)
 }
@@ -3782,6 +3815,14 @@ pub(crate) fn set_confirmed_suffix_gate(
     mode: Option<bool>,
 ) {
     scanner.tuning().set_confirmed_suffix_gate(mode);
+}
+
+#[cfg(test)]
+pub(crate) fn set_confirmed_companion_gate(
+    scanner: &crate::engine::CompiledScanner,
+    mode: Option<bool>,
+) {
+    scanner.tuning().set_confirmed_companion_gate(mode);
 }
 
 #[cfg(test)]

@@ -10,6 +10,7 @@ mod autoroute_gpu_optin_contract;
 mod backend_collapse_regression;
 mod backend_collapse_surface_regression;
 mod batch_topology_and_tuning;
+mod companion_gate;
 #[cfg(feature = "simd")]
 mod compiled_scanner_compile;
 mod compiler_compile;
@@ -34,6 +35,7 @@ mod gpu_resident_throughput;
 mod homoglyph_ascii_skip_parity;
 mod homoglyph_gate_repro;
 mod lazy_regex;
+mod markerless_dense_skip;
 mod perf_decode_caesar;
 mod perf_locality_intern;
 mod perf_ml_scoring;

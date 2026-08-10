@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Make filesystem/windowed phase-1 representative reuse symmetric: both chunks must agree on windowed-ness, and windowed pairs also require the same path, so vocab-clean proofs cannot jump across paths or source classes."
+crates = ["scanner"]
