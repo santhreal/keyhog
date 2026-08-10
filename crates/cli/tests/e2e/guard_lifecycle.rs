@@ -152,6 +152,20 @@ fn guard_status_json_format() {
         "guard status JSON should have 'state' field: got: {}",
         status_out
     );
+    // Verify the new status fields are present.
+    for field in [
+        "accepted_event_sequence",
+        "completed_event_sequence",
+        "scanner_residency",
+        "backend_route_label",
+        "autoroute_evidence_status",
+        "store_schema_version",
+    ] {
+        assert!(
+            parsed.get(field).is_some(),
+            "guard status JSON should have '{field}' field: got: {status_out}"
+        );
+    }
 }
 
 #[cfg(unix)]
