@@ -1659,6 +1659,7 @@ pub fn scan_coalesced_phase2_with_admission_for_test(
             None,
             None,
             None,
+            crate::hw_probe::ScanBackend::CpuFallback,
             scanner.default_execution_route(),
         )
         .expect("test phase-2 admission scan succeeds")
@@ -1679,6 +1680,7 @@ pub fn scan_windowed_with_triggered_for_test(
             None,
             None,
             None,
+            crate::hw_probe::ScanBackend::CpuFallback,
             scanner.default_execution_route(),
         )
         .expect("test triggered window scan succeeds")
@@ -1701,6 +1703,7 @@ pub fn scan_windowed_with_triggered_evidence_for_test(
             None,
             confirmed_anchor_literal_matches,
             generic_keyword_positions,
+            crate::hw_probe::ScanBackend::CpuFallback,
             scanner.default_execution_route(),
         )
         .expect("test evidence window scan succeeds")
@@ -1938,7 +1941,7 @@ pub mod confidence {
                 )
             })
             .post_match;
-        crate::confidence::policy::finalize_report_confidence(
+        crate::confidence::policy::finalize_report_confidence_canonical(
             confidence,
             crate::confidence::policy::ReportConfidencePolicy {
                 credential,

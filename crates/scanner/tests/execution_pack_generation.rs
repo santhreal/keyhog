@@ -582,7 +582,7 @@ fn wgpu_pack_contains_exact_vyre_orchestration_program() {
         decoded.matcher_digest,
         *blake3::hash(&decoded.matcher_bytes).as_bytes()
     );
-assert!(!decoded.phase2_catalog_bytes.is_empty());
+    assert!(!decoded.phase2_catalog_bytes.is_empty());
     assert_eq!(
         decoded.phase2_catalog_digest,
         *blake3::hash(&decoded.phase2_catalog_bytes).as_bytes()
@@ -620,7 +620,8 @@ fn wgpu_program_rejects_cuda_backend_relabeling() {
     assert!(error.to_string().contains("not selected GpuCuda"));
 }
 
-/// WHY: a signed matcher receipt calibrated with another feature schema or model cannot authorize fused scoring.
+/// WHY: a signed matcher receipt calibrated with another feature schema or
+/// model cannot authorize the quantized score dispatch.
 #[cfg(feature = "gpu")]
 #[test]
 fn wgpu_program_rejects_stale_quantized_confidence_artifacts() {
@@ -640,7 +641,9 @@ fn wgpu_program_rejects_stale_quantized_confidence_artifacts() {
         )
         .expect_err("stale quantized confidence identity must fail");
         assert!(
-            error.to_string().contains("confidence schema, model, or score ABI")
+            error
+                .to_string()
+                .contains("confidence schema, model, or score ABI")
                 || error.to_string().contains("unsupported"),
             "offset {offset}: {error}"
         );

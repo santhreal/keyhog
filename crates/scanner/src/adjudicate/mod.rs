@@ -543,7 +543,10 @@ pub(crate) fn finalize_report_candidate(
             record_suppression_telemetry(path, credential, stage_id);
             None
         }
-        Verdict::Reported(confidence) => confidence,
+        Verdict::Reported(confidence) => confidence.map(|confidence| {
+            crate::confidence::policy::canonical_report_confidence(confidence)
+                .max(policy.min_confidence_floor)
+        }),
     }
 }
 

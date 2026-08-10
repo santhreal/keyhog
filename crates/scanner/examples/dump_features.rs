@@ -46,6 +46,15 @@ fn resolve_detector(id: &str) -> Option<&'static keyhog_core::DetectorSpec> {
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--quantized-schema-digest") {
+        println!(
+            "{}",
+            keyhog_core::hex_encode(
+                &keyhog_scanner::confidence::quantized::feature_schema_digest()
+            )
+        );
+        return;
+    }
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut out = io::BufWriter::new(stdout.lock());

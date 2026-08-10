@@ -224,8 +224,7 @@ fn quantized_feature_union_and_scores_are_bit_identical_across_canonical_abi() {
         .enumerate()
     {
         assert!(seen.insert(*name), "duplicate feature ABI name {name}");
-        let mut features =
-            [0.0; keyhog_scanner::confidence::quantized::FEATURE_NAMES.len()];
+        let mut features = [0.0; keyhog_scanner::confidence::quantized::FEATURE_NAMES.len()];
         features[index] = 1.0;
         let first = keyhog_scanner::testing::quantized_score_features(&features)
             .expect("canonical quantized score");

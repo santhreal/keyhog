@@ -55,7 +55,7 @@ fn issue32_resident_capacity_counts_presence_storage_before_allocation() {
         let per_slot = base
             .mutable_device_bytes()
             .expect("base resident byte accounting fits u64");
-        let expected = 4 + 4 + 4 + 12 + u64::from(super::GPU_FUSED_MATCH_CAP) * 12;
+        let expected = 8 + 4 + 4 + 12 + u64::from(super::GPU_FUSED_MATCH_CAP) * 12;
         assert_eq!(per_slot, expected);
         assert!(
             per_slot * u64::from(depth) <= aggregate_ceiling,

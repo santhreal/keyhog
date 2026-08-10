@@ -3,8 +3,10 @@
 
 pub(crate) mod penalties;
 pub(crate) mod policy;
-pub mod quantized;
 mod prefixes;
+pub mod quantized;
+#[cfg(all(feature = "gpu", feature = "ml"))]
+pub(crate) mod quantized_vyre;
 mod signals;
 
 pub use prefixes::KNOWN_PREFIXES;

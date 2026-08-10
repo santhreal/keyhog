@@ -117,10 +117,15 @@ exist. An unavailable differential is recorded explicitly on a candidate model;
 loop builds the candidate first and then benchmarks that exact binary, avoiding
 a circular requirement for results from a model that could not yet be built.
 
-`fast_sigmoid(x) = 0.5 + 0.5*x/(1+|x|)` is the exact serve-time nonlinearity;
-the trainer optimizes through it so trained probabilities are the ones the Rust
-scanner produces. `weights.bin` layout (little-endian f32), matching the offsets
-in `ml_weights.rs`:
+`fast_sigmoid(x) = 0.5 + 0.5*x/(1+|x|)` is the exact floating-point
+serve-time nonlinearity. The trainer also emits the canonical signed Q7
+accelerator artifact. Q7 conversion uses nearest-ties-away-from-zero rounding,
+and the artifact header binds format version 1, feature-schema version 1, all
+model dimensions, the 55-feature schema digest, and the payload byte count and
+SHA-256 digest.
+
+`weights.bin` uses little-endian f32 values matching the offsets in
+`ml_weights.rs`:
 
 ```
 gate.weight[6,D], gate.bias[6],
@@ -150,8 +155,8 @@ provides evaluation-only replay of that exact model.
 | `rust_features.py` | training feature source; batches detector/channel-qualified records through Rust `dump_features` |
 | `feature_parity.py` | parity/debug port of `ml_features.rs` (not used for training features) |
 | `config_lists.py` | serve-path detector keyword lists, mirror of `config.rs` |
-| `corpus.py` | labeled training corpus generator with positive coverage for every authoritative entropy family and heavy base64-of-binary negatives |
-| `train_classifier.py` | trains the MoE, evaluates, serializes `weights.bin` and `model_card.json` |
+| `train_classifier.py` | trains the MoE, evaluates, and serializes the matched `weights.bin`, `quantized_moe.bin`, and `model_card.json` artifacts |
+| `retrain_loop.sh` | verifies and promotes the complete three-artifact serving set, or restores all three backups |
 | `parity_check.py` | asserts the Python debug port still matches the Rust serve-path extractor |
 
 ## Retraining
@@ -168,11 +173,11 @@ python3 ml/corpus.py --out ml/data/corpus.jsonl
 
 # 3. harvest real candidates, then train + install. Build the exact keyhog
 #    binary that harvest receives; a stale scanner changes the training data.
-#    Training reads the same Rust
-#    serve-path feature extractor via KEYHOG_DUMP_FEATURES, backs up the
-#    existing weights.bin/model_card.json to .bak, and refuses to write unless
-#    synthetic F1 plus aggregate and per-class leakage-free real held-out recall
-#    clear the gates.
+#    Training reads the same Rust serve-path feature extractor through
+#    KEYHOG_DUMP_FEATURES. Verified promotion backs up weights.bin,
+#    quantized_moe.bin, and model_card.json, then refuses the complete write
+#    unless synthetic F1 plus aggregate and per-class leakage-free real
+#    held-out recall clear the gates.
 cargo build --release -p keyhog --bin keyhog --features simd
 python3 ml/harvest_corpus.py --corpora "$CRED_CORPORA" \
   --keyhog-bin "${CARGO_TARGET_DIR:-target}/release/keyhog" \
@@ -187,8 +192,18 @@ ml/retrain_loop.sh --write --verify
 ```
 
 `crates/scanner/build.rs` validates that `model_card.json` names the exact
-FNV-derived `weights.bin` model version before embedding both. A stale or
-missing card fails the build instead of producing an `unknown` model lineage.
+FNV-derived floating-point model version, quantized artifact SHA-256, and
+canonical feature-schema digest before embedding the serving artifacts. A
+stale, partial, or missing serving set fails the build.
+
+The GPU route submits eligible candidate rows to one asynchronous VYRE score
+program. Bounded IR loops keep the complete model below finite shader-size
+limits. This program is not part of the resident literal kernel. Invalid UTF-8,
+empty, oversized, or unquantizable candidates stay on the floating-point CPU
+model. After the dispatch fence retires, the shared CPU tail restores candidate
+order and applies detector floors, suppression, and final finding construction.
+Authenticated CPU routes use the same fixed-point artifact for eligible rows,
+so backend choice cannot change the confidence model.
 
 ## Parity contract
 

@@ -428,6 +428,13 @@ fn canonicalize_report_confidence(confidence: f64) -> f64 {
     (confidence * REPORT_CONFIDENCE_SCALE).round() / REPORT_CONFIDENCE_SCALE
 }
 
+pub(crate) fn finalize_report_confidence_canonical(
+    confidence: f64,
+    policy: ReportConfidencePolicy<'_>,
+) -> Option<f64> {
+    finalize_report_confidence(confidence, policy).map(canonicalize_report_confidence)
+}
+
 pub(crate) fn finalize_report_confidence(
     confidence: f64,
     policy: ReportConfidencePolicy<'_>,
@@ -457,7 +464,10 @@ pub(crate) fn finalize_report_confidence(
         policy.calibration,
     );
     apply_checksum_decision_confidence(confidence, policy.checksum)
-        .map(canonicalize_report_confidence)
+}
+
+pub(crate) fn canonical_report_confidence(confidence: f64) -> f64 {
+    canonicalize_report_confidence(confidence)
 }
 
 #[cfg(feature = "ml")]
@@ -532,7 +542,7 @@ pub(crate) fn ml_score_for_candidate_text(text: &str, score: impl FnOnce() -> f6
     }
 }
 
-#[cfg(all(feature = "ml", feature = "gpu"))]
+#[cfg(all(test, feature = "ml", feature = "gpu"))]
 pub(crate) fn apply_empty_candidate_score_policy<'a>(
     texts: impl IntoIterator<Item = &'a str>,
     scores: &mut [f64],

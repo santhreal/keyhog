@@ -133,13 +133,19 @@ fn dense_rejected_candidates_construct_no_durable_matches() {
 /// WHY: the accelerator returns only an integer score; the shared CPU finalizer
 /// must retain exact below/at/above floor semantics without a floating tolerance.
 #[test]
-fn quantized_scores_keep_floor_ownership_in_the_shared_finalizer() {
+fn quantized_scores_keep_every_registered_floor_in_the_shared_finalizer() {
     let config = ScannerConfig::default();
-    let floor = 0.95;
-    let at = crate::confidence::quantized::QuantizedScore(62_226).as_f64();
-    let below = crate::confidence::quantized::QuantizedScore(62_225).as_f64();
-    let above = crate::confidence::quantized::QuantizedScore(62_227).as_f64();
-    let pending_at = |offset| {
+    let mut floor_bits = std::collections::BTreeSet::from([
+        config.min_confidence.to_bits(),
+        ScannerConfig::HIGH_PRECISION_MIN_CONFIDENCE.to_bits(),
+    ]);
+    floor_bits.extend(
+        keyhog_core::embedded_detector_specs()
+            .iter()
+            .filter_map(|detector| detector.min_confidence)
+            .map(f64::to_bits),
+    );
+    let pending_at = |offset, floor| {
         let mut pending = pending_candidate(offset, floor);
         pending.post_match = keyhog_core::DetectorPostMatchConfidenceSpec {
             placeholder_multiplier: 1.0,
@@ -156,13 +162,48 @@ fn quantized_scores_keep_floor_ownership_in_the_shared_finalizer() {
         pending
     };
 
-    assert!(
-        finalize_pending_match_for_test(&config, pending_at(1), below).is_none()
-    );
-    assert!(
-        finalize_pending_match_for_test(&config, pending_at(2), at).is_some()
-    );
-    assert!(
-        finalize_pending_match_for_test(&config, pending_at(3), above).is_some()
-    );
+    for (index, floor) in floor_bits.into_iter().map(f64::from_bits).enumerate() {
+        let scaled = floor * f64::from(u16::MAX);
+        let ceiling = scaled.ceil() as u32;
+        if ceiling > 0 {
+            let below = crate::confidence::quantized::QuantizedScore((ceiling - 1) as u16).as_f64();
+            assert!(below < floor);
+            assert!(
+                finalize_pending_match_for_test(&config, pending_at(index * 3 + 1, floor), below,)
+                    .is_none(),
+                "registered floor {floor} accepted the nearest quantized score below it"
+            );
+        }
+        let at_floor =
+            finalize_pending_match_for_test(&config, pending_at(index * 3 + 2, floor), floor)
+                .unwrap_or_else(|| panic!("registered floor {floor} rejected an exact score"));
+        assert_eq!(
+            at_floor.confidence,
+            Some(floor),
+            "registered floor {floor} changed the emitted score"
+        );
+        let above_units = if scaled.fract() == 0.0 {
+            ceiling.saturating_add(1)
+        } else {
+            ceiling
+        };
+        if above_units <= u32::from(u16::MAX) {
+            let above = crate::confidence::quantized::QuantizedScore(above_units as u16).as_f64();
+            assert!(above > floor);
+            let emitted = finalize_pending_match_for_test(
+                &config,
+                pending_at(index * 3 + 3, floor),
+                above,
+            )
+            .unwrap_or_else(|| {
+                panic!("registered floor {floor} rejected the nearest quantized score above it")
+            });
+            let canonical = ((above * 1_000.0).round() / 1_000.0).max(floor);
+            assert_eq!(
+                emitted.confidence,
+                Some(canonical),
+                "registered floor {floor} changed the canonical emitted score"
+            );
+        }
+    }
 }

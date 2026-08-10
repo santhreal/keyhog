@@ -29,7 +29,7 @@ impl ExecutionPackSectionKind {
 
     pub const fn schema_version(self) -> u16 {
         match self {
-Self::DetectorIr => super::ir::DETECTOR_EXECUTION_IR_VERSION,
+            Self::DetectorIr => super::ir::DETECTOR_EXECUTION_IR_VERSION,
             Self::LiteralIndex | Self::RegexPrograms | Self::SuppressionPolicy => {
                 super::matcher_sections::ROUTE_MATCHER_SECTION_VERSION
             }

@@ -6,10 +6,11 @@
 - Section-specific schema versions for execution packs: detector-plan sections use schema version 2 and matcher sections use schema version 5. Pack loading validates section schema versions and reports an actionable rebuild recommendation if mismatched.
 - Authenticate execution pack content digests and signatures before interpreting section tables or identity headers, protecting the trust boundary against unauthenticated header mutations.
 - Verify every changed section schema against independently encoded legacy pack bytes so compatibility checks cannot inherit the current compiler's layout.
+- Add a versioned integer confidence ABI and a separate asynchronous quantized MoE VYRE score dispatch. Bounded IR loops keep the complete model below finite shader-size limits. Authenticated CPU and GPU routes use the same fixed-point model for accelerator-eligible candidates; selected GPU scoring fails closed while feature extraction, confidence floors, suppression, deduplication, and reporting remain in the shared CPU tail.
+
 ## 0.5.68 - 2026-08-05
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.
-- Add a versioned integer confidence ABI and quantized MoE artifact for fused GPU routes. Signed VYRE execution packs and persisted route decisions bind the exact feature schema, model, detector/config/binary pack identity, and calibrated device/driver receipt; stale artifacts fail closed while confidence floors, suppression, deduplication, and reporting remain in the shared CPU finalizer.
 - Make scanner construction route-specific. The default library constructor owns only the scalar reference route, `compile_for_backend` owns one explicit route, and cross-route dispatch fails instead of materializing or substituting a backend.
 - Store each interned detector metadata string in one lookup-map key instead of a parallel arena and index, and reuse those allocations for resolution and cross-detector relation identities.
 - Remove the overlapping scalar phase-one automaton from exact SIMD scanners. Lazy SIMD plans now share the canonical literal table, phase-two keyword catalogs borrow detector-owned strings, and alphabet and GPU plan construction no longer clone temporary literal tables.

@@ -36,6 +36,7 @@ import math
 import os
 import pathlib
 import shutil
+import struct
 import sys
 
 import numpy as np
@@ -48,6 +49,11 @@ EXPERT_COUNT = 6
 FC1 = 32
 FC2 = 16
 CURRENT_MODEL_CARD = "crates/scanner/src/model_card.json"
+CURRENT_QUANTIZED_MODEL = "crates/scanner/src/quantized_moe.bin"
+QUANTIZED_MODEL_FORMAT_VERSION = 1
+QUANTIZED_FEATURE_SCHEMA_VERSION = 1
+QUANTIZED_FRACTIONAL_BITS = 7
+QUANTIZED_ROUNDING_TIES_AWAY = 1
 REAL_RECALL_FLOOR = 0.40
 REAL_F1_FLOOR = 0.78
 REAL_PRECISION_FLOOR = 0.70
@@ -785,6 +791,15 @@ def probe_gate_error(probes: dict, threshold: float = 0.5) -> str:
     return "REFUSING model: canonical probe contract failed: " + "; ".join(failures) + "\n"
 
 
+def parameter_count(num_features: int) -> int:
+    return (
+        num_features * EXPERT_COUNT
+        + EXPERT_COUNT
+        + EXPERT_COUNT
+        * (num_features * FC1 + FC1 + FC1 * FC2 + FC2 + FC2 + 1)
+    )
+
+
 def serialize(model, num_features: int) -> bytes:
     """Flatten the model into the exact little-endian f32 layout ml_weights.rs
     parses. Linear.weight is [out, in] row-major, which is precisely the
@@ -806,14 +821,63 @@ def serialize(model, num_features: int) -> bytes:
         add(sd[f"experts.{e}.fc3.bias"])  # [1]
 
     flat = np.concatenate(buf)
-    expected = (
-        num_features * EXPERT_COUNT
-        + EXPERT_COUNT
-        + EXPERT_COUNT
-        * (num_features * FC1 + FC1 + FC1 * FC2 + FC2 + FC2 + 1)
-    )
+    expected = parameter_count(num_features)
     assert flat.size == expected, f"layout size {flat.size} != expected {expected}"
     return flat.tobytes()
+
+def serialize_quantized(blob: bytes, num_features: int) -> bytes:
+    """Serialize the current model into the canonical signed Q7 wire format."""
+    if num_features != rust_features.NUM_FEATURES:
+        raise ValueError(
+            "quantized serving requires the current "
+            f"{rust_features.NUM_FEATURES}-feature schema, got {num_features}"
+        )
+    expected_bytes = parameter_count(num_features) * np.dtype("<f4").itemsize
+    if len(blob) != expected_bytes:
+        raise ValueError(
+            f"quantized serving expected {expected_bytes} model bytes, got {len(blob)}"
+        )
+    flat = np.frombuffer(blob, dtype="<f4")
+    if not np.isfinite(flat).all():
+        raise ValueError("quantized serving cannot encode non-finite model parameters")
+    scale = 1 << QUANTIZED_FRACTIONAL_BITS
+    scaled = flat.astype(np.float64) * scale
+    rounded = np.where(
+        scaled >= 0.0,
+        np.floor(scaled + 0.5),
+        np.ceil(scaled - 0.5),
+    )
+    quantized = np.clip(rounded, -32768, 32767).astype("<i2")
+    parameter_bound = int(np.max(np.abs(quantized.astype(np.int64))))
+    dense_terms = max(num_features, FC1, FC2)
+    maximum_dense_accumulator = (
+        dense_terms * 32768 * parameter_bound
+        + scale * parameter_bound
+        + scale // 2
+    )
+    if maximum_dense_accumulator > np.iinfo(np.int32).max:
+        raise ValueError(
+            "quantized serving parameter magnitude "
+            f"{parameter_bound} exceeds the VYRE i32 arithmetic bound"
+        )
+    payload = quantized.tobytes()
+    payload_digest = hashlib.sha256(payload).digest()
+    header = struct.pack(
+        "<8s6HBBHI32s",
+        b"KHQMOE\0\1",
+        QUANTIZED_MODEL_FORMAT_VERSION,
+        QUANTIZED_FEATURE_SCHEMA_VERSION,
+        num_features,
+        EXPERT_COUNT,
+        FC1,
+        FC2,
+        QUANTIZED_FRACTIONAL_BITS,
+        QUANTIZED_ROUNDING_TIES_AWAY,
+        0,
+        len(payload),
+        payload_digest,
+    )
+    return header + payload
 
 
 def weights_fnv1a64(blob: bytes) -> str:
@@ -834,7 +898,14 @@ def file_sha256(path: str | None) -> str | None:
     return digest.hexdigest()
 
 
-def write_model_card(blob: bytes, args, metrics, real_metrics=None) -> None:
+def write_model_card(
+    blob: bytes,
+    quantized_blob: bytes | None,
+    feature_schema_digest: str | None,
+    args,
+    metrics,
+    real_metrics=None,
+) -> None:
     """Write model-card provenance beside the serialized weights.
 
     Shipped writes require real held-out metrics. A synthetic-only card would be
@@ -914,6 +985,17 @@ def write_model_card(blob: bytes, args, metrics, real_metrics=None) -> None:
             "real_heldout": real_card,
         },
     }
+    if quantized_blob is not None:
+        if feature_schema_digest is None:
+            raise ValueError("quantized model card requires a feature-schema digest")
+        card["quantized_serving"] = {
+            "artifact_sha256": hashlib.sha256(quantized_blob).hexdigest(),
+            "feature_schema_sha256": feature_schema_digest,
+            "feature_schema_version": QUANTIZED_FEATURE_SCHEMA_VERSION,
+            "format_version": QUANTIZED_MODEL_FORMAT_VERSION,
+            "fractional_bits": QUANTIZED_FRACTIONAL_BITS,
+            "rounding": "nearest-ties-away-from-zero",
+        }
 
     if args.write:
         path = args.model_card
@@ -937,6 +1019,8 @@ def main() -> int:
                     help="harvested real-distribution JSONL to blend in (Stage 2); "
                          "enables the file-grouped real held-out eval")
     ap.add_argument("--out", default="crates/scanner/src/weights.bin")
+    ap.add_argument("--quantized-out", default=CURRENT_QUANTIZED_MODEL,
+                    help="quantized model artifact to update with --write")
     ap.add_argument("--model-card", default=CURRENT_MODEL_CARD,
                     help="model-card JSON to update with --write; must match weights.bin")
     ap.add_argument("--features", type=int, default=55, choices=[41, 42, 43, 51, 55])
@@ -1157,6 +1241,17 @@ def _write_weights(blob: bytes, args, metrics, real_metrics=None) -> None:
     """Write the serialized weights: `--write` overwrites the crate's
     `weights.bin` (backing up the old one to `.bak`); otherwise a scratch file
     next to the corpus, never touching the shipped crate."""
+    if args.features == rust_features.NUM_FEATURES:
+        quantized_blob = serialize_quantized(blob, args.features)
+        feature_schema_digest = rust_features.quantized_schema_digest()
+    else:
+        if args.write:
+            raise SystemExit(
+                "REFUSING to write: shipped quantized serving requires the current "
+                f"{rust_features.NUM_FEATURES}-feature model"
+            )
+        quantized_blob = None
+        feature_schema_digest = None
     if args.write:
         real = real_metrics or {}
         recall = real.get("recall_at_0_40_floor", real.get("real_pos_recall_at_0.40_floor"))
@@ -1186,13 +1281,39 @@ def _write_weights(blob: bytes, args, metrics, real_metrics=None) -> None:
         with open(args.out, "wb") as fh:
             fh.write(blob)
         sys.stderr.write(f"wrote {args.out}\n")
+        if quantized_blob is not None:
+            if os.path.exists(args.quantized_out):
+                shutil.copy2(args.quantized_out, args.quantized_out + ".bak")
+                sys.stderr.write(
+                    f"backed up existing quantized model -> {args.quantized_out}.bak\n"
+                )
+            with open(args.quantized_out, "wb") as fh:
+                fh.write(quantized_blob)
+            sys.stderr.write(f"wrote {args.quantized_out}\n")
     else:
         # default: write next to corpus for inspection, do NOT touch the crate
         scratch = os.path.join(os.path.dirname(args.corpus) or ".", f"weights_{args.features}.bin")
         with open(scratch, "wb") as fh:
             fh.write(blob)
         sys.stderr.write(f"wrote {scratch} (pass --write to update {args.out})\n")
-    write_model_card(blob, args, metrics, real_metrics)
+        if quantized_blob is not None:
+            quantized_scratch = os.path.join(
+                os.path.dirname(args.corpus) or "",
+                f"quantized_moe_{args.features}.bin",
+            )
+            with open(quantized_scratch, "wb") as fh:
+                fh.write(quantized_blob)
+            sys.stderr.write(
+                f"wrote {quantized_scratch} (pass --write to update {args.quantized_out})\n"
+            )
+    write_model_card(
+        blob,
+        quantized_blob,
+        feature_schema_digest,
+        args,
+        metrics,
+        real_metrics,
+    )
 
 
 def _class_floor(metric: dict) -> float | None:

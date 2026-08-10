@@ -15,6 +15,7 @@ impl CompiledScanner {
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
+        backend: crate::hw_probe::ScanBackend,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
         let scan_state = self.scan_prepared_state_with_triggered(
@@ -34,7 +35,7 @@ impl CompiledScanner {
             let mut scan_state = scan_state;
             if !crate::deadline::expired(deadline) {
                 let _g = profile::span(keyhog_profile::Stage::MachineLearning);
-                self.apply_ml_batch_scores(&mut scan_state)?;
+                self.apply_ml_batch_scores(&mut scan_state, backend, deadline)?;
             }
             Ok(scan_state.into_matches())
         }

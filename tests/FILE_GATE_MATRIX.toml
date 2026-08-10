@@ -940,6 +940,16 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/confidence/quantized.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/confidence/quantized_vyre.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/confidence/signals.rs"
 error = true
 adversarial = true

@@ -75,6 +75,7 @@ impl CompiledScanner {
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
+        backend: crate::hw_probe::ScanBackend,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<RawMatch>> {
         use rayon::prelude::*;
@@ -166,6 +167,7 @@ impl CompiledScanner {
                             phase2_always_evidence,
                             confirmed_anchor_matches,
                             generic_positions,
+                            backend,
                             route,
                         )?;
                         Ok((offset, window_len, matches))

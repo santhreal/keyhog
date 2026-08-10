@@ -1058,10 +1058,11 @@ impl CompiledScanner {
             generic_keyword_plan.map_or(0, |plan| plan.stem_literals().count());
         let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
         #[cfg(feature = "gpu")]
-let quantized_confidence_authenticated =
-            packed_confidence_authenticated && packed_gpu_artifact.is_some();
+        let quantized_confidence_authenticated = selected_backend.map_or(true, |backend| {
+            !backend.is_gpu() || (packed_confidence_authenticated && packed_gpu_artifact.is_some())
+        });
         #[cfg(not(feature = "gpu"))]
-        let quantized_confidence_authenticated = false;
+        let quantized_confidence_authenticated = true;
         #[cfg(feature = "gpu")]
         let (gpu_literals, packed_gpu_matcher, gpu_max_literal_len, phase2_gpu_dfa) =
             if let Some((artifact, phase2_catalog_bytes, backend_id)) = packed_gpu_artifact {

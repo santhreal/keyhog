@@ -207,68 +207,147 @@ pub(crate) fn complete_batch_scores_with_config<T: MlScoreInput>(
     }
     Ok(scores)
 }
+
 #[cfg(feature = "ml")]
-pub(crate) struct QuantizedBatchResult {
-    pub(crate) scores: Vec<f64>,
-    pub(crate) cpu_owned_candidate_ids: Vec<u32>,
+struct PreparedQuantizedBatch {
+    scores: Vec<f64>,
+    accelerated_candidate_ids: Vec<usize>,
+    accelerated_rows: Vec<crate::confidence::quantized::QuantizedFeatureRow>,
+    cpu_rows: Vec<(usize, Option<[f32; NUM_FEATURES]>)>,
 }
 
-/// Deterministic CPU oracle for the authenticated fused confidence route.
-///
-/// Candidate IDs are positional and the result order is unchanged. Inputs that
-/// cannot enter the integer ABI are explicitly scored by the established CPU
-/// model; a selected accelerator failure is handled by the caller and never
-/// enters this reference path as a silent substitute.
 #[cfg(feature = "ml")]
-pub(crate) fn score_input_batch_quantized_reference<T: MlScoreInput>(
+fn prepare_quantized_batch<T: MlScoreInput>(
     inputs: &[T],
     config: &crate::types::ScannerConfig,
-) -> crate::Result<QuantizedBatchResult> {
+) -> Result<PreparedQuantizedBatch, crate::confidence::quantized::QuantizedConfidenceError> {
     use crate::confidence::quantized::{
-        model, QuantizedConfidenceError, QuantizedFeatureRow, MAX_CANDIDATES_PER_BATCH,
+        candidate_score_ownership, CandidateScoreOwnership, QuantizedConfidenceError,
+        QuantizedFeatureRow, MAX_CANDIDATES_PER_BATCH,
     };
 
     if inputs.len() > MAX_CANDIDATES_PER_BATCH {
-        return Err(crate::ScanError::Gpu(
-            QuantizedConfidenceError::BatchTooLarge {
-                candidates: inputs.len(),
-                maximum: MAX_CANDIDATES_PER_BATCH,
-            }
-            .to_string(),
-        ));
+        return Err(QuantizedConfidenceError::BatchTooLarge {
+            candidates: inputs.len(),
+            maximum: MAX_CANDIDATES_PER_BATCH,
+        });
     }
-    let model = model().map_err(|error| crate::ScanError::Gpu(error.to_string()))?;
+    let mut accelerated_candidate_ids = Vec::new();
+    let mut accelerated_rows = Vec::new();
+    let mut cpu_rows = Vec::new();
     let mut scores = Vec::new();
     scores.try_reserve_exact(inputs.len()).map_err(|_| {
-        crate::ScanError::Gpu("quantized confidence score allocation failed within its batch bound".into())
+        QuantizedConfidenceError::BackendFailure(
+            "quantized confidence score allocation failed".into(),
+        )
     })?;
-    let mut cpu_owned_candidate_ids = Vec::new();
-    cpu_owned_candidate_ids
-        .try_reserve(inputs.len().min(64))
-        .map_err(|_| crate::ScanError::Gpu("quantized confidence ownership allocation failed".into()))?;
-
+    scores.resize(inputs.len(), 0.0);
+    accelerated_candidate_ids
+        .try_reserve_exact(inputs.len())
+        .map_err(|_| {
+            QuantizedConfidenceError::BackendFailure(
+                "quantized confidence candidate allocation failed".into(),
+            )
+        })?;
+    accelerated_rows
+        .try_reserve_exact(inputs.len())
+        .map_err(|_| {
+            QuantizedConfidenceError::BackendFailure(
+                "quantized confidence feature allocation failed".into(),
+            )
+        })?;
+    cpu_rows.try_reserve_exact(inputs.len()).map_err(|_| {
+        QuantizedConfidenceError::BackendFailure(
+            "CPU-owned confidence feature allocation failed".into(),
+        )
+    })?;
     for (candidate_id, input) in inputs.iter().enumerate() {
         let text = input.ml_text();
-        let features = input.ml_features(config);
-        let score = match QuantizedFeatureRow::from_float(&features) {
-            Ok(row) if !text.is_empty() => model.score(&row).as_f64(),
-            Ok(_) | Err(_) => {
-                cpu_owned_candidate_ids.push(u32::try_from(candidate_id).map_err(|_| {
-                    crate::ScanError::Gpu(
-                        "quantized confidence candidate ID exceeds the u32 ABI".into(),
-                    )
-                })?);
-                crate::confidence::policy::ml_score_for_candidate_text(text, || {
-                    forward_pass(&features) as f64
-                })
+        match candidate_score_ownership(text.as_bytes()) {
+            CandidateScoreOwnership::Cpu => cpu_rows.push((candidate_id, None)),
+            CandidateScoreOwnership::Accelerated => {
+                let features = input.ml_features(config);
+                match QuantizedFeatureRow::from_float(&features) {
+                    Ok(row) => {
+                        accelerated_candidate_ids.push(candidate_id);
+                        accelerated_rows.push(row);
+                    }
+                    Err(_) => cpu_rows.push((candidate_id, Some(features))),
+                }
             }
-        };
-        scores.push(score);
+        }
     }
-    Ok(QuantizedBatchResult {
+    Ok(PreparedQuantizedBatch {
         scores,
-        cpu_owned_candidate_ids,
+        accelerated_candidate_ids,
+        accelerated_rows,
+        cpu_rows,
     })
+}
+
+#[cfg(feature = "ml")]
+fn score_cpu_owned_rows<T: MlScoreInput>(
+    batch: &mut PreparedQuantizedBatch,
+    inputs: &[T],
+    config: &crate::types::ScannerConfig,
+) {
+    for (candidate_id, features) in batch.cpu_rows.drain(..) {
+        let input = &inputs[candidate_id];
+        let text = input.ml_text();
+        let features = features.unwrap_or_else(|| input.ml_features(config));
+        batch.scores[candidate_id] =
+            crate::confidence::policy::ml_score_for_candidate_text(text, || {
+                forward_pass(&features) as f64
+            });
+    }
+}
+
+#[cfg(feature = "ml")]
+pub(crate) fn score_input_batch_quantized_cpu<T: MlScoreInput>(
+    inputs: &[T],
+    config: &crate::types::ScannerConfig,
+) -> crate::Result<Vec<f64>> {
+    let mut batch = prepare_quantized_batch(inputs, config)
+        .map_err(|error| crate::ScanError::Config(error.to_string()))?;
+    let accelerated_scores = crate::confidence::quantized::score_batch(&batch.accelerated_rows)
+        .map_err(|error| crate::ScanError::Config(error.to_string()))?;
+    score_cpu_owned_rows(&mut batch, inputs, config);
+    for (candidate_id, score) in batch
+        .accelerated_candidate_ids
+        .into_iter()
+        .zip(accelerated_scores)
+    {
+        batch.scores[candidate_id] = score.as_f64();
+    }
+    Ok(batch.scores)
+}
+
+/// Score GPU-owned candidates on the selected VYRE peer and keep explicitly
+/// ineligible candidates on the established CPU model.
+#[cfg(all(feature = "gpu", feature = "ml"))]
+pub(crate) fn score_input_batch_quantized_vyre<T: MlScoreInput>(
+    inputs: &[T],
+    config: &crate::types::ScannerConfig,
+    backend: &dyn vyre::VyreBackend,
+    deadline: Option<std::time::Instant>,
+) -> crate::Result<Vec<f64>> {
+    let mut batch = prepare_quantized_batch(inputs, config)
+        .map_err(|error| crate::ScanError::Gpu(error.to_string()))?;
+    let timeout =
+        deadline.map(|deadline| deadline.saturating_duration_since(std::time::Instant::now()));
+    let pending_gpu_scores =
+        crate::confidence::quantized_vyre::submit_rows(backend, &batch.accelerated_rows, timeout)
+            .map_err(|error| crate::ScanError::Gpu(error.to_string()))?;
+    score_cpu_owned_rows(&mut batch, inputs, config);
+    let gpu_scores = crate::confidence::quantized::validate_accelerated_output(
+        batch.accelerated_rows.len(),
+        pending_gpu_scores.await_scores(),
+    )
+    .map_err(|error| crate::ScanError::Gpu(error.to_string()))?;
+    for (candidate_id, score) in batch.accelerated_candidate_ids.into_iter().zip(gpu_scores) {
+        batch.scores[candidate_id] = score.as_f64();
+    }
+    Ok(batch.scores)
 }
 
 /// Score precomputed model features without recomputing text/context signals.
