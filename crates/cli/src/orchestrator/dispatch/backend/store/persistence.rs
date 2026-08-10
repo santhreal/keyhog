@@ -410,15 +410,16 @@ pub(crate) fn save_autoroute_cache(
             .iter()
             .any(|row| decision_requires_gpu_artifact_identity(&row.decision))
     });
-    let gpu_artifact_binding = gpu_routes_present.then(|| {
-        match super::artifact_identity::current_gpu_sidecar_sha256() {
-            Some(sha256) => AutorouteGpuArtifactBinding::InstalledSidecar { sha256 },
-            None => AutorouteGpuArtifactBinding::RuntimeCompiled {
-                executable_sha256: executable_sha256.clone(),
-                rules_digest: rules_digest.to_string(),
+    let gpu_artifact_binding =
+        gpu_routes_present.then(
+            || match super::artifact_identity::current_gpu_sidecar_sha256() {
+                Some(sha256) => AutorouteGpuArtifactBinding::InstalledSidecar { sha256 },
+                None => AutorouteGpuArtifactBinding::RuntimeCompiled {
+                    executable_sha256: executable_sha256.clone(),
+                    rules_digest: rules_digest.to_string(),
+                },
             },
-        }
-    });
+        );
 
     let cache = AutorouteCache {
         version: AUTOROUTE_CACHE_VERSION,

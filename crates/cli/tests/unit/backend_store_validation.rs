@@ -73,10 +73,7 @@ fn gpu_artifact_identity_mutation_coverage() {
     cache.gpu_artifact_binding = Some(AutorouteGpuArtifactBinding::InstalledSidecar {
         sha256: "valid-sidecar".into(),
     });
-    assert!(gpu_artifact_binding_matches(
-        &cache,
-        Some("valid-sidecar")
-    ));
+    assert!(gpu_artifact_binding_matches(&cache, Some("valid-sidecar")));
     assert!(!gpu_artifact_binding_matches(
         &cache,
         Some("different-sidecar")
