@@ -15,9 +15,16 @@ static GPU_TEST_LOCK: Mutex<()> = Mutex::new(());
 /// same driver queue while the ordinary Rust test harness runs in parallel.
 #[cfg(test)]
 pub(crate) fn gpu_test_lock() -> MutexGuard<'static, ()> {
-    GPU_TEST_LOCK
-        .lock()
-        .expect("live GPU test lock poisoned by a prior test failure")
+    // One failed live-GPU test must not poison the rest of the suite: later
+    // adapters still need the exclusion lock, and macOS CI previously cascaded
+    // eight failures from a single poisoned mutex.
+    match GPU_TEST_LOCK.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            GPU_TEST_LOCK.clear_poison();
+            poisoned.into_inner()
+        }
+    }
 }
 
 /// Nonblocking test seam for proving live-adapter exclusion without timing.
@@ -26,8 +33,9 @@ pub(crate) fn try_gpu_test_lock() -> Option<MutexGuard<'static, ()>> {
     match GPU_TEST_LOCK.try_lock() {
         Ok(guard) => Some(guard),
         Err(TryLockError::WouldBlock) => None,
-        Err(TryLockError::Poisoned(_)) => {
-            panic!("live GPU test lock poisoned by a prior test failure")
+        Err(TryLockError::Poisoned(poisoned)) => {
+            GPU_TEST_LOCK.clear_poison();
+            Some(poisoned.into_inner())
         }
     }
 }

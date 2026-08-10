@@ -177,7 +177,7 @@ fn looks_binary_header_check(bytes: &[u8]) -> bool {
     false
 }
 
-pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
+pub(in crate::filesystem) fn looks_binary(bytes: &[u8]) -> bool {
     if has_binary_magic(bytes) || has_utf16_nul_pattern(bytes) {
         return true;
     }
@@ -233,7 +233,18 @@ pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
     suspicious >= SUSPICIOUS_CONTROL_BINARY_MIN && suspicious * 20 > total
 }
 
+pub(in crate::filesystem) fn has_utf16_bom_prefix(bytes: &[u8]) -> bool {
+    has_utf16_nul_pattern(bytes)
+}
+
 pub(in crate::filesystem) fn looks_binary_prefix(bytes: &[u8]) -> bool {
+    // UTF-16 BOM text is handled by the decode path; do not reject it here on
+    // the strength of embedded NULs alone.
+    if has_utf16_nul_pattern(bytes) {
+        return false;
+    }
+    // Prefix reject stays magic/NUL-run only so extensionless binaries without
+    // a known signature still reach printable-string extraction.
     has_unambiguous_prefix_magic(bytes)
         || crate::magic::has_bmp_header(bytes)
         || crate::magic::has_pe_header(bytes)

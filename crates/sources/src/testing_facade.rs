@@ -154,7 +154,7 @@ pub mod testing {
         }
 
         pub fn set_skip_counts(&self, counts: crate::SkipCounts) {
-            crate::skip::set_skip_counts_for_test(counts);
+            crate::skip::store_skip_counts(counts);
         }
 
         pub fn reset_skip_counters(&self) {
@@ -929,6 +929,25 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
+        pub fn stream_docker_layer_archive_chunks(
+            &self,
+            archive_path: &std::path::Path,
+            limits: crate::SourceLimits,
+            total_cap: u64,
+            respect_default_excludes: bool,
+        ) -> Result<
+            Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>,
+            keyhog_core::SourceError,
+        > {
+            crate::docker::stream_layer_archive_chunks_for_test(
+                archive_path,
+                limits,
+                total_cap,
+                respect_default_excludes,
+            )
+        }
+
+        #[cfg(feature = "docker")]
         pub fn unpack_docker_layer_archive_with_total_cap(
             &self,
             archive_path: &std::path::Path,
@@ -995,6 +1014,33 @@ pub mod testing {
             total_cap: u64,
         ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError> {
             crate::docker::unpack_layers_with_shared_budget_for_test(archives, total_cap)
+        }
+
+        #[cfg(feature = "docker")]
+        pub fn stream_docker_layers_with_shared_budget(
+            &self,
+            archives: &[&std::path::Path],
+            total_cap: u64,
+            respect_default_excludes: bool,
+        ) -> Result<
+            Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>,
+            keyhog_core::SourceError,
+        > {
+            crate::docker::stream_layers_with_shared_budget_for_test(
+                archives,
+                total_cap,
+                respect_default_excludes,
+            )
+        }
+
+        #[cfg(feature = "docker")]
+        pub fn rewrite_streamed_docker_layer_chunk(
+            &self,
+            chunk: keyhog_core::Chunk,
+            image: &str,
+            layer_name: &str,
+        ) -> Result<keyhog_core::Chunk, keyhog_core::SourceError> {
+            crate::docker::rewrite_streamed_layer_chunk_for_test(chunk, image, layer_name)
         }
 
         #[cfg(feature = "docker")]

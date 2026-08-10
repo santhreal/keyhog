@@ -10,7 +10,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use gix::objs::Kind;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
-use rayon::prelude::*;
 
 use super::tag_messages::{
     collect_reachable_tag_messages, decode_next_tag_message, decode_next_unreachable_tag_message,
@@ -76,7 +75,6 @@ struct SharedDecodedBlob {
 /// to every referencing (oid, path) slot, which re-attaches its own path so
 /// per-path skip accounting is unchanged.
 enum GitBlobOidSkipKind {
-    RepositoryOpen(String),
     ObjectUnreadable(String),
     Binary,
 }
@@ -84,11 +82,6 @@ enum GitBlobOidSkipKind {
 impl GitBlobOidSkipKind {
     fn with_identity(&self, oid: gix::ObjectId, filepath: Vec<u8>) -> GitBlobSkip {
         match self {
-            Self::RepositoryOpen(error) => GitBlobSkip::RepositoryOpen {
-                oid,
-                filepath,
-                error: error.clone(),
-            },
             Self::ObjectUnreadable(error) => GitBlobSkip::ObjectUnreadable {
                 oid,
                 filepath,
@@ -163,11 +156,6 @@ enum GitBlobBatchItem {
     Skip(GitBlobSkip),
 }
 
-/// Minimum unique blobs in one batch before parallel decode pays for its
-/// per-worker `gix::open` and fork/join; below it serial decode on the
-/// already-open handle is strictly cheaper.
-const GIT_PARALLEL_DECODE_MIN_BLOBS: usize = 8;
-
 #[derive(Debug)]
 enum GitBlobSkip {
     HeaderUnreadable {
@@ -185,11 +173,6 @@ enum GitBlobSkip {
         filepath: Vec<u8>,
         size: u64,
         cap: u64,
-    },
-    RepositoryOpen {
-        oid: gix::ObjectId,
-        filepath: Vec<u8>,
-        error: String,
     },
     ObjectUnreadable {
         oid: gix::ObjectId,
@@ -515,6 +498,11 @@ fn stream_git_blobs(
     // recur across commits (most of a tree is untouched by any one commit),
     // so memoizing them prunes nearly all repeated descents.
     let mut walked_trees: HashSet<gix::ObjectId> = HashSet::new();
+    // Every ref tip under refs/ plus HEAD must be fully enumerated once so
+    // `--max-commits` still covers untouched blobs on each tip tree
+    // (including custom ref namespaces and detached CI checkouts). Non-tip commits
+    // use parent-tree diffs for O(changed) work.
+    let ref_tip_oids = collect_ref_tip_oids(&repo_arg)?;
     let mut unreachable_objects: Option<UnreachableGitObjects> = None;
     let mut pending_blob_decode: Option<PendingGitBlobDecode> = None;
     let mut total_bytes = 0usize;
@@ -605,12 +593,14 @@ fn stream_git_blobs(
                     continue;
                 }
 
+                let force_full_walk = ref_tip_oids.contains(&id);
                 let commit_blobs = match load_commit_blob_set(
                     &repo_handle,
                     id,
                     &mut seen_blob_paths,
                     &mut walked_trees,
                     respect_default_excludes,
+                    force_full_walk,
                 ) {
                     Ok(Some(commit_blobs)) => commit_blobs,
                     Ok(None) => continue,
@@ -678,6 +668,7 @@ fn load_commit_blob_set(
     seen_blob_paths: &mut HashSet<GitBlobPathKey>,
     walked_trees: &mut HashSet<gix::ObjectId>,
     respect_default_excludes: bool,
+    force_full_walk: bool,
 ) -> Result<Option<GitCommitBlobSet>, SourceError> {
     let commit_id = id.to_string();
     // Law 10: `git log` already enumerated this commit, so a gix failure to
@@ -753,21 +744,46 @@ fn load_commit_blob_set(
 
     let mut blob_metadata = Vec::new();
     let mut errors = Vec::new();
-    collect_tree_blobs_metadata(
-        repo,
-        &tree,
-        seen_blob_paths,
-        walked_trees,
-        None,
-        &mut blob_metadata,
-        b"",
-        &mut errors,
-        respect_default_excludes,
-    );
-    // Memoize the root tree only when its walk recorded no error, so a
-    // corrupt subtree keeps re-reporting (and re-attempting) on later commits
-    // exactly as before.
-    if errors.is_empty() {
+    // Prefer parent-tree diffs over full tree rewalks. Flat histories (one new
+    // root entry per commit) otherwise re-scan O(n) entries per commit → O(n²)
+    // object-header traffic. Diffs emit only added/changed paths; deletions'
+    // old blob sides are kept so newest-first `git log` order still recalls
+    // credentials that were removed later. The scan tip, root commits, and
+    // unreadable parents fall back to a full walk (recall-safe under
+    // `--max-commits`: untouched tip blobs must still be scanned).
+    let parent_ids: Vec<gix::ObjectId> = commit.parent_ids().map(|id| id.detach()).collect();
+    // Root-tree memoization is only valid after a FULL enumeration of that tree.
+    // Parent-tree diffs emit only changed sides; marking the root walked afterwards
+    // would let a later commit that reuses the same tree early-skip and drop blobs
+    // that were never collected on the first visit (e.g. revert-to-earlier-tree).
+    let root_fully_enumerated = if force_full_walk || parent_ids.is_empty() {
+        collect_tree_blobs_metadata(
+            repo,
+            &tree,
+            seen_blob_paths,
+            walked_trees,
+            None,
+            &mut blob_metadata,
+            b"",
+            &mut errors,
+            respect_default_excludes,
+        );
+        true
+    } else {
+        collect_commit_blobs_via_parent_diffs(
+            repo,
+            &tree,
+            &parent_ids,
+            seen_blob_paths,
+            walked_trees,
+            &mut blob_metadata,
+            &mut errors,
+            respect_default_excludes,
+        )
+    };
+    // Memoize the root tree only after a full walk with no error, so a corrupt
+    // subtree keeps re-reporting (and re-attempting) on later commits.
+    if root_fully_enumerated && errors.is_empty() {
         // LAW10: failing to read the tree id only skips memoization, so later commits
         // re-walk this tree instead of trusting a memo. Recall-safe by construction.
         if let Ok(root_tree_id) = commit.tree_id() {
@@ -987,30 +1003,17 @@ fn next_git_blob_batch(
 
 fn decode_git_blob_candidates(
     repo: &gix::Repository,
-    repo_path: &Path,
+    _repo_path: &Path,
     candidates: Vec<GitBlobCandidate>,
 ) -> Vec<Option<Result<SharedDecodedBlob, GitBlobOidSkipKind>>> {
-    // Small batches (the common case near history tips, where a commit
-    // touches a handful of blobs) decode serially on the already-open
-    // repository handle: the rayon fork/join plus a fresh `gix::open` per
-    // worker costs more than the decode itself there. Large batches keep the
-    // parallel path.
-    if candidates.len() < GIT_PARALLEL_DECODE_MIN_BLOBS {
-        return candidates
-            .into_iter()
-            .map(|candidate| Some(decode_one_git_blob(repo, candidate)))
-            .collect();
-    }
-    let repo_path = repo_path.to_path_buf();
+    // Always decode on the already-open repository handle. A prior parallel
+    // path reopened the repo per rayon worker (`gix::open`) and stalled at
+    // near-idle CPU under pack/lock contention on busy hosts, including tip
+    // full-walk batches. Serial decode on the shared handle stays recall-safe
+    // and avoids that hang class.
     candidates
-        .into_par_iter()
-        .map_init(
-            || gix::open(&repo_path).map_err(|error| error.to_string()),
-            |repo_state, candidate| match repo_state {
-                Ok(repo) => Some(decode_one_git_blob(repo, candidate)),
-                Err(error) => Some(Err(GitBlobOidSkipKind::RepositoryOpen(error.clone()))),
-            },
-        )
+        .into_iter()
+        .map(|candidate| Some(decode_one_git_blob(repo, candidate)))
         .collect()
 }
 
@@ -1080,21 +1083,6 @@ fn record_git_blob_skip(skip: GitBlobSkip, pending_errors: &mut VecDeque<SourceE
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             pending_errors.push_back(git_unscanned_object_error(format!(
                 "git blob {oid} at {} exceeds per-blob size cap ({size} bytes > {cap} bytes); blob was not scanned",
-                git_blob_path_display(&filepath)
-            )));
-        }
-        GitBlobSkip::RepositoryOpen {
-            oid,
-            filepath,
-            error,
-        } => {
-            tracing::warn!(
-                %error, %oid,
-                "git repository could not be opened by a blob decode worker; blob NOT scanned"
-            );
-            record_git_object_unreadable();
-            pending_errors.push_back(git_unscanned_object_error(format!(
-                "git repository could not be opened while decoding blob {oid} at {} ({error}); blob was not scanned",
                 git_blob_path_display(&filepath)
             )));
         }
@@ -1380,6 +1368,246 @@ fn commit_author_name(commit: &gix::Commit<'_>, commit_id: &str) -> Result<Strin
     }
 }
 
+/// Returns `true` when this commit fell back to a full tree walk (so the root
+/// may be memoized), and `false` when only parent-tree diff sides were collected.
+fn collect_commit_blobs_via_parent_diffs(
+    repo: &gix::Repository,
+    tree: &gix::Tree<'_>,
+    parent_ids: &[gix::ObjectId],
+    seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    walked_trees: &mut HashSet<gix::ObjectId>,
+    blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
+    errors: &mut Vec<SourceError>,
+    respect_default_excludes: bool,
+) -> bool {
+    let mut diff_state = gix::diff::tree::State::default();
+    let mut records = Vec::new();
+    for parent_id in parent_ids {
+        let Some(parent_tree) = load_commit_tree_for_diff(repo, *parent_id) else {
+            // Unreadable parent: keep already-collected deletion/previous sides
+            // from earlier parents, then full-walk the current tree. The parent
+            // commit's own visit already recorded the coverage gap.
+            absorb_tree_diff_blob_records(
+                std::mem::take(&mut records),
+                seen_blob_paths,
+                blob_metadata,
+                errors,
+                respect_default_excludes,
+            );
+            collect_tree_blobs_metadata(
+                repo,
+                tree,
+                seen_blob_paths,
+                walked_trees,
+                None,
+                blob_metadata,
+                b"",
+                errors,
+                respect_default_excludes,
+            );
+            return true;
+        };
+        if parent_tree.id == tree.id {
+            continue;
+        }
+        let mut recorder = gix::diff::tree::Recorder::default()
+            .track_location(Some(gix::diff::tree::recorder::Location::Path));
+        if let Err(error) = gix::diff::tree(
+            gix::objs::TreeRefIter::from_bytes(&parent_tree.data),
+            gix::objs::TreeRefIter::from_bytes(&tree.data),
+            &mut diff_state,
+            &repo.objects,
+            &mut recorder,
+        ) {
+            tracing::warn!(
+                %error,
+                parent = %parent_id,
+                "git parent-tree diff failed; falling back to a full tree walk for recall"
+            );
+            absorb_tree_diff_blob_records(
+                std::mem::take(&mut records),
+                seen_blob_paths,
+                blob_metadata,
+                errors,
+                respect_default_excludes,
+            );
+            collect_tree_blobs_metadata(
+                repo,
+                tree,
+                seen_blob_paths,
+                walked_trees,
+                None,
+                blob_metadata,
+                b"",
+                errors,
+                respect_default_excludes,
+            );
+            return true;
+        }
+        records.extend(recorder.records);
+    }
+    absorb_tree_diff_blob_records(
+        records,
+        seen_blob_paths,
+        blob_metadata,
+        errors,
+        respect_default_excludes,
+    );
+    false
+}
+
+fn load_commit_tree_for_diff<'a>(
+    repo: &'a gix::Repository,
+    parent_id: gix::ObjectId,
+) -> Option<gix::Tree<'a>> {
+    let obj = match repo.find_object(parent_id) {
+        Ok(obj) => obj,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                parent = %parent_id,
+                "git parent commit object unreadable during tree diff"
+            );
+            return None;
+        }
+    };
+    let commit = match obj.try_into_commit() {
+        Ok(commit) => commit,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                parent = %parent_id,
+                "git parent object is not a commit during tree diff"
+            );
+            return None;
+        }
+    };
+    match commit.tree() {
+        Ok(tree) => Some(tree),
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                parent = %parent_id,
+                "git parent commit tree unreadable during tree diff"
+            );
+            None
+        }
+    }
+}
+
+fn absorb_tree_diff_blob_records(
+    records: Vec<gix::diff::tree::recorder::Change>,
+    seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
+    errors: &mut Vec<SourceError>,
+    respect_default_excludes: bool,
+) {
+    for change in records {
+        match change {
+            gix::diff::tree::recorder::Change::Addition {
+                entry_mode,
+                oid,
+                path,
+                ..
+            } => {
+                consider_diff_blob_path(
+                    oid,
+                    path.as_ref(),
+                    entry_mode,
+                    seen_blob_paths,
+                    blob_metadata,
+                    errors,
+                    respect_default_excludes,
+                );
+            }
+            gix::diff::tree::recorder::Change::Deletion {
+                entry_mode,
+                oid,
+                path,
+                ..
+            } => {
+                // Newest-first history: a deletion is often the first time this
+                // scan observes a historical blob that no longer exists in
+                // newer trees. Keep the deleted blob side for recall.
+                consider_diff_blob_path(
+                    oid,
+                    path.as_ref(),
+                    entry_mode,
+                    seen_blob_paths,
+                    blob_metadata,
+                    errors,
+                    respect_default_excludes,
+                );
+            }
+            gix::diff::tree::recorder::Change::Modification {
+                previous_entry_mode,
+                previous_oid,
+                entry_mode,
+                oid,
+                path,
+            } => {
+                consider_diff_blob_path(
+                    oid,
+                    path.as_ref(),
+                    entry_mode,
+                    seen_blob_paths,
+                    blob_metadata,
+                    errors,
+                    respect_default_excludes,
+                );
+                consider_diff_blob_path(
+                    previous_oid,
+                    path.as_ref(),
+                    previous_entry_mode,
+                    seen_blob_paths,
+                    blob_metadata,
+                    errors,
+                    respect_default_excludes,
+                );
+            }
+        }
+    }
+}
+
+fn consider_diff_blob_path(
+    oid: gix::ObjectId,
+    path: &[u8],
+    entry_mode: gix::objs::tree::EntryMode,
+    seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+    blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
+    errors: &mut Vec<SourceError>,
+    respect_default_excludes: bool,
+) {
+    // Match full-walk ordering: default excludes win before unsupported-mode
+    // coverage gaps, so excluded symlinks/gitlinks never flip scan status.
+    if respect_default_excludes && crate::filesystem::is_default_excluded_path_bytes(path) {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+        return;
+    }
+    if entry_mode.is_tree() {
+        return;
+    }
+    if !entry_mode.is_blob() {
+        let path_display = git_blob_path_display(path);
+        let mode = format!("{entry_mode:?}");
+        tracing::warn!(
+            %oid,
+            path = %path_display,
+            %mode,
+            "git tree diff entry is not a blob or tree; referenced content was NOT scanned"
+        );
+        record_git_object_unreadable();
+        errors.push(git_unscanned_object_error(format!(
+            "git tree entry '{path_display}' has unsupported mode {mode}; referenced content was not scanned"
+        )));
+        return;
+    }
+    let filepath = path.to_vec();
+    if seen_blob_paths.insert((oid, filepath.clone())) {
+        blob_metadata.push((oid, filepath));
+    }
+}
+
 fn collect_tree_blobs_metadata(
     repo: &gix::Repository,
     tree: &gix::Tree<'_>,
@@ -1410,6 +1638,99 @@ fn collect_tree_blobs_metadata(
             "git tree walk failed ({error}); remaining blobs were not scanned"
         )));
     }
+}
+
+fn collect_ref_tip_oids(repo_arg: &str) -> Result<HashSet<gix::ObjectId>, SourceError> {
+    let mut cmd = super::git_command()?;
+    // Enumerate every ref under refs/ (notes, pull, replace, custom namespaces,
+    // ...) so --max-commits still full-walks untouched tip blobs for tips that
+    // `git log --all` can select. HEAD is unioned separately for detached CI.
+    cmd.args([
+        "-C",
+        repo_arg,
+        "for-each-ref",
+        "--format=%(objectname) %(*objectname)",
+        "--end-of-options",
+    ]);
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    let mut child = super::spawn_git_child(cmd)?;
+    let stdout = child
+        .take_stdout()
+        .ok_or_else(|| SourceError::Io(std::io::Error::other("missing for-each-ref stdout")))?;
+    let mut reader = std::io::BufReader::new(stdout);
+    let mut line_buf = Vec::new();
+    let mut tips = HashSet::new();
+    loop {
+        let record =
+            super::read_capped_line(&mut reader, &mut line_buf, super::GIT_PLUMBING_LINE_BYTES)
+                .map_err(SourceError::Io)?;
+        if record.consumed == 0 {
+            break;
+        }
+        if record.content > super::GIT_PLUMBING_LINE_BYTES {
+            return Err(super::git_output_line_truncated_error(
+                "git for-each-ref",
+                "ref object id line",
+                super::GIT_PLUMBING_LINE_BYTES,
+                record.content,
+            ));
+        }
+        let line = String::from_utf8_lossy(&line_buf);
+        let line = line.trim_end_matches('\n').trim_end_matches('\r');
+        // Prefer the peeled target for annotated tags (`%(*objectname)`); fall
+        // back to `%(objectname)` for commits/lightweight tags. Avoids the
+        // newer `%(objectname:peel)` atom, which older git rejects.
+        let mut fields = line.split_whitespace();
+        let objectname = fields.next().unwrap_or("");
+        let peeled = fields.next().unwrap_or("");
+        let tip = if peeled.is_empty() {
+            objectname
+        } else {
+            peeled
+        };
+        if let Some(id) = parse_git_object_id_line(tip, "ref tip") {
+            tips.insert(id);
+        }
+    }
+    super::wait_for_git_child(&mut child, "git for-each-ref", "enumerating ref tips")?;
+
+    // Detached HEAD (common in CI) is enumerated by `git log --all` but is not
+    // listed under refs/heads. Union the peeled HEAD tip so --max-commits still
+    // full-walks the checked-out commit's untouched blobs.
+    let mut head_cmd = super::git_command()?;
+    head_cmd.args(["-C", repo_arg, "rev-parse", "--verify", "HEAD"]);
+    head_cmd.stdout(std::process::Stdio::piped());
+    head_cmd.stderr(std::process::Stdio::piped());
+    match super::spawn_git_child(head_cmd) {
+        Ok(mut head_child) => {
+            if let Some(stdout) = head_child.take_stdout() {
+                let mut reader = std::io::BufReader::new(stdout);
+                let mut line_buf = Vec::new();
+                if let Ok(record) = super::read_capped_line(
+                    &mut reader,
+                    &mut line_buf,
+                    super::GIT_PLUMBING_LINE_BYTES,
+                ) {
+                    if record.consumed > 0 && record.content <= super::GIT_PLUMBING_LINE_BYTES {
+                        let line = String::from_utf8_lossy(&line_buf);
+                        let line = line.trim_end_matches('\n').trim_end_matches('\r');
+                        if let Some(id) = parse_git_object_id_line(line, "HEAD tip") {
+                            tips.insert(id);
+                        }
+                    }
+                }
+            }
+            // Unborn/empty repos fail rev-parse; tip set simply stays without HEAD.
+            let _ =
+                super::wait_for_git_child(&mut head_child, "git rev-parse", "resolving HEAD tip");
+        }
+        Err(error) => {
+            tracing::warn!(%error, "git HEAD tip could not be resolved; detached checkout may miss untouched blobs under --max-commits");
+        }
+    }
+
+    Ok(tips)
 }
 
 /// Walk HEAD's tree and collect every blob path identity reachable from it.
