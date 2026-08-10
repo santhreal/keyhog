@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.70 - 2026-08-10
+
+- fix(profile): fail-closed overlapping allocation session peaks.
+
 ## 0.5.69 - 2026-08-10
 
 - Out-of-band verification now polls only while callbacks are pending and uses a bounded three-request lifecycle burst while preserving the configured sustained collector rate.

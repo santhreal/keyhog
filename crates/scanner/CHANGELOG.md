@@ -1,6 +1,10 @@
 # Changelog
 
 
+## 0.5.70 - 2026-08-10
+
+- fix(profile): fail-closed overlapping allocation session peaks.
+
 ## 0.5.69 - 2026-08-10
 
 - Signed execution packs now reuse whole-pack signature authentication during scanner hydration instead of hashing backend and native shard payloads again; unsigned development packs retain full per-shard validation.

@@ -130,6 +130,16 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
   **Peak memory still grows with worker count on a real scan, and no size knob reduces it.** The remaining per-worker term is the `regex` crate's lazy-DFA cache, allocated per compiled regex per thread and retained in that regex's pool for the life of the process, dominated by the anchored phase-2 verifiers. Lowering the per-regex ceiling does not help: measured at 1 MiB, 256 KiB and 64 KiB on two binaries at one, eight and thirty-two threads, peak resident memory moves under one percent while wall time degrades about fivefold, because the meta engine abandons the lazy DFA for slower engines that allocate comparable per-thread state. What governs the term is how many distinct patterns a worker activates, not the size of any one automaton, so reducing it is detection-routing work rather than a tuning constant.
 
+## [0.5.70] - 2026-08-10
+
+### Changed
+
+- fix(profile): fail-closed overlapping allocation session peaks.
+
+### Security
+
+- Fail-closed overlapping allocation sessions instead of misattributing process-global peaks
+
 ## [0.5.69] - 2026-08-10
 
 ### Added

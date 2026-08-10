@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.70 - 2026-08-10
+
+- fix(profile): fail-closed overlapping allocation session peaks.
+
 ## 0.5.69 - 2026-08-10
 
 - Report resettable counters from production filesystem discovery for root inspection, walk entries, metadata admission, errors, and early termination.
