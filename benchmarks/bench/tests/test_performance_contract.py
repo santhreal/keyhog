@@ -247,6 +247,14 @@ def test_standalone_betterleaks_memory_gate_requires_exact_shared_provenance() -
     candidate_row = next(
         row for row in candidate["workloads"] if row["workload_id"] == first
     )
+    original_route = candidate_row["execution_route"]
+    candidate_row["execution_route"] = "unexpected-route"
+    with pytest.raises(
+        PerformanceContractError,
+        match="candidate shared route coverage differs",
+    ):
+        evaluate_betterleaks_memory_contract(candidate, better, CATALOG)
+    candidate_row["execution_route"] = original_route
     candidate_row["max_peak_rss_kb"] = 100_001
     violations = evaluate_betterleaks_memory_contract(candidate, better, CATALOG)
     assert any(

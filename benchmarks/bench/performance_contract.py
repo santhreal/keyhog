@@ -64,13 +64,15 @@ def evaluate_betterleaks_memory_contract(
         if workload.betterleaks_comparable
         for route in workload.execution_routes
     }
-    expected_comp_ids = {w for w, _ in shared_keys}
-    cand_comp_workload_ids = {w for w, _ in cand_keys if w in expected_comp_ids}
-    if cand_comp_workload_ids != expected_comp_ids:
-        missing = sorted(expected_comp_ids - cand_comp_workload_ids)
-        extra = sorted(cand_comp_workload_ids - expected_comp_ids)
+    expected_comp_ids = {workload_id for workload_id, _ in shared_keys}
+    candidate_shared_keys = {
+        key for key in cand_keys if key[0] in expected_comp_ids
+    }
+    if candidate_shared_keys != shared_keys:
+        missing = sorted(shared_keys - candidate_shared_keys)
+        extra = sorted(candidate_shared_keys - shared_keys)
         raise PerformanceContractError(
-            f"candidate shared coverage differs: missing={missing}, extra={extra}"
+            f"candidate shared route coverage differs: missing={missing}, extra={extra}"
         )
     comp_workload_ids = {w for w, _ in comp_keys}
     if comp_workload_ids != expected_comp_ids:
