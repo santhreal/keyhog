@@ -7565,3 +7565,134 @@ fn merging_a_point_redeclares_the_reconciled_route() {
         "the declared route must equal the route the evidence resolves"
     );
 }
+
+fn ordered_device_route_for_autoroute_test(
+) -> keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute {
+    use keyhog_scanner::gpu::device_set::{
+        CalibratedGpuDevice, DeviceTimingEvidence, GpuApi, OrderedGpuDeviceRoute,
+    };
+    let devices = (0..2)
+        .map(|ordinal| CalibratedGpuDevice {
+            api: GpuApi::Wgpu,
+            api_ordinal: ordinal,
+            physical_identity: format!("gpu-{ordinal}"),
+            topology_identity: format!("pci:0000:0{ordinal}:00.0/numa:0"),
+            software_eligible: true,
+            display_eligible: true,
+            driver_identity: "driver-1".to_string(),
+            runtime_identity: "wgpu-25/vyre-0.7.2".to_string(),
+            capacity_bytes: 8 << 30,
+            workload_weight: if ordinal == 0 { 1 } else { 2 },
+            timing: DeviceTimingEvidence {
+                sample_bytes: 8 << 20,
+                trials_ns: vec![100, 101, 99],
+            },
+            resident_budget_bytes: 1 << 30,
+        })
+        .collect();
+    OrderedGpuDeviceRoute::new(
+        "workload-a".to_string(),
+        "detectors-a".to_string(),
+        "config-a".to_string(),
+        2 << 30,
+        devices,
+    )
+    .expect("valid ordered route")
+}
+
+#[test]
+fn route_timing_schema_authenticates_complete_ordered_device_set() {
+    let ordered = ordered_device_route_for_autoroute_test();
+    let timing = BackendTimingEvidence::constant_ms(1, AUTOROUTE_CALIBRATION_TRIALS);
+    let entry = RouteTimingEvidence::new_with_peer_identity(
+        MeasuredRoute {
+            backend: ScanBackend::GpuWgpu,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
+        },
+        timing,
+        None,
+    )
+    .bind_ordered_device_route(ordered.clone())
+    .expect("ordered route binds");
+    let expected_peer_identity =
+        format!("ordered-device-set:{}", ordered.authenticated_digest);
+    assert_eq!(
+        entry.peer_identity.as_deref(),
+        Some(expected_peer_identity.as_str())
+    );
+    let json = serde_json::to_value(&entry).expect("serialize route evidence");
+    let persisted = json
+        .get("ordered_device_route")
+        .expect("schema persists ordered route");
+    assert_eq!(
+        persisted
+            .get("schema_version")
+            .and_then(serde_json::Value::as_u64),
+        Some(keyhog_scanner::gpu::device_set::GPU_DEVICE_ROUTE_SCHEMA_VERSION as u64)
+    );
+    assert_eq!(
+        persisted
+            .get("devices")
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len),
+        Some(2)
+    );
+}
+
+#[test]
+fn route_timing_rejects_stale_tampered_partial_and_backend_mismatched_sets() {
+    let base = RouteTimingEvidence::new_with_peer_identity(
+        MeasuredRoute {
+            backend: ScanBackend::GpuWgpu,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
+        },
+        BackendTimingEvidence::constant_ms(1, AUTOROUTE_CALIBRATION_TRIALS),
+        None,
+    );
+    let mut stale = ordered_device_route_for_autoroute_test();
+    stale.schema_version = 0;
+    assert!(base
+        .clone()
+        .bind_ordered_device_route(stale)
+        .expect_err("stale route rejected")
+        .contains("unsupported GPU device route schema"));
+
+    let mut tampered = ordered_device_route_for_autoroute_test();
+    tampered.devices.swap(0, 1);
+    assert!(base
+        .clone()
+        .bind_ordered_device_route(tampered)
+        .expect_err("reordered route rejected")
+        .contains("authentication digest mismatch"));
+
+    let partial = keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute::new(
+        "workload-a".to_string(),
+        "detectors-a".to_string(),
+        "config-a".to_string(),
+        1 << 30,
+        vec![ordered_device_route_for_autoroute_test().devices.remove(0)],
+    )
+    .expect("single-device route is structurally valid");
+    assert!(base
+        .clone()
+        .bind_ordered_device_route(partial)
+        .expect_err("partial multi-device evidence rejected")
+        .contains("at least two devices"));
+
+    let mut mixed_devices = ordered_device_route_for_autoroute_test().devices;
+    mixed_devices[1].api = keyhog_scanner::gpu::device_set::GpuApi::Cuda;
+    let mismatched = keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute::new(
+        "workload-a".to_string(),
+        "detectors-a".to_string(),
+        "config-a".to_string(),
+        2 << 30,
+        mixed_devices,
+    )
+    .expect("mixed route remains structurally authenticated");
+    assert!(base
+        .bind_ordered_device_route(mismatched)
+        .expect_err("mixed backend set rejected")
+        .contains("does not use the measured"));
+}

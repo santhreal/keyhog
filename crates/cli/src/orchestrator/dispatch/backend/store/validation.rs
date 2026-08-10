@@ -293,6 +293,41 @@ fn validate_point_route_evidence_at(
             )
             .into());
         }
+        if let Some(device_route) = &entry.ordered_device_route {
+            device_route.validate().map_err(|error| {
+                format!(
+                    "cache decision has invalid ordered device-set evidence for {}: {error}",
+                    entry.backend
+                )
+            })?;
+            if device_route.devices.len() < 2 {
+                return Err(format!(
+                    "cache decision ordered device-set evidence for {} contains fewer than two devices",
+                    entry.backend
+                )
+                .into());
+            }
+            if device_route
+                .devices
+                .iter()
+                .any(|device| device.api.scan_backend() != route.backend)
+            {
+                return Err(format!(
+                    "cache decision ordered device set does not use {} on every device",
+                    entry.backend
+                )
+                .into());
+            }
+            let expected_peer_identity =
+                format!("ordered-device-set:{}", device_route.authenticated_digest);
+            if entry.peer_identity.as_deref() != Some(expected_peer_identity.as_str()) {
+                return Err(format!(
+                    "cache decision ordered device set for {} is not authenticated by its peer identity",
+                    entry.backend
+                )
+                .into());
+            }
+        }
         let timing_route = (
             entry.backend.clone(),
             entry.phase2_plain_localizer,

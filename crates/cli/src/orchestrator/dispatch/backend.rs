@@ -115,6 +115,9 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
     hasher.finish_u64()
 }
 
+// v53: GPU timing rows can authenticate a calibrated ordered physical-device
+// set with exact topology, driver/runtime, capacity, workload weights, timing,
+// and bounded resident budgets. Older rows cannot prove multi-device replay.
 // v51: the resolved-config digest no longer hashes whether a calibration
 // excluded an eligible GPU. The persisted host generation already carries that
 // exactly, through `eligible_backends` and the full GPU device/runtime/driver
@@ -191,7 +194,7 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 52;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 53;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 

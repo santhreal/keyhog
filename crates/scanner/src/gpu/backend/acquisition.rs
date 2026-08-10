@@ -433,6 +433,215 @@ pub(crate) fn probe_cuda_peer() -> Result<vyre_driver_cuda::device::CudaDeviceCa
     )
 }
 
+#[cfg(feature = "gpu")]
+pub fn enumerate_gpu_device_census(
+) -> Result<crate::gpu::device_set::GpuAdapterCensus, String> {
+    let mut failures = Vec::new();
+    let mut exposures = match crate::gpu::adapter_probe::probe_wgpu_device_exposures() {
+        Ok(exposures) => exposures,
+        Err(reason) => {
+            failures.push(crate::gpu::device_set::GpuApiCensusFailure {
+                api: crate::gpu::device_set::GpuApi::Wgpu,
+                reason,
+            });
+            Vec::new()
+        }
+    };
+    #[cfg(all(feature = "gpu", target_os = "linux"))]
+    match run_cuda_after_preflight(
+        ensure_cuda_driver_library_loadable,
+        vyre_driver_cuda::device::CudaDeviceCaps::probe_all,
+        "device census",
+    ) {
+        Ok(caps) => {
+            exposures
+                .try_reserve(caps.len())
+                .map_err(|error| format!("CUDA device census reserve failed: {error}"))?;
+            let runtime_identity = cuda_runtime_identity();
+            let cuda_pci_order_proven =
+                std::env::var("CUDA_DEVICE_ORDER").as_deref() == Ok("PCI_BUS_ID")
+                    && std::env::var_os("CUDA_VISIBLE_DEVICES").is_none();
+            for caps in caps {
+                let topology = cuda_pci_order_proven
+                    .then(|| {
+                        crate::gpu::adapter_probe::linux_nvidia_pci_identity(caps.ordinal)
+                    })
+                    .flatten();
+                let (physical_identity, topology_identity, device_id, os_driver) =
+                    topology.unwrap_or_else(|| {
+                        let fallback = format!("cuda:ordinal={}", caps.ordinal);
+                        (
+                            fallback.clone(),
+                            fallback,
+                            0,
+                            "unavailable".to_string(),
+                        )
+                    });
+                let mut ineligible_reason = None;
+                if physical_identity.starts_with("cuda:ordinal=") {
+                    ineligible_reason = Some(
+                        "stable CUDA PCI topology identity is unavailable; calibrate with CUDA_DEVICE_ORDER=PCI_BUS_ID and no CUDA_VISIBLE_DEVICES remapping"
+                            .to_string(),
+                    );
+                }
+                if runtime_identity.is_err() {
+                    ineligible_reason =
+                        Some("exact CUDA driver/runtime identity is unavailable".to_string());
+                }
+                exposures.push(crate::gpu::device_set::GpuDeviceExposure {
+                    api: crate::gpu::device_set::GpuApi::Cuda,
+                    api_ordinal: caps.ordinal,
+                    physical_identity,
+                    topology_identity,
+                    name: caps.name,
+                    vendor_id: 0x10de,
+                    device_id,
+                    driver_identity: format!(
+                        "os-driver={os_driver};{}",
+                        runtime_identity.as_deref().unwrap_or("runtime-unavailable")
+                    ),
+                    runtime_identity: format!(
+                        "vyre-cuda={};{}",
+                        env!("KEYHOG_VYRE_CUDA_VERSION"),
+                        runtime_identity.as_deref().unwrap_or("runtime-unavailable")
+                    ),
+                    capacity_bytes: caps.total_memory,
+                    is_software: false,
+                    is_display_only: false,
+                    ineligible_reason,
+                });
+            }
+        }
+        Err(reason) => failures.push(crate::gpu::device_set::GpuApiCensusFailure {
+            api: crate::gpu::device_set::GpuApi::Cuda,
+            reason,
+        }),
+    }
+    let mut census = crate::gpu::device_set::deduplicate_gpu_exposures(exposures)?;
+    census.failures = failures;
+    Ok(census)
+}
+
+#[cfg(all(feature = "gpu", target_os = "linux"))]
+fn cuda_runtime_identity() -> Result<String, String> {
+    let version = std::fs::read_to_string("/proc/driver/nvidia/version")
+        .map_err(|error| format!("cannot read NVIDIA driver identity: {error}"))?;
+    let normalized = version.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        Err("NVIDIA driver identity is empty".to_string())
+    } else {
+        Ok(format!("nvidia-kernel:{normalized}"))
+    }
+}
+
+#[cfg(feature = "gpu")]
+/// Acquire every device in an already authenticated ordered route. Acquisition
+/// is all-or-nothing; one required device failure drops successful siblings.
+pub fn acquire_ordered_gpu_device_set(
+    route: &crate::gpu::device_set::OrderedGpuDeviceRoute,
+) -> Result<AcquiredGpuDeviceSet, String> {
+    let live = enumerate_gpu_device_census()?;
+    route.validate_live_set(&live)?;
+    let mut devices = Vec::new();
+    devices
+        .try_reserve_exact(route.devices.len())
+        .map_err(|error| format!("ordered GPU backend set reserve failed: {error}"))?;
+    for (position, device) in route.devices.iter().enumerate() {
+        let backend = acquire_peer_ordinal(device.api, device.api_ordinal).map_err(|error| {
+            format!(
+                "required GPU device {position} acquisition failed: {error}; the ordered device-set route is invalid"
+            )
+        })?;
+        devices.push(backend);
+    }
+    Ok(AcquiredGpuDeviceSet {
+        authenticated_route_digest: route.authenticated_digest.clone(),
+        devices,
+    })
+}
+
+#[cfg(feature = "gpu")]
+pub struct AcquiredGpuDeviceSet {
+    authenticated_route_digest: String,
+    devices: Vec<Arc<dyn vyre::VyreBackend>>,
+}
+
+#[cfg(feature = "gpu")]
+impl AcquiredGpuDeviceSet {
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.devices.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.devices.is_empty()
+    }
+
+    #[must_use]
+    pub fn authenticated_route_digest(&self) -> &str {
+        &self.authenticated_route_digest
+    }
+
+    #[must_use]
+    pub fn backend(&self, position: usize) -> Option<&Arc<dyn vyre::VyreBackend>> {
+        self.devices.get(position)
+    }
+}
+
+#[cfg(feature = "gpu")]
+fn acquire_peer_ordinal(
+    api: crate::gpu::device_set::GpuApi,
+    ordinal: usize,
+) -> Result<Arc<dyn vyre::VyreBackend>, String> {
+    match api {
+        crate::gpu::device_set::GpuApi::Wgpu => {
+            let backend = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                vyre_driver_wgpu::WgpuBackend::acquire_adapter(ordinal)
+            }))
+            .map_err(|panic| {
+                format!(
+                    "WGPU adapter {ordinal} acquisition panicked: {}",
+                    crate::error::panic_payload_detail(panic)
+                )
+            })?
+            .map_err(|error| error.to_string())?;
+            Ok(Arc::new(backend))
+        }
+        crate::gpu::device_set::GpuApi::Cuda => {
+            #[cfg(all(feature = "gpu", target_os = "linux"))]
+            {
+                let backend = run_cuda_after_preflight(
+                    ensure_cuda_driver_library_loadable,
+                    || {
+                        vyre_driver_cuda::backend::CudaBackend::acquire_ordinal(ordinal)
+                            .map(|cuda| {
+                                Arc::new(
+                                    vyre_driver_cuda::CudaBackendRegistration::new(cuda),
+                                ) as Arc<dyn vyre::VyreBackend>
+                            })
+                    },
+                    "ordered device acquisition",
+                )?;
+                Ok(backend)
+            }
+            #[cfg(not(all(feature = "gpu", target_os = "linux")))]
+            {
+                let _ = ordinal;
+                Err("CUDA ordered-device acquisition is unavailable on this platform".to_string())
+            }
+        }
+        crate::gpu::device_set::GpuApi::Metal => {
+            if ordinal != 0 {
+                return Err(format!(
+                    "Metal adapter ordinal {ordinal} is not enumerable through the current VYRE API"
+                ));
+            }
+            acquire_metal_peer().map(|peer| peer.backend)
+        }
+    }
+}
+
 #[cfg(all(test, feature = "gpu"))]
 #[path = "../../../tests/unit/gpu_backend_acquisition.rs"]
 mod tests;

@@ -209,6 +209,8 @@ pub(super) struct RouteTimingEvidence {
     pub(super) phase2_plain_localizer: bool,
     pub(super) phase2_keyword_localizer: bool,
     pub(super) peer_identity: Option<String>,
+    pub(super) ordered_device_route:
+        Option<keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute>,
     pub(super) timing: BackendTimingEvidence,
 }
 
@@ -232,8 +234,44 @@ impl RouteTimingEvidence {
             phase2_plain_localizer: route.phase2_plain_localizer,
             phase2_keyword_localizer: route.phase2_keyword_localizer,
             peer_identity,
+            ordered_device_route: None,
             timing,
         }
+    }
+
+    pub(super) fn bind_ordered_device_route(
+        mut self,
+        device_route: keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute,
+    ) -> Result<Self, String> {
+        device_route.validate()?;
+        let measured = self
+            .measured_route()
+            .ok_or_else(|| "ordered GPU route names an unsupported backend".to_string())?;
+        if !measured.backend.is_gpu() {
+            return Err("ordered GPU device evidence cannot bind a host backend".to_string());
+        }
+        if device_route.devices.len() < 2 {
+            return Err(
+                "ordered multi-device autoroute evidence requires at least two devices"
+                    .to_string(),
+            );
+        }
+        if device_route
+            .devices
+            .iter()
+            .any(|device| device.api.scan_backend() != measured.backend)
+        {
+            return Err(format!(
+                "ordered device set does not use the measured {} backend on every device",
+                measured.backend.label()
+            ));
+        }
+        self.peer_identity = Some(format!(
+            "ordered-device-set:{}",
+            device_route.authenticated_digest
+        ));
+        self.ordered_device_route = Some(device_route);
+        Ok(self)
     }
 
     pub(super) fn measured_route(&self) -> Option<MeasuredRoute> {
@@ -1034,6 +1072,7 @@ impl AutorouteDecision {
             .then_some(first)
             .flatten()
     }
+
 
     pub(super) fn primary_point(&self) -> &AutorouteCalibrationPoint {
         // LAW10: fail-closed; validated decisions contain evidence, and an invariant violation aborts rather than selecting an unevidenced route.

@@ -13,6 +13,10 @@ pub(crate) use acquisition::load_dynamic_library;
 pub(crate) use acquisition::probe_cuda_peer;
 pub use acquisition::GpuBackendAvailability;
 pub(crate) use acquisition::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
+#[cfg(feature = "gpu")]
+pub use acquisition::{
+    acquire_ordered_gpu_device_set, enumerate_gpu_device_census, AcquiredGpuDeviceSet,
+};
 
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) use resident_evidence::{

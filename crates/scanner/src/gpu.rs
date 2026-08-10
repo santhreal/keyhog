@@ -6,6 +6,7 @@
 #[cfg(feature = "gpu")]
 mod adapter_probe;
 mod backend;
+pub mod device_set;
 #[cfg(feature = "gpu")]
 pub(crate) mod evidence;
 #[cfg(all(test, feature = "gpu", target_os = "linux"))]
@@ -13,6 +14,10 @@ pub(crate) use backend::load_dynamic_library;
 #[cfg(all(feature = "gpu", target_os = "linux"))]
 pub(crate) use backend::probe_cuda_peer;
 pub use backend::GpuBackendAvailability;
+#[cfg(feature = "gpu")]
+pub use backend::{
+    acquire_ordered_gpu_device_set, enumerate_gpu_device_census, AcquiredGpuDeviceSet,
+};
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) use backend::{
     reset_test_max_in_flight_slots, test_max_in_flight_slots, with_test_resident_dispatch_failure,
