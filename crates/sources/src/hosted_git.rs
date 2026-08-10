@@ -63,6 +63,19 @@ impl ExpectedCloneOrigin {
         })
     }
 
+    /// GitHub.com's REST API lives on `api.github.com` while HTTPS clones use
+    /// `github.com`. Map the public API host to the public clone host the same
+    /// way Bitbucket maps `api.bitbucket.org` → `bitbucket.org`. Self-hosted
+    /// GHES keeps the API host as the clone origin.
+    #[cfg(feature = "github")]
+    pub(crate) fn github_from_api_endpoint(endpoint: &str) -> Result<Self, SourceError> {
+        let origin = Self::from_endpoint("github", endpoint)?;
+        if origin.host.eq_ignore_ascii_case("api.github.com") {
+            return Ok(Self::host("github.com"));
+        }
+        Ok(origin)
+    }
+
     #[cfg(feature = "gitlab")]
     pub(crate) fn from_api_root(api_root: &reqwest::Url) -> Result<Self, SourceError> {
         let host = api_root.host_str().ok_or_else(|| {

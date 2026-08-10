@@ -106,9 +106,7 @@ fn github_non_https_clone_url_rejected_with_exact_reason() {
         .expect_err("ssh:// clone URL must be refused");
     let msg = err.to_string();
     assert!(
-        msg.contains(
-            "refusing clone URL that is neither https nor literal loopback http"
-        ),
+        msg.contains("refusing clone URL that is neither https nor literal loopback http"),
         "expected non-https refusal, got: {msg}"
     );
 }
@@ -452,7 +450,6 @@ fn gitlab_private_ip_https_endpoint_refused_before_network() {
     );
 }
 
-
 // ---------------------------------------------------------------------------
 // GitHub collaboration / org API-endpoint SSRF (fail-closed, no network)
 // ---------------------------------------------------------------------------
@@ -478,14 +475,11 @@ fn github_collaboration_private_ip_https_endpoint_refused_before_network() {
         timeout: Some(Duration::from_millis(800)),
         ..Default::default()
     };
-    let source = keyhog_sources::GitHubCollaborationSource::new(
-        "acme/repo",
-        "ghp_testtoken",
-        issues_only(),
-    )
-    .expect("collaboration source constructs")
-    .with_endpoint("https://192.0.2.1")
-    .with_http_config(http);
+    let source =
+        keyhog_sources::GitHubCollaborationSource::new("acme/repo", "ghp_testtoken", issues_only())
+            .expect("collaboration source constructs")
+            .with_endpoint("https://192.0.2.1")
+            .with_http_config(http);
     let rows: Vec<_> = source.chunks().collect();
     assert_eq!(
         rows.len(),
@@ -520,16 +514,18 @@ fn github_collaboration_loopback_http_endpoint_refused_without_private_optin() {
             .body("[]");
     });
 
-    let source = keyhog_sources::GitHubCollaborationSource::new(
-        "acme/repo",
-        "ghp_testtoken",
-        issues_only(),
-    )
-    .expect("collaboration source constructs")
-    .with_endpoint(server.url(""))
-    .with_http_config(keyhog_sources::http::HttpClientConfig::default());
+    let source =
+        keyhog_sources::GitHubCollaborationSource::new("acme/repo", "ghp_testtoken", issues_only())
+            .expect("collaboration source constructs")
+            .with_endpoint(server.url(""))
+            .with_http_config(keyhog_sources::http::HttpClientConfig::default());
     let rows: Vec<_> = source.chunks().collect();
-    assert_eq!(rows.len(), 1, "expected one refusal chunk, got {}", rows.len());
+    assert_eq!(
+        rows.len(),
+        1,
+        "expected one refusal chunk, got {}",
+        rows.len()
+    );
     let msg = rows[0]
         .as_ref()
         .expect_err("loopback collaboration endpoint without opt-in must Err")
@@ -573,3 +569,64 @@ fn github_org_private_ip_https_endpoint_refused_at_factory() {
     );
 }
 
+#[test]
+fn github_collaboration_wiki_ssh_url_refused_before_clone() {
+    let source = keyhog_sources::GitHubCollaborationSource::new(
+        "acme/repo",
+        "ghp_testtoken",
+        keyhog_sources::GitHubCollaborationSelection {
+            issues: false,
+            pull_requests: false,
+            discussions: false,
+            wiki: true,
+            gists: false,
+            releases: false,
+        },
+    )
+    .expect("collaboration source constructs")
+    .with_wiki_clone_url("ssh://github.com/acme/repo.wiki.git");
+    let rows: Vec<_> = source.chunks().collect();
+    assert!(
+        !rows.is_empty(),
+        "refused wiki clone must surface at least one row"
+    );
+    let joined = rows
+        .iter()
+        .filter_map(|row| row.as_ref().err().map(|error| error.to_string()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        joined.contains("neither https nor literal loopback http")
+            || joined.contains("outside expected clone origin")
+            || joined.contains("wiki"),
+        "ssh wiki URL must be refused before clone, got: {joined}"
+    );
+}
+
+#[test]
+fn github_collaboration_wiki_cross_host_url_refused_before_clone() {
+    let source = keyhog_sources::GitHubCollaborationSource::new(
+        "acme/repo",
+        "ghp_testtoken",
+        keyhog_sources::GitHubCollaborationSelection {
+            issues: false,
+            pull_requests: false,
+            discussions: false,
+            wiki: true,
+            gists: false,
+            releases: false,
+        },
+    )
+    .expect("collaboration source constructs")
+    .with_wiki_clone_url("https://attacker.example/acme/repo.wiki.git");
+    let rows: Vec<_> = source.chunks().collect();
+    let joined = rows
+        .iter()
+        .filter_map(|row| row.as_ref().err().map(|error| error.to_string()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        joined.contains("outside expected clone origin") && joined.contains("attacker.example"),
+        "cross-host wiki URL must be refused before askpass, got: {joined}"
+    );
+}

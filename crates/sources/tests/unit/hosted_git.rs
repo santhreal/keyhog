@@ -286,3 +286,17 @@ fn api_endpoint_and_pagination_errors_redact_query_fragment_and_userinfo() {
         );
     }
 }
+
+#[cfg(feature = "github")]
+#[test]
+fn github_from_api_endpoint_maps_public_api_host_to_clone_host() {
+    let origin = ExpectedCloneOrigin::github_from_api_endpoint("https://api.github.com")
+        .expect("public GitHub API endpoint must yield a clone origin");
+    assert_eq!(origin.host, "github.com");
+    assert_eq!(origin.port, 443);
+
+    let ghes = ExpectedCloneOrigin::github_from_api_endpoint("https://ghe.example/api/v3")
+        .expect("GHES API endpoint must keep its host as clone origin");
+    assert_eq!(ghes.host, "ghe.example");
+    assert_eq!(ghes.port, 443);
+}

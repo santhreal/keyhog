@@ -477,6 +477,24 @@ impl GitHubCollaborationSource {
             default_clone_url = format!("https://github.com/{}/{}.wiki.git", self.owner, self.repo);
             &default_clone_url
         };
+        // Same shape + origin screen org clones use. Without it `--github-wiki-url`
+        // could point askpass credentials at ssh:// / cross-host / gadget URLs.
+        let expected_clone_origin =
+            crate::hosted_git::ExpectedCloneOrigin::github_from_api_endpoint(&self.endpoint)
+                .map_err(|error| {
+                    GitHubGap::inaccessible("wiki", self.repository(), error.to_string())
+                })?;
+        crate::hosted_git::validate_clone_url_for_origin(
+            "github",
+            clone_url,
+            &expected_clone_origin,
+        )
+        .map_err(|error| match error {
+            SourceError::Other(detail) => {
+                GitHubGap::inaccessible("wiki", self.repository(), detail)
+            }
+            other => GitHubGap::inaccessible("wiki", self.repository(), other.to_string()),
+        })?;
         crate::hosted_git::clone_authenticated_history(
             "github",
             &format!("{}/{}.wiki", self.owner, self.repo),

@@ -219,7 +219,7 @@ fn stream_org_chunks(
         Some(org),
         "x-access-token",
         token,
-        &hosted_git::ExpectedCloneOrigin::from_endpoint("github", &endpoint)?,
+        &hosted_git::ExpectedCloneOrigin::github_from_api_endpoint(&endpoint)?,
         &repos,
         limits,
         respect_default_excludes,
@@ -266,7 +266,6 @@ fn build_client(
         .build()
         .map_err(|e| SourceError::Other(format!("failed to build GitHub client: {e}")))
 }
-
 
 fn list_repos(
     client: &Client,
