@@ -111,7 +111,13 @@ pub(super) fn current_executable_sha256(
         .as_deref()
         .map_err(|error| error.clone().into())
 }
+#[cfg(not(test))]
 pub(super) fn current_gpu_sidecar_sha256() -> Option<String> {
     let cache_dir = keyhog_scanner::gpu_literal_artifact_cache_dir().ok()?;
     installed_gpu_sidecar_digest(&cache_dir)
+}
+
+#[cfg(test)]
+pub(super) fn current_gpu_sidecar_sha256() -> Option<String> {
+    Some("test-installed-gpu-sidecar-v1".to_string())
 }
