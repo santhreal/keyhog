@@ -1365,7 +1365,22 @@ impl CompiledScanner {
     }
 
     /// Apply explicit performance-route tuning to this compiled scanner.
-    pub fn with_tuning_config(self, config: ScannerTuningConfig) -> Result<Self> {
+    ///
+    /// This compatibility method preserves the original infallible builder
+    /// signature. Use [`Self::try_with_tuning_config`] when tuning comes from an
+    /// untrusted or dynamically constructed source.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `config` contains a value the runtime cannot represent.
+    #[deprecated(note = "use try_with_tuning_config to handle invalid tuning")]
+    pub fn with_tuning_config(self, config: ScannerTuningConfig) -> Self {
+        self.try_with_tuning_config(config)
+            .unwrap_or_else(|error| panic!("invalid scanner tuning configuration: {error}"))
+    }
+
+    /// Validate and apply explicit performance-route tuning.
+    pub fn try_with_tuning_config(self, config: ScannerTuningConfig) -> Result<Self> {
         self.tuning
             .apply_config(&config)
             .map_err(crate::error::ScanError::Config)?;

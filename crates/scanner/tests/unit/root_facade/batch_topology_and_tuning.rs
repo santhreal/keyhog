@@ -86,7 +86,7 @@ fn production_topology_covers_every_boundary_variant_exactly_once() {
 }
 
 #[test]
-fn chunk_lane_tuning_validates_bounds_and_reaches_runtime_state() {
+fn pr27_review_chunk_lane_tuning_validates_bounds_and_reaches_runtime_state() {
     use keyhog_scanner::{GpuInitPolicy, ScannerTuningConfig};
 
     let valid_cases = [
@@ -119,7 +119,25 @@ fn chunk_lane_tuning_validates_bounds_and_reaches_runtime_state() {
         );
     }
 
-    for invalid in [0, usize::MAX] {
+    let compatibility_tuning = ScannerTuningConfig {
+        chunk_lane_threshold: Some(8 * 1024),
+        ..Default::default()
+    };
+    #[allow(deprecated)]
+    let compatibility_scanner = CompiledScanner::compile(vec![])
+        .expect("default scanner compiles")
+        .with_tuning_config(compatibility_tuning);
+    assert_eq!(
+        keyhog_scanner::testing::scanner_chunk_lane_threshold_for_test(&compatibility_scanner),
+        8 * 1024,
+        "the original infallible builder signature must remain source-compatible"
+    );
+
+    for invalid in [
+        ScannerTuningConfig::CHUNK_LANE_THRESHOLD_MIN - 1,
+        ScannerTuningConfig::CHUNK_LANE_THRESHOLD_MAX + 1,
+        usize::MAX,
+    ] {
         let tuning = ScannerTuningConfig {
             chunk_lane_threshold: Some(invalid),
             ..Default::default()
@@ -142,7 +160,7 @@ fn chunk_lane_tuning_validates_bounds_and_reaches_runtime_state() {
         assert!(
             CompiledScanner::compile(vec![])
                 .expect("default scanner compiles")
-                .with_tuning_config(tuning)
+                .try_with_tuning_config(tuning)
                 .is_err(),
             "invalid threshold {invalid} must fail post-compile tuning"
         );

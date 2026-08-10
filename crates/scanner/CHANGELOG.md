@@ -3,7 +3,8 @@
 ## 0.5.69 - 2026-08-09
 
 - Preserve line indices as `usize` throughout entropy keyword discovery, context checks, and candidate scanning, preventing silent line drops or panics on large inputs.
-- Add a validated `chunk_lane_threshold` configuration knob with a supported range of `1..usize::MAX`, fail-closed scanner construction, effective-config output, routing identity, and runtime propagation.
+- Add a validated `chunk_lane_threshold` configuration knob with a supported range of 1 byte through the 1 MiB scan-window ceiling, fail-closed scanner construction, effective-config output, routing identity, and runtime propagation.
+- Preserve the infallible `with_tuning_config` builder for source compatibility and add `try_with_tuning_config` for fail-closed dynamic tuning.
 - Cap scratch set capacity retention to prevent pathological bucket growth in worker-local scratch pools.
 - Ensure deterministic total-ordering tiebreak on decoded candidate match merges.
 - Coalesce small chunks through one shared CPU/SIMD topology while keeping every large chunk as an independently scheduled work item.
