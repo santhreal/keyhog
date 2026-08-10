@@ -33,8 +33,8 @@ use crate::cache;
 use crate::{into_finding, DedupedMatch, VerificationEngine, VerifyConfig, VerifyError};
 
 pub(crate) use aws::{
-    build_aws_probe, classify_aws_sts_failure, parse_aws_sts_success_metadata, valid_aws_format,
-    validate_aws_region,
+    build_aws_probe, classify_aws_sts_failure, classify_aws_sts_http_200,
+    parse_aws_sts_success_metadata, valid_aws_format, validate_aws_region,
 };
 pub(crate) use credential::{
     rate_limit_feedback_sequence_for_test, retry_delay_bounds_for_attempt,

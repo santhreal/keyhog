@@ -265,21 +265,34 @@ async fn build_sigv4_request(
     }
 
     if status == 200 {
-        let metadata = match parse_aws_sts_success_metadata(&resp_body) {
-            Ok(metadata) => metadata,
-            Err(error) => {
-                tracing::warn!(
-                    %error,
-                    "AWS STS GetCallerIdentity returned HTTP 200 but identity metadata could \
-                     not be parsed; reporting the credential as live with metadata_parse_error"
-                );
-                HashMap::from([("metadata_parse_error".into(), error)])
-            }
-        };
-        Ok((VerificationResult::Live, metadata, false))
+        Ok(classify_aws_sts_http_200(&resp_body))
     } else {
         let (result, transient) = classify_aws_sts_failure(status, &resp_body);
         Ok((result, HashMap::new(), transient))
+    }
+}
+
+/// HTTP 200 alone is not proof of a live credential: STS must return parseable
+/// caller-identity metadata (Arn + Account). Interstitials, wrong endpoints, or
+/// truncated bodies must fail closed as `Error`, never `Live`.
+pub(crate) fn classify_aws_sts_http_200(
+    body: &str,
+) -> (VerificationResult, HashMap<String, String>, bool) {
+    match parse_aws_sts_success_metadata(body) {
+        Ok(metadata) => (VerificationResult::Live, metadata, false),
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                "AWS STS GetCallerIdentity returned HTTP 200 but identity metadata could not be parsed; refusing to report the credential as live"
+            );
+            (
+                VerificationResult::Error(format!(
+                    "AWS STS GetCallerIdentity returned HTTP 200 but identity metadata could not be parsed: {error}"
+                )),
+                HashMap::from([("metadata_parse_error".into(), error)]),
+                false,
+            )
+        }
     }
 }
 

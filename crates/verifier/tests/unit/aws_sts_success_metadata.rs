@@ -190,3 +190,52 @@ fn aws_sts_non_403_failure_remains_transient_rate_limited() {
         keyhog_core::VerificationResult::RateLimited
     ));
 }
+
+#[test]
+fn aws_sts_http_200_without_identity_is_error_not_live() {
+    let html = "<html><body>ok</body></html>";
+    let (result, metadata, transient) = TestApi.classify_aws_sts_http_200(html);
+    assert!(
+        !transient,
+        "unparsed STS success is conclusive enough to fail closed"
+    );
+    assert!(
+        matches!(result, VerificationResult::Error(_)),
+        "HTTP 200 without Arn/Account must not be Live, got {result:?}"
+    );
+    assert_eq!(
+        metadata
+            .get("metadata_parse_error")
+            .map(String::as_str)
+            .is_some(),
+        true,
+        "parse failure detail must remain in metadata for operators"
+    );
+    match result {
+        VerificationResult::Error(message) => assert!(
+            message.contains("could not be parsed"),
+            "error must explain the refuse-live decision: {message}"
+        ),
+        other => panic!("expected Error, got {other:?}"),
+    }
+}
+
+#[test]
+fn aws_sts_http_200_with_identity_still_live() {
+    let xml = r#"
+        <GetCallerIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+          <GetCallerIdentityResult>
+            <Arn>arn:aws:iam::123456789012:user/alice</Arn>
+            <UserId>AIDAEXAMPLEUSERID</UserId>
+            <Account>123456789012</Account>
+          </GetCallerIdentityResult>
+        </GetCallerIdentityResponse>
+    "#;
+    let (result, metadata, transient) = TestApi.classify_aws_sts_http_200(xml);
+    assert!(!transient);
+    assert!(matches!(result, VerificationResult::Live));
+    assert_eq!(
+        metadata.get("account_id").map(String::as_str),
+        Some("123456789012")
+    );
+}

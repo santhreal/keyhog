@@ -663,6 +663,14 @@ pub mod testing {
             status: u16,
             body: &str,
         ) -> (keyhog_core::VerificationResult, bool);
+        fn classify_aws_sts_http_200(
+            &self,
+            body: &str,
+        ) -> (
+            keyhog_core::VerificationResult,
+            HashMap<String, String>,
+            bool,
+        );
         fn valid_aws_format_for_test(&self, access_key: &str, secret_key: &str) -> bool;
         fn validate_aws_region_for_test(
             &self,
@@ -1015,6 +1023,17 @@ pub mod testing {
             body: &str,
         ) -> (keyhog_core::VerificationResult, bool) {
             crate::verify::classify_aws_sts_failure(status, body)
+        }
+
+        fn classify_aws_sts_http_200(
+            &self,
+            body: &str,
+        ) -> (
+            keyhog_core::VerificationResult,
+            HashMap<String, String>,
+            bool,
+        ) {
+            crate::verify::classify_aws_sts_http_200(body)
         }
 
         fn valid_aws_format_for_test(&self, access_key: &str, secret_key: &str) -> bool {
