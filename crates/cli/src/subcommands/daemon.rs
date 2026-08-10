@@ -86,7 +86,7 @@ async fn start(
             keyhog_core::detector_digest().to_owned(),
         )
     };
-    let (guard_hot_index_budget, guard_recon_config) = load_guard_config();
+    let (guard_hot_index_budget, guard_recon_config, guard_scanner_idle_timeout) = load_guard_config();
     let options = server::ServerOptions {
         request_read_timeout: Duration::from_secs(request_timeout_secs),
         mass_service: mass,
@@ -100,6 +100,7 @@ async fn start(
         backend_override,
         guard_hot_index_budget,
         guard_recon_config,
+        guard_scanner_idle_timeout,
     )
     .await?;
     Ok(ExitCode::SUCCESS)
@@ -433,28 +434,28 @@ async fn status_over_control_channel(
 /// the hot index memory budget and the reconciliation config.
 /// Missing or invalid values fall back to defaults and do not
 /// prevent daemon startup.
-fn load_guard_config() -> (Option<usize>, keyhog_sources::guard::GuardReconciliationConfig) {
+fn load_guard_config() -> (Option<usize>, keyhog_sources::guard::GuardReconciliationConfig, Option<u64>) {
     let config_path = match crate::config::find_config_file(None) {
         Some(p) => p,
-        None => return (None, keyhog_sources::guard::GuardReconciliationConfig::default()),
+        None => return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None),
     };
     let raw = match std::fs::read_to_string(&config_path) {
         Ok(content) => content,
         Err(e) => {
             tracing::warn!("daemon: failed to read {}: {}", config_path.display(), e);
-            return (None, keyhog_sources::guard::GuardReconciliationConfig::default());
+            return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None);
         }
     };
     let config: crate::config::ConfigFile = match toml::from_str(&raw) {
         Ok(c) => c,
         Err(e) => {
             tracing::warn!("daemon: failed to parse {}: {}", config_path.display(), e);
-            return (None, keyhog_sources::guard::GuardReconciliationConfig::default());
+            return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None);
         }
     };
     let guard = match config.guard {
         Some(g) => g,
-        None => return (None, keyhog_sources::guard::GuardReconciliationConfig::default()),
+        None => return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None),
     };
     let budget = guard.hot_index_memory.as_deref().and_then(parse_byte_size);
     let defaults = keyhog_sources::guard::GuardReconciliationConfig::default();
@@ -474,7 +475,11 @@ fn load_guard_config() -> (Option<usize>, keyhog_sources::guard::GuardReconcilia
             .subtree_max_depth
             .unwrap_or(defaults.subtree_max_depth),
     };
-    (budget, recon_config)
+    let scanner_idle_timeout_secs = guard
+        .scanner_idle_timeout
+        .as_deref()
+        .and_then(parse_duration_secs);
+    (budget, recon_config, scanner_idle_timeout_secs)
 }
 
 /// Parse a human-readable byte size string (e.g. "64MiB", "128MB", "1GB").
@@ -525,4 +530,10 @@ fn parse_duration_ms(s: &str) -> Option<u64> {
         _ => return None,
     };
     Some(millis as u64)
+}
+
+/// Parse a human-readable duration string (e.g. "5m", "1h", "300s").
+/// Returns seconds. Returns `None` on parse failure.
+fn parse_duration_secs(s: &str) -> Option<u64> {
+    parse_duration_ms(s).map(|ms| ms / 1000)
 }

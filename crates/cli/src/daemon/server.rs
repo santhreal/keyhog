@@ -460,6 +460,7 @@ pub(crate) async fn run_with_backend_override(
     backend_override: Option<ScanBackend>,
     guard_hot_index_budget: Option<usize>,
     guard_recon_config: keyhog_sources::guard::GuardReconciliationConfig,
+    guard_scanner_idle_timeout: Option<u64>,
 ) -> Result<()> {
     ignore_sigpipe_while_serving();
     // Tell the operator the daemon is working before scanner compile and warmup.
@@ -502,6 +503,11 @@ pub(crate) async fn run_with_backend_override(
         guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
         report_semantics_version: 1,
     });
+
+    // Apply configured scanner idle timeout to the guard runtime.
+    if let Some(secs) = guard_scanner_idle_timeout {
+        state.guard.set_scanner_idle_timeout(secs);
+    }
 
     announce_daemon_ready(&socket_path, detector_count, &state.warm_backend_status());
     let accept_task = spawn_accept_loop(listener, state.clone());

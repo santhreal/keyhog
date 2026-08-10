@@ -70,6 +70,9 @@ pub struct GuardRuntime {
     transactions: Mutex<HashMap<u64, GuardTransaction>>,
     /// Last time any guard activity occurred (commit, event, root change).
     last_activity: Mutex<Instant>,
+    /// Configured scanner idle timeout in seconds before the residency
+    /// label reports "idle-unload". Defaults to 300 (5 minutes).
+    scanner_idle_timeout_secs: Mutex<u64>,
     /// Roots that received filesystem events while in the Indexing
     /// state. The baseline reconciliation handler checks this after
     /// the scan completes and transitions such roots to Dirty
@@ -77,8 +80,9 @@ pub struct GuardRuntime {
     dirty_during_indexing: parking_lot::Mutex<std::collections::HashSet<Vec<u8>>>,
 }
 
-/// Seconds of guard inactivity before the scanner is considered idle-unloaded.
-const SCANNER_IDLE_UNLOAD_SECS: u64 = 300;
+/// Default scanner idle timeout in seconds (5 minutes).
+const DEFAULT_SCANNER_IDLE_TIMEOUT_SECS: u64 = 300;
+
 
 /// Maximum age of an in-flight transaction before it is swept as
 /// abandoned. A client that disconnects mid-transaction leaves it
@@ -95,6 +99,7 @@ impl GuardRuntime {
             next_transaction_id: Mutex::new(1),
             transactions: Mutex::new(HashMap::new()),
             last_activity: Mutex::new(Instant::now()),
+            scanner_idle_timeout_secs: Mutex::new(DEFAULT_SCANNER_IDLE_TIMEOUT_SECS),
             dirty_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
         }
     }
@@ -108,8 +113,15 @@ impl GuardRuntime {
             next_transaction_id: Mutex::new(1),
             transactions: Mutex::new(HashMap::new()),
             last_activity: Mutex::new(Instant::now()),
+            scanner_idle_timeout_secs: Mutex::new(DEFAULT_SCANNER_IDLE_TIMEOUT_SECS),
             dirty_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
         }
+    }
+
+    /// Set the scanner idle timeout in seconds. After this many seconds
+    /// of guard inactivity, the residency label reports "idle-unload".
+    pub fn set_scanner_idle_timeout(&self, secs: u64) {
+        *self.scanner_idle_timeout_secs.lock() = secs;
     }
 
 
@@ -457,7 +469,8 @@ impl GuardRuntime {
             return "active";
         }
         let elapsed = self.last_activity.lock().elapsed();
-        if elapsed.as_secs() < SCANNER_IDLE_UNLOAD_SECS {
+        let timeout = *self.scanner_idle_timeout_secs.lock();
+        if elapsed.as_secs() < timeout {
             "resident"
         } else {
             "idle-unload"
