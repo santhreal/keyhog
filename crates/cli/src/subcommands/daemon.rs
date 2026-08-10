@@ -86,7 +86,7 @@ async fn start(
             keyhog_core::detector_digest().to_owned(),
         )
     };
-    let guard_hot_index_budget = load_guard_hot_index_budget();
+    let (guard_hot_index_budget, guard_recon_config) = load_guard_config();
     let options = server::ServerOptions {
         request_read_timeout: Duration::from_secs(request_timeout_secs),
         mass_service: mass,
@@ -99,6 +99,7 @@ async fn start(
         options,
         backend_override,
         guard_hot_index_budget,
+        guard_recon_config,
     )
     .await?;
     Ok(ExitCode::SUCCESS)
@@ -413,29 +414,52 @@ async fn status_over_control_channel(
 /// Load the `[guard].hot_index_memory` setting from `.keyhog.toml`.
 /// Returns `None` when the file is absent, the `[guard]` section is
 /// absent, or the value cannot be parsed. Errors are logged as warnings
-/// and do not prevent daemon startup.
-fn load_guard_hot_index_budget() -> Option<usize> {
+/// Load guard configuration from the KeyHog config file. Returns
+/// the hot index memory budget and the reconciliation config.
+/// Missing or invalid values fall back to defaults and do not
+/// prevent daemon startup.
+fn load_guard_config() -> (Option<usize>, keyhog_sources::guard::GuardReconciliationConfig) {
     let config_path = match crate::config::find_config_file(None) {
         Some(p) => p,
-        None => return None,
+        None => return (None, keyhog_sources::guard::GuardReconciliationConfig::default()),
     };
     let raw = match std::fs::read_to_string(&config_path) {
         Ok(content) => content,
         Err(e) => {
             tracing::warn!("daemon: failed to read {}: {}", config_path.display(), e);
-            return None;
+            return (None, keyhog_sources::guard::GuardReconciliationConfig::default());
         }
     };
     let config: crate::config::ConfigFile = match toml::from_str(&raw) {
         Ok(c) => c,
         Err(e) => {
             tracing::warn!("daemon: failed to parse {}: {}", config_path.display(), e);
-            return None;
+            return (None, keyhog_sources::guard::GuardReconciliationConfig::default());
         }
     };
-    let guard = config.guard?;
-    let memory_str = guard.hot_index_memory?;
-    parse_byte_size(&memory_str)
+    let guard = match config.guard {
+        Some(g) => g,
+        None => return (None, keyhog_sources::guard::GuardReconciliationConfig::default()),
+    };
+    let budget = guard.hot_index_memory.as_deref().and_then(parse_byte_size);
+    let defaults = keyhog_sources::guard::GuardReconciliationConfig::default();
+    let recon_config = keyhog_sources::guard::GuardReconciliationConfig {
+        max_pending_events_per_root: guard
+            .max_pending_events_per_root
+            .unwrap_or(defaults.max_pending_events_per_root),
+        coalesce_window_ms: guard
+            .coalesce_window
+            .as_deref()
+            .and_then(parse_duration_ms)
+            .unwrap_or(defaults.coalesce_window_ms),
+        subtree_max_files: guard
+            .subtree_max_files
+            .unwrap_or(defaults.subtree_max_files),
+        subtree_max_depth: guard
+            .subtree_max_depth
+            .unwrap_or(defaults.subtree_max_depth),
+    };
+    (budget, recon_config)
 }
 
 /// Parse a human-readable byte size string (e.g. "64MiB", "128MB", "1GB").
@@ -463,4 +487,27 @@ fn parse_byte_size(s: &str) -> Option<usize> {
         }
     };
     Some((num * multiplier) as usize)
+}
+
+/// Parse a human-readable duration string (e.g. "100ms", "5s", "1m").
+/// Returns milliseconds. Returns `None` on parse failure.
+fn parse_duration_ms(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let split = s.find(|c: char| !c.is_ascii_digit() && c != '.');
+    let (num_str, unit_str) = match split {
+        Some(idx) => (&s[..idx], s[idx..].trim()),
+        None => (s, ""),
+    };
+    let num: f64 = num_str.parse().ok()?;
+    let millis = match unit_str.to_lowercase().as_str() {
+        "ms" => num,
+        "s" => num * 1000.0,
+        "m" => num * 1000.0 * 60.0,
+        "h" => num * 1000.0 * 60.0 * 60.0,
+        _ => return None,
+    };
+    Some(millis as u64)
 }

@@ -275,6 +275,7 @@ impl ServerState {
         warm_backend: WarmBackendReadiness,
         guard_hot_index_budget: Option<usize>,
         guard_filter: crate::orchestrator::DefaultScanFilter,
+        guard_recon_config: keyhog_sources::guard::GuardReconciliationConfig,
     ) -> Self {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -310,7 +311,7 @@ impl ServerState {
             guard_filter: Arc::new(guard_filter),
             guard_watcher: Arc::new(parking_lot::Mutex::new(
                 crate::daemon::guard_watcher::GuardWatcher::new(
-                    keyhog_sources::guard::GuardReconciliationConfig::default(),
+                    guard_recon_config,
                 )
                 .unwrap_or_else(|e| {
                     tracing::warn!("daemon: guard watcher disabled: {}", e);
@@ -458,6 +459,7 @@ pub(crate) async fn run_with_backend_override(
     options: ServerOptions,
     backend_override: Option<ScanBackend>,
     guard_hot_index_budget: Option<usize>,
+    guard_recon_config: keyhog_sources::guard::GuardReconciliationConfig,
 ) -> Result<()> {
     ignore_sigpipe_while_serving();
     // Tell the operator the daemon is working before scanner compile and warmup.
@@ -483,6 +485,7 @@ pub(crate) async fn run_with_backend_override(
         warm_backend,
         guard_hot_index_budget,
         guard_filter,
+        guard_recon_config,
     ));
 
     // Set the guard policy identity from the daemon's scanner and build
@@ -627,7 +630,7 @@ fn spawn_accept_loop(
 fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let coalesce_window = std::time::Duration::from_millis(
-            keyhog_sources::guard::GuardReconciliationConfig::default().coalesce_window_ms,
+            state.guard_watcher.lock().coalesce_window_ms(),
         );
         loop {
             tokio::select! {
@@ -649,9 +652,12 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
 /// events mark the root dirty (EventAccepted) only when it is in a
 /// state that accepts that transition (Current or Blocked). Overflow
 /// (ReconcileSubtree) uses CoverageLost, which is legal from every
-/// active state. Events on roots that are already Dirty, Degraded,
-/// StalePolicy, Indexing, or Stopped are no-ops: the root is already
-/// in a state that accounts for unscanned changes.
+/// active state. Events on roots in the Indexing state are recorded
+/// via `mark_dirty_during_indexing` so the baseline handler can
+/// transition the root to Dirty after the scan completes instead of
+/// claiming Current. Events on Dirty, Degraded, StalePolicy, and
+/// Stopped roots are no-ops: those states already account for
+/// unscanned changes.
 fn process_guard_events(state: &ServerState, root: &Path, events: Vec<keyhog_sources::guard::GuardEvent>) {
     use keyhog_core::guard_state::{GuardRootState, GuardTransition};
     use keyhog_sources::guard::GuardEvent;
@@ -665,15 +671,27 @@ fn process_guard_events(state: &ServerState, root: &Path, events: Vec<keyhog_sou
         // and Degraded. Stopped roots are not active, so skip.
         match current_state {
             Some(GuardRootState::Stopped) | None => return,
+            Some(GuardRootState::Indexing) => {
+                // Overflow during indexing: mark for re-scan and
+                // also apply CoverageLost to signal degraded coverage.
+                state.guard.mark_dirty_during_indexing(root_bytes);
+                Some(GuardTransition::CoverageLost)
+            }
             _ => Some(GuardTransition::CoverageLost),
         }
     } else {
         // EventAccepted is legal only from Current and Blocked.
-        // Dirty, Degraded, StalePolicy, Indexing, and Stopped
-        // already account for unscanned changes.
         match current_state {
             Some(GuardRootState::Current) | Some(GuardRootState::Blocked) => {
                 Some(GuardTransition::EventAccepted)
+            }
+            Some(GuardRootState::Indexing) => {
+                // Events during indexing: the baseline scan is in
+                // progress. Record that changes were observed so the
+                // baseline handler can transition to Dirty instead
+                // of Current after the scan completes.
+                state.guard.mark_dirty_during_indexing(root_bytes);
+                None
             }
             _ => None,
         }
@@ -1192,7 +1210,9 @@ async fn handle_connection(
                 | Request::ScanPath { .. }
                 | Request::GuardCommitBegin { .. }
                 | Request::GuardCommitBlob { .. }
-                | Request::GuardCommitFinish { .. }) => {
+                | Request::GuardCommitFinish { .. }
+                | Request::GuardAdd { .. }
+                | Request::GuardReconcile { .. }) => {
                 match warm_route_denial.as_ref() {
                     Some(denial) => denial.clone(),
                     None => dispatch(&state, other).await,
@@ -1598,22 +1618,36 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             // Finalize raw matches through the suppression pipeline
             // (allowlist, test-fixture, confidence, inline suppression)
             // so suppressed/example values do not count as findings.
-            let findings = state.guard_filter.finalize_count(&state.scanner, raw_matches);
-            if let Err(msg) = state.guard.record_scanned_blob(txn_id, &oid, bytes_scanned, findings as u64) {
-                return Response::Error { message: msg };
-            }
-            // If clean (zero findings), insert attestation for reuse.
-            if findings == 0 {
-                let identity = state.guard.policy_identity();
-                if let Some(id) = identity {
-                    let att = keyhog_core::guard_state::GitCleanAttestation {
-                        hash_algorithm: txn.hash_algorithm,
-                        blob_oid: oid.clone(),
-                        object_size,
-                        policy_identity: id,
-                        last_seen_sequence: 0,
-                    };
-                    state.guard.insert_attestation(att);
+            // If finalization fails, treat it as a coverage gap
+            // rather than zero findings (fail closed).
+            let (findings, coverage_gap) = match state.guard_filter.finalize_count(&state.scanner, raw_matches) {
+                Some(count) => (count as u64, false),
+                None => (0, true),
+            };
+            if coverage_gap {
+                // Finalization failed: record the blob as scanned
+                // (for conservation) but with a coverage gap so the
+                // terminal state is Degraded, not Current.
+                if let Err(msg) = state.guard.record_coverage_gap(txn_id, &oid, bytes_scanned) {
+                    return Response::Error { message: msg };
+                }
+            } else {
+                if let Err(msg) = state.guard.record_scanned_blob(txn_id, &oid, bytes_scanned, findings) {
+                    return Response::Error { message: msg };
+                }
+                if findings == 0 {
+                    // If clean (zero findings), insert attestation for reuse.
+                    let identity = state.guard.policy_identity();
+                    if let Some(id) = identity {
+                        let att = keyhog_core::guard_state::GitCleanAttestation {
+                            hash_algorithm: txn.hash_algorithm,
+                            blob_oid: oid.clone(),
+                            object_size,
+                            policy_identity: id,
+                            last_seen_sequence: 0,
+                        };
+                        state.guard.insert_attestation(att);
+                    }
                 }
             }
             // Acknowledge the blob was scanned with a dedicated ack
@@ -1621,8 +1655,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             Response::GuardCommitBlobAck {
                 transaction_id: txn_id,
                 blob_oid: oid,
-                bytes_scanned: bytes_scanned,
-                findings_count: findings as u64,
+                bytes_scanned,
+                findings_count: findings,
             }
         }
         Request::GuardCommitFinish {
@@ -1630,7 +1664,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             client_objects_streamed,
             client_bytes_streamed,
         } => {
-            let txn = match state.guard.finish_transaction(transaction_id) {
+            // Validate before removing the transaction so a failed
+            // check does not discard the scanning work. The client
+            // can retry or correct and re-send Finish.
+            let txn = match state.guard.get_transaction(transaction_id) {
                 Some(t) => t,
                 None => {
                     return Response::Error {
@@ -1671,6 +1708,9 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     ),
                 };
             }
+            // All validation passed. Remove the transaction from
+            // the in-flight map.
+            let _ = state.guard.finish_transaction(transaction_id);
             let total_objects = txn.clean_hits.len() as u64 + txn.scanned_oids.len() as u64 + txn.objects_skipped;
             let objects_hit = txn.clean_hits.len() as u64;
             let objects_scanned = txn.scanned_oids.len() as u64;
@@ -1935,7 +1975,29 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 }
             };
             match state.guard.transition_root(root.as_bytes(), &terminal) {
-                Ok(_) => Response::GuardReconcileStarted { root: root.clone() },
+                Ok(_) => {
+                    // If filesystem events were observed during the
+                    // baseline scan, the tree changed mid-walk and
+                    // the scan may not have seen the latest content.
+                    // Transition to Dirty so the operator knows a
+                    // re-scan is needed. EventAccepted is legal from
+                    // Current and Blocked, the two states the
+                    // baseline terminal transition produces when the
+                    // scan itself succeeded.
+                    if state.guard.take_dirty_during_indexing(root.as_bytes()) {
+                        if let Err(e) = state.guard.transition_root(
+                            root.as_bytes(),
+                            &keyhog_core::guard_state::GuardTransition::EventAccepted,
+                        ) {
+                            tracing::warn!(
+                                "daemon: guard reconcile: dirty-during-indexing transition failed for {}: {}",
+                                root,
+                                e
+                            );
+                        }
+                    }
+                    Response::GuardReconcileStarted { root: root.clone() }
+                }
                 Err(e) => Response::Error {
                     message: format!("daemon: guard reconcile terminal transition failed: {}", e),
                 },
@@ -2719,6 +2781,7 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
     let guard_filter = state.guard_filter.clone();
     let _fragment_guard = fragment_scan_lock.lock_owned().await;
     scanner.clear_fragment_cache();
+    let skip_before = keyhog_sources::skip_counts();
     let result = tokio::task::spawn_blocking(move || -> Result<(usize, usize)> {
         let source = keyhog_sources::FilesystemSource::new(root_path.clone());
         let mut total_findings = 0usize;
@@ -2770,8 +2833,10 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
             );
             match scan_out {
                 Ok(raw_matches) => {
-                    let count = guard_filter.finalize_count(&scanner, raw_matches);
-                    total_findings += count;
+                    match guard_filter.finalize_count(&scanner, raw_matches) {
+                        Some(count) => total_findings += count,
+                        None => total_gaps += 1,
+                    }
                 }
                 Err(_) => {
                     total_gaps += 1;
@@ -2781,9 +2846,15 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
         Ok((total_findings, total_gaps))
     })
     .await;
+    // Count files the source quietly skipped (oversized, binary,
+    // unreadable, truncated) as coverage gaps. The source records
+    // these in process-global counters rather than as Err items.
+    let skip_after = keyhog_sources::skip_counts();
+    let skip_delta = skip_after.total().saturating_sub(skip_before.total());
     match result {
         Ok(Ok((findings, gaps))) => {
-            if gaps > 0 {
+            let total_gaps = gaps + skip_delta;
+            if total_gaps > 0 {
                 BaselineResult::Degraded
             } else if findings > 0 {
                 BaselineResult::Findings

@@ -73,6 +73,11 @@ impl GuardWatcher {
         }
     }
 
+    /// Returns the configured coalesce window in milliseconds.
+    pub fn coalesce_window_ms(&self) -> u64 {
+        self.config.coalesce_window_ms
+    }
+
 
     /// Register a new root for watching. The watcher is started before
     /// the baseline walk so events during the walk are captured.

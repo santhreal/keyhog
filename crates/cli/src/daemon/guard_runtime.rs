@@ -70,6 +70,11 @@ pub struct GuardRuntime {
     transactions: Mutex<HashMap<u64, GuardTransaction>>,
     /// Last time any guard activity occurred (commit, event, root change).
     last_activity: Mutex<Instant>,
+    /// Roots that received filesystem events while in the Indexing
+    /// state. The baseline reconciliation handler checks this after
+    /// the scan completes and transitions such roots to Dirty
+    /// instead of Current, so changes during the walk are not lost.
+    dirty_during_indexing: parking_lot::Mutex<std::collections::HashSet<Vec<u8>>>,
 }
 
 /// Seconds of guard inactivity before the scanner is considered idle-unloaded.
@@ -90,6 +95,7 @@ impl GuardRuntime {
             next_transaction_id: Mutex::new(1),
             transactions: Mutex::new(HashMap::new()),
             last_activity: Mutex::new(Instant::now()),
+            dirty_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -102,6 +108,7 @@ impl GuardRuntime {
             next_transaction_id: Mutex::new(1),
             transactions: Mutex::new(HashMap::new()),
             last_activity: Mutex::new(Instant::now()),
+            dirty_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -179,6 +186,19 @@ impl GuardRuntime {
     /// Get a copy of a root record.
     pub fn root_record(&self, canonical_path: &[u8]) -> Option<GuardRootRecord> {
         self.roots.read().get(canonical_path).cloned()
+    }
+
+    /// Mark that a root received filesystem events while in the
+    /// Indexing state. The baseline handler checks this after the
+    /// scan completes.
+    pub fn mark_dirty_during_indexing(&self, canonical_path: &[u8]) {
+        self.dirty_during_indexing.lock().insert(canonical_path.to_vec());
+    }
+
+    /// Check and clear the dirty-during-indexing flag for a root.
+    /// Returns true if events were observed during indexing.
+    pub fn take_dirty_during_indexing(&self, canonical_path: &[u8]) -> bool {
+        self.dirty_during_indexing.lock().remove(canonical_path)
     }
 
     /// Apply a transition to a root. Returns the new state or an error.

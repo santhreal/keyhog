@@ -476,12 +476,14 @@ impl DefaultScanFilter {
     }
 
     /// Finalize raw scanner matches through the suppression pipeline.
-    /// Returns the count of finalized findings.
+    /// Returns `Some(count)` on success, or `None` if the filtering
+    /// step failed. Callers must treat `None` as a coverage gap
+    /// (degraded), not as zero findings.
     pub(crate) fn finalize_count(
         &self,
         scanner: &CompiledScanner,
         matches: Vec<RawMatch>,
-    ) -> usize {
+    ) -> Option<usize> {
         let filter = postprocess::MatchFilter {
             scanner,
             signatures: &self.signatures,
@@ -493,8 +495,11 @@ impl DefaultScanFilter {
             min_severity: self.min_severity,
         };
         match postprocess::filter_and_resolve_matches(&filter, matches, &self.allowlist) {
-            Ok(finalized) => finalized.len(),
-            Err(_) => 0,
+            Ok(finalized) => Some(finalized.len()),
+            Err(e) => {
+                tracing::warn!("guard: match finalization failed: {}", e);
+                None
+            }
         }
     }
 }
