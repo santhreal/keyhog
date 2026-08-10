@@ -1907,6 +1907,23 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         last_reconciliation_time: record.last_reconciliation_time,
                         scanner_residency: state.guard.scanner_residency().to_string(),
                         backend_route_label: record.backend_route_label.clone(),
+                        build_identity_short: state.guard.policy_identity()
+                            .as_ref()
+                            .and_then(|id| id.short_digest().ok())
+                            .unwrap_or_default(),
+                        detector_digest_short: state.guard.policy_identity()
+                            .as_ref()
+                            .map(|id| id.detector_digest.get(..12).unwrap_or(&id.detector_digest).to_string())
+                            .unwrap_or_default(),
+                        suppression_digest_short: state.guard.policy_identity()
+                            .as_ref()
+                            .map(|id| id.suppression_digest.get(..12).unwrap_or(&id.suppression_digest).to_string())
+                            .unwrap_or_default(),
+                        config_digest_short: state.guard.policy_identity()
+                            .as_ref()
+                            .map(|id| id.config_digest.get(..12).unwrap_or(&id.config_digest).to_string())
+                            .unwrap_or_default(),
+                        autoroute_evidence_status: state.guard.autoroute_evidence_status().to_string(),
                         repair_command: format!("keyhog guard reconcile {}", root),
                     }
                 }

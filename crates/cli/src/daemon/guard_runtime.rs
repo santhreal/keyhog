@@ -374,6 +374,19 @@ impl GuardRuntime {
         self.current_identity.read().clone()
     }
 
+    /// Autoroute evidence status label for status display.
+    /// Returns "established" when a policy identity is set, "pending"
+    /// otherwise. The daemon does not hold autoroute calibration state;
+    /// the label reflects whether the scanner is ready to serve guard
+    /// transactions.
+    pub fn autoroute_evidence_status(&self) -> &'static str {
+        if self.current_identity.read().is_some() {
+            "established"
+        } else {
+            "pending"
+        }
+    }
+
     /// Update a root's last receipt and terminal sequence after a
     /// commit transaction completes. Also transitions the root state
     /// based on the transaction outcome.

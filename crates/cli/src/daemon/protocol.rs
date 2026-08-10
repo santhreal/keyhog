@@ -482,6 +482,16 @@ pub(crate) enum Response {
         scanner_residency: String,
         /// Backend route label used for the last scan.
         backend_route_label: String,
+        /// Build identity short digest (first 12 hex chars).
+        build_identity_short: String,
+        /// Detector digest short (first 12 hex chars).
+        detector_digest_short: String,
+        /// Suppression digest short (first 12 hex chars).
+        suppression_digest_short: String,
+        /// Config digest short (first 12 hex chars).
+        config_digest_short: String,
+        /// Autoroute evidence status label.
+        autoroute_evidence_status: String,
         /// Exact repair command.
         repair_command: String,
     },

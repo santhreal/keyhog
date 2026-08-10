@@ -255,6 +255,11 @@ async fn run_status(
             last_reconciliation_time,
             scanner_residency,
             backend_route_label,
+            build_identity_short,
+            detector_digest_short,
+            suppression_digest_short,
+            config_digest_short,
+            autoroute_evidence_status,
             repair_command,
         } => {
             if format != "human" && format != "json" {
@@ -282,6 +287,11 @@ async fn run_status(
                     "last_reconciliation_time": last_reconciliation_time,
                     "scanner_residency": scanner_residency,
                     "backend_route_label": backend_route_label,
+                    "build_identity_short": build_identity_short,
+                    "detector_digest_short": detector_digest_short,
+                    "suppression_digest_short": suppression_digest_short,
+                    "config_digest_short": config_digest_short,
+                    "autoroute_evidence_status": autoroute_evidence_status,
                     "repair_command": repair_command,
                 });
                 println!("{json}");
@@ -308,6 +318,19 @@ async fn run_status(
                 }
                 eprintln!("residency:      {scanner_residency}");
                 eprintln!("backend route:  {backend_route_label}");
+                if !build_identity_short.is_empty() {
+                    eprintln!("build digest:   {build_identity_short}");
+                }
+                if !detector_digest_short.is_empty() {
+                    eprintln!("detector:       {detector_digest_short}");
+                }
+                if !suppression_digest_short.is_empty() {
+                    eprintln!("suppression:    {suppression_digest_short}");
+                }
+                if !config_digest_short.is_empty() {
+                    eprintln!("config:         {config_digest_short}");
+                }
+                eprintln!("autoroute:      {autoroute_evidence_status}");
                 if state == "degraded" || state == "stale-policy" {
                     eprintln!(
                         "{} repair: {repair_command}",
