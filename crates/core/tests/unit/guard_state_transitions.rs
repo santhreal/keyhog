@@ -4,9 +4,7 @@
 //! to return an error. Adding a state or event without updating the transition
 //! function makes these tests fail.
 
-use keyhog_core::guard_state::{
-    GuardRootState, GuardTransition, TransitionError,
-};
+use keyhog_core::guard_state::{GuardRootState, GuardTransition, TransitionError};
 
 /// All transition events for exhaustive testing.
 fn all_transitions() -> Vec<GuardTransition> {
@@ -231,10 +229,7 @@ fn only_degraded_and_stale_policy_need_repair() {
             state,
             GuardRootState::Degraded | GuardRootState::StalePolicy
         );
-        assert_eq!(
-            needs, expected,
-            "state {state:?} repair-need mismatch"
-        );
+        assert_eq!(needs, expected, "state {state:?} repair-need mismatch");
     }
 }
 
@@ -242,7 +237,9 @@ fn only_degraded_and_stale_policy_need_repair() {
 #[test]
 fn full_clean_lifecycle() {
     let s = GuardRootState::Stopped;
-    let s = s.transition(&GuardTransition::ReconciliationStarted).unwrap();
+    let s = s
+        .transition(&GuardTransition::ReconciliationStarted)
+        .unwrap();
     assert_eq!(s, GuardRootState::Indexing);
     let s = s.transition(&GuardTransition::ReconciliationClean).unwrap();
     assert_eq!(s, GuardRootState::Current);
@@ -258,8 +255,12 @@ fn full_clean_lifecycle() {
 #[test]
 fn finding_lifecycle() {
     let s = GuardRootState::Stopped;
-    let s = s.transition(&GuardTransition::ReconciliationStarted).unwrap();
-    let s = s.transition(&GuardTransition::ReconciliationFindings).unwrap();
+    let s = s
+        .transition(&GuardTransition::ReconciliationStarted)
+        .unwrap();
+    let s = s
+        .transition(&GuardTransition::ReconciliationFindings)
+        .unwrap();
     assert_eq!(s, GuardRootState::Blocked);
     let s = s.transition(&GuardTransition::EventAccepted).unwrap();
     assert_eq!(s, GuardRootState::Dirty);

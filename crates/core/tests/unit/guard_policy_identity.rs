@@ -1,8 +1,8 @@
 //! Policy identity and receipt conservation tests for the guard state.
 
 use keyhog_core::guard_state::{
-    GitCleanAttestation, GitHashAlgorithm, GuardPolicyIdentity, GuardReceipt,
-    GuardRootState, GUARD_SCHEMA_VERSION,
+    GitCleanAttestation, GitHashAlgorithm, GuardPolicyIdentity, GuardReceipt, GuardRootState,
+    GUARD_SCHEMA_VERSION,
 };
 
 fn sample_identity() -> GuardPolicyIdentity {

@@ -13,8 +13,8 @@
 //! dispatch function talks to when a guard request arrives.
 
 use keyhog_core::guard_state::{
-    GitCleanAttestation, GitHashAlgorithm, GuardPolicyIdentity, GuardRootMode,
-    GuardRootRecord, GuardRootState, GuardTransition, FilesystemIdentity,
+    FilesystemIdentity, GitCleanAttestation, GitHashAlgorithm, GuardPolicyIdentity, GuardRootMode,
+    GuardRootRecord, GuardRootState, GuardTransition,
 };
 use keyhog_core::guard_store::{HotAttestationIndex, RootRegistry};
 use parking_lot::{Mutex, RwLock};
@@ -86,7 +86,6 @@ pub struct GuardRuntime {
 /// Default scanner idle timeout in seconds (5 minutes).
 const DEFAULT_SCANNER_IDLE_TIMEOUT_SECS: u64 = 300;
 
-
 /// Maximum age of an in-flight transaction before it is swept as
 /// abandoned. A client that disconnects mid-transaction leaves it
 /// behind; this reclaims the memory and unblocks the residency label.
@@ -128,7 +127,6 @@ impl GuardRuntime {
     pub fn set_scanner_idle_timeout(&self, secs: u64) {
         *self.scanner_idle_timeout_secs.lock() = secs;
     }
-
 
     /// Set the current policy identity. When it changes, all existing
     /// attestations are invalidated and roots transition to stale-policy.
@@ -208,7 +206,9 @@ impl GuardRuntime {
         let removed = self.roots.write().remove(canonical_path);
         if removed.is_some() {
             self.dirty_during_indexing.lock().remove(canonical_path);
-            self.coverage_lost_during_indexing.lock().remove(canonical_path);
+            self.coverage_lost_during_indexing
+                .lock()
+                .remove(canonical_path);
             self.touch_activity();
         }
         removed
@@ -228,7 +228,9 @@ impl GuardRuntime {
     /// Indexing state. The baseline handler checks this after the
     /// scan completes.
     pub fn mark_dirty_during_indexing(&self, canonical_path: &[u8]) {
-        self.dirty_during_indexing.lock().insert(canonical_path.to_vec());
+        self.dirty_during_indexing
+            .lock()
+            .insert(canonical_path.to_vec());
     }
 
     /// Check and clear the dirty-during-indexing flag for a root.
@@ -246,7 +248,9 @@ impl GuardRuntime {
 
     /// Check and clear the coverage-lost-during-indexing flag.
     pub fn take_coverage_lost_during_indexing(&self, canonical_path: &[u8]) -> bool {
-        self.coverage_lost_during_indexing.lock().remove(canonical_path)
+        self.coverage_lost_during_indexing
+            .lock()
+            .remove(canonical_path)
     }
 
     /// Apply a transition to a root. Returns the new state or an error.
@@ -256,12 +260,12 @@ impl GuardRuntime {
         event: &GuardTransition,
     ) -> Result<GuardRootState, keyhog_core::guard_state::TransitionError> {
         let mut roots = self.roots.write();
-        let record = roots
-            .get_mut(canonical_path)
-            .ok_or_else(|| keyhog_core::guard_state::TransitionError::Illegal {
+        let record = roots.get_mut(canonical_path).ok_or_else(|| {
+            keyhog_core::guard_state::TransitionError::Illegal {
                 event: event.clone(),
                 from: GuardRootState::Stopped,
-            })?;
+            }
+        })?;
         let new_state = record.state.transition(event)?;
         record.state = new_state;
         if let GuardTransition::ReconciliationClean
@@ -408,7 +412,11 @@ impl GuardRuntime {
             .collect();
         for id in &stale_ids {
             txns.remove(id);
-            tracing::warn!("daemon: guard transaction {} abandoned (timed out after {}s)", id, TRANSACTION_TIMEOUT_SECS);
+            tracing::warn!(
+                "daemon: guard transaction {} abandoned (timed out after {}s)",
+                id,
+                TRANSACTION_TIMEOUT_SECS
+            );
         }
     }
 
@@ -444,9 +452,12 @@ impl GuardRuntime {
         receipt: keyhog_core::guard_state::GuardReceipt,
     ) -> Result<(), String> {
         let mut roots = self.roots.write();
-        let record = roots
-            .get_mut(canonical_path)
-            .ok_or_else(|| format!("root not registered: {}", String::from_utf8_lossy(canonical_path)))?;
+        let record = roots.get_mut(canonical_path).ok_or_else(|| {
+            format!(
+                "root not registered: {}",
+                String::from_utf8_lossy(canonical_path)
+            )
+        })?;
         // A commit transaction is an authoritative proof of content
         // state, not a state-machine event. The receipt's
         // terminal_state is the proven state, so set it directly
@@ -558,7 +569,11 @@ mod tests {
     fn add_root_creates_stopped_record() {
         let rt = GuardRuntime::new();
         let record = rt
-            .add_root(b"/work/project".to_vec(), test_fs_identity(), GuardRootMode::Repo)
+            .add_root(
+                b"/work/project".to_vec(),
+                test_fs_identity(),
+                GuardRootMode::Repo,
+            )
             .unwrap();
         assert_eq!(record.state, GuardRootState::Stopped);
         assert_eq!(rt.root_count(), 1);
@@ -567,17 +582,29 @@ mod tests {
     #[test]
     fn add_duplicate_root_fails() {
         let rt = GuardRuntime::new();
-        rt.add_root(b"/work/project".to_vec(), test_fs_identity(), GuardRootMode::Repo)
-            .unwrap();
-        let result = rt.add_root(b"/work/project".to_vec(), test_fs_identity(), GuardRootMode::Repo);
+        rt.add_root(
+            b"/work/project".to_vec(),
+            test_fs_identity(),
+            GuardRootMode::Repo,
+        )
+        .unwrap();
+        let result = rt.add_root(
+            b"/work/project".to_vec(),
+            test_fs_identity(),
+            GuardRootMode::Repo,
+        );
         assert!(result.is_err());
     }
 
     #[test]
     fn remove_root_works() {
         let rt = GuardRuntime::new();
-        rt.add_root(b"/work/project".to_vec(), test_fs_identity(), GuardRootMode::Repo)
-            .unwrap();
+        rt.add_root(
+            b"/work/project".to_vec(),
+            test_fs_identity(),
+            GuardRootMode::Repo,
+        )
+        .unwrap();
         assert_eq!(rt.root_count(), 1);
 
         let removed = rt.remove_root(b"/work/project");
@@ -588,8 +615,12 @@ mod tests {
     #[test]
     fn transition_root_stopped_to_indexing() {
         let rt = GuardRuntime::new();
-        rt.add_root(b"/work/project".to_vec(), test_fs_identity(), GuardRootMode::Repo)
-            .unwrap();
+        rt.add_root(
+            b"/work/project".to_vec(),
+            test_fs_identity(),
+            GuardRootMode::Repo,
+        )
+        .unwrap();
 
         let new_state = rt
             .transition_root(b"/work/project", &GuardTransition::ReconciliationStarted)
@@ -600,8 +631,12 @@ mod tests {
     #[test]
     fn transition_root_indexing_to_current() {
         let rt = GuardRuntime::new();
-        rt.add_root(b"/work/project".to_vec(), test_fs_identity(), GuardRootMode::Repo)
-            .unwrap();
+        rt.add_root(
+            b"/work/project".to_vec(),
+            test_fs_identity(),
+            GuardRootMode::Repo,
+        )
+        .unwrap();
         rt.transition_root(b"/work/project", &GuardTransition::ReconciliationStarted)
             .unwrap();
         let new_state = rt
@@ -613,8 +648,12 @@ mod tests {
     #[test]
     fn transition_illegal_returns_error() {
         let rt = GuardRuntime::new();
-        rt.add_root(b"/work/project".to_vec(), test_fs_identity(), GuardRootMode::Repo)
-            .unwrap();
+        rt.add_root(
+            b"/work/project".to_vec(),
+            test_fs_identity(),
+            GuardRootMode::Repo,
+        )
+        .unwrap();
         let result = rt.transition_root(b"/work/project", &GuardTransition::EventAccepted);
         assert!(result.is_err());
     }
@@ -623,8 +662,12 @@ mod tests {
     fn policy_identity_change_transitions_roots_to_stale() {
         let rt = GuardRuntime::new();
         rt.set_policy_identity(test_identity());
-        rt.add_root(b"/work/project".to_vec(), test_fs_identity(), GuardRootMode::Repo)
-            .unwrap();
+        rt.add_root(
+            b"/work/project".to_vec(),
+            test_fs_identity(),
+            GuardRootMode::Repo,
+        )
+        .unwrap();
         rt.transition_root(b"/work/project", &GuardTransition::ReconciliationStarted)
             .unwrap();
         rt.transition_root(b"/work/project", &GuardTransition::ReconciliationClean)
@@ -680,8 +723,12 @@ mod tests {
         let rt = GuardRuntime::new();
         rt.add_root(b"/a".to_vec(), test_fs_identity(), GuardRootMode::Repo)
             .unwrap();
-        rt.add_root(b"/b".to_vec(), test_fs_identity(), GuardRootMode::Filesystem)
-            .unwrap();
+        rt.add_root(
+            b"/b".to_vec(),
+            test_fs_identity(),
+            GuardRootMode::Filesystem,
+        )
+        .unwrap();
 
         let list = rt.list_roots();
         assert_eq!(list.len(), 2);
@@ -690,8 +737,12 @@ mod tests {
     #[test]
     fn scanner_residency_is_resident_after_activity() {
         let rt = GuardRuntime::new();
-        rt.add_root(b"/work/project".to_vec(), test_fs_identity(), GuardRootMode::Repo)
-            .unwrap();
+        rt.add_root(
+            b"/work/project".to_vec(),
+            test_fs_identity(),
+            GuardRootMode::Repo,
+        )
+        .unwrap();
         // add_root calls touch_activity, so residency should be "resident".
         assert_eq!(rt.scanner_residency(), "resident");
     }
@@ -699,8 +750,12 @@ mod tests {
     #[test]
     fn scanner_residency_is_active_during_transaction() {
         let rt = GuardRuntime::new();
-        rt.add_root(b"/work/project".to_vec(), test_fs_identity(), GuardRootMode::Repo)
-            .unwrap();
+        rt.add_root(
+            b"/work/project".to_vec(),
+            test_fs_identity(),
+            GuardRootMode::Repo,
+        )
+        .unwrap();
         let txn = GuardTransaction {
             transaction_id: rt.next_transaction_id(),
             repo_path: "/work/project".to_string(),
@@ -781,7 +836,10 @@ mod tests {
         assert_eq!(loaded.terminal_sequence, record.terminal_sequence);
         // The restore_root method itself preserves state; the caller
         // (server.rs) is responsible for resetting to Stopped.
-        assert_eq!(loaded.state, keyhog_core::guard_state::GuardRootState::Current);
+        assert_eq!(
+            loaded.state,
+            keyhog_core::guard_state::GuardRootState::Current
+        );
     }
 
     #[test]
@@ -927,20 +985,33 @@ mod tests {
         // ReconciliationClean transition. If the transition were skipped,
         // this test would fail.
         let rt = GuardRuntime::new();
-        rt.add_root(b"/mutation/transition".to_vec(), test_fs_identity(), GuardRootMode::Repo)
-            .unwrap();
-        rt.transition_root(b"/mutation/transition", &GuardTransition::ReconciliationStarted)
-            .unwrap();
+        rt.add_root(
+            b"/mutation/transition".to_vec(),
+            test_fs_identity(),
+            GuardRootMode::Repo,
+        )
+        .unwrap();
+        rt.transition_root(
+            b"/mutation/transition",
+            &GuardTransition::ReconciliationStarted,
+        )
+        .unwrap();
         assert_eq!(
             rt.root_state(b"/mutation/transition"),
             Some(GuardRootState::Indexing)
         );
         // Direct EventAccepted from Indexing should fail.
         let result = rt.transition_root(b"/mutation/transition", &GuardTransition::EventAccepted);
-        assert!(result.is_err(), "EventAccepted from Indexing should be illegal");
+        assert!(
+            result.is_err(),
+            "EventAccepted from Indexing should be illegal"
+        );
         // Only ReconciliationClean/Findings/Degraded can transition from Indexing.
-        rt.transition_root(b"/mutation/transition", &GuardTransition::ReconciliationClean)
-            .unwrap();
+        rt.transition_root(
+            b"/mutation/transition",
+            &GuardTransition::ReconciliationClean,
+        )
+        .unwrap();
         assert_eq!(
             rt.root_state(b"/mutation/transition"),
             Some(GuardRootState::Current)
@@ -950,27 +1021,41 @@ mod tests {
     #[test]
     fn coverage_lost_during_indexing_survives_until_taken() {
         let rt = GuardRuntime::new();
-        rt.add_root(b"/overflow/root".to_vec(), test_fs_identity(), GuardRootMode::Repo)
-            .unwrap();
+        rt.add_root(
+            b"/overflow/root".to_vec(),
+            test_fs_identity(),
+            GuardRootMode::Repo,
+        )
+        .unwrap();
         rt.transition_root(b"/overflow/root", &GuardTransition::ReconciliationStarted)
             .unwrap();
         rt.mark_dirty_during_indexing(b"/overflow/root");
         rt.mark_coverage_lost_during_indexing(b"/overflow/root");
         // Root must remain Indexing so the baseline terminal transition stays legal.
-        assert_eq!(rt.root_state(b"/overflow/root"), Some(GuardRootState::Indexing));
+        assert_eq!(
+            rt.root_state(b"/overflow/root"),
+            Some(GuardRootState::Indexing)
+        );
         assert!(rt.take_coverage_lost_during_indexing(b"/overflow/root"));
         assert!(!rt.take_coverage_lost_during_indexing(b"/overflow/root"));
         assert!(rt.take_dirty_during_indexing(b"/overflow/root"));
         rt.transition_root(b"/overflow/root", &GuardTransition::ReconciliationDegraded)
             .unwrap();
-        assert_eq!(rt.root_state(b"/overflow/root"), Some(GuardRootState::Degraded));
+        assert_eq!(
+            rt.root_state(b"/overflow/root"),
+            Some(GuardRootState::Degraded)
+        );
     }
 
     #[test]
     fn remove_root_clears_indexing_event_flags() {
         let rt = GuardRuntime::new();
-        rt.add_root(b"/clear/flags".to_vec(), test_fs_identity(), GuardRootMode::Filesystem)
-            .unwrap();
+        rt.add_root(
+            b"/clear/flags".to_vec(),
+            test_fs_identity(),
+            GuardRootMode::Filesystem,
+        )
+        .unwrap();
         rt.mark_dirty_during_indexing(b"/clear/flags");
         rt.mark_coverage_lost_during_indexing(b"/clear/flags");
         assert!(rt.remove_root(b"/clear/flags").is_some());

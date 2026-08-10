@@ -23,8 +23,8 @@
 //! remain available.
 
 use crate::guard_state::{
-    GitCleanAttestation, GitHashAlgorithm, GuardPolicyIdentity, GuardRootRecord,
-    GuardRootState, GUARD_SCHEMA_VERSION,
+    GitCleanAttestation, GitHashAlgorithm, GuardPolicyIdentity, GuardRootRecord, GuardRootState,
+    GUARD_SCHEMA_VERSION,
 };
 use lru::LruCache;
 use parking_lot::Mutex;
@@ -323,10 +323,7 @@ impl RootRegistry {
 
     /// Count roots by state.
     pub fn count_by_state(&self, state: GuardRootState) -> usize {
-        self.roots
-            .values()
-            .filter(|r| r.state == state)
-            .count()
+        self.roots.values().filter(|r| r.state == state).count()
     }
 }
 
@@ -390,7 +387,9 @@ impl DurableGuardStore {
                 {
                     use std::os::unix::fs::PermissionsExt;
                     std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
-                        .map_err(|e| GuardStoreError::Io(format!("set guard store dir perms: {e}")))?;
+                        .map_err(|e| {
+                            GuardStoreError::Io(format!("set guard store dir perms: {e}"))
+                        })?;
                 }
             }
         }
@@ -447,13 +446,17 @@ impl DurableGuardStore {
         }
         // Create all tables so they exist for reads even before first write.
         {
-            let _ = txn.open_table(ROOTS_TABLE)
+            let _ = txn
+                .open_table(ROOTS_TABLE)
                 .map_err(|e| GuardStoreError::Io(format!("create roots table: {e}")))?;
-            let _ = txn.open_table(ATTESTATIONS_TABLE)
+            let _ = txn
+                .open_table(ATTESTATIONS_TABLE)
                 .map_err(|e| GuardStoreError::Io(format!("create attestations table: {e}")))?;
-            let _ = txn.open_table(ROOT_GAPS_TABLE)
+            let _ = txn
+                .open_table(ROOT_GAPS_TABLE)
                 .map_err(|e| GuardStoreError::Io(format!("create root_gaps table: {e}")))?;
-            let _ = txn.open_table(SERVICE_STATE_TABLE)
+            let _ = txn
+                .open_table(SERVICE_STATE_TABLE)
                 .map_err(|e| GuardStoreError::Io(format!("create service_state table: {e}")))?;
         }
         txn.commit()
@@ -477,8 +480,8 @@ impl DurableGuardStore {
         {
             let (key, value) =
                 entry.map_err(|e| GuardStoreError::Io(format!("read root entry: {e}")))?;
-            let record: GuardRootRecord = serde_json::from_slice(value.value())
-                .map_err(|e| GuardStoreError::Corrupt {
+            let record: GuardRootRecord =
+                serde_json::from_slice(value.value()).map_err(|e| GuardStoreError::Corrupt {
                     detail: format!("deserialize root record: {e}"),
                 })?;
             registry.roots.insert(key.value().to_vec(), record);
@@ -518,8 +521,8 @@ impl DurableGuardStore {
                 .open_table(ROOTS_TABLE)
                 .map_err(|e| GuardStoreError::Io(format!("open roots table: {e}")))?;
             table
-            .remove(canonical_path)
-            .map_err(|e| GuardStoreError::Io(format!("remove root: {e}")))?;
+                .remove(canonical_path)
+                .map_err(|e| GuardStoreError::Io(format!("remove root: {e}")))?;
         }
         txn.commit()
             .map_err(|e| GuardStoreError::Io(format!("commit remove root: {e}")))?;
@@ -527,9 +530,7 @@ impl DurableGuardStore {
     }
 
     /// Load all clean attestations from the durable store.
-    pub fn load_attestations(
-        &self,
-    ) -> Result<Vec<GitCleanAttestation>, GuardStoreError> {
+    pub fn load_attestations(&self) -> Result<Vec<GitCleanAttestation>, GuardStoreError> {
         let txn = self
             .db
             .begin_read()
@@ -544,8 +545,8 @@ impl DurableGuardStore {
         {
             let (_, value) =
                 entry.map_err(|e| GuardStoreError::Io(format!("read attestation entry: {e}")))?;
-            let att: GitCleanAttestation = serde_json::from_slice(value.value())
-                .map_err(|e| GuardStoreError::Corrupt {
+            let att: GitCleanAttestation =
+                serde_json::from_slice(value.value()).map_err(|e| GuardStoreError::Corrupt {
                     detail: format!("deserialize attestation: {e}"),
                 })?;
             attestations.push(att);

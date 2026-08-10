@@ -64,13 +64,7 @@ fn guard_commit_clean_staged_exits_zero() {
 
     let output = Command::new(binary())
         .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
-        .args([
-            "scan",
-            "--git-staged",
-            "--daemon=auto",
-            "--format",
-            "json",
-        ])
+        .args(["scan", "--git-staged", "--daemon=auto", "--format", "json"])
         .current_dir(repo)
         .arg(".")
         .output()
@@ -291,13 +285,7 @@ fn guard_commit_cache_hit_skips_rescan() {
     // First scan: should scan the blob and cache the clean attestation.
     let first = Command::new(binary())
         .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
-        .args([
-            "scan",
-            "--git-staged",
-            "--daemon=auto",
-            "--format",
-            "json",
-        ])
+        .args(["scan", "--git-staged", "--daemon=auto", "--format", "json"])
         .current_dir(repo)
         .arg(".")
         .output()
@@ -307,13 +295,7 @@ fn guard_commit_cache_hit_skips_rescan() {
     // Second scan: same staged content, should hit the cache.
     let second = Command::new(binary())
         .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
-        .args([
-            "scan",
-            "--git-staged",
-            "--daemon=auto",
-            "--format",
-            "json",
-        ])
+        .args(["scan", "--git-staged", "--daemon=auto", "--format", "json"])
         .current_dir(repo)
         .arg(".")
         .output()

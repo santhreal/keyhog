@@ -140,7 +140,10 @@ fn guard_status_json_format() {
         .output()
         .expect("guard add");
     let add_code = add.status.code().unwrap_or(-1);
-    assert!(add_code == 0 || add_code == 13, "guard add should succeed or exit 13 (stopped)");
+    assert!(
+        add_code == 0 || add_code == 13,
+        "guard add should succeed or exit 13 (stopped)"
+    );
 
     // Get status in JSON format.
     let status = Command::new(binary())
@@ -149,8 +152,9 @@ fn guard_status_json_format() {
         .output()
         .expect("guard status json");
     let status_out = String::from_utf8_lossy(&status.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&status_out)
-        .unwrap_or_else(|e| panic!("guard status --format json should produce valid JSON: {e}: got: {status_out}"));
+    let parsed: serde_json::Value = serde_json::from_str(&status_out).unwrap_or_else(|e| {
+        panic!("guard status --format json should produce valid JSON: {e}: got: {status_out}")
+    });
     assert!(
         parsed.get("state").is_some(),
         "guard status JSON should have 'state' field: got: {}",

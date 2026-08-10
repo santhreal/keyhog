@@ -12,8 +12,6 @@ mod blocking_thread;
 mod capped_read;
 mod compression_limits;
 mod decode;
-/// Guard event normalization and subscribe-first reconciliation protocol.
-pub mod guard;
 #[cfg(any(
     feature = "azure",
     feature = "s3",
@@ -25,6 +23,8 @@ pub mod guard;
 ))]
 mod endpoint_screen;
 mod factory;
+/// Guard event normalization and subscribe-first reconciliation protocol.
+pub mod guard;
 mod limits;
 mod magic;
 #[cfg(any(
@@ -97,7 +97,10 @@ mod web;
 pub use api::*;
 pub use filesystem::DiscoveryCounts;
 #[cfg(feature = "git")]
-pub use git::{StagedEntryKind, StagedManifest, StagedManifestEntry, read_staged_blob, verify_staged_fingerprint};
+pub use git::{
+    read_staged_blob, verify_staged_fingerprint, StagedEntryKind, StagedManifest,
+    StagedManifestEntry,
+};
 pub(crate) use skip::{
     acquire_scan_read_lease, attach_scan_lease, enter_exclusive_scan_scope, gate_scan,
     record_skip_event, record_skip_events, reset_skip_counters, SourceSkipEvent,

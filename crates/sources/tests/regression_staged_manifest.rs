@@ -22,8 +22,12 @@ fn init_repo() -> (tempfile::TempDir, std::path::PathBuf) {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let repo = temp_dir.path().to_path_buf();
     assert!(git(&repo, &["init", "-q", "-b", "main"]).status.success());
-    assert!(git(&repo, &["config", "user.email", "test@example.com"]).status.success());
-    assert!(git(&repo, &["config", "user.name", "Test"]).status.success());
+    assert!(git(&repo, &["config", "user.email", "test@example.com"])
+        .status
+        .success());
+    assert!(git(&repo, &["config", "user.name", "Test"])
+        .status
+        .success());
     (temp_dir, repo)
 }
 
@@ -81,7 +85,9 @@ fn manifest_captures_modified_file() {
 fn manifest_captures_deletion() {
     let (_temp, repo) = init_repo();
     commit(&repo, "doomed.txt", "content\n", "initial");
-    assert!(git(&repo, &["rm", "--cached", "doomed.txt"]).status.success());
+    assert!(git(&repo, &["rm", "--cached", "doomed.txt"])
+        .status
+        .success());
 
     let manifest = StagedManifest::acquire(&repo).unwrap();
     assert_eq!(manifest.entries.len(), 1);
@@ -98,7 +104,9 @@ fn manifest_captures_executable_mode() {
     commit(&repo, "README.md", "initial\n", "initial");
     std::fs::write(repo.join("run.sh"), "#!/bin/sh\necho hi\n").unwrap();
     assert!(git(&repo, &["add", "run.sh"]).status.success());
-    assert!(git(&repo, &["update-index", "--chmod=+x", "run.sh"]).status.success());
+    assert!(git(&repo, &["update-index", "--chmod=+x", "run.sh"])
+        .status
+        .success());
 
     let manifest = StagedManifest::acquire(&repo).unwrap();
     assert_eq!(manifest.entries.len(), 1);
@@ -183,7 +191,9 @@ fn manifest_total_bytes_excludes_deletions() {
     commit(&repo, "doomed.txt", "will be deleted\n", "initial");
     commit(&repo, "keep.txt", "kept\n", "second");
 
-    assert!(git(&repo, &["rm", "--cached", "doomed.txt"]).status.success());
+    assert!(git(&repo, &["rm", "--cached", "doomed.txt"])
+        .status
+        .success());
     stage_file(&repo, "new.txt", "new content\n");
 
     let manifest = StagedManifest::acquire(&repo).unwrap();
@@ -214,7 +224,10 @@ fn manifest_preserves_non_utf8_path_bytes() {
             .current_dir(&repo)
             .output()
             .unwrap();
-        assert!(output.status.success(), "git add non-utf8 failed: {output:?}");
+        assert!(
+            output.status.success(),
+            "git add non-utf8 failed: {output:?}"
+        );
 
         let manifest = StagedManifest::acquire(&repo).unwrap();
         assert_eq!(manifest.entries.len(), 1);
@@ -234,7 +247,11 @@ fn manifest_multiple_entries_preserve_order() {
     assert_eq!(manifest.entries.len(), 3);
     // Git diff --raw outputs in the repository's index order, which is
     // typically alphabetical. Verify all three are present.
-    let paths: Vec<&[u8]> = manifest.entries.iter().map(|e| e.path_bytes.as_slice()).collect();
+    let paths: Vec<&[u8]> = manifest
+        .entries
+        .iter()
+        .map(|e| e.path_bytes.as_slice())
+        .collect();
     assert!(paths.iter().any(|p| *p == b"zebra.py"));
     assert!(paths.iter().any(|p| *p == b"alpha.py"));
     assert!(paths.iter().any(|p| *p == b"middle.py"));

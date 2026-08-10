@@ -53,9 +53,7 @@ fn request_timeout(request: &Request) -> Duration {
         | Request::GuardCommitBegin { .. }
         | Request::GuardCommitBlob { .. }
         | Request::GuardCommitFinish { .. }
-        | Request::GuardReconcile { .. } => {
-            DAEMON_REQUEST_TIMEOUT
-        }
+        | Request::GuardReconcile { .. } => DAEMON_REQUEST_TIMEOUT,
     }
 }
 

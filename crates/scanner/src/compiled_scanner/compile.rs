@@ -932,8 +932,9 @@ impl CompiledScanner {
             }
         };
         #[cfg(feature = "gpu")]
-        let packed_confidence_authentication =
-            packed_vyre_program.as_ref().map(|source| source.signature_authenticated);
+        let packed_confidence_authentication = packed_vyre_program
+            .as_ref()
+            .map(|source| source.signature_authenticated);
         #[cfg(feature = "gpu")]
         let packed_gpu_artifact = if let Some(source) = packed_vyre_program {
             let selected = selected_backend

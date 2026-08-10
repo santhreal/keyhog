@@ -105,10 +105,7 @@ impl GuardRootState {
 
     /// Whether this state indicates the root needs explicit repair action.
     pub fn needs_repair(self) -> bool {
-        matches!(
-            self,
-            GuardRootState::Degraded | GuardRootState::StalePolicy
-        )
+        matches!(self, GuardRootState::Degraded | GuardRootState::StalePolicy)
     }
 
     /// All variants in declaration order, for exhaustive test derivation.
@@ -220,10 +217,7 @@ impl GuardRootState {
     /// transition is enumerated here; anything not listed is rejected. Adding
     /// a state or event without updating this function and its tests is a
     /// compile-time or test-time failure.
-    pub fn transition(
-        self,
-        event: &GuardTransition,
-    ) -> Result<GuardRootState, TransitionError> {
+    pub fn transition(self, event: &GuardTransition) -> Result<GuardRootState, TransitionError> {
         use GuardRootState as S;
         use GuardTransition as T;
 

@@ -41,6 +41,9 @@ mod frame_incremental_tests;
 #[cfg(test)]
 #[path = "frame_streaming_tests.rs"]
 mod frame_streaming_tests;
+pub(crate) mod guard_commit;
+pub(crate) mod guard_runtime;
+pub(crate) mod guard_watcher;
 #[cfg(test)]
 #[path = "path_resolution_tests.rs"]
 mod path_resolution_tests;
@@ -49,11 +52,8 @@ mod path_resolution_tests;
 mod protected_wire_tests;
 pub(crate) mod protocol;
 pub(crate) mod server;
-pub(crate) mod guard_runtime;
-pub(crate) mod transport;
-pub(crate) mod guard_watcher;
-pub(crate) mod guard_commit;
 pub(crate) mod sigpipe;
+pub(crate) mod transport;
 mod trust;
 mod warm_identity;
 #[cfg(test)]

@@ -341,21 +341,28 @@ mod tests {
         assert!(GuardEvent::Modify(PathBuf::from("/a")).requires_scan());
         assert!(!GuardEvent::Remove(PathBuf::from("/a")).requires_scan());
         assert!(GuardEvent::ReconcileSubtree(PathBuf::from("/a")).requires_scan());
-        assert!(
-            GuardEvent::Rename {
-                from: PathBuf::from("/a"),
-                to: PathBuf::from("/b")
-            }
-            .requires_scan()
-        );
+        assert!(GuardEvent::Rename {
+            from: PathBuf::from("/a"),
+            to: PathBuf::from("/b")
+        }
+        .requires_scan());
         assert!(!GuardEvent::Barrier(42).requires_scan());
     }
 
     #[test]
     fn event_kind_labels() {
-        assert_eq!(GuardEvent::Create(PathBuf::from("/a")).kind_label(), "create");
-        assert_eq!(GuardEvent::Modify(PathBuf::from("/a")).kind_label(), "modify");
-        assert_eq!(GuardEvent::Remove(PathBuf::from("/a")).kind_label(), "remove");
+        assert_eq!(
+            GuardEvent::Create(PathBuf::from("/a")).kind_label(),
+            "create"
+        );
+        assert_eq!(
+            GuardEvent::Modify(PathBuf::from("/a")).kind_label(),
+            "modify"
+        );
+        assert_eq!(
+            GuardEvent::Remove(PathBuf::from("/a")).kind_label(),
+            "remove"
+        );
         assert_eq!(
             GuardEvent::Rename {
                 from: PathBuf::from("/a"),

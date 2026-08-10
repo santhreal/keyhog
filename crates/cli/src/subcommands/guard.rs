@@ -5,7 +5,7 @@
 
 use crate::args::{GuardAction, GuardArgs};
 use crate::daemon::client;
-use crate::daemon::protocol::{Request, Response, response_kind};
+use crate::daemon::protocol::{response_kind, Request, Response};
 use crate::exit_codes;
 use crate::style;
 use std::process::ExitCode;
@@ -78,7 +78,11 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
                 root: canonical_for_reconcile,
             };
             match conn.round_trip(&status_request).await? {
-                Response::GuardStatusResult { state, findings_count, .. } => {
+                Response::GuardStatusResult {
+                    state,
+                    findings_count,
+                    ..
+                } => {
                     let palette = style::for_stderr();
                     eprintln!(
                         "{} guard: reconciliation complete, root is {}",
@@ -123,9 +127,7 @@ async fn run_remove(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
     };
 
     let canonical = resolve_root_for_control(&root)?;
-    let request = Request::GuardRemove {
-        root: canonical,
-    };
+    let request = Request::GuardRemove { root: canonical };
     match conn.round_trip(&request).await? {
         Response::GuardRemoved => {
             let palette = style::for_stderr();
@@ -165,10 +167,7 @@ async fn run_list() -> anyhow::Result<ExitCode> {
         Response::GuardListResult { roots } => {
             if roots.is_empty() {
                 let palette = style::for_stderr();
-                eprintln!(
-                    "{} no guard roots registered",
-                    style::pass("OK", &palette)
-                );
+                eprintln!("{} no guard roots registered", style::pass("OK", &palette));
             } else {
                 let palette = style::for_stderr();
                 eprintln!(
@@ -180,9 +179,7 @@ async fn run_list() -> anyhow::Result<ExitCode> {
                 for entry in &roots {
                     println!(
                         "  {}  {}  seq={}",
-                        entry.root,
-                        entry.state,
-                        entry.terminal_sequence
+                        entry.root, entry.state, entry.terminal_sequence
                     );
                 }
             }
@@ -190,11 +187,7 @@ async fn run_list() -> anyhow::Result<ExitCode> {
         }
         Response::Error { message } => {
             let palette = style::for_stderr();
-            eprintln!(
-                "{} guard list: {}",
-                style::warn("WARN", &palette),
-                message
-            );
+            eprintln!("{} guard list: {}", style::warn("WARN", &palette), message);
             Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
         }
         other => {
@@ -209,10 +202,7 @@ async fn run_list() -> anyhow::Result<ExitCode> {
     }
 }
 
-async fn run_status(
-    root: std::path::PathBuf,
-    format: String,
-) -> anyhow::Result<ExitCode> {
+async fn run_status(root: std::path::PathBuf, format: String) -> anyhow::Result<ExitCode> {
     let socket = default_socket_path();
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
@@ -225,9 +215,7 @@ async fn run_status(
     };
 
     let canonical = resolve_root_for_control(&root)?;
-    let request = Request::GuardStatus {
-        root: canonical,
-    };
+    let request = Request::GuardStatus { root: canonical };
     match conn.round_trip(&request).await? {
         Response::GuardStatusResult {
             root: daemon_root,
@@ -332,10 +320,7 @@ async fn run_status(
                     println!("store path:     {store_path}");
                 }
                 if state == "degraded" || state == "stale-policy" {
-                    eprintln!(
-                        "{} repair: {repair_command}",
-                        style::warn("WARN", &palette)
-                    );
+                    eprintln!("{} repair: {repair_command}", style::warn("WARN", &palette));
                 }
             }
             // Exit 13 for any state that is not a proven-clean Current root.
@@ -376,7 +361,11 @@ async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
                 root: canonical.clone(),
             };
             match conn.round_trip(&status_request).await? {
-                Response::GuardStatusResult { state, findings_count, .. } => {
+                Response::GuardStatusResult {
+                    state,
+                    findings_count,
+                    ..
+                } => {
                     let palette = style::for_stderr();
                     eprintln!(
                         "{} guard: reconciliation complete for {}, state is {}",
@@ -499,9 +488,7 @@ async fn run_rebuild(root: std::path::PathBuf, mode: String) -> anyhow::Result<E
     };
     match conn.round_trip(&reconcile_request).await? {
         Response::GuardReconcileStarted { root: _ } => {
-            let status_request = Request::GuardStatus {
-                root: added_root,
-            };
+            let status_request = Request::GuardStatus { root: added_root };
             match conn.round_trip(&status_request).await? {
                 Response::GuardStatusResult {
                     state,
@@ -540,7 +527,6 @@ async fn run_rebuild(root: std::path::PathBuf, mode: String) -> anyhow::Result<E
         }
     }
 }
-
 
 /// Map a guard root state label to the CLI exit code byte.
 /// Dirty is unproven (events observed, not yet reconciled) and must not
@@ -591,7 +577,9 @@ fn resolve_root_for_control(root: &std::path::Path) -> anyhow::Result<String> {
                 root.to_path_buf()
             } else {
                 std::env::current_dir()
-                    .map_err(|e| anyhow::anyhow!("guard: cannot resolve cwd for {}: {}", root.display(), e))?
+                    .map_err(|e| {
+                        anyhow::anyhow!("guard: cannot resolve cwd for {}: {}", root.display(), e)
+                    })?
                     .join(root)
             };
             absolute

@@ -83,7 +83,9 @@ fn guard_state_tokens(text: &str) -> Vec<(String, String)> {
     let valid = guard_state_labels();
     let mut found = Vec::new();
     for word in text.split_whitespace() {
-        let cleaned = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-').to_lowercase();
+        let cleaned = word
+            .trim_matches(|c: char| !c.is_alphanumeric() && c != '-')
+            .to_lowercase();
         if cleaned.is_empty() {
             continue;
         }
@@ -132,7 +134,10 @@ fn shipped_docs_guard_state_labels_match_code() {
         // `StalePolicy` which is correct in prose).
         for word in text.split_whitespace() {
             let w = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-');
-            if w.eq_ignore_ascii_case("stalepolicy") && !w.contains('-') && !w.chars().next().is_some_and(|c| c.is_uppercase()) {
+            if w.eq_ignore_ascii_case("stalepolicy")
+                && !w.contains('-')
+                && !w.chars().next().is_some_and(|c| c.is_uppercase())
+            {
                 panic!(
                     "{}: contains '{}' (lowercase, missing hyphen); the correct label is 'stale-policy'",
                     doc_path.display(),

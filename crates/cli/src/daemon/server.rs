@@ -311,18 +311,19 @@ impl ServerState {
             scans_drained: Notify::new(),
             active_requests: AtomicU32::new(0),
             guard: Arc::new(match guard_hot_index_budget {
-                Some(budget) => crate::daemon::guard_runtime::GuardRuntime::with_hot_index_budget(budget),
+                Some(budget) => {
+                    crate::daemon::guard_runtime::GuardRuntime::with_hot_index_budget(budget)
+                }
                 None => crate::daemon::guard_runtime::GuardRuntime::new(),
             }),
             guard_filter: Arc::new(guard_filter),
             guard_watcher: Arc::new(parking_lot::Mutex::new(
-                crate::daemon::guard_watcher::GuardWatcher::new(
-                    guard_recon_config,
-                )
-                .unwrap_or_else(|e| {
-                    tracing::warn!("daemon: guard watcher disabled: {}", e);
-                    crate::daemon::guard_watcher::GuardWatcher::new_disabled()
-                }),
+                crate::daemon::guard_watcher::GuardWatcher::new(guard_recon_config).unwrap_or_else(
+                    |e| {
+                        tracing::warn!("daemon: guard watcher disabled: {}", e);
+                        crate::daemon::guard_watcher::GuardWatcher::new_disabled()
+                    },
+                ),
             )),
             guard_store,
             guard_scrub_interval,
@@ -489,35 +490,40 @@ pub(crate) async fn run_with_backend_override(
     // persists root records and attestations across daemon restarts.
     // On startup, mark the service as unclean; a clean marker is only
     // written during a graceful shutdown.
-    let guard_store: Option<Arc<keyhog_core::guard_store::DurableGuardStore>> = match &guard_store_path {
-        Some(path) => {
-            if let Some(parent) = path.parent() {
-                if let Err(e) = std::fs::create_dir_all(parent) {
-                    tracing::warn!("daemon: failed to create guard store dir {}: {}", parent.display(), e);
-                }
-            }
-            match keyhog_core::guard_store::DurableGuardStore::open(path) {
-                Ok(store) => {
-                    if let Err(e) = store.mark_unclean_shutdown() {
-                        tracing::warn!("daemon: failed to mark guard store unclean: {}", e);
+    let guard_store: Option<Arc<keyhog_core::guard_store::DurableGuardStore>> =
+        match &guard_store_path {
+            Some(path) => {
+                if let Some(parent) = path.parent() {
+                    if let Err(e) = std::fs::create_dir_all(parent) {
+                        tracing::warn!(
+                            "daemon: failed to create guard store dir {}: {}",
+                            parent.display(),
+                            e
+                        );
                     }
-                    tracing::info!("daemon: guard store opened at {}", path.display());
-                    Some(Arc::new(store))
                 }
-                Err(e) => {
-                    tracing::warn!(
-                        "daemon: failed to open guard store at {}: {}; \
+                match keyhog_core::guard_store::DurableGuardStore::open(path) {
+                    Ok(store) => {
+                        if let Err(e) = store.mark_unclean_shutdown() {
+                            tracing::warn!("daemon: failed to mark guard store unclean: {}", e);
+                        }
+                        tracing::info!("daemon: guard store opened at {}", path.display());
+                        Some(Arc::new(store))
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "daemon: failed to open guard store at {}: {}; \
                          continuing without durable state; \
                          run 'keyhog guard rebuild <root>' after restarting to recover",
-                        path.display(),
-                        e
-                    );
-                    None
+                            path.display(),
+                            e
+                        );
+                        None
+                    }
                 }
             }
-        }
-        None => None,
-    };
+            None => None,
+        };
 
     let state = Arc::new(ServerState::new(
         scanner,
@@ -538,17 +544,19 @@ pub(crate) async fn run_with_backend_override(
     // Set the guard policy identity from the daemon's scanner and build
     // identity. This binds clean attestations to the exact detector corpus,
     // suppression, and configuration the daemon was started with.
-    state.guard.set_policy_identity(keyhog_core::guard_state::GuardPolicyIdentity {
-        build_identity: KEYHOG_VERSION.to_string(),
-        detector_digest: detector_rules_digest.clone(),
-        suppression_digest: String::new(),
-        keyhogignore_digest: String::new(),
-        config_digest: String::new(),
-        decode_policy_version: 1,
-        source_policy_digest: String::new(),
-        guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
-        report_semantics_version: 1,
-    });
+    state
+        .guard
+        .set_policy_identity(keyhog_core::guard_state::GuardPolicyIdentity {
+            build_identity: KEYHOG_VERSION.to_string(),
+            detector_digest: detector_rules_digest.clone(),
+            suppression_digest: String::new(),
+            keyhogignore_digest: String::new(),
+            config_digest: String::new(),
+            decode_policy_version: 1,
+            source_policy_digest: String::new(),
+            guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
+            report_semantics_version: 1,
+        });
 
     // Apply configured scanner idle timeout to the guard runtime.
     if let Some(secs) = guard_scanner_idle_timeout {
@@ -579,12 +587,19 @@ pub(crate) async fn run_with_backend_override(
                         } else {
                             // Re-register with the filesystem watcher.
                             if let Err(e) = state.guard_watcher.lock().add_root(path.clone()) {
-                                tracing::warn!("daemon: watcher failed to observe restored root {}: {}", path_str, e);
+                                tracing::warn!(
+                                    "daemon: watcher failed to observe restored root {}: {}",
+                                    path_str,
+                                    e
+                                );
                             }
                             tracing::info!("daemon: restored guard root {} (stopped)", path_str);
                         }
                     } else {
-                        tracing::warn!("daemon: skipping persisted root {}: path no longer exists", path_str);
+                        tracing::warn!(
+                            "daemon: skipping persisted root {}: path no longer exists",
+                            path_str
+                        );
                     }
                 }
             }
@@ -741,9 +756,8 @@ fn spawn_accept_loop(
 /// coalesced within a short window before applying transitions.
 fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let coalesce_window = std::time::Duration::from_millis(
-            state.guard_watcher.lock().coalesce_window_ms(),
-        );
+        let coalesce_window =
+            std::time::Duration::from_millis(state.guard_watcher.lock().coalesce_window_ms());
         // Periodic scrub: re-scan all Current roots on a configured
         // interval to catch changes that filesystem events missed.
         // None disables scrubbing.
@@ -806,7 +820,10 @@ fn scrub_guard_roots(state: &ServerState) {
         }
     }
     if scrubbed > 0 {
-        tracing::info!("daemon: scrub triggered reconciliation for {} root(s)", scrubbed);
+        tracing::info!(
+            "daemon: scrub triggered reconciliation for {} root(s)",
+            scrubbed
+        );
     }
 }
 
@@ -821,12 +838,18 @@ fn scrub_guard_roots(state: &ServerState) {
 /// Reconciliation* transition illegal. Events on Dirty, Degraded,
 /// StalePolicy, and Stopped roots are no-ops: those states already
 /// account for unscanned changes.
-fn process_guard_events(state: &ServerState, root: &Path, events: Vec<keyhog_sources::guard::GuardEvent>) {
+fn process_guard_events(
+    state: &ServerState,
+    root: &Path,
+    events: Vec<keyhog_sources::guard::GuardEvent>,
+) {
     use keyhog_core::guard_state::{GuardRootState, GuardTransition};
     use keyhog_sources::guard::GuardEvent;
 
     let root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(root.as_os_str());
-    let has_overflow = events.iter().any(|e| matches!(e, GuardEvent::ReconcileSubtree(_)));
+    let has_overflow = events
+        .iter()
+        .any(|e| matches!(e, GuardEvent::ReconcileSubtree(_)));
     let current_state = state.guard.root_state(root_bytes);
 
     match guard_event_action(current_state, has_overflow) {
@@ -905,17 +928,31 @@ fn baseline_terminal_transition(
 /// making the daemon scan sensitive OS paths.
 fn is_system_path(path: &std::path::Path) -> bool {
     const SYSTEM_PREFIXES: &[&str] = &[
-        "/etc", "/proc", "/sys", "/dev", "/boot", "/run", "/var/log",
-        "/usr", "/bin", "/sbin", "/lib", "/lib64", "/var/lib", "/opt", "/srv",
+        "/etc",
+        "/proc",
+        "/sys",
+        "/dev",
+        "/boot",
+        "/run",
+        "/var/log",
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/lib64",
+        "/var/lib",
+        "/opt",
+        "/srv",
         "/credentials",
     ];
     let path_str = path.to_string_lossy();
     if path_str.as_ref() == "/" {
         return true;
     }
-    if SYSTEM_PREFIXES.iter().any(|prefix| {
-        path_str.as_ref() == *prefix || path_str.starts_with(&format!("{}/", prefix))
-    }) {
+    if SYSTEM_PREFIXES
+        .iter()
+        .any(|prefix| path_str.as_ref() == *prefix || path_str.starts_with(&format!("{}/", prefix)))
+    {
         return true;
     }
     // Refuse the operator home directory itself and known credential stores.
@@ -964,7 +1001,9 @@ mod system_path_tests {
         let home = std::env::var("HOME").expect("HOME");
         assert!(is_system_path(Path::new(&home)));
         assert!(is_system_path(Path::new(&format!("{home}/.ssh"))));
-        assert!(is_system_path(Path::new(&format!("{home}/.aws/credentials"))));
+        assert!(is_system_path(Path::new(&format!(
+            "{home}/.aws/credentials"
+        ))));
         assert!(is_system_path(Path::new(&format!("{home}/.gnupg"))));
         // Project trees under home remain allowed.
         assert!(!is_system_path(Path::new(&format!("{home}/src/keyhog"))));
@@ -973,7 +1012,9 @@ mod system_path_tests {
 
 #[cfg(test)]
 mod guard_event_action_tests {
-    use super::{baseline_terminal_transition, guard_event_action, BaselineResult, GuardEventAction};
+    use super::{
+        baseline_terminal_transition, guard_event_action, BaselineResult, GuardEventAction,
+    };
     use keyhog_core::guard_state::{GuardRootState, GuardTransition};
 
     #[test]
@@ -1020,8 +1061,6 @@ mod guard_event_action_tests {
         );
     }
 }
-
-
 
 async fn run_accept_loop(
     listener: UnixListener,
@@ -1650,9 +1689,18 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 backend_recoveries: state.backend_recoveries.load(Ordering::Relaxed),
                 last_backend_fault: last_backend_fault.clone(),
                 guard_roots_registered: state.guard.root_count() as u64,
-                guard_roots_current: state.guard.count_by_state(keyhog_core::guard_state::GuardRootState::Current) as u64,
-                guard_roots_blocked: state.guard.count_by_state(keyhog_core::guard_state::GuardRootState::Blocked) as u64,
-                guard_roots_degraded: state.guard.count_by_state(keyhog_core::guard_state::GuardRootState::Degraded) as u64,
+                guard_roots_current: state
+                    .guard
+                    .count_by_state(keyhog_core::guard_state::GuardRootState::Current)
+                    as u64,
+                guard_roots_blocked: state
+                    .guard
+                    .count_by_state(keyhog_core::guard_state::GuardRootState::Blocked)
+                    as u64,
+                guard_roots_degraded: state
+                    .guard
+                    .count_by_state(keyhog_core::guard_state::GuardRootState::Degraded)
+                    as u64,
                 guard_active_transactions: state.guard.active_transaction_count() as u64,
                 warm_backend: state.warm_backend_status(),
             },
@@ -1712,7 +1760,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 "sha256" => keyhog_core::guard_state::GitHashAlgorithm::Sha256,
                 other => {
                     return Response::Error {
-                        message: format!("daemon: guard commit: unsupported hash algorithm '{}'", other),
+                        message: format!(
+                            "daemon: guard commit: unsupported hash algorithm '{}'",
+                            other
+                        ),
                     };
                 }
             };
@@ -1721,7 +1772,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 Some(id) => id,
                 None => {
                     return Response::Error {
-                        message: "daemon: guard commit: policy identity not yet established".to_string(),
+                        message: "daemon: guard commit: policy identity not yet established"
+                            .to_string(),
                     };
                 }
             };
@@ -1759,11 +1811,11 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     continue;
                 }
                 bytes_requested += entry.object_size;
-                if let Some(_att) = state.guard.lookup_attestation(
-                    git_hash,
-                    &entry.object_oid,
-                    &policy_short,
-                ) {
+                if let Some(_att) =
+                    state
+                        .guard
+                        .lookup_attestation(git_hash, &entry.object_oid, &policy_short)
+                {
                     clean_hits.push(entry.object_oid.clone());
                     bytes_hit += entry.object_size;
                 } else {
@@ -1807,7 +1859,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 Some(t) => t,
                 None => {
                     return Response::Error {
-                        message: format!("daemon: guard commit blob: transaction {} not found", transaction_id),
+                        message: format!(
+                            "daemon: guard commit blob: transaction {} not found",
+                            transaction_id
+                        ),
                     };
                 }
             };
@@ -1830,7 +1885,9 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 return Response::Error {
                     message: format!(
                         "daemon: guard commit blob: size mismatch for {}: declared {}, got {}",
-                        blob_oid, object_size, payload_bytes.len()
+                        blob_oid,
+                        object_size,
+                        payload_bytes.len()
                     ),
                 };
             }
@@ -1847,11 +1904,12 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let scanner = state.scanner.clone();
             let router = state.router.clone();
             let backend_override = state.backend_override;
-            let recover_automatic_backend_faults = crate::orchestrator::automatic_backend_recovery_allowed(
-                backend_override,
-                false,
-                keyhog_scanner::gpu::gpu_runtime_policy(),
-            );
+            let recover_automatic_backend_faults =
+                crate::orchestrator::automatic_backend_recovery_allowed(
+                    backend_override,
+                    false,
+                    keyhog_scanner::gpu::gpu_runtime_policy(),
+                );
             let fragment_scan_lock = state.fragment_scan_lock.clone();
             let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
             let txn_id = transaction_id;
@@ -1892,8 +1950,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                                 selection.backend.label()
                             )
                         })?;
-                        let raw: Vec<RawMatch> =
-                            outcome.per_chunk.into_iter().flatten().collect();
+                        let raw: Vec<RawMatch> = outcome.per_chunk.into_iter().flatten().collect();
                         Ok(raw)
                     },
                 )?;
@@ -1909,12 +1966,18 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         return Response::Error { message: msg };
                     }
                     return Response::Error {
-                        message: format!("daemon: guard commit blob: scan failed for {}: {}", oid, e),
+                        message: format!(
+                            "daemon: guard commit blob: scan failed for {}: {}",
+                            oid, e
+                        ),
                     };
                 }
                 Err(e) => {
                     return Response::Error {
-                        message: format!("daemon: guard commit blob: task panicked for {}: {}", oid, e),
+                        message: format!(
+                            "daemon: guard commit blob: task panicked for {}: {}",
+                            oid, e
+                        ),
                     };
                 }
             };
@@ -1923,7 +1986,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             // so suppressed/example values do not count as findings.
             // If finalization fails, treat it as a coverage gap
             // rather than zero findings (fail closed).
-            let (findings, coverage_gap) = match state.guard_filter.finalize_count(&state.scanner, raw_matches) {
+            let (findings, coverage_gap) = match state
+                .guard_filter
+                .finalize_count(&state.scanner, raw_matches)
+            {
                 Some(count) => (count as u64, false),
                 None => (0, true),
             };
@@ -1935,7 +2001,11 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     return Response::Error { message: msg };
                 }
             } else {
-                if let Err(msg) = state.guard.record_scanned_blob(txn_id, &oid, bytes_scanned, findings) {
+                if let Err(msg) =
+                    state
+                        .guard
+                        .record_scanned_blob(txn_id, &oid, bytes_scanned, findings)
+                {
                     return Response::Error { message: msg };
                 }
                 if findings == 0 {
@@ -1980,7 +2050,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 Some(t) => t,
                 None => {
                     return Response::Error {
-                        message: format!("daemon: guard commit finish: transaction {} not found", transaction_id),
+                        message: format!(
+                            "daemon: guard commit finish: transaction {} not found",
+                            transaction_id
+                        ),
                     };
                 }
             };
@@ -2020,7 +2093,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             // All validation passed. Remove the transaction from
             // the in-flight map.
             let _ = state.guard.finish_transaction(transaction_id);
-            let total_objects = txn.clean_hits.len() as u64 + txn.scanned_oids.len() as u64 + txn.objects_skipped;
+            let total_objects =
+                txn.clean_hits.len() as u64 + txn.scanned_oids.len() as u64 + txn.objects_skipped;
             let objects_hit = txn.clean_hits.len() as u64;
             let objects_scanned = txn.scanned_oids.len() as u64;
             let bytes_hit = txn.bytes_hit;
@@ -2043,16 +2117,18 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 findings_count: txn.findings_count,
                 coverage_gaps: txn.coverage_gaps,
                 terminal_state,
-                policy_identity: identity.clone().unwrap_or_else(|| keyhog_core::guard_state::GuardPolicyIdentity {
-                    build_identity: String::new(),
-                    detector_digest: String::new(),
-                    suppression_digest: String::new(),
-                    keyhogignore_digest: String::new(),
-                    config_digest: String::new(),
-                    decode_policy_version: 0,
-                    source_policy_digest: String::new(),
-                    guard_schema_version: 0,
-                    report_semantics_version: 0,
+                policy_identity: identity.clone().unwrap_or_else(|| {
+                    keyhog_core::guard_state::GuardPolicyIdentity {
+                        build_identity: String::new(),
+                        detector_digest: String::new(),
+                        suppression_digest: String::new(),
+                        keyhogignore_digest: String::new(),
+                        config_digest: String::new(),
+                        decode_policy_version: 0,
+                        source_policy_digest: String::new(),
+                        guard_schema_version: 0,
+                        report_semantics_version: 0,
+                    }
                 }),
                 // Placeholder; replaced with the root's post-update sequence.
                 terminal_sequence: 0,
@@ -2066,7 +2142,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 Err(_) => std::path::PathBuf::from(&txn.repo_path),
             };
             let commit_root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(commit_root.as_os_str());
-            if let Err(e) = state.guard.update_root_after_commit(commit_root_bytes, receipt) {
+            if let Err(e) = state
+                .guard
+                .update_root_after_commit(commit_root_bytes, receipt)
+            {
                 tracing::warn!(
                     "daemon: guard commit finish: failed to update root {}: {}",
                     commit_root.display(),
@@ -2110,7 +2189,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 "filesystem" => keyhog_core::guard_state::GuardRootMode::Filesystem,
                 other => {
                     return Response::Error {
-                        message: format!("daemon: invalid guard mode '{}': expected 'repo' or 'filesystem'", other),
+                        message: format!(
+                            "daemon: invalid guard mode '{}': expected 'repo' or 'filesystem'",
+                            other
+                        ),
                     }
                 }
             };
@@ -2146,7 +2228,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 Ok(m) => m,
                 Err(e) => {
                     return Response::Error {
-                        message: format!("daemon: guard add: path does not exist: {}: {}", canonical, e),
+                        message: format!(
+                            "daemon: guard add: path does not exist: {}: {}",
+                            canonical, e
+                        ),
                     };
                 }
             };
@@ -2156,7 +2241,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 };
             }
             let fs_identity = filesystem_identity(&canonical_path);
-            match state.guard.add_root(canonical.as_bytes().to_vec(), fs_identity, guard_mode) {
+            match state
+                .guard
+                .add_root(canonical.as_bytes().to_vec(), fs_identity, guard_mode)
+            {
                 Ok(record) => {
                     // Register the root with the filesystem watcher.
                     // Subscribe-first: the watcher starts before any
@@ -2176,15 +2264,18 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         return Response::Error {
                             message: format!(
                                 "daemon: guard add: watcher cannot observe {}: {}",
-                                canonical,
-                                e
+                                canonical, e
                             ),
                         };
                     }
                     // Persist the root to the durable store for crash recovery.
                     if let Some(store) = &state.guard_store {
                         if let Err(e) = store.save_root(&record) {
-                            tracing::warn!("daemon: guard add: failed to persist root {}: {}", canonical, e);
+                            tracing::warn!(
+                                "daemon: guard add: failed to persist root {}: {}",
+                                canonical,
+                                e
+                            );
                         }
                     }
                     Response::GuardAdded {
@@ -2193,20 +2284,31 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         terminal_sequence: record.terminal_sequence,
                     }
                 }
-                Err(msg) => Response::Error { message: format!("daemon: guard add failed: {}", msg) },
+                Err(msg) => Response::Error {
+                    message: format!("daemon: guard add failed: {}", msg),
+                },
             }
         }
         Request::GuardRemove { root } => {
             match state.guard.remove_root(root.as_bytes()) {
                 Some(_) => {
-                    state.guard_watcher.lock().remove_root(std::path::Path::new(&root));
+                    state
+                        .guard_watcher
+                        .lock()
+                        .remove_root(std::path::Path::new(&root));
                     // Remove from durable store.
                     if let Some(store) = &state.guard_store {
                         if let Err(e) = store.remove_root(root.as_bytes()) {
-                            tracing::warn!("daemon: guard remove: failed to delete root from store: {}", e);
+                            tracing::warn!(
+                                "daemon: guard remove: failed to delete root from store: {}",
+                                e
+                            );
                         }
                         if let Err(e) = store.clear_root_gaps(root.as_bytes()) {
-                            tracing::warn!("daemon: guard remove: failed to clear root gaps: {}", e);
+                            tracing::warn!(
+                                "daemon: guard remove: failed to clear root gaps: {}",
+                                e
+                            );
                         }
                     }
                     Response::GuardRemoved
@@ -2216,67 +2318,98 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 },
             }
         }
-        Request::GuardStatus { root } => {
-            match state.guard.root_record(root.as_bytes()) {
-                Some(record) => {
-                    let (files_scanned, bytes_scanned, attestation_hits, attestation_misses, findings_count, coverage_gaps) =
-                        if let Some(ref receipt) = record.last_receipt {
-                            (
-                                receipt.objects_scanned,
-                                receipt.bytes_scanned,
-                                receipt.objects_hit,
-                                receipt.objects_requested - receipt.objects_hit - receipt.objects_skipped,
-                                receipt.findings_count,
-                                receipt.coverage_gaps,
-                            )
-                        } else {
-                            (0, 0, 0, 0, 0, 0)
-                        };
-                    Response::GuardStatusResult {
-                        root: root.clone(),
-                        mode: record.mode.label().to_string(),
-                        state: record.state.label().to_string(),
-                        terminal_sequence: record.terminal_sequence,
-                        accepted_event_sequence: record.accepted_event_sequence,
-                        completed_event_sequence: record.completed_event_sequence,
-                        pending_events: state.guard_watcher.lock().pending_event_count(std::path::Path::new(&root)) as u64,
-                        files_scanned,
-                        bytes_scanned,
-                        attestation_hits,
-                        attestation_misses,
-                        findings_count,
-                        coverage_gaps,
-                        initial_reconciliation_time: record.initial_reconciliation_time,
-                        last_reconciliation_time: record.last_reconciliation_time,
-                        scanner_residency: state.guard.scanner_residency().to_string(),
-                        backend_route_label: record.backend_route_label.clone(),
-                        build_identity_short: state.guard.policy_identity()
-                            .as_ref()
-                            .and_then(|id| id.short_digest().ok())
-                            .unwrap_or_default(),
-                        detector_digest_short: state.guard.policy_identity()
-                            .as_ref()
-                            .map(|id| id.detector_digest.get(..12).unwrap_or(&id.detector_digest).to_string())
-                            .unwrap_or_default(),
-                        suppression_digest_short: state.guard.policy_identity()
-                            .as_ref()
-                            .map(|id| id.suppression_digest.get(..12).unwrap_or(&id.suppression_digest).to_string())
-                            .unwrap_or_default(),
-                        config_digest_short: state.guard.policy_identity()
-                            .as_ref()
-                            .map(|id| id.config_digest.get(..12).unwrap_or(&id.config_digest).to_string())
-                            .unwrap_or_default(),
-                        autoroute_evidence_status: state.guard.autoroute_evidence_status().to_string(),
-                        store_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
-                        store_path: String::new(),
-                        repair_command: format!("keyhog guard reconcile {}", root),
-                    }
+        Request::GuardStatus { root } => match state.guard.root_record(root.as_bytes()) {
+            Some(record) => {
+                let (
+                    files_scanned,
+                    bytes_scanned,
+                    attestation_hits,
+                    attestation_misses,
+                    findings_count,
+                    coverage_gaps,
+                ) = if let Some(ref receipt) = record.last_receipt {
+                    (
+                        receipt.objects_scanned,
+                        receipt.bytes_scanned,
+                        receipt.objects_hit,
+                        receipt.objects_requested - receipt.objects_hit - receipt.objects_skipped,
+                        receipt.findings_count,
+                        receipt.coverage_gaps,
+                    )
+                } else {
+                    (0, 0, 0, 0, 0, 0)
+                };
+                Response::GuardStatusResult {
+                    root: root.clone(),
+                    mode: record.mode.label().to_string(),
+                    state: record.state.label().to_string(),
+                    terminal_sequence: record.terminal_sequence,
+                    accepted_event_sequence: record.accepted_event_sequence,
+                    completed_event_sequence: record.completed_event_sequence,
+                    pending_events: state
+                        .guard_watcher
+                        .lock()
+                        .pending_event_count(std::path::Path::new(&root))
+                        as u64,
+                    files_scanned,
+                    bytes_scanned,
+                    attestation_hits,
+                    attestation_misses,
+                    findings_count,
+                    coverage_gaps,
+                    initial_reconciliation_time: record.initial_reconciliation_time,
+                    last_reconciliation_time: record.last_reconciliation_time,
+                    scanner_residency: state.guard.scanner_residency().to_string(),
+                    backend_route_label: record.backend_route_label.clone(),
+                    build_identity_short: state
+                        .guard
+                        .policy_identity()
+                        .as_ref()
+                        .and_then(|id| id.short_digest().ok())
+                        .unwrap_or_default(),
+                    detector_digest_short: state
+                        .guard
+                        .policy_identity()
+                        .as_ref()
+                        .map(|id| {
+                            id.detector_digest
+                                .get(..12)
+                                .unwrap_or(&id.detector_digest)
+                                .to_string()
+                        })
+                        .unwrap_or_default(),
+                    suppression_digest_short: state
+                        .guard
+                        .policy_identity()
+                        .as_ref()
+                        .map(|id| {
+                            id.suppression_digest
+                                .get(..12)
+                                .unwrap_or(&id.suppression_digest)
+                                .to_string()
+                        })
+                        .unwrap_or_default(),
+                    config_digest_short: state
+                        .guard
+                        .policy_identity()
+                        .as_ref()
+                        .map(|id| {
+                            id.config_digest
+                                .get(..12)
+                                .unwrap_or(&id.config_digest)
+                                .to_string()
+                        })
+                        .unwrap_or_default(),
+                    autoroute_evidence_status: state.guard.autoroute_evidence_status().to_string(),
+                    store_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
+                    store_path: String::new(),
+                    repair_command: format!("keyhog guard reconcile {}", root),
                 }
-                None => Response::Error {
-                    message: format!("daemon: guard root not registered: {}", root),
-                },
             }
-        }
+            None => Response::Error {
+                message: format!("daemon: guard root not registered: {}", root),
+            },
+        },
         Request::GuardReconcile { root } => {
             let current_state = match state.guard.root_state(root.as_bytes()) {
                 Some(s) => s,
@@ -2303,7 +2436,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 | keyhog_core::guard_state::GuardRootState::Blocked => {
                     // Stop first, then start reconciliation. The stop
                     // transition is always legal from active states.
-                    match state.guard.transition_root(root.as_bytes(), &keyhog_core::guard_state::GuardTransition::Stopped) {
+                    match state.guard.transition_root(
+                        root.as_bytes(),
+                        &keyhog_core::guard_state::GuardTransition::Stopped,
+                    ) {
                         Ok(_) => {}
                         Err(e) => {
                             return Response::Error {
@@ -3123,11 +3259,8 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
                     let total_bytes: usize = batch.iter().map(|c| c.data.len()).sum();
                     keyhog_profile::add_input_units(1);
                     keyhog_profile::add_input_bytes(total_bytes as u64);
-                    let selection = router.choose_with_plan(
-                        scanner.as_ref(),
-                        backend_override,
-                        &batch,
-                    )?;
+                    let selection =
+                        router.choose_with_plan(scanner.as_ref(), backend_override, &batch)?;
                     let outcome = crate::orchestrator::scan_selected_batch(
                         scanner.as_ref(),
                         &batch,
@@ -3144,18 +3277,15 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
                             root_path.display()
                         )
                     })?;
-                    let raw: Vec<RawMatch> =
-                        outcome.per_chunk.into_iter().flatten().collect();
+                    let raw: Vec<RawMatch> = outcome.per_chunk.into_iter().flatten().collect();
                     Ok(raw)
                 },
             );
             match scan_out {
-                Ok(raw_matches) => {
-                    match guard_filter.finalize_count(&scanner, raw_matches) {
-                        Some(count) => total_findings += count,
-                        None => total_gaps += 1,
-                    }
-                }
+                Ok(raw_matches) => match guard_filter.finalize_count(&scanner, raw_matches) {
+                    Some(count) => total_findings += count,
+                    None => total_gaps += 1,
+                },
                 Err(_) => {
                     total_gaps += 1;
                 }

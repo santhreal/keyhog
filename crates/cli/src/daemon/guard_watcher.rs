@@ -17,13 +17,13 @@
 //! completes. This closes the race between watcher registration and
 //! scanning existing bytes.
 
-use keyhog_sources::guard::{GuardEvent, EventBuffer, GuardReconciliationConfig};
+use keyhog_sources::guard::{EventBuffer, GuardEvent, GuardReconciliationConfig};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 /// One watched root and its event buffer.
 struct WatchedRoot {
@@ -78,7 +78,6 @@ impl GuardWatcher {
         self.config.coalesce_window_ms
     }
 
-
     /// Register a new root for watching. The watcher is started before
     /// the baseline walk so events during the walk are captured.
     pub fn add_root(&mut self, path: PathBuf) -> Result<(), String> {
@@ -86,13 +85,15 @@ impl GuardWatcher {
             return Err(format!("root already watched: {}", path.display()));
         }
         if let Some(ref mut watcher) = self.watcher {
-            watcher.watch(&path, RecursiveMode::Recursive).map_err(|e| {
-                format!(
-                    "failed to watch {}: {}; on Linux raise fs.inotify.max_user_watches",
-                    path.display(),
-                    e
-                )
-            })?;
+            watcher
+                .watch(&path, RecursiveMode::Recursive)
+                .map_err(|e| {
+                    format!(
+                        "failed to watch {}: {}; on Linux raise fs.inotify.max_user_watches",
+                        path.display(),
+                        e
+                    )
+                })?;
         }
         let buffer = Arc::new(Mutex::new(EventBuffer::new(
             self.config.max_pending_events_per_root,
@@ -156,16 +157,9 @@ impl GuardWatcher {
                     .push(GuardEvent::ReconcileSubtree(root.clone()));
                 buf.drain_and_reset();
             } else {
-                let buffered: Vec<GuardEvent> = buf
-                    .drain()
-                    .into_iter()
-                    .map(|(_, ge)| ge)
-                    .collect();
+                let buffered: Vec<GuardEvent> = buf.drain().into_iter().map(|(_, ge)| ge).collect();
                 if !buffered.is_empty() {
-                    results
-                        .entry(root.clone())
-                        .or_default()
-                        .extend(buffered);
+                    results.entry(root.clone()).or_default().extend(buffered);
                 }
             }
         }
@@ -199,7 +193,6 @@ impl GuardWatcher {
             .map(|r| r.buffer.lock().len())
             .unwrap_or(0)
     }
-
 }
 
 /// Convert a notify::Event into normalized GuardEvent(s).

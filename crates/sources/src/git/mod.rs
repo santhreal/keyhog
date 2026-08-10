@@ -12,8 +12,10 @@ mod manifest;
 mod source;
 mod staged;
 mod tag_messages;
+pub use manifest::{
+    verify_staged_fingerprint, StagedEntryKind, StagedManifest, StagedManifestEntry,
+};
 pub(crate) use staged::consume_oversized_staged_header_path;
-pub use manifest::{StagedManifest, StagedManifestEntry, StagedEntryKind, verify_staged_fingerprint};
 
 /// Resolve `git` to an absolute path inside a trusted system bin dir.
 /// SECURITY: kimi-wave1 audit finding 3.PATH-git. Refuses to fall back
@@ -60,15 +62,18 @@ pub use staged::GitStagedSource;
 /// Read a staged blob's content by object ID from a repository.
 /// Returns the raw blob bytes. Used by the guard commit client
 /// to stream blob payloads to the daemon.
-pub fn read_staged_blob(repo_path: &std::path::Path, oid: &str) -> Result<Vec<u8>, keyhog_core::SourceError> {
+pub fn read_staged_blob(
+    repo_path: &std::path::Path,
+    oid: &str,
+) -> Result<Vec<u8>, keyhog_core::SourceError> {
     let repo = gix::open(repo_path).map_err(|e| {
         keyhog_core::SourceError::Git(format!("failed to open repository for blob read: {e}"))
     })?;
     let object_id = gix::ObjectId::from_hex(oid.as_bytes())
         .map_err(|e| keyhog_core::SourceError::Git(format!("invalid object ID {oid}: {e}")))?;
-    let object = repo.find_object(object_id).map_err(|e| {
-        keyhog_core::SourceError::Git(format!("failed to read blob {oid}: {e}"))
-    })?;
+    let object = repo
+        .find_object(object_id)
+        .map_err(|e| keyhog_core::SourceError::Git(format!("failed to read blob {oid}: {e}")))?;
     Ok(object.data.to_vec())
 }
 
@@ -1120,18 +1125,14 @@ pub(crate) fn staged_manifest_acquire(
     let mut coverage_gaps: Vec<String> = Vec::new();
 
     loop {
-        let header_bytes = match read_capped_record(
-            &mut reader,
-            &mut header,
-            GIT_PLUMBING_LINE_BYTES,
-            0,
-        ) {
-            Ok(record) if record.consumed == 0 => break,
-            Ok(record) => record.content,
-            Err(error) => {
-                return Err(SourceError::Io(error));
-            }
-        };
+        let header_bytes =
+            match read_capped_record(&mut reader, &mut header, GIT_PLUMBING_LINE_BYTES, 0) {
+                Ok(record) if record.consumed == 0 => break,
+                Ok(record) => record.content,
+                Err(error) => {
+                    return Err(SourceError::Io(error));
+                }
+            };
         if header_bytes > GIT_PLUMBING_LINE_BYTES {
             return Err(SourceError::Git(format!(
                 "git raw staged diff header exceeded the {GIT_PLUMBING_LINE_BYTES}-byte limit"
@@ -1150,12 +1151,7 @@ pub(crate) fn staged_manifest_acquire(
             ))
         })?;
 
-        let path_bytes = match read_capped_record(
-            &mut reader,
-            &mut raw_path,
-            1024 * 1024,
-            0,
-        ) {
+        let path_bytes = match read_capped_record(&mut reader, &mut raw_path, 1024 * 1024, 0) {
             Ok(record) if record.consumed == 0 => {
                 return Err(SourceError::Git(
                     "git raw staged diff ended before the path for an index entry".into(),
@@ -1264,7 +1260,7 @@ fn parse_raw_diff_header(
     let (kind, object_oid, object_size) = match status {
         'D' => (StagedEntryKind::Deletion, String::new(), 0u64),
         'A' | 'C' | 'M' | 'T' => {
- // Added, copied, modified, type-changed: scan the new blob.
+            // Added, copied, modified, type-changed: scan the new blob.
             let kind = classify_mode(new_mode);
             (kind, new_oid.to_string(), 0u64) // Size filled by caller if needed
         }

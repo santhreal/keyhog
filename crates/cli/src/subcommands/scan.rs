@@ -116,11 +116,19 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                 #[cfg(feature = "git")]
                 if policy.effective_args.git_staged {
                     let socket_path = effective_daemon_socket(&policy.effective_args);
-                    let repo_path = policy.effective_args.path.as_deref().unwrap_or_else(|| std::path::Path::new("."));
+                    let repo_path = policy
+                        .effective_args
+                        .path
+                        .as_deref()
+                        .unwrap_or_else(|| std::path::Path::new("."));
                     let digest = keyhog_core::detector_digest().to_string();
-                    let result = crate::daemon::guard_commit::run_guard_commit(&socket_path, repo_path, &digest)
-                        .await
-                        .context("--daemon=on guard commit transaction failed")?;
+                    let result = crate::daemon::guard_commit::run_guard_commit(
+                        &socket_path,
+                        repo_path,
+                        &digest,
+                    )
+                    .await
+                    .context("--daemon=on guard commit transaction failed")?;
                     return finish_guard_commit_scan(result, &policy.effective_args);
                 }
                 run_via_daemon(&mut policy.effective_args).await
@@ -130,9 +138,19 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                 #[cfg(feature = "git")]
                 if policy.effective_args.git_staged {
                     let socket_path = effective_daemon_socket(&policy.effective_args);
-                    let repo_path = policy.effective_args.path.as_deref().unwrap_or_else(|| std::path::Path::new("."));
+                    let repo_path = policy
+                        .effective_args
+                        .path
+                        .as_deref()
+                        .unwrap_or_else(|| std::path::Path::new("."));
                     let digest = keyhog_core::detector_digest().to_string();
-                    match crate::daemon::guard_commit::run_guard_commit(&socket_path, repo_path, &digest).await {
+                    match crate::daemon::guard_commit::run_guard_commit(
+                        &socket_path,
+                        repo_path,
+                        &digest,
+                    )
+                    .await
+                    {
                         Ok(result) => {
                             return finish_guard_commit_scan(result, &policy.effective_args);
                         }
@@ -378,7 +396,6 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         );
     }
 
-
     // The daemon's client-side finalize mirrors allowlist/rule suppression,
     // inline suppression, match resolution, and dedup for daemon-eligible scans.
     // It still does NOT run live verification or enforce the policy/security
@@ -460,7 +477,6 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
             "the daemon only supports exactly one source: --stdin or a single regular file; directories, git, remote, binary, dynamic, and multi-source scans require the in-process scanner",
         );
     }
-
 
     if forced_on {
         return DaemonRoute::Required;

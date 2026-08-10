@@ -118,10 +118,7 @@ impl StagedManifest {
 /// the race-detection check the guard commit protocol runs at
 /// `GuardCommitFinish` to ensure the staged content has not changed
 /// since the transaction began.
-pub fn verify_staged_fingerprint(
-    repo_path: &std::path::Path,
-    expected_fingerprint: &str,
-) -> bool {
+pub fn verify_staged_fingerprint(repo_path: &std::path::Path, expected_fingerprint: &str) -> bool {
     match super::staged_manifest_acquire(repo_path) {
         Ok(fresh) => fresh.index_fingerprint == expected_fingerprint,
         Err(_) => false,

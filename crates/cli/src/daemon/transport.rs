@@ -91,9 +91,7 @@ mod windows {
 
     pub(crate) async fn connect_transport(path: &Path) -> io::Result<DaemonStream> {
         let pipe_name = pipe_name_from_path(path);
-        named_pipe::ClientOptions::new()
-            .open(&pipe_name)
-            .await
+        named_pipe::ClientOptions::new().open(&pipe_name).await
     }
 
     pub(crate) fn transport_path_display(path: &Path) -> String {

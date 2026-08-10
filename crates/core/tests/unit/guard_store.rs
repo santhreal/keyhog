@@ -2,12 +2,12 @@
 //! and root registry.
 
 use keyhog_core::guard_state::{
-    FilesystemIdentity, GitCleanAttestation, GitHashAlgorithm, GuardPolicyIdentity,
-    GuardRootMode, GuardRootRecord, GuardRootState, GUARD_SCHEMA_VERSION,
+    FilesystemIdentity, GitCleanAttestation, GitHashAlgorithm, GuardPolicyIdentity, GuardRootMode,
+    GuardRootRecord, GuardRootState, GUARD_SCHEMA_VERSION,
 };
 use keyhog_core::guard_store::{
-    check_schema_version, DurableGuardStore, GuardStoreError, HotAttestationIndex,
-    RootRegistry, DEFAULT_HOT_INDEX_MEMORY,
+    check_schema_version, DurableGuardStore, GuardStoreError, HotAttestationIndex, RootRegistry,
+    DEFAULT_HOT_INDEX_MEMORY,
 };
 
 fn sample_identity() -> GuardPolicyIdentity {
@@ -37,7 +37,10 @@ fn sample_attestation(oid: &str, seq: u64) -> GitCleanAttestation {
 fn sample_root_record(path: &str) -> GuardRootRecord {
     GuardRootRecord {
         canonical_path: path.as_bytes().to_vec(),
-        filesystem_identity: FilesystemIdentity { device: 1, inode: 2 },
+        filesystem_identity: FilesystemIdentity {
+            device: 1,
+            inode: 2,
+        },
         mode: GuardRootMode::Repo,
         state: GuardRootState::Current,
         terminal_sequence: 0,
@@ -182,7 +185,9 @@ fn hot_index_different_hash_algorithm_does_not_collide() {
 
     let short = sample_identity().short_digest().unwrap();
     assert!(index.get(GitHashAlgorithm::Sha1, "oid1", &short).is_some());
-    assert!(index.get(GitHashAlgorithm::Sha256, "oid1", &short).is_some());
+    assert!(index
+        .get(GitHashAlgorithm::Sha256, "oid1", &short)
+        .is_some());
     assert_eq!(index.len(), 2);
 }
 
@@ -196,7 +201,10 @@ fn schema_version_one_is_accepted() {
 #[test]
 fn schema_version_zero_is_obsolete() {
     let result = check_schema_version(0);
-    assert!(matches!(result, Err(GuardStoreError::SchemaObsolete { found: 0 })));
+    assert!(matches!(
+        result,
+        Err(GuardStoreError::SchemaObsolete { found: 0 })
+    ));
 }
 
 #[test]
@@ -379,7 +387,10 @@ fn durable_store_save_and_load_root() {
 
     let record = keyhog_core::guard_state::GuardRootRecord {
         canonical_path: b"/work/project".to_vec(),
-        filesystem_identity: FilesystemIdentity { device: 1, inode: 2 },
+        filesystem_identity: FilesystemIdentity {
+            device: 1,
+            inode: 2,
+        },
         mode: GuardRootMode::Repo,
         state: GuardRootState::Current,
         terminal_sequence: 42,
@@ -407,7 +418,10 @@ fn durable_store_remove_root() {
 
     let record = keyhog_core::guard_state::GuardRootRecord {
         canonical_path: b"/work/project".to_vec(),
-        filesystem_identity: FilesystemIdentity { device: 1, inode: 2 },
+        filesystem_identity: FilesystemIdentity {
+            device: 1,
+            inode: 2,
+        },
         mode: GuardRootMode::Repo,
         state: GuardRootState::Stopped,
         terminal_sequence: 0,
@@ -518,7 +532,13 @@ fn durable_store_root_gaps_save_load_clear() {
     // Clear gaps for the root.
     let removed = store.clear_root_gaps(root_key).expect("clear gaps");
     assert_eq!(removed, 2);
-    assert_eq!(store.load_root_gaps(root_key).expect("load after clear").len(), 0);
+    assert_eq!(
+        store
+            .load_root_gaps(root_key)
+            .expect("load after clear")
+            .len(),
+        0
+    );
 }
 
 #[test]
@@ -577,14 +597,18 @@ fn durable_store_rejects_unsupported_schema_version() {
         {
             let mut meta: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("meta");
             let mut table = txn.open_table(meta).expect("open meta");
-            table.insert("schema_version", 9999u32.to_le_bytes().as_slice())
+            table
+                .insert("schema_version", 9999u32.to_le_bytes().as_slice())
                 .expect("write version");
         }
         txn.commit().expect("commit");
     }
     // Reopening should fail with a schema version error.
     let result = DurableGuardStore::open(&path);
-    assert!(result.is_err(), "unsupported schema version should be rejected");
+    assert!(
+        result.is_err(),
+        "unsupported schema version should be rejected"
+    );
     let err = result.err().unwrap();
     let msg = err.to_string();
     assert!(
@@ -707,7 +731,9 @@ fn durable_store_root_gaps_prefix_collision() {
     let removed = store.clear_root_gaps(parent).expect("clear parent gaps");
     assert_eq!(removed, 1, "should remove exactly 1 parent gap");
 
-    let child_gaps_after = store.load_root_gaps(child).expect("load child after parent clear");
+    let child_gaps_after = store
+        .load_root_gaps(child)
+        .expect("load child after parent clear");
     assert_eq!(
         child_gaps_after.len(),
         1,

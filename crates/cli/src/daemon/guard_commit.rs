@@ -13,12 +13,10 @@
 //! daemon names as required (cache misses) are streamed.
 
 use crate::daemon::client::{self, Client};
-use crate::daemon::protocol::{
-    self, GuardWireManifestEntry, Request, Response, WIRE_VERSION,
-};
+use crate::daemon::protocol::{self, GuardWireManifestEntry, Request, Response, WIRE_VERSION};
 use anyhow::{bail, Context, Result};
 use keyhog_core::guard_state::GuardReceipt;
-use keyhog_sources::{StagedManifest, StagedManifestEntry, StagedEntryKind};
+use keyhog_sources::{StagedEntryKind, StagedManifest, StagedManifestEntry};
 use std::path::Path;
 
 /// Maximum blob payload size the client will stream in one frame.
@@ -65,14 +63,15 @@ pub(crate) async fn run_guard_commit(
     // fingerprint against the correct working tree, not its own CWD.
     let repo_path = match std::fs::canonicalize(repo_path) {
         Ok(p) => p,
-        Err(e) => bail!("guard commit: cannot resolve repo path {}: {e}", repo_path.display()),
+        Err(e) => bail!(
+            "guard commit: cannot resolve repo path {}: {e}",
+            repo_path.display()
+        ),
     };
-    let mut conn = client::connect_with_detector_rules_digest(
-        socket_path,
-        detector_rules_digest.to_string(),
-    )
-    .await
-    .context("guard commit: connect to daemon")?;
+    let mut conn =
+        client::connect_with_detector_rules_digest(socket_path, detector_rules_digest.to_string())
+            .await
+            .context("guard commit: connect to daemon")?;
 
     // Verify the daemon supports the guard wire protocol.
     if let Some(status) = conn.warm_backend_status() {
@@ -279,4 +278,3 @@ fn manifest_entry_to_wire(entry: &StagedManifestEntry) -> GuardWireManifestEntry
         raw_mode: entry.raw_mode,
     }
 }
-
