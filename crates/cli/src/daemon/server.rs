@@ -1938,6 +1938,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                             scanner.as_ref(),
                             &payload,
                             selection.backend,
+                            #[cfg(feature = "gpu")]
+                            selection.ordered_gpu.as_deref(),
                             selection.phase1_plan.as_ref(),
                             selection.execution_route,
                             selection
@@ -3265,6 +3267,8 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
                         scanner.as_ref(),
                         &batch,
                         selection.backend,
+                        #[cfg(feature = "gpu")]
+                        selection.ordered_gpu.as_deref(),
                         selection.phase1_plan.as_ref(),
                         selection.execution_route,
                         selection
