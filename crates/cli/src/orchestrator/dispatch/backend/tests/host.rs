@@ -203,6 +203,7 @@ fn paired_same_backend_rounds_retain_shared_host_drift() {
             backend: ScanBackend::CpuFallback,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
         }),
         "paired rounds must prove a stable plan delta even when marginal intervals share host drift"
     );

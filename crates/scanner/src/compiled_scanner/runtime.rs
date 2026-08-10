@@ -61,6 +61,7 @@ impl CompiledScanner {
             },
             phase2_plain_localizer: self.tuning.phase2_plain_localizer_enabled(),
             phase2_keyword_localizer: true,
+            gpu_pipeline_depth: 1,
         }
     }
 

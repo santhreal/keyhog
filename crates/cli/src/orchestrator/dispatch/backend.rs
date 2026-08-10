@@ -194,7 +194,7 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 53;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 54;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -492,6 +492,61 @@ impl CachedBackendRouter {
                             })
                         })
                 });
+            let pipeline_check: Result<(), String> = self
+                .decisions
+                .get(&key)
+                .and_then(|decision| decision.gpu_pipeline_identity_for_route(route))
+                .ok_or_else(|| {
+                    format!(
+                        "persisted {} route has no complete pipeline depth/capability evidence",
+                        route.backend.label()
+                    )
+                })
+                .and_then(|(expected_capability, expected_input, expected_matches)| {
+                    #[cfg(feature = "gpu")]
+                    {
+                        let actual_capability = scanner
+                            .gpu_resident_dispatch_capability(route.backend)
+                            .map_err(|error| {
+                                format!(
+                                    "could not validate persisted {} pipeline capability: {error}",
+                                    route.backend.label()
+                                )
+                            })?;
+                        let (actual_input, actual_matches) = scanner
+                            .gpu_resident_pipeline_slot_capacities(route.gpu_pipeline_depth)
+                            .map_err(|error| {
+                                format!(
+                                    "could not validate persisted {} pipeline capacities: {error}",
+                                    route.backend.label()
+                                )
+                            })?;
+                        let actual_input = u64::try_from(actual_input).map_err(|_| {
+                            "live GPU resident input capacity exceeds u64".to_string()
+                        })?;
+                        if actual_capability != expected_capability
+                            || actual_input != expected_input
+                            || actual_matches != expected_matches
+                        {
+                            return Err(format!(
+                                "persisted {} pipeline evidence is stale; expected capability={expected_capability} input={expected_input} matches={expected_matches}, live capability={actual_capability} input={actual_input} matches={actual_matches}",
+                                route.backend.label()
+                            ));
+                        }
+                        Ok(())
+                    }
+                    #[cfg(not(feature = "gpu"))]
+                    {
+                        let _ = (
+                            scanner,
+                            expected_capability,
+                            expected_input,
+                            expected_matches,
+                        );
+                        Err("persisted GPU route cannot run without the CLI GPU feature".to_string())
+                    }
+                });
+            let identity_check = identity_check.and(pipeline_check);
             if let Err(reason) = identity_check {
                 record_bucket_miss(AutorouteCacheMiss::PeerIdentityChanged, &key);
                 let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);

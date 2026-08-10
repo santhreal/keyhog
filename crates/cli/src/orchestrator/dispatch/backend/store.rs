@@ -40,6 +40,8 @@ pub(super) use artifact_identity::installed_gpu_sidecar_digest;
 pub(super) use codec::AUTOROUTE_CACHE_FILE_BYTES;
 #[cfg(test)]
 pub(super) use schema::{AutorouteBuildFeatures, AutorouteCache};
+#[cfg(test)]
+pub(super) use validation::validate_decision_route_evidence;
 
 #[cfg(test)]
 use keyhog_scanner::hw_probe::ScanBackend;

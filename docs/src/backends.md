@@ -193,8 +193,10 @@ marked `production_comparable = false` and must not support a crossover claim.
 
 The checked benchmark now sends identical 1 MiB windows with 128 KiB overlap
 through the explicit production execution-route entry point for Hyperscan and
-every acquired CUDA, Metal, or WGPU peer, with all four combinations of plain-pattern
-and keyword-anchor localization.
+every acquired CUDA, Metal, or WGPU peer. It measures all four combinations of
+plain-pattern and keyword-anchor localization and every resident pipeline depth
+the peer declares eligible. Synchronous peers expose depth one. Asynchronous
+peers expose depths one through four.
 It requires sorted full-match parity from every route, rejects GPU degradation,
 and rotates candidate order during selection. Selection-only samples choose one
 measured-correct GPU route and one measured-correct Hyperscan route. Both routes
@@ -211,16 +213,16 @@ hindsight oracle. A forced plain or keyword localizer filter, profiling, or perf
 tracing retains parity and degradation checks but cannot pass the release speed
 gate.
 
-Schema 9 records both selected backends and localization choices, every
-route-selection sample, and a separate held-out confidence interval for each
-Hyperscan plan. `crossover_passed` is based only on the independently selected
-GPU and Hyperscan routes.
+Schema 10 records both selected backends, localization choices, and the GPU
+pipeline depth, every route-selection sample, and a separate held-out confidence
+interval for each Hyperscan plan. `crossover_passed` is based only on the
+independently selected GPU and Hyperscan routes.
 Use `--diagnostic` for an unprofiled 8 MiB measurement from a dirty development
 tree. That mode retains exact parity and degradation checks but records
 `diagnostic = true`, `production_comparable = false`, and cannot pass the
 release gate.
 
-Diagnostic runs may isolate either route dimension with
+Diagnostic runs may isolate either localization dimension with
 `KH_BENCH_PHASE2_PLAIN_LOCALIZER=0|1` or
 `KH_BENCH_PHASE2_KEYWORD_LOCALIZER=0|1`. Setting either variable makes the run
 ineligible for release evidence; an unrestricted run measures all four plans.
@@ -228,9 +230,9 @@ ineligible for release evidence; an unrestricted run measures all four plans.
 Use `--profile` to attribute scanner stages to exact routes. Candidate selection
 and held-out trials remain unprofiled; after timing, the benchmark runs one
 isolated scan for each Hyperscan localization plan and the selected GPU route.
-Profile labels include the backend and both localization values, so costs from
-different execution plans are never merged into one report. Profile runs cannot
-pass the release gate.
+Profile labels include the backend, both localization values, and the resident
+pipeline depth, so costs from different execution plans are never merged into
+one report. Profile runs cannot pass the release gate.
 
 The checked artifact at
 `benchmarks/baselines/gpu_8mib_crossover_rtx5090.toml` retains the last measured

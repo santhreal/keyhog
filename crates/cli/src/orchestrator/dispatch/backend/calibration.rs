@@ -110,6 +110,29 @@ fn apply_test_timing_fixture(
     Ok(())
 }
 
+fn eligible_pipeline_depths(
+    scanner: &CompiledScanner,
+    backend: ScanBackend,
+) -> Result<Vec<u8>, AutorouteRoutingError> {
+    if !backend.is_gpu() {
+        return Ok(vec![1]);
+    }
+    #[cfg(feature = "gpu")]
+    {
+        scanner
+            .eligible_gpu_resident_pipeline_depths(backend)
+            .map_err(|error| AutorouteRoutingError::candidate_backend_rejected(backend, error))
+    }
+    #[cfg(not(feature = "gpu"))]
+    {
+        let _ = scanner;
+        Err(AutorouteRoutingError::candidate_backend_rejected(
+            backend,
+            "GPU route is present in calibration without the CLI GPU feature",
+        ))
+    }
+}
+
 pub(super) fn calibrate_fastest_correct_backend(
     scanner: &CompiledScanner,
     _pattern_count: usize,
@@ -124,6 +147,7 @@ pub(super) fn calibrate_fastest_correct_backend(
         backend: ScanBackend::CpuFallback,
         phase2_plain_localizer: false,
         phase2_keyword_localizer: false,
+        gpu_pipeline_depth: 1,
     };
     let reference = establish_scalar_reference(scanner, sample, admission_plan, reference_route)?;
     let reference_coverage = reference.coverage;
@@ -170,20 +194,22 @@ pub(super) fn calibrate_fastest_correct_backend(
             .map_err(AutorouteRoutingError::calibration_not_persisted)?;
     }
 
-    let mut candidate_routes = candidate_backends
-        .into_iter()
-        .flat_map(|backend| {
-            [false, true]
-                .into_iter()
-                .flat_map(move |phase2_plain_localizer| {
-                    [false, true].map(move |phase2_keyword_localizer| MeasuredRoute {
+    let mut candidate_routes = Vec::new();
+    for backend in candidate_backends {
+        let depths = eligible_pipeline_depths(scanner, backend)?;
+        for gpu_pipeline_depth in depths {
+            for phase2_plain_localizer in [false, true] {
+                for phase2_keyword_localizer in [false, true] {
+                    candidate_routes.push(MeasuredRoute {
                         backend,
                         phase2_plain_localizer,
                         phase2_keyword_localizer,
-                    })
-                })
-        })
-        .collect::<Vec<_>>();
+                        gpu_pipeline_depth,
+                    });
+                }
+            }
+        }
+    }
     let rotation =
         calibration_candidate_rotation(sample_bytes, sample.len(), candidate_routes.len());
     candidate_routes.rotate_left(rotation);
@@ -241,6 +267,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     decision.backend = resolved.backend.label().to_string();
     decision.phase2_plain_localizer = resolved.phase2_plain_localizer;
     decision.phase2_keyword_localizer = resolved.phase2_keyword_localizer;
+    decision.gpu_pipeline_depth = resolved.gpu_pipeline_depth;
 
     let keyword_triggers = admission_plan.map(Phase1AdmissionPlan::phase2_keyword_triggers);
     tracing::info!(
@@ -248,6 +275,7 @@ pub(super) fn calibrate_fastest_correct_backend(
         backend = resolved.backend.label(),
         phase2_plain_localizer = resolved.phase2_plain_localizer,
         phase2_keyword_localizer = resolved.phase2_keyword_localizer,
+        gpu_pipeline_depth = resolved.gpu_pipeline_depth,
         confidence_separated,
         selection_basis = if confidence_separated {
             "peer-separated-95pct-confidence"
@@ -324,10 +352,60 @@ fn route_timings_with_cold_cost(
         } else {
             None
         };
+        let gpu_pipeline = if backend.is_gpu() {
+            #[cfg(feature = "gpu")]
+            {
+                let capability =
+                    scanner
+                        .gpu_resident_dispatch_capability(backend)
+                        .map_err(|error| {
+                            AutorouteRoutingError::candidate_backend_rejected(backend, error)
+                        })?;
+                let eligible_depths = scanner
+                    .eligible_gpu_resident_pipeline_depths(backend)
+                    .map_err(|error| {
+                        AutorouteRoutingError::candidate_backend_rejected(backend, error)
+                    })?;
+                if !eligible_depths.contains(&route.gpu_pipeline_depth) {
+                    return Err(AutorouteRoutingError::candidate_backend_rejected(
+                        backend,
+                        format!(
+                            "pipeline depth {} is not eligible for resident capability {capability}",
+                            route.gpu_pipeline_depth
+                        ),
+                    ));
+                }
+                let (input_capacity, match_capacity) = scanner
+                    .gpu_resident_pipeline_slot_capacities(route.gpu_pipeline_depth)
+                    .map_err(|error| {
+                        AutorouteRoutingError::candidate_backend_rejected(backend, error)
+                    })?;
+                Some((
+                    capability.to_string(),
+                    u64::try_from(input_capacity).map_err(|_| {
+                        AutorouteRoutingError::candidate_backend_rejected(
+                            backend,
+                            "GPU resident slot input capacity exceeds u64",
+                        )
+                    })?,
+                    match_capacity,
+                ))
+            }
+            #[cfg(not(feature = "gpu"))]
+            {
+                return Err(AutorouteRoutingError::candidate_backend_rejected(
+                    backend,
+                    "GPU timing evidence cannot be built without the CLI GPU feature",
+                ));
+            }
+        } else {
+            None
+        };
         route_timings.push(RouteTimingEvidence::new_with_peer_identity(
             route,
             measured,
             peer_identity,
+            gpu_pipeline,
         ));
     }
     Ok(route_timings)

@@ -61,6 +61,7 @@ pub(crate) fn route_timings(
                     backend,
                     phase2_plain_localizer,
                     phase2_keyword_localizer,
+                    gpu_pipeline_depth: 1,
                 },
                 timing,
             ));
