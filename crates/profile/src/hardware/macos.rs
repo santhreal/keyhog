@@ -27,6 +27,7 @@ extern "C" {
     fn task_threads(task: MachPort, threads: *mut *mut MachPort, count: *mut u32) -> c_int;
     fn thread_info(thread: MachPort, flavor: c_int, info: *mut c_int, count: *mut u32) -> c_int;
     fn vm_deallocate(task: MachPort, address: usize, size: usize) -> c_int;
+    fn mach_port_deallocate(task: MachPort, name: MachPort) -> c_int;
     fn sysctlbyname(
         name: *const c_char,
         oldp: *mut c_void,
@@ -195,6 +196,13 @@ pub(super) fn sample_thread_utilization() -> (Vec<ThreadCpuV2>, u64) {
                 cpu_time_ns,
             }),
             None => dropped = dropped.saturating_add(1),
+        }
+        // task_threads returns owned send rights; vm_deallocate only frees the
+        // array storage. Drop each port or repeated samples leak Mach rights.
+        // SAFETY: port came from task_threads; deallocate regardless of
+        // thread_info outcome.
+        unsafe {
+            mach_port_deallocate(mach_task_self(), port);
         }
     }
     // SAFETY: ports was allocated by task_threads with count entries.
