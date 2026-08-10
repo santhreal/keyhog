@@ -932,9 +932,8 @@ impl CompiledScanner {
             }
         };
         #[cfg(feature = "gpu")]
-        let packed_confidence_authenticated = packed_vyre_program
-            .as_ref()
-            .is_some_and(|source| source.signature_authenticated);
+        let packed_confidence_authentication =
+            packed_vyre_program.as_ref().map(|source| source.signature_authenticated);
         #[cfg(feature = "gpu")]
         let packed_gpu_artifact = if let Some(source) = packed_vyre_program {
             let selected = selected_backend
@@ -1100,7 +1099,13 @@ impl CompiledScanner {
         let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
         #[cfg(feature = "gpu")]
         let quantized_confidence_authenticated = selected_backend.map_or(true, |backend| {
-            !backend.is_gpu() || (packed_confidence_authenticated && packed_gpu_artifact.is_some())
+            if !backend.is_gpu() {
+                true
+            } else if let Some(signature_authenticated) = packed_confidence_authentication {
+                signature_authenticated && packed_gpu_artifact.is_some()
+            } else {
+                validate_live_detector_corpus
+            }
         });
         #[cfg(not(feature = "gpu"))]
         let quantized_confidence_authenticated = true;

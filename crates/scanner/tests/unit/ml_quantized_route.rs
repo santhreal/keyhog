@@ -31,6 +31,23 @@ fn quantized_cpu_route_matches_fixed_point_oracle_and_cpu_owned_policy() {
     );
 }
 
+/// WHY: a diagnostic GPU route compiled from a validated live detector corpus
+/// has no execution pack to authenticate, but must still use the build-validated
+/// embedded quantized model instead of leaving every ML-enabled batch unscanned.
+#[cfg(feature = "gpu")]
+#[test]
+fn direct_gpu_route_authenticates_embedded_quantized_artifact() {
+    let scanner = crate::CompiledScanner::compile_for_backend(
+        Vec::new(),
+        crate::hw_probe::ScanBackend::GpuWgpu,
+    )
+    .expect("direct GPU scanner compiles");
+    assert!(
+        scanner.quantized_confidence_authenticated,
+        "validated live detector compiles authenticate the embedded quantized model"
+    );
+}
+
 /// WHY: a GPU-selected execution pack without the model binding must not
 /// silently run the floating-point CPU scorer and claim the selected route.
 #[cfg(feature = "gpu")]
