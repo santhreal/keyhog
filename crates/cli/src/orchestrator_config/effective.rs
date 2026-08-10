@@ -446,6 +446,10 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         "tuning_gpu_recall_floor = {}\n",
         tuning.gpu_recall_floor
     ));
+    out.push_str(&format!(
+        "tuning_chunk_lane_threshold = {}\n",
+        tuning.chunk_lane_threshold
+    ));
     out.push_str(&format!("known_prefixes = {}\n", s.known_prefixes.len()));
     out.push_str(&format!("secret_keywords = {}\n", s.secret_keywords.len()));
     out.push_str(&format!("test_keywords = {}\n", s.test_keywords.len()));
@@ -745,6 +749,10 @@ fn hash_scanner_tuning(h: &mut StableHasher, tuning: &keyhog_scanner::ScannerTun
         tuning.fallback_localizer,
     );
     h.field_bool("scanner_tuning.gpu_recall_floor", tuning.gpu_recall_floor);
+    h.field_usize(
+        "scanner_tuning.chunk_lane_threshold",
+        tuning.chunk_lane_threshold,
+    );
 }
 
 fn hash_source_limits(h: &mut StableHasher, limits: keyhog_sources::SourceLimits) {

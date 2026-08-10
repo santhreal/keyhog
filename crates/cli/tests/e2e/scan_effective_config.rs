@@ -905,7 +905,8 @@ fn config_effective_prints_scanner_tuning_from_toml() {
          confirmed_suffix_gate = false\n\
          no_candidate_gate = false\n\
          fallback_localizer = true\n\
-         gpu_recall_floor = true\n",
+         gpu_recall_floor = true\n\
+         chunk_lane_threshold = 32768\n",
     );
 
     assert_eq!(code, Some(0), "stderr={stderr}");
@@ -924,6 +925,7 @@ fn config_effective_prints_scanner_tuning_from_toml() {
         "tuning_no_candidate_gate = false",
         "tuning_fallback_localizer = true",
         "tuning_gpu_recall_floor = true",
+        "tuning_chunk_lane_threshold = 32768",
     ] {
         assert!(
             stdout.contains(required),
@@ -971,6 +973,7 @@ fn config_effective_ignores_legacy_detection_tuning_env() {
         "tuning_confirmed_suffix_gate = true",
         "tuning_no_candidate_gate = true",
         "tuning_fallback_localizer = true",
+        "tuning_chunk_lane_threshold = 65536",
     ] {
         assert!(
             stdout.contains(required),
@@ -1372,7 +1375,8 @@ fn config_effective_rejects_invalid_config_enums_and_min_length() {
          fused_depth = 0\n\
          per_chunk_timeout_ms = 0\n\
          [tuning]\n\
-         hs_shard_target = 0\n",
+         hs_shard_target = 0\n\
+         chunk_lane_threshold = 0\n",
     );
 
     assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
@@ -1391,6 +1395,7 @@ fn config_effective_rejects_invalid_config_enums_and_min_length() {
         "[scan].fused_depth = 0",
         "[scan].per_chunk_timeout_ms = 0",
         "[tuning].hs_shard_target",
+        "[tuning].chunk_lane_threshold",
     ] {
         assert!(
             stderr.contains(required),

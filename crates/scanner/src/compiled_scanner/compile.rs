@@ -111,6 +111,10 @@ impl CompiledScanner {
         Self::compile_for_backend(detectors, crate::hw_probe::ScanBackend::CpuFallback)
     }
 
+    /// Compile using the resolved scanner runtime GPU policy.
+    pub fn compile_with_runtime_policy(detectors: Vec<DetectorSpec>) -> Result<Self> {
+        Self::compile_with_gpu_policy(detectors, GpuInitPolicy::FromRuntimePolicy)
+    }
     /// Compile only the backend selected before scanner construction.
     pub fn compile_for_backend(
         detectors: Vec<DetectorSpec>,
@@ -529,6 +533,9 @@ impl CompiledScanner {
         packed_decoder_plan: Option<(Arc<crate::decode::CompiledDecoderPlan>, [u8; 32])>,
         mut packed_detector_plan: Option<PackedDetectorPlanPrelude<'_>>,
     ) -> Result<Self> {
+        tuning_config
+            .validate()
+            .map_err(crate::error::ScanError::Config)?;
         if packed_detector_plan.is_none() {
             if packed_state.is_none() {
                 super::validation::validate_detector_corpus(&detectors)
@@ -1365,6 +1372,10 @@ impl CompiledScanner {
             ),
         };
 
+        scanner
+            .tuning
+            .apply_config(tuning_config)
+            .map_err(crate::error::ScanError::Config)?;
         Ok(scanner)
     }
 
@@ -1376,9 +1387,26 @@ impl CompiledScanner {
     }
 
     /// Apply explicit performance-route tuning to this compiled scanner.
+    ///
+    /// This compatibility method preserves the original infallible builder
+    /// signature. Use [`Self::try_with_tuning_config`] when tuning comes from an
+    /// untrusted or dynamically constructed source.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `config` contains a value the runtime cannot represent.
+    #[deprecated(note = "use try_with_tuning_config to handle invalid tuning")]
     pub fn with_tuning_config(self, config: ScannerTuningConfig) -> Self {
-        self.tuning.apply_config(&config);
-        self
+        self.try_with_tuning_config(config)
+            .unwrap_or_else(|error| panic!("invalid scanner tuning configuration: {error}"))
+    }
+
+    /// Validate and apply explicit performance-route tuning.
+    pub fn try_with_tuning_config(self, config: ScannerTuningConfig) -> Result<Self> {
+        self.tuning
+            .apply_config(&config)
+            .map_err(crate::error::ScanError::Config)?;
+        Ok(self)
     }
 }
 

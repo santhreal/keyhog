@@ -471,13 +471,9 @@ pub(crate) fn find_classified_entropy_secrets_with_precomputed_keywords_and_poli
         line_offsets.len() >= lines.len(),
         "entropy line offsets must cover every split line"
     );
-    let keyword_line_ids: Vec<u32> = keyword_lines
+    let keyword_line_ids: Vec<usize> = keyword_lines
         .iter()
-        .map(|(line_idx, _)| match u32::try_from(*line_idx) {
-            Ok(line_id) => line_id,
-            // LAW10: fail-closed; line count exceeding u32::MAX is an invalid input boundary for u32 line indexing.
-            Err(_) => panic!("entropy input exceeds the checked u32 line-index boundary"),
-        })
+        .map(|(line_idx, _)| *line_idx)
         .collect();
     find_classified_entropy_secrets_from_lines(
         &BorrowedEntropyLines {
@@ -502,7 +498,7 @@ pub(crate) fn find_classified_entropy_secrets_with_precomputed_keywords_and_poli
 pub(crate) fn find_classified_entropy_secrets_indexed(
     text: &str,
     line_index: &crate::context::LineContextIndex,
-    keyword_line_ids: &[u32],
+    keyword_line_ids: &[usize],
     min_length: usize,
     context_lines: usize,
     entropy_threshold: f64,
@@ -536,7 +532,7 @@ pub(crate) fn find_classified_entropy_secrets_indexed(
 #[allow(clippy::too_many_arguments)]
 fn find_classified_entropy_secrets_from_lines(
     lines: &impl EntropyLines,
-    keyword_line_ids: &[u32],
+    keyword_line_ids: &[usize],
     min_length: usize,
     context_lines: usize,
     entropy_threshold: f64,
@@ -580,10 +576,14 @@ fn find_classified_entropy_secrets_from_lines(
     matches
 }
 
+pub(crate) fn keyword_line_ids_contain(keyword_line_ids: &[usize], line_index: usize) -> bool {
+    keyword_line_ids.binary_search(&line_index).is_ok()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn scan_keyword_contexts(
     lines: &impl EntropyLines,
-    keyword_line_ids: &[u32],
+    keyword_line_ids: &[usize],
     min_length: usize,
     context_lines: usize,
     entropy_threshold: f64,
@@ -595,8 +595,7 @@ fn scan_keyword_contexts(
     skip_lines: Option<&std::collections::HashSet<usize>>,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) {
-    for &keyword_line_id in keyword_line_ids {
-        let keyword_line_index = keyword_line_id as usize;
+    for &keyword_line_index in keyword_line_ids {
         let Some(keyword_line) = lines.line(keyword_line_index) else {
             continue;
         };
@@ -615,12 +614,9 @@ fn scan_keyword_contexts(
             .saturating_add(1)
             .min(lines.len());
         for line_idx in start..end {
-            let line_id = match u32::try_from(line_idx) {
-                Ok(line_id) => line_id,
-                // LAW10: fail-closed; line count exceeding u32::MAX is an invalid input boundary for u32 line indexing.
-                Err(_) => panic!("entropy input exceeds the checked u32 line-index boundary"),
-            };
-            if line_idx != keyword_line_index && keyword_line_ids.binary_search(&line_id).is_ok() {
+            if line_idx != keyword_line_index
+                && keyword_line_ids_contain(keyword_line_ids, line_idx)
+            {
                 continue;
             }
             if skip_lines.is_some_and(|skip| skip.contains(&line_idx)) {
@@ -708,7 +704,7 @@ pub(super) const BYTE_CLASS: [u8; 256] = {
 
 fn scan_keyword_free_candidates(
     lines: &impl EntropyLines,
-    keyword_line_ids: &[u32],
+    keyword_line_ids: &[usize],
     entropy_threshold: f64,
     keyword_free_threshold: Option<f64>,
     seen: &mut std::collections::HashSet<String>,
@@ -764,11 +760,7 @@ fn scan_keyword_free_candidates(
     let dogfood_enabled = crate::telemetry::is_dogfood_enabled();
     let mut keyword_line_cursor = 0usize;
     for line_idx in 0..lines.len() {
-        let line_id = match u32::try_from(line_idx) {
-            Ok(line_id) => line_id,
-            // LAW10: fail-closed; line count exceeding u32::MAX is an invalid input boundary for u32 line indexing.
-            Err(_) => panic!("entropy input exceeds the checked u32 line-index boundary"),
-        };
+
         let Some(line) = lines.line(line_idx) else {
             continue;
         };
@@ -777,12 +769,12 @@ fn scan_keyword_free_candidates(
             KeywordFreeLineScope::KeywordAssignments
         ) {
             while keyword_line_cursor < keyword_line_ids.len()
-                && keyword_line_ids[keyword_line_cursor] < line_id
+                && keyword_line_ids[keyword_line_cursor] < line_idx
             {
                 keyword_line_cursor += 1;
             }
             if keyword_line_cursor == keyword_line_ids.len()
-                || keyword_line_ids[keyword_line_cursor] != line_id
+                || keyword_line_ids[keyword_line_cursor] != line_idx
             {
                 continue;
             }
@@ -917,16 +909,15 @@ fn scan_keyword_free_candidates(
 pub(crate) fn has_lower_dash_app_password_candidate_indexed(
     text: &str,
     line_index: &crate::context::LineContextIndex,
-    keyword_line_ids: &[u32],
+    keyword_line_ids: &[usize],
     config: &crate::ScannerConfig,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
     excluded_lines: &std::collections::HashSet<usize>,
 ) -> bool {
     has_lower_dash_app_password_candidate_from_lines(
-        keyword_line_ids.iter().filter_map(|&line_id| {
-            let line_idx = line_id as usize;
-            line_index.line(text, line_idx).map(|line| (line_idx, line))
-        }),
+        keyword_line_ids
+            .iter()
+            .filter_map(|&line_idx| line_index.line(text, line_idx).map(|line| (line_idx, line))),
         config,
         active_policy,
         excluded_lines,

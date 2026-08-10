@@ -16,20 +16,44 @@ use keyhog_core::{Calibration, ScanConfig};
 /// environment.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct ScannerTuningConfig {
+    /// Use Hyperscan instead of the portable RegexSet for the always-active
+    /// phase-two prefilter when the compiled scanner supports it.
     pub phase2_hs: Option<bool>,
+    /// Maximum non-ASCII chunk size routed through the Hyperscan phase-two
+    /// prefilter. Larger chunks use the portable localized RegexSet path.
     pub hs_prefilter_max_len: Option<usize>,
+    /// Target number of patterns per compiled Hyperscan shard.
     pub hs_shard_target: Option<usize>,
+    /// Localize phase-two patterns through their shared required anchors before
+    /// running full extraction regexes.
     pub phase2_anchor: Option<bool>,
+    /// Skip homoglyph variants that cannot match a pure-ASCII chunk.
     pub homoglyph_gate: Option<bool>,
+    /// Omit homoglyph-only patterns from the ASCII prefilter program.
     pub homoglyph_ascii_skip: Option<bool>,
+    /// Reverse phase-two extraction order for deterministic-order diagnostics.
     pub fallback_reverse: Option<bool>,
+    /// Truncate unbounded prefilter repetitions to sound fixed-length marking
+    /// supersets; full extraction still validates each candidate.
     pub prefilter_truncate: Option<bool>,
+    /// Skip a phase-two batch when every required prefix literal is absent.
     pub fallback_prefix_gate: Option<bool>,
+    /// Restrict decoded phase-two scans to the newly decoded span instead of
+    /// rescanning the surrounding parent context.
     pub decode_focus: Option<bool>,
+    /// Skip confirmed patterns when every required suffix literal is absent.
     pub confirmed_suffix_gate: Option<bool>,
+    /// Skip always-active phase-two work after proving that the chunk has no
+    /// candidate for any member of the batch.
     pub no_candidate_gate: Option<bool>,
+    /// Localize eligible plain phase-two patterns before full extraction.
     pub fallback_localizer: Option<bool>,
+    /// Compute the full CPU trigger floor beside GPU region-presence evidence
+    /// for parity diagnostics.
     pub gpu_recall_floor: Option<bool>,
+    /// Maximum chunk size grouped into sequential small-file work lanes. Larger
+    /// chunks are scheduled as independent parallel work items.
+    pub chunk_lane_threshold: Option<usize>,
 }
 
 impl ScannerTuningConfig {
@@ -60,7 +84,30 @@ impl ScannerTuningConfig {
     pub(crate) const NO_CANDIDATE_GATE_DEFAULT: bool = true;
     pub(crate) const FALLBACK_LOCALIZER_DEFAULT: bool = true;
     pub(crate) const GPU_RECALL_FLOOR_DEFAULT: bool = false;
+    pub(crate) const CHUNK_LANE_THRESHOLD_DEFAULT: usize =
+        crate::engine::batch_topology::SMALL_CHUNK_MAX_BYTES;
+    /// Smallest valid small-file work-lane threshold, in bytes.
+    pub const CHUNK_LANE_THRESHOLD_MIN: usize = 1;
+    /// Largest valid small-file work-lane threshold, in bytes.
+    pub const CHUNK_LANE_THRESHOLD_MAX: usize = crate::types::MAX_SCAN_CHUNK_BYTES;
 
+    /// Reject tuning outside the bounded runtime scheduling contract.
+    pub fn validate(&self) -> Result<(), String> {
+        if let Some(threshold) = self.chunk_lane_threshold {
+            if !(Self::CHUNK_LANE_THRESHOLD_MIN..=Self::CHUNK_LANE_THRESHOLD_MAX)
+                .contains(&threshold)
+            {
+                return Err(format!(
+                    "chunk_lane_threshold must be between {} and {} bytes, got {threshold}",
+                    Self::CHUNK_LANE_THRESHOLD_MIN,
+                    Self::CHUNK_LANE_THRESHOLD_MAX
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Resolve every absent override to its compiled default.
     pub fn effective(&self) -> ResolvedScannerTuningConfig {
         ResolvedScannerTuningConfig {
             fallback_hs: self.fallback_hs_effective(),
@@ -77,6 +124,7 @@ impl ScannerTuningConfig {
             no_candidate_gate: self.no_candidate_gate_effective(),
             fallback_localizer: self.fallback_localizer_effective(),
             gpu_recall_floor: self.gpu_recall_floor_effective(),
+            chunk_lane_threshold: self.chunk_lane_threshold_effective(),
         }
     }
 
@@ -145,24 +193,45 @@ impl ScannerTuningConfig {
         self.gpu_recall_floor
             .unwrap_or(Self::GPU_RECALL_FLOOR_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
+    pub(crate) fn chunk_lane_threshold_effective(&self) -> usize {
+        self.chunk_lane_threshold
+            .unwrap_or(Self::CHUNK_LANE_THRESHOLD_DEFAULT)
+    }
 }
 
+/// Fully resolved scanner tuning used for route identity and diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ResolvedScannerTuningConfig {
+    /// Whether the Hyperscan always-active phase-two prefilter is enabled.
     pub fallback_hs: bool,
+    /// Maximum non-ASCII chunk size routed through the Hyperscan prefilter.
     pub hs_prefilter_max_len: usize,
+    /// Target pattern count per compiled Hyperscan shard.
     pub hs_shard_target: usize,
+    /// Whether shared-anchor phase-two localization is enabled.
     pub fallback_anchor: bool,
+    /// Whether the pure-ASCII homoglyph gate is enabled.
     pub homoglyph_gate: bool,
+    /// Whether homoglyph-only patterns are omitted on pure-ASCII input.
     pub homoglyph_ascii_skip: bool,
+    /// Whether diagnostic phase-two extraction order is reversed.
     pub fallback_reverse: bool,
+    /// Whether unbounded prefilter repetitions use sound truncation.
     pub prefilter_truncate: bool,
+    /// Whether batches with absent required prefixes are skipped.
     pub fallback_prefix_gate: bool,
+    /// Whether decoded scans are restricted to the newly decoded span.
     pub decode_focus: bool,
+    /// Whether confirmed patterns with absent required suffixes are skipped.
     pub confirmed_suffix_gate: bool,
+    /// Whether proven no-candidate chunks skip always-active phase two.
     pub no_candidate_gate: bool,
+    /// Whether eligible plain phase-two patterns use localized extraction.
     pub fallback_localizer: bool,
+    /// Whether GPU region presence is paired with the full CPU trigger floor.
     pub gpu_recall_floor: bool,
+    /// Maximum chunk size grouped into a sequential small-file work lane.
+    pub chunk_lane_threshold: usize,
 }
 
 /// Recall-equivalent execution choices resolved for one scan request.

@@ -394,95 +394,216 @@ impl CompiledScanner {
                 .collect::<Vec<std::sync::OnceLock<Result<Option<std::sync::Arc<[u64]>>, String>>>>(
                 )
         });
-        let lane_width = super::batch_topology::coalesced_lane_width(chunks);
-        let triggers = if lane_width == 1 {
-            chunks
-                .par_iter()
-                .enumerate()
-                .map(|(chunk_index, chunk)| {
-                    let _profile_context =
-                        profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
-                    let data = chunk.data.as_bytes();
-                    let admission =
-                        match admission_plan.and_then(|plan| plan.admission_for(chunk_index)) {
-                            Some(admission) => admission,
-                            None => self.phase1_admission(data),
-                        };
-                    if admission != super::Phase1Admission::Admitted {
-                        return Ok(None);
-                    }
-                    let reusable =
-                        admission_plan
-                            .zip(reusable_triggers.as_ref())
-                            .and_then(|(plan, rows)| {
-                                let row = plan.payload_evidence_row_for(chunk_index)?;
-                                rows.get(row)
-                            });
-                    if let Some(reusable) = reusable {
-                        let res = reusable.get_or_init(|| {
-                            self.reusable_simd_triggers
-                                .lock()
-                                .get_or_compute(&chunk.data, || {
-                                    self.compute_one_coalesced_simd_trigger(
-                                        data,
-                                        prefilter,
-                                        ac_len,
-                                        words_needed,
-                                    )
-                                })
-                        });
-                        return res
-                            .as_ref()
-                            .map(|opt| opt.as_ref().map(|arc| arc.as_ref().to_vec()))
-                            .map_err(Clone::clone);
-                    }
-                    self.compute_one_coalesced_simd_trigger(data, prefilter, ac_len, words_needed)
+        let representative_indices = admission_plan.map(|plan| {
+            let mut representatives = vec![None; plan.payload_evidence_row_count()];
+            for chunk_index in 0..chunks.len() {
+                if plan.admission_for(chunk_index) != Some(super::Phase1Admission::Admitted) {
+                    continue;
+                }
+                let Some(row) = plan.payload_evidence_row_for(chunk_index) else {
+                    continue;
+                };
+                if let Some(representative) = representatives.get_mut(row) {
+                    representative.get_or_insert(chunk_index);
+                }
+            }
+            representatives
+        });
+        if let (Some(rows), Some(representatives)) =
+            (reusable_triggers.as_ref(), representative_indices.as_ref())
+        {
+            let mut cache = self.reusable_simd_triggers.lock();
+            for (row, representative) in representatives.iter().enumerate() {
+                let Some(chunk_index) = *representative else {
+                    continue;
+                };
+                if let Some(cached) = cache.get(&chunks[chunk_index].data) {
+                    let _ = rows[row].set(Ok(cached));
+                }
+            }
+        }
+        let is_representative = |chunk_index: usize| {
+            admission_plan
+                .and_then(|plan| plan.payload_evidence_row_for(chunk_index))
+                .and_then(|row| {
+                    representative_indices
+                        .as_ref()
+                        .and_then(|representatives| representatives.get(row))
+                        .copied()
+                        .flatten()
                 })
-                .collect::<Result<Vec<_>, String>>()?
-        } else {
-            chunks
-                .par_chunks(lane_width)
-                .enumerate()
-                .map(|(lane_index, lane)| {
-                    let _profile_context =
-                        profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
-                    let base = lane_index * lane_width;
-                    let admitted = |offset: usize, data: &[u8]| {
-                        admission_plan
-                            .and_then(|plan| plan.admission_for(base + offset))
-                            // LAW10: missing cached admission recomputes the full production admission result.
-                            .unwrap_or_else(|| self.phase1_admission(data))
-                            == super::Phase1Admission::Admitted
-                    };
-                    let mut lane_triggers = vec![None; lane.len()];
-                    prefilter.scanner().scan_many_each_result(
-                        lane.iter().enumerate().filter_map(|(offset, chunk)| {
-                            let data = chunk.data.as_bytes();
-                            admitted(offset, data).then_some((offset, data))
-                        }),
-                        |offset, hs_id| {
-                            let scratch = lane_triggers[offset]
-                                .get_or_insert_with(|| vec![0u64; words_needed]);
-                            mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
-                        },
-                    )?;
-                    for (offset, chunk) in lane.iter().enumerate() {
-                        let data = chunk.data.as_bytes();
-                        if admitted(offset, data) {
-                            prefilter.for_each_recovery_match(data, |pattern_index| {
-                                let scratch = lane_triggers[offset]
-                                    .get_or_insert_with(|| vec![0u64; words_needed]);
-                                self.mark_triggered_pattern(scratch, pattern_index);
-                            });
-                        }
-                    }
-                    Ok(lane_triggers)
-                })
-                .collect::<Result<Vec<Vec<Option<Vec<u64>>>>, String>>()?
-                .into_iter()
-                .flatten()
-                .collect()
+                .is_none_or(|representative| representative == chunk_index)
         };
+        let compute_single_trigger = |chunk_index: usize, chunk: &keyhog_core::Chunk| {
+            let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+            let data = chunk.data.as_bytes();
+            let admission = match admission_plan.and_then(|plan| plan.admission_for(chunk_index)) {
+                Some(admission) => admission,
+                None => self.phase1_admission(data),
+            };
+            if admission != super::Phase1Admission::Admitted {
+                return Ok(None);
+            }
+            let reusable =
+                admission_plan
+                    .zip(reusable_triggers.as_ref())
+                    .and_then(|(plan, rows)| {
+                        let row = plan.payload_evidence_row_for(chunk_index)?;
+                        rows.get(row)
+                    });
+            if let Some(reusable) = reusable {
+                return reusable
+                    .get_or_init(|| {
+                        self.reusable_simd_triggers
+                            .lock()
+                            .get_or_compute(&chunk.data, || {
+                                self.compute_one_coalesced_simd_trigger(
+                                    data,
+                                    prefilter,
+                                    ac_len,
+                                    words_needed,
+                                )
+                            })
+                    })
+                    .as_ref()
+                    .map(|triggers| {
+                        triggers
+                            .as_ref()
+                            .map(|row| row.as_ref().to_vec())
+                    })
+                    .map_err(Clone::clone);
+            }
+            self.compute_one_coalesced_simd_trigger(data, prefilter, ac_len, words_needed)
+        };
+
+        let threshold = self.tuning.chunk_lane_threshold();
+        let workers = rayon::current_num_threads().max(1);
+
+        let triggers =
+            if chunks.len() <= workers || chunks.iter().all(|chunk| chunk.data.len() > threshold) {
+                chunks
+                    .par_iter()
+                    .enumerate()
+                    .map(|(chunk_index, chunk)| compute_single_trigger(chunk_index, chunk))
+                    .collect::<Result<Vec<_>, String>>()?
+            } else {
+                let work_lanes = super::batch_topology::coalesced_work_lanes(chunks, threshold);
+                let lane_triggers: Vec<Vec<(usize, Option<Vec<u64>>)>> = work_lanes
+                    .par_iter()
+                    .map(|lane| match lane {
+                        super::batch_topology::CoalescedLane::Large(index) => {
+                            if is_representative(*index) {
+                                Ok(vec![(
+                                    *index,
+                                    compute_single_trigger(*index, &chunks[*index])?,
+                                )])
+                            } else {
+                                Ok(vec![(*index, None)])
+                            }
+                        }
+                        super::batch_topology::CoalescedLane::Small(indices) => {
+                            let _profile_context =
+                                profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+                            if admission_plan.is_some() {
+                                return indices
+                                    .iter()
+                                    .map(|&index| {
+                                        let trigger = if is_representative(index) {
+                                            compute_single_trigger(index, &chunks[index])?
+                                        } else {
+                                            None
+                                        };
+                                        Ok((index, trigger))
+                                    })
+                                    .collect::<Result<Vec<_>, String>>();
+                            }
+                            let admitted = |index: usize, data: &[u8]| {
+                                admission_plan
+                                    .and_then(|plan| plan.admission_for(index))
+                                    .unwrap_or_else(|| self.phase1_admission(data))
+                                    == super::Phase1Admission::Admitted
+                            };
+                            let mut lane_triggers = vec![None; indices.len()];
+                            let should_compute = |index: usize, data: &[u8]| {
+                                if !admitted(index, data) || !is_representative(index) {
+                                    return false;
+                                }
+                                admission_plan
+                                    .zip(reusable_triggers.as_ref())
+                                    .and_then(|(plan, rows)| {
+                                        let row = plan.payload_evidence_row_for(index)?;
+                                        rows.get(row)
+                                    })
+                                    .is_none_or(|reusable| reusable.get().is_none())
+                            };
+                            #[cfg(debug_assertions)]
+                            {
+                                let scanned_bytes = indices
+                                    .iter()
+                                    .filter_map(|&index| {
+                                        let data = chunks[index].data.as_bytes();
+                                        should_compute(index, data).then_some(data.len())
+                                    })
+                                    .fold(0usize, usize::saturating_add);
+                                self.phase1_trigger_scanned_bytes.fetch_add(
+                                    u64::try_from(scanned_bytes).unwrap_or(u64::MAX),
+                                    std::sync::atomic::Ordering::Relaxed,
+                                );
+                            }
+                            prefilter.scanner().scan_many_each_result(
+                                indices
+                                    .iter()
+                                    .enumerate()
+                                    .filter_map(|(lane_offset, &index)| {
+                                        let data = chunks[index].data.as_bytes();
+                                        should_compute(index, data).then_some((lane_offset, data))
+                                    }),
+                                |lane_offset, hs_id| {
+                                    let scratch = lane_triggers[lane_offset]
+                                        .get_or_insert_with(|| vec![0u64; words_needed]);
+                                    mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
+                                },
+                            )?;
+                            for (lane_offset, &index) in indices.iter().enumerate() {
+                                let data = chunks[index].data.as_bytes();
+                                if should_compute(index, data) {
+                                    prefilter.for_each_recovery_match(data, |pattern_index| {
+                                        let scratch = lane_triggers[lane_offset]
+                                            .get_or_insert_with(|| vec![0u64; words_needed]);
+                                        self.mark_triggered_pattern(scratch, pattern_index);
+                                    });
+                                }
+                            }
+                            Ok(indices.iter().copied().zip(lane_triggers).collect())
+                        }
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+
+                let mut combined = vec![None; chunks.len()];
+                for lane in lane_triggers {
+                    for (index, trigger) in lane {
+                        combined[index] = trigger;
+                    }
+                }
+                if let (Some(plan), Some(rows)) = (admission_plan, reusable_triggers.as_ref()) {
+                    for (index, trigger) in combined.iter_mut().enumerate() {
+                        if plan.admission_for(index) != Some(super::Phase1Admission::Admitted) {
+                            continue;
+                        }
+                        let Some(row) = plan.payload_evidence_row_for(index) else {
+                            continue;
+                        };
+                        let cached = rows
+                            .get(row)
+                            .and_then(std::sync::OnceLock::get)
+                            .ok_or_else(|| {
+                                format!("missing reusable SIMD trigger row {row} for chunk {index}")
+                            })?;
+                        *trigger = cached.clone()?;
+                    }
+                }
+                combined
+            };
 
         if tracing::enabled!(tracing::Level::INFO) {
             let hit_count = triggers.iter().filter(|t| t.is_some()).count();
@@ -865,12 +986,9 @@ impl CompiledScanner {
                                     prepared,
                                     &triggered,
                                     None,
-                                    phase1_plan
-                                        .and_then(|plan| {
-                                            plan.confirmed_patterns_absence_for(chunk_index)
-                                        })
-                                        // LAW10: missing confirmed-pattern absence evidence keeps confirmed matching enabled.
-                                        .unwrap_or(false),
+                                    // Plan absence is scalar-trigger evidence. SIMD-triggered rows
+                                    // must execute confirmation for their producer's candidate set.
+                                    false,
                                     phase1_plan
                                         .and_then(|plan| {
                                             plan.entropy_absence_for(

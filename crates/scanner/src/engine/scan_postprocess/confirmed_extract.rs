@@ -25,6 +25,7 @@ thread_local! {
 /// describe exactly the same sets as the structures they replace, so the set of
 /// patterns admitted to extraction is unchanged; only allocation and probe cost
 /// differ.
+pub(crate) const HOT_DIRECT_OFFSETS_CEILING: usize = 4096;
 #[derive(Default)]
 struct ConfirmedScratch {
     /// One bit per `ac_map` index, set when that pattern is in this chunk's
@@ -33,9 +34,17 @@ struct ConfirmedScratch {
     /// One bit per `suffix_gate_ac` literal id, set when that literal occurs in
     /// this chunk.
     suffix: Vec<u64>,
+    /// Set of `(detector_index, offset)` pairs already emitted by earlier direct lanes.
+    hot_direct_offsets: std::collections::HashSet<(usize, usize)>,
 }
 
 impl ConfirmedScratch {
+    fn reset_hot_direct_offsets(&mut self) {
+        self.hot_direct_offsets.clear();
+        if self.hot_direct_offsets.capacity() > HOT_DIRECT_OFFSETS_CEILING {
+            self.hot_direct_offsets = std::collections::HashSet::new();
+        }
+    }
     /// Rebuild the active-pattern bitset for one chunk. `clear` + `resize`
     /// zeroes in place and keeps the capacity from the previous chunk.
     fn load_active(&mut self, pattern_count: usize, confirmed_patterns: &[usize]) {
@@ -131,6 +140,11 @@ impl CompiledScanner {
         } else {
             false
         };
+        let has_hot_direct_offsets = self.populate_hot_direct_emitted_offsets(
+            confirmed_patterns,
+            scan_state,
+            &mut scratch_owned.hot_direct_offsets,
+        );
         // Freeze the scratch for the rest of the pass: every use below is a
         // read, so the closures share one immutable borrow.
         let scratch = &scratch_owned;
@@ -145,7 +159,6 @@ impl CompiledScanner {
                 _ => true,
             }
         };
-        let hot_direct_offsets = self.hot_direct_emitted_offsets(confirmed_patterns, scan_state);
         if let Some(anchor_index) = &self.confirmed_anchor_index {
             let has_active_anchored = confirmed_patterns
                 .iter()
@@ -194,7 +207,8 @@ impl CompiledScanner {
                         if let Some(entry) = self.ac_map.get(pat_idx) {
                             let mut filtered_group = Vec::new();
                             let group = if self.is_hot_confirmed_pattern(pat_idx) {
-                                if let Some(offsets) = hot_direct_offsets.as_ref() {
+                                if has_hot_direct_offsets {
+                                    let offsets = &scratch_owned.hot_direct_offsets;
                                     let detector_index = entry.detector_index;
                                     filtered_group.reserve(group.len());
                                     filtered_group.extend(group.iter().copied().filter(
@@ -326,23 +340,24 @@ impl CompiledScanner {
                 }
             }
         }
+        scratch_owned.reset_hot_direct_offsets();
         CONFIRMED_SCRATCH.with(|cell| cell.replace(scratch_owned));
     }
 
-    fn hot_direct_emitted_offsets(
+    fn populate_hot_direct_emitted_offsets(
         &self,
         confirmed_patterns: &[usize],
         scan_state: &ScanState,
-    ) -> Option<std::collections::HashSet<(usize, usize)>> {
-        // The map below hashes one detector-id string per hot triggered
-        // pattern, and the walk that follows can only find an offset if some
-        // earlier lane already produced a match. On a chunk where nothing was
-        // produced (the overwhelming majority) the result is provably `None`,
-        // so settle that before paying for the map.
+        offsets: &mut std::collections::HashSet<(usize, usize)>,
+    ) -> bool {
+        offsets.clear();
+        if offsets.capacity() > HOT_DIRECT_OFFSETS_CEILING {
+            *offsets = std::collections::HashSet::new();
+        }
         let mut produced_any = false;
         scan_state.for_each_produced_match(|_| produced_any = true);
         if !produced_any {
-            return None;
+            return false;
         }
         let detector_by_id: std::collections::HashMap<&str, usize> = confirmed_patterns
             .iter()
@@ -358,25 +373,32 @@ impl CompiledScanner {
             })
             .collect();
         if detector_by_id.is_empty() {
-            return None;
+            return false;
         }
-        let mut offsets = std::collections::HashSet::new();
         scan_state.for_each_produced_match(|produced| {
             if let Some(&detector_index) = detector_by_id.get(produced.detector_id) {
                 offsets.insert((detector_index, produced.offset));
             }
         });
-        (!offsets.is_empty()).then_some(offsets)
+        !offsets.is_empty()
     }
 
-    fn is_hot_confirmed_pattern(&self, pat_idx: usize) -> bool {
-        match self.hot_confirmed_by_pattern.get(pat_idx) {
-            Some(is_hot) => *is_hot,
-            None => {
-                panic!(
-                    "internal invariant violation: missing hot-confirmed detector classification for pattern index {pat_idx}"
-                );
-            }
-        }
+    pub(crate) fn is_hot_confirmed_pattern(&self, pat_idx: usize) -> bool {
+        self.hot_confirmed_by_pattern
+            .get(pat_idx)
+            .copied()
+            .unwrap_or(false)
     }
+}
+pub(crate) fn exercise_confirmed_offsets_scratch_for_test(entries: usize) -> usize {
+    CONFIRMED_SCRATCH.with(|cell| {
+        let mut scratch = cell.take();
+        scratch
+            .hot_direct_offsets
+            .extend((0..entries).map(|index| (index, index)));
+        scratch.reset_hot_direct_offsets();
+        let capacity = scratch.hot_direct_offsets.capacity();
+        cell.replace(scratch);
+        capacity
+    })
 }

@@ -4,10 +4,11 @@
 //! folder contract (KH-GAP-013 `entropy_keywords_inline_tests_in_src`).
 
 use keyhog_scanner::testing::{
+    find_keyword_assignment_line_ids_for_test,
     is_import_like_prefix_for_test as is_import_like_prefix,
     is_keyword_assignment_line_for_test as is_keyword_assignment_line,
     is_likely_innocuous_line_for_test as is_likely_innocuous_line,
-    key_material_compact_keywords_for_test,
+    key_material_compact_keywords_for_test, keyword_line_ids_contain_for_test,
     normalized_assignment_keyword_is_credential_for_test as normalized_assignment_keyword_is_credential,
 };
 
@@ -88,4 +89,21 @@ fn credential_assignment_surface_preserves_boundaries_across_short_and_long_keys
     ] {
         assert!(!is_keyword_assignment_line(line, &[]), "{line:?}");
     }
+}
+#[test]
+fn keyword_line_ids_preserve_every_usize_boundary() {
+    let text = "line0 = non_keyword\nDB_PASS = hunter2\nline2 = non_keyword\n";
+    assert_eq!(find_keyword_assignment_line_ids_for_test(text), vec![1]);
+
+    let line_ids: Vec<usize> = [u32::MAX as u64, u32::MAX as u64 + 1, usize::MAX as u64]
+        .into_iter()
+        .filter_map(|line_id| usize::try_from(line_id).ok())
+        .collect();
+    for &line_id in &line_ids {
+        assert!(keyword_line_ids_contain_for_test(&line_ids, line_id));
+    }
+    assert!(!keyword_line_ids_contain_for_test(
+        &line_ids,
+        u32::MAX as usize - 1
+    ));
 }

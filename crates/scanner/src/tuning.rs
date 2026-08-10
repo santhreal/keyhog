@@ -92,6 +92,8 @@ pub(crate) struct ScannerTuning {
     phase2_plain_localizer: AtomicU8,
     /// Override for the GPU region-presence full CPU recall floor.
     gpu_recall_floor: AtomicU8,
+    /// Override for chunk lane threshold sweeping (0 = compiled default).
+    chunk_lane_threshold: AtomicUsize,
 }
 
 impl Default for ScannerTuning {
@@ -117,11 +119,13 @@ impl ScannerTuning {
             no_candidate_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
             phase2_plain_localizer: AtomicU8::new(BoolOverride::Default.as_byte()),
             gpu_recall_floor: AtomicU8::new(BoolOverride::Default.as_byte()),
+            chunk_lane_threshold: AtomicUsize::new(0),
         }
     }
 
     /// Apply explicit resolved config overrides to this scanner instance.
-    pub(crate) fn apply_config(&self, config: &ScannerTuningConfig) {
+    pub(crate) fn apply_config(&self, config: &ScannerTuningConfig) -> Result<(), String> {
+        config.validate()?;
         self.set_phase2_hs(config.phase2_hs);
         self.set_hs_prefilter_max_len(config.hs_prefilter_max_len);
         self.set_phase2_anchor_mode(config.phase2_anchor);
@@ -135,6 +139,8 @@ impl ScannerTuning {
         self.set_no_candidate_gate(config.no_candidate_gate);
         self.set_phase2_plain_localizer(config.fallback_localizer);
         self.set_gpu_recall_floor(config.gpu_recall_floor);
+        self.set_chunk_lane_threshold(config.chunk_lane_threshold);
+        Ok(())
     }
 
     /// Resolve every per-scanner tuning override once into a plain copyable
@@ -198,6 +204,22 @@ impl ScannerTuning {
     pub(crate) fn set_hs_prefilter_max_len(&self, threshold: Option<usize>) {
         self.hs_max_len
             .store(threshold.unwrap_or(usize::MAX), Relaxed); // LAW10: None is the documented compiled-default sentinel, not an error fallback.
+    }
+
+    // ── Chunk lane threshold ──────────────────────────────────────────────
+
+    /// Get the current configured chunk lane threshold for small file scanning.
+    pub(crate) fn chunk_lane_threshold(&self) -> usize {
+        match self.chunk_lane_threshold.load(Relaxed) {
+            0 => crate::engine::batch_topology::SMALL_CHUNK_MAX_BYTES,
+            val => val,
+        }
+    }
+
+    /// Force the validated chunk lane threshold for small-file scheduling.
+    pub(crate) fn set_chunk_lane_threshold(&self, threshold: Option<usize>) {
+        self.chunk_lane_threshold
+            .store(threshold.unwrap_or(0), Relaxed);
     }
 
     // ── Shared-anchor phase-2 localization ────────────────────────────────

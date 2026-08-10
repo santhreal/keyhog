@@ -52,15 +52,19 @@ fn accepted_fields(table: Option<&str>) -> BTreeSet<String> {
     fields
 }
 
+fn configuration_reference() -> String {
+    std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/src/reference/configuration.md"),
+    )
+    .expect("read the configuration reference")
+}
+
 /// The `.keyhog.toml` key column of the reference table, as `(table, key)`.
 /// A cell may hold several keys, an assignment example, or a dash for "no
 /// surface"; all three appear in the shipped table.
 fn documented_keys() -> BTreeSet<(Option<String>, String)> {
-    let reference = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../docs/src/reference/configuration.md"),
-    )
-    .expect("read the configuration reference");
+    let reference = configuration_reference();
 
     let mut keys = BTreeSet::new();
     for line in reference.lines() {
@@ -121,6 +125,35 @@ fn documented_config_keys_exist_in_the_schema() {
         unknown.is_empty(),
         "the configuration reference names keys the schema does not accept:\n{}",
         unknown.join("\n")
+    );
+}
+
+/// WHY: `[tuning]` fields affect runtime work selection and autoroute identity;
+/// every schema addition must become operator-visible in the same change.
+#[test]
+fn every_tuning_schema_key_is_documented() {
+    let reference = configuration_reference();
+    let tuning_section = reference
+        .split_once("### `[tuning]`")
+        .map(|(_, section)| section)
+        .and_then(|section| section.split_once("\n### ").map(|(body, _)| body))
+        .expect("configuration reference has one bounded tuning section");
+    let tuning_block = tuning_section
+        .split_once("```toml")
+        .map(|(_, block)| block)
+        .and_then(|block| block.split_once("```").map(|(body, _)| body))
+        .expect("tuning section has a TOML example");
+    let documented: BTreeSet<String> = tuning_block
+        .lines()
+        .filter_map(|line| line.split_once('=').map(|(key, _)| key.trim().to_owned()))
+        .collect();
+    let missing: Vec<String> = accepted_fields(Some("tuning"))
+        .difference(&documented)
+        .cloned()
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "the tuning schema accepts keys missing from its configuration reference: {missing:?}"
     );
 }
 

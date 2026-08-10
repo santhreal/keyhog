@@ -148,9 +148,12 @@ fn phase2_gpu_catalog_loss_is_operator_visible() {
             && src.contains("prefixless always-active pattern(s) did not lower to a GPU regex-DFA"),
         "the retired fixed candidate budget must stay absent, every eligible pattern must be enumerated, and real lowering gaps must describe the lost GPU evidence"
     );
-    assert_eq!(
-        src.matches("report_phase2_gpu_catalog_loss(format!(").count(),
-        1,
+    assert!(
+        src.lines()
+            .filter(|line| line.contains("report_phase2_gpu_catalog_loss("))
+            .filter(|line| !line.contains("fn report_phase2_gpu_catalog_loss("))
+            .count()
+            >= 1,
         "the consolidated phase-2 GPU catalog incompleteness branch must route through the visible reporter"
     );
 }

@@ -9,6 +9,16 @@
 - Include retained keyword, generic-position, CPU-trigger, payload, and line-index storage in evidence-cache replacement accounting, reject individually oversized entries, and enforce aggregate residency and entry-count ceilings.
 - Use checked page alignment for interior mapping slices while discarding the trailing partial page when releasing whole authenticated execution packs.
 - Wire the production-path cache, decoder-admission, and context-window regressions into the aggregate scanner test binary.
+- Preserve line indices as `usize` throughout entropy keyword discovery, context checks, and candidate scanning, preventing silent line drops or panics on large inputs.
+- Add a validated `chunk_lane_threshold` configuration knob with a supported range of 1 byte through the 1 MiB scan-window ceiling, fail-closed scanner construction, effective-config output, routing identity, and runtime propagation.
+- Preserve the infallible `with_tuning_config` builder for source compatibility and add `try_with_tuning_config` for fail-closed dynamic tuning.
+- Cap scratch set capacity retention to prevent pathological bucket growth in worker-local scratch pools.
+- Ensure deterministic total-ordering tiebreak on decoded candidate match merges.
+- Coalesce small chunks through one shared CPU/SIMD topology while keeping every large chunk as an independently scheduled work item.
+- Reuse exact SIMD trigger rows across repeated small files in mixed small/large batches without trusting scalar absence evidence for SIMD candidates.
+- Fail closed on out-of-bounds lookups in hot-pattern classification.
+- Return immediately from windowed processing after an expired deadline, with bounded deadline regressions that tolerate scheduler variance.
+- Keep the deterministic CPU library constructor and expose runtime-policy GPU probing through `compile_with_runtime_policy`.
 ## 0.5.68 - 2026-08-05
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.

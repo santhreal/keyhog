@@ -53,7 +53,7 @@ pub(crate) fn find_keyword_assignment_line_ids_with_matcher(
     text: &str,
     line_index: &crate::context::LineContextIndex,
     matcher: &AssignmentKeywordMatcher,
-) -> Vec<u32> {
+) -> Vec<usize> {
     line_index
         .lines(text)
         .enumerate()
@@ -61,11 +61,7 @@ pub(crate) fn find_keyword_assignment_line_ids_with_matcher(
             if !is_declared_keyword_assignment_line(line, matcher) {
                 return None;
             }
-            Some(match u32::try_from(line_idx) {
-                Ok(line_id) => line_id,
-                // LAW10: fail-closed; line count exceeding u32::MAX is an invalid input boundary for u32 line indexing.
-                Err(_) => panic!("LineContextIndex admitted more than u32::MAX lines"),
-            })
+            Some(line_idx)
         })
         .collect()
 }

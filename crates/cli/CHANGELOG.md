@@ -11,6 +11,7 @@
 - Bind every GPU-capable autoroute decision to the verified installer-owned matcher manifest, while excluding unrelated lazy runtime-cache files from calibration identity.
 - Require exactly seven positive, round-paired timing trials for every autoroute candidate.
 - Keep autoroute cache validation regressions under the centralized CLI unit-test tree enforced by the source-layout gate.
+- Document the chunk-lane scheduling threshold and require every accepted tuning key to remain present in the configuration reference.
 
 ## 0.5.67 - 2026-08-05
 
