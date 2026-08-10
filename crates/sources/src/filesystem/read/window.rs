@@ -727,7 +727,7 @@ pub(in crate::filesystem) fn slice_into_windows(
 /// offset below which no later window can read. The mmap path uses it to hand
 /// those pages back so residency tracks the window, not the file; the pure
 /// slicer ignores it.
-fn for_each_window(
+pub(in crate::filesystem) fn for_each_window(
     bytes: &[u8],
     window_size: usize,
     overlap: usize,

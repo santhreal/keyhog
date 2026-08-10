@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Container layer path normalization now keeps scanning members whose names begin with `#`, only peeling HAR `#url` suffixes when the member body remains non-empty."
+crates = ["sources"]

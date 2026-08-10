@@ -28,6 +28,96 @@ pub(crate) use path::display_path;
 pub(crate) use read::decode_text_file;
 pub(crate) use read::open_file_safe;
 
+/// Emit image-metadata chunks for an in-memory layer member whose extension is a
+/// recognised image type. Returns `Ok(Some(true))` when the member was an image and
+/// emission completed, `Ok(Some(false))` when the consumer stopped, and `Ok(None)`
+/// when the bytes are not a recognised image payload so the caller can fall through
+/// to the ordinary Binary skip.
+pub(crate) fn try_emit_image_metadata_member(
+    entry_name: &str,
+    bytes: &[u8],
+    ext: &str,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<Option<bool>, SourceError> {
+    extract::try_emit_image_metadata_member(entry_name, bytes, ext, emit)
+}
+
+pub(crate) fn try_emit_pdf_member(
+    entry_name: &str,
+    bytes: Vec<u8>,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    extract::try_emit_pdf_member(entry_name, bytes, emit)
+}
+
+/// Shared container-magic probe used by Docker layer streaming and the
+/// filesystem extensionless-container router.
+pub(crate) fn container_extension_from_prefix(bytes: &[u8]) -> Option<&'static str> {
+    extract::container_extension_from_prefix(bytes)
+}
+
+/// True when `ext` is an openpack-handled archive extension (zip/jar/apk/ipa/crx/…).
+pub(crate) fn is_openpack_archive_ext(ext: &str) -> bool {
+    extract::is_openpack_archive_ext(ext)
+}
+
+/// Scan one already-buffered archive/layer member through the shared in-memory
+/// dispatcher (nested tar/zip/compressed descent + leaf text/strings). Used by
+/// Docker layer streaming so a layer never has to hit the filesystem first.
+/// Extract a top-level Docker-layer 7z/RAR member from already-buffered bytes.
+/// Nested archive members must not use this helper.
+pub(crate) fn emit_top_level_seven_zip_or_rar_member(
+    ext: &str,
+    content: Vec<u8>,
+    member_display: &str,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    extract::emit_top_level_seven_zip_or_rar_member(
+        ext,
+        content,
+        member_display,
+        max_size,
+        respect_default_excludes,
+        emit,
+    )
+}
+
+pub(crate) fn emit_in_memory_zip_member(
+    member_display: &str,
+    content: Vec<u8>,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    extract::emit_in_memory_zip_member(
+        member_display,
+        content,
+        max_size,
+        respect_default_excludes,
+        emit,
+    )
+}
+
+pub(crate) fn emit_in_memory_member(
+    entry_name: &str,
+    content: Vec<u8>,
+    member_display: &str,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    extract::emit_in_memory_member(
+        entry_name,
+        content,
+        member_display,
+        max_size,
+        respect_default_excludes,
+        emit,
+    )
+}
+
 /// Crate-visible read of the walker's default window size for the limits
 /// ordering guard. `reader::DEFAULT_WINDOW_SIZE` is `pub(in crate::filesystem)`,
 /// so a test outside this module cannot see it directly, and the guard has to
@@ -50,17 +140,14 @@ pub(crate) fn default_exclude_dirs() -> &'static [String] {
     filter::default_exclude_dirs()
 }
 
-#[cfg(feature = "git")]
 pub(crate) fn is_default_excluded_path(path: &str) -> bool {
     filter::is_default_excluded(path)
 }
 
-#[cfg(feature = "git")]
 pub(crate) fn is_default_excluded_path_bytes(path: &[u8]) -> bool {
     filter::is_default_excluded_bytes(path)
 }
 
-#[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
 pub(crate) fn is_default_skip_extension(ext: &str) -> bool {
     filter::is_skip_extension(ext)
 }
@@ -435,10 +522,15 @@ fn collect_descriptor_archive_symlink_errors(
 
     let mut errors = Vec::new();
     let result = walk_descriptor_relative(root, |entry| {
-        if respect_default_excludes
-            && filter::is_default_excluded_bytes(entry.path.as_os_str().as_bytes())
-        {
-            return Ok(false);
+        if respect_default_excludes {
+            let relative = entry
+                .path
+                .strip_prefix(root)
+                .unwrap_or(entry.path.as_path());
+            if filter::is_default_excluded_bytes(relative.as_os_str().as_bytes()) {
+                // Prune default-excluded directories; skip excluded non-dirs.
+                return Ok(false);
+            }
         }
         if let DescriptorEntryKind::Symlink { target } = &entry.kind {
             let resolved_target = if target.is_absolute() {
@@ -621,6 +713,18 @@ pub(crate) fn decode_text_file_owned_or_bytes_for_test(bytes: Vec<u8>) -> Result
 
 pub(crate) fn looks_binary_prefix_for_test(bytes: &[u8]) -> bool {
     read::looks_binary_prefix_for_test(bytes)
+}
+
+pub(crate) fn has_utf16_bom_prefix(bytes: &[u8]) -> bool {
+    read::has_utf16_bom_prefix(bytes)
+}
+
+pub(crate) fn looks_binary_prefix(bytes: &[u8]) -> bool {
+    read::looks_binary_prefix_for_test(bytes)
+}
+
+pub(crate) fn looks_binary(bytes: &[u8]) -> bool {
+    read::looks_binary_for_test(bytes)
 }
 
 pub(crate) fn slice_into_windows_with_offsets_for_test(
