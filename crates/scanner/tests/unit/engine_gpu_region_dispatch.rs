@@ -256,7 +256,6 @@ fn issue32_gpu_region_batches_use_every_eligible_resident_depth() {
     }
 }
 
-
 #[test]
 fn phase2_gpu_admission_workload_uses_original_slice_when_every_row_is_eligible() {
     let chunks = [

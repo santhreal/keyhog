@@ -1,9 +1,9 @@
 use super::*;
+#[cfg(feature = "gpu")]
+use crate::engine::gpu_region_batch::with_test_region_presence_byte_limit;
 use crate::GpuInitPolicy;
 #[cfg(feature = "gpu")]
 use crate::ScanBackend;
-#[cfg(feature = "gpu")]
-use crate::engine::gpu_region_batch::with_test_region_presence_byte_limit;
 
 fn test_pattern(src: &str, case_insensitive: bool) -> CompiledPattern {
     test_pattern_with_shape(src, case_insensitive, 0, false)
