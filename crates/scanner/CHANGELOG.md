@@ -8,6 +8,7 @@
 - Cap scratch set capacity retention to prevent pathological bucket growth in worker-local scratch pools.
 - Ensure deterministic total-ordering tiebreak on decoded candidate match merges.
 - Coalesce small chunks through one shared CPU/SIMD topology while keeping every large chunk as an independently scheduled work item.
+- Reuse exact SIMD trigger rows across repeated small files in mixed small/large batches without trusting scalar absence evidence for SIMD candidates.
 - Fail closed on out-of-bounds lookups in hot-pattern classification.
 - Return immediately from windowed processing after an expired deadline, with bounded deadline regressions that tolerate scheduler variance.
 - Keep the deterministic CPU library constructor and expose runtime-policy GPU probing through `compile_with_runtime_policy`.

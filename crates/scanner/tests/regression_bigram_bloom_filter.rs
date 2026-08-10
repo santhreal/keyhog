@@ -788,6 +788,62 @@ fn repeated_payloads_share_generic_keyword_positions() {
     );
 }
 
+/// WHY: one large member switches SIMD dispatch to mixed lanes. Exact small
+/// payload classes must still scan one representative instead of every copy.
+#[cfg(feature = "simd")]
+#[test]
+fn pr27_review_mixed_batch_reuses_exact_simd_trigger_rows() {
+    let scanner = CompiledScanner::compile_for_backend(
+        vec![detector(vec![PatternSpec {
+            regex: r"ANCHOR_[A-Za-z0-9]{24}".into(),
+            ..Default::default()
+        }])],
+        ScanBackend::SimdCpu,
+    )
+    .expect("compile SIMD scanner")
+    .try_with_tuning_config(keyhog_scanner::ScannerTuningConfig {
+        chunk_lane_threshold: Some(1024),
+        ..Default::default()
+    })
+    .expect("apply mixed-lane threshold");
+    let small_payload = format!("prefix ANCHOR_{} suffix\n", "A1b2C3d4E5f6G7h8J9k0LmNo");
+    let large_payload = small_payload.repeat((1024 / small_payload.len()) + 2);
+    let duplicate_count = rayon::current_num_threads().max(1) + 1;
+    let mut chunks = (0..duplicate_count)
+        .map(|index| chunk(&format!("small-{index}.txt"), small_payload.clone()))
+        .collect::<Vec<_>>();
+    chunks.push(chunk("large.txt", large_payload.clone()));
+
+    let plan = scanner.phase1_admission_plan(&chunks);
+    assert_eq!(
+        plan.summary().admitted_chunks,
+        chunks.len() as u64,
+        "the fixture must exercise SIMD trigger scanning for both payload classes"
+    );
+    scanner.reset_phase1_trigger_scanned_bytes_for_diagnostics();
+    let findings = scanner
+        .scan_coalesced_with_backend_and_admission(&chunks, ScanBackend::SimdCpu, Some(&plan))
+        .expect("mixed planned SIMD scan");
+
+    assert_eq!(
+        scanner.phase1_trigger_scanned_bytes_for_diagnostics(),
+        (small_payload.len() + large_payload.len()) as u64,
+        "mixed SIMD lanes must scan each exact payload class once"
+    );
+    scanner.clear_fragment_cache();
+    let direct = scanner
+        .scan_coalesced_with_backend(&chunks, ScanBackend::SimdCpu)
+        .expect("mixed direct SIMD scan");
+    assert_eq!(
+        findings, direct,
+        "representative trigger reuse must preserve every logical chunk result"
+    );
+    assert!(
+        findings.iter().flatten().next().is_some(),
+        "the fixture must exercise a live detector finding"
+    );
+}
+
 /// WHY: representative absence is valid only when every triggered confirmed
 /// regex is absent. A matching representative must retain full per-chunk
 /// extraction so path-sensitive adjudication still runs independently.

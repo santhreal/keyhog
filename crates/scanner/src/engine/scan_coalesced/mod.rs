@@ -44,27 +44,40 @@ pub(crate) struct ReusableSimdTriggerCache {
 
 #[cfg(feature = "simd")]
 impl ReusableSimdTriggerCache {
+    fn get(&mut self, payload: &keyhog_core::SensitiveString) -> Option<Option<Vec<u64>>> {
+        let fingerprint = super::phase1_admission::phase1_payload_fingerprint(payload.as_bytes());
+        self.get_with_fingerprint(fingerprint, payload)
+    }
+
+    fn get_with_fingerprint(
+        &mut self,
+        fingerprint: [u8; 32],
+        payload: &keyhog_core::SensitiveString,
+    ) -> Option<Option<Vec<u64>>> {
+        let position = self
+            .entries
+            .iter()
+            .position(|entry| entry.fingerprint == fingerprint && entry.payload.eq(payload))?;
+        let entry = self
+            .entries
+            .remove(position)
+            .expect("cache position came from the same deque");
+        let triggers = entry.triggers.clone();
+        self.entries.push_back(entry);
+        #[cfg(debug_assertions)]
+        {
+            self.hits = self.hits.saturating_add(1);
+        }
+        Some(triggers)
+    }
+
     fn get_or_compute(
         &mut self,
         payload: &keyhog_core::SensitiveString,
         compute: impl FnOnce() -> Result<Option<Vec<u64>>, String>,
     ) -> Result<Option<Vec<u64>>, String> {
         let fingerprint = super::phase1_admission::phase1_payload_fingerprint(payload.as_bytes());
-        if let Some(position) = self
-            .entries
-            .iter()
-            .position(|entry| entry.fingerprint == fingerprint && entry.payload.eq(payload))
-        {
-            let entry = self
-                .entries
-                .remove(position)
-                .expect("cache position came from the same deque");
-            let triggers = entry.triggers.clone();
-            self.entries.push_back(entry);
-            #[cfg(debug_assertions)]
-            {
-                self.hits = self.hits.saturating_add(1);
-            }
+        if let Some(triggers) = self.get_with_fingerprint(fingerprint, payload) {
             return Ok(triggers);
         }
 
@@ -521,6 +534,46 @@ impl CompiledScanner {
                 .map(|_| std::sync::OnceLock::new())
                 .collect::<Vec<std::sync::OnceLock<Result<Option<Vec<u64>>, String>>>>()
         });
+        let representative_indices = admission_plan.map(|plan| {
+            let mut representatives = vec![None; plan.payload_evidence_row_count()];
+            for chunk_index in 0..chunks.len() {
+                if plan.admission_for(chunk_index) != Some(super::Phase1Admission::Admitted) {
+                    continue;
+                }
+                let Some(row) = plan.payload_evidence_row_for(chunk_index) else {
+                    continue;
+                };
+                if let Some(representative) = representatives.get_mut(row) {
+                    representative.get_or_insert(chunk_index);
+                }
+            }
+            representatives
+        });
+        if let (Some(rows), Some(representatives)) =
+            (reusable_triggers.as_ref(), representative_indices.as_ref())
+        {
+            let mut cache = self.reusable_simd_triggers.lock();
+            for (row, representative) in representatives.iter().enumerate() {
+                let Some(chunk_index) = *representative else {
+                    continue;
+                };
+                if let Some(cached) = cache.get(&chunks[chunk_index].data) {
+                    let _ = rows[row].set(Ok(cached));
+                }
+            }
+        }
+        let is_representative = |chunk_index: usize| {
+            admission_plan
+                .and_then(|plan| plan.payload_evidence_row_for(chunk_index))
+                .and_then(|row| {
+                    representative_indices
+                        .as_ref()
+                        .and_then(|representatives| representatives.get(row))
+                        .copied()
+                        .flatten()
+                })
+                .is_none_or(|representative| representative == chunk_index)
+        };
         let compute_single_trigger = |chunk_index: usize, chunk: &keyhog_core::Chunk| {
             let _profile_context = profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
             let data = chunk.data.as_bytes();
@@ -572,13 +625,32 @@ impl CompiledScanner {
                 let lane_triggers: Vec<Vec<(usize, Option<Vec<u64>>)>> = work_lanes
                     .par_iter()
                     .map(|lane| match lane {
-                        super::batch_topology::CoalescedLane::Large(index) => Ok(vec![(
-                            *index,
-                            compute_single_trigger(*index, &chunks[*index])?,
-                        )]),
+                        super::batch_topology::CoalescedLane::Large(index) => {
+                            if is_representative(*index) {
+                                Ok(vec![(
+                                    *index,
+                                    compute_single_trigger(*index, &chunks[*index])?,
+                                )])
+                            } else {
+                                Ok(vec![(*index, None)])
+                            }
+                        }
                         super::batch_topology::CoalescedLane::Small(indices) => {
                             let _profile_context =
                                 profile_runtime.as_ref().map(keyhog_profile::Runtime::enter);
+                            if admission_plan.is_some() {
+                                return indices
+                                    .iter()
+                                    .map(|&index| {
+                                        let trigger = if is_representative(index) {
+                                            compute_single_trigger(index, &chunks[index])?
+                                        } else {
+                                            None
+                                        };
+                                        Ok((index, trigger))
+                                    })
+                                    .collect::<Result<Vec<_>, String>>();
+                            }
                             let admitted = |index: usize, data: &[u8]| {
                                 admission_plan
                                     .and_then(|plan| plan.admission_for(index))
@@ -586,13 +658,39 @@ impl CompiledScanner {
                                     == super::Phase1Admission::Admitted
                             };
                             let mut lane_triggers = vec![None; indices.len()];
+                            let should_compute = |index: usize, data: &[u8]| {
+                                if !admitted(index, data) || !is_representative(index) {
+                                    return false;
+                                }
+                                admission_plan
+                                    .zip(reusable_triggers.as_ref())
+                                    .and_then(|(plan, rows)| {
+                                        let row = plan.payload_evidence_row_for(index)?;
+                                        rows.get(row)
+                                    })
+                                    .is_none_or(|reusable| reusable.get().is_none())
+                            };
+                            #[cfg(debug_assertions)]
+                            {
+                                let scanned_bytes = indices
+                                    .iter()
+                                    .filter_map(|&index| {
+                                        let data = chunks[index].data.as_bytes();
+                                        should_compute(index, data).then_some(data.len())
+                                    })
+                                    .fold(0usize, usize::saturating_add);
+                                self.phase1_trigger_scanned_bytes.fetch_add(
+                                    u64::try_from(scanned_bytes).unwrap_or(u64::MAX),
+                                    std::sync::atomic::Ordering::Relaxed,
+                                );
+                            }
                             prefilter.scanner().scan_many_each_result(
                                 indices
                                     .iter()
                                     .enumerate()
                                     .filter_map(|(lane_offset, &index)| {
                                         let data = chunks[index].data.as_bytes();
-                                        admitted(index, data).then_some((lane_offset, data))
+                                        should_compute(index, data).then_some((lane_offset, data))
                                     }),
                                 |lane_offset, hs_id| {
                                     let scratch = lane_triggers[lane_offset]
@@ -602,7 +700,7 @@ impl CompiledScanner {
                             )?;
                             for (lane_offset, &index) in indices.iter().enumerate() {
                                 let data = chunks[index].data.as_bytes();
-                                if admitted(index, data) {
+                                if should_compute(index, data) {
                                     prefilter.for_each_recovery_match(data, |pattern_index| {
                                         let scratch = lane_triggers[lane_offset]
                                             .get_or_insert_with(|| vec![0u64; words_needed]);
@@ -619,6 +717,23 @@ impl CompiledScanner {
                 for lane in lane_triggers {
                     for (index, trigger) in lane {
                         combined[index] = trigger;
+                    }
+                }
+                if let (Some(plan), Some(rows)) = (admission_plan, reusable_triggers.as_ref()) {
+                    for (index, trigger) in combined.iter_mut().enumerate() {
+                        if plan.admission_for(index) != Some(super::Phase1Admission::Admitted) {
+                            continue;
+                        }
+                        let Some(row) = plan.payload_evidence_row_for(index) else {
+                            continue;
+                        };
+                        let cached = rows
+                            .get(row)
+                            .and_then(std::sync::OnceLock::get)
+                            .ok_or_else(|| {
+                                format!("missing reusable SIMD trigger row {row} for chunk {index}")
+                            })?;
+                        *trigger = cached.clone()?;
                     }
                 }
                 combined
@@ -978,12 +1093,9 @@ impl CompiledScanner {
                                     prepared,
                                     &triggered,
                                     None,
-                                    phase1_plan
-                                        .and_then(|plan| {
-                                            plan.confirmed_patterns_absence_for(chunk_index)
-                                        })
-                                        // LAW10: missing confirmed-pattern absence evidence keeps confirmed matching enabled.
-                                        .unwrap_or(false),
+                                    // Plan absence is scalar-trigger evidence. SIMD-triggered rows
+                                    // must execute confirmation for their producer's candidate set.
+                                    false,
                                     phase1_plan
                                         .and_then(|plan| {
                                             plan.entropy_absence_for(
