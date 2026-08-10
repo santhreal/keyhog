@@ -83,6 +83,15 @@ fn recovered_phase2_tail(
     let remaining = total_rows.saturating_sub(start);
     admission.admitted.resize(total_rows, false);
     admission.complete.resize(total_rows, false);
+    if admission.candidate_words_per_region > 0 {
+        if let Some(words) = total_rows.checked_mul(admission.candidate_words_per_region) {
+            admission.candidate_bits.resize(words, 0);
+        } else {
+            admission.candidate_bits.clear();
+            admission.candidate_words_per_region = 0;
+            admission.candidate_phase2_indices.clear();
+        }
+    }
     Phase2GpuAdmissionOutcome {
         admission,
         haystack_uploads,
@@ -133,6 +142,39 @@ pub(super) fn append_phase2_gpu_admission(
             shard.complete.len()
         ));
     }
+    let expected_candidate_words = shard
+        .candidate_words_per_region
+        .checked_mul(expected_rows)
+        .ok_or_else(|| "phase-2 GPU candidate shard size overflow".to_string())?;
+    if shard.candidate_bits.len() != expected_candidate_words {
+        return Err(format!(
+            "phase-2 GPU candidate shard returned {} word(s), need {expected_candidate_words}",
+            shard.candidate_bits.len()
+        ));
+    }
+    if merged.candidate_words_per_region == 0 {
+        merged.candidate_words_per_region = shard.candidate_words_per_region;
+    } else if merged.candidate_words_per_region != shard.candidate_words_per_region {
+        return Err(format!(
+            "phase-2 GPU candidate row stride changed across input shards: {} != {}",
+            merged.candidate_words_per_region, shard.candidate_words_per_region
+        ));
+    }
+    let expected_map_len = shard
+        .candidate_words_per_region
+        .checked_mul(u32::BITS as usize)
+        .ok_or_else(|| "phase-2 GPU candidate map size overflow".to_string())?;
+    if shard.candidate_phase2_indices.len() != expected_map_len {
+        return Err(format!(
+            "phase-2 GPU candidate map returned {} slot(s), need {expected_map_len}",
+            shard.candidate_phase2_indices.len()
+        ));
+    }
+    if merged.candidate_phase2_indices.is_empty() {
+        merged.candidate_phase2_indices = shard.candidate_phase2_indices.clone();
+    } else if merged.candidate_phase2_indices != shard.candidate_phase2_indices {
+        return Err("phase-2 GPU candidate map changed across input shards".to_string());
+    }
     merged
         .admitted
         .try_reserve(shard.admitted.len())
@@ -141,8 +183,13 @@ pub(super) fn append_phase2_gpu_admission(
         .complete
         .try_reserve(shard.complete.len())
         .map_err(|error| format!("phase-2 GPU complete-row merge reserve failed: {error}"))?;
+    merged
+        .candidate_bits
+        .try_reserve(shard.candidate_bits.len())
+        .map_err(|error| format!("phase-2 GPU candidate merge reserve failed: {error}"))?;
     merged.admitted.append(&mut shard.admitted);
     merged.complete.append(&mut shard.complete);
+    merged.candidate_bits.append(&mut shard.candidate_bits);
     merged.matches_seen = merged
         .matches_seen
         .checked_add(shard.matches_seen)
@@ -170,6 +217,9 @@ pub(super) fn scan_phase2_gpu_chunks_sharded(
                     admitted: Vec::new(),
                     complete: Vec::new(),
                     matches_seen: 0,
+                    candidate_bits: Vec::new(),
+                    candidate_words_per_region: 0,
+                    candidate_phase2_indices: Vec::new(),
                 },
                 0,
                 0,
@@ -184,6 +234,9 @@ pub(super) fn scan_phase2_gpu_chunks_sharded(
         admitted: Vec::new(),
         complete: Vec::new(),
         matches_seen: 0,
+        candidate_bits: Vec::new(),
+        candidate_words_per_region: 0,
+        candidate_phase2_indices: Vec::new(),
     };
     let mut haystack_uploads = 0usize;
     let uploads_per_batch = usize::from(catalog.coverage().shards > 0);
@@ -262,6 +315,9 @@ pub(super) fn scan_phase2_gpu_refs_sharded(
                     admitted: Vec::new(),
                     complete: Vec::new(),
                     matches_seen: 0,
+                    candidate_bits: Vec::new(),
+                    candidate_words_per_region: 0,
+                    candidate_phase2_indices: Vec::new(),
                 },
                 0,
                 0,
@@ -276,6 +332,9 @@ pub(super) fn scan_phase2_gpu_refs_sharded(
         admitted: Vec::new(),
         complete: Vec::new(),
         matches_seen: 0,
+        candidate_bits: Vec::new(),
+        candidate_words_per_region: 0,
+        candidate_phase2_indices: Vec::new(),
     };
     let mut haystack_uploads = 0usize;
     let uploads_per_batch = usize::from(catalog.coverage().shards > 0);

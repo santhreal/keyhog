@@ -461,6 +461,9 @@ impl CompiledScanner {
                 None,
                 None,
                 None,
+                0,
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -806,6 +809,9 @@ impl CompiledScanner {
         triggers: Vec<Option<Vec<u64>>>,
         phase2_admission: Option<&[bool]>,
         phase2_admission_complete: Option<&[bool]>,
+        phase2_candidate_bits: Option<&[u32]>,
+        phase2_candidate_words_per_region: usize,
+        phase2_candidate_map: Option<&[u32]>,
         phase2_keyword_hints: Option<&[Vec<u32>]>,
         phase2_always_anchor_presence: Option<&[bool]>,
         phase2_always_anchor_literal_matches: Option<&[Vec<(u32, u32)>]>,
@@ -827,6 +833,17 @@ impl CompiledScanner {
         let recovery_receipts = crate::gpu::capture_recovery_receipts();
         let profile_runtime = keyhog_profile::current_runtime();
         let entropy_config_digest = self.entropy_evidence_config_digest();
+        let phase2_candidate_layout =
+            phase2_candidate_bits
+                .zip(phase2_candidate_map)
+                .filter(|(bits, map)| {
+                    phase2_candidate_words_per_region
+                        .checked_mul(chunks.len())
+                        .is_some_and(|expected| expected == bits.len())
+                        && phase2_candidate_words_per_region
+                            .checked_mul(u32::BITS as usize)
+                            .is_some_and(|expected| expected == map.len())
+                });
         struct CoalescedChunkOutput {
             state: Option<crate::types::ScanState>,
             matches: Vec<keyhog_core::RawMatch>,
@@ -867,6 +884,15 @@ impl CompiledScanner {
                             Some(complete) => complete,
                             None => false,
                         };
+                        let phase2_candidate_row =
+                            phase2_candidate_layout.and_then(|(bits, map)| {
+                                let start =
+                                    chunk_index.checked_mul(phase2_candidate_words_per_region)?;
+                                let end = start.checked_add(phase2_candidate_words_per_region)?;
+                                bits.get(start..end).map(|row| (row, map))
+                            });
+                        let phase2_gpu_complete =
+                            phase2_gpu_complete && phase2_candidate_row.is_some();
                         let phase2_always_active_gpu_evidence = phase1_plan
                             .and_then(|plan| plan.phase2_always_active_absence_for(chunk_index))
                             .and_then(|absence| {
@@ -877,6 +903,10 @@ impl CompiledScanner {
                                     Phase2AlwaysActiveGpuEvidence {
                                         prefixless_admitted: admitted_by_phase2_gpu,
                                         prefixless_complete: phase2_gpu_complete,
+                                        prefixless_candidate_bits: phase2_candidate_row
+                                            .map(|(bits, _)| bits),
+                                        prefixless_candidate_map: phase2_candidate_row
+                                            .map(|(_, map)| map),
                                         anchor_present,
                                         anchor_literal_matches: always_anchor_literal_matches,
                                     }
@@ -1007,8 +1037,11 @@ impl CompiledScanner {
                                 needs_postprocess: false,
                             });
                         }
-                        let raw_phase2_absence_proven = phase2_always_active_gpu_evidence
-                            .is_some_and(|evidence| evidence.absence_proven())
+                        let raw_phase2_absence_proven = chunk.data.is_ascii()
+                            && phase2_always_active_gpu_evidence.is_some_and(|evidence| {
+                                !evidence.anchor_present
+                                    && self.phase2_prefixless_gpu_absence_proven(evidence)
+                            })
                             && keyword_hints.is_some();
                         let admitted_by_phase2_keyword_hint =
                             keyword_hints.is_some_and(|hints| !hints.is_empty());

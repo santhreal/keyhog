@@ -251,7 +251,7 @@ impl CompiledScanner {
                 &mut scratch,
                 false,
                 phase2_keyword_hints,
-                phase2_always_active_gpu_evidence.is_some_and(|evidence| evidence.absence_proven()),
+                phase2_always_active_gpu_evidence,
                 route,
             );
             if self.tuning.phase2_reverse_enabled() {
@@ -337,7 +337,7 @@ impl CompiledScanner {
             None => ACTIVE_PATTERNS_POOL.with(|cell| {
                 let mut scratch = cell.borrow_mut();
                 scratch.begin(self.phase2_patterns.len());
-                self.populate_active_phase2(data, data, &mut scratch, false, None, false, route);
+                self.populate_active_phase2(data, data, &mut scratch, false, None, None, route);
                 !scratch.active.is_empty()
             }),
         }
@@ -350,6 +350,72 @@ impl CompiledScanner {
         self.phase2_anchor_index
             .as_ref()
             .is_some_and(|a| a.is_always_active_eligible(idx))
+    }
+
+    fn validated_phase2_gpu_candidates<'a>(
+        &self,
+        evidence: Phase2AlwaysActiveGpuEvidence<'a>,
+    ) -> Option<(&'a [u32], &'a [u32])> {
+        if !evidence.prefixless_complete {
+            return None;
+        }
+        let (bits, map) = evidence.prefixless_candidates()?;
+        let any_candidate = bits.iter().any(|&word| word != 0);
+        if any_candidate != evidence.prefixless_admitted {
+            return None;
+        }
+        let mut prior_phase2_index = None;
+        for (slot, &phase2_index) in map.iter().enumerate() {
+            let bit_is_set = bits
+                .get(slot / u32::BITS as usize)
+                .is_some_and(|word| word & (1u32 << (slot % u32::BITS as usize)) != 0);
+            if phase2_index == u32::MAX {
+                if bit_is_set {
+                    return None;
+                }
+                continue;
+            }
+            let phase2_index = phase2_index as usize;
+            let Some((pattern, _)) = self.phase2_patterns.get(phase2_index) else {
+                return None;
+            };
+            if self
+                .phase2_always_active_indices
+                .binary_search(&phase2_index)
+                .is_err()
+                || pattern.homoglyph_variant
+                || super::phase2::gate_prefix_literals(pattern.regex.as_str()).is_some()
+                || prior_phase2_index.is_some_and(|prior| prior >= phase2_index)
+            {
+                return None;
+            }
+            prior_phase2_index = Some(phase2_index);
+        }
+        let expected = self
+            .phase2_always_active_indices
+            .iter()
+            .copied()
+            .filter(|&index| {
+                let pattern = &self.phase2_patterns[index].0;
+                !pattern.homoglyph_variant
+                    && super::phase2::gate_prefix_literals(pattern.regex.as_str()).is_none()
+            });
+        let actual = map
+            .iter()
+            .copied()
+            .filter(|&index| index != u32::MAX)
+            .map(|index| index as usize);
+        if !expected.eq(actual) {
+            return None;
+        }
+        Some((bits, map))
+    }
+
+    pub(crate) fn phase2_prefixless_gpu_absence_proven(
+        &self,
+        evidence: Phase2AlwaysActiveGpuEvidence<'_>,
+    ) -> bool {
+        self.validated_phase2_gpu_candidates(evidence).is_some() && !evidence.prefixless_admitted
     }
 
     /// Compute the active phase-2 set. `anchor_mode` selects how always-active
@@ -368,9 +434,18 @@ impl CompiledScanner {
         scratch: &mut ActivePatternsScratch,
         anchor_mode: bool,
         phase2_keyword_hints: Option<&[u32]>,
-        always_active_absence_proven: bool,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
     ) {
+        let gpu_candidates = phase2_always_active_gpu_evidence
+            .and_then(|evidence| self.validated_phase2_gpu_candidates(evidence));
+        let cpu_prefilter_required = gpu_candidates.is_none()
+            || self.phase2_always_active_indices.iter().any(|&index| {
+                let pattern = &self.phase2_patterns[index].0;
+                let covered = !pattern.homoglyph_variant
+                    && super::phase2::gate_prefix_literals(pattern.regex.as_str()).is_none();
+                !covered && !(anchor_mode && self.anchor_always_active_eligible(index))
+            });
         if let Some(keyword_index) = &self.route_classification.phase2_keyword_index {
             // Always-active patterns (no >=4-char keyword) would each run their
             // capture regex over the whole chunk. Gate them through a combined
@@ -401,7 +476,7 @@ impl CompiledScanner {
                 // The anchorless always-active RegexSet, the detectors that run
                 // on EVERY chunk. This span is the cost the old vague label hid.
                 let _g = super::profile::span(keyhog_profile::Stage::Phase2Prefilter);
-                if !always_active_absence_proven {
+                if cpu_prefilter_required {
                     #[cfg(debug_assertions)]
                     self.phase2_prefilter_scanned_bytes.fetch_add(
                         // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; scan behavior is unchanged.
@@ -466,9 +541,23 @@ impl CompiledScanner {
         } else {
             // No keyword prefilter compiled - every phase-2 pattern is
             // considered active.
-            if !always_active_absence_proven {
+            if cpu_prefilter_required {
                 for index in 0..self.phase2_patterns.len() {
                     scratch.mark(index);
+                }
+            }
+        }
+        if let Some((bits, map)) = gpu_candidates {
+            scratch.remove_indices(map);
+            for (slot, &phase2_index) in map.iter().enumerate() {
+                if phase2_index == u32::MAX
+                    || bits[slot / u32::BITS as usize] & (1u32 << (slot % u32::BITS as usize)) == 0
+                {
+                    continue;
+                }
+                let phase2_index = phase2_index as usize;
+                if !anchor_mode || !self.anchor_always_active_eligible(phase2_index) {
+                    scratch.mark(phase2_index);
                 }
             }
         }

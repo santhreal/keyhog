@@ -108,7 +108,7 @@ pub(crate) mod phase2_generic;
 #[cfg(feature = "gpu")]
 mod phase2_gpu_dfa;
 #[cfg(feature = "gpu")]
-pub(crate) use phase2_gpu_dfa::Phase2GpuDfaCatalogCache;
+pub(crate) use phase2_gpu_dfa::{compile_phase2_gpu_catalog_artifact, Phase2GpuDfaCatalogCache};
 #[cfg(feature = "simd")]
 mod phase2_hs;
 #[cfg(feature = "gpu")]

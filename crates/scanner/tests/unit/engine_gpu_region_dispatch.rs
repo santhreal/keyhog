@@ -370,6 +370,9 @@ fn phase2_gpu_admission_expands_subset_bits_to_original_batch() {
         admitted: vec![true, false, true],
         complete: vec![true, true, true],
         matches_seen: 7,
+        candidate_bits: vec![0x1, 0x2, 0x4],
+        candidate_words_per_region: 1,
+        candidate_phase2_indices: vec![7; 32],
     };
 
     let full = expand_phase2_gpu_admission(subset, &[1, 3, 4], 5);
@@ -377,6 +380,8 @@ fn phase2_gpu_admission_expands_subset_bits_to_original_batch() {
     assert_eq!(full.admitted, vec![false, true, false, false, true]);
     assert_eq!(full.complete, vec![false, true, false, true, true]);
     assert_eq!(full.matches_seen, 7);
+    assert_eq!(full.candidate_words_per_region, 1);
+    assert_eq!(full.candidate_bits, vec![0, 0x1, 0, 0x2, 0x4]);
 }
 
 #[test]
@@ -385,6 +390,9 @@ fn phase2_gpu_admission_length_mismatch_marks_evidence_incomplete() {
         admitted: vec![true],
         complete: vec![true],
         matches_seen: 1,
+        candidate_bits: vec![0x1],
+        candidate_words_per_region: 1,
+        candidate_phase2_indices: vec![7; 32],
     };
 
     let full = expand_phase2_gpu_admission(subset, &[0, 2], 3);
@@ -394,6 +402,29 @@ fn phase2_gpu_admission_length_mismatch_marks_evidence_incomplete() {
         full.complete.iter().all(|&complete| !complete),
         "mismatched subset evidence must not claim complete GPU admission coverage"
     );
+    assert!(full.candidate_bits.is_empty());
+    assert_eq!(full.candidate_words_per_region, 0);
+    assert!(full.candidate_phase2_indices.is_empty());
+}
+
+#[test]
+fn phase2_gpu_admission_out_of_range_index_marks_evidence_incomplete() {
+    let subset = Phase2GpuDfaAdmission {
+        admitted: vec![true],
+        complete: vec![true],
+        matches_seen: 1,
+        candidate_bits: vec![0x1],
+        candidate_words_per_region: 1,
+        candidate_phase2_indices: vec![7; 32],
+    };
+
+    let full = expand_phase2_gpu_admission(subset, &[3], 3);
+
+    assert_eq!(full.admitted, vec![false; 3]);
+    assert_eq!(full.complete, vec![false; 3]);
+    assert!(full.candidate_bits.is_empty());
+    assert_eq!(full.candidate_words_per_region, 0);
+    assert!(full.candidate_phase2_indices.is_empty());
 }
 
 #[cfg(feature = "simd")]
@@ -435,6 +466,9 @@ fn complete_always_active_negative_preserves_triggered_row_keyword_phase2_findin
         vec![Some(vec![1])],
         Some(&admitted),
         Some(&complete),
+        Some(&[]),
+        0,
+        Some(&[]),
         Some(&keyword_hints),
         Some(&anchors_present),
         None,
@@ -452,6 +486,128 @@ fn complete_always_active_negative_preserves_triggered_row_keyword_phase2_findin
     assert_eq!(
         found.credential.as_ref(),
         "aB3dE5gH7jK9mN2pQ4sT6vW8xY1zC0fR"
+    );
+}
+
+#[cfg(feature = "simd")]
+#[test]
+fn phase2_gpu_candidate_bits_drive_production_active_set() {
+    let detector = keyhog_core::DetectorSpec {
+        id: "gpu-candidate-active-set".into(),
+        name: "GPU Candidate Active Set".into(),
+        service: "fixture".into(),
+        severity: keyhog_core::Severity::High,
+        patterns: vec![keyhog_core::PatternSpec {
+            regex: r"([A-Za-z0-9]{32})".into(),
+            group: Some(1),
+            ..Default::default()
+        }],
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
+    };
+    let scanner = CompiledScanner::compile(vec![detector]).expect("compile fixture detector");
+    assert_eq!(scanner.phase2_patterns.len(), 1);
+    let chunk = keyhog_core::Chunk::from("aB3dE5gH7jK9mN2pQ4sT6vW8xY1zC0fR");
+    let triggers = || vec![Some(vec![0])];
+    let admitted = [true];
+    let complete = [true];
+    let anchors_present = [false];
+    let keyword_hints = [Vec::<u32>::new()];
+    let mut candidate_map = vec![u32::MAX; u32::BITS as usize];
+    candidate_map[0] = 0;
+
+    let hit_bits = [1u32];
+    let hit = scanner
+        .scan_coalesced_phase2_with_admission(
+            std::slice::from_ref(&chunk),
+            triggers(),
+            Some(&admitted),
+            Some(&complete),
+            Some(&hit_bits),
+            1,
+            Some(&candidate_map),
+            Some(&keyword_hints),
+            Some(&anchors_present),
+            None,
+            None,
+            None,
+            None,
+            scanner.default_execution_route(),
+        )
+        .expect("candidate-hit scan");
+    assert!(hit[0]
+        .iter()
+        .any(|finding| finding.detector_id.as_ref() == "gpu-candidate-active-set"));
+
+    let miss_bits = [0u32];
+    let missed = scanner
+        .scan_coalesced_phase2_with_admission(
+            std::slice::from_ref(&chunk),
+            triggers(),
+            Some(&[false]),
+            Some(&complete),
+            Some(&miss_bits),
+            1,
+            Some(&candidate_map),
+            Some(&keyword_hints),
+            Some(&anchors_present),
+            None,
+            None,
+            None,
+            None,
+            scanner.default_execution_route(),
+        )
+        .expect("candidate-miss scan");
+    assert!(
+        missed[0].is_empty(),
+        "a complete candidate miss must suppress the covered CPU admission path"
+    );
+
+    let malformed_map = vec![u32::MAX; u32::BITS as usize];
+    let malformed = scanner
+        .scan_coalesced_phase2_with_admission(
+            std::slice::from_ref(&chunk),
+            triggers(),
+            Some(&admitted),
+            Some(&complete),
+            Some(&hit_bits),
+            1,
+            Some(&malformed_map),
+            Some(&keyword_hints),
+            Some(&anchors_present),
+            None,
+            None,
+            None,
+            None,
+            scanner.default_execution_route(),
+        )
+        .expect("malformed candidate evidence falls back to CPU");
+    assert!(malformed[0]
+        .iter()
+        .any(|finding| finding.detector_id.as_ref() == "gpu-candidate-active-set"));
+
+    let omitted = scanner
+        .scan_coalesced_phase2_with_admission(
+            std::slice::from_ref(&chunk),
+            vec![None],
+            Some(&[false]),
+            Some(&complete),
+            Some(&[]),
+            0,
+            Some(&[]),
+            Some(&keyword_hints),
+            Some(&anchors_present),
+            None,
+            None,
+            None,
+            None,
+            scanner.default_execution_route(),
+        )
+        .expect("omitted candidate coverage falls back to CPU");
+    assert!(
+        omitted[0]
+            .iter()
+            .any(|finding| finding.detector_id.as_ref() == "gpu-candidate-active-set"),
+        "complete evidence cannot omit a compatible prefixless pattern"
     );
 }
 
@@ -526,6 +682,9 @@ fn normalized_triggered_rows_discard_raw_gpu_evidence_and_recompute_admission() 
         vec![Some(raw_triggers)],
         Some(&admitted),
         Some(&complete),
+        Some(&[]),
+        0,
+        Some(&[]),
         Some(&raw_keyword_hints),
         Some(&anchors_present),
         None,

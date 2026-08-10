@@ -2,8 +2,8 @@
 
 use super::{CanonicalDetectorExecutionIr, ExecutionPackBackend, ExecutionPackError};
 
-const MAGIC: &[u8; 8] = b"KHVPACK\x01";
-pub const VYRE_ORCHESTRATION_PROGRAM_VERSION: u16 = 1;
+const MAGIC: &[u8; 8] = b"KHVPACK\x02";
+pub const VYRE_ORCHESTRATION_PROGRAM_VERSION: u16 = 2;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VyreExecutionIdentity {
@@ -102,6 +102,8 @@ pub struct VyreOrchestrationProgram {
     pub matcher_wire_version: u32,
     pub matcher_digest: [u8; 32],
     pub matcher_bytes: Vec<u8>,
+    pub phase2_catalog_digest: [u8; 32],
+    pub phase2_catalog_bytes: Vec<u8>,
 }
 
 impl VyreOrchestrationProgram {
@@ -137,6 +139,27 @@ impl VyreOrchestrationProgram {
             )
         })?;
         let matcher_digest = *blake3::hash(&matcher.bytes).as_bytes();
+        #[cfg(not(feature = "gpu"))]
+        return Err(ExecutionPackError::InvalidCompilerInput(
+            "VYRE phase-2 catalog compilation requires the scanner GPU feature".into(),
+        ));
+        #[cfg(feature = "gpu")]
+        let backend_id = match backend {
+            ExecutionPackBackend::GpuCuda => Some("cuda"),
+            ExecutionPackBackend::GpuWgpu => Some("wgpu"),
+            ExecutionPackBackend::GpuMetal => Some("metal"),
+            _ => {
+                return Err(ExecutionPackError::InvalidCompilerInput(
+                    "phase-2 GPU catalog requires a GPU backend".into(),
+                ));
+            }
+        };
+        #[cfg(feature = "gpu")]
+        let phase2_catalog_bytes =
+            crate::engine::compile_phase2_gpu_catalog_artifact(detector_ir.detectors(), backend_id)
+                .map_err(ExecutionPackError::InvalidCompilerInput)?;
+        #[cfg(feature = "gpu")]
+        let phase2_catalog_digest = *blake3::hash(&phase2_catalog_bytes).as_bytes();
         Ok(Self {
             version: VYRE_ORCHESTRATION_PROGRAM_VERSION,
             backend,
@@ -148,6 +171,8 @@ impl VyreOrchestrationProgram {
             matcher_wire_version: matcher.wire_version,
             matcher_digest,
             matcher_bytes: matcher.bytes,
+            phase2_catalog_digest,
+            phase2_catalog_bytes,
         })
     }
 
@@ -163,6 +188,13 @@ impl VyreOrchestrationProgram {
                 "VYRE matcher digest does not match its bytes".into(),
             ));
         }
+        if self.phase2_catalog_bytes.is_empty()
+            || *blake3::hash(&self.phase2_catalog_bytes).as_bytes() != self.phase2_catalog_digest
+        {
+            return Err(ExecutionPackError::InvalidCompilerInput(
+                "phase-2 GPU catalog digest does not match its bytes".into(),
+            ));
+        }
         validate_wire_header(
             &self.matcher_bytes,
             self.matcher_wire_magic,
@@ -176,6 +208,7 @@ impl VyreOrchestrationProgram {
         out.extend_from_slice(&[0; 5]);
         out.extend_from_slice(&self.detector_ir_digest);
         out.extend_from_slice(&self.matcher_digest);
+        out.extend_from_slice(&self.phase2_catalog_digest);
         out.extend_from_slice(&self.execution_identity.device_limits_digest);
         out.extend_from_slice(&self.matcher_pattern_count.to_le_bytes());
         out.extend_from_slice(&self.matcher_wire_magic);
@@ -189,6 +222,7 @@ impl VyreOrchestrationProgram {
         write_bytes(&mut out, self.execution_identity.driver_version.as_bytes())?;
         write_bytes(&mut out, self.matcher_cache_key.as_bytes())?;
         write_bytes(&mut out, &self.matcher_bytes)?;
+        write_bytes(&mut out, &self.phase2_catalog_bytes)?;
         Ok(out)
     }
 
@@ -234,6 +268,7 @@ impl VyreOrchestrationProgram {
             ));
         }
         let matcher_digest: [u8; 32] = cursor.take(32)?.try_into().expect("fixed digest");
+        let phase2_catalog_digest: [u8; 32] = cursor.take(32)?.try_into().expect("fixed digest");
         let device_limits_digest: [u8; 32] = cursor.take(32)?.try_into().expect("fixed digest");
         let matcher_pattern_count = cursor.u32()?;
         let matcher_wire_magic: [u8; 4] = cursor.take(4)?.try_into().expect("fixed magic");
@@ -255,6 +290,7 @@ impl VyreOrchestrationProgram {
         }
         let matcher_cache_key = cursor.string()?;
         let matcher_bytes = cursor.bytes()?.to_vec();
+        let phase2_catalog_bytes = cursor.bytes()?.to_vec();
         if !cursor.is_empty() {
             return Err(ExecutionPackError::InvalidPack(
                 "VYRE orchestration program has trailing bytes".into(),
@@ -263,6 +299,13 @@ impl VyreOrchestrationProgram {
         if *blake3::hash(&matcher_bytes).as_bytes() != matcher_digest {
             return Err(ExecutionPackError::InvalidPack(
                 "VYRE matcher artifact is corrupt; its content digest does not match".into(),
+            ));
+        }
+        if phase2_catalog_bytes.is_empty()
+            || *blake3::hash(&phase2_catalog_bytes).as_bytes() != phase2_catalog_digest
+        {
+            return Err(ExecutionPackError::InvalidPack(
+                "phase-2 GPU catalog artifact is corrupt; its content digest does not match".into(),
             ));
         }
         validate_wire_header(&matcher_bytes, matcher_wire_magic, matcher_wire_version)?;
@@ -277,6 +320,8 @@ impl VyreOrchestrationProgram {
             matcher_wire_version,
             matcher_digest,
             matcher_bytes,
+            phase2_catalog_digest,
+            phase2_catalog_bytes,
         };
         if program.canonical_bytes()?.as_slice() != bytes {
             return Err(ExecutionPackError::InvalidPack(

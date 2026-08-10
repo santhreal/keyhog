@@ -36,6 +36,8 @@ pub(crate) const MIN_PREFIX_BYTES: usize = 3;
 pub(crate) struct Phase2AlwaysActiveGpuEvidence<'a> {
     pub(crate) prefixless_admitted: bool,
     pub(crate) prefixless_complete: bool,
+    pub(crate) prefixless_candidate_bits: Option<&'a [u32]>,
+    pub(crate) prefixless_candidate_map: Option<&'a [u32]>,
     pub(crate) anchor_present: bool,
     /// Complete raw-byte `(literal_id, offset)` rows for the always-active
     /// anchor segment. `None` means positions were not produced, so presence
@@ -43,25 +45,27 @@ pub(crate) struct Phase2AlwaysActiveGpuEvidence<'a> {
     pub(crate) anchor_literal_matches: Option<&'a [(u32, u32)]>,
 }
 
-impl Phase2AlwaysActiveGpuEvidence<'_> {
+impl<'a> Phase2AlwaysActiveGpuEvidence<'a> {
     #[inline]
     pub(crate) const fn exact_absence() -> Phase2AlwaysActiveGpuEvidence<'static> {
         Phase2AlwaysActiveGpuEvidence {
             prefixless_admitted: false,
             prefixless_complete: true,
+            prefixless_candidate_bits: Some(&[]),
+            prefixless_candidate_map: Some(&[]),
             anchor_present: false,
             anchor_literal_matches: Some(&[]),
         }
     }
 
     #[inline]
-    pub(crate) const fn prefixless_absence_proven(self) -> bool {
-        self.prefixless_complete && !self.prefixless_admitted
-    }
-
-    #[inline]
-    pub(crate) const fn absence_proven(self) -> bool {
-        self.prefixless_absence_proven() && !self.anchor_present
+    pub(crate) fn prefixless_candidates(self) -> Option<(&'a [u32], &'a [u32])> {
+        let bits = self.prefixless_candidate_bits?;
+        let map = self.prefixless_candidate_map?;
+        bits.len()
+            .checked_mul(u32::BITS as usize)
+            .filter(|&expected| expected == map.len())
+            .map(|_| (bits, map))
     }
 }
 
@@ -186,6 +190,22 @@ impl ActivePatternsScratch {
                 self.active.push(index);
             }
         }
+    }
+    pub(crate) fn remove_indices(&mut self, indices: &[u32]) {
+        for &index in indices {
+            if index == u32::MAX {
+                continue;
+            }
+            if let Some(slot) = self.stamp.get_mut(index as usize) {
+                if *slot == self.generation {
+                    *slot = 0;
+                }
+            }
+        }
+        let generation = self.generation;
+        let stamp = &self.stamp;
+        self.active
+            .retain(|&index| stamp.get(index) == Some(&generation));
     }
 
     /// O(1) membership test against the current generation. Used by the

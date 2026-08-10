@@ -1,6 +1,7 @@
 //! Candidate discovery for phase-2 GPU regex-DFA admission.
 
 use super::super::phase2::gate_prefix_literals;
+use super::lowering::CpuRequiredReason;
 use crate::types::CompiledPattern;
 
 pub(super) fn prefixless_always_active_candidates(
@@ -38,4 +39,22 @@ pub(super) fn ascii_phase2_gpu_dfa_candidates(
         .copied()
         .filter(|&idx| !phase2_patterns[idx].0.homoglyph_variant)
         .collect()
+}
+
+pub(super) fn cpu_required_reason(
+    pattern: &CompiledPattern,
+    keywords: &[String],
+    always_active: bool,
+) -> Option<CpuRequiredReason> {
+    if !always_active {
+        return Some(CpuRequiredReason::KeywordGated);
+    }
+    if gate_prefix_literals(pattern.regex.as_str()).is_some() {
+        return Some(CpuRequiredReason::GatePrefixed);
+    }
+    if pattern.homoglyph_variant {
+        return Some(CpuRequiredReason::AsciiHomoglyphRedundant);
+    }
+    debug_assert!(!keywords.iter().any(|keyword| keyword.len() >= 4));
+    None
 }

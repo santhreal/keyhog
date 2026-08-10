@@ -400,6 +400,9 @@ fn phase2_shard_merge_preserves_row_proofs_and_match_multiplicity() {
         admitted: Vec::new(),
         complete: Vec::new(),
         matches_seen: 0,
+        candidate_bits: Vec::new(),
+        candidate_words_per_region: 0,
+        candidate_phase2_indices: Vec::new(),
     };
     append_phase2_gpu_admission(
         &mut merged,
@@ -407,6 +410,9 @@ fn phase2_shard_merge_preserves_row_proofs_and_match_multiplicity() {
             admitted: vec![true, false],
             complete: vec![true, true],
             matches_seen: 3,
+            candidate_bits: vec![0x1, 0x2],
+            candidate_words_per_region: 1,
+            candidate_phase2_indices: vec![7; 32],
         },
         2,
     )
@@ -417,6 +423,9 @@ fn phase2_shard_merge_preserves_row_proofs_and_match_multiplicity() {
             admitted: vec![false, true, true],
             complete: vec![false, true, false],
             matches_seen: 4,
+            candidate_bits: vec![0x4, 0x8, 0x10],
+            candidate_words_per_region: 1,
+            candidate_phase2_indices: vec![7; 32],
         },
         3,
     )
@@ -425,6 +434,9 @@ fn phase2_shard_merge_preserves_row_proofs_and_match_multiplicity() {
     assert_eq!(merged.admitted, [true, false, false, true, true]);
     assert_eq!(merged.complete, [true, true, false, true, false]);
     assert_eq!(merged.matches_seen, 7);
+    assert_eq!(merged.candidate_words_per_region, 1);
+    assert_eq!(merged.candidate_bits, [0x1, 0x2, 0x4, 0x8, 0x10]);
+    assert_eq!(merged.candidate_phase2_indices, vec![7; 32]);
 }
 
 #[test]

@@ -130,6 +130,8 @@ impl Phase2GpuDfaCatalogResident {
         scratch: &mut Phase2GpuDfaScratch,
         haystack_len: u32,
         admitted: &mut [bool],
+        candidate_bits: &mut [u32],
+        candidate_words_per_region: usize,
     ) -> Result<usize, String> {
         let needed = ResidentCapacity::for_batch(
             scratch.dispatch.haystack_bytes.len(),
@@ -164,7 +166,13 @@ impl Phase2GpuDfaCatalogResident {
         }
 
         let result = match &mut *slot {
-            ResidentSlot::Ready(state) => state.scan(scratch, haystack_len, admitted),
+            ResidentSlot::Ready(state) => state.scan(
+                scratch,
+                haystack_len,
+                admitted,
+                candidate_bits,
+                candidate_words_per_region,
+            ),
             ResidentSlot::Empty | ResidentSlot::Failed(_) => Err(
                 "phase-2 GPU catalog-resident state was not installed after preparation"
                     .to_string(),
@@ -191,6 +199,48 @@ impl ResidentState {
         backend: &Arc<dyn VyreBackend>,
         capacity: ResidentCapacity,
     ) -> Result<Self, String> {
+        let mut resident_bytes = capacity
+            .haystack_bytes
+            .checked_add(
+                (capacity.regions as usize)
+                    .checked_mul(U32_BYTES)
+                    .ok_or_else(|| "phase-2 GPU resident region byte count overflow".to_string())?,
+            )
+            .and_then(|bytes| bytes.checked_add(U32_BYTES * 2))
+            .ok_or_else(|| "phase-2 GPU resident shared byte count overflow".to_string())?;
+        for shard in shards {
+            let pattern_count =
+                u32::try_from(shard.pipeline.pattern_lengths.len()).map_err(|error| {
+                    format!("phase-2 GPU resident pattern count exceeds ABI: {error}")
+                })?;
+            let presence_words =
+                vyre_libs::scan::regex_admission_presence_words(pattern_count) as usize;
+            let presence_bytes = (capacity.regions as usize)
+                .checked_mul(presence_words)
+                .and_then(|words| words.checked_mul(U32_BYTES))
+                .ok_or_else(|| "phase-2 GPU resident presence byte count overflow".to_string())?;
+            let table_bytes = shard
+                .pipeline
+                .dfa
+                .transitions
+                .len()
+                .checked_add(shard.pipeline.dfa.output_offsets.len())
+                .and_then(|words| words.checked_add(shard.pipeline.dfa.output_records.len()))
+                .and_then(|words| words.checked_mul(U32_BYTES))
+                .ok_or_else(|| "phase-2 GPU resident table byte count overflow".to_string())?;
+            resident_bytes = resident_bytes
+                .checked_add(table_bytes)
+                .and_then(|bytes| bytes.checked_add(presence_bytes))
+                .ok_or_else(|| "phase-2 GPU resident aggregate byte count overflow".to_string())?;
+        }
+        if resident_bytes
+            > crate::engine::phase2_gpu_dfa::lowering::PHASE2_GPU_DFA_MAX_RESIDENT_BYTES
+        {
+            return Err(format!(
+                "phase-2 GPU resident-byte ceiling exceeded before allocation: {resident_bytes} > {}",
+                crate::engine::phase2_gpu_dfa::lowering::PHASE2_GPU_DFA_MAX_RESIDENT_BYTES
+            ));
+        }
         let mut shared = Vec::with_capacity(SHARED_BINDINGS);
         let region_bytes = (capacity.regions as usize)
             .checked_mul(U32_BYTES)
@@ -248,11 +298,22 @@ impl ResidentState {
         scratch: &mut Phase2GpuDfaScratch,
         haystack_len: u32,
         admitted: &mut [bool],
+        candidate_bits: &mut [u32],
+        candidate_words_per_region: usize,
     ) -> Result<usize, String> {
         self.validate_scan(scratch, haystack_len, admitted)?;
         self.stage_region_starts(scratch)?;
 
         let region_count = scratch.region_starts.len();
+        let expected_candidate_words = region_count
+            .checked_mul(candidate_words_per_region)
+            .ok_or_else(|| "phase-2 GPU candidate output size overflow".to_string())?;
+        if candidate_bits.len() != expected_candidate_words {
+            return Err(format!(
+                "phase-2 GPU candidate output has {} word(s), need {expected_candidate_words}",
+                candidate_bits.len()
+            ));
+        }
         let mut reset_lengths = Vec::new();
         reset_lengths.try_reserve(self.shards.len()).map_err(|error| {
             format!(
@@ -362,11 +423,24 @@ impl ResidentState {
         drop(output_refs);
 
         let mut evidence_bits = 0usize;
+        let mut candidate_word_offset = 0usize;
         for ((shard, output), &byte_len) in
             self.shards.iter().zip(&scratch.outputs).zip(&reset_lengths)
         {
-            evidence_bits =
-                evidence_bits.saturating_add(shard.decode_into(output, byte_len, admitted)?);
+            evidence_bits = evidence_bits.saturating_add(shard.decode_into(
+                output,
+                byte_len,
+                admitted,
+                candidate_bits,
+                candidate_words_per_region,
+                candidate_word_offset,
+            )?);
+            candidate_word_offset = candidate_word_offset
+                .checked_add(shard.presence_words())
+                .ok_or_else(|| "phase-2 GPU candidate word offset overflow".to_string())?;
+        }
+        if candidate_word_offset != candidate_words_per_region {
+            return Err("phase-2 GPU candidate word layout changed after validation".to_string());
         }
         Ok(evidence_bits)
     }
