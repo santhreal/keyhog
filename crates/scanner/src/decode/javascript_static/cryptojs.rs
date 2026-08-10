@@ -14,28 +14,28 @@ use crate::telemetry::{record_static_recovery_rejection, StaticRecoveryRejection
 
 static REQUIRE_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
-        r#"(?m)\b(?:const|let)\s+(?P<alias>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*require\s*\(\s*(?:'crypto-js'|"crypto-js")\s*\)\s*;"#,
+        r#"(?m)\b(?:const|let|var)\s+(?P<alias>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*require\s*\(\s*(?:'crypto-js'|"crypto-js")\s*\)\s*;"#,
         "CryptoJS require binding",
     )
 });
 
 static DECRYPT_FUNCTION_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
-        r"(?s)\bfunction\s+(?P<function>[A-Za-z_$][A-Za-z0-9_$]*)\s*\(\s*(?P<cipher_param>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*(?P<key_param>[A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*\{\s*(?:const|let)\s+(?P<bytes>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?P<decrypt_alias>[A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*AES\s*\.\s*decrypt\s*\(\s*(?P<cipher_use>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*(?P<key_use>[A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*;\s*return\s+(?P<bytes_use>[A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*toString\s*\(\s*(?P<utf8_alias>[A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*enc\s*\.\s*Utf8\s*\)\s*;?\s*\}",
+        r"(?s)\bfunction\s+(?P<function>[A-Za-z_$][A-Za-z0-9_$]*)\s*\(\s*(?P<cipher_param>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*(?P<key_param>[A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*\{\s*(?:const|let|var)\s+(?P<bytes>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?P<decrypt_alias>[A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*AES\s*\.\s*decrypt\s*\(\s*(?P<cipher_use>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*(?P<key_use>[A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*;\s*return\s+(?P<bytes_use>[A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*toString\s*\(\s*(?P<utf8_alias>[A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*enc\s*\.\s*Utf8\s*\)\s*;?\s*\}",
         "CryptoJS passphrase decrypt function",
     )
 });
 
 static STRING_BINDING_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
-        r#"(?m)\b(?:const|let)\s+(?P<name>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?P<value>["'][A-Za-z0-9+/=_-]+["'])\s*;"#,
+        r#"(?m)\b(?:const|let|var)\s+(?P<name>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?P<value>["'][A-Za-z0-9+/=_-]+["'])\s*;"#,
         "static ASCII string binding",
     )
 });
 
 static DECRYPT_CALL_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
-        r"(?m)\b(?:const|let)\s+(?P<result>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?P<invocation>(?P<function>[A-Za-z_$][A-Za-z0-9_$]*)\s*\(\s*(?P<cipher>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*(?P<key>[A-Za-z_$][A-Za-z0-9_$]*)\s*\))\s*;",
+        r"(?m)\b(?:const|let|var)\s+(?P<result>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?P<invocation>(?P<function>[A-Za-z_$][A-Za-z0-9_$]*)\s*\(\s*(?P<cipher>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*(?P<key>[A-Za-z_$][A-Za-z0-9_$]*)\s*\))\s*;",
         "CryptoJS passphrase decrypt call",
     )
 });

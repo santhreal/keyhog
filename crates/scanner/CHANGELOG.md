@@ -1,12 +1,5 @@
 # Changelog
 
-## 0.5.69 - 2026-08-09
-
-- Restore pure structural base64url parsing in `jwt_segments` and reserve structural payload/header decoding for `analyze`, eliminating premature syntax rejections on valid base64url runs.
-- Replace runtime panic macro paths in BPE token count cache initialization with a compile-time safe `TOKEN_CACHE_CAPACITY` constant.
-- Preserve CryptoJS scope analysis design rules in static JavaScript secret recovery by maintaining declaration keyword restrictions (`const|let`).
-- Update suppression shape assignment placeholder checks and miss-clustering attribution dev tools to support sound F1 recall recovery calculations and exact identity matching.
-
 ## 0.5.68 - 2026-08-05
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.
