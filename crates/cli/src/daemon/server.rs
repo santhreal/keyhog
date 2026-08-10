@@ -544,6 +544,51 @@ pub(crate) async fn run_with_backend_override(
         state.guard.set_scanner_idle_timeout(secs);
     }
 
+    // Load persisted roots and attestations from the durable store.
+    // This restores guard state across daemon restarts. Roots are
+    // restored in their persisted state; the watcher is re-registered
+    // for each root that still exists on disk.
+    if let Some(store) = &state.guard_store {
+        match store.load_roots() {
+            Ok(registry) => {
+                for record in registry.list() {
+                    let path_str = String::from_utf8_lossy(&record.canonical_path).to_string();
+                    let path = std::path::PathBuf::from(&path_str);
+                    // Only restore roots whose path still exists.
+                    if path.exists() {
+                        if let Err(e) = state.guard.restore_root(record.clone()) {
+                            tracing::warn!("daemon: failed to restore root {}: {}", path_str, e);
+                        } else {
+                            // Re-register with the filesystem watcher.
+                            if let Err(e) = state.guard_watcher.lock().add_root(path.clone()) {
+                                tracing::warn!("daemon: watcher failed to observe restored root {}: {}", path_str, e);
+                            }
+                            tracing::info!("daemon: restored guard root {}", path_str);
+                        }
+                    } else {
+                        tracing::warn!("daemon: skipping persisted root {}: path no longer exists", path_str);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("daemon: failed to load roots from durable store: {}", e);
+            }
+        }
+        // Load persisted attestations.
+        match store.load_attestations() {
+            Ok(attestations) => {
+                let count = attestations.len();
+                for att in attestations {
+                    state.guard.insert_attestation(att);
+                }
+                tracing::info!("daemon: loaded {} attestations from durable store", count);
+            }
+            Err(e) => {
+                tracing::warn!("daemon: failed to load attestations from durable store: {}", e);
+            }
+        }
+    }
+
     announce_daemon_ready(&socket_path, detector_count, &state.warm_backend_status());
     let accept_task = spawn_accept_loop(listener, state.clone());
     let watcher_task = spawn_guard_watcher_loop(state.clone());

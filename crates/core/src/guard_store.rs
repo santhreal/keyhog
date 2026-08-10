@@ -284,6 +284,13 @@ impl RootRegistry {
         record
     }
 
+    /// Insert a fully-formed root record. Used when restoring from
+    /// the durable store, where the complete record state must be
+    /// preserved rather than initialized to `Stopped`.
+    pub fn insert_record(&mut self, record: GuardRootRecord) {
+        self.roots.insert(record.canonical_path.clone(), record);
+    }
+
     /// Look up a root by canonical path bytes.
     pub fn get(&self, canonical_path: &[u8]) -> Option<&GuardRootRecord> {
         self.roots.get(canonical_path)

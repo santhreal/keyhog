@@ -181,6 +181,23 @@ impl GuardRuntime {
         Ok(record)
     }
 
+    /// Restore a root record from the durable store. Unlike `add_root`,
+    /// this preserves the full record state (state, sequences, timestamps).
+    /// Used during daemon startup to reload persisted roots.
+    pub fn restore_root(&self, record: GuardRootRecord) -> Result<(), String> {
+        let mut roots = self.roots.write();
+        let key = record.canonical_path.clone();
+        if roots.get(&key).is_some() {
+            return Err(format!(
+                "root already registered: {}",
+                String::from_utf8_lossy(&key)
+            ));
+        }
+        roots.insert_record(record);
+        self.touch_activity();
+        Ok(())
+    }
+
     /// Remove a root from the registry.
     pub fn remove_root(&self, canonical_path: &[u8]) -> Option<GuardRootRecord> {
         let removed = self.roots.write().remove(canonical_path);
