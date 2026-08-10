@@ -85,16 +85,7 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
                         style::pass("OK", &palette),
                         state
                     );
-                    if matches!(
-                        state.as_str(),
-                        "stopped" | "indexing" | "degraded" | "stale-policy"
-                    ) {
-                        Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
-                    } else if state == "blocked" || findings_count > 0 {
-                        Ok(ExitCode::from(exit_codes::EXIT_FINDINGS))
-                    } else {
-                        Ok(ExitCode::SUCCESS)
-                    }
+                    Ok(exit_for_guard_state(&state, findings_count))
                 }
                 Response::Error { message } => {
                     anyhow::bail!("guard add: status after reconcile: {message}");
@@ -348,18 +339,7 @@ async fn run_status(
                 }
             }
             // Exit 13 for any state that is not a proven-clean Current root.
-            // Dirty means events were observed but not yet reconciled, so it
-            // must not report success. Exit 1 for blocked / findings.
-            if matches!(
-                state.as_str(),
-                "degraded" | "stale-policy" | "stopped" | "indexing" | "dirty"
-            ) {
-                Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
-            } else if state == "blocked" || findings_count > 0 {
-                Ok(ExitCode::from(exit_codes::EXIT_FINDINGS))
-            } else {
-                Ok(ExitCode::SUCCESS)
-            }
+            Ok(exit_for_guard_state(&state, findings_count))
         }
         Response::Error { message } => {
             anyhow::bail!("{message}");
@@ -404,16 +384,7 @@ async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
                         root.display(),
                         state
                     );
-                    if matches!(
-                        state.as_str(),
-                        "stopped" | "indexing" | "degraded" | "stale-policy"
-                    ) {
-                        Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
-                    } else if state == "blocked" || findings_count > 0 {
-                        Ok(ExitCode::from(exit_codes::EXIT_FINDINGS))
-                    } else {
-                        Ok(ExitCode::SUCCESS)
-                    }
+                    Ok(exit_for_guard_state(&state, findings_count))
                 }
                 Response::Error { message } => {
                     anyhow::bail!("guard reconcile: status after reconcile: {message}");
@@ -495,29 +466,20 @@ async fn run_rebuild(root: std::path::PathBuf, mode: String) -> anyhow::Result<E
         root: canonical.clone(),
         mode: mode.clone(),
     };
-    match conn.round_trip(&add_request).await? {
+    let added_root = match conn.round_trip(&add_request).await? {
         Response::GuardAdded {
-            state,
+            root: ref added_root,
+            state: ref add_state,
             terminal_sequence,
-            ..
         } => {
             eprintln!(
-                "{} guard: rebuild complete for {}, state is {} (sequence {})",
+                "{} guard: root {} re-registered for rebuild (state {}, sequence {})",
                 style::pass("OK", &palette),
                 root.display(),
-                state,
+                add_state,
                 terminal_sequence
             );
-            if matches!(
-                state.as_str(),
-                "stopped" | "indexing" | "degraded" | "stale-policy"
-            ) {
-                Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
-            } else if state == "blocked" {
-                Ok(ExitCode::from(exit_codes::EXIT_FINDINGS))
-            } else {
-                Ok(ExitCode::SUCCESS)
-            }
+            added_root.clone()
         }
         Response::Error { message } => {
             anyhow::bail!("guard rebuild: add failed: {message}");
@@ -528,7 +490,77 @@ async fn run_rebuild(root: std::path::PathBuf, mode: String) -> anyhow::Result<E
                 response_kind(&other)
             );
         }
+    };
+
+    // 3. Wait for baseline reconciliation so rebuild reports a terminal state,
+    // matching `guard add` and the exit-code docs.
+    let reconcile_request = Request::GuardReconcile {
+        root: added_root.clone(),
+    };
+    match conn.round_trip(&reconcile_request).await? {
+        Response::GuardReconcileStarted { root: _ } => {
+            let status_request = Request::GuardStatus {
+                root: added_root,
+            };
+            match conn.round_trip(&status_request).await? {
+                Response::GuardStatusResult {
+                    state,
+                    findings_count,
+                    terminal_sequence,
+                    ..
+                } => {
+                    eprintln!(
+                        "{} guard: rebuild complete for {}, state is {} (sequence {})",
+                        style::pass("OK", &palette),
+                        root.display(),
+                        state,
+                        terminal_sequence
+                    );
+                    Ok(exit_for_guard_state(&state, findings_count))
+                }
+                Response::Error { message } => {
+                    anyhow::bail!("guard rebuild: status after reconcile: {message}");
+                }
+                other => {
+                    anyhow::bail!(
+                        "guard rebuild: status protocol mismatch (got {})",
+                        response_kind(&other)
+                    );
+                }
+            }
+        }
+        Response::Error { message } => {
+            anyhow::bail!("guard rebuild: reconcile failed: {message}");
+        }
+        other => {
+            anyhow::bail!(
+                "guard rebuild: reconcile protocol mismatch (got {})",
+                response_kind(&other)
+            );
+        }
     }
+}
+
+
+/// Map a guard root state label to the CLI exit code byte.
+/// Dirty is unproven (events observed, not yet reconciled) and must not
+/// report success. Exit 13 for any non-proven-clean state; exit 1 for
+/// blocked / findings; exit 0 only for current with zero findings.
+fn exit_code_for_guard_state(state: &str, findings_count: u64) -> u8 {
+    if matches!(
+        state,
+        "degraded" | "stale-policy" | "stopped" | "indexing" | "dirty"
+    ) {
+        exit_codes::EXIT_SOURCE_FAILED
+    } else if state == "blocked" || findings_count > 0 {
+        exit_codes::EXIT_FINDINGS
+    } else {
+        exit_codes::EXIT_SUCCESS
+    }
+}
+
+fn exit_for_guard_state(state: &str, findings_count: u64) -> ExitCode {
+    ExitCode::from(exit_code_for_guard_state(state, findings_count))
 }
 
 /// Canonicalize a root path on the client side before sending it to the
@@ -572,5 +604,52 @@ fn resolve_root_for_control(root: &std::path::Path) -> anyhow::Result<String> {
             root.display(),
             err
         )),
+    }
+}
+
+#[cfg(test)]
+mod exit_code_for_guard_state_tests {
+    use super::exit_code_for_guard_state;
+    use crate::exit_codes::{EXIT_FINDINGS, EXIT_SOURCE_FAILED, EXIT_SUCCESS};
+
+    #[test]
+    fn dirty_is_fail_closed_exit_13() {
+        assert_eq!(exit_code_for_guard_state("dirty", 0), EXIT_SOURCE_FAILED);
+    }
+
+    #[test]
+    fn current_clean_is_success() {
+        assert_eq!(exit_code_for_guard_state("current", 0), EXIT_SUCCESS);
+    }
+
+    #[test]
+    fn blocked_or_findings_are_exit_1() {
+        assert_eq!(exit_code_for_guard_state("blocked", 0), EXIT_FINDINGS);
+        assert_eq!(exit_code_for_guard_state("current", 2), EXIT_FINDINGS);
+    }
+
+    #[test]
+    fn unproven_states_are_exit_13() {
+        for state in ["stopped", "indexing", "degraded", "stale-policy", "dirty"] {
+            assert_eq!(
+                exit_code_for_guard_state(state, 0),
+                EXIT_SOURCE_FAILED,
+                "{state}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod resolve_root_for_control_tests {
+    use super::resolve_root_for_control;
+    use std::path::PathBuf;
+
+    #[test]
+    fn deleted_absolute_path_falls_back_without_canonicalize() {
+        let missing = PathBuf::from("/tmp/keyhog-guard-missing-root-does-not-exist-xyz");
+        assert!(!missing.exists());
+        let resolved = resolve_root_for_control(&missing).expect("resolve deleted root");
+        assert_eq!(resolved, missing.to_string_lossy());
     }
 }

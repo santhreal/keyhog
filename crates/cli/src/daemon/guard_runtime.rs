@@ -78,6 +78,9 @@ pub struct GuardRuntime {
     /// the scan completes and transitions such roots to Dirty
     /// instead of Current, so changes during the walk are not lost.
     dirty_during_indexing: parking_lot::Mutex<std::collections::HashSet<Vec<u8>>>,
+    /// Roots that observed watcher overflow (lost events) while Indexing.
+    /// Baseline completion must end Degraded rather than Current/Dirty.
+    coverage_lost_during_indexing: parking_lot::Mutex<std::collections::HashSet<Vec<u8>>>,
 }
 
 /// Default scanner idle timeout in seconds (5 minutes).
@@ -101,6 +104,7 @@ impl GuardRuntime {
             last_activity: Mutex::new(Instant::now()),
             scanner_idle_timeout_secs: Mutex::new(DEFAULT_SCANNER_IDLE_TIMEOUT_SECS),
             dirty_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
+            coverage_lost_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -115,6 +119,7 @@ impl GuardRuntime {
             last_activity: Mutex::new(Instant::now()),
             scanner_idle_timeout_secs: Mutex::new(DEFAULT_SCANNER_IDLE_TIMEOUT_SECS),
             dirty_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
+            coverage_lost_during_indexing: parking_lot::Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -202,6 +207,8 @@ impl GuardRuntime {
     pub fn remove_root(&self, canonical_path: &[u8]) -> Option<GuardRootRecord> {
         let removed = self.roots.write().remove(canonical_path);
         if removed.is_some() {
+            self.dirty_during_indexing.lock().remove(canonical_path);
+            self.coverage_lost_during_indexing.lock().remove(canonical_path);
             self.touch_activity();
         }
         removed
@@ -228,6 +235,18 @@ impl GuardRuntime {
     /// Returns true if events were observed during indexing.
     pub fn take_dirty_during_indexing(&self, canonical_path: &[u8]) -> bool {
         self.dirty_during_indexing.lock().remove(canonical_path)
+    }
+
+    /// Mark that watcher overflow lost events while this root was Indexing.
+    pub fn mark_coverage_lost_during_indexing(&self, canonical_path: &[u8]) {
+        self.coverage_lost_during_indexing
+            .lock()
+            .insert(canonical_path.to_vec());
+    }
+
+    /// Check and clear the coverage-lost-during-indexing flag.
+    pub fn take_coverage_lost_during_indexing(&self, canonical_path: &[u8]) -> bool {
+        self.coverage_lost_during_indexing.lock().remove(canonical_path)
     }
 
     /// Apply a transition to a root. Returns the new state or an error.
@@ -926,5 +945,36 @@ mod tests {
             rt.root_state(b"/mutation/transition"),
             Some(GuardRootState::Current)
         );
+    }
+
+    #[test]
+    fn coverage_lost_during_indexing_survives_until_taken() {
+        let rt = GuardRuntime::new();
+        rt.add_root(b"/overflow/root".to_vec(), test_fs_identity(), GuardRootMode::Repo)
+            .unwrap();
+        rt.transition_root(b"/overflow/root", &GuardTransition::ReconciliationStarted)
+            .unwrap();
+        rt.mark_dirty_during_indexing(b"/overflow/root");
+        rt.mark_coverage_lost_during_indexing(b"/overflow/root");
+        // Root must remain Indexing so the baseline terminal transition stays legal.
+        assert_eq!(rt.root_state(b"/overflow/root"), Some(GuardRootState::Indexing));
+        assert!(rt.take_coverage_lost_during_indexing(b"/overflow/root"));
+        assert!(!rt.take_coverage_lost_during_indexing(b"/overflow/root"));
+        assert!(rt.take_dirty_during_indexing(b"/overflow/root"));
+        rt.transition_root(b"/overflow/root", &GuardTransition::ReconciliationDegraded)
+            .unwrap();
+        assert_eq!(rt.root_state(b"/overflow/root"), Some(GuardRootState::Degraded));
+    }
+
+    #[test]
+    fn remove_root_clears_indexing_event_flags() {
+        let rt = GuardRuntime::new();
+        rt.add_root(b"/clear/flags".to_vec(), test_fs_identity(), GuardRootMode::Filesystem)
+            .unwrap();
+        rt.mark_dirty_during_indexing(b"/clear/flags");
+        rt.mark_coverage_lost_during_indexing(b"/clear/flags");
+        assert!(rt.remove_root(b"/clear/flags").is_some());
+        assert!(!rt.take_dirty_during_indexing(b"/clear/flags"));
+        assert!(!rt.take_coverage_lost_during_indexing(b"/clear/flags"));
     }
 }

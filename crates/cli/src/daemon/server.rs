@@ -815,62 +815,89 @@ fn scrub_guard_roots(state: &ServerState) {
 /// events mark the root dirty (EventAccepted) only when it is in a
 /// state that accepts that transition (Current or Blocked). Overflow
 /// (ReconcileSubtree) uses CoverageLost, which is legal from every
-/// active state. Events on roots in the Indexing state are recorded
-/// via `mark_dirty_during_indexing` so the baseline handler can
-/// transition the root to Dirty after the scan completes instead of
-/// claiming Current. Events on Dirty, Degraded, StalePolicy, and
-/// Stopped roots are no-ops: those states already account for
-/// unscanned changes.
+/// active post-baseline state. Events or overflow on roots still in
+/// Indexing are recorded via flags so the baseline handler can choose
+/// Dirty or Degraded after the scan completes — applying CoverageLost
+/// mid-index would leave Indexing early and make the terminal
+/// Reconciliation* transition illegal. Events on Dirty, Degraded,
+/// StalePolicy, and Stopped roots are no-ops: those states already
+/// account for unscanned changes.
 fn process_guard_events(state: &ServerState, root: &Path, events: Vec<keyhog_sources::guard::GuardEvent>) {
     use keyhog_core::guard_state::{GuardRootState, GuardTransition};
     use keyhog_sources::guard::GuardEvent;
 
     let root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(root.as_os_str());
     let has_overflow = events.iter().any(|e| matches!(e, GuardEvent::ReconcileSubtree(_)));
-
     let current_state = state.guard.root_state(root_bytes);
-    let transition = if has_overflow {
-        // CoverageLost is legal from Indexing, Current, Dirty, Blocked,
-        // and Degraded. Stopped roots are not active, so skip.
-        match current_state {
-            Some(GuardRootState::Stopped) | None => return,
-            Some(GuardRootState::Indexing) => {
-                // Overflow during indexing: mark for re-scan and
-                // also apply CoverageLost to signal degraded coverage.
-                state.guard.mark_dirty_during_indexing(root_bytes);
-                Some(GuardTransition::CoverageLost)
+
+    match guard_event_action(current_state, has_overflow) {
+        GuardEventAction::Ignore => {}
+        GuardEventAction::MarkDuringIndexing { coverage_lost } => {
+            state.guard.mark_dirty_during_indexing(root_bytes);
+            if coverage_lost {
+                state.guard.mark_coverage_lost_during_indexing(root_bytes);
             }
-            _ => Some(GuardTransition::CoverageLost),
+        }
+        GuardEventAction::Transition(transition) => {
+            match state.guard.transition_root(root_bytes, &transition) {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        "daemon: guard transition failed for {}: {}",
+                        root.display(),
+                        e
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum GuardEventAction {
+    Ignore,
+    MarkDuringIndexing { coverage_lost: bool },
+    Transition(keyhog_core::guard_state::GuardTransition),
+}
+
+fn guard_event_action(
+    current_state: Option<keyhog_core::guard_state::GuardRootState>,
+    has_overflow: bool,
+) -> GuardEventAction {
+    use keyhog_core::guard_state::{GuardRootState, GuardTransition};
+    if has_overflow {
+        match current_state {
+            Some(GuardRootState::Stopped) | None => GuardEventAction::Ignore,
+            Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
+                coverage_lost: true,
+            },
+            _ => GuardEventAction::Transition(GuardTransition::CoverageLost),
         }
     } else {
-        // EventAccepted is legal only from Current and Blocked.
         match current_state {
             Some(GuardRootState::Current) | Some(GuardRootState::Blocked) => {
-                Some(GuardTransition::EventAccepted)
+                GuardEventAction::Transition(GuardTransition::EventAccepted)
             }
-            Some(GuardRootState::Indexing) => {
-                // Events during indexing: the baseline scan is in
-                // progress. Record that changes were observed so the
-                // baseline handler can transition to Dirty instead
-                // of Current after the scan completes.
-                state.guard.mark_dirty_during_indexing(root_bytes);
-                None
-            }
-            _ => None,
+            Some(GuardRootState::Indexing) => GuardEventAction::MarkDuringIndexing {
+                coverage_lost: false,
+            },
+            _ => GuardEventAction::Ignore,
         }
-    };
+    }
+}
 
-    if let Some(transition) = transition {
-        match state.guard.transition_root(root_bytes, &transition) {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::warn!(
-                    "daemon: guard transition failed for {}: {}",
-                    root.display(),
-                    e
-                );
-            }
+fn baseline_terminal_transition(
+    scan_result: BaselineResult,
+    coverage_lost_during_indexing: bool,
+) -> keyhog_core::guard_state::GuardTransition {
+    use keyhog_core::guard_state::GuardTransition;
+    match scan_result {
+        BaselineResult::Findings => GuardTransition::ReconciliationFindings,
+        BaselineResult::Degraded => GuardTransition::ReconciliationDegraded,
+        BaselineResult::Clean if coverage_lost_during_indexing => {
+            GuardTransition::ReconciliationDegraded
         }
+        BaselineResult::Clean => GuardTransition::ReconciliationClean,
     }
 }
 
@@ -942,6 +969,56 @@ mod system_path_tests {
         assert!(is_system_path(Path::new(&format!("{home}/.gnupg"))));
         // Project trees under home remain allowed.
         assert!(!is_system_path(Path::new(&format!("{home}/src/keyhog"))));
+    }
+}
+
+#[cfg(test)]
+mod guard_event_action_tests {
+    use super::{baseline_terminal_transition, guard_event_action, BaselineResult, GuardEventAction};
+    use keyhog_core::guard_state::{GuardRootState, GuardTransition};
+
+    #[test]
+    fn overflow_during_indexing_defers_coverage_lost() {
+        assert_eq!(
+            guard_event_action(Some(GuardRootState::Indexing), true),
+            GuardEventAction::MarkDuringIndexing {
+                coverage_lost: true
+            }
+        );
+    }
+
+    #[test]
+    fn events_during_indexing_mark_dirty_only() {
+        assert_eq!(
+            guard_event_action(Some(GuardRootState::Indexing), false),
+            GuardEventAction::MarkDuringIndexing {
+                coverage_lost: false
+            }
+        );
+    }
+
+    #[test]
+    fn overflow_on_current_uses_coverage_lost() {
+        assert_eq!(
+            guard_event_action(Some(GuardRootState::Current), true),
+            GuardEventAction::Transition(GuardTransition::CoverageLost)
+        );
+    }
+
+    #[test]
+    fn clean_with_indexing_overflow_is_degraded() {
+        assert_eq!(
+            baseline_terminal_transition(BaselineResult::Clean, true),
+            GuardTransition::ReconciliationDegraded
+        );
+        assert_eq!(
+            baseline_terminal_transition(BaselineResult::Clean, false),
+            GuardTransition::ReconciliationClean
+        );
+        assert_eq!(
+            baseline_terminal_transition(BaselineResult::Findings, true),
+            GuardTransition::ReconciliationFindings
+        );
     }
 }
 
@@ -2254,28 +2331,18 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             // transition. This runs synchronously so the caller gets
             // the final state in the response.
             let scan_result = perform_baseline_reconciliation(state, &root).await;
-            let terminal = match scan_result {
-                BaselineResult::Clean => {
-                    keyhog_core::guard_state::GuardTransition::ReconciliationClean
-                }
-                BaselineResult::Findings => {
-                    keyhog_core::guard_state::GuardTransition::ReconciliationFindings
-                }
-                BaselineResult::Degraded => {
-                    keyhog_core::guard_state::GuardTransition::ReconciliationDegraded
-                }
-            };
+            let coverage_lost = state
+                .guard
+                .take_coverage_lost_during_indexing(root.as_bytes());
+            let dirty = state.guard.take_dirty_during_indexing(root.as_bytes());
+            let terminal = baseline_terminal_transition(scan_result, coverage_lost);
             match state.guard.transition_root(root.as_bytes(), &terminal) {
                 Ok(_) => {
-                    // If filesystem events were observed during the
-                    // baseline scan, the tree changed mid-walk and
-                    // the scan may not have seen the latest content.
-                    // Transition to Dirty so the operator knows a
-                    // re-scan is needed. EventAccepted is legal from
-                    // Current and Blocked, the two states the
-                    // baseline terminal transition produces when the
-                    // scan itself succeeded.
-                    if state.guard.take_dirty_during_indexing(root.as_bytes()) {
+                    // Ordinary (non-overflow) events during indexing mean the
+                    // tree changed mid-walk. Move Current/Blocked to Dirty so
+                    // status stays fail-closed until a later reconcile.
+                    // Overflow already forced Degraded via coverage_lost.
+                    if dirty && !coverage_lost {
                         if let Err(e) = state.guard.transition_root(
                             root.as_bytes(),
                             &keyhog_core::guard_state::GuardTransition::EventAccepted,
