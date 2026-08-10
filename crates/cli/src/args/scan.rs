@@ -523,6 +523,15 @@ pub struct ScanArgs {
     #[arg(long, value_name = "PATH|off")]
     pub autoroute_cache: Option<String>,
 
+    /// Override the MatcherArtifact cache directory.
+    ///
+    /// Persists the eager compiled matcher graph across process invocations.
+    /// This is distinct from `--cache-dir`, which only stores Hyperscan `.db`
+    /// shards. Use an absolute directory, or `off` to disable. Config:
+    /// `[system].matcher_cache` in `.keyhog.toml`; this flag overrides it.
+    #[arg(long, value_name = "DIR|off")]
+    pub matcher_cache: Option<String>,
+
     /// Explicit per-detector Bayesian calibration cache for confidence scoring.
     ///
     /// Normal scans are hermetic and ignore any default `keyhog calibrate`

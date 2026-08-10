@@ -15,7 +15,7 @@
 //!     has CLOSED (`'\u{2060}'..='\u{2064}'` is in the zero-width set), so the
 //!     real current value asserted below is `true`, and the stale gap is noted,
 //!   - `is_combining_mark` reaching the FULL Grapheme_Extend set (blocks beyond
-//!     U+0300–036F: Extended U+1DC0, Half Marks U+FE20),
+//!     U+0300-036F: Extended U+1DC0, Half Marks U+FE20),
 //!   - `strip_interior_evasion_controls` anchored strip vs structural-whitespace
 //!     preservation (TSV tabs, CRLF, mid-identifier non-anchoring).
 //!
@@ -65,7 +65,7 @@ fn detect_combining_acute_is_decomposed() {
 #[test]
 fn detect_combining_extended_block_u1dc0_is_decomposed() {
     // U+1DC0 lives in the Combining Diacritical Marks Extended block, OUTSIDE
-    // the U+0300–036F block. It must still classify as a combining mark, proving
+    // the U+0300-036F block. It must still classify as a combining mark, proving
     // `is_combining_mark` covers the full Grapheme_Extend set, not one block.
     let m = uh::detect_unicode_attacks("\u{1DC0}");
     assert_eq!(m.len(), 1);
@@ -119,7 +119,7 @@ fn normalize_strips_zwj_bom_zwsp_to_clean_token() {
 #[test]
 fn normalize_strips_combining_marks_from_two_blocks() {
     // U+1DC0 (Extended block) + U+FE20 (Combining Half Marks block) both dropped
-    // neither is in the legacy U+0300–036F block.
+    // neither is in the legacy U+0300-036F block.
     let evaded = "g\u{1DC0}h\u{FE20}p_x1234567890abcd";
     let out = uh::normalize_homoglyphs(evaded);
     assert_eq!(&*out, "ghp_x1234567890abcd");

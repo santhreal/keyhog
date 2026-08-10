@@ -18,8 +18,8 @@ pub(crate) use detectors::{
     validate_explicit_detector_path, DetectorCorpusProvenance, LoadedDetectorCorpus,
 };
 pub(crate) use effective::{
-    autoroute_config_digest, profiling_policy_digest, profiling_resolved_config_digest,
-    render_effective_config,
+    autoroute_config_digest, matcher_resolved_config_digest, profiling_policy_digest,
+    profiling_resolved_config_digest, render_effective_config,
 };
 pub(crate) use engine_runtime::ResolvedEngineRuntimeSettings;
 pub(crate) use policy::{ResolvedAllowlistConfig, ResolvedReportPolicy, ResolvedVerifyPolicy};
@@ -27,11 +27,12 @@ pub(crate) use policy::{ResolvedAllowlistConfig, ResolvedReportPolicy, ResolvedV
 pub(crate) use runtime::MAX_COMMITS_DEFAULT;
 pub(crate) use runtime::{
     backend_override_cli_value, backend_override_label, configure_hyperscan_cache_dir,
-    configure_persistent_daemon_threads, configure_threads, fused_batch_calibration_counts,
-    fused_cpu_wave_width, fused_depth_default, gpu_runtime_policy_for_backend_override,
-    gpu_runtime_policy_from_args, keyhog_worker_threads, parse_backend_override, ScanRuntimeInput,
-    FUSED_BATCH_BYTES, FUSED_BATCH_DEFAULT, MAX_THREADS_CAP, ML_THRESHOLD_DEFAULT,
-    VERIFY_MAX_CONCURRENT_DEFAULT, VERIFY_TIMEOUT_DEFAULT_SECS,
+    configure_matcher_artifact_cache_dir, configure_persistent_daemon_threads, configure_threads,
+    fused_batch_calibration_counts, fused_cpu_wave_width, fused_depth_default,
+    gpu_runtime_policy_for_backend_override, gpu_runtime_policy_from_args, keyhog_worker_threads,
+    parse_backend_override, ScanRuntimeInput, FUSED_BATCH_BYTES, FUSED_BATCH_DEFAULT,
+    MAX_THREADS_CAP, ML_THRESHOLD_DEFAULT, VERIFY_MAX_CONCURRENT_DEFAULT,
+    VERIFY_TIMEOUT_DEFAULT_SECS,
 };
 pub(crate) use scanner::build_scanner_config;
 use scanner::{build_scanner_config_from_input, ScannerConfigInput};
@@ -123,6 +124,9 @@ pub(crate) struct ResolvedScanConfig {
     /// Resolved persistent autoroute calibration cache file. `None` means
     /// persistence is explicitly disabled.
     pub(crate) autoroute_cache_path: Option<PathBuf>,
+    /// Resolved MatcherArtifact cache directory. `None` means persistence is
+    /// explicitly disabled.
+    pub(crate) matcher_cache_path: Option<PathBuf>,
     /// Resolved explicit per-detector Bayesian calibration cache file. `None`
     /// means confidence scoring is hermetic and does not read disk state.
     pub(crate) calibration_cache_path: Option<PathBuf>,
@@ -189,6 +193,24 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         runtime_input.autoroute_cache.as_deref(),
     )
     .map_err(anyhow::Error::msg)?;
+    let mut matcher_cache_path = crate::matcher_cache_path::resolve_matcher_cache_path(
+        runtime_input.matcher_cache.as_deref(),
+    )
+    .map_err(anyhow::Error::msg)?;
+    // Lockdown forbids reading detector graphs from unsigned on-disk caches.
+    if args.lockdown && matcher_cache_path.is_some() {
+        // Only surface warnings when the operator explicitly configured the
+        // cache; default-on resolution must not spam --lockdown/--quiet CI.
+        if runtime_input.matcher_cache.is_some() {
+            tracing::warn!("lockdown mode: MatcherArtifact cache disabled");
+            eprintln!(
+                "warning: MatcherArtifact cache disabled because --lockdown forbids unsigned on-disk detector/matcher caches"
+            );
+        }
+        matcher_cache_path = None;
+    }
+
+    configure_matcher_artifact_cache_dir(matcher_cache_path.clone())?;
     let backend_override = parse_backend_override(runtime_input.backend.as_deref())?;
     let scanner_tuning = outcome.scanner_tuning;
     let scanner_input = ScannerConfigInput::from_scan_args(args);
@@ -233,6 +255,7 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         incremental_cache_path: runtime_input.incremental_cache_path,
         hyperscan_cache_dir: runtime_input.cache_dir,
         autoroute_cache_path,
+        matcher_cache_path,
         calibration_cache_path,
         calibration_entry_count,
         calibration_digest,
@@ -280,6 +303,7 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
         incremental_cache_path: None,
         hyperscan_cache_dir: None,
         autoroute_cache_path: None,
+        matcher_cache_path: None,
         calibration_cache_path: None,
         calibration_entry_count: 0,
         calibration_digest: 0,

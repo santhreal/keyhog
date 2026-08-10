@@ -109,6 +109,7 @@ or coverage incomplete.
 | `--limit-stdin-bytes` | `SIZE` |  | Maximum bytes accepted from --stdin before failing closed |
 | `--limit-web-response-bytes` | `SIZE` |  | Maximum HTTP response bytes scanned by --url |
 | `--lockdown` |  |  | Lockdown mode: maximum security at the cost of throughput. Enables every protection in `keyhog_core::apply_protections(true)` (mlock, refuse-on-coredump-leak, refuse-on-disk-cache), forces HTTPS-only verifier, refuses to write any cache to disk, and hard-aborts if any protection fails to take. Use this when keyhog is running inside EnvSeal or otherwise in a security-critical embedding |
+| `--matcher-cache` | `DIR\|off` |  | Override the MatcherArtifact cache directory. Persists the eager compiled matcher graph across process invocations. This is distinct from `--cache-dir`, which only stores Hyperscan `.db` shards. Use an absolute directory, or `off` to disable. Config: `[system].matcher_cache` in `.keyhog.toml`; this flag overrides it. |
 | `--max-commits` | `MAX_COMMITS` |  | Max git commits to traverse |
 | `--max-file-size` | `SIZE` |  | Maximum file size to scan. Files larger than this are listed in the end-of-scan "files skipped: exceeded --max-file-size" summary. Default is 100 MiB, the `FilesystemSource` ceiling. Files above the 1 MiB window size are read in overlapping ~1 MiB windows (so memory stays bounded regardless of file size), up to this cap |
 | `--min-confidence` | `FLOAT` |  | Minimum confidence score (0.0 - 1.0) to report findings (default: 0.40) |
@@ -292,6 +293,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--limit-stdin-bytes` | `SIZE` |  | Maximum bytes accepted from --stdin before failing closed |
 | `--limit-web-response-bytes` | `SIZE` |  | Maximum HTTP response bytes scanned by --url |
 | `--lockdown` |  |  | Lockdown mode: maximum security at the cost of throughput. Enables every protection in `keyhog_core::apply_protections(true)` (mlock, refuse-on-coredump-leak, refuse-on-disk-cache), forces HTTPS-only verifier, refuses to write any cache to disk, and hard-aborts if any protection fails to take. Use this when keyhog is running inside EnvSeal or otherwise in a security-critical embedding |
+| `--matcher-cache` | `DIR\|off` |  | Override the MatcherArtifact cache directory. Persists the eager compiled matcher graph across process invocations. This is distinct from `--cache-dir`, which only stores Hyperscan `.db` shards. Use an absolute directory, or `off` to disable. Config: `[system].matcher_cache` in `.keyhog.toml`; this flag overrides it. |
 | `--max-commits` | `MAX_COMMITS` |  | Max git commits to traverse |
 | `--max-file-size` | `SIZE` |  | Maximum file size to scan. Files larger than this are listed in the end-of-scan "files skipped: exceeded --max-file-size" summary. Default is 100 MiB, the `FilesystemSource` ceiling. Files above the 1 MiB window size are read in overlapping ~1 MiB windows (so memory stays bounded regardless of file size), up to this cap |
 | `--min-confidence` | `FLOAT` |  | Minimum confidence score (0.0 - 1.0) to report findings (default: 0.40) |

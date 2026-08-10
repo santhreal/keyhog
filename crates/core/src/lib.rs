@@ -130,11 +130,28 @@ pub(crate) const STALE_TMP_CUTOFF_SECS: u64 = 60 * 60;
 /// lockdown past-findings gate, a rename here moves all three together so the
 /// lockdown scan can never desynchronize from where scan artifacts actually land.
 pub(crate) const KEYHOG_CACHE_SUBDIR: &str = "keyhog";
+/// Sibling of [`KEYHOG_CACHE_SUBDIR`] used for MatcherArtifact `.khm` files.
+pub const KEYHOG_MATCHER_ARTIFACTS_SUBDIR: &str = "keyhog-matcher-artifacts";
+/// On-disk magic for MatcherArtifact cache files (`KHMA`).
+pub const MATCHER_ARTIFACT_MAGIC: &[u8; 4] = b"KHMA";
+/// Filename prefix for MatcherArtifact cache files (`matcher-<hex>.khm`).
+pub const MATCHER_ARTIFACT_FILENAME_PREFIX: &str = "matcher-";
+/// Filename suffix for MatcherArtifact cache files.
+pub const MATCHER_ARTIFACT_SUFFIX: &str = ".khm";
+/// MatcherArtifact on-disk envelope version shared with lockdown header checks.
+pub const MATCHER_ARTIFACT_FORMAT_VERSION: u32 = 4;
 
 /// Absolute path of keyhog's per-user cache root (`<os-cache>/keyhog`), or
 /// `None` when the platform exposes no cache directory.
 pub(crate) fn keyhog_cache_root() -> Option<std::path::PathBuf> {
     dirs::cache_dir().map(|dir| dir.join(KEYHOG_CACHE_SUBDIR))
+}
+
+/// Absolute path of the MatcherArtifact cache root
+/// (`<os-cache>/keyhog-matcher-artifacts`), or `None` when the platform exposes
+/// no cache directory.
+pub fn keyhog_matcher_artifacts_root() -> Option<std::path::PathBuf> {
+    dirs::cache_dir().map(|dir| dir.join(KEYHOG_MATCHER_ARTIFACTS_SUBDIR))
 }
 
 /// Parse the embedded detector corpus, FAILING CLOSED on any malformed TOML.
@@ -256,6 +273,44 @@ pub fn detector_spec_by_id(id: &str) -> Option<&'static DetectorSpec> {
 #[inline]
 pub fn git_hash() -> &'static str {
     env!("GIT_HASH")
+}
+
+/// SHA-256 hex digest of the currently running executable, memoized once per process.
+///
+/// Shared by MatcherArtifact identity and autoroute calibration so a scan does
+/// not read and hash the binary twice.
+pub fn current_executable_sha256() -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    use std::sync::OnceLock;
+    static DIGEST: OnceLock<Result<String, String>> = OnceLock::new();
+    DIGEST
+        .get_or_init(|| {
+            let path = std::env::current_exe()
+                .map_err(|error| format!("locate running executable: {error}"))?;
+            let mut file = std::fs::File::open(&path).map_err(|error| {
+                format!(
+                    "open running executable {} for identity: {error}",
+                    path.display()
+                )
+            })?;
+            let mut hasher = Sha256::new();
+            let mut buffer = [0u8; 128 * 1024];
+            loop {
+                let read = file.read(&mut buffer).map_err(|error| {
+                    format!(
+                        "read running executable {} for identity: {error}",
+                        path.display()
+                    )
+                })?;
+                if read == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..read]);
+            }
+            Ok(format!("{:x}", hasher.finalize()))
+        })
+        .clone()
 }
 
 /// Effective digest identifying the EXACT embedded detector set and the

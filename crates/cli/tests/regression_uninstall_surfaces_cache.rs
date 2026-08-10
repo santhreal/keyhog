@@ -76,3 +76,33 @@ fn uninstall_dry_run_omits_cache_hint_when_absent() {
         "uninstall must not name a cache dir that does not exist; got:\n{stdout}"
     );
 }
+
+#[test]
+fn uninstall_dry_run_names_the_matcher_artifact_cache_when_present() {
+    let cache_home = TempDir::new().expect("tempdir");
+    let matcher_cache = cache_home.path().join("keyhog-matcher-artifacts");
+    std::fs::create_dir_all(&matcher_cache).expect("create matcher cache");
+    std::fs::write(matcher_cache.join("matcher-deadbeef.khm"), b"KHMA").expect("seed");
+
+    let output = Command::new(binary())
+        .arg("uninstall")
+        .env("XDG_CACHE_HOME", cache_home.path())
+        .env("NO_COLOR", "1")
+        .output()
+        .expect("spawn keyhog uninstall");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        matcher_cache.is_dir(),
+        "dry-run uninstall must not delete the matcher cache"
+    );
+    let cache_str = matcher_cache.display().to_string();
+    assert!(
+        stdout.contains(&cache_str),
+        "uninstall cleanup hints must name the matcher cache dir {cache_str}; got:\n{stdout}"
+    );
+    assert!(
+        stdout.to_ascii_lowercase().contains("matcher"),
+        "the matcher cache hint must describe what the path is; got:\n{stdout}"
+    );
+}

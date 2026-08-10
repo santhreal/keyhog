@@ -132,6 +132,8 @@ pub(crate) mod gpu_literal_artifacts;
 pub(crate) mod gpu_matcher_cache;
 /// Hardware capability detection and backend selection.
 pub mod hw_probe;
+/// Persistent compiled matcher (`MatcherArtifact`) cache shared across processes.
+pub mod matcher_artifact_cache;
 /// Machine learning inference for secret scoring.
 pub mod ml_scorer;
 /// Multiline secret reassembly logic.
@@ -265,6 +267,21 @@ pub fn set_hyperscan_cache_dir(path: Option<std::path::PathBuf>) {
 #[cfg(feature = "simd")]
 pub fn validate_hyperscan_cache_dir(path: &std::path::Path) -> std::result::Result<(), String> {
     simd::backend::validate_configured_cache_dir(path)
+}
+
+/// Configure the MatcherArtifact cache directory for this process.
+///
+/// Call before compiling a scanner. `None` disables persistence. Explicit paths
+/// must be absolute under the user's home or the per-uid keyhog temp cache root.
+pub fn set_matcher_artifact_cache_dir(path: Option<std::path::PathBuf>) {
+    matcher_artifact_cache::set_matcher_artifact_cache_dir(path);
+}
+
+/// Validate an explicit MatcherArtifact cache directory without compiling.
+pub fn validate_matcher_artifact_cache_dir(
+    path: &std::path::Path,
+) -> std::result::Result<(), String> {
+    matcher_artifact_cache::validate_matcher_artifact_cache_dir(path)
 }
 
 /// True when `detector_id` names the pure-entropy fallback family (`"entropy"`

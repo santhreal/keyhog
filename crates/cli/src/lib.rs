@@ -668,6 +668,7 @@ pub mod exit_codes;
 pub(crate) mod format;
 pub(crate) mod installer;
 pub(crate) mod log_dedup;
+pub(crate) mod matcher_cache_path;
 pub(crate) mod runtime_preflight;
 // Daemon uses Unix-domain sockets (`tokio::net::UnixListener` and
 // `std::os::unix::net`). Windows lacks both surfaces in the form

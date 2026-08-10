@@ -161,6 +161,31 @@ impl CompiledScanner {
             None,
             None,
             None,
+            true,
+        )
+    }
+
+    /// Hydrate a scanner from an already-decoded [`CompileState`].
+    ///
+    /// Used by the MatcherArtifact cache hit path and by miss-path hydration
+    /// after a freshly compiled artifact is persisted, so eager construction
+    /// runs at most once per miss.
+    pub(crate) fn compile_shared_from_compile_state(
+        detectors: Arc<[DetectorSpec]>,
+        gpu_policy: GpuInitPolicy,
+        tuning_config: &ScannerTuningConfig,
+        state: crate::compiler::compiler_build::CompileState,
+    ) -> Result<Self> {
+        Self::compile_shared_with_state_source(
+            detectors,
+            gpu_policy,
+            tuning_config,
+            Some(state),
+            None,
+            None,
+            None,
+            None,
+            true,
         )
     }
 
@@ -195,6 +220,7 @@ impl CompiledScanner {
             None,
             None,
             None,
+            false,
         )
     }
 
@@ -520,6 +546,7 @@ impl CompiledScanner {
             packed_vyre_program,
             decoder_plan,
             packed_detector_plan,
+            false,
         )
     }
 
@@ -532,12 +559,19 @@ impl CompiledScanner {
         packed_vyre_program: Option<PackedVyreProgramSource<'_>>,
         packed_decoder_plan: Option<(Arc<crate::decode::CompiledDecoderPlan>, [u8; 32])>,
         mut packed_detector_plan: Option<PackedDetectorPlanPrelude<'_>>,
+        validate_live_detector_corpus: bool,
     ) -> Result<Self> {
         tuning_config
             .validate()
             .map_err(crate::error::ScanError::Config)?;
+        // Fresh compiles and MatcherArtifact hydration supply full live
+        // DetectorSpecs (including companion regexes). Authenticated
+        // execution-pack schema reconstruction only fills companion names, so
+        // the corpus quality gate must stay skipped there. Feature
+        // compatibility (e.g. entropy-less builds refusing entropy-owning
+        // detectors) still runs for every non-prelude path.
         if packed_detector_plan.is_none() {
-            if packed_state.is_none() {
+            if validate_live_detector_corpus {
                 super::validation::validate_detector_corpus(&detectors)
                     .map_err(crate::error::ScanError::Config)?;
             }

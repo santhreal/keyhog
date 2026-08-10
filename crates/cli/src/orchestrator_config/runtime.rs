@@ -189,6 +189,7 @@ fn explicit_gpu_backend(args: &ScanArgs) -> bool {
 pub(crate) struct ScanRuntimeInput {
     pub(crate) cache_dir: Option<PathBuf>,
     pub(crate) autoroute_cache: Option<String>,
+    pub(crate) matcher_cache: Option<String>,
     pub(crate) calibration_cache: Option<PathBuf>,
     pub(crate) backend: Option<String>,
     pub(crate) batch_pipeline: bool,
@@ -216,6 +217,7 @@ impl ScanRuntimeInput {
         Self {
             cache_dir: args.cache_dir.clone(),
             autoroute_cache: args.autoroute_cache.clone(),
+            matcher_cache: args.matcher_cache.clone(),
             calibration_cache: args.calibration_cache.clone(),
             backend: args.backend.clone(),
             batch_pipeline: args.batch_pipeline && !args.no_batch_pipeline,
@@ -389,6 +391,16 @@ pub(crate) fn configure_hyperscan_cache_dir(cache_dir: Option<PathBuf>) -> Resul
         }
     }
 
+    Ok(())
+}
+
+pub(crate) fn configure_matcher_artifact_cache_dir(cache_dir: Option<PathBuf>) -> Result<()> {
+    if let Some(path) = cache_dir.as_ref() {
+        keyhog_scanner::validate_matcher_artifact_cache_dir(path).map_err(|error| {
+            anyhow::anyhow!("{error}. Configure with --matcher-cache or [system].matcher_cache")
+        })?;
+    }
+    keyhog_scanner::set_matcher_artifact_cache_dir(cache_dir);
     Ok(())
 }
 

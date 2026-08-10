@@ -157,3 +157,101 @@ fn cache_entry_read_error_is_lockdown_violation() {
         "a per-entry read_dir error must fail closed instead of being filtered out"
     );
 }
+
+#[test]
+fn compiled_matcher_artifact_file_is_not_lockdown_violation() {
+    with_xdg_cache_home(|cache_home| {
+        let root = cache_home.path().join("keyhog-matcher-artifacts");
+        std::fs::create_dir_all(&root).expect("matcher artifacts dir");
+        let name = format!("matcher-{}.khm", "b".repeat(64));
+        let mut bytes = keyhog_core::MATCHER_ARTIFACT_MAGIC.to_vec();
+        bytes.extend_from_slice(&keyhog_core::MATCHER_ARTIFACT_FORMAT_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 64]);
+        std::fs::write(root.join(name), bytes).expect("write khm");
+        let hits = keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+            &keyhog_core::testing::TestApi,
+        );
+        assert_eq!(
+            hits,
+            Vec::<std::path::PathBuf>::new(),
+            "trusted MatcherArtifact .khm should not violate lockdown"
+        );
+    });
+}
+
+#[test]
+fn matcher_artifact_without_magic_is_lockdown_violation() {
+    with_xdg_cache_home(|cache_home| {
+        let root = cache_home.path().join("keyhog-matcher-artifacts");
+        std::fs::create_dir_all(&root).expect("matcher artifacts dir");
+        let name = format!("matcher-{}.khm", "c".repeat(64));
+        std::fs::write(root.join(name), b"BAD!").expect("write bad khm");
+        let hits = keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+            &keyhog_core::testing::TestApi,
+        );
+        assert_eq!(
+            hits.is_empty(),
+            false,
+            "bad MatcherArtifact magic must violate lockdown: {hits:?}"
+        );
+    });
+}
+
+#[test]
+fn matcher_artifact_stale_version_is_lockdown_violation() {
+    with_xdg_cache_home(|cache_home| {
+        let root = cache_home.path().join("keyhog-matcher-artifacts");
+        std::fs::create_dir_all(&root).expect("matcher artifacts dir");
+        let name = format!("matcher-{}.khm", "e".repeat(64));
+        let mut bytes = keyhog_core::MATCHER_ARTIFACT_MAGIC.to_vec();
+        let stale = keyhog_core::MATCHER_ARTIFACT_FORMAT_VERSION.wrapping_add(1);
+        bytes.extend_from_slice(&stale.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 64]);
+        std::fs::write(root.join(name), bytes).expect("write stale khm");
+        let hits = keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+            &keyhog_core::testing::TestApi,
+        );
+        assert_eq!(
+            hits.is_empty(),
+            false,
+            "stale MatcherArtifact format version must violate lockdown: {hits:?}"
+        );
+    });
+}
+
+#[test]
+fn matcher_artifact_under_keyhog_root_is_lockdown_violation() {
+    with_xdg_cache_home(|cache_home| {
+        let keyhog_cache = cache_home.path().join("keyhog");
+        std::fs::create_dir_all(&keyhog_cache).expect("create cache dir");
+        let name = format!("matcher-{}.khm", "d".repeat(64));
+        let mut bytes = b"KHMA".to_vec();
+        bytes.extend_from_slice(&4u32.to_le_bytes());
+        std::fs::write(keyhog_cache.join(name), bytes).expect("write khm under keyhog");
+        let hits = keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+            &keyhog_core::testing::TestApi,
+        );
+        assert_eq!(
+            hits.is_empty(),
+            false,
+            "matcher .khm under keyhog/ must violate lockdown: {hits:?}"
+        );
+    });
+}
+
+#[test]
+fn matcher_artifact_tmp_named_file_is_lockdown_violation() {
+    with_xdg_cache_home(|cache_home| {
+        let root = cache_home.path().join("keyhog-matcher-artifacts");
+        std::fs::create_dir_all(&root).expect("matcher artifacts dir");
+        std::fs::write(root.join(".tmpABCDEFGH"), b"in-flight").expect("write tmp");
+        let hits = keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+            &keyhog_core::testing::TestApi,
+        );
+        assert_eq!(
+            hits.is_empty(),
+            false,
+            "non-khm names under matcher-artifacts must violate lockdown: {hits:?}"
+        );
+    });
+}

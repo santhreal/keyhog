@@ -100,6 +100,7 @@ A dash means that layer intentionally has no surface.
 | Incremental cache | off | `[scan].incremental` / `[scan].incremental_cache` | `--incremental` / `--incremental-cache` | BLAKE3 Merkle skip-cache; 10-100× on CI re-runs. |
 | Hyperscan cache dir | platform cache dir | `[system].cache_dir` | `--cache-dir` | Compiled-database cache directory. Must be an absolute user-owned path under the home directory or per-user keyhog temp cache root. |
 | Autoroute cache file | platform cache file | `[system].autoroute_cache` | `--autoroute-cache` | Persisted fastest-correct backend decisions. Use an absolute file path or `off` to disable persistence; cache misses then warn, complete through scalar recovery, and cannot be reported as autoroute. |
+| MatcherArtifact cache dir | platform cache dir | `[system].matcher_cache` | `--matcher-cache` | Persisted eager compiled matcher graph reused across process invocations. Distinct from Hyperscan `--cache-dir` `.db` shards. Default-on mirrors Hyperscan's local shard cache (unsigned, identity-bound). `--lockdown` disables it. Use an absolute directory or `off` to disable. Identity binds binary, features, detector digest, matcher-relevant config digest, pack generation, backend, and runtime identity; mismatches miss and rebuild. LazyRegex residency is not retained. |
 | Bayesian calibration cache | off | `[system].calibration_cache` | `--calibration-cache` | Explicit per-detector confidence calibration file written by `keyhog calibrate`. Missing or damaged explicit files fail closed before scanning. |
 | GPU runtime policy | `auto` | `[system].gpu` | `--no-gpu` / `--require-gpu` | `auto` probes when routing can use GPU, `off` skips GPU init, and `required` fails closed when no usable GPU stack is available. Printed by `keyhog config --effective` and included in autoroute scan identity. |
 | Low-level calibration GPU control | off | `[system].autoroute_gpu` | `--autoroute-gpu` / `--no-autoroute-gpu` | Applies only to direct `scan --autoroute-calibrate` diagnostics. The canonical `keyhog calibrate-autoroute` command always measures every eligible backend, including GPU. Normal scans only consume persisted evidence. |
@@ -398,6 +399,7 @@ the [`scan --help` output](./cli.md) for the current `--lockdown` checks.
 trusted_bin_dirs = ["/nix/store/example-system-bin/bin"]
 cache_dir = "/home/alice/.cache/keyhog"
 autoroute_cache = "/home/alice/.cache/keyhog/autoroute.json"
+matcher_cache = "/home/alice/.cache/keyhog-matcher-artifacts"
 calibration_cache = "/home/alice/.cache/keyhog/calibration.json"
 gpu = "auto"
 autoroute_gpu = false
@@ -419,6 +421,8 @@ It uses the same precedence as scan flags: compiled platform default, then TOML,
 then `--autoroute-cache`. The value must be an absolute file path or `off`.
 The cache path is printed by `keyhog config --effective`; it is storage
 configuration, not part of the scan identity digest.
+
+`matcher_cache` overrides the MatcherArtifact cache directory used to reuse the eager compiled matcher graph across process invocations. This is not the Hyperscan `--cache-dir` database cache: a directory that only contains `hs-*.db` shards still pays the detector-spec compile floor. When unset, KeyHog defaults to `dirs::cache_dir()/keyhog-matcher-artifacts` (sibling of the Hyperscan `keyhog/` cache root so lockdown's past-findings audit of `<cache>/keyhog` is not tripped by matcher graphs). Pass an absolute directory or `off`. The trust model matches Hyperscan `.db` shards: the artifact is unsigned local state bound by binary/config/detector digests under a uid-owned allowlisted path; `--lockdown` disables MatcherArtifact entirely rather than reading unsigned detector graphs. The cache key binds binary identity, target/features, detector corpus digest, matcher-relevant config digest (scanner tuning / disabled detectors / confidence floors / regex DFA limit - not thread counts, exclude paths, or volatile cache locations), pack/generation identity when packs apply, and backend-relevant runtime identity. A mismatch misses and rebuilds; a foreign matcher is never served. LazyRegex programs remain compile-on-first-use, so peak RSS stays near the MemoryFootprint baseline rather than retaining every detector regex.
 
 `calibration_cache` opts a scan into per-detector Bayesian confidence
 calibration written by `keyhog calibrate`. The scanner never reads the default

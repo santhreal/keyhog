@@ -357,6 +357,9 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     let autoroute_cache_path =
         format_optional_path(resolved.autoroute_cache_path.as_ref(), "<disabled>");
     out.push_str(&format!("autoroute_cache_path = {autoroute_cache_path}\n"));
+    let matcher_cache_path =
+        format_optional_path(resolved.matcher_cache_path.as_ref(), "<disabled>");
+    out.push_str(&format!("matcher_cache_path = {matcher_cache_path}\n"));
     // LAW10: absent explicit calibration cache; scanner config carries None and does not read disk.
     let calibration_cache_path =
         format_optional_path(resolved.calibration_cache_path.as_ref(), "<disabled>");
@@ -670,6 +673,7 @@ pub(crate) fn profiling_resolved_config_digest(resolved: &ResolvedScanConfig) ->
         "autoroute_cache_path",
         resolved.autoroute_cache_path.as_deref(),
     );
+    h.field_option_path("matcher_cache_path", resolved.matcher_cache_path.as_deref());
     h.field_option_path(
         "calibration_cache_path",
         resolved.calibration_cache_path.as_deref(),
@@ -705,6 +709,34 @@ pub(crate) fn profiling_resolved_config_digest(resolved: &ResolvedScanConfig) ->
     #[cfg(feature = "verify")]
     h.field_str("verify.oob.server", &verify.oob.server);
     h.field_u64("verify.oob.timeout_secs", verify.oob.timeout_secs);
+    h.finish_256()
+}
+
+/// Config identity for MatcherArtifact cache keys.
+///
+/// Only fields that change the compiled matcher graph participate. Thread counts,
+/// exclude paths, Hyperscan/incremental/autoroute cache *paths*, report/verify
+/// policy, and other scan-orchestration knobs are excluded so ordinary flag
+/// changes do not miss and multiply on-disk artifacts.
+pub(crate) fn matcher_resolved_config_digest(resolved: &ResolvedScanConfig) -> [u8; 32] {
+    let mut h = StableHasher::new("matcher-resolved-config-digest-v3");
+    hash_scanner_tuning(&mut h, &resolved.scanner_tuning);
+    let mut disabled: Vec<_> = resolved.disabled_detectors.iter().collect();
+    disabled.sort();
+    h.field_usize("disabled_detectors.len", disabled.len());
+    for id in disabled {
+        h.field_str("disabled_detectors.id", id);
+    }
+    // Confidence floors can drop detectors from the effective graph before
+    // compile when paired with corpus filtering; bind them explicitly.
+    let mut floors: Vec<_> = resolved.detector_min_confidence.iter().collect();
+    floors.sort_by(|a, b| a.0.cmp(b.0));
+    h.field_usize("detector_min_confidence.len", floors.len());
+    for (id, floor) in floors {
+        h.field_str("detector_min_confidence.id", id);
+        h.field_f64_bits("detector_min_confidence.floor", *floor);
+    }
+    h.field_option_usize("regex_dfa_limit", resolved.regex_dfa_limit);
     h.finish_256()
 }
 

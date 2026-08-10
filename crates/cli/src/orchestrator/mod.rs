@@ -1275,6 +1275,18 @@ impl ScanOrchestrator {
             let detectors_path = auto_discover_detectors(&args.detectors)?;
             (requested_detector_mode, detectors_path)
         };
+        let resolved_config_digest =
+            crate::orchestrator_config::matcher_resolved_config_digest(&effective_config);
+        let runtime_identity = keyhog_scanner::hw_probe::hyperscan_runtime_identity();
+        let gpu_init_policy = {
+            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackSelect);
+            gpu_init_policy_for_args(
+                &args,
+                effective_config.autoroute_cache_path.as_deref(),
+                effective_config.autoroute_gpu,
+                effective_config.autoroute_calibration,
+            )
+        };
         let (mut loaded_corpus, detector_execution_pack) = {
             let _profile_span = keyhog_profile::span(keyhog_profile::Stage::DetectorLoad);
             if !detectors_path.exists() && requested_detector_mode.is_none() {
@@ -1320,17 +1332,15 @@ impl ScanOrchestrator {
                             error = %error,
                             "no installed execution-pack generation; parsing embedded detectors"
                         );
-                        (
-                            Some(
-                                load_effective_detector_corpus(
-                                    &detectors_path,
-                                    requested_detector_mode,
-                                    !args.lockdown,
-                                )
-                                .context("loading effective detector corpus")?,
-                            ),
-                            None,
-                        )
+                        let embedded = || -> anyhow::Result<LoadedDetectorCorpus> {
+                            load_effective_detector_corpus(
+                                &detectors_path,
+                                requested_detector_mode,
+                                !args.lockdown,
+                            )
+                            .context("loading effective detector corpus")
+                        };
+                        (Some(embedded()?), None)
                     }
                     Err(error) => {
                         return Err(error).context(
@@ -1512,20 +1522,17 @@ impl ScanOrchestrator {
         let detectors: Option<Arc<[DetectorSpec]>> =
             (!direct_pack_hydration).then(|| detectors.into());
 
-        let gpu_init_policy = {
-            let _profile_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackSelect);
-            gpu_init_policy_for_args(
-                &args,
-                effective_config.autoroute_cache_path.as_deref(),
-                effective_config.autoroute_gpu,
-                effective_config.autoroute_calibration,
-            )
-        };
         let scanner = {
             let _pack_span = keyhog_profile::span(keyhog_profile::Stage::ExecutionPackMap);
             let compiled = if disabled_detectors.is_empty() {
                 match detector_execution_pack.as_ref() {
                     Some(pack) => {
+                        // Keep Result intact so the shared with_context below
+                        // still labels pack-backed scanner materialization.
+                        // Do not attribute pack hydration to
+                        // CacheId::MatcherArtifact. That counter is reserved for
+                        // the on-disk MatcherArtifact cache so --profile can
+                        // prove a real .khm hit/miss.
                         CompiledScanner::compile_from_execution_pack_with_gpu_policy_and_tuning(
                             pack,
                             gpu_init_policy,
@@ -1536,22 +1543,45 @@ impl ScanOrchestrator {
                         let detectors = detectors.as_ref().context(
                             "embedded/debug scanner construction requires detector schemas",
                         )?;
-                        CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
+                        // No installed pack on this path; pack generation is "none".
+                        keyhog_scanner::compile_shared_with_matcher_artifact_cache(
                             Arc::clone(detectors),
                             gpu_init_policy,
                             &effective_config.scanner_tuning,
+                            resolved_config_digest,
+                            None,
+                            runtime_identity.as_deref(),
                         )
+                        .map(|(scanner, outcome)| {
+                            tracing::debug!(
+                                target: "keyhog::matcher_artifact_cache",
+                                outcome = outcome.as_str(),
+                                "matcher artifact cache outcome"
+                            );
+                            scanner
+                        })
                     }
                 }
             } else {
                 let detectors = detectors
                     .as_ref()
                     .context("disabled-detector scanner construction requires detector schemas")?;
-                CompiledScanner::compile_shared_with_gpu_policy_and_tuning(
+                keyhog_scanner::compile_shared_with_matcher_artifact_cache(
                     Arc::clone(detectors),
                     gpu_init_policy,
                     &effective_config.scanner_tuning,
+                    resolved_config_digest,
+                    None,
+                    runtime_identity.as_deref(),
                 )
+                .map(|(scanner, outcome)| {
+                    tracing::debug!(
+                        target: "keyhog::matcher_artifact_cache",
+                        outcome = outcome.as_str(),
+                        "matcher artifact cache outcome"
+                    );
+                    scanner
+                })
             };
             Arc::new(
                 compiled
@@ -1800,6 +1830,7 @@ impl ScanOrchestrator {
                 incremental_cache_path: None,
                 hyperscan_cache_dir: None,
                 autoroute_cache_path: None,
+                matcher_cache_path: None,
                 calibration_cache_path: None,
                 calibration_entry_count: 0,
                 calibration_digest: 0,
