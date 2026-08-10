@@ -88,7 +88,7 @@ pub const DEFINITIONS: &[ExitCodeDefinition] = &[
     ExitCodeDefinition {
         code: EXIT_SOURCE_FAILED,
         label: "Requested source failed or coverage incomplete",
-        help: "Requested source failed or input coverage was incomplete",
+        help: "Requested source failed, input coverage incomplete, or guard root degraded/stale/stopped/indexing (run `keyhog guard status <root>` for the repair command)",
         scan_reachable: true,
     },
     ExitCodeDefinition {

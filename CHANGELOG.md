@@ -2,6 +2,14 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Perpetual repository and filesystem guard: daemon-resident runtime that registers Git repositories and filesystem trees as guarded roots, maintains a closed state machine per root, tracks `GuardPolicyIdentity`, caches clean blob attestations in a hot index, and exposes `keyhog guard add|remove|list|status|reconcile` over daemon wire protocol v13 (`GuardCommitBegin`/`Blob`/`Finish` plus status/list frames).
+- Staged Git manifest acquisition (`git diff --cached --raw -z --no-renames`) with BLAKE3 index fingerprinting for race detection, plus a daemon-resident filesystem watcher with bounded per-root event buffers and overflow-triggered subtree reconciliation.
+- `[guard]` configuration section for hot-index budget, event-queue caps, coalesce window, scanner residency / idle-unload, scrub interval, and subtree reconciliation bounds.
+
 ## [0.5.70] - 2026-08-10
 
 ### Changed

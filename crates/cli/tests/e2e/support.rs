@@ -129,6 +129,13 @@ impl DaemonGuard {
         Self::start_impl(&[], false, false, Some("cpu"))
     }
 
+    /// Start daemon on CPU backend with embedded detectors (no --detectors
+    /// flag), so guard subcommands that use `client::connect()` with
+    /// embedded detector identity can match the daemon's warm backend.
+    pub fn start_cpu_embedded() -> Self {
+        Self::start_impl_full(&[], false, false, Some("cpu"), true)
+    }
+
     pub fn start_mass() -> Self {
         Self::start_impl(&[], true, false, None)
     }
@@ -151,6 +158,16 @@ impl DaemonGuard {
         mass_gpu_primary: bool,
         backend: Option<&'static str>,
     ) -> Self {
+        Self::start_impl_full(envs, mass, mass_gpu_primary, backend, false)
+    }
+
+    fn start_impl_full(
+        envs: &[(&str, &str)],
+        mass: bool,
+        mass_gpu_primary: bool,
+        backend: Option<&'static str>,
+        skip_detectors: bool,
+    ) -> Self {
         use std::process::Stdio;
         use std::time::{Duration, Instant};
 
@@ -167,9 +184,11 @@ impl DaemonGuard {
             "start",
             "--backend",
             backend.unwrap_or(if mass { "cpu" } else { "simd" }),
-            "--detectors",
-            detectors.to_str().expect("detectors path"),
         ];
+        if !skip_detectors {
+            daemon_args.push("--detectors");
+            daemon_args.push(detectors.to_str().expect("detectors path"));
+        }
         if mass {
             daemon_args.push("--mass");
         }

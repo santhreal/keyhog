@@ -50,6 +50,10 @@ mod display;
 /// Shared standard Base64 decode (wire / K8s), bounded for DoS safety.
 mod encoding;
 mod finding;
+/// Perpetual guard root state machine, policy identity, and receipt types.
+pub mod guard_state;
+/// Durable guard state store: schema, tables, and memory-bounded LRU.
+pub mod guard_store;
 /// Git-LFS pointer recognition, shared by the scanner (oid suppression) and
 /// sources (unscanned-blob coverage gap).
 pub mod git_lfs;

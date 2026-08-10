@@ -86,6 +86,7 @@ async fn start(
             keyhog_core::detector_digest().to_owned(),
         )
     };
+    let guard_hot_index_budget = load_guard_hot_index_budget();
     let options = server::ServerOptions {
         request_read_timeout: Duration::from_secs(request_timeout_secs),
         mass_service: mass,
@@ -97,6 +98,7 @@ async fn start(
         detector_rules_digest,
         options,
         backend_override,
+        guard_hot_index_budget,
     )
     .await?;
     Ok(ExitCode::SUCCESS)
@@ -406,4 +408,59 @@ async fn status_over_control_channel(
         socket.display()
     );
     Ok(ExitCode::from(crate::exit_codes::EXIT_HEALTH_FAILURE))
+}
+
+/// Load the `[guard].hot_index_memory` setting from `.keyhog.toml`.
+/// Returns `None` when the file is absent, the `[guard]` section is
+/// absent, or the value cannot be parsed. Errors are logged as warnings
+/// and do not prevent daemon startup.
+fn load_guard_hot_index_budget() -> Option<usize> {
+    let config_path = match crate::config::find_config_file(None) {
+        Some(p) => p,
+        None => return None,
+    };
+    let raw = match std::fs::read_to_string(&config_path) {
+        Ok(content) => content,
+        Err(e) => {
+            tracing::warn!("daemon: failed to read {}: {}", config_path.display(), e);
+            return None;
+        }
+    };
+    let config: crate::config::ConfigFile = match toml::from_str(&raw) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("daemon: failed to parse {}: {}", config_path.display(), e);
+            return None;
+        }
+    };
+    let guard = config.guard?;
+    let memory_str = guard.hot_index_memory?;
+    parse_byte_size(&memory_str)
+}
+
+/// Parse a human-readable byte size string (e.g. "64MiB", "128MB", "1GB").
+/// Returns `None` on parse failure.
+fn parse_byte_size(s: &str) -> Option<usize> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    // Find the split between numeric and unit.
+    let split = s.find(|c: char| !c.is_ascii_digit() && c != '.');
+    let (num_str, unit_str) = match split {
+        Some(idx) => (&s[..idx], s[idx..].trim()),
+        None => (s, ""),
+    };
+    let num: f64 = num_str.parse().ok()?;
+    let multiplier = match unit_str.to_lowercase().as_str() {
+        "" | "b" => 1.0,
+        "k" | "kb" | "kib" => 1024.0,
+        "m" | "mb" | "mib" => 1024.0 * 1024.0,
+        "g" | "gb" | "gib" => 1024.0 * 1024.0 * 1024.0,
+        _ => {
+            tracing::warn!("daemon: unknown byte size unit '{}'", unit_str);
+            return None;
+        }
+    };
+    Some((num * multiplier) as usize)
 }

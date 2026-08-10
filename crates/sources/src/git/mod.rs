@@ -8,10 +8,12 @@ use std::thread::JoinHandle;
 mod diff;
 mod diff_parser;
 mod history;
+mod manifest;
 mod source;
 mod staged;
 mod tag_messages;
 pub(crate) use staged::consume_oversized_staged_header_path;
+pub use manifest::{StagedManifest, StagedManifestEntry, StagedEntryKind, verify_staged_fingerprint};
 
 /// Resolve `git` to an absolute path inside a trusted system bin dir.
 /// SECURITY: kimi-wave1 audit finding 3.PATH-git. Refuses to fall back
@@ -1042,4 +1044,239 @@ pub(crate) fn get_commit_metadata(
         author: author.to_string(),
         date: date.to_string(),
     })
+}
+
+// ── Staged manifest acquisition ──────────────────────────────────────────
+
+/// Acquire the exact ordered staged manifest from a repository.
+///
+/// Runs `git diff --cached --raw -z --no-renames --no-abbrev` to get the
+/// exact staged object IDs and paths, classifies each entry, and computes
+/// an index fingerprint for race detection.
+pub(crate) fn staged_manifest_acquire(
+    repo_path: &Path,
+) -> Result<manifest::StagedManifest, SourceError> {
+    use keyhog_core::guard_state::GitHashAlgorithm;
+
+    let repo_root = canonical_repo_root(repo_path)?;
+    let repo_arg = validate_repo_path(&repo_root)?;
+    let repo = gix::open(&repo_root).map_err(|error| {
+        SourceError::Git(format!(
+            "failed to open repository for staged manifest: {error}"
+        ))
+    })?;
+
+    // gix::hash::Kind is non_exhaustive; Sha1 is the only variant compiled
+    // in (gix uses default-features = false + max-performance-safe). The
+    // wildcard arm maps any future variant to Sha1 as the safe default;
+    // when sha256 support is added, add an explicit arm before it.
+    let hash_algorithm = match repo.object_hash() {
+        gix::hash::Kind::Sha1 => GitHashAlgorithm::Sha1,
+        _ => GitHashAlgorithm::Sha1,
+    };
+
+    let mut command = git_command()?;
+    command.args([
+        "-C",
+        &repo_arg,
+        "diff",
+        "--cached",
+        "--raw",
+        "-z",
+        "--no-abbrev",
+        "--no-renames",
+        "--no-ext-diff",
+        "--diff-filter=ACMRTD",
+        "--end-of-options",
+    ]);
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+
+    let mut child = spawn_git_child(command)?;
+    let stdout = child
+        .take_stdout()
+        .ok_or_else(|| SourceError::Io(std::io::Error::other("missing git diff stdout")))?;
+
+    let mut reader = std::io::BufReader::new(stdout);
+    let mut header = Vec::new();
+    let mut raw_path = Vec::new();
+    let mut entries = Vec::new();
+    let mut total_bytes: u64 = 0;
+    let mut coverage_gaps: Vec<String> = Vec::new();
+
+    loop {
+        let header_bytes = match read_capped_record(
+            &mut reader,
+            &mut header,
+            GIT_PLUMBING_LINE_BYTES,
+            0,
+        ) {
+            Ok(record) if record.consumed == 0 => break,
+            Ok(record) => record.content,
+            Err(error) => {
+                return Err(SourceError::Io(error));
+            }
+        };
+        if header_bytes > GIT_PLUMBING_LINE_BYTES {
+            return Err(SourceError::Git(format!(
+                "git raw staged diff header exceeded the {GIT_PLUMBING_LINE_BYTES}-byte limit"
+            )));
+        }
+        // Strip the NUL delimiter.
+        if header.last() == Some(&0) {
+            header.pop();
+        }
+
+        // Parse the raw diff header: ":<mode> <old_oid> <new_oid> <status>\0<path>"
+        // Format: ":100644 100644 <sha> <sha> M\0path\0"
+        let header_str = std::str::from_utf8(&header).map_err(|error| {
+            SourceError::Git(format!(
+                "git raw staged diff header is not valid UTF-8: {error}"
+            ))
+        })?;
+
+        let path_bytes = match read_capped_record(
+            &mut reader,
+            &mut raw_path,
+            1024 * 1024,
+            0,
+        ) {
+            Ok(record) if record.consumed == 0 => {
+                return Err(SourceError::Git(
+                    "git raw staged diff ended before the path for an index entry".into(),
+                ));
+            }
+            Ok(record) => record.content,
+            Err(error) => return Err(SourceError::Io(error)),
+        };
+        if raw_path.last() == Some(&0) {
+            raw_path.pop();
+        }
+        if raw_path.is_empty() {
+            return Err(SourceError::Git(
+                "git raw staged diff emitted an empty path".into(),
+            ));
+        }
+
+        let mut entry = parse_raw_diff_header(header_str, &raw_path)?;
+        // Look up the object size for non-deletion entries that have a blob OID.
+        // Use find_header to avoid loading the full object payload into memory.
+        if entry.kind != manifest::StagedEntryKind::Deletion && !entry.object_oid.is_empty() {
+            if let Ok(oid) = gix::ObjectId::from_hex(entry.object_oid.as_bytes()) {
+                match repo.find_header(oid) {
+                    Ok(header) => entry.object_size = header.size(),
+                    Err(_) => {
+                        coverage_gaps.push(format!(
+                            "staged object {} could not be read for size lookup",
+                            entry.object_oid
+                        ));
+                    }
+                }
+            } else {
+                coverage_gaps.push(format!(
+                    "staged object OID '{}' is not a valid hash",
+                    entry.object_oid
+                ));
+            }
+        }
+        if entry.kind != manifest::StagedEntryKind::Deletion {
+            total_bytes = total_bytes.saturating_add(entry.object_size);
+        }
+        entries.push(entry);
+    }
+
+    if let Err(error) = wait_for_git_child(
+        &mut child,
+        "git diff --cached --raw",
+        "reading staged manifest",
+    ) {
+        return Err(error);
+    }
+
+    let total_objects = entries.len() as u64;
+    let mut manifest = manifest::StagedManifest {
+        hash_algorithm,
+        index_fingerprint: String::new(),
+        entries,
+        total_bytes,
+        total_objects,
+        coverage_gaps,
+    };
+    manifest.index_fingerprint = manifest.recompute_fingerprint();
+    Ok(manifest)
+}
+
+/// Parse a raw diff header line into a manifest entry.
+///
+/// Format: `:<old_mode> <new_mode> <old_oid> <new_oid> <status>`
+fn parse_raw_diff_header(
+    header: &str,
+    path_bytes: &[u8],
+) -> Result<manifest::StagedManifestEntry, SourceError> {
+    use manifest::{StagedEntryKind, StagedManifestEntry};
+
+    // Header starts with ':' and has space-separated fields.
+    let header = header.strip_prefix(':').ok_or_else(|| {
+        SourceError::Git(format!(
+            "git raw staged diff header does not start with ':': {header:?}"
+        ))
+    })?;
+
+    let parts: Vec<&str> = header.splitn(5, ' ').collect();
+    if parts.len() < 5 {
+        return Err(SourceError::Git(format!(
+            "git raw staged diff header has too few fields: {header:?}"
+        )));
+    }
+
+    let new_mode = u32::from_str_radix(parts[1], 8).map_err(|error| {
+        SourceError::Git(format!(
+            "git raw staged diff header has invalid mode '{}': {error}",
+            parts[1]
+        ))
+    })?;
+
+    let new_oid = parts[3];
+    let status = parts[4].chars().next().ok_or_else(|| {
+        SourceError::Git(format!(
+            "git raw staged diff header has empty status: {header:?}"
+        ))
+    })?;
+
+    let (kind, object_oid, object_size) = match status {
+        'D' => (StagedEntryKind::Deletion, String::new(), 0u64),
+        'A' | 'C' | 'M' | 'T' => {
+ // Added, copied, modified, type-changed: scan the new blob.
+            let kind = classify_mode(new_mode);
+            (kind, new_oid.to_string(), 0u64) // Size filled by caller if needed
+        }
+        'R' => {
+            // Rename (disabled with --no-renames, but handle defensively).
+            let kind = classify_mode(new_mode);
+            (kind, new_oid.to_string(), 0u64)
+        }
+        _ => {
+            return Err(SourceError::Git(format!(
+                "git raw staged diff header has unknown status '{status}': {header:?}"
+            )));
+        }
+    };
+
+    Ok(StagedManifestEntry {
+        path_bytes: path_bytes.to_vec(),
+        kind,
+        object_oid,
+        object_size,
+        raw_mode: new_mode,
+    })
+}
+
+/// Classify a Git file mode into an entry kind.
+fn classify_mode(mode: u32) -> manifest::StagedEntryKind {
+    use manifest::StagedEntryKind;
+    match mode {
+        0o120000 => StagedEntryKind::Symlink,
+        0o160000 => StagedEntryKind::Submodule,
+        _ => StagedEntryKind::File,
+    }
 }
