@@ -20,6 +20,9 @@
 - Return immediately from windowed processing after an expired deadline, with bounded deadline regressions that tolerate scheduler variance.
 - Keep the deterministic CPU library constructor and expose runtime-policy GPU probing through `compile_with_runtime_policy`.
 - Bound batch lane memory by the largest chunk, expose `finish_partition` to release cross-partition caches, retain production GPU overlap evidence through dispatch retirement, and verify that linked or packaged GPU kernels remain VYRE-owned.
+- Restrict 64-character hexadecimal detection in `generic-api-key` strictly to explicit cryptographic key slots (`signing_key`, `encryption_key`, `master_key`, `session_key`, `hmac_secret`, `hmac_seed`) to prevent false-positive flagging of SHA-256 digests and checksums.
+- Add negative false-positive test cases covering content digests, checksums, object IDs, commit hashes, and hash-suffixed fields to `generic_api_key_64_hex`.
+- Cover credential-free PostgreSQL connection URLs as negative detector cases.
 ## 0.5.68 - 2026-08-05
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.

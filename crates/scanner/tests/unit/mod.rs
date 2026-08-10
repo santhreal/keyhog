@@ -119,6 +119,7 @@ pub mod false_positive_integrity_disclaimer;
 pub mod file_gate;
 pub mod flaw_investigation;
 pub mod gates;
+pub mod generic_api_key_64_hex;
 pub mod gpu_cases;
 pub mod gpu_input_budget;
 pub mod max_inner_loop_iters;
@@ -158,6 +159,7 @@ pub mod phase2_generic_bridge;
 #[cfg(feature = "multiline")]
 pub mod pipeline;
 pub mod placeholder_suppression_boundaries;
+pub mod postgresql_host_credential_span;
 pub mod prefix_trie;
 pub mod prefix_trie_extended;
 pub mod profile_extraction;
