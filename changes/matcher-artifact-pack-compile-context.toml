@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Preserve scanner-materialization context on installed execution-pack compile failures, and remove the unused record_matcher_artifact_pack_hit helper that contradicted CLI profile attribution policy."
+crates = ["cli", "scanner"]

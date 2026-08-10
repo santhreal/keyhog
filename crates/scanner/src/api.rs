@@ -29,7 +29,7 @@ pub use crate::matcher_artifact_cache::{
     compile_shared_with_matcher_artifact_cache, configured_matcher_artifact_cache_dir,
     default_matcher_artifact_cache_dir, default_matcher_artifact_cache_dir_from_base,
     execution_pack_backend_for_scan_backend, load_matcher_artifact, load_matcher_artifact_with_ir,
-    matcher_backend_for_gpu_policy, record_matcher_artifact_pack_hit, store_matcher_artifact,
+    matcher_backend_for_gpu_policy, store_matcher_artifact,
     LoadedMatcherArtifact, MatcherArtifactCacheOutcome, MatcherArtifactIdentity,
     MATCHER_ARTIFACT_FILE_BYTES, MATCHER_ARTIFACT_MAGIC, MATCHER_ARTIFACT_SUFFIX,
     MATCHER_ARTIFACT_VERSION,

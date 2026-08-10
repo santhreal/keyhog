@@ -1027,10 +1027,3 @@ fn hydrate_matcher_artifact_state(
     .map_err(|error| ScanError::Config(error.to_string()))
 }
 
-/// Record a MatcherArtifact hit for an authenticated execution-pack hydration.
-///
-/// Installed packs already carry the eager matcher graph; profile output still
-/// attributes that reuse to `CacheId::MatcherArtifact`.
-pub fn record_matcher_artifact_pack_hit() {
-    keyhog_profile::record_cache_hit(keyhog_profile::CacheId::MatcherArtifact);
-}

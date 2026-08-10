@@ -1528,17 +1528,17 @@ impl ScanOrchestrator {
             let compiled = if disabled_detectors.is_empty() {
                 match detector_execution_pack.as_ref() {
                     Some(pack) => {
-                        let compiled =
-                            CompiledScanner::compile_from_execution_pack_with_gpu_policy_and_tuning(
-                                pack,
-                                gpu_init_policy,
-                                &effective_config.scanner_tuning,
-                            )?;
+                        // Keep Result intact so the shared with_context below
+                        // still labels pack-backed scanner materialization.
                         // Do not attribute pack hydration to
                         // CacheId::MatcherArtifact. That counter is reserved for
                         // the on-disk MatcherArtifact cache so --profile can
                         // prove a real .khm hit/miss.
-                        Ok(compiled)
+                        CompiledScanner::compile_from_execution_pack_with_gpu_policy_and_tuning(
+                            pack,
+                            gpu_init_policy,
+                            &effective_config.scanner_tuning,
+                        )
                     }
                     None => {
                         let detectors = detectors.as_ref().context(
