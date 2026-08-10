@@ -1907,20 +1907,34 @@ def capture_startup_baseline(workload:Workload,*,binary:str|pathlib.Path,detecto
 
 def workload_measurement_axes(workload: Workload) -> dict[str, str]:
     """Describe the route actually measured for one workload row."""
-    workload_id=workload.workload_id
+    workload_id = workload.workload_id
     if workload_id.startswith("daemon-warm-"):
-        process_state="warm"; page_cache_state="warm"; execution_route="warm-daemon"
+        process_state = "warm"
+        page_cache_state = "warm"
+        execution_route = "warm-daemon"
     elif workload_id.startswith("daemon-mass-"):
-        process_state="steady"; page_cache_state="steady"; execution_route="mass-daemon"
-    elif workload.family=="incremental":
-        process_state="cold"; page_cache_state="incremental-warm"; execution_route="in-process"
+        process_state = "steady"
+        page_cache_state = "steady"
+        execution_route = "mass-daemon"
+    elif workload.family == "incremental":
+        process_state = "cold"
+        page_cache_state = "incremental-warm"
+        execution_route = "in-process"
     else:
-        process_state="cold"; page_cache_state="uncontrolled"; execution_route="in-process"
+        process_state = "cold"
+        page_cache_state = "uncontrolled"
+        execution_route = "in-process"
+    if workload.execution_routes != (execution_route,):
+        raise BaselineCaptureError(
+            f"{workload_id} declares execution routes {list(workload.execution_routes)!r}, "
+            f"but its production capture measures only {execution_route!r}"
+        )
     return {
-        "policy":"default", "process_state":process_state,
-        "page_cache_state":page_cache_state,
-        "output_format":"text" if workload.family=="watch" else "json-envelope",
-        "execution_route":execution_route,
+        "policy": "default",
+        "process_state": process_state,
+        "page_cache_state": page_cache_state,
+        "output_format": "text" if workload.family == "watch" else "json-envelope",
+        "execution_route": execution_route,
     }
 
 

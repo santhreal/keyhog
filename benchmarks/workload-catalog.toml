@@ -21,7 +21,7 @@ family = "filesystem"
 surface = "scan --path DIRECTORY"
 owner = "benchmarks/workload_matrix/generate.py:build_empty_dir"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-empty-directory"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = false
 
@@ -31,7 +31,7 @@ family = "filesystem"
 surface = "scan --path FILE"
 owner = "benchmarks/bench/scaling_matrix.py"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-single-tiny-file"
-execution_routes = ["in-process", "warm-daemon", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = false
 
@@ -41,7 +41,7 @@ family = "filesystem"
 surface = "scan --path FILE --max-file-size 512M"
 owner = "benchmarks/workload_matrix/generate.py:build_one_large"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-single-large-file"
-execution_routes = ["in-process", "warm-daemon", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = true
 
@@ -51,7 +51,7 @@ family = "filesystem"
 surface = "scan --path DIRECTORY"
 owner = "benchmarks/workload_matrix/generate.py:build_many_small"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-many-small-files"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = true
 
@@ -61,7 +61,7 @@ family = "filesystem"
 surface = "scan --path DIRECTORY"
 owner = "benchmarks/workload_matrix/generate.py:build_flat_many"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-flat-many-files"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = true
 
@@ -71,7 +71,7 @@ family = "filesystem"
 surface = "scan --path DIRECTORY"
 owner = "benchmarks/workload_matrix/generate.py:build_deep_nest"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-deep-directory-tree"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = false
 
@@ -81,7 +81,7 @@ family = "filesystem"
 surface = "scan --path FILE"
 owner = "benchmarks/workload_matrix/generate.py:build_one_long_line"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-one-long-line"
-execution_routes = ["in-process", "warm-daemon", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = true
 
@@ -91,7 +91,7 @@ family = "filesystem"
 surface = "scan --path FILE"
 owner = "benchmarks/workload_matrix/generate.py:build_over_max_size"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-over-size-limit"
-execution_routes = ["in-process", "warm-daemon", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = false
 
@@ -101,7 +101,7 @@ family = "filesystem"
 surface = "scan --path DIRECTORY"
 owner = "benchmarks/workload_matrix/generate.py:build_binary_reject"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-binary-rejection"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = false
 
@@ -111,7 +111,7 @@ family = "filesystem"
 surface = "scan --path DIRECTORY"
 owner = "benchmarks/workload_matrix/generate.py:build_no_extension"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-no-extension"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = false
 
@@ -121,7 +121,7 @@ family = "filesystem"
 surface = "scan --path DIRECTORY"
 owner = "benchmarks/workload_matrix/generate.py:build_encoding_mixed"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-mixed-encodings"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = false
 
@@ -131,7 +131,7 @@ family = "filesystem"
 surface = "scan --path DIRECTORY"
 owner = "benchmarks/workload_matrix/generate.py:build_sparse"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-sparse-files"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = true
 
@@ -141,7 +141,7 @@ family = "filesystem"
 surface = "scan --path DIRECTORY"
 owner = "benchmarks/workload_matrix/generate.py:build_size_changing"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-changing-size"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = false
 
@@ -151,7 +151,7 @@ family = "filesystem"
 surface = "scan --path DIRECTORY"
 owner = "benchmarks/workload_matrix/generate.py:build_symlink_cycle"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-symlink-cycle"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = false
 
@@ -161,7 +161,7 @@ family = "filesystem"
 surface = "scan --path DIRECTORY"
 owner = "benchmarks/workload_matrix/generate.py:build_unreadable_dir"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-unreadable-tree"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = false
 
@@ -171,7 +171,7 @@ family = "filesystem"
 surface = "scan --path DIRECTORY"
 owner = "benchmarks/workload_matrix/generate.py:build_encoded_midfile"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-encoded-midfile"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -181,7 +181,7 @@ family = "filesystem"
 surface = "scan ROOT ROOT"
 owner = "crates/cli/tests/unit/subcommands_scan_multi_root.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-multiple-roots"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -191,7 +191,7 @@ family = "filesystem"
 surface = "scan --path ARCHIVE"
 owner = "crates/sources/src/filesystem/extract.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-compressed-archive"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -201,7 +201,7 @@ family = "filesystem"
 surface = "scan --binary --path BINARY"
 owner = "crates/sources/src/binary/mod.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-binary-strings"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -211,7 +211,7 @@ family = "filesystem"
 surface = "scan --binary --path BINARY"
 owner = "crates/sources/src/binary/analyzers/ghidra.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:filesystem-binary-decompiler"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -221,7 +221,7 @@ family = "stdin"
 surface = "scan --stdin"
 owner = "crates/sources/src/stdin.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:stdin-empty"
-execution_routes = ["in-process", "warm-daemon", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = false
 
@@ -231,7 +231,7 @@ family = "stdin"
 surface = "scan --stdin"
 owner = "crates/sources/src/stdin.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:stdin-tiny"
-execution_routes = ["in-process", "warm-daemon", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = false
 
@@ -241,7 +241,7 @@ family = "stdin"
 surface = "scan --stdin"
 owner = "crates/cli/src/subcommands/calibrate_autoroute.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:stdin-medium"
-execution_routes = ["in-process", "warm-daemon", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = true
 
@@ -251,7 +251,7 @@ family = "stdin"
 surface = "scan --stdin"
 owner = "crates/cli/src/daemon/protocol.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:stdin-large-bounded"
-execution_routes = ["in-process", "warm-daemon", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = true
 gpu_eligible = true
 
@@ -261,7 +261,7 @@ family = "git"
 surface = "scan --git-staged PATH"
 owner = "crates/sources/src/git/staged.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:git-staged-index"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = false
 
@@ -271,7 +271,7 @@ family = "git"
 surface = "scan --git-diff REF"
 owner = "crates/sources/src/git/diff.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:git-diff-lines"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -281,7 +281,7 @@ family = "git"
 surface = "scan --git-blobs PATH"
 owner = "crates/sources/src/git/source.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:git-reachable-blobs"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -291,7 +291,7 @@ family = "git"
 surface = "scan --git-history PATH"
 owner = "crates/sources/src/git/history.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:git-commit-history"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -301,7 +301,7 @@ family = "git"
 surface = "scan --git-history PATH"
 owner = "crates/sources/tests/adversarial/git_shallow_clone_single_commit_scanned.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:git-shallow-clone"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -311,7 +311,7 @@ family = "github"
 surface = "scan --github-org ORG"
 owner = "crates/sources/src/github_org.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:github-organization-repositories"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -321,7 +321,7 @@ family = "github"
 surface = "scan --github-collaboration OWNER/REPO --github-issues"
 owner = "crates/sources/src/github_collaboration.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:github-collaboration-issues"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = false
 
@@ -331,7 +331,7 @@ family = "github"
 surface = "scan --github-collaboration OWNER/REPO --github-pull-requests"
 owner = "crates/sources/src/github_collaboration.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:github-collaboration-pull-requests"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = false
 
@@ -341,7 +341,7 @@ family = "github"
 surface = "scan --github-collaboration OWNER/REPO --github-discussions"
 owner = "crates/sources/src/github_collaboration.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:github-collaboration-discussions"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = false
 
@@ -351,7 +351,7 @@ family = "github"
 surface = "scan --github-collaboration OWNER/REPO --github-wiki"
 owner = "crates/sources/src/github_collaboration.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:github-collaboration-wiki"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -361,7 +361,7 @@ family = "github"
 surface = "scan --github-collaboration OWNER/REPO --github-gists"
 owner = "crates/sources/src/github_collaboration.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:github-collaboration-gists"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = false
 
@@ -371,7 +371,7 @@ family = "github"
 surface = "scan --github-collaboration OWNER/REPO --github-releases"
 owner = "crates/sources/src/github_collaboration.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:github-collaboration-releases"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = false
 
@@ -381,7 +381,7 @@ family = "gitlab"
 surface = "scan --gitlab-group GROUP"
 owner = "crates/sources/src/gitlab_group.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:gitlab-group-projects"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -391,7 +391,7 @@ family = "bitbucket"
 surface = "scan --bitbucket-workspace WORKSPACE"
 owner = "crates/sources/src/bitbucket_workspace.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:bitbucket-workspace-repositories"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -401,7 +401,7 @@ family = "cloud"
 surface = "scan --s3-bucket BUCKET"
 owner = "crates/sources/src/s3/mod.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:cloud-s3-bucket"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -411,7 +411,7 @@ family = "cloud"
 surface = "scan --gcs-bucket BUCKET"
 owner = "crates/sources/src/gcs.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:cloud-gcs-bucket"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -421,7 +421,7 @@ family = "cloud"
 surface = "scan --azure-container-url URL"
 owner = "crates/sources/src/cloud/azure_blob.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:cloud-azure-container"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -431,7 +431,7 @@ family = "container"
 surface = "scan --docker-image IMAGE"
 owner = "crates/sources/src/docker.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:container-docker-image"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -441,7 +441,7 @@ family = "web"
 surface = "scan --url URL"
 owner = "crates/sources/src/web.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:web-javascript"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -451,7 +451,7 @@ family = "web"
 surface = "scan --url URL"
 owner = "crates/sources/src/web.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:web-source-map"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -461,7 +461,7 @@ family = "web"
 surface = "scan --url URL"
 owner = "crates/sources/src/web.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:web-wasm-binary"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -471,7 +471,7 @@ family = "web"
 surface = "scan --url URL URL"
 owner = "crates/sources/src/web.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:web-multiple-urls"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = true
 
@@ -481,7 +481,7 @@ family = "slack"
 surface = "scan --source slack:PARAMS"
 owner = "crates/sources/src/slack.rs"
 fixture = "benchmarks/bench/workload_fixtures.py:slack-workspace-messages"
-execution_routes = ["in-process", "mass-daemon"]
+execution_routes = ["in-process"]
 betterleaks_comparable = false
 gpu_eligible = false
 

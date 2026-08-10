@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import pathlib
 import sys
@@ -776,6 +777,16 @@ def test_workload_measurement_axes_preserve_resident_and_cache_routes() -> None:
     assert workload_measurement_axes(_workload("daemon-mass-remote"))["execution_route"]=="mass-daemon"
     assert workload_measurement_axes(_workload("incremental-warm-index"))["page_cache_state"]=="incremental-warm"
     assert workload_measurement_axes(_workload("watch-filesystem-events"))["output_format"]=="text"
+
+
+def test_workload_measurement_axes_reject_unmeasured_declared_routes() -> None:
+    """WHY: adding a catalog route without a production capture would let release evidence claim coverage that was never measured."""
+    workload = replace(
+        _workload("filesystem-single-tiny-file"),
+        execution_routes=("in-process", "mass-daemon"),
+    )
+    with pytest.raises(BaselineCaptureError, match="production capture measures only"):
+        workload_measurement_axes(workload)
 
 
 def test_oob_detector_and_command_require_the_real_collector_protocol(tmp_path:pathlib.Path) -> None:
