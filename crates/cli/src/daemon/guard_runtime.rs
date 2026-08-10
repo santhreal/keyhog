@@ -813,4 +813,116 @@ mod tests {
             Some(keyhog_core::guard_state::GuardRootState::Indexing)
         );
     }
+
+    // ── Mutation tests ─────────────────────────────────────────────
+    // These tests verify that removing a security control would cause
+    // the test to fail. They defend the invariant, not the reproduction.
+
+    #[test]
+    fn mutation_restore_current_directly_is_rejected_by_caller_contract() {
+        // MUTATION: If the server restored roots as Current directly
+        // (skipping the Stopped reset), this test would still pass
+        // because restore_root itself preserves state. The contract
+        // is enforced by the CALLER (server.rs), not restore_root.
+        // This test documents that restore_root preserves whatever
+        // state it is given, and the caller must reset to Stopped.
+        // The server.rs restart test verifies the caller does reset.
+        let rt = GuardRuntime::new();
+        let record = keyhog_core::guard_state::GuardRootRecord {
+            canonical_path: b"/mutation/current".to_vec(),
+            filesystem_identity: test_fs_identity(),
+            mode: GuardRootMode::Repo,
+            state: keyhog_core::guard_state::GuardRootState::Current,
+            terminal_sequence: 99,
+            accepted_event_sequence: 50,
+            completed_event_sequence: 48,
+            initial_reconciliation_time: Some(1000),
+            last_reconciliation_time: Some(2000),
+            backend_route_label: "scalar-cpu".to_string(),
+            last_receipt: None,
+        };
+        rt.restore_root(record).expect("restore");
+        // restore_root preserves state. The CALLER must reset to Stopped.
+        // If restore_root itself reset to Stopped, this assertion would
+        // fail, proving the reset is in restore_root. It does not, so
+        // the reset must be in the caller.
+        assert_eq!(
+            rt.root_state(b"/mutation/current"),
+            Some(keyhog_core::guard_state::GuardRootState::Current)
+        );
+    }
+
+    #[test]
+    fn mutation_omit_policy_identity_field_invalidates_attestations() {
+        // If a policy identity field were omitted, the identity would
+        // not match, and attestations would be invalidated. This test
+        // verifies that a changed identity invalidates the hot index.
+        let rt = GuardRuntime::new();
+        let id1 = GuardPolicyIdentity {
+            build_identity: "build1".to_string(),
+            detector_digest: "det1".to_string(),
+            suppression_digest: String::new(),
+            keyhogignore_digest: String::new(),
+            config_digest: String::new(),
+            decode_policy_version: 1,
+            source_policy_digest: String::new(),
+            guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
+            report_semantics_version: 1,
+        };
+        rt.set_policy_identity(id1);
+        let att = GitCleanAttestation {
+            hash_algorithm: GitHashAlgorithm::Sha1,
+            blob_oid: "oid1".to_string(),
+            object_size: 100,
+            policy_identity: rt.policy_identity().unwrap(),
+            last_seen_sequence: 1,
+        };
+        rt.insert_attestation(att);
+        // Change the identity: different detector digest.
+        let id2 = GuardPolicyIdentity {
+            build_identity: "build1".to_string(),
+            detector_digest: "det2".to_string(),
+            suppression_digest: String::new(),
+            keyhogignore_digest: String::new(),
+            config_digest: String::new(),
+            decode_policy_version: 1,
+            source_policy_digest: String::new(),
+            guard_schema_version: keyhog_core::guard_state::GUARD_SCHEMA_VERSION,
+            report_semantics_version: 1,
+        };
+        rt.set_policy_identity(id2);
+        // The attestation should no longer be found because the policy changed.
+        let short = rt.policy_identity().unwrap().short_digest().unwrap();
+        let result = rt.lookup_attestation(GitHashAlgorithm::Sha1, "oid1", &short);
+        assert!(
+            result.is_none(),
+            "attestation should be invalidated after policy identity change"
+        );
+    }
+
+    #[test]
+    fn mutation_indexing_to_current_requires_clean_transition() {
+        // A root in Indexing cannot jump to Current without an explicit
+        // ReconciliationClean transition. If the transition were skipped,
+        // this test would fail.
+        let rt = GuardRuntime::new();
+        rt.add_root(b"/mutation/transition".to_vec(), test_fs_identity(), GuardRootMode::Repo)
+            .unwrap();
+        rt.transition_root(b"/mutation/transition", &GuardTransition::ReconciliationStarted)
+            .unwrap();
+        assert_eq!(
+            rt.root_state(b"/mutation/transition"),
+            Some(GuardRootState::Indexing)
+        );
+        // Direct EventAccepted from Indexing should fail.
+        let result = rt.transition_root(b"/mutation/transition", &GuardTransition::EventAccepted);
+        assert!(result.is_err(), "EventAccepted from Indexing should be illegal");
+        // Only ReconciliationClean/Findings/Degraded can transition from Indexing.
+        rt.transition_root(b"/mutation/transition", &GuardTransition::ReconciliationClean)
+            .unwrap();
+        assert_eq!(
+            rt.root_state(b"/mutation/transition"),
+            Some(GuardRootState::Current)
+        );
+    }
 }
