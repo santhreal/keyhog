@@ -106,10 +106,20 @@ impl GitHubCollaborationSource {
         mut emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
     ) -> Result<(), SourceError> {
         let _acquire = crate::profile::acquire_span();
-        let client = build_client(self.token.as_ref(), &self.http)?;
+        // Same pre-connect SSRF screen gitlab-group / bitbucket-workspace use.
+        // CLI wires `--github-api-endpoint` through `with_endpoint` without the
+        // factory path, so validation must happen here before the bearer token
+        // leaves the process.
+        let (api_root, screened) = crate::hosted_git::validated_api_endpoint(
+            "github",
+            &self.endpoint,
+            self.http.allow_private_endpoint,
+        )?;
+        let endpoint = api_root.as_str().trim_end_matches('/').to_string();
+        let client = build_client(self.token.as_ref(), &self.http, screened.as_ref())?;
         let mut api = GitHubApi::new(
             client,
-            &self.endpoint,
+            &endpoint,
             self.limits.hosted_git_pages,
             self.limits.web_response_bytes,
         );
@@ -1090,7 +1100,11 @@ impl BoundedJsonError {
     }
 }
 
-fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Client, SourceError> {
+fn build_client(
+    token: &str,
+    http: &crate::http::HttpClientConfig,
+    screened: Option<&crate::endpoint_screen::ScreenedEndpoint>,
+) -> Result<Client, SourceError> {
     let mut headers = HeaderMap::new();
     headers.insert(
         ACCEPT,
@@ -1101,10 +1115,11 @@ fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Cli
         HeaderValue::from_str(&format!("Bearer {token}"))
             .map_err(|_| SourceError::Other("invalid GitHub authorization header".into()))?,
     );
-    crate::http::blocking_client_builder(http)
+    let builder = crate::http::blocking_client_builder(http)
         .map_err(SourceError::Other)?
         .default_headers(headers)
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::none());
+    crate::endpoint_screen::pin_screened_addrs(builder, screened, http.proxy.is_some())
         .build()
         .map_err(|_| SourceError::Other("failed to build GitHub collaboration client".into()))
 }

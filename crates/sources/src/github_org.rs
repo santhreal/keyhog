@@ -197,13 +197,18 @@ fn stream_org_chunks(
     emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> Result<(), SourceError> {
     validate_org_name(org)?;
-    let client = build_client(token, http)?;
+    // Defense in depth with the factory: screen the API root before any socket
+    // opens, matching gitlab-group / bitbucket-workspace / github-collaboration.
+    let (api_root, screened) =
+        hosted_git::validated_api_endpoint("github", endpoint, http.allow_private_endpoint)?;
+    let endpoint = api_root.as_str().trim_end_matches('/').to_string();
+    let client = build_client(token, http, screened.as_ref())?;
     let repos = {
         let _enumerate = crate::profile::acquire_span();
         list_repos(
             &client,
             org,
-            endpoint,
+            &endpoint,
             limits.hosted_git_pages,
             limits.web_response_bytes,
         )?
@@ -214,7 +219,7 @@ fn stream_org_chunks(
         Some(org),
         "x-access-token",
         token,
-        &hosted_git::ExpectedCloneOrigin::from_endpoint("github", endpoint)?,
+        &hosted_git::ExpectedCloneOrigin::from_endpoint("github", &endpoint)?,
         &repos,
         limits,
         respect_default_excludes,
@@ -223,23 +228,27 @@ fn stream_org_chunks(
     )
 }
 
-fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Client, SourceError> {
+fn build_client(
+    token: &str,
+    http: &crate::http::HttpClientConfig,
+    screened: Option<&crate::endpoint_screen::ScreenedEndpoint>,
+) -> Result<Client, SourceError> {
     let mut headers = HeaderMap::new();
     headers.insert(
         ACCEPT,
         HeaderValue::from_static("application/vnd.github+json"),
     );
     // USER_AGENT is set by `blocking_client_builder` (`keyhog/<version>
-    // (github-org)`). We intentionally don'"'"'t set it in default_headers -
+    // (github-org)`). We intentionally don't set it in default_headers -
     // reqwest's user_agent() takes precedence anyway and the duplicate
-    // header would confuse GitHub'"'"'s rate-limiting which keys off UA.
+    // header would confuse GitHub's rate-limiting which keys off UA.
     headers.insert(
         AUTHORIZATION,
         HeaderValue::from_str(&format!("Bearer {token}"))
             .map_err(|e| SourceError::Other(format!("invalid GitHub authorization header: {e}")))?,
     );
 
-    crate::http::blocking_client_builder(http)
+    let builder = crate::http::blocking_client_builder(http)
         .map_err(SourceError::Other)?
         .default_headers(headers)
         // SECURITY: kimi-5 audit finding #3. Without an explicit redirect
@@ -252,10 +261,12 @@ fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Cli
         // default. `blocking_client_builder` sets a 5-hop limit by
         // default; we override to none() here because GitHub auth
         // tokens are higher-value than the average scan target.
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::none());
+    crate::endpoint_screen::pin_screened_addrs(builder, screened, http.proxy.is_some())
         .build()
         .map_err(|e| SourceError::Other(format!("failed to build GitHub client: {e}")))
 }
+
 
 fn list_repos(
     client: &Client,

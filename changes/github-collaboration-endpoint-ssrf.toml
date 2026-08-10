@@ -1,0 +1,3 @@
+category = "Security"
+summary = "GitHub collaboration and org API endpoints now fail closed through the shared hosted-git SSRF screen before any bearer token leaves the process."
+crates = ["sources"]
