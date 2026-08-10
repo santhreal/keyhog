@@ -6,8 +6,8 @@ use keyhog_core::guard_state::{
     GuardRootMode, GuardRootState, GUARD_SCHEMA_VERSION,
 };
 use keyhog_core::guard_store::{
-    check_schema_version, GuardStoreError, HotAttestationIndex, RootRegistry,
-    DEFAULT_HOT_INDEX_MEMORY,
+    check_schema_version, DurableGuardStore, GuardStoreError, HotAttestationIndex,
+    RootRegistry, DEFAULT_HOT_INDEX_MEMORY,
 };
 
 fn sample_identity() -> GuardPolicyIdentity {
@@ -335,4 +335,100 @@ fn root_registry_count_by_state() {
     registry.get_mut(b"/a").unwrap().state = GuardRootState::Current;
     assert_eq!(registry.count_by_state(GuardRootState::Stopped), 1);
     assert_eq!(registry.count_by_state(GuardRootState::Current), 1);
+}
+
+// ── Durable store ────────────────────────────────────────────────────────
+
+fn temp_store_path() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("guard.redb");
+    (dir, path)
+}
+
+#[test]
+fn durable_store_opens_and_creates_schema() {
+    let (_dir, path) = temp_store_path();
+    {
+        let store = DurableGuardStore::open(&path).expect("open store");
+        assert_eq!(store.path(), &path);
+    }
+    // Reopening should verify the schema version.
+    let _store2 = DurableGuardStore::open(&path).expect("reopen store");
+}
+
+#[test]
+fn durable_store_save_and_load_root() {
+    let (_dir, path) = temp_store_path();
+    let store = DurableGuardStore::open(&path).expect("open store");
+
+    let record = keyhog_core::guard_state::GuardRootRecord {
+        canonical_path: b"/work/project".to_vec(),
+        filesystem_identity: FilesystemIdentity { device: 1, inode: 2 },
+        mode: GuardRootMode::Repo,
+        state: GuardRootState::Current,
+        terminal_sequence: 42,
+        accepted_event_sequence: 10,
+        completed_event_sequence: 8,
+        initial_reconciliation_time: Some(1000),
+        last_reconciliation_time: Some(2000),
+        backend_route_label: "simd".to_string(),
+        last_receipt: None,
+    };
+    store.save_root(&record).expect("save root");
+
+    let loaded = store.load_roots().expect("load roots");
+    assert_eq!(loaded.len(), 1);
+    let got = loaded.get(b"/work/project").expect("root exists");
+    assert_eq!(got.state, GuardRootState::Current);
+    assert_eq!(got.terminal_sequence, 42);
+    assert_eq!(got.initial_reconciliation_time, Some(1000));
+}
+
+#[test]
+fn durable_store_remove_root() {
+    let (_dir, path) = temp_store_path();
+    let store = DurableGuardStore::open(&path).expect("open store");
+
+    let record = keyhog_core::guard_state::GuardRootRecord {
+        canonical_path: b"/work/project".to_vec(),
+        filesystem_identity: FilesystemIdentity { device: 1, inode: 2 },
+        mode: GuardRootMode::Repo,
+        state: GuardRootState::Stopped,
+        terminal_sequence: 0,
+        accepted_event_sequence: 0,
+        completed_event_sequence: 0,
+        initial_reconciliation_time: None,
+        last_reconciliation_time: None,
+        backend_route_label: String::new(),
+        last_receipt: None,
+    };
+    store.save_root(&record).expect("save root");
+    assert_eq!(store.load_roots().expect("load").len(), 1);
+    store.remove_root(b"/work/project").expect("remove root");
+    assert_eq!(store.load_roots().expect("load").len(), 0);
+}
+
+#[test]
+fn durable_store_save_and_load_attestation() {
+    let (_dir, path) = temp_store_path();
+    let store = DurableGuardStore::open(&path).expect("open store");
+
+    let att = sample_attestation("abc123", 1);
+    store.save_attestation(&att).expect("save attestation");
+
+    let loaded = store.load_attestations().expect("load attestations");
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].blob_oid, "abc123");
+}
+
+#[test]
+fn durable_store_remove_attestation() {
+    let (_dir, path) = temp_store_path();
+    let store = DurableGuardStore::open(&path).expect("open store");
+
+    let att = sample_attestation("abc123", 1);
+    store.save_attestation(&att).expect("save attestation");
+    assert_eq!(store.load_attestations().expect("load").len(), 1);
+    store.remove_attestation(&att).expect("remove attestation");
+    assert_eq!(store.load_attestations().expect("load").len(), 0);
 }
