@@ -92,7 +92,7 @@ fn planted_secret() -> String {
     concat!("AKIA", "QYLPMN5HFIQR7XYA").to_string()
 }
 
-/// A real named token that test/example context scores below a 0.99 floor.
+/// A real named token whose normal source-path score remains below a 0.99 floor.
 const LOW_CONFIDENCE_SECRET: &str = "ap_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d";
 
 /// Isolated daemon with its own `XDG_RUNTIME_DIR`, so `default_socket_path()`
@@ -262,8 +262,8 @@ fn daemon_route_honors_config_min_confidence_floor() {
     let daemon = Daemon::start();
     let work = TempDir::new().expect("work tempdir");
 
-    let fixture_dir = work.path().join("examples");
-    std::fs::create_dir_all(&fixture_dir).expect("create example fixture directory");
+    let fixture_dir = work.path().join("src");
+    std::fs::create_dir_all(&fixture_dir).expect("create source fixture directory");
     let path = write_fixture(
         &fixture_dir,
         "sample.txt",
