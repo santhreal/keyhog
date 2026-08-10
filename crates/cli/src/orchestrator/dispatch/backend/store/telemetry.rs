@@ -254,13 +254,9 @@ pub(crate) fn render_summary(stats: &AutorouteCacheStats) -> Option<String> {
         stats.lookups()
     );
     if stats.misses > 0 {
-        // This line sits next to coverage-gap rows that use the same WARN
-        // label, and the two mean opposite things. A cache miss costs speed and
-        // nothing else: every byte still gets scanned, through scalar
-        // correctness recovery. Say so in the text, because a reader taught to
-        // treat a stderr warning as an incomplete scan will otherwise read it
-        // as one.
-        line.push_str("; every byte was still scanned, this costs speed not coverage");
+        // A miss is a coverage failure: no authenticated route was selected for
+        // the affected batch, so it remained unscanned.
+        line.push_str("; miss lookup(s) left affected batches unscanned; coverage is incomplete");
         let causes = stats
             .by_cause
             .iter()

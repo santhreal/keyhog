@@ -304,12 +304,13 @@ fn persistent_runtime_uses_configured_autoroute_cache_path() {
             .expect("empty chunks have a backend-independent exact result"),
         Vec::<keyhog_core::RawMatch>::new()
     );
-    let findings = runtime
+    let error = runtime
         .scan_chunk(&chunk)
-        .expect("an uncalibrated persistent runtime must complete through scalar recovery");
-    assert_eq!(
-        findings,
-        Vec::<keyhog_core::RawMatch>::new(),
-        "scalar recovery must preserve the clean result"
+        .expect_err("an uncalibrated persistent runtime must leave input unscanned");
+    let message = error.to_string();
+    assert!(
+        message.contains("autoroute calibration required")
+            && message.contains("batch was not scanned"),
+        "invalid autoroute state must fail closed with repair context: {message}",
     );
 }

@@ -15,10 +15,10 @@
 //!
 //! Why these assertions hold on EVERY host (deterministic, machine-independent):
 //!   * Without persisted calibration, the auto path reports
-//!     "autoroute calibration required" and completes through scalar recovery
-//!     rather than guessing a route. If a
-//!     valid cache is present, normal scans may select GPU only when calibration
-//!     picked it; they do not repeat the calibration admission flag.
+//!     "autoroute calibration required", leaves input unscanned, and exits
+//!     non-success rather than guessing or substituting a route. If valid cache
+//!     evidence exists, normal scans may select GPU only when calibration picked
+//!     it; they do not repeat the calibration admission flag.
 //!   * an exact GPU backend reports it as FORCED (`forced via …`), not auto-selected
 //!     when a usable adapter exists; on a host with no usable adapter it fails
 //!     closed instead of silently substituting SIMD.
@@ -75,16 +75,17 @@ fn scan(path: &PathBuf, extra: &[&str]) -> (Option<i32>, String) {
 }
 
 #[test]
-fn without_persisted_evidence_a_large_auto_scan_recovers_visibly() {
+fn without_persisted_evidence_a_large_auto_scan_fails_closed() {
     let (_dir, path) = large_clean_file();
     let (code, stderr) = scan(&path, &[]);
 
     assert!(
-        code == Some(0)
+        code == Some(13)
             && stderr.contains("autoroute calibration required")
-            && stderr.contains("scalar correctness recovery")
-            && stderr.contains("scan coverage is complete"),
-        "auto scan without valid evidence must recover visibly, not guess; \
+            && stderr.contains("No backend was selected")
+            && stderr.contains("batch was not scanned")
+            && !stderr.contains("scalar correctness recovery"),
+        "auto scan without valid evidence must remain unscanned, not guess; \
          code={code:?} stderr={stderr}"
     );
 }
@@ -127,9 +128,10 @@ fn autoroute_gpu_admission_flag_does_not_make_a_normal_scan_calibrate() {
     let (code, stderr) = scan(&path, &["--autoroute-gpu"]);
 
     assert!(
-        code == Some(0)
+        code == Some(13)
             && stderr.contains("autoroute calibration required")
-            && stderr.contains("scalar correctness recovery"),
+            && stderr.contains("batch was not scanned")
+            && !stderr.contains("scalar correctness recovery"),
         "--autoroute-gpu alone must not turn a normal scan into calibration; \
          code={code:?} stderr={stderr}"
     );

@@ -251,8 +251,7 @@ pub(super) struct RouteTimingEvidence {
     pub(super) gpu_slot_input_capacity_bytes: Option<u64>,
     pub(super) gpu_slot_match_capacity: Option<u32>,
     pub(super) peer_identity: Option<String>,
-    pub(super) ordered_device_route:
-        Option<keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute>,
+    pub(super) ordered_device_route: Option<keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute>,
     pub(super) timing: BackendTimingEvidence,
 }
 
@@ -318,8 +317,7 @@ impl RouteTimingEvidence {
         }
         if device_route.devices.len() < 2 {
             return Err(
-                "ordered multi-device autoroute evidence requires at least two devices"
-                    .to_string(),
+                "ordered multi-device autoroute evidence requires at least two devices".to_string(),
             );
         }
         if device_route
@@ -1007,10 +1005,43 @@ impl AutorouteDecision {
             .calibration_points
             .into_iter()
             .next()
-            // LAW10: fail-closed; the exact two-element length was checked above, so violation aborts rather than fabricating timing evidence.
-            .unwrap_or_else(|| panic!("length checked"));
+            .ok_or_else(|| "autoroute calibration envelope lost its only point".to_string())?;
         if self.contains_measurement(&point.measurement_shape) {
             return Ok(());
+        }
+        for incoming in &point.route_timings {
+            let route = incoming
+                .measured_route()
+                .ok_or_else(|| "new workload point contains an unsupported route".to_string())?;
+            let existing = self
+                .calibration_points
+                .first()
+                .and_then(|point| point.route_timing_for_route(route))
+                .ok_or_else(|| {
+                    format!(
+                        "new workload point contains route {} absent from existing evidence",
+                        render_measured_route(route)
+                    )
+                })?;
+            match (
+                existing.ordered_device_route.as_ref(),
+                incoming.ordered_device_route.as_ref(),
+            ) {
+                (None, None) => {}
+                (Some(left), Some(right)) if left.has_same_device_set_identity(right) => {}
+                (Some(_), Some(_)) => {
+                    return Err(format!(
+                        "workload class changes its ordered GPU device-set identity for {}",
+                        render_measured_route(route)
+                    ));
+                }
+                _ => {
+                    return Err(format!(
+                        "workload class changes between single-device and ordered multi-device evidence for {}",
+                        render_measured_route(route)
+                    ));
+                }
+            }
         }
         if self.calibration_points.len() >= MAX_AUTOROUTE_MEASURED_POINTS {
             return Err(format!(
@@ -1043,8 +1074,8 @@ impl AutorouteDecision {
         // execution plan on top of it is reconciled by `resolve_class_route`
         // instead: points that split on the plan alone used to discard the
         // class, and in the field that split was noise, so a workload whose
-        // backend was never once in doubt ended up with no decision and paid
-        // scalar recovery on every later scan.
+        // backend was never once in doubt ended up with no decision and left
+        // every later automatic scan unroutable.
         if expected_one_shot.backend != measured_one_shot.backend
             || expected_daemon.backend != measured_daemon.backend
         {
@@ -1151,6 +1182,27 @@ impl AutorouteDecision {
             .then_some(first)
             .flatten()
     }
+    pub(super) fn ordered_device_route_for_route(
+        &self,
+        route: MeasuredRoute,
+    ) -> Option<&keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute> {
+        let first = self
+            .calibration_points
+            .first()?
+            .route_timing_for_route(route)?
+            .ordered_device_route
+            .as_ref()?;
+        self.calibration_points
+            .iter()
+            .all(|point| {
+                point
+                    .route_timing_for_route(route)
+                    .and_then(|entry| entry.ordered_device_route.as_ref())
+                    .is_some_and(|candidate| first.has_same_device_set_identity(candidate))
+            })
+            .then_some(first)
+    }
+
     pub(super) fn gpu_pipeline_identity_for_route(
         &self,
         route: MeasuredRoute,
@@ -1181,7 +1233,6 @@ impl AutorouteDecision {
             })
             .then_some(identity)
     }
-
 
     pub(super) fn primary_point(&self) -> &AutorouteCalibrationPoint {
         // LAW10: fail-closed; validated decisions contain evidence, and an invariant violation aborts rather than selecting an unevidenced route.

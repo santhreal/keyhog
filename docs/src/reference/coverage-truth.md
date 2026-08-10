@@ -73,7 +73,7 @@ one chunk and zero bytes, so chunk count alone does not prove coverage.
 | Value | Meaning |
 |---|---|
 | `success` | No coverage gap was recorded and no backend recovery happened. |
-| `complete_after_recovery` | Coverage is complete. A backend fault or missing autoroute calibration was recovered through scalar correctness recovery. |
+| `complete_after_recovery` | Coverage is complete after an authenticated backend fault completed through exact recovery. Missing or invalid autoroute evidence is not recovery; it records a `partial` scan. |
 | `partial` | At least one coverage gap was recorded. |
 | `cancelled` | The run was interrupted. |
 | `failed` | The run failed before it could report. |

@@ -5,9 +5,8 @@ pub(crate) use allowlist::load_rule_suppressor;
 mod dispatch;
 pub(crate) use dispatch::{
     automatic_backend_recovery_allowed, canonical_source_classes,
-    record_completed_backend_recovery, record_completed_remote_autoroute_state_recovery,
-    scan_selected_batch, AutorouteMeasurementReceipt, AutorouteStateRecovery, BackendRecoveryPlan,
-    COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB,
+    record_completed_backend_recovery, scan_selected_batch, AutorouteMeasurementReceipt,
+    BackendRecoveryPlan, COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB,
 };
 mod postprocess;
 pub(crate) mod reporting;
@@ -481,9 +480,9 @@ pub(crate) struct DefaultScanRuntime {
     /// repeating intent.
     worker_threads: usize,
     /// Explicit backend forced by the caller (e.g. `keyhog watch --backend cpu`).
-    /// `None` => use persisted autoroute evidence, with visible scalar recovery
-    /// when that state is invalid. When `Some`, the per-file scan never consults
-    /// the autoroute cache, so the runtime works on an uncalibrated binary.
+    /// `None` uses persisted autoroute evidence and fails closed when that state
+    /// is invalid. When `Some`, the per-file scan never consults the autoroute
+    /// cache, so the runtime works on an uncalibrated binary.
     backend_override: Option<keyhog_scanner::ScanBackend>,
     /// True for unforced production autoroute unless GPU execution is required.
     /// Explicit, required, and calibration dispatches remain hard contracts.
@@ -734,6 +733,8 @@ impl DefaultScanRuntime {
             self.scanner.as_ref(),
             batch,
             backend,
+            #[cfg(feature = "gpu")]
+            selection.ordered_gpu.as_deref(),
             selection.phase1_plan.as_ref(),
             selection.execution_route,
             selection
@@ -756,9 +757,6 @@ impl DefaultScanRuntime {
         if let Some(recovery) = outcome.recovery.as_ref() {
             self.router
                 .quarantine_recovered_route(&selection, recovery)?;
-        }
-        if let Some(recovery) = selection.autoroute_recovery.as_ref() {
-            dispatch::record_completed_autoroute_state_recovery(batch, backend, recovery);
         }
         Ok(outcome.per_chunk.into_iter().flatten().collect())
     }

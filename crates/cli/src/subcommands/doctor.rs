@@ -490,11 +490,10 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
 
     // ── Autoroute calibration coverage ────────────────────────────────
     // The default `keyhog scan` resolves a backend from persisted autoroute
-    // evidence. An uncovered workload warns and completes through scalar
-    // correctness recovery, without calling that recovery an autoroute result.
-    // Surface whether this binary and host are calibrated so an operator can
-    // distinguish complete recovery from a measured fastest route. Readiness
-    // and repair come from the same typed contract as
+    // evidence. An uncovered workload remains unscanned and makes the run
+    // non-successful. Surface whether this binary and host are calibrated so an
+    // operator can distinguish a measured fastest route from invalid state.
+    // Readiness and repair come from the same typed contract as
     // `backend --autoroute`; doctor only decides how that state affects its
     // aggregate health report.
     println!("\n{bold}autoroute{reset}");
@@ -620,7 +619,7 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
         crate::orchestrator::AutorouteReadiness::CalibrationRequired => {
             warned = true;
             println!(
-                "  calibration    {yellow}NOT CALIBRATED{reset}  {dim}automatic scans complete through visible scalar correctness recovery; repair: `{}`{reset}",
+                "  calibration    {yellow}NOT CALIBRATED{reset}  {dim}automatic scans fail closed without scanning; repair: `{}`{reset}",
                 readiness
                     .required_repair_command()
                     .map_err(anyhow::Error::msg)?

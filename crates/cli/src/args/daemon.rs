@@ -35,10 +35,9 @@ pub enum DaemonAction {
         cache_dir: Option<PathBuf>,
         /// Force a daemon scan backend instead of using persisted autoroute.
         ///
-        /// The default `auto` mode uses persisted calibration. Missing or
-        /// invalid evidence is reported per request while scalar correctness
-        /// recovery scans every byte. Use an explicit backend only for
-        /// diagnostics and hermetic daemon tests.
+        /// The default `auto` mode requires persisted calibration. Missing or
+        /// invalid evidence prevents readiness. Use an explicit backend only
+        /// for diagnostics and hermetic daemon tests.
         #[arg(
             long,
             value_name = "BACKEND",

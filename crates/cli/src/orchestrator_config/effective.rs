@@ -594,9 +594,9 @@ fn autoroute_config_hasher(resolved: &ResolvedScanConfig) -> StableHasher {
     // builds with no GPU candidate at all, where the "exclusion" is vacuous and
     // the host profiles are byte-identical. Those runs wrote every decision
     // under a config digest no scan would ever request, so the immediately
-    // following identical scan reported a config mismatch and completed through
-    // scalar correctness recovery. Measured on this tree: calibrating
-    // `crates/core/src` without `--autoroute-gpu` persisted under config digest
+    // following identical scan reported a config mismatch and failed closed.
+    // Measured on this tree: calibrating `crates/core/src` without
+    // `--autoroute-gpu` persisted under config digest
     // 6f1448b21763f30e while the very next identical scan asked for
     // b3a30e4526ff5e41.
     h.field_option_usize("regex_dfa_limit", resolved.regex_dfa_limit);

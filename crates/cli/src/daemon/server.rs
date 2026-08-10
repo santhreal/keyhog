@@ -366,7 +366,6 @@ impl ServerState {
     fn backend_policy(&self) -> &'static str {
         match self.backend_override {
             Some(backend) => backend.label(),
-            None if self.router.autoroute_state_is_invalid() => "autoroute-recovery",
             None if self.router.autoroute_has_quarantined_routes() => "autoroute-degraded",
             None => "autoroute",
         }
@@ -1299,6 +1298,8 @@ async fn scan_text(
                     scanner.as_ref(),
                     batch,
                     selection.backend,
+                    #[cfg(feature = "gpu")]
+                    selection.ordered_gpu.as_deref(),
                     selection.phase1_plan.as_ref(),
                     selection.execution_route,
                     selection
@@ -1317,16 +1318,7 @@ async fn scan_text(
                 let backend_recovery = outcome
                     .recovery
                     .as_ref()
-                    .map(backend_recovery_status_from_receipt)
-                    .or_else(|| {
-                        selection.autoroute_recovery.as_ref().map(|recovery| {
-                            autoroute_state_recovery_status(
-                                std::slice::from_ref(&chunk),
-                                selection.backend,
-                                recovery,
-                            )
-                        })
-                    });
+                    .map(backend_recovery_status_from_receipt);
                 scanner.clear_fragment_cache();
                 Ok((
                     outcome.per_chunk.into_iter().flatten().collect(),
@@ -1481,6 +1473,8 @@ async fn scan_path(
                     scanner.as_ref(),
                     &chunks,
                     selection.backend,
+                    #[cfg(feature = "gpu")]
+                    selection.ordered_gpu.as_deref(),
                     selection.phase1_plan.as_ref(),
                     selection.execution_route,
                     selection
@@ -1499,12 +1493,7 @@ async fn scan_path(
                 let backend_recovery = outcome
                     .recovery
                     .as_ref()
-                    .map(backend_recovery_status_from_receipt)
-                    .or_else(|| {
-                        selection.autoroute_recovery.as_ref().map(|recovery| {
-                            autoroute_state_recovery_status(&chunks, selection.backend, recovery)
-                        })
-                    });
+                    .map(backend_recovery_status_from_receipt);
                 scanner.clear_fragment_cache();
                 let mut per_chunk = outcome.per_chunk;
                 crate::inline_suppression::attach_inline_suppression_context(
@@ -1650,6 +1639,8 @@ async fn scan_mass_batch(
                         scanner.as_ref(),
                         &chunks,
                         selection.backend,
+                        #[cfg(feature = "gpu")]
+                        selection.ordered_gpu.as_deref(),
                         selection.phase1_plan.as_ref(),
                         selection.execution_route,
                         selection
@@ -1668,16 +1659,7 @@ async fn scan_mass_batch(
                     let backend_recovery = outcome
                         .recovery
                         .as_ref()
-                        .map(backend_recovery_status_from_receipt)
-                        .or_else(|| {
-                            selection.autoroute_recovery.as_ref().map(|recovery| {
-                                autoroute_state_recovery_status(
-                                    &chunks,
-                                    selection.backend,
-                                    recovery,
-                                )
-                            })
-                        });
+                        .map(backend_recovery_status_from_receipt);
                     let gpu = selection.backend.is_gpu() && !outcome.recovered;
                     let mut per_chunk = outcome.per_chunk;
                     crate::inline_suppression::attach_inline_suppression_context(
@@ -1769,34 +1751,6 @@ fn backend_recovery_status_from_receipt(
         recovered_chunks: receipt.recovered_chunks(),
         recovered_bytes: receipt.recovered_bytes(),
         reason: receipt.reason.clone(),
-    }
-}
-
-fn autoroute_state_recovery_status(
-    chunks: &[Chunk],
-    recovery_backend: ScanBackend,
-    recovery: &crate::orchestrator::AutorouteStateRecovery,
-) -> BackendRecoveryStatus {
-    let recovered_ranges = chunks
-        .iter()
-        .enumerate()
-        .filter(|(_, chunk)| !chunk.data.is_empty())
-        .map(|(chunk_index, chunk)| RecoveredInputRangeStatus {
-            chunk_index,
-            byte_start: 0,
-            byte_end: chunk.data.len(),
-        })
-        .collect::<Vec<_>>();
-    BackendRecoveryStatus {
-        failed_backend: "autoroute-invalid".to_string(),
-        recovery_backend: recovery_backend.label().to_string(),
-        recovered_chunks: recovered_ranges.len(),
-        recovered_bytes: recovered_ranges
-            .iter()
-            .map(|range| (range.byte_end - range.byte_start) as u64)
-            .sum(),
-        recovered_ranges,
-        reason: recovery.reason.clone(),
     }
 }
 

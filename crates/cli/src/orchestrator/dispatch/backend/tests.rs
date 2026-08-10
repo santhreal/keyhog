@@ -194,6 +194,81 @@ fn issue32_async_gpu_evidence_requires_complete_depth_matrix_and_preserves_aggre
         error.to_string().contains("backend/depth census"),
         "incomplete-depth diagnostic must name the missing matrix: {error}"
     );
+
+    let ordered = ordered_device_route_for_autoroute_test();
+    let mut ordered_timings = decision.primary_point_mut().route_timings.clone();
+    for entry in &mut ordered_timings {
+        if entry.backend == ScanBackend::GpuWgpu.label() {
+            *entry = entry
+                .clone()
+                .bind_ordered_device_route(ordered.clone())
+                .expect("ordered route binds to every WGPU variant");
+        }
+    }
+    let mut device_set = AutorouteDecision::from_peer_timing_evidence(
+        selected.backend,
+        1,
+        1,
+        test_measurement_shape_evidence(1, 1),
+        0xA11D,
+        1,
+        ordered_timings,
+        false,
+        false,
+    );
+    device_set.backend = selected.backend.label().to_string();
+    device_set.phase2_plain_localizer = selected.phase2_plain_localizer;
+    device_set.phase2_keyword_localizer = selected.phase2_keyword_localizer;
+    device_set.gpu_pipeline_depth = selected.gpu_pipeline_depth;
+    super::store::validate_decision_route_evidence(&device_set, &expected)
+        .expect("one authenticated device set across every route variant is valid");
+
+    let mut orphaned = device_set.clone();
+    let orphaned_entry = orphaned
+        .primary_point_mut()
+        .route_timings
+        .iter_mut()
+        .find(|entry| entry.backend == ScanBackend::GpuWgpu.label())
+        .expect("WGPU timing exists");
+    orphaned_entry.ordered_device_route = None;
+    let error = super::store::validate_decision_route_evidence(&orphaned, &expected)
+        .expect_err("a device-set identity without its authenticated body must fail closed");
+    assert!(
+        error
+            .to_string()
+            .contains("has no authenticated route body"),
+        "orphaned device-set diagnostic must identify the missing body: {error}"
+    );
+
+    let mut alternate_devices = ordered.devices.clone();
+    alternate_devices[0].workload_weight += 1;
+    let alternate = keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute::new(
+        ordered.workload_identity.clone(),
+        ordered.detector_digest.clone(),
+        ordered.config_digest.clone(),
+        ordered.process_resident_limit_bytes,
+        alternate_devices,
+    )
+    .expect("alternate ordered route remains valid");
+    let mut mixed = device_set;
+    let mixed_entry = mixed
+        .primary_point_mut()
+        .route_timings
+        .iter_mut()
+        .find(|entry| {
+            entry.backend == ScanBackend::GpuWgpu.label() && entry.gpu_pipeline_depth == 4
+        })
+        .expect("deep WGPU timing exists");
+    *mixed_entry = mixed_entry
+        .clone()
+        .bind_ordered_device_route(alternate)
+        .expect("alternate ordered route binds");
+    let error = super::store::validate_decision_route_evidence(&mixed, &expected)
+        .expect_err("route variants cannot mix authenticated device sets");
+    assert!(
+        error.to_string().contains("mixes ordered device sets"),
+        "mixed device-set diagnostic must identify route drift: {error}"
+    );
 }
 
 #[cfg(feature = "simd")]
@@ -511,8 +586,8 @@ fn a_rejected_cache_is_never_reported_as_an_uncalibrated_bucket() {
     // belong to this binary, host, corpus or config, so recalibrating one
     // bucket into it changes nothing; an absent bucket means the cache is valid
     // and simply does not cover this workload yet. Before the causes were
-    // separated both surfaced as the same scalar recovery, which is how a cache
-    // that could never hit looked exactly like a corpus nobody had calibrated.
+    // separated both blocked routing with the same diagnosis, which is how a
+    // cache that could never hit looked exactly like a corpus nobody calibrated.
     let path = Some(std::path::PathBuf::from("/tmp/autoroute.json"));
     let rejected = Some("executable digest mismatch".to_string());
 
@@ -3555,7 +3630,7 @@ fn issue32_autoroute_cache_rejects_stale_v53_before_payload_decode() {
     let _ = std::fs::remove_file(&path);
     assert!(
         error.contains("unsupported autoroute cache version 53")
-            && error.contains("expects 54")
+            && error.contains("expects 56")
             && !error.contains("missing field"),
         "v53 rejection must be version-first and actionable: {error}"
     );
@@ -4022,7 +4097,8 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
         cache_load_error: None,
         cache_dirty: true,
         runtime_health: None,
-        recovery_announced: false,
+        #[cfg(feature = "gpu")]
+        ordered_device_sets: Mutex::new(HashMap::new()),
     };
 
     router
@@ -4091,7 +4167,8 @@ fn measured_router_drop_does_not_persist_dirty_cache() {
             cache_load_error: None,
             cache_dirty: true,
             runtime_health: None,
-            recovery_announced: false,
+            #[cfg(feature = "gpu")]
+            ordered_device_sets: Mutex::new(HashMap::new()),
         };
     }
 
@@ -4151,7 +4228,8 @@ fn measured_router_commit_discards_unmeasured_stale_decisions() {
         cache_load_error: None,
         cache_dirty: true,
         runtime_health: None,
-        recovery_announced: false,
+        #[cfg(feature = "gpu")]
+        ordered_device_sets: Mutex::new(HashMap::new()),
     };
 
     router
@@ -4210,7 +4288,8 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
         cache_load_error: None,
         cache_dirty: false,
         runtime_health: None,
-        recovery_announced: false,
+        #[cfg(feature = "gpu")]
+        ordered_device_sets: Mutex::new(HashMap::new()),
     };
 
     assert_eq!(
@@ -4310,7 +4389,7 @@ fn calibration_envelope_retains_agreeing_points_and_rejects_a_crossover() {
 
 #[test]
 #[cfg(feature = "simd")]
-fn cached_router_uses_visible_scalar_recovery_for_invalid_autoroute_state() {
+fn cached_router_fails_closed_for_invalid_autoroute_state() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_cached_router_hit_miss_{}.json",
         std::process::id()
@@ -4415,31 +4494,21 @@ fn cached_router_uses_visible_scalar_recovery_for_invalid_autoroute_state() {
         } else {
             ScanBackend::CpuFallback
         },
-        "cache-hit recovery was unexpected: {:?}",
-        hit.autoroute_recovery
+        "cache hit must choose the authenticated persisted backend",
     );
     let miss = router
         .choose_with_plan(&scanner, None, &miss_batch)
-        .expect("cache miss must preserve scan coverage through visible recovery");
-    assert_eq!(miss.backend, ScanBackend::CpuFallback);
-    let miss_recovery = miss
-        .autoroute_recovery
-        .expect("cache miss must be marked as autoroute-state recovery");
+        .expect_err("cache miss must leave the batch unscanned");
+    assert_eq!(miss.kind(), AutorouteRoutingErrorKind::RoutingUnavailable);
+    let miss_message = miss.to_string();
     assert!(
-        miss_recovery
-            .reason
-            .contains("autoroute calibration required")
-            && miss_recovery
-                .reason
-                .contains("--autoroute-calibrate --autoroute-gpu")
-            && miss_recovery.reason.contains("coverage:")
-            && miss_recovery
-                .reason
-                .contains("complete through scalar correctness recovery"),
-        "cache miss must preserve operator-visible autoroute diagnosis; got {}",
-        miss_recovery.reason,
+        miss_message.contains("autoroute calibration required")
+            && miss_message.contains("--autoroute-calibrate --autoroute-gpu")
+            && miss_message.contains("coverage:")
+            && miss_message.contains("No backend was selected")
+            && miss_message.contains("batch was not scanned"),
+        "cache miss must preserve operator-visible autoroute diagnosis; got {miss_message}",
     );
-    assert!(miss_recovery.announce, "first recovery must warn");
     assert_eq!(
         router
             .choose_with_plan(&scanner, Some(ScanBackend::CpuFallback), &miss_batch)
@@ -4467,12 +4536,12 @@ fn cached_router_uses_visible_scalar_recovery_for_invalid_autoroute_state() {
     assert!(router.autoroute_has_quarantined_routes());
     let quarantined = router
         .choose_with_plan(&scanner, None, &hit_batch)
-        .expect("a quarantined route must recover visibly through the scalar oracle");
-    assert_eq!(quarantined.backend, ScanBackend::CpuFallback);
-    let quarantined = quarantined
-        .autoroute_recovery
-        .expect("quarantined route must carry recovery state")
-        .reason;
+        .expect_err("a quarantined route must leave the batch unscanned");
+    assert_eq!(
+        quarantined.kind(),
+        AutorouteRoutingErrorKind::RoutingUnavailable
+    );
+    let quarantined = quarantined.to_string();
     assert!(
         quarantined.contains("autoroute decision is quarantined")
             && quarantined.contains("will not silently substitute another route")
@@ -4502,12 +4571,12 @@ fn cached_router_uses_visible_scalar_recovery_for_invalid_autoroute_state() {
     );
     let after_restart = restarted_router
         .choose_with_plan(&scanner, None, &hit_batch)
-        .expect("runtime quarantine must recover after process-local router reconstruction");
-    assert_eq!(after_restart.backend, ScanBackend::CpuFallback);
-    let after_restart = after_restart
-        .autoroute_recovery
-        .expect("restarted quarantined route must carry recovery state")
-        .reason;
+        .expect_err("runtime quarantine must fail closed after router reconstruction");
+    assert_eq!(
+        after_restart.kind(),
+        AutorouteRoutingErrorKind::RoutingUnavailable
+    );
+    let after_restart = after_restart.to_string();
     assert!(
         after_restart.contains("autoroute decision is quarantined")
             && after_restart.contains("injected dispatch fault"),
@@ -4565,17 +4634,17 @@ fn cached_router_uses_visible_scalar_recovery_for_invalid_autoroute_state() {
     );
     let corrupt_health = corrupt_health_router
         .choose_with_plan(&scanner, None, &hit_batch)
-        .expect("corrupt runtime health must recover with complete coverage");
-    assert_eq!(corrupt_health.backend, ScanBackend::CpuFallback);
-    let corrupt_health = corrupt_health
-        .autoroute_recovery
-        .expect("corrupt runtime health must be marked as recovery")
-        .reason;
+        .expect_err("corrupt runtime health must leave the batch unscanned");
+    assert_eq!(
+        corrupt_health.kind(),
+        AutorouteRoutingErrorKind::RoutingUnavailable
+    );
+    let corrupt_health = corrupt_health.to_string();
     assert!(
         corrupt_health.contains("cache or host identity was rejected")
             && corrupt_health.contains("runtime route-health artifact")
             && corrupt_health.contains("invalid JSON"),
-        "corrupt runtime health must recover visibly with repair context; got {corrupt_health}"
+        "corrupt runtime health must fail visibly with repair context; got {corrupt_health}"
     );
     assert_eq!(
         corrupt_health_router
@@ -6706,7 +6775,8 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
         runtime_class: AutorouteRuntimeClass::OneShot,
         runtime_faults: Mutex::new(HashMap::new()),
         runtime_health: None,
-        recovery_announced: AtomicBool::new(false),
+        #[cfg(feature = "gpu")]
+        ordered_device_sets: Mutex::new(HashMap::new()),
     };
 
     assert_eq!(
@@ -6726,7 +6796,7 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
 }
 
 #[test]
-fn daemon_without_valid_autoroute_evidence_initializes_required_recovery() {
+fn daemon_without_valid_autoroute_evidence_fails_closed() {
     let router = CachedBackendRouter {
         pattern_count: 922,
         decode_workload_plan: test_decode_workload_plan(),
@@ -6736,22 +6806,27 @@ fn daemon_without_valid_autoroute_evidence_initializes_required_recovery() {
         runtime_class: AutorouteRuntimeClass::OneShot,
         runtime_faults: Mutex::new(HashMap::new()),
         runtime_health: None,
-        recovery_announced: AtomicBool::new(false),
+        #[cfg(feature = "gpu")]
+        ordered_device_sets: Mutex::new(HashMap::new()),
     };
 
-    let expected_routes = if autoroute_required() {
-        vec![ScanBackend::CpuFallback]
-    } else {
-        Vec::new()
-    };
-
-    assert_eq!(
-        router
+    if autoroute_required() {
+        let error = router
             .persistent_routes()
-            .expect("invalid autoroute state must not prevent daemon readiness"),
-        expected_routes,
-        "daemon readiness must initialize scalar recovery exactly when autoroute is required"
-    );
+            .expect_err("invalid autoroute state must prevent daemon readiness");
+        assert_eq!(error.kind(), AutorouteRoutingErrorKind::RoutingUnavailable);
+        assert!(
+            error.to_string().contains("cache schema is stale"),
+            "startup error must preserve the rejected evidence reason: {error}",
+        );
+    } else {
+        assert_eq!(
+            router
+                .persistent_routes()
+                .expect("autoroute is optional on this target"),
+            Vec::<ScanBackend>::new(),
+        );
+    }
 }
 
 #[test]
@@ -7307,6 +7382,9 @@ fn live_calibration_measures_every_gpu_peer_before_resolving_or_refusing() {
         ),
         &eligible,
         Some(&admission_plan),
+        "gpu-calibration-test",
+        "detectors-test",
+        "config-test",
     );
     match outcome {
         Ok(decision) => {
@@ -7343,7 +7421,7 @@ fn live_calibration_measures_every_gpu_peer_before_resolving_or_refusing() {
 // Two of those five runs disagreed in OPPOSITE directions on that one point,
 // which is the proof the verdict was noise: `cpu-fallback` won every time and
 // only the sub-plan flipped. Three of five runs therefore persisted nothing,
-// and every later scan of that workload paid scalar recovery.
+// and every later automatic scan of that workload failed closed.
 //
 // A paired 95% test can call a winner while the two intervals overlap almost
 // entirely, and on the next sample it calls the other one. These contracts pin
@@ -7375,6 +7453,7 @@ fn scalar_plan_decision(
             backend: ScanBackend::SimdCpu,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
         },
         BackendTimingEvidence::constant_ms(50_000, AUTOROUTE_CALIBRATION_TRIALS),
     )];
@@ -7548,6 +7627,7 @@ fn a_split_plan_across_points_reconciles_to_the_compiled_default() {
                     backend: ScanBackend::SimdCpu,
                     phase2_plain_localizer: false,
                     phase2_keyword_localizer: false,
+                    gpu_pipeline_depth: 1,
                 },
                 BackendTimingEvidence::constant_ms(50_000, AUTOROUTE_CALIBRATION_TRIALS),
             )];
@@ -7617,6 +7697,7 @@ fn a_backend_crossover_across_points_still_refuses_to_resolve() {
                     backend: ScanBackend::SimdCpu,
                     phase2_plain_localizer: false,
                     phase2_keyword_localizer: false,
+                    gpu_pipeline_depth: 1,
                 },
                 BackendTimingEvidence::constant_ms(simd_ms, AUTOROUTE_CALIBRATION_TRIALS),
             ),
@@ -7625,6 +7706,7 @@ fn a_backend_crossover_across_points_still_refuses_to_resolve() {
                     backend: ScanBackend::CpuFallback,
                     phase2_plain_localizer: true,
                     phase2_keyword_localizer: true,
+                    gpu_pipeline_depth: 1,
                 },
                 BackendTimingEvidence::constant_ms(cpu_ms, AUTOROUTE_CALIBRATION_TRIALS),
             ),
@@ -7706,6 +7788,9 @@ fn ordered_device_route_for_autoroute_test(
             api_ordinal: ordinal,
             physical_identity: format!("gpu-{ordinal}"),
             topology_identity: format!("pci:0000:0{ordinal}:00.0/numa:0"),
+            name: format!("device-{ordinal}"),
+            vendor_id: 0x10de,
+            device_id: 0x1234,
             software_eligible: true,
             display_eligible: true,
             driver_identity: "driver-1".to_string(),
@@ -7730,6 +7815,145 @@ fn ordered_device_route_for_autoroute_test(
 }
 
 #[test]
+fn ordered_route_binding_matches_workload_rules_and_config() {
+    let key = test_workload_key();
+    let rules_digest = test_rules_digest();
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let base = ordered_device_route_for_autoroute_test();
+    let ordered = keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute::new(
+        render_workload_key(&key),
+        rules_digest.to_string(),
+        format!("{config_digest:016x}"),
+        base.process_resident_limit_bytes,
+        base.devices,
+    )
+    .expect("route identities bind");
+    let route = MeasuredRoute {
+        backend: ScanBackend::GpuWgpu,
+        phase2_plain_localizer: false,
+        phase2_keyword_localizer: false,
+        gpu_pipeline_depth: 1,
+    };
+    let decision = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::GpuWgpu,
+        1,
+        1,
+        test_measurement_shape_evidence(1, 1),
+        0xA11D,
+        1,
+        vec![RouteTimingEvidence::new_with_peer_identity(
+            route,
+            BackendTimingEvidence::constant_ms(10, AUTOROUTE_CALIBRATION_TRIALS),
+            None,
+            Some(("timed-resident".to_string(), 1024, 65_536)),
+        )
+        .bind_ordered_device_route(ordered)
+        .expect("ordered route binds")],
+        false,
+        false,
+    );
+    super::store::validate_ordered_device_route_bindings(
+        &key,
+        &decision,
+        rules_digest,
+        config_digest,
+    )
+    .expect("exact route context is valid");
+    assert!(super::store::validate_ordered_device_route_bindings(
+        &key,
+        &decision,
+        "different-rules",
+        config_digest,
+    )
+    .expect_err("rules drift rejected")
+    .to_string()
+    .contains("different detector rule set"));
+    assert!(super::store::validate_ordered_device_route_bindings(
+        &key,
+        &decision,
+        rules_digest,
+        config_digest + 1,
+    )
+    .expect_err("config drift rejected")
+    .to_string()
+    .contains("different scan configuration"));
+}
+
+#[test]
+fn merged_points_keep_one_hardware_set_while_accepting_remeasured_weights() {
+    let decision = |sample_bytes: u64, weights: [u64; 2], driver: &str| {
+        let mut devices = ordered_device_route_for_autoroute_test().devices;
+        for (device, weight) in devices.iter_mut().zip(weights) {
+            device.workload_weight = weight;
+            device.timing.sample_bytes = sample_bytes;
+            device.driver_identity = driver.to_string();
+        }
+        let ordered = keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute::new(
+            "workload-a".to_string(),
+            "detectors-a".to_string(),
+            "config-a".to_string(),
+            2 << 30,
+            devices,
+        )
+        .expect("remeasured ordered route");
+        let gpu_route = MeasuredRoute {
+            backend: ScanBackend::GpuWgpu,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
+        };
+        AutorouteDecision::from_peer_timing_evidence(
+            ScanBackend::GpuWgpu,
+            sample_bytes,
+            1,
+            test_measurement_shape_evidence(sample_bytes, 1),
+            0xA11D,
+            1,
+            vec![
+                RouteTimingEvidence::new_with_peer_identity(
+                    gpu_route,
+                    BackendTimingEvidence::constant_ms(10, AUTOROUTE_CALIBRATION_TRIALS),
+                    None,
+                    Some(("timed-resident".to_string(), 1024, 65_536)),
+                )
+                .bind_ordered_device_route(ordered)
+                .expect("ordered route binds"),
+                RouteTimingEvidence::new(
+                    MeasuredRoute {
+                        backend: ScanBackend::CpuFallback,
+                        phase2_plain_localizer: false,
+                        phase2_keyword_localizer: false,
+                        gpu_pipeline_depth: 1,
+                    },
+                    BackendTimingEvidence::constant_ms(100, AUTOROUTE_CALIBRATION_TRIALS),
+                ),
+            ],
+            false,
+            false,
+        )
+    };
+
+    let route = MeasuredRoute {
+        backend: ScanBackend::GpuWgpu,
+        phase2_plain_localizer: false,
+        phase2_keyword_localizer: false,
+        gpu_pipeline_depth: 1,
+    };
+    let mut envelope = decision(8 << 20, [1, 2], "driver-1");
+    envelope
+        .merge_calibration_point(decision(12 << 20, [2, 3], "driver-1"))
+        .expect("measurement weights may vary within one stable hardware set");
+    assert!(envelope.ordered_device_route_for_route(route).is_some());
+    super::store::validate_ordered_device_set_stability(&envelope)
+        .expect("cache validation accepts stable hardware with new timing weights");
+
+    let error = envelope
+        .merge_calibration_point(decision(14 << 20, [2, 3], "driver-2"))
+        .expect_err("hardware identity drift must invalidate the workload class");
+    assert!(error.contains("changes its ordered GPU device-set identity"));
+}
+
+#[test]
 fn route_timing_schema_authenticates_complete_ordered_device_set() {
     let ordered = ordered_device_route_for_autoroute_test();
     let timing = BackendTimingEvidence::constant_ms(1, AUTOROUTE_CALIBRATION_TRIALS);
@@ -7738,14 +7962,15 @@ fn route_timing_schema_authenticates_complete_ordered_device_set() {
             backend: ScanBackend::GpuWgpu,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
         },
         timing,
         None,
+        Some(("timed-resident".to_string(), 1024, 65_536)),
     )
     .bind_ordered_device_route(ordered.clone())
     .expect("ordered route binds");
-    let expected_peer_identity =
-        format!("ordered-device-set:{}", ordered.authenticated_digest);
+    let expected_peer_identity = format!("ordered-device-set:{}", ordered.authenticated_digest);
     assert_eq!(
         entry.peer_identity.as_deref(),
         Some(expected_peer_identity.as_str())
@@ -7776,9 +8001,11 @@ fn route_timing_rejects_stale_tampered_partial_and_backend_mismatched_sets() {
             backend: ScanBackend::GpuWgpu,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
         },
         BackendTimingEvidence::constant_ms(1, AUTOROUTE_CALIBRATION_TRIALS),
         None,
+        Some(("timed-resident".to_string(), 1024, 65_536)),
     );
     let mut stale = ordered_device_route_for_autoroute_test();
     stale.schema_version = 0;

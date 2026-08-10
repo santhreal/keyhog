@@ -29,7 +29,7 @@ fn absent_cache_is_valid_when_no_backend_choice_exists() {
 }
 
 #[test]
-fn disabled_cache_reports_complete_recovery_when_build_has_backend_choice() {
+fn disabled_cache_reports_fail_closed_routing_when_build_has_backend_choice() {
     let inspection = inspect_autoroute_cache_for_build(None, true);
 
     assert!(inspection.calibration_required);
@@ -37,8 +37,8 @@ fn disabled_cache_reports_complete_recovery_when_build_has_backend_choice() {
     assert!(!inspection.present);
     assert!(inspection.error.as_deref().is_some_and(|error| {
         error.contains("cache is disabled")
-            && error.contains("complete through scalar correctness recovery")
-            && error.contains("cannot claim a fastest measured route")
+            && error.contains("fail closed without scanning")
+            && error.contains("no fastest measured route")
     }));
     assert!(inspection.configs.is_empty());
     assert_eq!(inspection.readiness(), AutorouteReadiness::Disabled);

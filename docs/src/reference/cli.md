@@ -28,7 +28,7 @@ or coverage incomplete.
 | `--allow-s3-credential-forward` |  |  | Forward ambient AWS credentials to a custom S3 endpoint you trust. Off by default; AWS-owned endpoints do not need this. This flag is intentionally explicit because it can send AWS identity material to a third-party host |
 | `--allow-script-verify` |  |  | Permit detector `script:` verification for trusted detector corpora. Off by default because scripts execute verifier-supplied code with credential-adjacent context. Prints an explicit warning when active |
 | `--autoroute-cache` | `PATH\|off` |  | Override the persistent autoroute calibration cache file. Use an absolute path, or `off` to disable persistence. Config: `[system].autoroute_cache` in `.keyhog.toml`; this flag overrides it. |
-| `--autoroute-calibrate` |  |  | Run this scan as an explicit autoroute calibration probe: benchmark parity-checked backend candidates and persist the fastest-correct decision for each workload bucket. Normal scans never benchmark on cache miss; they use persisted evidence or visibly complete through scalar correctness recovery. An explicit `--backend` is diagnostic only |
+| `--autoroute-calibrate` |  |  | Run this scan as an explicit autoroute calibration probe: benchmark parity-checked backend candidates and persist the fastest-correct decision for each workload bucket. Normal scans never benchmark on cache miss; they use persisted evidence or fail closed without scanning. An explicit `--backend` is diagnostic only |
 | `--autoroute-gpu` |  |  | Allow autoroute calibration to include GPU candidates for eligible workload buckets. Normal scans still use persisted calibration only |
 | `--azure-container-url` | `URL` |  | Scan an Azure Blob Storage container URL. Include a SAS query string for private containers |
 | `--azure-prefix` | `PREFIX` |  | Optional Azure Blob prefix to limit the scan |
@@ -210,7 +210,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--allow-s3-credential-forward` |  |  | Forward ambient AWS credentials to a custom S3 endpoint you trust. Off by default; AWS-owned endpoints do not need this. This flag is intentionally explicit because it can send AWS identity material to a third-party host |
 | `--allow-script-verify` |  |  | Permit detector `script:` verification for trusted detector corpora. Off by default because scripts execute verifier-supplied code with credential-adjacent context. Prints an explicit warning when active |
 | `--autoroute-cache` | `PATH\|off` |  | Override the persistent autoroute calibration cache file. Use an absolute path, or `off` to disable persistence. Config: `[system].autoroute_cache` in `.keyhog.toml`; this flag overrides it. |
-| `--autoroute-calibrate` |  |  | Run this scan as an explicit autoroute calibration probe: benchmark parity-checked backend candidates and persist the fastest-correct decision for each workload bucket. Normal scans never benchmark on cache miss; they use persisted evidence or visibly complete through scalar correctness recovery. An explicit `--backend` is diagnostic only |
+| `--autoroute-calibrate` |  |  | Run this scan as an explicit autoroute calibration probe: benchmark parity-checked backend candidates and persist the fastest-correct decision for each workload bucket. Normal scans never benchmark on cache miss; they use persisted evidence or fail closed without scanning. An explicit `--backend` is diagnostic only |
 | `--autoroute-gpu` |  |  | Allow autoroute calibration to include GPU candidates for eligible workload buckets. Normal scans still use persisted calibration only |
 | `--azure-container-url` | `URL` |  | Scan an Azure Blob Storage container URL. Include a SAS query string for private containers |
 | `--azure-prefix` | `PREFIX` |  | Optional Azure Blob prefix to limit the scan |
@@ -424,7 +424,7 @@ keyhog watch                      # watch the current directory
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
 | `<PATH>` | `PATH...` | `.` | Director(ies) to watch recursively. Pass several to monitor multiple roots in one foreground watcher (`keyhog watch src/ config/`); nested or duplicate roots fold into their covering parent, mirroring `keyhog scan`. Each root must be a directory. Defaults to the current directory |
-| `--backend` | `BACKEND` |  | Select persisted autoroute or explicitly force one diagnostic backend. Accepted values are listed below. Without valid installer calibration, each change scan warns and completes through scalar correctness recovery exactly as `keyhog scan` does Possible values: `auto`, `gpu-cuda`, `gpu-cuda-region-presence`, `gpu-metal`, `gpu-metal-region-presence`, `gpu-wgpu`, `gpu-wgpu-region-presence`, `simd`, `simd-regex`, `cpu`, `cpu-fallback`. |
+| `--backend` | `BACKEND` |  | Select persisted autoroute or explicitly force one diagnostic backend. Accepted values are listed below. Without valid installer calibration, change scans fail closed without scanning Possible values: `auto`, `gpu-cuda`, `gpu-cuda-region-presence`, `gpu-metal`, `gpu-metal-region-presence`, `gpu-wgpu`, `gpu-wgpu-region-presence`, `simd`, `simd-regex`, `cpu`, `cpu-fallback`. |
 | `--cache-dir` | `DIR` |  | Override the Hyperscan compiled-database cache directory |
 | `-d`, `--detectors` | `DETECTORS` | `detectors` | Detector TOML directory. When omitted, KeyHog discovers an installed corpus or uses the embedded corpus. An explicitly named missing path is an error |
 | `--max-consecutive-failures` | `N` | `8` | Exit after this many consecutive per-file scan engine failures so a wedged scanner cannot silently drop secrets under editor saves (KH-1334 / KH-1462). Default 8 |
@@ -481,7 +481,7 @@ stdin and single-file scans.
 
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
-| `--backend` | `BACKEND` |  | Force a daemon scan backend instead of using persisted autoroute. The default `auto` mode uses persisted calibration. Missing or invalid evidence is reported per request while scalar correctness recovery scans every byte. Use an explicit backend only for diagnostics and hermetic daemon tests. Possible values: `auto`, `gpu-cuda`, `gpu-cuda-region-presence`, `gpu-metal`, `gpu-metal-region-presence`, `gpu-wgpu`, `gpu-wgpu-region-presence`, `simd`, `simd-regex`, `cpu`, `cpu-fallback`. |
+| `--backend` | `BACKEND` |  | Force a daemon scan backend instead of using persisted autoroute. The default `auto` mode requires persisted calibration. Missing or invalid evidence prevents readiness. Use an explicit backend only for diagnostics and hermetic daemon tests. Possible values: `auto`, `gpu-cuda`, `gpu-cuda-region-presence`, `gpu-metal`, `gpu-metal-region-presence`, `gpu-wgpu`, `gpu-wgpu-region-presence`, `simd`, `simd-regex`, `cpu`, `cpu-fallback`. |
 | `--cache-dir` | `DIR` |  | Override the Hyperscan compiled-database cache directory |
 | `--detectors` | `DETECTORS` | `detectors` | Detector directory (same default as `keyhog scan --detectors`) |
 | `--mass` |  |  | Enable bounded directory, Git, archive, binary, remote, and cloud batches from `keyhog scan --daemon=mass`. Warm one-file requests remain available on the same socket |
@@ -654,7 +654,7 @@ coverage.
 <!-- keyhog-generated: cli-reference command="backend" -->
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
-| `--autoroute` |  |  | Inspect the persisted autoroute calibration cache: which resolved scan configs and workload buckets have a fastest-correct backend decision, the cold-aware one-shot and warm-daemon routes, confidence basis, and whether the cache is stale for this build. Read-only; pairs with `--json`. Use this to diagnose an "autoroute calibration required" recovery receipt and identify the exact unproved workload bucket |
+| `--autoroute` |  |  | Inspect the persisted autoroute calibration cache: which resolved scan configs and workload buckets have a fastest-correct backend decision, the cold-aware one-shot and warm-daemon routes, confidence basis, and whether the cache is stale for this build. Read-only; pairs with `--json`. Use this to diagnose an "autoroute calibration required" routing error and identify the exact unproved workload bucket |
 | `--autoroute-cache` | `PATH\|off` |  | Inspect this explicit autoroute cache file instead of the platform default. Use the same absolute path passed to `scan --autoroute-cache` or configured as `[system].autoroute_cache`; `off` inspects the disabled state |
 | `--json` |  |  | Emit `backend --self-test` or `backend --autoroute` as stable JSON for CI health gates / scripted inspection |
 | `--no-gpu` |  |  | Disable GPU probing for backend inspection/self-test |
@@ -720,9 +720,9 @@ actual KeyHog-owned width.
 
 `scan-system` always runs its own in-process scanner, whether the daemon is
 active or inactive. It uses persisted autoroute evidence and has no explicit
-backend override. Missing, stale, or incomplete evidence warns and completes
-through the scalar correctness oracle; the report is marked
-`complete_after_recovery` rather than claiming a calibrated route.
+backend override. Missing, stale, or incomplete evidence selects no backend for
+the affected batch; the report records partial coverage and names the required
+calibration.
 
 ## `keyhog completion <bash|zsh|fish|powershell|elvish>`
 

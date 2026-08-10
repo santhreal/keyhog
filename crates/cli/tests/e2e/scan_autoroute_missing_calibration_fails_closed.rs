@@ -1,11 +1,11 @@
-//! E2E: invalid autoroute state completes through visible scalar recovery.
+//! E2E: invalid autoroute state leaves input unscanned and exits non-success.
 
 use crate::e2e::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 
 #[test]
-fn scan_autoroute_missing_calibration_recovers_complete_input() {
+fn scan_autoroute_missing_calibration_fails_closed() {
     let dir = TempDir::new().expect("tempdir");
     let fixture = dir.path().join("clean.rs");
     std::fs::write(&fixture, "fn main() {}\n").expect("write fixture");
@@ -31,17 +31,21 @@ fn scan_autoroute_missing_calibration_recovers_complete_input() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(
         output.status.code(),
-        Some(0),
-        "a clean scan must complete through visible scalar recovery; stderr={stderr}"
+        Some(13),
+        "an unroutable scan must report incomplete coverage; stderr={stderr}"
     );
     assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "[]");
     assert!(
         stderr.contains("autoroute calibration required")
             && stderr.contains("No autoroute cache file exists")
-            && stderr.contains("scalar correctness recovery")
-            && stderr.contains("scan coverage is complete")
+            && stderr.contains("No backend was selected")
+            && stderr.contains("batch was not scanned")
             && stderr.contains("keyhog calibrate-autoroute"),
-        "stderr must identify invalid autoroute state, exact recovery, and repair; stderr={stderr}"
+        "stderr must identify invalid autoroute state, unscanned input, and repair; stderr={stderr}"
+    );
+    assert!(
+        !stderr.contains("scalar correctness recovery"),
+        "invalid autoroute state must not claim scalar recovery; stderr={stderr}",
     );
 }
 

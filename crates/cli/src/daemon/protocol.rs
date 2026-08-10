@@ -220,9 +220,8 @@ pub(crate) enum Response {
         keyhog_version: String,
         git_hash: String,
         detector_rules_digest: String,
-        /// `autoroute`, `autoroute-recovery` for invalid startup evidence,
-        /// `autoroute-degraded` for persisted route quarantine, or the canonical
-        /// label of a backend forced at daemon startup.
+        /// `autoroute`, `autoroute-degraded` for persisted route quarantine, or
+        /// the canonical label of a backend forced at daemon startup.
         backend_policy: String,
         detector_count: usize,
         uptime_secs: u64,

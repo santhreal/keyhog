@@ -15,7 +15,6 @@ mod pipeline;
 use anyhow::Result;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::AutorouteReadiness;
-pub(crate) use backend::AutorouteStateRecovery;
 pub(crate) use backend::BackendRecoveryPlan;
 pub(crate) use backend::{autoroute_cache_stats, render_cache_summary, render_missing_buckets};
 pub(crate) use backend::{
@@ -201,7 +200,8 @@ impl CoalescedBatchRouter {
                 execution_route: scanner.execution_route_for_backend(*backend),
                 recovery_plan: None,
                 runtime_route: None,
-                autoroute_recovery: None,
+                #[cfg(feature = "gpu")]
+                ordered_gpu: None,
             }),
             Self::Measured(router) => Self::lock(router).choose_with_plan(scanner, None, batch),
         }
@@ -360,25 +360,16 @@ impl CoalescedScannerWorker {
         })
         .collect();
 
-        // The one question that decides whether a routing failure may destroy
-        // a finding set: is the OUTPUT in doubt, or only the route?
+        // Routing errors are fail-closed at the affected batch boundary. A
+        // batch with missing, stale, invalid, or quarantined autoroute evidence
+        // never reaches a scanner and contributes no findings. Findings from
+        // independently completed batches remain reportable, but the coverage
+        // gap forces non-success status.
         //
-        // This used to be an unconditional `return Err(error)`, so a cache miss
-        // on a workload bucket threw away a complete and correct scan. Scalar
-        // correctness recovery is the reference implementation, not a degraded
-        // mode; its findings are byte-identical to an explicit backend run of
-        // the same tree, which makes them the most trustworthy in the report
-        // rather than the least. Discarding them was pure loss.
-        // A backend that DISAGREED with the reference about what the matches
-        // are is the opposite case and stays fatal: we do not know which
-        // finding set we are holding, so there is nothing safe to report.
-        //
-        // A batch that never reached a scanner sits between the two, and which
-        // side it falls on depends on what this run is producing. On a scan the
-        // artifact is a report, so it is a coverage fact: keep the other
-        // batches' findings and record the gap. Under `--autoroute-calibrate`
-        // the artifact is a routing decision measured over a specific workload,
-        // and a batch that never ran voids that measurement, so it stays fatal.
+        // Findings divergence is stronger: output already produced by the run
+        // cannot be trusted and the complete finding set is discarded.
+        // Dispatch failure during calibration also stays fatal because an
+        // unscanned batch voids the measurement.
         if let Some(error) = first_routing_error(&routing_error).take() {
             match error.kind() {
                 AutorouteRoutingErrorKind::FindingsUntrustworthy => return Err(error),
@@ -413,8 +404,8 @@ impl CoalescedScannerWorker {
             eprintln!(
                 "error: the autoroute decision cache could not be persisted: {error}\n  \
                  The scan itself completed and its findings are reported below. Until the \
-                 cache path is writable, later scans of this workload will fall back to \
-                 scalar correctness recovery instead of a measured backend."
+                 cache path is writable and calibration succeeds, later automatic scans of \
+                 this workload fail closed without selecting a substitute backend."
             );
         }
         self.scanner.dump_profile_reports("keyhog scan");
@@ -463,6 +454,8 @@ impl CoalescedScannerWorker {
             self.scanner.as_ref(),
             batch,
             chosen_backend,
+            #[cfg(feature = "gpu")]
+            selection.ordered_gpu.as_deref(),
             selection.phase1_plan.as_ref(),
             selection.execution_route,
             selection
@@ -473,9 +466,6 @@ impl CoalescedScannerWorker {
             AutorouteRoutingError::selected_backend_dispatch_failed(chosen_backend, error)
         })?;
         record_profiled_batch_route(batch, self.router.requested_backend(), &selection, &outcome);
-        if let Some(recovery) = selection.autoroute_recovery.as_ref() {
-            record_completed_autoroute_state_recovery(batch, chosen_backend, recovery);
-        }
         // Collect the findings BEFORE quarantining the route. From here the
         // batch's bytes are scanned and its matches are known; quarantining is
         // a note about which backend to avoid next time. It used to run first
@@ -623,6 +613,7 @@ pub(crate) fn scan_selected_batch(
     scanner: &CompiledScanner,
     batch: &[Chunk],
     backend: ScanBackend,
+    #[cfg(feature = "gpu")] ordered_gpu: Option<&backend::OrderedGpuSelection>,
     admission_plan: Option<&keyhog_scanner::Phase1AdmissionPlan>,
     execution_route: keyhog_scanner::ScanExecutionRoute,
     recovery_plan: Option<BackendRecoveryPlan>,
@@ -630,19 +621,58 @@ pub(crate) fn scan_selected_batch(
     if !batch.is_empty() && scanner.prepare_anchor_batch(execution_route) {
         super::run::release_allocator_arenas_after_construction();
     }
-    let (mut per_chunk, mut recovery, gpu_recovery_receipts) = match scanner
-        .scan_coalesced_with_backend_admission_route_and_recovery(
-            batch,
-            backend,
-            admission_plan,
-            execution_route,
-            false,
-        ) {
-        Ok(outcome) => (
-            outcome.matches,
-            outcome.recovery,
-            outcome.gpu_recovery_receipts,
-        ),
+    let scan_result = {
+        #[cfg(feature = "gpu")]
+        {
+            if let Some(ordered) = ordered_gpu {
+                scanner
+                    .scan_coalesced_with_ordered_gpu_device_route(
+                        batch,
+                        backend,
+                        ordered.route.as_ref(),
+                        ordered.acquired.as_ref(),
+                        execution_route,
+                    )
+                    .map(|matches| (matches, None, 0))
+            } else {
+                scanner
+                    .scan_coalesced_with_backend_admission_route_and_recovery(
+                        batch,
+                        backend,
+                        admission_plan,
+                        execution_route,
+                        false,
+                    )
+                    .map(|outcome| {
+                        (
+                            outcome.matches,
+                            outcome.recovery,
+                            outcome.gpu_recovery_receipts,
+                        )
+                    })
+            }
+        }
+        #[cfg(not(feature = "gpu"))]
+        {
+            scanner
+                .scan_coalesced_with_backend_admission_route_and_recovery(
+                    batch,
+                    backend,
+                    admission_plan,
+                    execution_route,
+                    false,
+                )
+                .map(|outcome| {
+                    (
+                        outcome.matches,
+                        outcome.recovery,
+                        outcome.gpu_recovery_receipts,
+                    )
+                })
+        }
+    };
+    let (mut per_chunk, mut recovery, gpu_recovery_receipts) = match scan_result {
+        Ok(outcome) => outcome,
         Err(error) => match recovery_plan {
             Some(recovery_plan) => {
                 let (per_chunk, recovery) = recover_automatic_backend_batch(
@@ -743,90 +773,6 @@ fn completed_recovery_terminal_message(receipt: &keyhog_scanner::BackendRecovery
             receipt.recovery_backend.label(),
         )
     }
-}
-
-pub(crate) fn record_completed_autoroute_state_recovery(
-    batch: &[Chunk],
-    recovery_backend: ScanBackend,
-    recovery: &AutorouteStateRecovery,
-) {
-    let recovered_chunks = batch.iter().filter(|chunk| !chunk.data.is_empty()).count();
-    let recovered_bytes = batch
-        .iter()
-        .map(|chunk| chunk.data.len() as u64)
-        .sum::<u64>();
-    record_autoroute_state_recovery_summary(
-        recovery_backend,
-        recovered_chunks,
-        recovered_chunks,
-        recovered_bytes,
-        &recovery.reason,
-    );
-    if recovery.announce {
-        eprintln!(
-            "keyhog: WARNING: autoroute state is invalid; scalar correctness recovery scanned {recovered_chunks} chunk(s), {recovered_bytes} byte(s); scan coverage is complete; repair: keyhog calibrate-autoroute"
-        );
-        eprintln!("keyhog: autoroute evidence: {}", recovery.reason);
-        tracing::debug!(
-            target: "keyhog::routing",
-            recovery_backend = recovery_backend.label(),
-            chunks = recovered_chunks,
-            bytes = recovered_bytes,
-            reason = %recovery.reason,
-            "invalid autoroute state recovered with complete byte coverage",
-        );
-    }
-}
-
-pub(crate) fn record_completed_remote_autoroute_state_recovery(
-    recovery_backend: ScanBackend,
-    recovered_ranges: usize,
-    recovered_chunks: usize,
-    recovered_bytes: u64,
-    reason: String,
-) {
-    record_autoroute_state_recovery_summary(
-        recovery_backend,
-        recovered_ranges,
-        recovered_chunks,
-        recovered_bytes,
-        &reason,
-    );
-    eprintln!(
-        "keyhog: WARNING: daemon autoroute state is invalid; scalar correctness recovery scanned {recovered_chunks} chunk(s), {recovered_bytes} byte(s); scan coverage is complete; repair: keyhog calibrate-autoroute"
-    );
-    eprintln!("keyhog: autoroute evidence: {reason}");
-    tracing::debug!(
-        target: "keyhog::routing",
-        recovery_backend = recovery_backend.label(),
-        ranges = recovered_ranges,
-        chunks = recovered_chunks,
-        bytes = recovered_bytes,
-        reason = %reason,
-        "daemon invalid autoroute state recovered with complete byte coverage",
-    );
-}
-
-fn record_autoroute_state_recovery_summary(
-    recovery_backend: ScanBackend,
-    recovered_ranges: usize,
-    recovered_chunks: usize,
-    recovered_bytes: u64,
-    reason: &str,
-) {
-    crate::BACKEND_RECOVERY_EVENTS.fetch_add(1, Ordering::Relaxed);
-    crate::BACKEND_RECOVERED_CHUNKS.fetch_add(recovered_chunks, Ordering::Relaxed);
-    crate::BACKEND_RECOVERED_BYTES.fetch_add(recovered_bytes, Ordering::Relaxed);
-    crate::record_backend_recovery_summary(keyhog_core::ScanBackendRecoverySummary {
-        events: 1,
-        failed_backend: "autoroute-invalid".to_string(),
-        recovery_backend: recovery_backend.label().to_string(),
-        recovered_ranges,
-        recovered_chunks,
-        recovered_bytes,
-        reason: reason.to_string(),
-        repair_command: "keyhog calibrate-autoroute".to_string(),
-    });
 }
 
 fn batch_has_no_scan_bytes(batch: &[Chunk]) -> bool {

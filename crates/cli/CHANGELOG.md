@@ -8,7 +8,7 @@
 - Report a completed admission-plan recovery as `complete_after_recovery` when the protocol reports scanned bytes, instead of consulting unrelated process-global byte counters.
 - Restore execution-pack signing-key, rollback, stale-stage, ambiguous-backup, and symlink cleanup regression coverage.
 - Prove separate installations create distinct execution-pack signing keys through the installer-owned key path.
-- Version autoroute caches for authenticated ordered GPU device-set evidence, including exact topology, driver/runtime, capacity, per-workload weights and timings, and resident budgets.
+- Version autoroute caches for authenticated ordered GPU device-set evidence. Calibration measures each required device and the complete route, while normal scans acquire that exact live set and dispatch its contiguous weighted shard ranges without runtime benchmarking.
 
 ## 0.5.67 - 2026-08-05
 
@@ -147,9 +147,9 @@
   removes it only after the listener terminates.
 - Bind every persisted GPU timing and parity receipt to the exact acquired
   execution peer. Route replay now rejects changed or missing adapter identity.
-- Make the final backend summary identify invalid-autoroute scalar recovery and
-  runtime-fault recovery directly. Recovered work is no longer
-  described as a calibrated non-GPU winner.
+- Fail closed when autoroute evidence is missing, stale, invalid, incomplete, or
+  quarantined. No scalar substitute is selected; affected batches remain
+  unscanned and force non-success status with recalibration guidance.
 - Let `calibrate-autoroute --policy` refresh one scan policy without rerunning
   every preset. The default remains the complete all-policy install sweep.
 - Reject autoroute cache and runtime-health workload identities with impossible

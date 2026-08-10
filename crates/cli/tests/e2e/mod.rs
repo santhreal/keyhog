@@ -29,7 +29,7 @@ pub mod incremental_rescan_reports_unchanged_secret;
 pub mod keyhogignore_excludes_file;
 pub mod named_detector_structured_keys_fire_at_default;
 pub mod realworld_configs;
-pub mod scan_autoroute_missing_calibration_recovers;
+pub mod scan_autoroute_missing_calibration_fails_closed;
 pub mod scan_batch_pipeline_agrees_with_fused;
 pub mod scan_bigtree_completes_and_recalls;
 pub mod scan_binary_ghidra_stderr;

@@ -28,6 +28,15 @@ fn hit_rate_counts_every_consultation_as_its_denominator() {
     let summary = render_summary(&mixed).expect("a consulted cache reports a rate");
     assert!(summary.contains("75.0% hit"), "{summary}");
     assert!(summary.contains("bucket-absent=1"), "{summary}");
+    assert!(
+        summary.contains("affected batches unscanned")
+            && summary.contains("coverage is incomplete"),
+        "{summary}",
+    );
+    assert!(
+        !summary.contains("every byte was still scanned"),
+        "{summary}",
+    );
 }
 
 #[test]

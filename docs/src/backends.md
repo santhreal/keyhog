@@ -304,16 +304,15 @@ explicit backend contract.
 
 Missing, stale, malformed, disabled, incomplete, or quarantined evidence cannot
 authorize an automatic route. KeyHog prints the missing workload identity and a
-repair command. It then scans the bytes through the scalar correctness oracle
-and marks metadata-bearing output `complete_after_recovery`. The recovery
-receipt names `autoroute-invalid`, the recovery backend, recovered ranges,
-chunks, and bytes, the non-secret reason, and the repair command.
+repair command. No backend is selected. The affected batch remains unscanned,
+metadata-bearing output records partial coverage, and the process exits
+non-success.
 
 Run `keyhog backend --autoroute` to distinguish `calibration_required`, `stale`,
 `invalid`, `disabled`, and `quarantined`. Run `keyhog calibrate-autoroute` for
 the core ladder. For Git, Docker, or web workloads, run the exact
 `scan --autoroute-calibrate --autoroute-gpu` repair command printed in the
-recovery receipt.
+routing diagnostic.
 
 Use an explicit backend only when you intentionally want a diagnostic override.
 It bypasses the invalid route state but does not repair it.

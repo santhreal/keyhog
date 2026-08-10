@@ -83,8 +83,7 @@ pub(crate) static INCREMENTAL_CACHE_ERRORS: AtomicUsize = AtomicUsize::new(0);
 /// scan. Persisting a routing decision is NOT part of producing findings, so
 /// this never discards them; it exists so `--autoroute-calibrate`, whose whole
 /// requested operation was to persist that decision, cannot report success
-/// when the write failed and leave every later scan silently falling back to
-/// scalar recovery with no way to tell why.
+/// when the write failed and leave every later automatic scan unroutable.
 pub(crate) static AUTOROUTE_PERSIST_ERRORS: AtomicUsize = AtomicUsize::new(0);
 /// Number of scan batches that reached the scanner and could not be routed to
 /// any backend, so their bytes were never scanned. The findings gathered before

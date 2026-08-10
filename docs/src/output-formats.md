@@ -26,10 +26,10 @@ from CLI text or stderr.
 Metadata-bearing formats expose `scan_status` as `success`,
 `complete_after_recovery`, `partial`, `cancelled`, or `failed`.
 `complete_after_recovery` is a successful complete scan, but it proves that a
-visible backend fault or invalid autoroute state occurred and every affected
-byte was recovered. Any
-source or scanner coverage gap overrides it to `partial`; recovery never masks
-incomplete input.
+visible fault in an authenticated selected backend occurred and every affected
+byte was recovered. Invalid autoroute state selects no backend and records
+`partial`. Any source or scanner coverage gap overrides recovery; incomplete
+input never reports clean.
 
 The composite Action output named `scan-status` is a different, normalized
 wrapper receipt: `success`, `partial`, `cancelled`, or `failed`.
@@ -38,20 +38,20 @@ with ordinary clean/findings semantics. Consumers that must distinguish healthy
 completion from recovery must inspect a metadata-bearing report (for the
 Action's SARIF default, the KeyHog run properties), not the wrapper output.
 
-After a selected accelerated backend faults, the recovery backend is the confidence-separated
-fastest remaining measured-correct peer for the same workload and runtime
-class. When no trustworthy route can be selected at all, the scalar correctness
-oracle completes the input and the receipt names `autoroute-invalid`; this is
-recovery, not an autoroute decision.
+After a selected accelerated backend faults, the recovery backend is the
+confidence-separated fastest remaining measured-correct peer for the same
+workload and runtime class. When no trustworthy route can be selected, no
+recovery backend is substituted: the affected input remains unscanned and the
+report records partial coverage.
 
-Automatic recovery is structured in every metadata-bearing artifact.
-JSON-envelope, JSONL-envelope, HTML, and the CSV preamble carry
+Authenticated-backend fault recovery is structured in every metadata-bearing
+artifact. JSON-envelope, JSONL-envelope, HTML, and the CSV preamble carry
 `backend_recoveries`; SARIF uses
 `runs[].properties["keyhog.backend.recoveries"]`; GitLab SAST uses
 `scan.keyhog_backend_recoveries`; JUnit adds `keyhog.backend.recovery` suite
 properties; GitHub annotations emit a warning with recovered bytes and the
-repair command. Plain `json` and `jsonl` intentionally retain their stable
-finding-only schemas and receive the same recovery warning on stderr as text.
+repair command. Plain `json` and `jsonl` retain their stable finding-only
+schemas and receive the same recovery warning on stderr as text.
 Each metadata projection retains the failed backend, recovery backend,
 recovered byte count, and `keyhog calibrate-autoroute` remediation.
 

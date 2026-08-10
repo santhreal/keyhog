@@ -266,13 +266,13 @@ jq '{
 transforms. These counters describe the JavaScript, AES, and CryptoJS evaluator.
 They do not mean that a scan backend failed.
 
-`backend_recoveries` records automatic routing recovery. Each row names the
-failed backend, the backend that completed the stable bytes, recovered range,
-chunk, and byte counts, a non-secret reason, and a repair command.
-`failed_backend: "autoroute-invalid"` means no persisted route could be trusted.
-`scan_status: "complete_after_recovery"` means byte coverage is complete, but
-the route still needs repair. A partial or failed status must not be treated as
-a clean scan.
+`backend_recoveries` records recovery after an authenticated automatic backend
+faults. Each row names the failed backend, the backend that completed the stable
+bytes, recovered range, chunk, and byte counts, a non-secret reason, and a
+repair command. `scan_status: "complete_after_recovery"` means byte coverage is
+complete, but the route still needs repair. Missing or invalid autoroute
+evidence creates no recovery row; it leaves input unscanned and reports
+`scan_status: "partial"`.
 
 Use the receipt to remediate the route:
 

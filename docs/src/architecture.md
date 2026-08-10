@@ -213,7 +213,7 @@ inspectable.
 |---|---|---|
 | One in-process scan | `keyhog scan ... --daemon=off` | Full orchestrator; persisted one-shot autoroute evidence or an explicit diagnostic `--backend`. |
 | Large tree, multiple inputs, Git, cloud, container, binary, or live verification | In-process orchestrator | Fused or coalesced batches; the daemon is not eligible even when it is running. |
-| Repeated eligible stdin or single-file scans on Unix | `keyhog daemon start`, then `keyhog scan ...` | Client checks request eligibility and peer identity; a calibrated daemon uses warm-runtime autoroute evidence, invalid startup state is labeled `autoroute-recovery`, and persisted quarantine is labeled `autoroute-degraded`. Every affected request reports scalar recovery. |
+| Repeated eligible stdin or single-file scans on Unix | `keyhog daemon start`, then `keyhog scan ...` | Client checks request eligibility and peer identity; a calibrated daemon uses warm-runtime autoroute evidence. Invalid startup state prevents readiness. Persisted quarantine is labeled `autoroute-degraded`, and affected requests fail closed without scanning. |
 | Continuous local directory monitoring | `keyhog watch` | Foreground watcher with its own compiled scanner and warm-runtime autoroute policy; not the daemon and not reported by `daemon status`. |
 
 Persisted backend selection lives under
@@ -359,14 +359,14 @@ released before that worker serves another route.
 KeyHog separates trust failures from recoverable execution failures:
 
 - **Complete:** the selected backend covered the input normally.
-- **Complete after recovery:** an automatically selected accelerator failed or
-  autoroute evidence was invalid. KeyHog warned visibly and counted every
-  recovered range, chunk, and byte. Runtime faults retain completed dispatches
-  and replay only unprocessed ranges through a proven recovery peer; invalid
-  selection state scans the batch through the scalar correctness oracle. The
-  result is complete, but it is not a healthy autoroute claim.
-- **Incomplete:** some requested bytes or transformation could not be recovered.
-  The scan may report findings from covered input, but it cannot report clean.
+- **Complete after recovery:** an authenticated, automatically selected backend
+  faulted. KeyHog warned visibly and counted every recovered range, chunk, and
+  byte. Runtime faults retain completed dispatches and replay only unprocessed
+  ranges through a proven recovery peer.
+- **Incomplete:** some requested bytes or transformation was not scanned.
+  Missing, invalid, or quarantined autoroute state selects no backend and leaves
+  the affected batch unscanned. The scan may report findings from independently
+  covered input, but it cannot report clean.
 - **Fatal trust or explicit-contract failure:** invalid policy, corrupt or
   unauthenticated artifacts, or an explicitly required backend cannot be
   substituted.
