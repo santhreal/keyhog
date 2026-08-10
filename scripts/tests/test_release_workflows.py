@@ -61,7 +61,8 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
         for obsolete in ("audit-gates:", "strict-runners:", "  deny:", "  audit:"):
             with self.subTest(obsolete=obsolete):
                 self.assertNotIn(obsolete, CI)
-        self.assertIn("length == 15", CI)
+        # Required push/PR verdict is the slim fast path only.
+        self.assertIn("length == 5", CI)
 
     def test_release_dogfood_build_includes_the_simd_backend_it_exercises(self) -> None:
         """The release dogfood matrix must not request SIMD from a portable-only binary."""

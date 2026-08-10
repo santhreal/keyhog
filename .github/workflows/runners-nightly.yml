@@ -1,9 +1,9 @@
 name: runners-nightly
 
 # Full strict runner matrix (~100k+ cases). Too slow for every PR push;
-# the ci.yml strict-runners job gates the four highest-signal multipliers
-# on pull_request + main. This workflow runs the complete red-wall set
-# once daily and on manual dispatch for triage after contract expansion.
+# required CI stays on the slim fast path in ci.yml, and this workflow owns
+# the complete red-wall set once daily and on manual dispatch for triage
+# after contract expansion.
 
 on:
   schedule:
@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Contract corpus + runner fixtures are LFS-tracked, same
-          # requirement as ci.yml strict-runners and Test/fmt jobs.
+          # requirement as Format and focused integration jobs.
           lfs: true
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2

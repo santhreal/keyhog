@@ -119,15 +119,10 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
         run: |
-
           for i in 1 2 3 4 5; do
-
             sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-
             sleep $((i * 2))
-
             if [ "$i" -eq 5 ]; then exit 1; fi
-
           done
       # release-fast (thin LTO, codegen-units=16) is the profile built for
       # exactly this gate: -O3 validation + smoke without the multi-minute

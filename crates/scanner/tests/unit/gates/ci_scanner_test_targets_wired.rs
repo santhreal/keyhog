@@ -29,13 +29,15 @@ fn ci_scanner_test_targets_exist() {
 }
 
 #[test]
-fn ci_scanner_property_fuzz_runs_as_library_target() {
+fn overnight_scanner_property_fuzz_runs_as_library_target() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let repo = root
         .parent()
         .and_then(Path::parent)
         .expect("scanner crate lives under crates/scanner");
-    let workflow_path = repo.join(".github/workflows/ci.yml");
+    // Heavy scanner property fuzz lives on the overnight surface, not the
+    // required push/PR path in ci.yml.
+    let workflow_path = repo.join(".github/workflows/ci-nightly.yml");
     let workflow = std::fs::read_to_string(&workflow_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", workflow_path.display()));
 
@@ -51,7 +53,7 @@ fn ci_scanner_property_fuzz_runs_as_library_target() {
 
     assert!(
         command.contains("cargo test -p keyhog-scanner --lib property::scanner_fuzz"),
-        "{} must run property::scanner_fuzz through --lib so CI does not compile every scanner integration target before filtering one library property module: {command}",
+        "{} must run property::scanner_fuzz through --lib so overnight CI does not compile every scanner integration target before filtering one library property module: {command}",
         workflow_path.display()
     );
 }
