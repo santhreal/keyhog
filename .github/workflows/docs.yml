@@ -85,6 +85,13 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Verify documentation truth

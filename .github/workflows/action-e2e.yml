@@ -48,6 +48,13 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+          fi
       - name: Checkout exact Action candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install pinned Rust toolchain
@@ -92,6 +99,13 @@ jobs:
       image: rust:1.89.0-bookworm@sha256:948f9b08a66e7fe01b03a98ef1c7568292e07ec2e4fe90d88c07bb14563c84ff
       options: --cap-add IPC_LOCK --ulimit memlock=-1:-1
     steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          chown -R 1000:1000 "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+          fi
       - name: Checkout exact Action candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -218,6 +232,13 @@ jobs:
       contents: read
       security-events: write
     steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+          fi
       - name: Checkout exact Action candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
