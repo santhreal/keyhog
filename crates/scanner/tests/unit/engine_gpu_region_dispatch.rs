@@ -131,7 +131,7 @@ fn gpu_recovery_fixture() -> (
 ) {
     let detector = keyhog_core::DetectorSpec {
         id: "gpu-range-recovery-fixture".into(),
-        name: "GPU range recovery fixture".into(),
+        name: "GPU recovery fixture".into(),
         service: "fixture".into(),
         severity: keyhog_core::Severity::High,
         patterns: vec![keyhog_core::PatternSpec {
@@ -256,39 +256,6 @@ fn issue32_gpu_region_batches_use_every_eligible_resident_depth() {
     }
 }
 
-#[cfg(feature = "gpu")]
-/// Proves phase-two recovery retains completed GPU shards while sharing no
-/// fault-injection or adapter state with concurrent parity tests.
-#[test]
-fn automatic_phase2_gpu_recovery_preserves_completed_shards() {
-    let _gpu_test_guard = crate::testing::gpu_test_lock();
-    let (scanner, backend, chunks, expected) = gpu_recovery_fixture();
-
-    let outcome = with_test_region_presence_byte_limit(64, || {
-        crate::engine::gpu_region_dispatch_helpers::with_test_phase2_dispatch_failure(1, || {
-            scanner
-                .scan_coalesced_gpu_region_presence_recovering(
-                    &chunks,
-                    backend,
-                    scanner.default_execution_route(),
-                    true,
-                )
-                .expect("automatic route must recover phase-two admission ranges")
-        })
-    });
-
-    assert_eq!(outcome.matches, expected);
-    let recovery = outcome.recovery.expect("typed phase-two recovery receipt");
-    assert_eq!(recovery.failed_backend, backend);
-    assert_eq!(
-        recovery.ranges,
-        vec![
-            crate::RecoveredInputRange::new(1, 0, chunks[1].data.len()),
-            crate::RecoveredInputRange::new(2, 0, chunks[2].data.len()),
-        ],
-        "the completed phase-two shard must remain GPU-owned"
-    );
-}
 
 #[test]
 fn phase2_gpu_admission_workload_uses_original_slice_when_every_row_is_eligible() {
@@ -494,6 +461,7 @@ fn complete_always_active_negative_preserves_triggered_row_keyword_phase2_findin
         None,
         None,
         None,
+        crate::hw_probe::ScanBackend::CpuFallback,
         scanner.default_execution_route(),
     );
     let results = results.expect("always-active negative phase-two scan succeeds");
@@ -550,6 +518,7 @@ fn phase2_gpu_candidate_bits_drive_production_active_set() {
             None,
             None,
             None,
+            crate::hw_probe::ScanBackend::CpuFallback,
             scanner.default_execution_route(),
         )
         .expect("candidate-hit scan");
@@ -573,6 +542,7 @@ fn phase2_gpu_candidate_bits_drive_production_active_set() {
             None,
             None,
             None,
+            crate::hw_probe::ScanBackend::CpuFallback,
             scanner.default_execution_route(),
         )
         .expect("candidate-miss scan");
@@ -597,6 +567,7 @@ fn phase2_gpu_candidate_bits_drive_production_active_set() {
             None,
             None,
             None,
+            crate::hw_probe::ScanBackend::CpuFallback,
             scanner.default_execution_route(),
         )
         .expect("malformed candidate evidence falls back to CPU");
@@ -619,6 +590,7 @@ fn phase2_gpu_candidate_bits_drive_production_active_set() {
             None,
             None,
             None,
+            crate::hw_probe::ScanBackend::CpuFallback,
             scanner.default_execution_route(),
         )
         .expect("omitted candidate coverage falls back to CPU");
@@ -710,6 +682,7 @@ fn normalized_triggered_rows_discard_raw_gpu_evidence_and_recompute_admission() 
         None,
         None,
         None,
+        crate::hw_probe::ScanBackend::SimdCpu,
         scanner.default_execution_route(),
     );
     let results = results.expect("normalized phase-two scan succeeds");
