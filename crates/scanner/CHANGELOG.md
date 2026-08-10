@@ -6,6 +6,9 @@
 - Section-specific schema versions for execution packs: detector-plan sections use schema version 2 and matcher sections use schema version 5. Pack loading validates section schema versions and reports an actionable rebuild recommendation if mismatched.
 - Authenticate execution pack content digests and signatures before interpreting section tables or identity headers, protecting the trust boundary against unauthenticated header mutations.
 - Verify every changed section schema against independently encoded legacy pack bytes so compatibility checks cannot inherit the current compiler's layout.
+- Include retained keyword, generic-position, CPU-trigger, payload, and line-index storage in evidence-cache replacement accounting, reject individually oversized entries, and enforce aggregate residency and entry-count ceilings.
+- Use checked page alignment for interior mapping slices while discarding the trailing partial page when releasing whole authenticated execution packs.
+- Wire the production-path cache, decoder-admission, and context-window regressions into the aggregate scanner test binary.
 ## 0.5.68 - 2026-08-05
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.

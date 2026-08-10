@@ -89,19 +89,40 @@ const REUSABLE_EVIDENCE_MAX_BYTES: usize = 1024 * 1024;
 const REUSABLE_EVIDENCE_MAX_ENTRIES: usize = 16;
 
 #[derive(Clone, Debug)]
-struct ReusablePhase1Evidence {
-    admission: Phase1Admission,
-    keyword_trigger_count: u64,
-    keyword_hints: Vec<u32>,
-    generic_positions: Vec<u32>,
-    phase2_always_active_absence: bool,
-    cpu_trigger_hints: Option<Vec<u64>>,
-    normalization_passthrough: bool,
-    confirmed_patterns_absence: bool,
-    entropy_absence: bool,
-    multiline_absence: bool,
-    line_context_index: Option<Arc<crate::context::LineContextIndex>>,
-    decoder_absence: bool,
+pub(crate) struct ReusablePhase1Evidence {
+    pub(crate) admission: Phase1Admission,
+    pub(crate) keyword_trigger_count: u64,
+    pub(crate) keyword_hints: Vec<u32>,
+    pub(crate) generic_positions: Vec<u32>,
+    pub(crate) phase2_always_active_absence: bool,
+    pub(crate) cpu_trigger_hints: Option<Vec<u64>>,
+    pub(crate) normalization_passthrough: bool,
+    pub(crate) confirmed_patterns_absence: bool,
+    pub(crate) entropy_absence: bool,
+    pub(crate) multiline_absence: bool,
+    pub(crate) line_context_index: Option<Arc<crate::context::LineContextIndex>>,
+    pub(crate) decoder_absence: bool,
+}
+
+impl ReusablePhase1Evidence {
+    fn resident_bytes(&self) -> usize {
+        self.keyword_hints
+            .capacity()
+            .saturating_mul(std::mem::size_of::<u32>())
+            .saturating_add(
+                self.generic_positions
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<u32>()),
+            )
+            .saturating_add(self.cpu_trigger_hints.as_ref().map_or(0, |hints| {
+                hints.capacity().saturating_mul(std::mem::size_of::<u64>())
+            }))
+            .saturating_add(
+                self.line_context_index
+                    .as_ref()
+                    .map_or(0, |index| index.storage_bytes()),
+            )
+    }
 }
 
 #[derive(Debug)]
@@ -117,12 +138,9 @@ struct CachedReusablePhase1Evidence {
 
 impl CachedReusablePhase1Evidence {
     fn resident_bytes(&self) -> usize {
-        self.payload.len().saturating_add(
-            self.evidence
-                .line_context_index
-                .as_ref()
-                .map_or(0, |index| index.storage_bytes()),
-        )
+        self.payload
+            .len()
+            .saturating_add(self.evidence.resident_bytes())
     }
 }
 
@@ -135,6 +153,34 @@ pub(crate) struct ReusablePhase1EvidenceCache {
 }
 
 impl ReusablePhase1EvidenceCache {
+    pub(crate) fn resident_bytes(&self) -> usize {
+        self.resident_bytes
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub(crate) fn aggregate_resident_bytes(&self) -> usize {
+        self.entries.iter().fold(0, |total, entry| {
+            total.saturating_add(entry.resident_bytes())
+        })
+    }
+
+    pub(crate) fn contains_fingerprint(&self, fingerprint: [u8; 32]) -> bool {
+        self.entries
+            .iter()
+            .any(|entry| entry.fingerprint == fingerprint)
+    }
+
+    pub(crate) const fn max_resident_bytes() -> usize {
+        REUSABLE_EVIDENCE_MAX_BYTES
+    }
+
+    pub(crate) const fn max_entries() -> usize {
+        REUSABLE_EVIDENCE_MAX_ENTRIES
+    }
+
     fn get(
         &mut self,
         fingerprint: [u8; 32],
@@ -165,7 +211,7 @@ impl ReusablePhase1EvidenceCache {
         Some(evidence)
     }
 
-    fn insert(
+    pub(crate) fn insert(
         &mut self,
         fingerprint: [u8; 32],
         bypass_bigram: bool,
@@ -175,15 +221,7 @@ impl ReusablePhase1EvidenceCache {
         payload: SensitiveString,
         evidence: ReusablePhase1Evidence,
     ) {
-        let resident_bytes = payload.len().saturating_add(
-            evidence
-                .line_context_index
-                .as_ref()
-                .map_or(0, |index| index.storage_bytes()),
-        );
-        if resident_bytes > REUSABLE_EVIDENCE_MAX_BYTES {
-            return;
-        }
+        let resident_bytes = payload.len().saturating_add(evidence.resident_bytes());
         if let Some(position) = self.entries.iter().position(|entry| {
             entry.fingerprint == fingerprint
                 && entry.bypass_bigram == bypass_bigram
@@ -192,11 +230,29 @@ impl ReusablePhase1EvidenceCache {
                 && entry.decoder_admission_context == decoder_admission_context
                 && entry.payload.eq(&payload)
         }) {
-            let entry = self
-                .entries
-                .remove(position)
-                .expect("cache position came from the same deque");
-            self.entries.push_back(entry);
+            if let Some(mut entry) = self.entries.remove(position) {
+                self.resident_bytes = self.resident_bytes.saturating_sub(entry.resident_bytes());
+                if resident_bytes > REUSABLE_EVIDENCE_MAX_BYTES {
+                    return;
+                }
+                entry.evidence = evidence;
+                let updated_bytes = entry.resident_bytes();
+                while self.entries.len() >= REUSABLE_EVIDENCE_MAX_ENTRIES
+                    || self.resident_bytes.saturating_add(updated_bytes)
+                        > REUSABLE_EVIDENCE_MAX_BYTES
+                {
+                    let Some(evicted) = self.entries.pop_front() else {
+                        break;
+                    };
+                    self.resident_bytes =
+                        self.resident_bytes.saturating_sub(evicted.resident_bytes());
+                }
+                self.resident_bytes = self.resident_bytes.saturating_add(updated_bytes);
+                self.entries.push_back(entry);
+            }
+            return;
+        }
+        if resident_bytes > REUSABLE_EVIDENCE_MAX_BYTES {
             return;
         }
         while self.entries.len() >= REUSABLE_EVIDENCE_MAX_ENTRIES

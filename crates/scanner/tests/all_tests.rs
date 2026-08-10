@@ -433,6 +433,8 @@ pub mod regression_zero_pattern_recompile;
 pub mod adversarial_a3_decode;
 #[path = "adversarial_round1_auth_json.rs"]
 pub mod adversarial_round1_auth_json;
+#[path = "unit/root_facade/backlog_kh2040_kh2049_tests.rs"]
+pub mod backlog_kh2040_kh2049_tests;
 #[path = "compiled_scanner_detector_digest_stable.rs"]
 pub mod compiled_scanner_detector_digest_stable;
 #[path = "confidence_floor_edge_cases.rs"]

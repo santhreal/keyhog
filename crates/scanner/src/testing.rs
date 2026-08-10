@@ -2581,12 +2581,52 @@ pub use crate::engine::{
 };
 #[cfg(test)]
 pub(crate) use crate::homoglyph::expand_homoglyphs;
-pub struct CompactLineIndexForTest(crate::context::LineContextIndex);
+/// Test wrapper around [`crate::context::LineContextIndex`].
+#[derive(Clone)]
+pub struct CompactLineIndexForTest(pub(crate) std::sync::Arc<crate::context::LineContextIndex>);
 
+/// Construct a line index fixture for unit tests.
 pub fn compact_line_index_for_test(text: &str) -> Result<CompactLineIndexForTest, &'static str> {
     crate::context::LineContextIndex::try_new(text)
+        .map(std::sync::Arc::new)
         .map(CompactLineIndexForTest)
         .map_err(|_| "text exceeds compact line-index capacity")
+}
+
+impl CompactLineIndexForTest {
+    /// Retrieve line number for a byte offset.
+    pub fn line_number_for_offset(&self, offset: usize) -> usize {
+        self.0.line_number_for_offset(offset)
+    }
+
+    /// Retrieve total allocated storage bytes for the line index.
+    pub fn storage_bytes(&self) -> usize {
+        self.0.storage_bytes()
+    }
+}
+
+/// Test wrapper around [`crate::types::LazyRegex`].
+pub struct LazyCompanionForTest {
+    regex: crate::types::LazyRegex,
+}
+
+impl LazyCompanionForTest {
+    /// Query whether the underlying regex has been lazily compiled.
+    pub fn is_compiled(&self) -> bool {
+        self.regex.is_compiled()
+    }
+
+    /// Access the compiled regex reference, compiling if needed.
+    pub fn get(&self) -> &regex::Regex {
+        self.regex.get()
+    }
+}
+
+/// Construct a lazy companion regex for test verification.
+pub fn companion_lazy_regex_for_test(pattern: &str) -> LazyCompanionForTest {
+    LazyCompanionForTest {
+        regex: crate::types::LazyRegex::companion(pattern),
+    }
 }
 
 pub fn code_lines_from_compact_index_for_test(text: &str) -> Result<Vec<&str>, &'static str> {
@@ -6003,4 +6043,111 @@ pub fn stream_detector_plan_for_test(
         peak_live_wire_rows:
             crate::execution_pack::detector_plan::detector_plan_peak_live_wire_rows(),
     })
+}
+/// Test facade around [`crate::engine::phase1_admission::ReusablePhase1EvidenceCache`].
+#[derive(Default)]
+pub struct TestEvidenceCache {
+    inner: crate::engine::phase1_admission::ReusablePhase1EvidenceCache,
+}
+
+impl TestEvidenceCache {
+    /// Insert payload evidence into test evidence cache.
+    pub fn insert(
+        &mut self,
+        fingerprint: [u8; 32],
+        bypass_bigram: bool,
+        unicode_normalization_enabled: bool,
+        entropy_config_digest: [u8; 32],
+        decoder_admission_context: Option<u8>,
+        payload: keyhog_core::SensitiveString,
+        index: Option<std::sync::Arc<CompactLineIndexForTest>>,
+    ) {
+        self.insert_with_evidence_allocations(
+            fingerprint,
+            bypass_bigram,
+            unicode_normalization_enabled,
+            entropy_config_digest,
+            decoder_admission_context,
+            payload,
+            0,
+            0,
+            0,
+            index,
+        );
+    }
+
+    /// Insert payload evidence with real retained vector allocations.
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_with_evidence_allocations(
+        &mut self,
+        fingerprint: [u8; 32],
+        bypass_bigram: bool,
+        unicode_normalization_enabled: bool,
+        entropy_config_digest: [u8; 32],
+        decoder_admission_context: Option<u8>,
+        payload: keyhog_core::SensitiveString,
+        keyword_hint_count: usize,
+        generic_position_count: usize,
+        cpu_trigger_count: usize,
+        index: Option<std::sync::Arc<CompactLineIndexForTest>>,
+    ) {
+        let evidence = crate::engine::phase1_admission::ReusablePhase1Evidence {
+            admission: crate::engine::phase1_admission::Phase1Admission::Admitted,
+            keyword_trigger_count: 0,
+            keyword_hints: vec![0; keyword_hint_count],
+            generic_positions: vec![0; generic_position_count],
+            phase2_always_active_absence: false,
+            cpu_trigger_hints: (cpu_trigger_count != 0).then(|| vec![0; cpu_trigger_count]),
+            normalization_passthrough: false,
+            confirmed_patterns_absence: false,
+            entropy_absence: false,
+            multiline_absence: false,
+            line_context_index: index.map(|idx| std::sync::Arc::clone(&idx.0)),
+            decoder_absence: false,
+        };
+        self.inner.insert(
+            fingerprint,
+            bypass_bigram,
+            unicode_normalization_enabled,
+            entropy_config_digest,
+            decoder_admission_context,
+            payload,
+            evidence,
+        );
+    }
+
+    /// Retrieve current resident bytes in test evidence cache.
+    pub fn resident_bytes(&self) -> usize {
+        self.inner.resident_bytes()
+    }
+
+    /// Recompute resident bytes from every cached allocation.
+    pub fn aggregate_resident_bytes(&self) -> usize {
+        self.inner.aggregate_resident_bytes()
+    }
+
+    /// Retrieve current entry count in test evidence cache.
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Query whether an entry with this fingerprint remains cached.
+    pub fn contains_fingerprint(&self, fingerprint: [u8; 32]) -> bool {
+        self.inner.contains_fingerprint(fingerprint)
+    }
+
+    /// Return the production resident-byte ceiling.
+    pub const fn max_resident_bytes() -> usize {
+        crate::engine::phase1_admission::ReusablePhase1EvidenceCache::max_resident_bytes()
+    }
+
+    /// Return the production entry-count ceiling.
+    pub const fn max_entries() -> usize {
+        crate::engine::phase1_admission::ReusablePhase1EvidenceCache::max_entries()
+    }
+
+    /// Query whether test evidence cache is empty.
+    pub fn is_empty(&self) -> bool {
+        self.inner.len() == 0
+    }
 }

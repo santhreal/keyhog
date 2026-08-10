@@ -223,24 +223,11 @@ impl ExecutionPack {
     /// so later section faults do not repeat storage I/O, but the whole pack no
     /// longer overlaps decoded runtime state in RSS.
     pub fn release_resident_pages(&self) -> Result<(), ExecutionPackError> {
-        #[cfg(unix)]
-        {
-            let result = unsafe {
-                libc::madvise(
-                    self.mapping.as_ptr() as *mut libc::c_void,
-                    self.mapping.len(),
-                    libc::MADV_DONTNEED,
-                )
-            };
-            if result != 0 {
-                return Err(ExecutionPackError::Io {
-                    operation: "discard authenticated pages",
-                    path: self.path.clone(),
-                    source: std::io::Error::last_os_error(),
-                });
-            }
-        }
-        Ok(())
+        release_entire_mapping(
+            &self.mapping,
+            &self.path,
+            "discard authenticated pages",
+        )
     }
     /// Drop full pages covered by one decoded section field while retaining the
     /// immutable mapping and any partial edge pages. Callers must pass a slice
@@ -707,6 +694,57 @@ fn mapping_slice_range(mapping: &Mmap, bytes: &[u8]) -> Result<Range<usize>, Exe
     Ok((bytes_start - mapping_start)..(bytes_end - mapping_start))
 }
 
+#[cfg(unix)]
+fn mapping_page_size(path: &Path) -> Result<usize, ExecutionPackError> {
+    let probed = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    let page = usize::try_from(probed).map_err(|_| ExecutionPackError::Io {
+        operation: "query page size for mapped-page discard",
+        path: path.to_path_buf(),
+        source: std::io::Error::last_os_error(),
+    })?;
+    if page == 0 {
+        return Err(ExecutionPackError::InvalidPack(
+            "host page size is zero".into(),
+        ));
+    }
+    Ok(page)
+}
+
+fn release_entire_mapping(
+    mapping: &Mmap,
+    path: &Path,
+    operation: &'static str,
+) -> Result<(), ExecutionPackError> {
+    if mapping.is_empty() {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        let page = mapping_page_size(path)?;
+        if (mapping.as_ptr() as usize) % page != 0 {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} mapped-page discard starts outside a host page boundary; reinstall the execution pack",
+                path.display()
+            )));
+        }
+        let result = unsafe {
+            libc::madvise(
+                mapping.as_ptr() as *mut libc::c_void,
+                mapping.len(),
+                libc::MADV_DONTNEED,
+            )
+        };
+        if result != 0 {
+            return Err(ExecutionPackError::Io {
+                operation,
+                path: path.to_path_buf(),
+                source: std::io::Error::last_os_error(),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn release_mapping_slice(
     mapping: &Mmap,
     path: &Path,
@@ -719,20 +757,19 @@ fn release_mapping_slice(
     let range = mapping_slice_range(mapping, bytes)?;
     #[cfg(unix)]
     {
-        let probed = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-        let page = usize::try_from(probed).map_err(|_| ExecutionPackError::Io {
-            operation: "query page size for mapped-page discard",
-            path: path.to_path_buf(),
-            source: std::io::Error::last_os_error(),
-        })?;
-        if page == 0 {
-            return Err(ExecutionPackError::InvalidPack(
-                "host page size is zero".into(),
-            ));
-        }
+        let page = mapping_page_size(path)?;
         let relative_start = range.start;
         let relative_end = range.end;
-        let aligned_start = relative_start.div_ceil(page).saturating_mul(page);
+        let aligned_start = relative_start
+            .checked_add(page - 1)
+            .and_then(|value| value.checked_div(page))
+            .and_then(|value| value.checked_mul(page))
+            .ok_or_else(|| {
+                ExecutionPackError::InvalidPack(format!(
+                    "{} mapped-page discard range overflows platform alignment; reinstall the execution pack",
+                    path.display()
+                ))
+            })?;
         let aligned_end = relative_end - (relative_end % page);
         if aligned_start < aligned_end {
             let result = unsafe {

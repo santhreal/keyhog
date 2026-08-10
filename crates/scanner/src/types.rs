@@ -466,6 +466,9 @@ impl LazyRegex {
             })
             .as_ref()
     }
+    pub(crate) fn is_compiled(&self) -> bool {
+        self.state.cell.get().is_some()
+    }
 }
 
 /// A process-wide never-matching regex used as the fail-closed sentinel when a
