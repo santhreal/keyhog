@@ -8,6 +8,7 @@ mod daemon;
 mod detectors;
 mod diff;
 mod explain;
+mod guard;
 mod hook;
 mod limits;
 mod maintenance;
@@ -25,6 +26,7 @@ pub use daemon::{DaemonAction, DaemonArgs};
 pub use detectors::{DetectorArgs, DetectorFormat};
 pub use diff::DiffArgs;
 pub use explain::ExplainArgs;
+pub use guard::{GuardAction, GuardArgs};
 pub use hook::HookCommand;
 pub use limits::SourceLimitArgs;
 pub use maintenance::{
@@ -157,6 +159,10 @@ pub enum Command {
     /// Manage the long-lived `keyhog daemon` (start, stop, status)
     #[command(verbatim_doc_comment)]
     Daemon(DaemonArgs),
+
+    /// Manage the perpetual repository and filesystem guard
+    #[command(verbatim_doc_comment)]
+    Guard(GuardArgs),
 }
 
 /// Build the top-level clap [`clap::Command`] with the runtime-derived detector

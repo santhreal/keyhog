@@ -242,3 +242,18 @@ unsuppressed findings and coverage state. Choose by scope:
 
 Exit `13` cannot be suppressed. Coverage is a property of the input, not of the
 findings, so fix the source, permission, ref, or limit instead.
+
+## Guard subcommand exit codes
+
+`keyhog guard` subcommands use the same numeric exit codes with guard-specific
+state mapping:
+
+| Guard state | Exit code | Condition |
+|---|---|---|
+| `current` | `0` | The root is proven clean. |
+| `blocked` | `1` | Unsuppressed findings were detected. |
+| `dirty`, `stopped`, `indexing`, `degraded`, `stale-policy` | `13` | The root is not proven clean or coverage is incomplete. |
+
+`guard rebuild` uses the same mapping after re-adding the root. A rebuild that
+completes with `current` returns `0`; a rebuild that leaves the root `stopped`
+or `indexing` returns `13`.

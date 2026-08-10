@@ -2763,6 +2763,7 @@ dependencies = [
  "dirs",
  "flate2",
  "futures-util",
+ "hex",
  "httpmock",
  "keyhog-core",
  "keyhog-profile",
@@ -2773,6 +2774,7 @@ dependencies = [
  "mimalloc",
  "minisign-verify",
  "notify",
+ "parking_lot",
  "proptest",
  "rand 0.8.6",
  "rayon",
@@ -2782,6 +2784,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha1 0.10.6",
  "sha2 0.10.9",
  "tar",
  "tempfile",
@@ -2807,10 +2810,12 @@ dependencies = [
  "indexmap",
  "keyhog-profile",
  "libc",
+ "lru",
  "parking_lot",
  "proptest",
  "quick-xml",
  "rayon",
+ "redb",
  "regex",
  "regex-syntax",
  "serde",
@@ -2916,6 +2921,7 @@ dependencies = [
  "gix",
  "glob",
  "goblin",
+ "hex",
  "httpmock",
  "ignore",
  "io-uring",
@@ -4047,6 +4053,15 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "redb"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea0a72cd7140de9fc3e318823b883abf819c20d478ec89ce880466dc2ef263c6"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

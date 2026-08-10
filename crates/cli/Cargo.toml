@@ -158,12 +158,15 @@ serde_json = { workspace = true }
 semver = { workspace = true }
 blake3 = { workspace = true }
 sha2 = { workspace = true }
+sha1 = { workspace = true }
+hex = { workspace = true }
 flate2 = { workspace = true }
 tar = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
 notify = { workspace = true }
+parking_lot = { workspace = true }
 # Used by `baseline.rs::save` for atomic-rename writes via
 # `NamedTempFile::persist()`: same pattern used by merkle and
 # calibration. A mid-write crash on `--update-baseline` would

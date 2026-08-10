@@ -62,7 +62,9 @@ tempfile = { workspace = true }
 # by `RuleCondition::RegexMatch`.
 vyre_libs = { workspace = true, features = ["rule"] }
 smallvec = { workspace = true }
+lru = { workspace = true }
 url = { workspace = true }
+redb = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

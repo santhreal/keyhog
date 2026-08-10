@@ -149,6 +149,11 @@ async fn health_response_roundtrips() {
                 recovered_bytes: 128,
                 reason: "test recovery".to_string(),
             }),
+            guard_roots_registered: 0,
+            guard_roots_current: 0,
+            guard_roots_blocked: 0,
+            guard_roots_degraded: 0,
+            guard_active_transactions: 0,
             warm_backend: ready_warm_backend(),
         },
     )
@@ -167,6 +172,7 @@ async fn health_response_roundtrips() {
             backend_recoveries,
             last_backend_fault,
             warm_backend: _,
+            ..
         } => {
             assert_eq!(uptime_secs, 42);
             assert_eq!(scans_served, 7);

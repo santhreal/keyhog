@@ -112,8 +112,43 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
         }
         let mut policy = EffectivePolicy::resolve(&args);
         match daemon_route(&args, &policy) {
-            DaemonRoute::Required => run_via_daemon(&mut policy.effective_args).await,
+            DaemonRoute::Required => {
+                #[cfg(feature = "git")]
+                if policy.effective_args.git_staged {
+                    let socket_path = effective_daemon_socket(&policy.effective_args);
+                    let repo_path = policy.effective_args.path.as_deref().unwrap_or_else(|| std::path::Path::new("."));
+                    let digest = keyhog_core::detector_digest().to_string();
+                    let result = crate::daemon::guard_commit::run_guard_commit(&socket_path, repo_path, &digest)
+                        .await
+                        .context("--daemon=on guard commit transaction failed")?;
+                    return finish_guard_commit_scan(result, &policy.effective_args);
+                }
+                run_via_daemon(&mut policy.effective_args).await
+            }
             DaemonRoute::Opportunistic => {
+                // Guard commit transaction for --git-staged.
+                #[cfg(feature = "git")]
+                if policy.effective_args.git_staged {
+                    let socket_path = effective_daemon_socket(&policy.effective_args);
+                    let repo_path = policy.effective_args.path.as_deref().unwrap_or_else(|| std::path::Path::new("."));
+                    let digest = keyhog_core::detector_digest().to_string();
+                    match crate::daemon::guard_commit::run_guard_commit(&socket_path, repo_path, &digest).await {
+                        Ok(result) => {
+                            return finish_guard_commit_scan(result, &policy.effective_args);
+                        }
+                        Err(e) => {
+                            if policy.effective_args.daemon_mode() == DaemonMode::Auto {
+                                let palette = crate::style::for_stderr();
+                                eprintln!(
+                                    "{}: guard daemon unavailable ({e:#}); running in-process scanner",
+                                    crate::style::warn("keyhog", &palette)
+                                );
+                            }
+                            let orchestrator = ScanOrchestrator::new(args)?;
+                            return orchestrator.run().await;
+                        }
+                    }
+                }
                 match acquire_via_daemon(&mut policy.effective_args).await {
                     Ok(scan) => finish_daemon_scan(scan, &policy.effective_args),
                     Err(e) => {
@@ -124,17 +159,10 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
                                 crate::style::warn("keyhog", &palette)
                             );
                         }
-                        // LAW10: opportunistic daemon failure is reported on stderr in
-                        // auto mode, then the same scan runs in-process.
                         tracing::debug!(
                             error = %e,
                             "daemon auto route unavailable; running in-process scanner"
                         );
-                        // An stdin request is single-consumer. `acquire_via_daemon`
-                        // buffers it before sending `ScanText`, so an execution or
-                        // protocol failure can replay the exact bytes instead of
-                        // retrying against EOF. File requests need no special
-                        // handling because the path remains replayable.
                         let mut retry_args = args.clone();
                         retry_args.buffered_stdin = policy.effective_args.buffered_stdin.clone();
                         let orchestrator = ScanOrchestrator::new(retry_args)?;
@@ -350,24 +378,6 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         );
     }
 
-    let single_file = match effective_single_file_path(args) {
-        Ok(path) => path.is_some(),
-        Err(error) => {
-            return daemon_cannot_serve(
-                forced_on,
-                format!(
-                    "the daemon single-file route cannot inspect the requested path: {error:#}"
-                ),
-            );
-        }
-    };
-    let primary_sources = usize::from(args.stdin) + usize::from(single_file);
-    if primary_sources != 1 || has_daemon_incompatible_extra_sources(args) {
-        return daemon_cannot_serve(
-            forced_on,
-            "the daemon only supports exactly one source: --stdin or a single regular file; directories, git, remote, binary, dynamic, and multi-source scans require the in-process scanner",
-        );
-    }
 
     // The daemon's client-side finalize mirrors allowlist/rule suppression,
     // inline suppression, match resolution, and dedup for daemon-eligible scans.
@@ -379,13 +389,6 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     // merely because a daemon socket exists. Force the in-process path whenever
     // such policy is in play, so behavior never depends on whether a daemon
     // happens to be running.
-    //
-    // This SECURITY-policy check runs BEFORE the generic backend/GPU/batch
-    // operational-controls check below: when a scan requests BOTH a fail-closed
-    // security control (lockdown, secret-output) AND an operational control
-    // (e.g. `--backend`), the refusal must name the security policy that cannot
-    // be enforced, not merely the operational knob, the operator needs to know
-    // their lockdown / secret-output intent is what the daemon can't honor.
     //
     // Critically, the floor / lockdown-require / show_secrets / severity checks
     // read the EFFECTIVE post-`.keyhog.toml`-merge policy, not just the raw CLI
@@ -416,6 +419,48 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     if let Some(reason) = daemon_incompatible_scan_options(&policy.effective_args) {
         return daemon_cannot_serve(forced_on, reason);
     }
+
+    // Guard commit transaction: when --git-staged is used and a compatible
+    // guard daemon is available, route through the staged-object guard
+    // transaction instead of the in-process scanner. The daemon's clean
+    // attestation cache skips blobs whose content and policy identity are
+    // unchanged. Security policy checks above already ran, so lockdown,
+    // show_secrets, and verification are still enforced. This runs before
+    // the single-file/primary-source gate because --git-staged is a
+    // multi-object source the guard transaction handles natively.
+    #[cfg(feature = "git")]
+    if args.git_staged {
+        if forced_on {
+            return DaemonRoute::Required;
+        }
+        if effective_daemon_socket(args).exists() {
+            return DaemonRoute::Opportunistic;
+        }
+        return DaemonRoute::Forbidden(Some(format!(
+            "no daemon is listening on {}",
+            effective_daemon_socket(args).display()
+        )));
+    }
+
+    let single_file = match effective_single_file_path(args) {
+        Ok(path) => path.is_some(),
+        Err(error) => {
+            return daemon_cannot_serve(
+                forced_on,
+                format!(
+                    "the daemon single-file route cannot inspect the requested path: {error:#}"
+                ),
+            );
+        }
+    };
+    let primary_sources = usize::from(args.stdin) + usize::from(single_file);
+    if primary_sources != 1 || has_daemon_incompatible_extra_sources(args) {
+        return daemon_cannot_serve(
+            forced_on,
+            "the daemon only supports exactly one source: --stdin or a single regular file; directories, git, remote, binary, dynamic, and multi-source scans require the in-process scanner",
+        );
+    }
+
 
     if forced_on {
         return DaemonRoute::Required;
@@ -473,11 +518,7 @@ fn has_daemon_incompatible_extra_sources(args: &ScanArgs) -> bool {
         return true;
     }
     #[cfg(feature = "git")]
-    if args.git_blobs.is_some()
-        || args.git_diff.is_some()
-        || args.git_history.is_some()
-        || args.git_staged
-    {
+    if args.git_blobs.is_some() || args.git_diff.is_some() || args.git_history.is_some() {
         return true;
     }
     #[cfg(feature = "github")]
@@ -1471,6 +1512,58 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         findings.len(),
         exit,
         report_metadata.scan_status,
+    )?;
+    Ok(ExitCode::from(exit))
+}
+
+/// Finish a guard commit transaction scan. Maps the daemon's
+/// finding count and coverage gaps to the same exit codes as
+/// the in-process and daemon scan paths.
+#[cfg(unix)]
+fn finish_guard_commit_scan(
+    result: crate::daemon::guard_commit::GuardCommitResult,
+    args: &ScanArgs,
+) -> Result<ExitCode> {
+    use crate::exit_codes::{EXIT_CREDENTIALS_FOUND, EXIT_SOURCE_FAILED, EXIT_SUCCESS};
+
+    // Report cache hit statistics to stderr.
+    let palette = crate::style::for_stderr();
+    eprintln!(
+        "{} guard: {} cache hit(s), {} blob(s) scanned, {} byte(s) scanned",
+        crate::style::pass("OK", &palette),
+        result.cache_hits,
+        result.blobs_scanned,
+        result.bytes_scanned
+    );
+
+    let exit = if result.fingerprint_changed {
+        eprintln!(
+            "{}: guard commit: staged index changed during transaction; the scanned content may not match what is now staged.",
+            crate::style::fail("error", &palette)
+        );
+        EXIT_SOURCE_FAILED
+    } else if result.coverage_gaps > 0 && result.findings_count == 0 {
+        eprintln!(
+            "{}: guard commit: {} coverage gap(s); not reporting clean after incomplete coverage.",
+            crate::style::fail("error", &palette),
+            result.coverage_gaps
+        );
+        EXIT_SOURCE_FAILED
+    } else if result.findings_count > 0 {
+        eprintln!(
+            "{}: guard commit: {} unsuppressed finding(s).",
+            crate::style::fail("error", &palette),
+            result.findings_count
+        );
+        EXIT_CREDENTIALS_FOUND
+    } else {
+        EXIT_SUCCESS
+    };
+    crate::action_report::write_scan_receipt(
+        args,
+        result.findings_count as usize,
+        exit,
+        keyhog_core::ScanCompletionStatus::from_coverage_gaps(result.coverage_gaps > 0),
     )?;
     Ok(ExitCode::from(exit))
 }

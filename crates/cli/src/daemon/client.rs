@@ -40,10 +40,20 @@ fn request_timeout(request: &Request) -> Duration {
         | Request::Health
         | Request::MassBegin { .. }
         | Request::MassFilesystemBegin { .. }
-        | Request::MassEnd => DAEMON_HEALTH_TIMEOUT,
+        | Request::MassEnd
+        | Request::GuardAdd { .. }
+        | Request::GuardRemove { .. }
+        | Request::GuardStatus { .. }
+        | Request::GuardList => DAEMON_HEALTH_TIMEOUT,
         Request::Shutdown => DAEMON_SHUTDOWN_TIMEOUT,
         Request::ScanText { .. } => DAEMON_SCAN_TEXT_TIMEOUT,
-        Request::ScanPath { .. } | Request::MassBatch { .. } | Request::MassFilesystemNext => {
+        Request::ScanPath { .. }
+        | Request::MassBatch { .. }
+        | Request::MassFilesystemNext
+        | Request::GuardCommitBegin { .. }
+        | Request::GuardCommitBlob { .. }
+        | Request::GuardCommitFinish { .. }
+        | Request::GuardReconcile { .. } => {
             DAEMON_REQUEST_TIMEOUT
         }
     }

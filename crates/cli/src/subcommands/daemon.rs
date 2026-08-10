@@ -86,6 +86,7 @@ async fn start(
             keyhog_core::detector_digest().to_owned(),
         )
     };
+    let (guard_hot_index_budget, guard_recon_config, guard_scanner_idle_timeout, guard_store_path, guard_scrub_interval) = load_guard_config();
     let options = server::ServerOptions {
         request_read_timeout: Duration::from_secs(request_timeout_secs),
         mass_service: mass,
@@ -97,6 +98,11 @@ async fn start(
         detector_rules_digest,
         options,
         backend_override,
+        guard_hot_index_budget,
+        guard_recon_config,
+        guard_scanner_idle_timeout,
+        guard_store_path,
+        guard_scrub_interval,
     )
     .await?;
     Ok(ExitCode::SUCCESS)
@@ -223,6 +229,11 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
             detector_count,
             backend_recoveries,
             last_backend_fault,
+            guard_roots_registered,
+            guard_roots_current,
+            guard_roots_blocked,
+            guard_roots_degraded,
+            guard_active_transactions,
             warm_backend,
         } => {
             if warm_backend.daemon_generation != hello_warm_backend.daemon_generation {
@@ -284,6 +295,16 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                 "keyhog daemon: uptime {}s · {} scans served · {} active · {} detectors",
                 uptime_secs, scans_served, active_scans, detector_count
             );
+            if guard_roots_registered > 0 {
+                println!(
+                    "guard: {} root(s) registered · {} current · {} blocked · {} degraded · {} active transaction(s)",
+                    guard_roots_registered,
+                    guard_roots_current,
+                    guard_roots_blocked,
+                    guard_roots_degraded,
+                    guard_active_transactions,
+                );
+            }
             if mass_service {
                 println!(
                     "scan scope: bounded directory, Git, archive, binary, remote, and cloud \
@@ -392,4 +413,151 @@ async fn status_over_control_channel(
         socket.display()
     );
     Ok(ExitCode::from(crate::exit_codes::EXIT_HEALTH_FAILURE))
+}
+
+/// Load the `[guard].hot_index_memory` setting from `.keyhog.toml`.
+/// Returns `None` when the file is absent, the `[guard]` section is
+/// absent, or the value cannot be parsed. Errors are logged as warnings
+/// Load guard configuration from the KeyHog config file. Returns
+/// the hot index memory budget and the reconciliation config.
+/// Missing or invalid values fall back to defaults and do not
+fn load_guard_config() -> (Option<usize>, keyhog_sources::guard::GuardReconciliationConfig, Option<u64>, Option<PathBuf>, Option<u64>) {
+    let config_path = match crate::config::find_config_file(None) {
+        Some(p) => p,
+        None => return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None, None, None),
+    };
+    let raw = match std::fs::read_to_string(&config_path) {
+        Ok(content) => content,
+        Err(e) => {
+            tracing::warn!("daemon: failed to read {}: {}", config_path.display(), e);
+            return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None, None, None);
+        }
+    };
+    let config: crate::config::ConfigFile = match toml::from_str(&raw) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("daemon: failed to parse {}: {}", config_path.display(), e);
+            return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None, None, None);
+        }
+    };
+    let guard = match config.guard {
+        Some(g) => g,
+        None => return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None, None, None),
+    };
+    let budget = guard.hot_index_memory.as_deref().and_then(parse_byte_size);
+    let defaults = keyhog_sources::guard::GuardReconciliationConfig::default();
+    let recon_config = keyhog_sources::guard::GuardReconciliationConfig {
+        max_pending_events_per_root: guard
+            .max_pending_events_per_root
+            .unwrap_or(defaults.max_pending_events_per_root),
+        coalesce_window_ms: guard
+            .coalesce_window
+            .as_deref()
+            .and_then(parse_duration_ms)
+            .unwrap_or(defaults.coalesce_window_ms),
+        subtree_max_files: guard
+            .subtree_max_files
+            .unwrap_or(defaults.subtree_max_files),
+        subtree_max_depth: guard
+            .subtree_max_depth
+            .unwrap_or(defaults.subtree_max_depth),
+    };
+    let scanner_idle_timeout_secs = guard
+        .scanner_idle_timeout
+        .as_deref()
+        .and_then(parse_duration_secs);
+    let state_path = guard
+        .state_path
+        .as_deref()
+        .and_then(expand_state_path);
+    // Lockdown mode forbids on-disk persistence. If [lockdown] require = true
+    // is set alongside [guard].state_path, reject the durable store and
+    // operate in ephemeral mode.
+    let state_path = if state_path.is_some() && config.lockdown.as_ref().and_then(|l| l.require).unwrap_or(false) {
+        tracing::warn!(
+            "daemon: [guard].state_path ignored because [lockdown] require = true; \
+             guard operating in ephemeral mode (no durable persistence)"
+        );
+        None
+    } else {
+        state_path
+    };
+
+    let scrub_interval_secs = guard
+        .scrub_interval
+        .as_deref()
+        .and_then(parse_duration_secs);
+    (budget, recon_config, scanner_idle_timeout_secs, state_path, scrub_interval_secs)
+}
+
+/// Expand a state path string, resolving `~` to the home directory.
+/// Returns `None` if expansion fails.
+fn expand_state_path(s: &str) -> Option<PathBuf> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if s.starts_with('~') {
+        let home = std::env::var_os("HOME")?;
+        let expanded = s.replacen("~", std::path::Path::new(&home).to_str()?, 1);
+        Some(PathBuf::from(expanded))
+    } else {
+        Some(PathBuf::from(s))
+    }
+}
+
+/// Parse a human-readable byte size string (e.g. "64MiB", "128MB", "1GB").
+/// Returns `None` on parse failure.
+fn parse_byte_size(s: &str) -> Option<usize> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    // Find the split between numeric and unit.
+    let split = s.find(|c: char| !c.is_ascii_digit() && c != '.');
+    let (num_str, unit_str) = match split {
+        Some(idx) => (&s[..idx], s[idx..].trim()),
+        None => (s, ""),
+    };
+    let num: f64 = num_str.parse().ok()?;
+    let multiplier = match unit_str.to_lowercase().as_str() {
+        "" | "b" => 1.0,
+        "k" | "kb" | "kib" => 1024.0,
+        "m" | "mb" | "mib" => 1024.0 * 1024.0,
+        "g" | "gb" | "gib" => 1024.0 * 1024.0 * 1024.0,
+        _ => {
+            tracing::warn!("daemon: unknown byte size unit '{}'", unit_str);
+            return None;
+        }
+    };
+    Some((num * multiplier) as usize)
+}
+
+/// Parse a human-readable duration string (e.g. "100ms", "5s", "1m").
+/// Returns milliseconds. Returns `None` on parse failure.
+fn parse_duration_ms(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let split = s.find(|c: char| !c.is_ascii_digit() && c != '.');
+    let (num_str, unit_str) = match split {
+        Some(idx) => (&s[..idx], s[idx..].trim()),
+        None => (s, ""),
+    };
+    let num: f64 = num_str.parse().ok()?;
+    let millis = match unit_str.to_lowercase().as_str() {
+        "ms" => num,
+        "s" => num * 1000.0,
+        "m" => num * 1000.0 * 60.0,
+        "h" => num * 1000.0 * 60.0 * 60.0,
+        _ => return None,
+    };
+    Some(millis as u64)
+}
+
+/// Parse a human-readable duration string (e.g. "5m", "1h", "300s").
+/// Returns seconds. Returns `None` on parse failure.
+fn parse_duration_secs(s: &str) -> Option<u64> {
+    parse_duration_ms(s).map(|ms| ms / 1000)
 }
