@@ -62,6 +62,7 @@ README_MATRIX_CONFIG_OUT ?= results-readme-config
 README_MATRIX_DAEMON_OUT ?= results-readme-daemon
 README_MATRIX_DAEMON_CORPUS ?= corpora/daemon-file-8mib.txt
 README_MATRIX_SNAPSHOT ?= reports/readme-matrix.json
+README_MATRIX_AUTOROUTE_CACHE ?=
 README_MATRIX_SOURCE_STATE ?= clean
 README_SCALING_ROOT ?= corpora/readme-scaling
 README_SCALING_SNAPSHOT ?= reports/readme-scaling.json
@@ -167,9 +168,11 @@ readme-matrix-corpus:
 # run on. Regenerate and commit the scaling evidence first, then run this;
 # Commit the scaling refresh first, then run this on the clean tree.
 readme-matrix: require-clean-tree readme-matrix-corpus
-	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus mirror \
+	cd $(BENCH_DIR) && KEYHOG_BENCH_AUTOROUTE_CACHE="$(README_MATRIX_AUTOROUTE_CACHE)" \
+		$(PY) -m bench leaderboard --corpus mirror \
 		--scanners keyhog --tier perf --out "$(README_MATRIX_CONFIG_OUT)" --require-available
-	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus daemon-file \
+	cd $(BENCH_DIR) && KEYHOG_BENCH_AUTOROUTE_CACHE="$(README_MATRIX_AUTOROUTE_CACHE)" \
+		$(PY) -m bench leaderboard --corpus daemon-file \
 		--corpus-root "$(README_MATRIX_DAEMON_CORPUS)" --scanners keyhog --tier perf \
 		--out "$(README_MATRIX_DAEMON_OUT)" --require-available
 	cd $(BENCH_DIR) && $(PY) -m bench.readme_matrix \

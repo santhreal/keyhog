@@ -390,8 +390,19 @@ The published README matrix uses a generated deterministic 8 MiB file
 and the 15,000-fixture mirror corpus:
 
 ```bash
-make readme-matrix
+KEYHOG_BIN=/absolute/path/to/keyhog
+AUTOROUTE_CACHE="$(pwd)/benchmarks/results/readme-autoroute.json"
+make -C benchmarks readme-matrix \
+  KEYHOG_BIN="$KEYHOG_BIN" \
+  README_MATRIX_AUTOROUTE_CACHE="$AUTOROUTE_CACHE"
 ```
+
+The cache path is benchmark-owned and must not be the operator's normal cache.
+Before timing each `auto` row, the adapter calibrates that exact detector,
+policy, incremental-cache, source, and workload identity into this cache. The
+timed scan then performs a normal lookup. Explicit CPU and GPU rows never read
+the cache. This prevents stale ambient decisions and keeps calibration outside
+the measured interval.
 
 This command requires every explicit CPU, Hyperscan, CUDA, WGPU, policy, cache,
 daemon, worker, reader, storage, corpus-size, and partition row. It writes two

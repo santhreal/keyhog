@@ -404,8 +404,11 @@ def test_scanner_exit_contracts_distinguish_findings_from_failures():
 
 
 @pytest.mark.parametrize("backend", ["gpu-cuda", "gpu-wgpu"])
-def test_keyhog_gpu_benchmark_rows_use_exact_gpu_policy(tmp_path, backend):
+def test_keyhog_gpu_benchmark_rows_use_exact_gpu_policy(tmp_path, backend, monkeypatch):
     scanner = scanners.KeyhogScanner()
+    autoroute_cache = tmp_path / "autoroute.json"
+    autoroute_cache.write_text("{}")
+    monkeypatch.setenv("KEYHOG_BENCH_AUTOROUTE_CACHE", str(autoroute_cache))
 
     gpu_cmd = scanner._cmd(
         tmp_path, ScannerConfig(backend=backend), tmp_path / f"{backend}.json", None,
@@ -423,6 +426,7 @@ def test_keyhog_gpu_benchmark_rows_use_exact_gpu_policy(tmp_path, backend):
     assert "--require-gpu" in gpu_cmd
     assert gpu_cmd[gpu_cmd.index("--backend") + 1] == backend
     assert "--no-gpu" not in auto_cmd
+    assert auto_cmd[auto_cmd.index("--autoroute-cache") + 1] == str(autoroute_cache)
     assert "--no-gpu" in simd_cmd
     assert "--no-default-excludes" in gpu_cmd
     assert "--no-default-excludes" in auto_cmd
@@ -433,6 +437,43 @@ def test_keyhog_gpu_benchmark_rows_use_exact_gpu_policy(tmp_path, backend):
         keyhog_adapter._DETECTOR_CORPUS
     )
     assert scanner._env(ScannerConfig(backend=backend)) == {}
+
+
+def test_keyhog_auto_benchmark_requires_explicit_calibrated_cache(tmp_path, monkeypatch):
+    scanner = scanners.KeyhogScanner()
+    monkeypatch.delenv("KEYHOG_BENCH_AUTOROUTE_CACHE", raising=False)
+    with pytest.raises(RuntimeError, match="require KEYHOG_BENCH_AUTOROUTE_CACHE"):
+        scanner._cmd(
+            tmp_path,
+            ScannerConfig(backend="auto"),
+            tmp_path / "auto.json",
+            None,
+            pathlib.Path("/unused/keyhog"),
+        )
+
+
+def test_keyhog_auto_calibrates_exact_workload_before_timed_scan(tmp_path, monkeypatch):
+    scanner = scanners.KeyhogScanner(binary="/unused/keyhog")
+    autoroute_cache = tmp_path / "autoroute.json"
+    monkeypatch.setenv("KEYHOG_BENCH_AUTOROUTE_CACHE", str(autoroute_cache))
+    commands = []
+
+    def successful_scan(cmd, **kwargs):
+        commands.append(cmd)
+        pathlib.Path(cmd[cmd.index("--output") + 1]).write_text("[]")
+        return "", "", base.RunStats(exit_code=0)
+
+    monkeypatch.setattr(keyhog_adapter, "run_measured", successful_scan)
+    scanner.run(tmp_path, ScannerConfig(backend="auto"))
+
+    assert len(commands) == 2
+    assert "--autoroute-calibrate" in commands[0]
+    assert "--autoroute-gpu" in commands[0]
+    assert "--autoroute-calibrate" not in commands[1]
+    assert all(
+        command[command.index("--autoroute-cache") + 1] == str(autoroute_cache)
+        for command in commands
+    )
 
 
 def test_keyhog_single_file_perf_command_keeps_daemon_fixture_policy(tmp_path):

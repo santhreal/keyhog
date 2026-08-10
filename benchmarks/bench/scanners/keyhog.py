@@ -431,6 +431,22 @@ class KeyhogScanner(Scanner):
                "--detectors", str(detector_corpus or self._detector_corpus),
                "--backend", cfg.backend,
                "--output", str(output)]
+        if cfg.backend == "auto":
+            raw_autoroute_cache = os.environ.get("KEYHOG_BENCH_AUTOROUTE_CACHE", "")
+            if not raw_autoroute_cache:
+                raise RuntimeError(
+                    "auto benchmark rows require KEYHOG_BENCH_AUTOROUTE_CACHE "
+                    "pointing to a private absolute cache path"
+                )
+            autoroute_cache = pathlib.Path(raw_autoroute_cache)
+            if (
+                not autoroute_cache.is_absolute()
+                or (autoroute_cache.exists() and not autoroute_cache.is_file())
+            ):
+                raise RuntimeError(
+                    "KEYHOG_BENCH_AUTOROUTE_CACHE must name an absolute file path"
+                )
+            cmd += ["--autoroute-cache", str(autoroute_cache)]
         if not root.is_file():
             cmd += ["--no-suppress-test-fixtures", "--no-default-excludes"]
         # Optional report-floor override. None (every leaderboard config) means
@@ -623,7 +639,7 @@ class KeyhogScanner(Scanner):
         # adapter-owned artifact in one private, unique directory and let the
         # context manager remove it on success, timeout, scanner failure, or
         # parse/schema failure. Caller-owned output remains caller-owned.
-        owns_artifacts = output is None or cfg.cache == "on"
+        owns_artifacts = output is None or cfg.cache == "on" or cfg.backend == "auto"
         run_dir_context = (
             tempfile.TemporaryDirectory(prefix="keyhog-bench-")
             if owns_artifacts
@@ -637,6 +653,38 @@ class KeyhogScanner(Scanner):
                 # Warmup and timed pass share only this run's private index.
                 assert run_dir is not None
                 inc_cache = run_dir / "merkle.idx"
+            if cfg.backend == "auto":
+                assert run_dir is not None
+                calibration_out = run_dir / "autoroute-calibration.json"
+                calibration_cmd = self._cmd(
+                    root, cfg, calibration_out, inc_cache, executable, detector_corpus
+                )
+                calibration_cmd = [
+                    *calibration_cmd[:-1],
+                    "--autoroute-calibrate",
+                    "--autoroute-gpu",
+                    calibration_cmd[-1],
+                ]
+                calibration_stdout, calibration_stderr, calibration_stats = run_measured(
+                    calibration_cmd,
+                    env=env,
+                    timeout=timeout,
+                    pass_fds=pass_fds,
+                )
+                self._require_success(
+                    calibration_stdout,
+                    calibration_stderr,
+                    calibration_stats,
+                    cfg,
+                    timeout,
+                    phase="autoroute calibration",
+                )
+                self._parse(
+                    calibration_out,
+                    config_id=f"{cfg.config_id} autoroute calibration",
+                )
+            if cfg.cache == "on":
+                assert run_dir is not None
                 warm_out = run_dir / "warm.json"
                 warm_stdout, warm_stderr, warm_stats = run_measured(
                     self._cmd(
