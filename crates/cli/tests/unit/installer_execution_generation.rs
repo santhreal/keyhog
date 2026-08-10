@@ -1,4 +1,5 @@
 use super::*;
+use keyhog_scanner::execution_pack::ExecutionPackSigningKey;
 
 fn write(path: &Path, bytes: &[u8]) {
     fs::write(path, bytes).expect("write test fixture");
@@ -129,4 +130,59 @@ fn committed_generation_retains_published_artifacts() {
         b"new-cache"
     );
     assert_eq!(fs::read(&signing_key).expect("published key"), vec![5; 32]);
+}
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[test]
+fn signing_key_debug_formatting_does_not_leak_key_bytes() {
+    let raw_key = [0xab; 32];
+    let key = ExecutionPackSigningKey::from_bytes(raw_key).expect("valid signing key");
+    let debug_str = format!("{key:?}");
+    assert!(
+        !debug_str.contains(&hex_encode(&raw_key)),
+        "debug output must not leak secret key bytes"
+    );
+    assert_eq!(
+        debug_str,
+        format!(
+            "ExecutionPackSigningKey {{ key_id: {:?}, .. }}",
+            hex_encode(&key.key_id())
+        ),
+        "debug output must match expected key_id formatting"
+    );
+}
+
+/// WHY: deterministic test keys cannot detect an installer that accidentally persists one shared key across independent cache roots.
+#[test]
+fn independent_installations_have_isolated_signing_keys() {
+    let root_a = tempfile::tempdir().expect("installation A cache root");
+    let root_b = tempfile::tempdir().expect("installation B cache root");
+    let path_a = root_a.path().join("signing.key");
+    let path_b = root_b.path().join("signing.key");
+
+    assert!(ensure_signing_key(&path_a).expect("create installation A key"));
+    assert!(ensure_signing_key(&path_b).expect("create installation B key"));
+
+    let raw_a: [u8; 32] = fs::read(&path_a)
+        .expect("read installation A key")
+        .try_into()
+        .expect("installation A key length");
+    let raw_b: [u8; 32] = fs::read(&path_b)
+        .expect("read installation B key")
+        .try_into()
+        .expect("installation B key length");
+    assert_ne!(
+        raw_a, raw_b,
+        "independent installations must not share keys"
+    );
+
+    let key_a = ExecutionPackSigningKey::from_bytes(raw_a).expect("installation A key");
+    let key_b = ExecutionPackSigningKey::from_bytes(raw_b).expect("installation B key");
+    assert_ne!(
+        key_a.key_id(),
+        key_b.key_id(),
+        "independent installation key IDs must differ"
+    );
 }

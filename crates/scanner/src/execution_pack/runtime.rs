@@ -120,6 +120,21 @@ pub struct ExecutionPack {
     signature_authenticated: bool,
 }
 
+impl std::fmt::Debug for ExecutionPack {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ExecutionPack")
+            .field("path", &self.path)
+            .field("identity", &self.identity)
+            .field(
+                "content_digest",
+                &keyhog_core::hex_encode(&self.content_digest),
+            )
+            .field("signature_authenticated", &self.signature_authenticated)
+            .finish_non_exhaustive()
+    }
+}
+
 impl ExecutionPack {
     pub fn open(
         path: impl AsRef<Path>,
@@ -140,7 +155,7 @@ impl ExecutionPack {
                 path: path.to_path_buf(),
                 source,
             })?;
-        Self::from_mapping(mapping, path.to_path_buf(), expected, true)
+        Self::from_mapping(mapping, path.to_path_buf(), Some(expected), None, true)
     }
 
     /// Maps and authenticates one immutable pack generation before exposing any section.
@@ -162,9 +177,13 @@ impl ExecutionPack {
                 path: path.to_path_buf(),
                 source,
             })?;
-        let mut pack = Self::from_mapping(mapping, path.to_path_buf(), expected, false)?;
-        authenticate_pack_signature(&pack, signature_path.as_ref(), signing_key)?;
-        pack.signature_authenticated = true;
+        let pack = Self::from_mapping(
+            mapping,
+            path.to_path_buf(),
+            Some(expected),
+            Some((signature_path.as_ref(), signing_key)),
+            false,
+        )?;
         pack.release_resident_pages()?;
         Ok(pack)
     }
@@ -188,10 +207,13 @@ impl ExecutionPack {
                 path: path.to_path_buf(),
                 source,
             })?;
-        let expected = decode_identity_header(mapping.as_ref(), path)?;
-        let mut pack = Self::from_mapping(mapping, path.to_path_buf(), expected, false)?;
-        authenticate_pack_signature(&pack, signature_path.as_ref(), signing_key)?;
-        pack.signature_authenticated = true;
+        let pack = Self::from_mapping(
+            mapping,
+            path.to_path_buf(),
+            None,
+            Some((signature_path.as_ref(), signing_key)),
+            false,
+        )?;
         pack.release_resident_pages()?;
         Ok(pack)
     }
@@ -330,7 +352,8 @@ impl ExecutionPack {
     fn from_mapping(
         mapping: Mmap,
         path: PathBuf,
-        expected: ExecutionPackIdentity,
+        expected: Option<ExecutionPackIdentity>,
+        signature_auth: Option<(&Path, &ExecutionPackSigningKey)>,
         verify_content_digest: bool,
     ) -> Result<Self, ExecutionPackError> {
         let bytes = mapping.as_ref();
@@ -373,13 +396,22 @@ impl ExecutionPack {
                 path.display()
             )));
         }
-        let section_count = read_u32(bytes, 12) as usize;
-        if section_count == 0 || section_count > 64 {
-            return Err(ExecutionPackError::InvalidPack(format!(
-                "{} declares invalid section count {section_count}",
-                path.display()
-            )));
+        let content_digest = array32(bytes, 248);
+
+        let mut signature_authenticated = false;
+        if let Some((signature_path, signing_key)) = signature_auth {
+            authenticate_pack_signature(
+                &mapping,
+                &path,
+                content_digest,
+                signature_path,
+                signing_key,
+            )?;
+            signature_authenticated = true;
+        } else if verify_content_digest {
+            verify_content_digest_mapping(&mapping, &path, content_digest)?;
         }
+
         let declared_len = usize::try_from(read_u64(bytes, 16)).map_err(|_| {
             ExecutionPackError::InvalidPack(format!(
                 "{} length does not fit this target",
@@ -393,6 +425,25 @@ impl ExecutionPack {
                 bytes.len()
             )));
         }
+        let section_count = read_u32(bytes, 12) as usize;
+        if section_count == 0 || section_count > 64 {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} declares invalid section count {section_count}",
+                path.display()
+            )));
+        }
+        let identity = decode_identity_header(bytes, &path)?;
+        let stored_identity_digest = array32(bytes, 280);
+        if stored_identity_digest != identity.digest() {
+            return Err(ExecutionPackError::InvalidPack(format!(
+                "{} execution-pack identity digest mismatch; reinstall this generation",
+                path.display()
+            )));
+        }
+        if let Some(expected) = expected {
+            validate_identity(&path, identity, expected)?;
+        }
+
         let table_end = EXECUTION_PACK_HEADER_LEN
             .checked_add(section_count * EXECUTION_PACK_SECTION_ENTRY_LEN)
             .ok_or_else(|| {
@@ -406,36 +457,6 @@ impl ExecutionPack {
                 "{} section table extends beyond the mapped file",
                 path.display()
             )));
-        }
-
-        let identity = decode_identity_header(bytes, &path)?;
-        let stored_identity_digest = array32(bytes, 280);
-        if stored_identity_digest != identity.digest() {
-            return Err(ExecutionPackError::InvalidPack(format!(
-                "{} execution-pack identity digest mismatch; reinstall this generation",
-                path.display()
-            )));
-        }
-        validate_identity(&path, identity, expected)?;
-        let content_digest = array32(bytes, 248);
-        if verify_content_digest {
-            let mut content_hasher = blake3::Hasher::new();
-            update_mapping_and_release(
-                &mapping,
-                &path,
-                EXECUTION_PACK_HEADER_LEN..bytes.len(),
-                "discard content-authentication pages",
-                |chunk| {
-                    content_hasher.update(chunk);
-                },
-            )?;
-            let actual_digest = *content_hasher.finalize().as_bytes();
-            if actual_digest != content_digest {
-                return Err(ExecutionPackError::InvalidPack(format!(
-                    "{} content digest mismatch; reinstall or recalibrate this generation",
-                    path.display()
-                )));
-            }
         }
 
         let mut seen = BTreeSet::new();
@@ -459,7 +480,7 @@ impl ExecutionPack {
             let schema_version = read_u16(bytes, base + 2);
             if schema_version != kind.schema_version() {
                 return Err(ExecutionPackError::Incompatible(format!(
-                    "{} section {kind} uses schema {schema_version}; this binary requires {}",
+                    "{} section {kind} uses schema {schema_version}; this binary requires {}; run keyhog compile-execution-packs to rebuild",
                     path.display(),
                     kind.schema_version()
                 )));
@@ -512,15 +533,41 @@ impl ExecutionPack {
                 )));
             }
         }
+
         Ok(Self {
             mapping: std::sync::Arc::new(mapping),
             path,
             identity,
             content_digest,
-            signature_authenticated: false,
+            signature_authenticated,
             sections,
         })
     }
+}
+
+fn verify_content_digest_mapping(
+    mapping: &Mmap,
+    path: &Path,
+    content_digest: [u8; 32],
+) -> Result<(), ExecutionPackError> {
+    let mut content_hasher = blake3::Hasher::new();
+    update_mapping_and_release(
+        mapping,
+        path,
+        EXECUTION_PACK_HEADER_LEN..mapping.len(),
+        "discard content-authentication pages",
+        |chunk| {
+            content_hasher.update(chunk);
+        },
+    )?;
+    let actual_digest = *content_hasher.finalize().as_bytes();
+    if actual_digest != content_digest {
+        return Err(ExecutionPackError::InvalidPack(format!(
+            "{} content digest mismatch; reinstall or recalibrate this generation",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 fn decode_identity_header(
@@ -561,7 +608,9 @@ fn decode_identity_header(
 }
 
 fn authenticate_pack_signature(
-    pack: &ExecutionPack,
+    mapping: &Mmap,
+    path: &Path,
+    content_digest: [u8; 32],
     signature_path: &Path,
     signing_key: &ExecutionPackSigningKey,
 ) -> Result<(), ExecutionPackError> {
@@ -591,11 +640,11 @@ fn authenticate_pack_signature(
     let signature = ExecutionPackSignature::decode(&bytes)?;
     let mut pack_hasher = blake3::Hasher::new();
     let mut content_hasher = blake3::Hasher::new();
-    pack_hasher.update(&pack.mapping[..EXECUTION_PACK_HEADER_LEN]);
+    pack_hasher.update(&mapping[..EXECUTION_PACK_HEADER_LEN]);
     update_mapping_and_release(
-        &pack.mapping,
-        &pack.path,
-        EXECUTION_PACK_HEADER_LEN..pack.mapping.len(),
+        mapping,
+        path,
+        EXECUTION_PACK_HEADER_LEN..mapping.len(),
         "discard pack-authentication pages",
         |chunk| {
             pack_hasher.update(chunk);
@@ -603,10 +652,10 @@ fn authenticate_pack_signature(
         },
     )?;
     let actual_content_digest = *content_hasher.finalize().as_bytes();
-    if actual_content_digest != pack.content_digest {
+    if actual_content_digest != content_digest {
         return Err(ExecutionPackError::InvalidPack(format!(
             "{} content digest mismatch; reinstall or recalibrate this generation",
-            pack.path.display()
+            path.display()
         )));
     }
     signing_key.verify_digest(&signature, *pack_hasher.finalize().as_bytes())
@@ -631,7 +680,11 @@ fn update_mapping_and_release(
             .min(range.end);
         let chunk = &mapping[start..end];
         update(chunk);
-        release_mapping_slice(mapping, path, chunk, release_operation)?;
+        if end > 4096 {
+            let release_start = start.max(4096);
+            let release_chunk = &mapping[release_start..end];
+            release_mapping_slice(mapping, path, release_chunk, release_operation)?;
+        }
         start = end;
     }
     Ok(())

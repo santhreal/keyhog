@@ -326,14 +326,14 @@ fn mapped_execution_pack_constructs_scanner_from_borrowed_sections() {
     let direct = CompiledScanner::compile_from_execution_pack(&pack)
         .expect("stream detector plan directly from mapped execution pack");
     assert_eq!(
-        keyhog_scanner::execution_pack::matcher_sections::runtime_localization_hint_fallbacks(),
-        localization_fallbacks_before,
-        "normal installed-pack hydration must consume persisted localization hints"
-    );
-    assert_eq!(
         keyhog_scanner::execution_pack::detector_plan::detector_spec_schema_reconstructions(),
         schema_reconstructions_before,
         "normal installed-pack hydration must not reconstruct DetectorSpec"
+    );
+    assert_eq!(
+        keyhog_scanner::execution_pack::matcher_sections::runtime_localization_hint_fallbacks(),
+        localization_fallbacks_before,
+        "normal installed-pack hydration must consume persisted localization hints"
     );
     assert_eq!(
         keyhog_scanner::execution_pack::detector_plan::detector_plan_live_wire_rows(),

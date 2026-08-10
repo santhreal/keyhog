@@ -689,3 +689,246 @@ fn canonical_ir_rejects_tampered_normalized_metadata() {
         .to_string()
         .contains("normalized metadata does not match"));
 }
+
+/// WHY: mutating output from the current compiler can make stale-schema coverage inherit the exact serializer it is meant to check independently.
+#[test]
+fn runtime_rejects_independently_encoded_legacy_section_schemas() {
+    fn encode_legacy_pack(legacy_kind: ExecutionPackSectionKind, legacy_version: u16) -> Vec<u8> {
+        const SECTION_ENTRY_LEN: usize = 24;
+        let identity = identity();
+        let sections = sections();
+        let mut cursor = EXECUTION_PACK_HEADER_LEN + sections.len() * SECTION_ENTRY_LEN;
+        let mut entries = Vec::with_capacity(sections.len());
+        for section in &sections {
+            let alignment = section.alignment as usize;
+            cursor = (cursor + alignment - 1) & !(alignment - 1);
+            let version = if section.kind == legacy_kind {
+                legacy_version
+            } else {
+                section.kind.schema_version()
+            };
+            entries.push((
+                section.kind,
+                version,
+                cursor,
+                section.bytes.len(),
+                section.alignment,
+            ));
+            cursor += section.bytes.len();
+        }
+
+        let mut bytes = vec![0_u8; cursor];
+        bytes[0..8].copy_from_slice(b"KHPACK\0\x02");
+        bytes[8..10].copy_from_slice(&2_u16.to_le_bytes());
+        bytes[10..12].copy_from_slice(&(EXECUTION_PACK_HEADER_LEN as u16).to_le_bytes());
+        bytes[12..16].copy_from_slice(&(sections.len() as u32).to_le_bytes());
+        bytes[16..24].copy_from_slice(&(cursor as u64).to_le_bytes());
+        bytes[24..56].copy_from_slice(&identity.detector_digest);
+        bytes[56..88].copy_from_slice(&identity.config_digest);
+        bytes[88..120].copy_from_slice(&identity.target_digest);
+        bytes[120..152].copy_from_slice(&identity.compiler_abi);
+        bytes[152..184].copy_from_slice(&identity.binary_digest);
+        bytes[184..216].copy_from_slice(&identity.feature_digest);
+        bytes[216..248].copy_from_slice(&identity.backend_digest);
+        bytes[280..312].copy_from_slice(&identity.digest());
+        bytes[312] = identity.policy as u8;
+        bytes[313] = identity.backend as u8;
+
+        for (index, ((kind, version, offset, len, alignment), section)) in
+            entries.iter().zip(&sections).enumerate()
+        {
+            let base = EXECUTION_PACK_HEADER_LEN + index * SECTION_ENTRY_LEN;
+            bytes[base..base + 2].copy_from_slice(&(*kind as u16).to_le_bytes());
+            bytes[base + 2..base + 4].copy_from_slice(&version.to_le_bytes());
+            bytes[base + 4..base + 12].copy_from_slice(&(*offset as u64).to_le_bytes());
+            bytes[base + 12..base + 20].copy_from_slice(&(*len as u64).to_le_bytes());
+            bytes[base + 20..base + 24].copy_from_slice(&alignment.to_le_bytes());
+            bytes[*offset..*offset + *len].copy_from_slice(section.bytes);
+        }
+        let digest = blake3::hash(&bytes[EXECUTION_PACK_HEADER_LEN..]);
+        bytes[248..280].copy_from_slice(digest.as_bytes());
+        bytes
+    }
+
+    let legacy_versions = [
+        (ExecutionPackSectionKind::LiteralIndex, 4),
+        (ExecutionPackSectionKind::RegexPrograms, 4),
+        (ExecutionPackSectionKind::SuppressionPolicy, 4),
+        (ExecutionPackSectionKind::DetectorPlan, 1),
+    ];
+    let directory = tempfile::tempdir().expect("temporary directory");
+    for (kind, legacy_version) in legacy_versions {
+        let path = directory.path().join(format!("{kind:?}.khpack"));
+        fs::write(&path, encode_legacy_pack(kind, legacy_version)).expect("publish legacy pack");
+
+        let error =
+            ExecutionPack::open(&path, identity()).expect_err("legacy section schema must fail");
+        let message = error.to_string();
+        assert!(
+            message.contains(&format!("{kind} uses schema {legacy_version}")),
+            "error must identify the stale section schema; got: {message}"
+        );
+        assert!(
+            message.contains(&format!("requires {}", kind.schema_version())),
+            "error must identify the required section schema; got: {message}"
+        );
+        assert!(
+            message.contains("keyhog compile-execution-packs to rebuild"),
+            "error must suggest the rebuild command; got: {message}"
+        );
+    }
+}
+
+#[test]
+fn runtime_rejects_version_zero_section_schema() {
+    let compiled = compile_execution_pack(ExecutionPackCompileInput {
+        identity: identity(),
+        sections: &sections(),
+    })
+    .expect("compile pack");
+
+    let mut tampered_bytes = compiled.as_bytes().to_vec();
+    let version_offset = EXECUTION_PACK_HEADER_LEN + 2;
+    tampered_bytes[version_offset] = 0;
+    tampered_bytes[version_offset + 1] = 0;
+    let digest = blake3::hash(&tampered_bytes[EXECUTION_PACK_HEADER_LEN..]);
+    tampered_bytes[248..280].copy_from_slice(digest.as_bytes());
+
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("zero_version.khpack");
+    fs::write(&path, tampered_bytes).expect("publish tampered pack");
+
+    let error = ExecutionPack::open(&path, identity()).expect_err("version 0 section must fail");
+    let err_msg = error.to_string();
+    assert!(
+        err_msg.contains("uses schema 0"),
+        "error must mention invalid schema version 0; got: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("keyhog compile-execution-packs to rebuild"),
+        "error must suggest rebuild command; got: {err_msg}"
+    );
+}
+
+#[test]
+fn unauthenticated_section_table_mutation_fails_at_content_authentication() {
+    let compiled = compile_execution_pack(ExecutionPackCompileInput {
+        identity: identity(),
+        sections: &sections(),
+    })
+    .expect("compile pack");
+
+    // Offsets to mutate in section table without updating content_digest:
+    // [320: section 0 kind, 322: section 0 schema, 324: section 0 offset, 332: section 0 len, 340: section 0 alignment]
+    let test_offsets = [320, 322, 324, 332, 340];
+
+    for offset in test_offsets {
+        let mut tampered_bytes = compiled.as_bytes().to_vec();
+        tampered_bytes[offset] = tampered_bytes[offset].wrapping_add(1);
+
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory
+            .path()
+            .join(format!("unauth_mutation_{offset}.khpack"));
+        fs::write(&path, tampered_bytes).expect("publish tampered pack");
+
+        let error = ExecutionPack::open(&path, identity())
+            .expect_err("unauthenticated section table mutation must fail content authentication");
+        let err_msg = error.to_string();
+        assert!(
+            err_msg.contains("content digest mismatch"),
+            "load must fail at content authentication before section semantic parsing; got: {err_msg}"
+        );
+    }
+}
+
+fn generate_stale_schema_v1_fixture(identity: &ExecutionPackIdentity) -> Vec<u8> {
+    let header_len = 320;
+    let section_entry_len = 24;
+    let payload = b"stale_detector_plan_payload";
+    let total_len = header_len + section_entry_len + payload.len();
+
+    let mut bytes = vec![0u8; total_len];
+    bytes[0..8].copy_from_slice(b"KHPACK\0\x02");
+    bytes[8..10].copy_from_slice(&2u16.to_le_bytes());
+    bytes[10..12].copy_from_slice(&(header_len as u16).to_le_bytes());
+    bytes[12..16].copy_from_slice(&1u32.to_le_bytes());
+    bytes[16..24].copy_from_slice(&(total_len as u64).to_le_bytes());
+
+    bytes[24..56].copy_from_slice(&identity.detector_digest);
+    bytes[56..88].copy_from_slice(&identity.config_digest);
+    bytes[88..120].copy_from_slice(&identity.target_digest);
+    bytes[120..152].copy_from_slice(&identity.compiler_abi);
+    bytes[152..184].copy_from_slice(&identity.binary_digest);
+    bytes[184..216].copy_from_slice(&identity.feature_digest);
+    bytes[216..248].copy_from_slice(&identity.backend_digest);
+    bytes[312] = identity.policy as u8;
+    bytes[313] = identity.backend as u8;
+
+    let section_base = header_len;
+    bytes[section_base..section_base + 2].copy_from_slice(&6u16.to_le_bytes());
+    bytes[section_base + 2..section_base + 4].copy_from_slice(&1u16.to_le_bytes());
+    bytes[section_base + 4..section_base + 12]
+        .copy_from_slice(&((header_len + section_entry_len) as u64).to_le_bytes());
+    bytes[section_base + 12..section_base + 20]
+        .copy_from_slice(&(payload.len() as u64).to_le_bytes());
+
+    bytes[header_len + section_entry_len..].copy_from_slice(payload);
+
+    let content_digest = blake3::hash(&bytes[header_len..]);
+    bytes[248..280].copy_from_slice(content_digest.as_bytes());
+    bytes[280..312].copy_from_slice(&identity.digest());
+
+    bytes
+}
+
+#[test]
+fn runtime_rejects_stale_section_schema_version_at_persisted_boundary() {
+    let stale_bytes = generate_stale_schema_v1_fixture(&identity());
+
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("stale_persisted_schema.khpack");
+    fs::write(&path, stale_bytes).expect("publish stale pack");
+
+    let error = ExecutionPack::open(&path, identity()).expect_err(
+        "stale section schema version at persisted boundary must fail with rebuild suggestion",
+    );
+    let err_msg = error.to_string();
+    assert!(
+        err_msg.contains("uses schema 1"),
+        "error must state section schema version mismatch; got: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("keyhog compile-execution-packs to rebuild"),
+        "error must suggest rebuild command; got: {err_msg}"
+    );
+}
+
+#[test]
+fn runtime_rejects_pack_with_declared_length_mismatch() {
+    let compiled = compile_execution_pack(ExecutionPackCompileInput {
+        identity: identity(),
+        sections: &sections(),
+    })
+    .expect("compile pack");
+
+    let mut tampered_bytes = compiled.as_bytes().to_vec();
+    let fake_len = (tampered_bytes.len() + 100) as u64;
+    tampered_bytes[16..24].copy_from_slice(&fake_len.to_le_bytes());
+
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("length_mismatch.khpack");
+    fs::write(&path, tampered_bytes).expect("publish pack");
+
+    let error = ExecutionPack::open(&path, identity())
+        .expect_err("pack with declared length mismatch must be rejected");
+    let err_msg = error.to_string();
+    assert!(
+        err_msg.contains("declares"),
+        "error message must mention declared length mismatch; got: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("bytes but maps"),
+        "error message must state mapped bytes mismatch; got: {err_msg}"
+    );
+}
