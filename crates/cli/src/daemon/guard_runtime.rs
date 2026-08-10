@@ -732,4 +732,85 @@ mod tests {
         rt.set_scanner_idle_timeout(999_999);
         assert_eq!(rt.scanner_residency(), "resident");
     }
+
+    #[test]
+    fn restore_root_preserves_metadata_but_resets_state() {
+        let rt = GuardRuntime::new();
+        let record = keyhog_core::guard_state::GuardRootRecord {
+            canonical_path: b"/restored/repo".to_vec(),
+            filesystem_identity: test_fs_identity(),
+            mode: GuardRootMode::Repo,
+            state: keyhog_core::guard_state::GuardRootState::Current,
+            terminal_sequence: 42,
+            accepted_event_sequence: 10,
+            completed_event_sequence: 8,
+            initial_reconciliation_time: Some(1000),
+            last_reconciliation_time: Some(2000),
+            backend_route_label: "scalar-cpu".to_string(),
+            last_receipt: None,
+        };
+        rt.restore_root(record.clone()).expect("restore root");
+
+        // The restored root should be in the registry.
+        let loaded = rt.root_record(b"/restored/repo").expect("root exists");
+        // Metadata should be preserved.
+        assert_eq!(loaded.canonical_path, record.canonical_path);
+        assert_eq!(loaded.filesystem_identity, record.filesystem_identity);
+        assert_eq!(loaded.mode, record.mode);
+        assert_eq!(loaded.terminal_sequence, record.terminal_sequence);
+        // The restore_root method itself preserves state; the caller
+        // (server.rs) is responsible for resetting to Stopped.
+        assert_eq!(loaded.state, keyhog_core::guard_state::GuardRootState::Current);
+    }
+
+    #[test]
+    fn restore_root_rejects_duplicate() {
+        let rt = GuardRuntime::new();
+        let record = keyhog_core::guard_state::GuardRootRecord {
+            canonical_path: b"/dup/repo".to_vec(),
+            filesystem_identity: test_fs_identity(),
+            mode: GuardRootMode::Repo,
+            state: keyhog_core::guard_state::GuardRootState::Stopped,
+            terminal_sequence: 0,
+            accepted_event_sequence: 0,
+            completed_event_sequence: 0,
+            initial_reconciliation_time: None,
+            last_reconciliation_time: None,
+            backend_route_label: String::new(),
+            last_receipt: None,
+        };
+        rt.restore_root(record.clone()).expect("first restore");
+        let result = rt.restore_root(record);
+        assert!(result.is_err(), "duplicate restore should fail");
+    }
+
+    #[test]
+    fn restore_root_then_reconcile_transitions_to_indexing() {
+        let rt = GuardRuntime::new();
+        // Simulate a restart: restore a root as Stopped.
+        let record = keyhog_core::guard_state::GuardRootRecord {
+            canonical_path: b"/restart/repo".to_vec(),
+            filesystem_identity: test_fs_identity(),
+            mode: GuardRootMode::Repo,
+            state: keyhog_core::guard_state::GuardRootState::Stopped,
+            terminal_sequence: 5,
+            accepted_event_sequence: 0,
+            completed_event_sequence: 0,
+            initial_reconciliation_time: None,
+            last_reconciliation_time: None,
+            backend_route_label: String::new(),
+            last_receipt: None,
+        };
+        rt.restore_root(record).expect("restore");
+
+        // A stopped root should be able to transition to Indexing
+        // via the normal reconcile flow.
+        let transition = GuardTransition::ReconciliationStarted;
+        let result = rt.transition_root(b"/restart/repo", &transition);
+        assert!(result.is_ok(), "stopped root should transition to indexing");
+        assert_eq!(
+            rt.root_state(b"/restart/repo"),
+            Some(keyhog_core::guard_state::GuardRootState::Indexing)
+        );
+    }
 }
