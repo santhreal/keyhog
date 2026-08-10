@@ -4,6 +4,7 @@ use super::filter::FilesystemWalkConfig;
 use codewalk::FileEntry;
 use keyhog_core::SourceError;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 #[cfg(unix)]
 use std::cmp::Ordering;
@@ -181,7 +182,7 @@ fn configured_walk_builder(root: &Path, config: &FilesystemWalkConfig) -> ignore
     builder
 }
 
-fn validate_walk_root(root: &Path) -> Result<(), String> {
+fn validate_walk_root(root: &Path, tracker: Option<&DiscoveryTracker>) -> Result<(), String> {
     let mut current = PathBuf::new();
     for component in root.components() {
         current.push(component.as_os_str());
@@ -192,6 +193,11 @@ fn validate_walk_root(root: &Path) -> Result<(), String> {
                 | std::path::Component::CurDir
         ) {
             continue;
+        }
+        if let Some(tracker) = tracker {
+            tracker
+                .root_components_inspected
+                .fetch_add(1, AtomicOrdering::Relaxed);
         }
         let metadata = std::fs::symlink_metadata(&current).map_err(|error| {
             format!(
@@ -226,11 +232,28 @@ fn metadata_walk_result(
     root: &Path,
     config: &FilesystemWalkConfig,
     result: Result<ignore::DirEntry, ignore::Error>,
+    tracker: Option<&DiscoveryTracker>,
 ) -> Option<MetadataWalkResult> {
     let entry = match result {
         Ok(entry) => entry,
-        Err(error) => return Some(Err(error.to_string())),
+        Err(error) => {
+            if let Some(tracker) = tracker {
+                tracker.errors.fetch_add(1, AtomicOrdering::Relaxed);
+            }
+            return Some(Err(error.to_string()));
+        }
     };
+    if entry
+        .file_type()
+        .is_some_and(|file_type| file_type.is_dir())
+    {
+        if let Some(tracker) = tracker {
+            tracker
+                .directories_seen
+                .fetch_add(1, AtomicOrdering::Relaxed);
+        }
+        return None;
+    }
     if !entry
         .file_type()
         .is_some_and(|file_type| file_type.is_file())
@@ -242,31 +265,66 @@ fn metadata_walk_result(
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
         return None;
     }
-    Some(
-        std::fs::metadata(&path)
-            .map(|metadata| FileEntry {
-                path: path.clone(),
+    if let Some(tracker) = tracker {
+        tracker
+            .file_metadata_requests
+            .fetch_add(1, AtomicOrdering::Relaxed);
+    }
+    Some(match std::fs::metadata(&path) {
+        Ok(metadata) => {
+            if let Some(tracker) = tracker {
+                tracker.files_admitted.fetch_add(1, AtomicOrdering::Relaxed);
+            }
+            Ok(FileEntry {
+                path,
                 size: metadata.len(),
                 is_binary: false,
             })
-            .map_err(|error| format!("'{}': {error}", path.display())),
-    )
+        }
+        Err(error) => {
+            if let Some(tracker) = tracker {
+                tracker.errors.fetch_add(1, AtomicOrdering::Relaxed);
+            }
+            Err(format!("'{}': {error}", path.display()))
+        }
+    })
 }
 
-pub(super) fn walk_metadata(
+pub(super) fn walk_metadata_tracked(
     root: &Path,
     config: &FilesystemWalkConfig,
+    tracker: &DiscoveryTracker,
+    visit: impl FnMut(MetadataWalkResult) -> bool,
+) {
+    walk_metadata_tracked_opt(root, config, Some(tracker), visit);
+}
+
+fn walk_metadata_tracked_opt(
+    root: &Path,
+    config: &FilesystemWalkConfig,
+    tracker: Option<&DiscoveryTracker>,
     mut visit: impl FnMut(MetadataWalkResult) -> bool,
 ) {
-    if let Err(error) = validate_walk_root(root) {
+    if let Err(error) = validate_walk_root(root, tracker) {
+        if let Some(tracker) = tracker {
+            tracker.errors.fetch_add(1, AtomicOrdering::Relaxed);
+        }
         visit(Err(error));
         return;
     }
     for result in configured_walk_builder(root, config).build() {
-        let Some(mapped) = metadata_walk_result(root, config, result) else {
+        if let Some(tracker) = tracker {
+            tracker
+                .walk_entries_seen
+                .fetch_add(1, AtomicOrdering::Relaxed);
+        }
+        let Some(mapped) = metadata_walk_result(root, config, result, tracker) else {
             continue;
         };
         if !visit(mapped) {
+            if let Some(tracker) = tracker {
+                tracker.early_stops.fetch_add(1, AtomicOrdering::Relaxed);
+            }
             break;
         }
     }
@@ -281,6 +339,7 @@ pub(super) fn collect_unbounded_sorted(
     root: &Path,
     config: &FilesystemWalkConfig,
     has_ignore_patterns: bool,
+    tracker: &DiscoveryTracker,
 ) -> (SortedEntries, Vec<SourceError>, usize, u64) {
     let _walk = crate::profile::walk_span();
 
@@ -312,7 +371,7 @@ pub(super) fn collect_unbounded_sorted(
     let can_walk = true;
 
     if can_walk {
-        walk_metadata(root, config, |result| {
+        walk_metadata_tracked(root, config, tracker, |result| {
             match result {
                 Ok(entry) => {
                     let size = entry.size;
@@ -895,4 +954,112 @@ fn metadata_limit_error() -> SourceError {
         "filesystem discovery metadata exceeded the supported 4 GiB path table; remaining files were not scanned"
             .to_owned(),
     )
+}
+/// Source-level counters emitted by the production metadata discovery walk.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DiscoveryCounts {
+    pub root_components_inspected: u64,
+    pub walk_entries_seen: u64,
+    pub directories_seen: u64,
+    pub file_metadata_requests: u64,
+    pub files_admitted: u64,
+    pub errors: u64,
+    pub early_stops: u64,
+}
+
+#[derive(Debug, Default)]
+pub(super) struct DiscoveryTracker {
+    root_components_inspected: AtomicU64,
+    walk_entries_seen: AtomicU64,
+    directories_seen: AtomicU64,
+    file_metadata_requests: AtomicU64,
+    files_admitted: AtomicU64,
+    errors: AtomicU64,
+    early_stops: AtomicU64,
+}
+
+impl DiscoveryTracker {
+    pub(super) fn snapshot(&self) -> DiscoveryCounts {
+        DiscoveryCounts {
+            root_components_inspected: self.root_components_inspected.load(AtomicOrdering::Relaxed),
+            walk_entries_seen: self.walk_entries_seen.load(AtomicOrdering::Relaxed),
+            directories_seen: self.directories_seen.load(AtomicOrdering::Relaxed),
+            file_metadata_requests: self.file_metadata_requests.load(AtomicOrdering::Relaxed),
+            files_admitted: self.files_admitted.load(AtomicOrdering::Relaxed),
+            errors: self.errors.load(AtomicOrdering::Relaxed),
+            early_stops: self.early_stops.load(AtomicOrdering::Relaxed),
+        }
+    }
+
+    pub(super) fn record_error(&self) {
+        self.errors.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+
+    pub(super) fn record_file_metadata(&self, admitted: bool) {
+        self.file_metadata_requests
+            .fetch_add(1, AtomicOrdering::Relaxed);
+        if admitted {
+            self.files_admitted.fetch_add(1, AtomicOrdering::Relaxed);
+        } else {
+            self.errors.fetch_add(1, AtomicOrdering::Relaxed);
+        }
+    }
+
+    pub(super) fn reset(&self) {
+        self.root_components_inspected
+            .store(0, AtomicOrdering::Relaxed);
+        self.walk_entries_seen.store(0, AtomicOrdering::Relaxed);
+        self.directories_seen.store(0, AtomicOrdering::Relaxed);
+        self.file_metadata_requests
+            .store(0, AtomicOrdering::Relaxed);
+        self.files_admitted.store(0, AtomicOrdering::Relaxed);
+        self.errors.store(0, AtomicOrdering::Relaxed);
+        self.early_stops.store(0, AtomicOrdering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tracked_walk_counts_production_events_and_early_termination() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let sub_dir = temp_dir.path().join("sub");
+        std::fs::create_dir(&sub_dir).unwrap();
+        std::fs::write(temp_dir.path().join("sample1.txt"), "hello world").unwrap();
+        std::fs::write(sub_dir.join("sample2.txt"), "nested hello").unwrap();
+
+        let tracker = DiscoveryTracker::default();
+        let config = super::super::filter::walker_config(0, &[], true);
+        walk_metadata_tracked(temp_dir.path(), &config, &tracker, |_| false);
+
+        let counts = tracker.snapshot();
+        assert!(counts.root_components_inspected > 0);
+        assert!(counts.walk_entries_seen >= 2);
+        assert!(counts.directories_seen >= 1);
+        assert_eq!(counts.file_metadata_requests, 1);
+        assert_eq!(counts.files_admitted, 1);
+        assert_eq!(counts.errors, 0);
+        assert_eq!(counts.early_stops, 1);
+    }
+
+    #[test]
+    fn tracked_walk_records_root_validation_failure_without_walker_events() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let missing = temp_dir.path().join("missing");
+        let tracker = DiscoveryTracker::default();
+        let config = super::super::filter::walker_config(0, &[], true);
+        let mut errors = Vec::new();
+        walk_metadata_tracked(&missing, &config, &tracker, |result| {
+            errors.push(result.unwrap_err());
+            true
+        });
+
+        let counts = tracker.snapshot();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.walk_entries_seen, 0);
+        assert_eq!(counts.files_admitted, 0);
+    }
 }

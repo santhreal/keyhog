@@ -145,6 +145,7 @@ toml = { workspace = true }
 base64 = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+goblin = { workspace = true }
 io-uring = { workspace = true }
 # CUDA is the primary GPU backend on Linux when the `gpu` feature is on. The
 # crate loads libcuda/libnvrtc dynamically at runtime (cudarc dynamic-loading)

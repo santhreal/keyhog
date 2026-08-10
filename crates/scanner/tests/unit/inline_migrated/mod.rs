@@ -1,5 +1,6 @@
 //! Migrated from src/ #[cfg(test)] modules (KH-GAP-004).
 
+mod batch_topology_inline;
 mod bigram_bloom_inline;
 mod boundary_inline;
 mod caesar_inline;
@@ -17,6 +18,7 @@ mod parsers_inline;
 mod probabilistic_gate_inline;
 mod reverse_inline;
 mod scan_filters_inline;
+mod self_test_inline;
 mod shape_canonical_inline;
 mod shape_inline;
 mod simd_inline;

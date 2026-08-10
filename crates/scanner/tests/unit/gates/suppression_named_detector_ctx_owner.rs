@@ -200,11 +200,14 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
             && detector_catalog.contains("keyhog_core::load_embedded_detectors_or_fail()"),
         "detector credential shape must be a per-detector DetectorSpec::credential_shape (DET-0), compiled per detector from the detector's own spec, not a Tier-B rules-file list"
     );
+    let from_match_call = process
+        .split("ProcessCandidateSignals::from_match(")
+        .nth(1)
+        .and_then(|s| s.split(");").next())
+        .expect("engine/process.rs must call ProcessCandidateSignals::from_match");
     assert!(
-        (process.contains("detector_plan.credential_shape.as_ref()")
-            || process.contains("credential_shape"))
-            && process.contains("ProcessCandidateSignals::from_match("),
-        "engine/process.rs must pass construction-time detector shape policy into adjudicate"
+        from_match_call.contains("credential_shape"),
+        "engine/process.rs must pass credential_shape into ProcessCandidateSignals::from_match(...)"
     );
     for forbidden in [
         "crate::detector_ids::AWS_ACCESS_KEY",

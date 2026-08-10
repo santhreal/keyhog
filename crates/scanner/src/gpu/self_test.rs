@@ -275,3 +275,140 @@ fn gpu_region_presence_self_test_impl(
     }
     Ok(GpuRegionPresenceSelfTest { peers })
 }
+
+#[cfg(target_os = "linux")]
+fn is_keyhog_compute_symbol(symbol: &str) -> bool {
+    let symbol = symbol.to_ascii_lowercase();
+    let keyhog_owned = symbol.contains("keyhog_scanner")
+        || symbol.contains("keyhog::")
+        || symbol.contains("keyhog_");
+    let compute_primitive = [
+        "dispatch_kernel",
+        "gpu_kernel",
+        "kernel_main",
+        "launch_kernel",
+        "compute_shader",
+    ]
+    .iter()
+    .any(|marker| symbol.contains(marker));
+    let policy_or_test = symbol.contains("verify_gpu_kernel") || symbol.contains("test_gpu_kernel");
+    keyhog_owned && compute_primitive && !policy_or_test
+}
+
+#[cfg(target_os = "linux")]
+fn verify_linked_artifact(path: &std::path::Path) -> Result<(), String> {
+    let bytes = std::fs::read(path).map_err(|error| {
+        format!(
+            "failed to read GPU ownership artifact '{}': {error}",
+            path.display()
+        )
+    })?;
+    let object = goblin::Object::parse(&bytes).map_err(|error| {
+        format!(
+            "failed to parse GPU ownership artifact '{}': {error}",
+            path.display()
+        )
+    })?;
+    let goblin::Object::Elf(elf) = object else {
+        return Err(format!(
+            "GPU ownership artifact '{}' is not a supported ELF executable",
+            path.display()
+        ));
+    };
+    let symbols: Vec<&str> = elf
+        .syms
+        .iter()
+        .filter_map(|symbol| elf.strtab.get_at(symbol.st_name))
+        .chain(
+            elf.dynsyms
+                .iter()
+                .filter_map(|symbol| elf.dynstrtab.get_at(symbol.st_name)),
+        )
+        .collect();
+    if symbols.is_empty() {
+        return Err(format!(
+            "GPU ownership artifact '{}' has no inspectable linked symbols",
+            path.display()
+        ));
+    }
+    if let Some(symbol) = symbols
+        .iter()
+        .copied()
+        .find(|symbol| is_keyhog_compute_symbol(symbol))
+    {
+        return Err(format!(
+            "KeyHog owns prohibited linked GPU compute symbol: {symbol}"
+        ));
+    }
+    if !symbols.iter().any(|symbol| symbol.contains("vyre")) {
+        return Err(format!(
+            "GPU ownership artifact '{}' contains no linked VYRE symbols",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn verify_linked_artifact(path: &std::path::Path) -> Result<(), String> {
+    Err(format!(
+        "linked GPU ownership inspection is unavailable for '{}'; inspect the packaged source tree on this platform",
+        path.display()
+    ))
+}
+
+fn verify_source_artifacts(search_root: &std::path::Path) -> Result<(), String> {
+    let forbidden_extensions = ["wgsl", "ptx", "cu", "spv", "metal", "hlsl"];
+    let mut dirs_to_visit = vec![search_root.to_path_buf()];
+    while let Some(dir) = dirs_to_visit.pop() {
+        let entries = std::fs::read_dir(&dir).map_err(|error| {
+            format!(
+                "failed to enumerate GPU ownership source '{}': {error}",
+                dir.display()
+            )
+        })?;
+        for entry in entries {
+            let path = entry
+                .map_err(|error| format!("failed to enumerate GPU ownership source: {error}"))?
+                .path();
+            if path.is_dir() {
+                if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+                    if !name.starts_with('.') && name != "target" {
+                        dirs_to_visit.push(path);
+                    }
+                }
+            } else if path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| forbidden_extensions.contains(&extension))
+            {
+                return Err(format!(
+                    "KeyHog repository contains prohibited GPU kernel file: {}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Inspect a linked executable or packaged source tree using the ownership policy.
+pub fn verify_gpu_kernel_ownership_separation_at_path(
+    artifact: &std::path::Path,
+) -> Result<(), String> {
+    if artifact.is_file() {
+        verify_linked_artifact(artifact)
+    } else {
+        verify_source_artifacts(artifact)
+    }
+}
+
+/// Confirm the running scanner and its packaged source own no GPU compute kernels.
+pub fn verify_gpu_kernel_ownership_separation() -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    verify_linked_artifact(
+        &std::env::current_exe()
+            .map_err(|error| format!("failed to locate running scanner artifact: {error}"))?,
+    )?;
+    verify_source_artifacts(std::path::Path::new(env!("CARGO_MANIFEST_DIR")))
+}

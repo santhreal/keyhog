@@ -181,6 +181,14 @@ impl ReusablePhase1EvidenceCache {
         REUSABLE_EVIDENCE_MAX_ENTRIES
     }
 
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+        self.entries.shrink_to_fit();
+        self.resident_bytes = 0;
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
     fn get(
         &mut self,
         fingerprint: [u8; 32],

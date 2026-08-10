@@ -2859,6 +2859,7 @@ dependencies = [
  "dirs",
  "fancy-regex",
  "flate2",
+ "goblin",
  "hex",
  "hex-simd",
  "hyperscan",

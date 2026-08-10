@@ -19,6 +19,7 @@
 - Fail closed on out-of-bounds lookups in hot-pattern classification.
 - Return immediately from windowed processing after an expired deadline, with bounded deadline regressions that tolerate scheduler variance.
 - Keep the deterministic CPU library constructor and expose runtime-policy GPU probing through `compile_with_runtime_policy`.
+- Bound batch lane memory by the largest chunk, expose `finish_partition` to release cross-partition caches, retain production GPU overlap evidence through dispatch retirement, and verify that linked or packaged GPU kernels remain VYRE-owned.
 ## 0.5.68 - 2026-08-05
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.

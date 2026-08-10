@@ -120,6 +120,7 @@ pub(crate) use phase2_hs::hs_prefilter_requires_host_regex as hs_prefilter_requi
 pub(crate) use phase2_hs::Phase2HsEngine;
 mod phase2_prefilter;
 pub(crate) use crate::phase2_truncate;
+#[cfg_attr(not(feature = "simd"), allow(unused_imports))]
 pub(crate) use phase2_prefilter::canonical_phase2_scope_indices;
 mod process;
 pub(crate) use crate::scan_profile as profile;
@@ -232,6 +233,14 @@ pub(crate) fn release_candidate_scratch(values: &mut Vec<(u32, u32)>) {
 const MAX_IDLE_CANDIDATE_SCRATCH_BUFFERS: usize = 4;
 static CANDIDATE_SCRATCH_POOL: std::sync::Mutex<Vec<Vec<(u32, u32)>>> =
     std::sync::Mutex::new(Vec::new());
+
+fn release_idle_candidate_scratch() {
+    CANDIDATE_SCRATCH_POOL
+        .lock()
+        // LAW10: poison recovery still drops every idle scratch allocation.
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+}
 
 pub(crate) fn with_candidate_scratch<R>(f: impl FnOnce(&mut Vec<(u32, u32)>) -> R) -> R {
     let mut values = CANDIDATE_SCRATCH_POOL
@@ -489,6 +498,18 @@ impl CompiledScanner {
     ) -> Option<&Arc<dyn vyre::VyreBackend>> {
         self.backend_state.gpu_backend(backend)
     }
+
+    /// End one caller-defined scan partition.
+    ///
+    /// This clears the only mutable state whose contents cross scan calls:
+    /// fragment reassembly, reusable phase-one evidence, and idle candidate
+    /// scratch. Immutable detector programs and backend residency belong to the
+    /// scanner lifetime, not a partition, and remain available for the next call.
+    pub fn finish_partition(&self) {
+        self.fragment_cache.clear();
+        self.reusable_phase1_evidence.lock().clear();
+        release_idle_candidate_scratch();
+    }
 }
 
 pub struct CompiledScanner {
@@ -677,3 +698,4 @@ const _: () = {
     const fn assert_send_sync<T: Send + Sync>() {}
     let _ = assert_send_sync::<CompiledScanner>; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
 };
+

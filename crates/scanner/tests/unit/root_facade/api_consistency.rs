@@ -205,21 +205,20 @@ fn scan_repeated_invocations_produce_identical_findings() {
 #[test]
 fn empty_chunks_slice_returns_empty_results() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let scanner = scanner(ScanBackend::SimdCpu);
+    let scanner = scanner(ScanBackend::CpuFallback);
     scanner.clear_fragment_cache();
     let r = scanner
-        .scan_chunks_with_backend(&[], ScanBackend::SimdCpu)
+        .scan_chunks_with_backend(&[], ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
     assert!(
         r.is_empty(),
         "empty input slice must return empty result slice"
     );
 }
-
 #[test]
 fn multi_chunk_input_preserves_per_chunk_attribution() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let scanner = scanner(ScanBackend::SimdCpu);
+    let scanner = scanner(ScanBackend::CpuFallback);
     scanner.clear_fragment_cache();
     let chunks = vec![
         make_chunk("noise\n", "a.txt"),
@@ -231,7 +230,7 @@ fn multi_chunk_input_preserves_per_chunk_attribution() {
         ),
     ];
     let results = scanner
-        .scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu)
+        .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
     assert_eq!(
         results.len(),

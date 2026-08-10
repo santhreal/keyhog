@@ -181,7 +181,10 @@ fn try_reserve_inflight_slot(inflight_count: &AtomicUsize, max_inflight_keys: us
     }
 }
 
-async fn verify_group_task_safe(shared: VerifyTaskShared, group: DedupedMatch) -> VerifiedFinding {
+async fn verify_group_task_safe(
+    shared: Arc<VerifyTaskShared>,
+    group: DedupedMatch,
+) -> VerifiedFinding {
     let group_for_error = group.clone();
     match std::panic::AssertUnwindSafe(verify_group_task(shared, group))
         .catch_unwind()
@@ -211,7 +214,7 @@ async fn verify_group_task_safe(shared: VerifyTaskShared, group: DedupedMatch) -
 fn spawn_tracked_verify_task(
     join_set: &mut JoinSet<VerifiedFinding>,
     task_groups: &mut HashMap<TaskId, DedupedMatch>,
-    shared: VerifyTaskShared,
+    shared: Arc<VerifyTaskShared>,
     group: DedupedMatch,
 ) {
     let group_for_error = group.clone();
@@ -282,22 +285,21 @@ pub async fn tracked_join_error_preservation_for_test() -> Option<VerifiedFindin
     }
 }
 
-async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> VerifiedFinding {
-    let global = shared.global_semaphore;
+async fn verify_group_task(shared: Arc<VerifyTaskShared>, group: DedupedMatch) -> VerifiedFinding {
+    let global = &shared.global_semaphore;
     let service_sem = shared
         .service_semaphores
         .get(&*group.service)
         .cloned()
         .unwrap_or_else(|| Arc::new(Semaphore::new(shared.max_concurrent_per_service))); // LAW10: absent from prebuilt map => configured max_concurrent_per_service (Tier-A knob), one owner
-    let client = shared.client;
+    let client = &shared.client;
     let detector = shared.detectors.get(&*group.detector_id).cloned();
     let timeout = shared.timeout;
 
-    let cache = shared.cache;
-    let inflight = shared.inflight;
-    let inflight_count = shared.inflight_count;
+    let cache = &shared.cache;
+    let inflight = &shared.inflight;
+    let inflight_count = &shared.inflight_count;
     let max_inflight_keys = shared.max_inflight_keys;
-
     let Ok(_global_permit) = keyhog_profile::instrument_future(
         keyhog_profile::Stage::LiveVerification,
         global.acquire(),
@@ -520,7 +522,7 @@ impl VerificationEngine {
     pub async fn verify_all(&self, groups: Vec<DedupedMatch>) -> Vec<VerifiedFinding> {
         let max_active = self.global_semaphore.available_permits().max(1);
         let total = groups.len();
-        let shared = VerifyTaskShared {
+        let shared = Arc::new(VerifyTaskShared {
             global_semaphore: self.global_semaphore.clone(),
             service_semaphores: self.service_semaphores.clone(),
             max_concurrent_per_service: self.max_concurrent_per_service,
@@ -537,10 +539,10 @@ impl VerificationEngine {
             allow_script_verify: self.allow_script_verify,
             proxy_in_use: self.proxy_in_use,
             oob_session: self.oob_session.clone(),
-        };
-        let mut pending = groups.into_iter();
+        });
         let mut join_set = JoinSet::new();
         let mut task_groups = HashMap::new();
+        let mut pending = groups.into_iter();
 
         while join_set.len() < max_active {
             // Profile: queue depth at each scheduling decision, pending plus in-flight.

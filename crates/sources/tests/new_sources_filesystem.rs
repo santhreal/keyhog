@@ -93,6 +93,59 @@ fn walks_and_delivers_file_content() {
 }
 
 #[test]
+fn production_discovery_exposes_source_event_counters() {
+    let dir = tempfile::tempdir().unwrap();
+    let nested = dir.path().join("nested");
+    fs::create_dir(&nested).unwrap();
+    fs::write(dir.path().join("one.env"), "TOKEN=one\n").unwrap();
+    fs::write(nested.join("two.env"), "TOKEN=two\n").unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let chunks = collect(&source);
+    assert_eq!(chunks.len(), 2);
+    let counts = source.discovery_counts();
+    assert!(counts.root_components_inspected > 0);
+    assert!(counts.walk_entries_seen >= 4);
+    assert!(counts.directories_seen >= 2);
+    assert_eq!(counts.file_metadata_requests, 2);
+    assert_eq!(counts.files_admitted, 2);
+    assert_eq!(counts.errors, 0);
+    assert_eq!(counts.early_stops, 0);
+}
+
+#[test]
+fn production_discovery_counters_record_injected_root_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = FilesystemSource::new(dir.path().join("missing"));
+    let rows: Vec<_> = source.chunks().collect();
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].is_err());
+    assert_eq!(
+        source.discovery_counts(),
+        keyhog_sources::DiscoveryCounts {
+            errors: 1,
+            ..Default::default()
+        }
+    );
+}
+
+#[test]
+fn production_discovery_counts_explicit_file_admission_sibling() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("only.env");
+    fs::write(&file, "TOKEN=only\n").unwrap();
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_include_paths(vec![file]);
+
+    let chunks = collect(&source);
+    assert_eq!(chunks.len(), 1);
+    let counts = source.discovery_counts();
+    assert_eq!(counts.walk_entries_seen, 0);
+    assert_eq!(counts.file_metadata_requests, 1);
+    assert_eq!(counts.files_admitted, 1);
+    assert_eq!(counts.errors, 0);
+}
+
+#[test]
 fn walks_nested_directories() {
     let dir = tempfile::tempdir().unwrap();
     let nested = dir.path().join("a").join("b").join("c");
