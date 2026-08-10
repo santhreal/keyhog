@@ -131,7 +131,7 @@ async fn run_remove(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
         }
     };
 
-    let canonical = canonicalize_root(&root)?;
+    let canonical = resolve_root_for_control(&root)?;
     let request = Request::GuardRemove {
         root: canonical,
     };
@@ -187,7 +187,7 @@ async fn run_list() -> anyhow::Result<ExitCode> {
                     if roots.len() == 1 { "" } else { "s" }
                 );
                 for entry in &roots {
-                    eprintln!(
+                    println!(
                         "  {}  {}  seq={}",
                         entry.root,
                         entry.state,
@@ -233,7 +233,7 @@ async fn run_status(
         }
     };
 
-    let canonical = canonicalize_root(&root)?;
+    let canonical = resolve_root_for_control(&root)?;
     let request = Request::GuardStatus {
         root: canonical,
     };
@@ -302,43 +302,43 @@ async fn run_status(
                 println!("{json}");
             } else {
                 let palette = style::for_stderr();
-                eprintln!("root:           {}", daemon_root);
-                eprintln!("mode:           {mode}");
-                eprintln!("state:          {state}");
-                eprintln!("sequence:       {terminal_sequence}");
-                eprintln!("accepted seq:   {accepted_event_sequence}");
-                eprintln!("completed seq:  {completed_event_sequence}");
-                eprintln!("pending events: {pending_events}");
-                eprintln!("files scanned:  {files_scanned}");
-                eprintln!("bytes scanned:  {bytes_scanned}");
-                eprintln!("cache hits:     {attestation_hits}");
-                eprintln!("cache misses:   {attestation_misses}");
-                eprintln!("findings:       {findings_count}");
-                eprintln!("coverage gaps:  {coverage_gaps}");
+                println!("root:           {}", daemon_root);
+                println!("mode:           {mode}");
+                println!("state:          {state}");
+                println!("sequence:       {terminal_sequence}");
+                println!("accepted seq:   {accepted_event_sequence}");
+                println!("completed seq:  {completed_event_sequence}");
+                println!("pending events: {pending_events}");
+                println!("files scanned:  {files_scanned}");
+                println!("bytes scanned:  {bytes_scanned}");
+                println!("cache hits:     {attestation_hits}");
+                println!("cache misses:   {attestation_misses}");
+                println!("findings:       {findings_count}");
+                println!("coverage gaps:  {coverage_gaps}");
                 if let Some(t) = initial_reconciliation_time {
-                    eprintln!("initial recon:  {t}");
+                    println!("initial recon:  {t}");
                 }
                 if let Some(t) = last_reconciliation_time {
-                    eprintln!("last recon:     {t}");
+                    println!("last recon:     {t}");
                 }
-                eprintln!("residency:      {scanner_residency}");
-                eprintln!("backend route:  {backend_route_label}");
+                println!("residency:      {scanner_residency}");
+                println!("backend route:  {backend_route_label}");
                 if !build_identity_short.is_empty() {
-                    eprintln!("build digest:   {build_identity_short}");
+                    println!("build digest:   {build_identity_short}");
                 }
                 if !detector_digest_short.is_empty() {
-                    eprintln!("detector:       {detector_digest_short}");
+                    println!("detector:       {detector_digest_short}");
                 }
                 if !suppression_digest_short.is_empty() {
-                    eprintln!("suppression:    {suppression_digest_short}");
+                    println!("suppression:    {suppression_digest_short}");
                 }
                 if !config_digest_short.is_empty() {
-                    eprintln!("config:         {config_digest_short}");
+                    println!("config:         {config_digest_short}");
                 }
-                eprintln!("autoroute:      {autoroute_evidence_status}");
-                eprintln!("store schema:   {store_schema_version}");
+                println!("autoroute:      {autoroute_evidence_status}");
+                println!("store schema:   {store_schema_version}");
                 if !store_path.is_empty() {
-                    eprintln!("store path:     {store_path}");
+                    println!("store path:     {store_path}");
                 }
                 if state == "degraded" || state == "stale-policy" {
                     eprintln!(
@@ -347,12 +347,12 @@ async fn run_status(
                     );
                 }
             }
-            // Exit 13 for degraded/stale/stopped/indexing states.
-            // Exit 1 for blocked state (unsuppressed findings).
-            // Exit 1 for any state with findings_count > 0.
+            // Exit 13 for any state that is not a proven-clean Current root.
+            // Dirty means events were observed but not yet reconciled, so it
+            // must not report success. Exit 1 for blocked / findings.
             if matches!(
                 state.as_str(),
-                "degraded" | "stale-policy" | "stopped" | "indexing"
+                "degraded" | "stale-policy" | "stopped" | "indexing" | "dirty"
             ) {
                 Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
             } else if state == "blocked" || findings_count > 0 {
@@ -542,4 +542,35 @@ fn canonicalize_root(root: &std::path::Path) -> anyhow::Result<String> {
         .into_os_string()
         .into_string()
         .map_err(|s| anyhow::anyhow!("guard: root path is not valid UTF-8: {:?}", s))
+}
+
+/// Resolve a root for daemon control frames when the directory may already
+/// be gone (remove / status of a deleted root). Prefer canonicalize; on
+/// NotFound fall back to an absolute lexical path so the daemon can still
+/// match the registered key.
+fn resolve_root_for_control(root: &std::path::Path) -> anyhow::Result<String> {
+    match std::fs::canonicalize(root) {
+        Ok(canonical) => canonical
+            .into_os_string()
+            .into_string()
+            .map_err(|s| anyhow::anyhow!("guard: root path is not valid UTF-8: {:?}", s)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            let absolute = if root.is_absolute() {
+                root.to_path_buf()
+            } else {
+                std::env::current_dir()
+                    .map_err(|e| anyhow::anyhow!("guard: cannot resolve cwd for {}: {}", root.display(), e))?
+                    .join(root)
+            };
+            absolute
+                .into_os_string()
+                .into_string()
+                .map_err(|s| anyhow::anyhow!("guard: root path is not valid UTF-8: {:?}", s))
+        }
+        Err(err) => Err(anyhow::anyhow!(
+            "guard: cannot resolve {}: {}",
+            root.display(),
+            err
+        )),
+    }
 }

@@ -84,9 +84,9 @@ keyhog guard remove /path/to/repo
 
 | Code | Condition |
 |---|---|
-| 0 | The root is `current` or `dirty`. |
+| 0 | The root is `current`. |
 | 1 | The root is `blocked` or has unsuppressed findings. |
-| 13 | The root is `stopped`, `indexing`, `degraded`, or `stale-policy`. |
+| 13 | The root is `dirty`, `stopped`, `indexing`, `degraded`, or `stale-policy`. |
 
 ## Scanner residency
 

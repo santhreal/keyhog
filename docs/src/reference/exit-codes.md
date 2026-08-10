@@ -250,9 +250,9 @@ state mapping:
 
 | Guard state | Exit code | Condition |
 |---|---|---|
-| `current` or `dirty` | `0` | The root is clean or has pending events. |
+| `current` | `0` | The root is proven clean. |
 | `blocked` | `1` | Unsuppressed findings were detected. |
-| `stopped`, `indexing`, `degraded`, `stale-policy` | `13` | The root is not ready or coverage is incomplete. |
+| `dirty`, `stopped`, `indexing`, `degraded`, `stale-policy` | `13` | The root is not proven clean or coverage is incomplete. |
 
 `guard rebuild` uses the same mapping after re-adding the root. A rebuild that
 completes with `current` returns `0`; a rebuild that leaves the root `stopped`

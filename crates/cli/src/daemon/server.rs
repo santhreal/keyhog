@@ -880,13 +880,72 @@ fn process_guard_events(state: &ServerState, root: &Path, events: Vec<keyhog_sou
 fn is_system_path(path: &std::path::Path) -> bool {
     const SYSTEM_PREFIXES: &[&str] = &[
         "/etc", "/proc", "/sys", "/dev", "/boot", "/run", "/var/log",
-        "/usr", "/bin", "/sbin", "/lib", "/lib64",
+        "/usr", "/bin", "/sbin", "/lib", "/lib64", "/var/lib", "/opt", "/srv",
+        "/credentials",
     ];
     let path_str = path.to_string_lossy();
-    SYSTEM_PREFIXES.iter().any(|prefix| {
+    if path_str.as_ref() == "/" {
+        return true;
+    }
+    if SYSTEM_PREFIXES.iter().any(|prefix| {
         path_str.as_ref() == *prefix || path_str.starts_with(&format!("{}/", prefix))
-    })
+    }) {
+        return true;
+    }
+    // Refuse the operator home directory itself and known credential stores.
+    // Project checkouts under $HOME remain allowed.
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            if path_str.as_ref() == home {
+                return true;
+            }
+            const HOME_DENY: &[&str] = &[
+                ".ssh",
+                ".aws",
+                ".gnupg",
+                ".docker",
+                ".kube",
+                ".config/gcloud",
+                ".config/gh",
+                ".azure",
+            ];
+            for suffix in HOME_DENY {
+                let denied = format!("{home}/{suffix}");
+                if path_str.as_ref() == denied || path_str.starts_with(&format!("{denied}/")) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
+#[cfg(test)]
+mod system_path_tests {
+    use super::is_system_path;
+    use std::path::Path;
+
+    #[test]
+    fn rejects_filesystem_root_and_system_prefixes() {
+        assert!(is_system_path(Path::new("/")));
+        assert!(is_system_path(Path::new("/etc")));
+        assert!(is_system_path(Path::new("/etc/passwd")));
+        assert!(is_system_path(Path::new("/var/lib/foo")));
+        assert!(is_system_path(Path::new("/credentials")));
+    }
+
+    #[test]
+    fn rejects_home_and_credential_stores() {
+        let home = std::env::var("HOME").expect("HOME");
+        assert!(is_system_path(Path::new(&home)));
+        assert!(is_system_path(Path::new(&format!("{home}/.ssh"))));
+        assert!(is_system_path(Path::new(&format!("{home}/.aws/credentials"))));
+        assert!(is_system_path(Path::new(&format!("{home}/.gnupg"))));
+        // Project trees under home remain allowed.
+        assert!(!is_system_path(Path::new(&format!("{home}/src/keyhog"))));
+    }
+}
+
+
 
 async fn run_accept_loop(
     listener: UnixListener,
@@ -1919,6 +1978,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     guard_schema_version: 0,
                     report_semantics_version: 0,
                 }),
+                // Placeholder; replaced with the root's post-update sequence.
                 terminal_sequence: 0,
             };
             // Update the root record with the receipt. The root was
@@ -1929,16 +1989,22 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 Ok(p) => p,
                 Err(_) => std::path::PathBuf::from(&txn.repo_path),
             };
-            if let Err(e) = state.guard.update_root_after_commit(std::os::unix::ffi::OsStrExt::as_bytes(commit_root.as_os_str()), receipt) {
+            let commit_root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(commit_root.as_os_str());
+            if let Err(e) = state.guard.update_root_after_commit(commit_root_bytes, receipt) {
                 tracing::warn!(
                     "daemon: guard commit finish: failed to update root {}: {}",
                     commit_root.display(),
                     e
                 );
             }
+            let terminal_sequence = state
+                .guard
+                .root_record(commit_root_bytes)
+                .map(|record| record.terminal_sequence)
+                .unwrap_or(0);
             // Persist the updated root record to the durable store.
             if let Some(store) = &state.guard_store {
-                if let Some(record) = state.guard.root_record(std::os::unix::ffi::OsStrExt::as_bytes(commit_root.as_os_str())) {
+                if let Some(record) = state.guard.root_record(commit_root_bytes) {
                     if let Err(e) = store.save_root(&record) {
                         tracing::warn!(
                             "daemon: guard commit finish: failed to persist root {}: {}",
@@ -1959,7 +2025,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 findings_count: txn.findings_count,
                 coverage_gaps: txn.coverage_gaps,
                 terminal_state: terminal_state.label().to_string(),
-                terminal_sequence: 0,
+                terminal_sequence,
             }
         }
         Request::GuardAdd { root, mode } => {

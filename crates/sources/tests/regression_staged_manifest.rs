@@ -88,6 +88,8 @@ fn manifest_captures_deletion() {
     assert_eq!(manifest.entries[0].kind, StagedEntryKind::Deletion);
     assert!(manifest.entries[0].object_oid.is_empty());
     assert_eq!(manifest.entries[0].object_size, 0);
+    assert_eq!(manifest.total_objects, 0);
+    assert_eq!(manifest.total_bytes, 0);
 }
 
 #[test]
@@ -186,7 +188,11 @@ fn manifest_total_bytes_excludes_deletions() {
 
     let manifest = StagedManifest::acquire(&repo).unwrap();
     assert!(manifest.total_bytes > 0);
-    assert_eq!(manifest.total_objects, 2);
+    assert_eq!(manifest.entries.len(), 2, "one deletion and one file entry");
+    assert_eq!(
+        manifest.total_objects, 1,
+        "total_objects must count only non-deletion entries"
+    );
 }
 
 #[test]

@@ -57,15 +57,19 @@ fn guard_lifecycle_add_status_list_remove() {
         String::from_utf8_lossy(&status.stdout),
         String::from_utf8_lossy(&status.stderr)
     );
-    let status_err = String::from_utf8_lossy(&status.stderr);
+    let status_out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&status.stdout),
+        String::from_utf8_lossy(&status.stderr)
+    );
     // After reconciliation, the root should be in a terminal state
     // (current, dirty, or blocked), not stopped or indexing.
     assert!(
-        status_err.contains("current")
-            || status_err.contains("dirty")
-            || status_err.contains("blocked"),
-        "guard status should show a reconciled state (current/dirty/blocked) in stderr: got: {}",
-        status_err
+        status_out.contains("current")
+            || status_out.contains("dirty")
+            || status_out.contains("blocked"),
+        "guard status should show a reconciled state (current/dirty/blocked): got: {}",
+        status_out
     );
 
     // 3. List roots.

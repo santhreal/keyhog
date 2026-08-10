@@ -1208,7 +1208,10 @@ pub(crate) fn staged_manifest_acquire(
         return Err(error);
     }
 
-    let total_objects = entries.len() as u64;
+    let total_objects = entries
+        .iter()
+        .filter(|entry| entry.kind != manifest::StagedEntryKind::Deletion)
+        .count() as u64;
     let mut manifest = manifest::StagedManifest {
         hash_algorithm,
         index_fingerprint: String::new(),
