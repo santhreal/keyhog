@@ -229,6 +229,7 @@ fn scan_paths(scanner: &CompiledScanner, chunk: &Chunk) -> PathResults {
                         decode_backend: ScanBackend::CpuFallback,
                         phase2_plain_localizer,
                         phase2_keyword_localizer,
+                        gpu_pipeline_depth: 1,
                     },
                 );
                 localized.push((
@@ -252,6 +253,7 @@ fn scan_paths(scanner: &CompiledScanner, chunk: &Chunk) -> PathResults {
             decode_backend: ScanBackend::CpuFallback,
             phase2_plain_localizer: true,
             phase2_keyword_localizer: true,
+            gpu_pipeline_depth: 1,
         },
     );
     // Fully-unoptimized baseline: every phase-2 pattern runs the legacy
@@ -267,6 +269,7 @@ fn scan_paths(scanner: &CompiledScanner, chunk: &Chunk) -> PathResults {
             decode_backend: ScanBackend::CpuFallback,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
         },
     );
     assert!(scanner.default_execution_route().phase2_plain_localizer);

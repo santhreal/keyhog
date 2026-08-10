@@ -9,16 +9,17 @@
 KeyHog uses measured evidence to select an execution route for a calibrated
 workload key: Hyperscan/SIMD, scalar CPU, CUDA, native Metal, or WGPU, each
 measured with all four combinations of phase-two plain-pattern and
-keyword-anchor localization. It does not guess from a device name or a
-hard-coded size threshold. Autoroute is not a fallback hierarchy. During
-calibration KeyHog measures every eligible execution class exposed by that
-scanner, rejects candidates whose complete redacted raw-match identity differs
-from the independent scalar reference, and records the fastest survivor for the
-measured representative. Optional SIMD, CUDA, Metal, and WGPU engines are
-candidates, never correctness oracles. Every executable GPU path is acquired
-and measured independently. One driver never substitutes for another. The
-parity identity
-covers chunk membership; detector
+keyword-anchor localization. GPU routes also measure every resident pipeline
+depth the acquired peer declares eligible. Synchronous peers expose depth one;
+asynchronous peers expose depths one through four. It does not guess from a
+device name or a hard-coded size threshold. Autoroute is not a fallback
+hierarchy. During calibration KeyHog measures every eligible execution class
+exposed by that scanner, rejects candidates whose complete redacted raw-match
+identity differs from the independent scalar reference, and records the fastest
+survivor for the measured representative. Optional SIMD, CUDA, Metal, and WGPU
+engines are candidates, never correctness oracles. Every executable GPU path is
+acquired and measured independently. One driver never substitutes for another.
+The parity identity covers chunk membership; detector
 id/name/service/severity; exact credential, stored-hash, and companion identity;
 full source/history location; entropy; confidence; and finding multiplicity.
 Mismatch diagnostics expose only field names and occurrence counts.
@@ -28,8 +29,9 @@ benchmark mid-scan.
 
 Calibration, in-process batches, and daemon requests call the same explicit
 backend-dispatch boundary. Hyperscan uses its coalesced multi-chunk path. Scalar
-CPU and GPU use their normal batch paths. A timing row therefore measures the
-implementation that the persisted route authorizes.
+CPU and GPU use their normal batch paths, including the measured GPU resident
+pipeline depth. A timing row therefore measures the implementation that the
+persisted route authorizes.
 
 The workload key preserves the canonical source execution mixture, not only the
 top-level source families. Each sorted, raw-label-free BLAKE3 identity and size-provenance
@@ -540,12 +542,13 @@ representative route times, whether confidence was separated, the selection
 basis, and the resolved one-shot and daemon backends. The JSON view is lossless:
 each route includes its ordered nanosecond trials, cold observation, exact
 one-shot and warm projections, and 95 percent confidence bounds, so the result
-can be reproduced without parsing the private cache file. Each
-generation's `eligible_backends` array defines the complete backend set. Every
-decision must contain all four localization plans for every eligible backend and
-prove each plan correct. Removing a candidate timing and its receipt together
-still invalidates the cache because validation compares the full Cartesian route
-set with this live config identity.
+can be reproduced without parsing the private cache file. Each generation's
+`eligible_backends` array defines the complete backend set. Every decision must
+contain all four localization plans for every eligible backend and every
+eligible resident depth for each GPU peer, and prove each route correct.
+Removing a candidate timing and its receipt together still invalidates the
+cache because validation compares the full Cartesian route set with this live
+config identity.
 The inspection shows exactly what *is* covered and how each existing decision
 was made. An invalid decision makes the inspection report the cache as unusable;
 inspection never omits a malformed row and presents the remainder as healthy.
@@ -567,18 +570,18 @@ meanings:
 |---|---|
 | `calibrated_at_unix_ms` | Oldest persisted Unix timestamp among the decision's measured points. A future value on any point invalidates the complete cache. |
 | `calibration_age_ms` | Age of that oldest point, derived at inspection time from `inspected_at_unix_ms`; it is visible evidence, not an expiry policy. |
-| `backend`, `phase2_plain_localizer`, `phase2_keyword_localizer` | Cold-aware backend and both phase-two localization choices for an in-process one-shot scan. |
+| `backend`, `phase2_plain_localizer`, `phase2_keyword_localizer`, `gpu_pipeline_depth` | Cold-aware backend, both phase-two localization choices, and resident GPU pipeline depth for an in-process one-shot scan. Host and synchronous GPU routes use depth one. |
 | `calibration_points` | Number of exact content-and-source-shape representatives retained for this workload class. Equal byte/chunk counts can contribute more than one point. |
 | `sample_bytes_min`, `sample_bytes_max`, `sample_chunks_min`, `sample_chunks_max` | Exact measured envelope covered by the class. |
 | `measured_points` | Complete point-by-point projection: exact sample size, `measurement_generator`, `payload_digest`, `measurement_shape_digest`, timestamp, one-shot and daemon execution-plan winners, confidence status, every route timing, and every parity receipt. Use this array to distinguish same-sized probes and diagnose crossover behavior. |
-| `sample_bytes`, `sample_chunks`, `route_timings` | Concise size projection plus the complete generic route-timing array for the first point after sorting by bytes, chunks, then measurement-shape digest. Each timing identifies the backend, both localization choices, one-shot time, and warm time when applicable. `measured_points` is authoritative. |
+| `sample_bytes`, `sample_chunks`, `route_timings` | Concise size projection plus the complete generic route-timing array for the first point after sorting by bytes, chunks, then measurement-shape digest. Each timing identifies the backend, both localization choices, GPU pipeline depth and capability, per-slot input and match capacities, one-shot time, and warm time when applicable. `measured_points` is authoritative. |
 | `confidence_separated` | Whether one-shot evidence proves the route at every measured point, either as an exact paired-plan winner or as a statistically tied plan separated from every peer backend plan. `false` means the route is the dead-heat resolution of a measurement that separated nothing. |
 | `selection_basis` | `exact-plan-paired-95pct-confidence`, `peer-separated-compiled-default-plan`, `peer-separated-statistically-tied-plan`, or `unseparated-dead-heat-lowest-complexity-backend`. The last one names a decision the evidence permits rather than one it proves, and always pairs with `confidence_separated: false`. |
 | `selected_margin_ns` | Smallest one-shot representative-time margin to the next eligible route across all measured points; `null` when there is no peer route. |
-| `daemon_backend`, `daemon_phase2_plain_localizer`, `daemon_phase2_keyword_localizer` | Backend and both phase-two localization choices derived for a ready persistent daemon from warm evidence. |
+| `daemon_backend`, `daemon_phase2_plain_localizer`, `daemon_phase2_keyword_localizer`, `daemon_gpu_pipeline_depth` | Backend, both phase-two localization choices, and resident GPU pipeline depth derived for a ready persistent daemon from warm evidence. |
 | `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts, also aggregated conservatively across every measured point. |
 | `source_mixture` | Structured source-class components used by the workload identity: privacy-safe `source_class` for KeyHog-owned classes (`null` for unknown library-provided values), canonical execution-class digest, full-size versus payload provenance, reduced chunk/payload ratios, and maximum source-span bucket. The human-readable `workload` uses `<source_class>@<digest>` for known classes and `custom@<digest>` otherwise, so arbitrary source metadata is never echoed. JSON consumers should use these fields instead of parsing that string. |
-| `candidate_receipts` | Concise summary of the first measured point's receipts. Every receipt identifies the backend plus both localization choices. Every point carries the complete four-plans-per-backend set; every result digest must equal its point's scalar/both-off reference, and every evidence digest must recompute exactly or the cache is rejected. |
+| `candidate_receipts` | Concise summary of the first measured point's receipts. Every receipt identifies the backend, both localization choices, GPU pipeline depth, dispatch capability, and per-slot input and match capacities. Every point carries the complete eligible route set; every result digest must equal its point's scalar/both-off reference, and every evidence digest must recompute exactly or the cache is rejected. |
 
 ## Single-backend builds
 

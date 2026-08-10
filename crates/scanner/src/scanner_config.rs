@@ -182,6 +182,9 @@ pub struct ScanExecutionRoute {
     pub phase2_plain_localizer: bool,
     /// Localize eligible keyword-anchored patterns before residual extraction.
     pub phase2_keyword_localizer: bool,
+    /// Calibrated resident GPU dispatch depth. Host routes and synchronous GPU
+    /// peers use one; asynchronous VYRE peers may use two through four.
+    pub gpu_pipeline_depth: u8,
 }
 
 impl ScanExecutionRoute {
