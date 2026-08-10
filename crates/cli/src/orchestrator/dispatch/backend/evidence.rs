@@ -22,6 +22,7 @@ pub(super) struct MeasuredRoute {
     pub(super) backend: ScanBackend,
     pub(super) phase2_plain_localizer: bool,
     pub(super) phase2_keyword_localizer: bool,
+    pub(super) gpu_pipeline_depth: u8,
 }
 
 impl MeasuredRoute {
@@ -34,6 +35,7 @@ impl MeasuredRoute {
             },
             phase2_plain_localizer: self.phase2_plain_localizer,
             phase2_keyword_localizer: self.phase2_keyword_localizer,
+            gpu_pipeline_depth: self.gpu_pipeline_depth,
         }
     }
 }
@@ -114,6 +116,10 @@ pub(super) struct BackendParityReceipt {
     pub(super) backend: String,
     pub(super) phase2_plain_localizer: bool,
     pub(super) phase2_keyword_localizer: bool,
+    pub(super) gpu_pipeline_depth: u8,
+    pub(super) gpu_dispatch_capability: Option<String>,
+    pub(super) gpu_slot_input_capacity_bytes: Option<u64>,
+    pub(super) gpu_slot_match_capacity: Option<u32>,
     pub(super) peer_identity: Option<String>,
     pub(super) correctness_digest: u64,
     pub(super) completed_trials: usize,
@@ -123,10 +129,11 @@ pub(super) struct BackendParityReceipt {
 impl BackendParityReceipt {
     fn new(
         route: MeasuredRoute,
-        peer_identity: Option<&str>,
+        timing_entry: &RouteTimingEvidence,
         correctness_digest: u64,
-        timing: &BackendTimingEvidence,
     ) -> Self {
+        let peer_identity = timing_entry.peer_identity.as_deref();
+        let timing = &timing_entry.timing;
         let completed_trials = timing.trials_ns.len();
         let evidence_digest = Self::evidence_digest_for(
             route,
@@ -134,12 +141,19 @@ impl BackendParityReceipt {
             correctness_digest,
             completed_trials,
             timing,
+            timing_entry.gpu_dispatch_capability.as_deref(),
+            timing_entry.gpu_slot_input_capacity_bytes,
+            timing_entry.gpu_slot_match_capacity,
         );
         Self {
             backend: route.backend.label().to_string(),
             phase2_plain_localizer: route.phase2_plain_localizer,
             phase2_keyword_localizer: route.phase2_keyword_localizer,
             peer_identity: peer_identity.map(str::to_owned),
+            gpu_pipeline_depth: route.gpu_pipeline_depth,
+            gpu_dispatch_capability: timing_entry.gpu_dispatch_capability.clone(),
+            gpu_slot_input_capacity_bytes: timing_entry.gpu_slot_input_capacity_bytes,
+            gpu_slot_match_capacity: timing_entry.gpu_slot_match_capacity,
             correctness_digest,
             completed_trials,
             evidence_digest,
@@ -157,6 +171,9 @@ impl BackendParityReceipt {
             self.correctness_digest,
             self.completed_trials,
             timing,
+            self.gpu_dispatch_capability.as_deref(),
+            self.gpu_slot_input_capacity_bytes,
+            self.gpu_slot_match_capacity,
         )
     }
 
@@ -166,12 +183,32 @@ impl BackendParityReceipt {
         correctness_digest: u64,
         completed_trials: usize,
         timing: &BackendTimingEvidence,
+        gpu_dispatch_capability: Option<&str>,
+        gpu_slot_input_capacity_bytes: Option<u64>,
+        gpu_slot_match_capacity: Option<u32>,
     ) -> u64 {
         let mut hasher = crate::stable_hash::StableHasher::new("autoroute-parity-receipt");
         hasher
             .field_str("backend", route.backend.label())
             .field_bool("phase2_plain_localizer", route.phase2_plain_localizer)
             .field_bool("phase2_keyword_localizer", route.phase2_keyword_localizer)
+            .field_u64("gpu_pipeline_depth", u64::from(route.gpu_pipeline_depth))
+            .field_bool(
+                "gpu_dispatch_capability.present",
+                gpu_dispatch_capability.is_some(),
+            )
+            .field_str(
+                "gpu_dispatch_capability",
+                gpu_dispatch_capability.unwrap_or(""),
+            )
+            .field_u64(
+                "gpu_slot_input_capacity_bytes",
+                gpu_slot_input_capacity_bytes.unwrap_or(0),
+            )
+            .field_u64(
+                "gpu_slot_match_capacity",
+                u64::from(gpu_slot_match_capacity.unwrap_or(0)),
+            )
             .field_bool("peer_identity.present", peer_identity.is_some())
             // LAW10: canonical default; a preceding presence field distinguishes absence, and the empty string is only the digest payload for `None`.
             .field_str("peer_identity", peer_identity.unwrap_or(""))
@@ -198,6 +235,7 @@ pub(super) struct AutorouteDecision {
     pub(super) backend: String,
     pub(super) phase2_plain_localizer: bool,
     pub(super) phase2_keyword_localizer: bool,
+    pub(super) gpu_pipeline_depth: u8,
     pub(super) calibration_points: Vec<AutorouteCalibrationPoint>,
 }
 
@@ -208,6 +246,10 @@ pub(super) struct RouteTimingEvidence {
     pub(super) backend: String,
     pub(super) phase2_plain_localizer: bool,
     pub(super) phase2_keyword_localizer: bool,
+    pub(super) gpu_pipeline_depth: u8,
+    pub(super) gpu_dispatch_capability: Option<String>,
+    pub(super) gpu_slot_input_capacity_bytes: Option<u64>,
+    pub(super) gpu_slot_match_capacity: Option<u32>,
     pub(super) peer_identity: Option<String>,
     pub(super) ordered_device_route:
         Option<keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute>,
@@ -221,18 +263,42 @@ impl RouteTimingEvidence {
             .backend
             .is_gpu()
             .then(|| format!("test-peer:{}", route.backend.label()));
-        Self::new_with_peer_identity(route, timing, peer_identity)
+        let gpu_pipeline = route.backend.is_gpu().then(|| {
+            (
+                if route.gpu_pipeline_depth == 1 {
+                    "timed-resident"
+                } else {
+                    "async-submit-retire"
+                }
+                .to_string(),
+                1024_u64 / u64::from(route.gpu_pipeline_depth),
+                65_536_u32 / u32::from(route.gpu_pipeline_depth),
+            )
+        });
+        Self::new_with_peer_identity(route, timing, peer_identity, gpu_pipeline)
     }
 
     pub(super) fn new_with_peer_identity(
         route: MeasuredRoute,
         timing: BackendTimingEvidence,
         peer_identity: Option<String>,
+        gpu_pipeline: Option<(String, u64, u32)>,
     ) -> Self {
+        let (gpu_dispatch_capability, gpu_slot_input_capacity_bytes, gpu_slot_match_capacity) =
+            match gpu_pipeline {
+                Some((capability, input_capacity, match_capacity)) => {
+                    (Some(capability), Some(input_capacity), Some(match_capacity))
+                }
+                None => (None, None, None),
+            };
         Self {
             backend: route.backend.label().to_string(),
             phase2_plain_localizer: route.phase2_plain_localizer,
             phase2_keyword_localizer: route.phase2_keyword_localizer,
+            gpu_pipeline_depth: route.gpu_pipeline_depth,
+            gpu_dispatch_capability,
+            gpu_slot_input_capacity_bytes,
+            gpu_slot_match_capacity,
             peer_identity,
             ordered_device_route: None,
             timing,
@@ -279,6 +345,7 @@ impl RouteTimingEvidence {
             backend: keyhog_scanner::hw_probe::parse_backend_str(&self.backend)?,
             phase2_plain_localizer: self.phase2_plain_localizer,
             phase2_keyword_localizer: self.phase2_keyword_localizer,
+            gpu_pipeline_depth: self.gpu_pipeline_depth,
         })
     }
 }
@@ -333,6 +400,7 @@ impl AutorouteCalibrationPoint {
             backend,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
         })
     }
 
@@ -418,6 +486,7 @@ impl AutorouteCalibrationPoint {
                     *median_ns,
                     route.phase2_plain_localizer,
                     route.phase2_keyword_localizer,
+                    route.gpu_pipeline_depth,
                 )
             })
             .map(|(route, _)| route)
@@ -469,6 +538,7 @@ impl AutorouteCalibrationPoint {
                             != self.compiled_default_phase2_keyword_localizer,
                     route.phase2_plain_localizer,
                     route.phase2_keyword_localizer,
+                    route.gpu_pipeline_depth,
                 )
             })
             .map(|(route, _)| *route)
@@ -530,6 +600,7 @@ impl AutorouteCalibrationPoint {
                     backend_route_complexity(route.backend),
                     route.phase2_plain_localizer,
                     route.phase2_keyword_localizer,
+                    route.gpu_pipeline_depth,
                 )
             })
             .map(|(_, _, interval)| interval.high_ns)?;
@@ -545,6 +616,7 @@ impl AutorouteCalibrationPoint {
                     *median_ns,
                     route.phase2_plain_localizer,
                     route.phase2_keyword_localizer,
+                    route.gpu_pipeline_depth,
                 )
             })
             .map(|(route, _, _)| *route)
@@ -727,9 +799,8 @@ impl AutorouteDecision {
             .filter_map(|entry| {
                 Some(BackendParityReceipt::new(
                     entry.measured_route()?,
-                    entry.peer_identity.as_deref(),
+                    entry,
                     correctness_digest,
-                    &entry.timing,
                 ))
             })
             .collect()
@@ -741,11 +812,13 @@ impl AutorouteDecision {
                 left.backend.as_str(),
                 left.phase2_plain_localizer,
                 left.phase2_keyword_localizer,
+                left.gpu_pipeline_depth,
             )
                 .cmp(&(
                     right.backend.as_str(),
                     right.phase2_plain_localizer,
                     right.phase2_keyword_localizer,
+                    right.gpu_pipeline_depth,
                 ))
         });
     }
@@ -774,6 +847,7 @@ impl AutorouteDecision {
                             backend,
                             phase2_plain_localizer,
                             phase2_keyword_localizer,
+                            gpu_pipeline_depth: 1,
                         },
                         timing,
                     ));
@@ -819,6 +893,7 @@ impl AutorouteDecision {
             backend: backend.label().to_string(),
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
             calibration_points: vec![AutorouteCalibrationPoint {
                 sample_bytes,
                 sample_chunks,
@@ -859,6 +934,7 @@ impl AutorouteDecision {
             backend: backend.label().to_string(),
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
             calibration_points: vec![AutorouteCalibrationPoint {
                 sample_bytes,
                 sample_chunks,
@@ -893,6 +969,7 @@ impl AutorouteDecision {
             backend: backend.label().to_string(),
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
             calibration_points: vec![AutorouteCalibrationPoint {
                 sample_bytes,
                 sample_chunks,
@@ -1035,6 +1112,7 @@ impl AutorouteDecision {
         self.backend = reconciled.backend.label().to_string();
         self.phase2_plain_localizer = reconciled.phase2_plain_localizer;
         self.phase2_keyword_localizer = reconciled.phase2_keyword_localizer;
+        self.gpu_pipeline_depth = reconciled.gpu_pipeline_depth;
         Ok(())
     }
 
@@ -1047,6 +1125,7 @@ impl AutorouteDecision {
             backend: self.backend()?,
             phase2_plain_localizer: self.phase2_plain_localizer,
             phase2_keyword_localizer: self.phase2_keyword_localizer,
+            gpu_pipeline_depth: self.gpu_pipeline_depth,
         })
     }
 
@@ -1071,6 +1150,36 @@ impl AutorouteDecision {
             })
             .then_some(first)
             .flatten()
+    }
+    pub(super) fn gpu_pipeline_identity_for_route(
+        &self,
+        route: MeasuredRoute,
+    ) -> Option<(&str, u64, u32)> {
+        let first = self
+            .calibration_points
+            .first()?
+            .route_timings
+            .iter()
+            .find(|entry| entry.measured_route() == Some(route))?;
+        let identity = (
+            first.gpu_dispatch_capability.as_deref()?,
+            first.gpu_slot_input_capacity_bytes?,
+            first.gpu_slot_match_capacity?,
+        );
+        self.calibration_points
+            .iter()
+            .all(|point| {
+                point
+                    .route_timings
+                    .iter()
+                    .find(|entry| entry.measured_route() == Some(route))
+                    .is_some_and(|entry| {
+                        entry.gpu_dispatch_capability.as_deref() == Some(identity.0)
+                            && entry.gpu_slot_input_capacity_bytes == Some(identity.1)
+                            && entry.gpu_slot_match_capacity == Some(identity.2)
+                    })
+            })
+            .then_some(identity)
     }
 
 
@@ -1264,6 +1373,7 @@ impl AutorouteDecision {
             backend: selected.backend,
             phase2_plain_localizer: first.compiled_default_phase2_plain_localizer,
             phase2_keyword_localizer: first.compiled_default_phase2_keyword_localizer,
+            gpu_pipeline_depth: selected.gpu_pipeline_depth,
         };
         self.calibration_points
             .iter()
@@ -1361,9 +1471,10 @@ impl AutorouteDecision {
 
 fn render_measured_route(route: MeasuredRoute) -> String {
     format!(
-        "{}+phase2-plain-localizer={}+phase2-keyword-localizer={}",
+        "{}+phase2-plain-localizer={}+phase2-keyword-localizer={}+gpu-pipeline-depth={}",
         route.backend.label(),
         route.phase2_plain_localizer,
         route.phase2_keyword_localizer,
+        route.gpu_pipeline_depth,
     )
 }

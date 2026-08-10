@@ -15,9 +15,9 @@
 
 use super::gpu_region_batch::{
     for_each_region_presence_batch, for_each_region_presence_window,
-    region_presence_batch_byte_limit, set_trigger_bit, trigger_bit_is_set, validate_detector_match,
-    validate_region_presence_request_plan, RegionPresenceBatchMode,
-    MAX_REGION_PRESENCE_REQUEST_DISPATCHES,
+    region_presence_batch_byte_limit, region_presence_batch_byte_limit_for_depth, set_trigger_bit,
+    trigger_bit_is_set, validate_detector_match, validate_region_presence_request_plan,
+    RegionPresenceBatchMode, MAX_REGION_PRESENCE_REQUEST_DISPATCHES,
 };
 #[cfg(test)]
 use super::gpu_region_dispatch_helpers::record_test_window_reduction_allocation;
@@ -101,6 +101,17 @@ impl CompiledScanner {
         let resident_timed_dispatch_supported = self
             .backend_state
             .gpu_resident_timed_dispatch_supported(route);
+        let pipeline_depth = execution_route.gpu_pipeline_depth;
+        let dispatch_capability = self
+            .gpu_resident_dispatch_capability(route)
+            .map_err(super::gpu_forced::SelectedGpuDispatchError::new)?;
+        if pipeline_depth > 1 && dispatch_capability != "async-submit-retire" {
+            return dispatch_failure(format!(
+                "{} selected resident pipeline depth {pipeline_depth}, but its VYRE capability is {dispatch_capability}; recalibrate autoroute for this exact device/runtime",
+                route.label()
+            ));
+        }
+        let resident_submit_supported = dispatch_capability != "synchronous";
         let backend_code = crate::gpu::evidence::backend_code(backend.id());
         // Typed identity + capability evidence on the first dispatch under
         // each profile runtime; string facets ride the daemon warm identity.
@@ -180,9 +191,14 @@ impl CompiledScanner {
                     "GPU phase-2 anchor-presence row reserve failed: {error}"
                 ))
             })?;
+        triggers.resize_with(chunks.len(), || None);
+        phase2_keyword_hints.resize_with(chunks.len(), Vec::new);
+        phase2_always_anchor_presence.resize(chunks.len(), false);
         let mut gpu_presence_bits = 0usize;
         let mut logical_derive_s = std::time::Duration::ZERO;
-        let mut derive_presence_row = |row: &[u32]| -> std::result::Result<(), String> {
+        let mut derive_presence_row = |row_idx: usize,
+                                       row: &[u32]|
+         -> std::result::Result<(), String> {
             let whole_presence_words = phase2_always_position_end / 32;
             let tail_presence_bits = phase2_always_position_end % 32;
             let whole_bits = row
@@ -203,10 +219,22 @@ impl CompiledScanner {
                     "region-presence reduced bit count overflows host usize".to_string()
                 })?;
             let bits = self.triggered_patterns_from_gpu_presence(row);
-            phase2_keyword_hints.push(self.phase2_keyword_hints_from_gpu_presence(row));
-            phase2_always_anchor_presence
-                .push(self.phase2_always_anchor_present_from_gpu_presence(row));
-            triggers.push(bits.iter().any(|&word| word != 0).then_some(bits));
+            let keyword_hints = self.phase2_keyword_hints_from_gpu_presence(row);
+            let always_anchor_present = self.phase2_always_anchor_present_from_gpu_presence(row);
+            let trigger_count = triggers.len();
+            *triggers.get_mut(row_idx).ok_or_else(|| {
+                format!("region-presence logical row {row_idx} exceeds {trigger_count} chunk(s)")
+            })? = bits.iter().any(|&word| word != 0).then_some(bits);
+            let keyword_count = phase2_keyword_hints.len();
+            *phase2_keyword_hints.get_mut(row_idx).ok_or_else(|| {
+                format!("GPU phase-two keyword row {row_idx} exceeds {keyword_count} chunk(s)")
+            })? = keyword_hints;
+            let anchor_count = phase2_always_anchor_presence.len();
+            *phase2_always_anchor_presence
+                .get_mut(row_idx)
+                .ok_or_else(|| {
+                    format!("GPU phase-two anchor row {row_idx} exceeds {anchor_count} chunk(s)")
+                })? = always_anchor_present;
             Ok(())
         };
         let mut recovery_ranges = Vec::new();
@@ -220,7 +248,9 @@ impl CompiledScanner {
             rows: usize,
             logical_byte_base: usize,
         }
-        let mut resident_overlap = crate::gpu::GpuResidentLiteralOverlap::new();
+        let mut resident_overlap =
+            crate::gpu::GpuResidentLiteralOverlap::new(pipeline_depth, presence_words)
+                .map_err(super::gpu_forced::SelectedGpuDispatchError::new)?;
         let mut dispatch_presence = |haystack: &[u8],
                                      region_starts: &[u32],
                                      logical_start: usize,
@@ -228,6 +258,7 @@ impl CompiledScanner {
                                      logical_byte_base: usize,
                                      flush_current: bool,
                                      consume: &mut dyn FnMut(
+            usize,
             &[u32],
         )
             -> std::result::Result<(), String>| {
@@ -277,7 +308,7 @@ impl CompiledScanner {
                                 "region-presence readback row {row_idx} has out-of-range detector bit(s): word {word_idx} bits 0x{stray_bits:08x} beyond {gpu_literal_count} literal(s)"
                             ));
                     }
-                    (consume.borrow_mut())(row)?;
+                    (consume.borrow_mut())(row_idx, row)?;
                 }
                 for literal_match in literal_matches {
                     let pattern_id = literal_match.pattern_id as usize;
@@ -458,7 +489,7 @@ impl CompiledScanner {
                             }
                         }
                     }
-                    (consume.borrow_mut())(&recovered_presence).map_err(|recovery_error| {
+                    (consume.borrow_mut())(chunk_index, &recovered_presence).map_err(|recovery_error| {
                             format!(
                                 "GPU dispatch failed ({error}); exact CPU trigger recovery also failed: {recovery_error}"
                             )
@@ -478,7 +509,7 @@ impl CompiledScanner {
                         "selected GPU route was quarantined after an earlier dispatch fault: {error}"
                     ),
                 )
-            } else if resident_timed_dispatch_supported {
+            } else if resident_submit_supported {
                 resident_overlap.dispatch(
                     resident_slot,
                     matcher,
@@ -498,6 +529,7 @@ impl CompiledScanner {
                     resident_timed_dispatch_supported,
                     haystack,
                     region_starts,
+                    presence_words,
                     |presence, literal_matches| {
                         consume_evidence(current_metadata.clone(), presence, literal_matches)
                     },
@@ -512,7 +544,8 @@ impl CompiledScanner {
                 Err(error) => recover_evidence(&current_metadata, error),
             }
         };
-        let byte_limit = region_presence_batch_byte_limit(backend.id());
+        let byte_limit = region_presence_batch_byte_limit_for_depth(backend.id(), pipeline_depth)
+            .map_err(super::gpu_forced::SelectedGpuDispatchError::new)?;
         let planned_dispatches =
             validate_region_presence_request_plan(chunks, byte_limit, self.gpu_max_literal_len)
                 .map_err(super::gpu_forced::SelectedGpuDispatchError::new)?;
@@ -539,12 +572,13 @@ impl CompiledScanner {
                     byte_limit,
                     self.gpu_max_literal_len,
                     |haystack, range| {
-                        let mut reduce = |row: &[u32]| -> std::result::Result<(), String> {
-                            for (target, &word) in reduced.iter_mut().zip(row) {
-                                *target |= word;
-                            }
-                            Ok(())
-                        };
+                        let mut reduce =
+                            |_row_idx: usize, row: &[u32]| -> std::result::Result<(), String> {
+                                for (target, &word) in reduced.iter_mut().zip(row) {
+                                    *target |= word;
+                                }
+                                Ok(())
+                            };
                         let flush_current = range.end == chunks[cursor].data.len();
                         dispatch_presence(
                             haystack,
@@ -559,7 +593,7 @@ impl CompiledScanner {
                 );
                 if summary.is_ok() {
                     let t_derive = kh.then(std::time::Instant::now);
-                    derive_presence_row(&reduced)
+                    derive_presence_row(logical_row, &reduced)
                         .map_err(super::gpu_forced::SelectedGpuDispatchError::new)?;
                     logical_derive_s += t_derive.map_or(std::time::Duration::ZERO, |t| t.elapsed());
                 }
@@ -573,7 +607,7 @@ impl CompiledScanner {
                 (
                     for_each_region_presence_batch(
                         &chunks[run_start..run_end],
-                        backend.id(),
+                        byte_limit,
                         |haystack, region_starts, _mode, shard| {
                             let logical_start =
                                 run_start.checked_add(shard.chunks.start).ok_or_else(|| {

@@ -74,6 +74,7 @@ fn route_timings(
                     backend,
                     phase2_plain_localizer,
                     phase2_keyword_localizer,
+                    gpu_pipeline_depth: 1,
                 },
                 timing,
             ));
@@ -114,6 +115,85 @@ fn test_eligible_backends(gpu: Option<ScanBackend>) -> Vec<String> {
     }
     labels.sort_unstable();
     labels
+}
+
+#[test]
+fn issue32_async_gpu_evidence_requires_complete_depth_matrix_and_preserves_aggregate_caps() {
+    let mut timings = Vec::new();
+    for backend in [ScanBackend::CpuFallback, ScanBackend::GpuWgpu] {
+        let depths: &[u8] = if backend.is_gpu() {
+            &[1, 2, 3, 4]
+        } else {
+            &[1]
+        };
+        for depth in depths {
+            for plain in [false, true] {
+                for keyword in [false, true] {
+                    let route = MeasuredRoute {
+                        backend,
+                        phase2_plain_localizer: plain,
+                        phase2_keyword_localizer: keyword,
+                        gpu_pipeline_depth: *depth,
+                    };
+                    let timing = BackendTimingEvidence::constant_ms(
+                        if backend.is_gpu() {
+                            20 - u128::from(*depth)
+                        } else {
+                            100
+                        },
+                        AUTOROUTE_CALIBRATION_TRIALS,
+                    );
+                    let peer = backend.is_gpu().then(|| "test-async-wgpu".to_string());
+                    let pipeline = backend.is_gpu().then(|| {
+                        (
+                            "async-submit-retire".to_string(),
+                            1_200_u64 / u64::from(*depth),
+                            120_000_u32 / u32::from(*depth),
+                        )
+                    });
+                    timings.push(RouteTimingEvidence::new_with_peer_identity(
+                        route, timing, peer, pipeline,
+                    ));
+                }
+            }
+        }
+    }
+    let mut decision = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::CpuFallback,
+        1,
+        1,
+        test_measurement_shape_evidence(1, 1),
+        0xA11D,
+        1,
+        timings,
+        false,
+        false,
+    );
+    let selected = decision
+        .resolved_routing_route()
+        .expect("complete depth evidence resolves a route");
+    decision.backend = selected.backend.label().to_string();
+    decision.phase2_plain_localizer = selected.phase2_plain_localizer;
+    decision.phase2_keyword_localizer = selected.phase2_keyword_localizer;
+    decision.gpu_pipeline_depth = selected.gpu_pipeline_depth;
+    let expected = [ScanBackend::CpuFallback, ScanBackend::GpuWgpu]
+        .into_iter()
+        .map(|backend| backend.label().to_string())
+        .collect();
+    super::store::validate_decision_route_evidence(&decision, &expected)
+        .expect("complete async depth matrix is valid");
+
+    let mut incomplete = decision.clone();
+    incomplete
+        .primary_point_mut()
+        .route_timings
+        .retain(|entry| entry.gpu_pipeline_depth != 4);
+    let error = super::store::validate_decision_route_evidence(&incomplete, &expected)
+        .expect_err("missing eligible depth evidence must fail closed");
+    assert!(
+        error.to_string().contains("backend/depth census"),
+        "incomplete-depth diagnostic must name the missing matrix: {error}"
+    );
 }
 
 #[cfg(feature = "simd")]
@@ -2212,7 +2292,7 @@ fn autoroute_calibration_counts_full_batch_bytes() {
 }
 
 #[test]
-fn autoroute_cache_roundtrip_and_digest_invalidation() {
+fn issue32_autoroute_cache_roundtrip_and_digest_invalidation() {
     let path =
         std::env::temp_dir().join(format!("keyhog_autoroute_test_{}.json", std::process::id()));
     let digest = 0x1234_5678_9ABC_DEF0u64;
@@ -2292,6 +2372,10 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
         "\"candidate_receipts\"",
         "\"phase2_plain_localizer\":true",
         "\"phase2_keyword_localizer\":false",
+        "\"gpu_pipeline_depth\":1",
+        "\"gpu_dispatch_capability\"",
+        "\"gpu_slot_input_capacity_bytes\"",
+        "\"gpu_slot_match_capacity\"",
         "\"correctness_digest\"",
         "\"completed_trials\"",
         "\"evidence_digest\"",
@@ -2304,6 +2388,13 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             "cache JSON is missing required primary evidence field {required}"
         );
     }
+    let stale_without_depth = serialized.replacen("\"gpu_pipeline_depth\":1,", "", 1);
+    let stale_error = serde_json::from_str::<AutorouteCache>(&stale_without_depth)
+        .expect_err("missing calibrated pipeline depth must reject stale evidence");
+    assert!(
+        stale_error.to_string().contains("gpu_pipeline_depth"),
+        "stale depth diagnostic must name the missing route dimension: {stale_error}"
+    );
     for derived in [
         "\"decode_density_bucket\"",
         "\"simd_timing\"",
@@ -2926,6 +3017,7 @@ fn same_backend_tie_with_overlapping_peer_uses_noninferior_compiled_default() {
             backend: ScanBackend::CpuFallback,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
         }),
         "an exact overlap must select the lower-complexity backend's compiled default"
     );
@@ -2964,6 +3056,7 @@ fn separated_backend_uses_compiled_default_when_same_backend_plans_tie() {
             backend: ScanBackend::CpuFallback,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
         }),
         "backend evidence may select the compiled default plan without inventing a nanosecond plan winner"
     );
@@ -2988,6 +3081,7 @@ fn peer_separated_nondefault_tie_uses_stable_typed_plan() {
                         backend,
                         phase2_plain_localizer,
                         phase2_keyword_localizer,
+                        gpu_pipeline_depth: 1,
                     },
                     timing(elapsed_ms),
                 ));
@@ -3012,6 +3106,7 @@ fn peer_separated_nondefault_tie_uses_stable_typed_plan() {
             backend: ScanBackend::SimdCpu,
             phase2_plain_localizer: true,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
         }),
         "a tied nondefault leader must resolve deterministically without claiming an exact winner"
     );
@@ -3021,6 +3116,7 @@ fn peer_separated_nondefault_tie_uses_stable_typed_plan() {
             backend: ScanBackend::CpuFallback,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: true,
+            gpu_pipeline_depth: 1,
         }),
         "a single remaining measured backend must retain its compiled default across a plan tie"
     );
@@ -3051,6 +3147,7 @@ fn paired_backend_rounds_do_not_override_cross_backend_interval_overlap() {
                         backend,
                         phase2_plain_localizer,
                         phase2_keyword_localizer,
+                        gpu_pipeline_depth: 1,
                     },
                     BackendTimingEvidence::from_trial_ns(trials).expect("valid timing rounds"),
                 ));
@@ -3079,6 +3176,7 @@ fn paired_backend_rounds_do_not_override_cross_backend_interval_overlap() {
             backend: ScanBackend::CpuFallback,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: true,
+            gpu_pipeline_depth: 1,
         }),
         "an unproved measurement resolves to the lowest-complexity backend's compiled default"
     );
@@ -3126,6 +3224,7 @@ fn paired_same_backend_rounds_retain_shared_host_drift() {
             backend: ScanBackend::CpuFallback,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
         }),
         "paired rounds must prove a stable plan delta even when marginal intervals share host drift"
     );
@@ -3163,6 +3262,7 @@ fn selected_margin_includes_the_next_same_backend_route() {
             backend: ScanBackend::SimdCpu,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
         })
     );
     assert_eq!(
@@ -3433,6 +3533,31 @@ fn autoroute_cache_rejects_outdated_schema_with_clear_version_error() {
         !err.contains("missing field"),
         "version gate must fire BEFORE the full deserialize; a serde 'missing field' \
          error must not leak to the operator, got: {err:?}"
+    );
+}
+
+#[test]
+fn issue32_autoroute_cache_rejects_stale_v53_before_payload_decode() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_v53_pipeline_schema_{}.json",
+        std::process::id()
+    ));
+    std::fs::write(&path, br#"{"version":53}"#).expect("write stale v53 cache");
+    let error = load_autoroute_cache(
+        &path,
+        0x1234_5678_9ABC_DEF0,
+        test_rules_digest(),
+        0xA55A_D00D_CAFE_BEEF,
+        &test_host(None),
+    )
+    .expect_err("v53 cache must be rejected before payload decode")
+    .to_string();
+    let _ = std::fs::remove_file(&path);
+    assert!(
+        error.contains("unsupported autoroute cache version 53")
+            && error.contains("expects 54")
+            && !error.contains("missing field"),
+        "v53 rejection must be version-first and actionable: {error}"
     );
 }
 
@@ -7104,6 +7229,7 @@ fn phase2_keyword_localizer_is_an_independent_measured_route_candidate() {
         backend: ScanBackend::SimdCpu,
         phase2_plain_localizer: false,
         phase2_keyword_localizer: true,
+        gpu_pipeline_depth: 1,
     };
     timings
         .iter_mut()
@@ -7266,6 +7392,7 @@ fn scalar_plan_decision(
                         backend: ScanBackend::CpuFallback,
                         phase2_plain_localizer: plain,
                         phase2_keyword_localizer: keyword,
+                        gpu_pipeline_depth: 1,
                     },
                     overlapping_paired_trials(offset),
                 )
@@ -7377,6 +7504,7 @@ fn a_separated_plan_lead_still_beats_the_compiled_default() {
                     backend: ScanBackend::CpuFallback,
                     phase2_plain_localizer: plain,
                     phase2_keyword_localizer: keyword,
+                    gpu_pipeline_depth: 1,
                 },
                 BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS),
             )
@@ -7435,6 +7563,7 @@ fn a_split_plan_across_points_reconciles_to_the_compiled_default() {
                             backend: ScanBackend::CpuFallback,
                             phase2_plain_localizer: plain,
                             phase2_keyword_localizer: keyword,
+                            gpu_pipeline_depth: 1,
                         },
                         BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS),
                     )

@@ -201,40 +201,59 @@ fn automatic_gpu_recovery_rescans_only_unprocessed_dispatch_ranges() {
 }
 
 #[cfg(feature = "gpu")]
-/// Proves production batching submits the next independent resident IO slot
-/// before retiring the previous dispatch while preserving exact result order.
+/// Proves every eligible calibrated depth submits bounded independent resident
+/// IO slots while the production scanner restores exact scalar result order.
 #[test]
-fn gpu_region_batches_overlap_two_resident_io_slots() {
+fn issue32_gpu_region_batches_use_every_eligible_resident_depth() {
     let _gpu_test_guard = crate::testing::gpu_test_lock();
-    let (scanner, backend, chunks, expected) = gpu_recovery_fixture();
-    crate::gpu::reset_test_max_in_flight_slots();
+    let (scanner, backend, mut chunks, _) = gpu_recovery_fixture();
+    chunks.push(keyhog_core::Chunk::from(format!(
+        "{}tok_DDDDDDDDDDDDDDDD",
+        "d".repeat(24)
+    )));
+    chunks.push(keyhog_core::Chunk::from(format!(
+        "{}tok_EEEEEEEEEEEEEEEE",
+        "e".repeat(24)
+    )));
+    let expected = scanner
+        .scan_coalesced_with_backend(&chunks, crate::hw_probe::ScanBackend::CpuFallback)
+        .expect("scalar depth-matrix reference succeeds");
+    let eligible_depths = scanner
+        .eligible_gpu_resident_pipeline_depths(backend)
+        .expect("selected GPU exposes resident dispatch capability");
 
-    let outcome = with_test_region_presence_byte_limit(64, || {
+    for depth in eligible_depths {
         scanner
-            .scan_coalesced_gpu_region_presence_recovering(
-                &chunks,
-                backend,
-                scanner.default_execution_route(),
-                false,
-            )
-            .expect("overlapped GPU resident batches must remain exact")
-    });
-
-    assert_eq!(outcome.matches, expected);
-    // Dual-slot overlap requires async timed resident dispatch. wgpu/Metal hosts
-    // without TIMESTAMP_QUERY(_INSIDE_ENCODERS) take the borrowed sync path and
-    // never arm the in-flight counter; correctness is already covered above.
-    if !scanner
-        .backend_state
-        .gpu_resident_timed_dispatch_supported(backend)
-    {
-        return;
+            .reset_autoroute_calibration_gpu_workload()
+            .expect("each depth starts from clean resident state");
+        crate::gpu::reset_test_max_in_flight_slots();
+        let mut route = scanner.default_execution_route();
+        route.gpu_pipeline_depth = depth;
+        let outcome = with_test_region_presence_byte_limit(64, || {
+            scanner
+                .scan_coalesced_gpu_region_presence_recovering(&chunks, backend, route, false)
+                .expect("resident depth must preserve production scan parity")
+        });
+        assert_eq!(outcome.matches, expected, "finding drift at depth {depth}");
+        let observed = crate::gpu::test_max_in_flight_slots();
+        if depth == 1
+            && scanner
+                .gpu_resident_dispatch_capability(backend)
+                .expect("capability remains available")
+                == "synchronous"
+        {
+            assert_eq!(
+                observed, 0,
+                "borrowed synchronous path has no pending fence"
+            );
+        } else {
+            assert_eq!(
+                observed,
+                usize::from(depth),
+                "resident slot count must equal calibrated depth"
+            );
+        }
     }
-    assert_eq!(
-        crate::gpu::test_max_in_flight_slots(),
-        2,
-        "the next resident IO slot must submit before the previous slot retires"
-    );
 }
 
 #[cfg(feature = "gpu")]

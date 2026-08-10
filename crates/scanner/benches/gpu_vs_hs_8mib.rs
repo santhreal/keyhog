@@ -161,15 +161,17 @@ struct BenchRoute {
     backend: ScanBackend,
     phase2_plain_localizer: bool,
     phase2_keyword_localizer: bool,
+    gpu_pipeline_depth: u8,
 }
 
 impl BenchRoute {
     fn label(self) -> String {
         format!(
-            "{}+plain-localizer={}+keyword-localizer={}",
+            "{}+plain-localizer={}+keyword-localizer={}+gpu-pipeline-depth={}",
             self.backend.label(),
             self.phase2_plain_localizer,
-            self.phase2_keyword_localizer
+            self.phase2_keyword_localizer,
+            self.gpu_pipeline_depth,
         )
     }
 
@@ -182,6 +184,7 @@ impl BenchRoute {
             },
             phase2_plain_localizer: self.phase2_plain_localizer,
             phase2_keyword_localizer: self.phase2_keyword_localizer,
+            gpu_pipeline_depth: self.gpu_pipeline_depth,
         }
     }
 }
@@ -700,14 +703,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
+        let mut gpu_pipeline_routes = Vec::new();
+        for &backend in &gpu_backends {
+            let depths = scanner
+                .eligible_gpu_resident_pipeline_depths(backend)
+                .map_err(|error| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!(
+                            "cannot enumerate resident pipeline depths for {}: {error}",
+                            backend.label()
+                        ),
+                    )
+                })?;
+            gpu_pipeline_routes.extend(
+                depths
+                    .into_iter()
+                    .map(|gpu_pipeline_depth| (backend, gpu_pipeline_depth)),
+            );
+        }
+
         let plain_localizer_modes =
             forced_plain_localizer.map_or_else(|| vec![false, true], |mode| vec![mode]);
         let keyword_localizer_modes =
             forced_keyword_localizer.map_or_else(|| vec![false, true], |mode| vec![mode]);
-        let route_capacity = gpu_backends
+        let route_capacity = gpu_pipeline_routes
             .len()
             .checked_add(1)
-            .and_then(|backends| backends.checked_mul(plain_localizer_modes.len()))
+            .and_then(|routes| routes.checked_mul(plain_localizer_modes.len()))
             .and_then(|routes| routes.checked_mul(keyword_localizer_modes.len()))
             .ok_or_else(|| {
                 io::Error::new(
@@ -722,12 +745,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     backend: ScanBackend::SimdCpu,
                     phase2_plain_localizer,
                     phase2_keyword_localizer,
+                    gpu_pipeline_depth: 1,
                 });
-                candidate_routes.extend(gpu_backends.iter().copied().map(|backend| BenchRoute {
-                    backend,
-                    phase2_plain_localizer,
-                    phase2_keyword_localizer,
-                }));
+                candidate_routes.extend(gpu_pipeline_routes.iter().copied().map(
+                    |(backend, gpu_pipeline_depth)| BenchRoute {
+                        backend,
+                        phase2_plain_localizer,
+                        phase2_keyword_localizer,
+                        gpu_pipeline_depth,
+                    },
+                ));
             }
         }
 
@@ -736,6 +763,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             backend: ScanBackend::SimdCpu,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
+            gpu_pipeline_depth: 1,
         };
         let mut reference = match scanner.scan_coalesced_with_backend_admission_and_route(
             &chunks,
@@ -1133,7 +1161,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 && iters >= RELEASE_HELD_OUT_PAIRS
                 && selection_rounds >= RELEASE_SELECTION_ROUNDS;
             let artifact = CrossoverArtifact {
-                schema_version: 9,
+                schema_version: 10,
                 measured_at_utc: chrono::Utc::now().to_rfc3339(),
                 diagnostic,
                 production_comparable,

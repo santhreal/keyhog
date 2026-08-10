@@ -137,17 +137,32 @@ pub(super) const WGPU_BYTE_SCAN_DISPATCH_LIMIT: usize = 65_535 * 128;
 pub(super) const MAX_REGION_PRESENCE_REQUEST_DISPATCHES: usize = 4_096;
 
 pub(super) fn region_presence_batch_byte_limit(backend_id: &str) -> usize {
-    let live = region_presence_batch_byte_limit_for_input_budget(
-        backend_id,
-        super::gpu_input_budget::gpu_batch_input_limit(),
-    );
+    region_presence_batch_byte_limit_for_depth(backend_id, 1)
+        .expect("depth one is always a valid resident pipeline configuration")
+}
+
+pub(super) fn region_presence_batch_byte_limit_for_depth(
+    backend_id: &str,
+    depth: u8,
+) -> Result<usize, String> {
+    let divisor = usize::from(depth);
+    if !(1..=4).contains(&depth) {
+        return Err(format!(
+            "GPU resident pipeline depth {depth} is outside the supported 1..=4 range"
+        ));
+    }
+    let input_budget = super::gpu_input_budget::gpu_batch_input_limit()
+        .checked_div(divisor)
+        .filter(|capacity| *capacity > 0)
+        .ok_or_else(|| "GPU resident per-slot input capacity is zero".to_string())?;
+    let live = region_presence_batch_byte_limit_for_input_budget(backend_id, input_budget);
     #[cfg(test)]
     {
-        return TEST_REGION_PRESENCE_BYTE_LIMIT
-            .with(|limit| limit.get().map_or(live, |test_limit| live.min(test_limit)));
+        return Ok(TEST_REGION_PRESENCE_BYTE_LIMIT
+            .with(|limit| limit.get().map_or(live, |test_limit| live.min(test_limit))));
     }
     #[cfg(not(test))]
-    live
+    Ok(live)
 }
 
 #[cfg(test)]
@@ -589,7 +604,7 @@ fn dispatch_region_presence_shards(
 
 pub(super) fn for_each_region_presence_batch(
     chunks: &[keyhog_core::Chunk],
-    backend_id: &str,
+    byte_limit: usize,
     f: impl FnMut(
         &[u8],
         &[u32],
@@ -597,11 +612,7 @@ pub(super) fn for_each_region_presence_batch(
         &RegionPresenceShard,
     ) -> std::result::Result<(), String>,
 ) -> std::result::Result<RegionPresenceBatchSummary, String> {
-    for_each_region_presence_batch_with_limit(
-        chunks,
-        region_presence_batch_byte_limit(backend_id),
-        f,
-    )
+    for_each_region_presence_batch_with_limit(chunks, byte_limit, f)
 }
 
 /// Capture what [`with_region_presence_batch`] hands its callback for `chunks`:
