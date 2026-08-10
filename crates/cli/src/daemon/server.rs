@@ -556,14 +556,21 @@ pub(crate) async fn run_with_backend_override(
                     let path = std::path::PathBuf::from(&path_str);
                     // Only restore roots whose path still exists.
                     if path.exists() {
-                        if let Err(e) = state.guard.restore_root(record.clone()) {
+                        // Never restore a root as Current: the daemon has
+                        // not reconciled it since restart. Reset to Stopped
+                        // so the operator must explicitly reconcile before
+                        // commits are authorized. Preserve the canonical
+                        // path, filesystem identity, mode, and sequences.
+                        let mut restored = record.clone();
+                        restored.state = keyhog_core::guard_state::GuardRootState::Stopped;
+                        if let Err(e) = state.guard.restore_root(restored) {
                             tracing::warn!("daemon: failed to restore root {}: {}", path_str, e);
                         } else {
                             // Re-register with the filesystem watcher.
                             if let Err(e) = state.guard_watcher.lock().add_root(path.clone()) {
                                 tracing::warn!("daemon: watcher failed to observe restored root {}: {}", path_str, e);
                             }
-                            tracing::info!("daemon: restored guard root {}", path_str);
+                            tracing::info!("daemon: restored guard root {} (stopped)", path_str);
                         }
                     } else {
                         tracing::warn!("daemon: skipping persisted root {}: path no longer exists", path_str);
