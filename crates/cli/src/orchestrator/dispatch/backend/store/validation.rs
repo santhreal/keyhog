@@ -15,13 +15,31 @@ use super::super::workload::{
 };
 use super::super::AUTOROUTE_CALIBRATION_TRIALS;
 use super::artifact_identity::{current_executable_sha256, current_gpu_sidecar_sha256};
-use super::schema::{AutorouteBuildFeatures, AutorouteCache};
+use super::schema::{AutorouteBuildFeatures, AutorouteCache, AutorouteGpuArtifactBinding};
+
+fn gpu_artifact_binding_matches(
+    cache: &AutorouteCache,
+    current_sidecar_sha256: Option<&str>,
+) -> bool {
+    match &cache.gpu_artifact_binding {
+        Some(AutorouteGpuArtifactBinding::RuntimeCompiled {
+            executable_sha256,
+            rules_digest,
+        }) => {
+            current_sidecar_sha256.is_none()
+                && executable_sha256 == &cache.executable_sha256
+                && rules_digest == &cache.rules_digest
+        }
+        Some(AutorouteGpuArtifactBinding::InstalledSidecar { sha256 }) => {
+            current_sidecar_sha256 == Some(sha256.as_str())
+        }
+        None => false,
+    }
+}
 
 fn gpu_artifact_identity_matches(cache: &AutorouteCache) -> bool {
-    let Some(expected_sidecar) = &cache.gpu_sidecar_digest else {
-        return false;
-    };
-    current_gpu_sidecar_sha256().as_ref() == Some(expected_sidecar)
+    let current_sidecar = current_gpu_sidecar_sha256();
+    gpu_artifact_binding_matches(cache, current_sidecar.as_deref())
 }
 
 pub(crate) fn decision_requires_gpu_artifact_identity(decision: &AutorouteDecision) -> bool {

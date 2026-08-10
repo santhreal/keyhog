@@ -19,11 +19,12 @@ use super::codec::{
     parse_autoroute_cache, read_autoroute_cache_file, CacheParseError, AUTOROUTE_CACHE_FILE_BYTES,
 };
 use super::schema::{
-    AutorouteBuildFeatures, AutorouteCache, AutorouteConfigDecisions, PersistedAutorouteDecision,
+    AutorouteBuildFeatures, AutorouteCache, AutorouteConfigDecisions, AutorouteGpuArtifactBinding,
+    PersistedAutorouteDecision,
 };
 use super::validation::{
-    validate_cache_global_identity, validate_cache_structure, validate_decision_route_evidence,
-    validate_decision_workload_binding,
+    decision_requires_gpu_artifact_identity, validate_cache_global_identity,
+    validate_cache_structure, validate_decision_route_evidence, validate_decision_workload_binding,
 };
 
 /// Operator-relevant effect of a successful cache save.
@@ -402,15 +403,32 @@ pub(crate) fn save_autoroute_cache(
             .then_with(|| left.host.cmp(&right.host))
     });
 
+    let executable_sha256 = current_executable_sha256()?.to_string();
+    let gpu_routes_present = configs.iter().any(|config| {
+        config
+            .decisions
+            .iter()
+            .any(|row| decision_requires_gpu_artifact_identity(&row.decision))
+    });
+    let gpu_artifact_binding = gpu_routes_present.then(|| {
+        match super::artifact_identity::current_gpu_sidecar_sha256() {
+            Some(sha256) => AutorouteGpuArtifactBinding::InstalledSidecar { sha256 },
+            None => AutorouteGpuArtifactBinding::RuntimeCompiled {
+                executable_sha256: executable_sha256.clone(),
+                rules_digest: rules_digest.to_string(),
+            },
+        }
+    });
+
     let cache = AutorouteCache {
         version: AUTOROUTE_CACHE_VERSION,
         binary_version: env!("CARGO_PKG_VERSION").to_string(),
         git_hash: keyhog_core::git_hash().to_string(),
-        executable_sha256: current_executable_sha256()?.to_string(),
+        executable_sha256,
         build_features: AutorouteBuildFeatures::current(),
         detector_digest,
         rules_digest: rules_digest.to_string(),
-        gpu_sidecar_digest: super::artifact_identity::current_gpu_sidecar_sha256(),
+        gpu_artifact_binding,
         execution_pack_generation,
         configs,
     };

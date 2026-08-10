@@ -13,6 +13,19 @@ pub(crate) struct AutorouteCacheVersionEnvelope {
     pub(super) version: u32,
 }
 
+/// Artifact family used by every measured GPU route in this generation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum AutorouteGpuArtifactBinding {
+    /// Programs compiled from this exact executable and detector corpus.
+    RuntimeCompiled {
+        executable_sha256: String,
+        rules_digest: String,
+    },
+    /// Installer-owned GPU artifacts authenticated by their manifest digest.
+    InstalledSidecar { sha256: String },
+}
+
 /// On-disk autoroute calibration cache. Only build and corpus identity is shared.
 /// Each exact `(resolved scan configuration, host)` generation owns its routes.
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,7 +39,7 @@ pub(crate) struct AutorouteCache {
     pub(crate) detector_digest: u64,
     pub(crate) rules_digest: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) gpu_sidecar_digest: Option<String>,
+    pub(crate) gpu_artifact_binding: Option<AutorouteGpuArtifactBinding>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) execution_pack_generation:
         Option<crate::execution_pack_install::ExecutionPackGenerationBinding>,

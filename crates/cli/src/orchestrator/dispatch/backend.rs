@@ -116,6 +116,9 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
     hasher.finish_u64()
 }
 
+// v57: GPU cache evidence distinguishes runtime-compiled programs, bound to
+// the exact executable and detector corpus, from installer-owned sidecars
+// bound to their authenticated manifest digest.
 // v56: ordered device-set evidence authenticates the complete device identity,
 // including name and PCI vendor/device ids, and rejects orphaned, partial, or
 // mixed route bodies before selection.
@@ -204,7 +207,7 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
 // rejected on the version gate and recalibrated.
 // v56: authenticated ordered-device routes include adapter name and PCI
 // vendor/device identity. v55 routes lack those live-census bindings.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 56;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 57;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 

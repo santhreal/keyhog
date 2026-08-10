@@ -2,10 +2,10 @@ use super::*;
 use crate::orchestrator::dispatch::backend::AUTOROUTE_CACHE_VERSION;
 
 #[test]
-fn v52_serialized_cache_rejected_and_v53_round_trip_preserves_identities() {
-    let v52_json = r#"{
-        "version": 52,
-        "binary_version": "0.5.68",
+fn gpu_artifact_identity_v57_round_trip_rejects_older_schema() {
+    let old_json = r#"{
+        "version": 56,
+        "binary_version": "0.5.70",
         "git_hash": "abc",
         "executable_sha256": "def",
         "build_features": {"cli_features":[],"scanner_features":[],"sources_features":[],"verifier_features":[]},
@@ -13,52 +13,78 @@ fn v52_serialized_cache_rejected_and_v53_round_trip_preserves_identities() {
         "rules_digest": "rules",
         "configs": []
     }"#;
-    let parse_res = super::super::codec::parse_autoroute_cache(v52_json.as_bytes());
+    let parse_res = super::super::codec::parse_autoroute_cache(old_json.as_bytes());
     assert!(matches!(
         parse_res,
-        Err(super::super::codec::CacheParseError::Version { found: 52 })
+        Err(super::super::codec::CacheParseError::Version { found: 56 })
     ));
 
-    let v53_cache = AutorouteCache {
+    let cache = AutorouteCache {
         version: AUTOROUTE_CACHE_VERSION,
-        binary_version: "0.5.68".into(),
+        binary_version: "0.5.70".into(),
         git_hash: "abc".into(),
         executable_sha256: "def".into(),
         build_features: AutorouteBuildFeatures::default(),
         detector_digest: 123,
         rules_digest: "rules".into(),
-        gpu_sidecar_digest: Some("sidecar_digest_val".into()),
+        gpu_artifact_binding: Some(AutorouteGpuArtifactBinding::RuntimeCompiled {
+            executable_sha256: "def".into(),
+            rules_digest: "rules".into(),
+        }),
         execution_pack_generation: None,
         configs: vec![],
     };
-    let serialized = serde_json::to_string(&v53_cache).expect("serialize v53 cache");
+    let serialized = serde_json::to_string(&cache).expect("serialize v57 cache");
     let parsed = super::super::codec::parse_autoroute_cache(serialized.as_bytes())
-        .unwrap_or_else(|e| panic!("parse v53 cache: {}", e.diagnostic()));
-    assert_eq!(parsed.gpu_sidecar_digest, Some("sidecar_digest_val".into()));
+        .unwrap_or_else(|e| panic!("parse v57 cache: {}", e.diagnostic()));
+    assert_eq!(parsed.gpu_artifact_binding, cache.gpu_artifact_binding);
 }
 
 #[test]
 fn gpu_artifact_identity_mutation_coverage() {
     let mut cache = AutorouteCache {
         version: AUTOROUTE_CACHE_VERSION,
-        binary_version: "0.5.68".into(),
+        binary_version: "0.5.70".into(),
         git_hash: "test".into(),
-        executable_sha256: "test".into(),
+        executable_sha256: "test-executable".into(),
         build_features: AutorouteBuildFeatures::default(),
         detector_digest: 0,
-        rules_digest: "test".into(),
-        gpu_sidecar_digest: Some("valid_sidecar".into()),
+        rules_digest: "test-rules".into(),
+        gpu_artifact_binding: Some(AutorouteGpuArtifactBinding::RuntimeCompiled {
+            executable_sha256: "test-executable".into(),
+            rules_digest: "test-rules".into(),
+        }),
         execution_pack_generation: None,
         configs: vec![],
     };
 
-    // Removing gpu_sidecar_digest independently -> rejected for GPU decision
-    cache.gpu_sidecar_digest = None;
-    assert!(!gpu_artifact_identity_matches(&cache));
+    assert!(gpu_artifact_binding_matches(&cache, None));
+    assert!(
+        !gpu_artifact_binding_matches(&cache, Some("installed")),
+        "installing a sidecar must invalidate runtime-compiled evidence"
+    );
 
-    // Any identity other than the verified installed set is rejected.
-    cache.gpu_sidecar_digest = Some("invalid_sidecar".into());
-    assert!(!gpu_artifact_identity_matches(&cache));
+    cache.gpu_artifact_binding = Some(AutorouteGpuArtifactBinding::RuntimeCompiled {
+        executable_sha256: "different-executable".into(),
+        rules_digest: "test-rules".into(),
+    });
+    assert!(!gpu_artifact_binding_matches(&cache, None));
+
+    cache.gpu_artifact_binding = Some(AutorouteGpuArtifactBinding::InstalledSidecar {
+        sha256: "valid-sidecar".into(),
+    });
+    assert!(gpu_artifact_binding_matches(
+        &cache,
+        Some("valid-sidecar")
+    ));
+    assert!(!gpu_artifact_binding_matches(
+        &cache,
+        Some("different-sidecar")
+    ));
+    assert!(!gpu_artifact_binding_matches(&cache, None));
+
+    cache.gpu_artifact_binding = None;
+    assert!(!gpu_artifact_binding_matches(&cache, None));
 }
 
 #[test]
