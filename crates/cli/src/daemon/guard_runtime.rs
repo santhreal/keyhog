@@ -366,27 +366,15 @@ impl GuardRuntime {
         let record = roots
             .get_mut(canonical_path)
             .ok_or_else(|| format!("root not registered: {}", String::from_utf8_lossy(canonical_path)))?;
-        let new_state = match receipt.terminal_state {
-            keyhog_core::guard_state::GuardRootState::Blocked => {
-                record.state.transition(&GuardTransition::EventsFindings)
-            }
-            keyhog_core::guard_state::GuardRootState::Current => {
-                record.state.transition(&GuardTransition::EventsClean)
-            }
-            keyhog_core::guard_state::GuardRootState::Degraded => {
-                record.state.transition(&GuardTransition::EventsDegraded)
-            }
-            _ => Ok(receipt.terminal_state),
-        };
-        match new_state {
-            Ok(s) => {
-                record.state = s;
-                record.terminal_sequence = record.terminal_sequence.saturating_add(1);
-                record.last_receipt = Some(receipt);
-                Ok(())
-            }
-            Err(e) => Err(format!("state transition failed: {}", e)),
-        }
+        // A commit transaction is an authoritative proof of content
+        // state, not a state-machine event. The receipt's
+        // terminal_state is the proven state, so set it directly
+        // rather than going through the transition table (which
+        // would reject EventsClean from Current, for example).
+        record.state = receipt.terminal_state;
+        record.terminal_sequence = record.terminal_sequence.saturating_add(1);
+        record.last_receipt = Some(receipt);
+        Ok(())
     }
 
     /// Number of registered roots.

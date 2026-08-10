@@ -41,6 +41,12 @@ const CONTROL_PLANE_ADMISSIONS: usize = 8;
 /// Read deadline for a control-only connection. The reserved pool is small, so
 /// it has to clear itself rather than depend on peers being well behaved.
 const CONTROL_PLANE_READ_TIMEOUT: Duration = Duration::from_secs(5);
+/// Maximum concurrent guard commit transactions per daemon. A client
+/// that opens transactions in a loop cannot hold unbounded memory.
+const MAX_GUARD_TRANSACTIONS: usize = 32;
+/// Maximum manifest entries (staged files) in a single GuardCommitBegin
+/// frame. A client cannot stuff a transaction with millions of entries.
+const MAX_GUARD_MANIFEST_ENTRIES: usize = 100_000;
 /// How long `Shutdown` waits for in-flight scans to finish before it
 /// acknowledges anyway. The wire contract promises a flush, but an unbounded
 /// wait would let one wedged mass transaction make the daemon unstoppable.
@@ -640,35 +646,65 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
 }
 
 /// Process a batch of guard events for one root. Advisory filesystem
-/// events mark the root dirty (EventAccepted); only a commit
-/// transaction or explicit reconciliation can prove clean/findings.
-/// Overflow (ReconcileSubtree) marks the root degraded.
+/// events mark the root dirty (EventAccepted) only when it is in a
+/// state that accepts that transition (Current or Blocked). Overflow
+/// (ReconcileSubtree) uses CoverageLost, which is legal from every
+/// active state. Events on roots that are already Dirty, Degraded,
+/// StalePolicy, Indexing, or Stopped are no-ops: the root is already
+/// in a state that accounts for unscanned changes.
 fn process_guard_events(state: &ServerState, root: &Path, events: Vec<keyhog_sources::guard::GuardEvent>) {
-    use keyhog_core::guard_state::GuardTransition;
+    use keyhog_core::guard_state::{GuardRootState, GuardTransition};
     use keyhog_sources::guard::GuardEvent;
 
     let root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(root.as_os_str());
     let has_overflow = events.iter().any(|e| matches!(e, GuardEvent::ReconcileSubtree(_)));
 
+    let current_state = state.guard.root_state(root_bytes);
     let transition = if has_overflow {
-        GuardTransition::EventsDegraded
+        // CoverageLost is legal from Indexing, Current, Dirty, Blocked,
+        // and Degraded. Stopped roots are not active, so skip.
+        match current_state {
+            Some(GuardRootState::Stopped) | None => return,
+            _ => Some(GuardTransition::CoverageLost),
+        }
     } else {
-        // Advisory events observed changes. Mark the root dirty so
-        // the operator knows a re-scan is needed. Do not claim clean
-        // or findings without actually scanning the content.
-        GuardTransition::EventAccepted
+        // EventAccepted is legal only from Current and Blocked.
+        // Dirty, Degraded, StalePolicy, Indexing, and Stopped
+        // already account for unscanned changes.
+        match current_state {
+            Some(GuardRootState::Current) | Some(GuardRootState::Blocked) => {
+                Some(GuardTransition::EventAccepted)
+            }
+            _ => None,
+        }
     };
 
-    match state.guard.transition_root(root_bytes, &transition) {
-        Ok(_) => {}
-        Err(e) => {
-            tracing::warn!(
-                "daemon: guard transition failed for {}: {}",
-                root.display(),
-                e
-            );
+    if let Some(transition) = transition {
+        match state.guard.transition_root(root_bytes, &transition) {
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(
+                    "daemon: guard transition failed for {}: {}",
+                    root.display(),
+                    e
+                );
+            }
         }
     }
+}
+
+/// Check whether a path is a system directory that should never be
+/// registered as a guard root. Prevents a same-user client from
+/// making the daemon scan sensitive OS paths.
+fn is_system_path(path: &std::path::Path) -> bool {
+    const SYSTEM_PREFIXES: &[&str] = &[
+        "/etc", "/proc", "/sys", "/dev", "/boot", "/run", "/var/log",
+        "/usr", "/bin", "/sbin", "/lib", "/lib64",
+    ];
+    let path_str = path.to_string_lossy();
+    SYSTEM_PREFIXES.iter().any(|prefix| {
+        path_str.as_ref() == *prefix || path_str.starts_with(&format!("{}/", prefix))
+    })
 }
 
 async fn run_accept_loop(
@@ -1328,6 +1364,25 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             hash_algorithm,
             entries,
         } => {
+            // Bound concurrent transactions and manifest entries to
+            // prevent a client from holding unbounded daemon memory.
+            if state.guard.active_transaction_count() >= MAX_GUARD_TRANSACTIONS {
+                return Response::Error {
+                    message: format!(
+                        "daemon: guard commit: too many concurrent transactions (max {})",
+                        MAX_GUARD_TRANSACTIONS
+                    ),
+                };
+            }
+            if entries.len() > MAX_GUARD_MANIFEST_ENTRIES {
+                return Response::Error {
+                    message: format!(
+                        "daemon: guard commit: manifest has {} entries, max is {}",
+                        entries.len(),
+                        MAX_GUARD_MANIFEST_ENTRIES
+                    ),
+                };
+            }
             // Parse the hash algorithm.
             let git_hash = match hash_algorithm.as_str() {
                 "sha1" => keyhog_core::guard_state::GitHashAlgorithm::Sha1,
@@ -1652,12 +1707,18 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 }),
                 terminal_sequence: 0,
             };
-            // Update the root record with the receipt. Log errors
-            // so a failed update is visible to the operator.
-            if let Err(e) = state.guard.update_root_after_commit(txn.repo_path.as_bytes(), receipt) {
+            // Update the root record with the receipt. The root was
+            // registered under the daemon-canonicalized path, so
+            // canonicalize the transaction's repo_path to match.
+            // Log errors so a failed update is visible to the operator.
+            let commit_root = match std::fs::canonicalize(&txn.repo_path) {
+                Ok(p) => p,
+                Err(_) => std::path::PathBuf::from(&txn.repo_path),
+            };
+            if let Err(e) = state.guard.update_root_after_commit(std::os::unix::ffi::OsStrExt::as_bytes(commit_root.as_os_str()), receipt) {
                 tracing::warn!(
                     "daemon: guard commit finish: failed to update root {}: {}",
-                    txn.repo_path,
+                    commit_root.display(),
                     e
                 );
             }
@@ -1698,6 +1759,19 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 }
             };
             let canonical = canonical_path.to_string_lossy().into_owned();
+            // Reject system directories that should never be guard
+            // roots. The socket is same-uid only, but a same-user
+            // process should not be able to make the daemon scan
+            // sensitive system paths or consume watch descriptors
+            // on OS internals.
+            if is_system_path(&canonical_path) {
+                return Response::Error {
+                    message: format!(
+                        "daemon: guard add: refusing to register system path {}: guard roots must be project or user directories",
+                        canonical
+                    ),
+                };
+            }
             // Use symlink_metadata to avoid following symlinks. The design
             // contract requires roots be validated without following symlinks.
             let meta = match std::fs::symlink_metadata(&canonical_path) {
@@ -1719,13 +1793,25 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     // Register the root with the filesystem watcher.
                     // Subscribe-first: the watcher starts before any
                     // baseline walk so events during the walk are
-                    // captured.
+                    // captured. If the watcher cannot observe this
+                    // root (e.g. inotify watch limit exceeded), fail
+                    // the registration: the root is removed from the
+                    // guard runtime so `guard status` does not report
+                    // a protected root that is silently unwatched.
                     if let Err(e) = state.guard_watcher.lock().add_root(canonical_path.clone()) {
                         tracing::warn!(
                             "daemon: guard watcher failed to register {}: {}",
                             canonical,
                             e
                         );
+                        let _ = state.guard.remove_root(canonical.as_bytes());
+                        return Response::Error {
+                            message: format!(
+                                "daemon: guard add: watcher cannot observe {}: {}",
+                                canonical,
+                                e
+                            ),
+                        };
                     }
                     Response::GuardAdded {
                         root: canonical.clone(),

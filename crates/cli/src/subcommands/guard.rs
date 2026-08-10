@@ -77,7 +77,7 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
                 root: canonical_for_reconcile,
             };
             match conn.round_trip(&status_request).await? {
-                Response::GuardStatusResult { state, .. } => {
+                Response::GuardStatusResult { state, findings_count, .. } => {
                     let palette = style::for_stderr();
                     eprintln!(
                         "{} guard: reconciliation complete, root is {}",
@@ -89,6 +89,8 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
                         "stopped" | "indexing" | "degraded" | "stale-policy"
                     ) {
                         Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
+                    } else if state == "blocked" || findings_count > 0 {
+                        Ok(ExitCode::from(exit_codes::EXIT_FINDINGS))
                     } else {
                         Ok(ExitCode::SUCCESS)
                     }
@@ -343,7 +345,7 @@ async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
                 root: canonical.clone(),
             };
             match conn.round_trip(&status_request).await? {
-                Response::GuardStatusResult { state, .. } => {
+                Response::GuardStatusResult { state, findings_count, .. } => {
                     let palette = style::for_stderr();
                     eprintln!(
                         "{} guard: reconciliation complete for {}, state is {}",
@@ -356,6 +358,8 @@ async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
                         "stopped" | "indexing" | "degraded" | "stale-policy"
                     ) {
                         Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
+                    } else if state == "blocked" || findings_count > 0 {
+                        Ok(ExitCode::from(exit_codes::EXIT_FINDINGS))
                     } else {
                         Ok(ExitCode::SUCCESS)
                     }

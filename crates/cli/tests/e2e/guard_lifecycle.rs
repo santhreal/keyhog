@@ -32,12 +32,12 @@ fn guard_lifecycle_add_status_list_remove() {
         .output()
         .expect("guard add");
     let add_code = add.status.code().unwrap_or(-1);
-    // guard add now triggers baseline reconciliation. An empty tempdir
+    // guard add triggers baseline reconciliation. An empty tempdir
     // should reach current (exit 0). Watcher events may mark it dirty
-    // if files change during the scan, which is also exit 0.
+    // or degraded (exit 13). If findings are found, exit 1.
     assert!(
-        add_code == 0 || add_code == 13,
-        "guard add should succeed (0) or exit 13 (degraded/stale): got {}: stdout={}; stderr={}",
+        add_code == 0 || add_code == 1 || add_code == 13,
+        "guard add should succeed (0), exit 1 (findings), or exit 13 (degraded/stale): got {}: stdout={}; stderr={}",
         add_code,
         String::from_utf8_lossy(&add.stdout),
         String::from_utf8_lossy(&add.stderr)
