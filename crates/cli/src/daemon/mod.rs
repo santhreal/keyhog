@@ -52,6 +52,7 @@ pub(crate) mod server;
 pub(crate) mod guard_runtime;
 pub(crate) mod transport;
 pub(crate) mod guard_watcher;
+pub(crate) mod guard_commit;
 pub(crate) mod sigpipe;
 mod trust;
 mod warm_identity;

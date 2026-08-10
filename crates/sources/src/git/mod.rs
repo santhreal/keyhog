@@ -57,6 +57,21 @@ pub use history::GitHistorySource;
 pub use source::GitSource;
 pub use staged::GitStagedSource;
 
+/// Read a staged blob's content by object ID from a repository.
+/// Returns the raw blob bytes. Used by the guard commit client
+/// to stream blob payloads to the daemon.
+pub fn read_staged_blob(repo_path: &std::path::Path, oid: &str) -> Result<Vec<u8>, keyhog_core::SourceError> {
+    let repo = gix::open(repo_path).map_err(|e| {
+        keyhog_core::SourceError::Git(format!("failed to open repository for blob read: {e}"))
+    })?;
+    let object_id = gix::ObjectId::from_hex(oid.as_bytes())
+        .map_err(|e| keyhog_core::SourceError::Git(format!("invalid object ID {oid}: {e}")))?;
+    let object = repo.find_object(object_id).map_err(|e| {
+        keyhog_core::SourceError::Git(format!("failed to read blob {oid}: {e}"))
+    })?;
+    Ok(object.data.to_vec())
+}
+
 pub(crate) use diff_parser::{trim_diff_line_bytes, UnifiedDiffEvent, UnifiedDiffParser};
 pub(crate) use source::max_commits_limit;
 #[cfg(debug_assertions)]

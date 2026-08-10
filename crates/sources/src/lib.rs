@@ -96,7 +96,7 @@ mod web;
 
 pub use api::*;
 #[cfg(feature = "git")]
-pub use git::{StagedEntryKind, StagedManifest, StagedManifestEntry, verify_staged_fingerprint};
+pub use git::{StagedEntryKind, StagedManifest, StagedManifestEntry, read_staged_blob, verify_staged_fingerprint};
 pub(crate) use skip::{
     acquire_scan_read_lease, attach_scan_lease, enter_exclusive_scan_scope, gate_scan,
     record_skip_event, record_skip_events, reset_skip_counters, SourceSkipEvent,

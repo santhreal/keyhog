@@ -402,6 +402,58 @@ keyhog explain stripe-secret-key
 | `-d`, `--detectors` | `DETECTORS` | `detectors` | Detector TOML directory. When omitted, KeyHog discovers an installed corpus or uses the embedded corpus. An explicitly named missing path is an error |
 <!-- /keyhog-generated: cli-reference command="explain" -->
 
+## `keyhog guard <add|remove|list|status|reconcile>`
+
+Manages perpetual repository and filesystem guard protection. Connects to
+the daemon and sends guard control frames. When no daemon is available,
+reports that clearly instead of silently doing nothing.
+
+<!-- keyhog-generated: cli-reference command="guard" -->
+| Subcommand | Aliases | Description |
+|------------|---------|-------------|
+| `add` |  | Register a repository or filesystem root for continuous guard protection. Waits for initial reconciliation to complete before returning |
+| `help` |  | Print this message or the help of the given subcommand(s) |
+| `list` |  | List all registered guard roots and their current states |
+| `reconcile` |  | Force a full reconciliation of a guarded root after an intentional policy or filesystem change |
+| `remove` |  | Stop protecting a root and remove its persisted non-secret state |
+| `status` |  | Print the exact state and current policy identity of a guarded root |
+
+### `keyhog guard add`
+
+| Argument | Value | Default | Description |
+|----------|-------|---------|-------------|
+| `<ROOT>` *(required)* | `ROOT` |  | Root path to guard |
+| `--mode` | `MODE` | `repo` | Guard mode: `repo` uses Git object IDs for exact staged-content identity; `filesystem` uses content hashes without immutable Git OIDs |
+
+### `keyhog guard help`
+
+*No arguments.*
+
+### `keyhog guard list`
+
+*No arguments.*
+
+### `keyhog guard reconcile`
+
+| Argument | Value | Default | Description |
+|----------|-------|---------|-------------|
+| `<ROOT>` *(required)* | `ROOT` |  | Root path to reconcile |
+
+### `keyhog guard remove`
+
+| Argument | Value | Default | Description |
+|----------|-------|---------|-------------|
+| `<ROOT>` *(required)* | `ROOT` |  | Root path to unguard |
+
+### `keyhog guard status`
+
+| Argument | Value | Default | Description |
+|----------|-------|---------|-------------|
+| `<ROOT>` *(required)* | `ROOT` |  | Root path to inspect |
+| `--format` | `FORMAT` | `human` | Output format: `human` or `json` |
+
+<!-- /keyhog-generated: cli-reference command="guard" -->
+
 ## `keyhog watch [PATH]...`
 
 Foreground subcommand that watches one or more directories for file changes
