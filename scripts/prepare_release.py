@@ -18,6 +18,12 @@ except ModuleNotFoundError:
 
 
 CATEGORIES = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
+# Keep a Changelog has no Performance heading. Accept it in fragments and publish
+# under Changed so the 58+ already-committed notes can release without a rewrite.
+CATEGORY_ALIASES = {
+    "Performance": "Changed",
+    "Documentation": "Changed",
+}
 CRATE_CHANGELOGS = {
     "cli": Path("crates/cli/CHANGELOG.md"),
     "core": Path("crates/core/CHANGELOG.md"),
@@ -95,6 +101,9 @@ def load_fragments(directory: Path) -> list[Fragment]:
         category = data["category"]
         summary = data["summary"]
         crates = data["crates"]
+        if not isinstance(category, str):
+            raise PrepareError(f"{path} category must be a string")
+        category = CATEGORY_ALIASES.get(category, category)
         if category not in CATEGORIES:
             raise PrepareError(f"{path} has unsupported category {category!r}")
         if not isinstance(summary, str) or not summary.strip() or "\n" in summary:

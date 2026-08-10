@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "`Shutdown` now delivers in-flight results before it acknowledges."
+crates = []

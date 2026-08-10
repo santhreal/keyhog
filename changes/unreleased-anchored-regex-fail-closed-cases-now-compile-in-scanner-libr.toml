@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Anchored-regex fail-closed cases now compile in scanner library test builds."
+crates = []

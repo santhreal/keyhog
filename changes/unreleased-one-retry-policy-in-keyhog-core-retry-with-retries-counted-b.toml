@@ -1,0 +1,3 @@
+category = "Added"
+summary = "One retry policy, in `keyhog_core::retry`, with retries counted by cause."
+crates = []

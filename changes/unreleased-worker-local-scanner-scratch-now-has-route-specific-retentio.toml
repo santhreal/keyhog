@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "Worker-local scanner scratch uses route-specific retention ceilings instead of keeping outlier allocations."
+crates = []

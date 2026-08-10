@@ -41,7 +41,7 @@ summary = "Reduce allocations in the scanner hot path."
 crates = ["core", "scanner"]
 ```
 
-Save it as `changes/<short-name>.toml`. Valid categories are `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, and `Security`. The automatic release consumes the fragment after CI succeeds. Crates not named by a fragment receive the push commit subject.
+Save it as `changes/<short-name>.toml`. Valid categories are `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, and `Security`. `Performance` and `Documentation` are accepted as aliases of `Changed`. The automatic release consumes the fragment after CI succeeds. Crates not named by a fragment receive the push commit subject.
 
 ## Recover a failed publication
 

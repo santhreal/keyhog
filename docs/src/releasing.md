@@ -39,6 +39,8 @@ Valid categories are:
 - `Fixed`
 - `Security`
 
+`Performance` and `Documentation` are accepted as aliases of `Changed` so existing notes publish under the Keep a Changelog heading.
+
 Valid crate names are `cli`, `core`, `profile`, `scanner`, `sources`, and `verifier`. The release commit consumes the fragment. Any crate not covered by a fragment receives the push commit subject.
 
 ## Configure crates.io trusted publishing

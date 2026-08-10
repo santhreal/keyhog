@@ -52,6 +52,34 @@ class ReleaseFragmentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(release.load_fragments(Path(directory)), [])
 
+    def test_nonstandard_fragment_aliases_publish_under_changed(self) -> None:
+        """Performance and Documentation notes already on main must release under Changed."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / "pack-hydration.toml").write_text(
+                'category = "Performance"\n'
+                'summary = "Reuse authenticated pack hydration."\n'
+                'crates = ["scanner"]\n',
+                encoding="utf-8",
+            )
+            (path / "docs-note.toml").write_text(
+                'category = "Documentation"\n'
+                'summary = "Document baseline and history instructions."\n'
+                'crates = ["cli"]\n',
+                encoding="utf-8",
+            )
+            fragments = release.load_fragments(path)
+            self.assertEqual(
+                [fragment.category for fragment in fragments],
+                ["Changed", "Changed"],
+            )
+            rendered = release.render_section("0.5.69", "2026-08-10", fragments)
+            self.assertIn("### Changed\n\n", rendered)
+            self.assertIn("- Document baseline and history instructions.\n", rendered)
+            self.assertIn("- Reuse authenticated pack hydration.\n", rendered)
+            self.assertNotIn("### Performance", rendered)
+            self.assertNotIn("### Documentation", rendered)
+
     def test_unknown_fields_and_crates_are_rejected(self) -> None:
         """Typos in fragment ownership must not silently disappear from crate notes."""
         invalid = (

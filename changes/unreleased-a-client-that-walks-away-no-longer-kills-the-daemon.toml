@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "A client that walks away no longer kills the daemon."
+crates = []
