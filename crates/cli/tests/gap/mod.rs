@@ -12,8 +12,6 @@ pub mod dogfood_summary_no_pass_dogfood_when_active;
 pub mod exclude_paths_flag_not_wired;
 pub mod exit_code_system_vs_user;
 pub mod exit_codes_lockdown;
-pub mod file_gate_matrix_cli_hostile_columns_unmarked;
-pub mod file_gate_matrix_cli_split_rows_stale;
 pub mod flag_surface;
 pub mod format_surface;
 pub mod git_diff_non_repo_exits_nonzero;

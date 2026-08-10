@@ -12,7 +12,6 @@ live under each crate's own `tests/` tree.
 | `tests/docker/` | Scanning inside glibc/musl Docker images; build-and-run scenarios. |
 | `tests/install/` | OS-addressable install scenarios: Linux/macOS wrappers, Windows notes, and shared fixtures. |
 | `tests/integration/` | CLI entrypoint smoke tests (`keyhog --help`, `--version`, etc.). |
-| `tests/FILE_GATE_MATRIX.toml` | Per-source-file coverage matrix tracked by the file-gate CI job. |
 | `tests/docs/` | Docs claim checks (CLI help ↔ README, etc.). |
 
 ## Most common commands

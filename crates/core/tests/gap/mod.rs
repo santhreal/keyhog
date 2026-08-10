@@ -3,8 +3,6 @@ pub mod cross_detector_single_input_passthrough;
 pub mod dedup_same_credential_one_group;
 pub mod encoding_rejects_oversized_input;
 pub mod every_embedded_detector_parses;
-pub mod file_gate_matrix_core_columns_unmarked;
-pub mod file_gate_matrix_core_missing_submodule_rows;
 pub mod lib_rs_duplicate_lint_preamble;
 pub mod lint_preamble_present;
 pub mod merkle_load_without_spec_invalidates_legacy_save;

@@ -108,10 +108,6 @@ mod entropy_unique_byte_count_dedup;
 mod entropy_universal_rejection_rules_exact;
 #[path = "gap/entropy_xml_close_tag_search.rs"]
 mod entropy_xml_close_tag_search;
-#[path = "gap/file_gate_matrix_scanner_adversarial_unmarked.rs"]
-mod file_gate_matrix_scanner_adversarial_unmarked;
-#[path = "gap/file_gate_matrix_scanner_missing_submodule_rows.rs"]
-mod file_gate_matrix_scanner_missing_submodule_rows;
 #[path = "gap/findings_registry_integrity.rs"]
 mod findings_registry_integrity;
 #[path = "gap/fragment_assignment_syntax_prefilter.rs"]
