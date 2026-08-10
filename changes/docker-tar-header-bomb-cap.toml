@@ -1,3 +1,0 @@
-category = "Security"
-summary = "Cap the number of tar entries KeyHog walks in a docker archive or layer. The existing byte guard sums each entry's payload size, so an archive built entirely from zero-length entries never advanced it and could be walked without bound: a 4.4 MB gzip expands into two million tar headers, each costing a filesystem syscall during unpack. Entries past the cap are refused and counted as a coverage gap rather than silently truncated."
-crates = ["sources"]

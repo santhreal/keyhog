@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Default daemon clients now use the detector identity compiled into the binary instead of parsing all embedded detector TOML solely for the compatibility handshake; explicit replacement corpora remain content-hashed."
-crates = ["cli"]

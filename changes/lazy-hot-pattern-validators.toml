@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Authenticated packed scans defer precise hot-pattern validator regexes until their literal prefix is observed; backend parity regressions now compile the exact requested route."
-crates = ["scanner"]

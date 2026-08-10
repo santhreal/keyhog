@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Filesystem discovery now walks metadata directly, preserves native path ordering through bounded external sorting, and defers content classification to the no-follow reader instead of reopening every candidate during traversal."
-crates = ["sources"]

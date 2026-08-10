@@ -1,3 +1,0 @@
-category = "Fixed"
-crates = ["verifier"]
-summary = "AWS STS HTTP 200 responses without parseable caller-identity metadata no longer report Live."

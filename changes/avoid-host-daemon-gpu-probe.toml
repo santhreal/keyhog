@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Explicit CPU and SIMD daemons no longer initialize or retain GPU runtime libraries during startup."
-crates = ["cli", "scanner"]

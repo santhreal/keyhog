@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Filesystem scans now coalesce ordered tiny-file handoffs into bounded batches and reuse complete extensionless prefix reads instead of reopening the same file."
-crates = ["sources"]

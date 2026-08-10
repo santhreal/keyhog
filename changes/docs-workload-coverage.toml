@@ -1,3 +1,0 @@
-category = "Added"
-summary = "Add a workload index and per-shape guides so each input shape has a documented path from zero to a correct scan, and add a canonical page for telling a genuine clean from a skipped input. Watch mode had no page and was absent from the table of contents, single-large-file, minified, container, stdin and encoded-payload inputs had no shape-specific limits recorded, and a reader had no documented way to distinguish an empty findings list caused by clean input from one caused by input that was never read."
-crates = []

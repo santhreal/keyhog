@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Stop vendor detectors from claiming credentials that carry no evidence of that vendor. Akamai owned every bare client_secret, WordPress owned every bare access_token, and Authentik owned every bearer authorization header. Wrong-vendor attribution on the ground-truth corpus drops from 114 of 386 to 87, with no recall lost and 9 files newly detected."
-crates = []

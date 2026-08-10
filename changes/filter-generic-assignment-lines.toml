@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Generic assignment scanning now rejects broad keyword-stem lines unless an assignment delimiter follows the stem, while preserving *_PASS= and value-suffix recall."
-crates = ["scanner"]

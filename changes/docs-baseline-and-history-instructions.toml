@@ -1,3 +1,0 @@
-category = "Documentation"
-summary = "Document what a baseline entry actually matches on, add a task-oriented path for failing CI only on new secrets, and state the shallow-clone prerequisite for scanning Git history. The deep-recovery guide previously opened with autoroute calibration and never mentioned fetch-depth, so a documented CI job would scan a single commit and report nothing."
-crates = []

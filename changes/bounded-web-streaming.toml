@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Web scans now stream ordered fetch results with eight-response backpressure, emit JavaScript, source-map, and WASM text in gapless 256 KiB chunks, and release parsed source-map ownership before chunk materialization."
-crates = ["sources"]

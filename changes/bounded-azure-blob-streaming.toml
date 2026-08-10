@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Azure Blob Storage scans now stream blob bodies in deterministic order through the shared bounded cloud fetch window instead of retaining a container-wide result vector."
-crates = ["sources"]

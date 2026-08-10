@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Cap retained batch-route records and count drops like other profile event streams"
-crates = ["profile"]

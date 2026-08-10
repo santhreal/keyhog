@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Concurrent CPU batches now single-flight exact reusable admission evidence misses instead of rebuilding the same representative in parallel."
-crates = ["scanner"]

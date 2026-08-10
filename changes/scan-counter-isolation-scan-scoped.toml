@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Source skip counters (unreadable, binary, over-max-size and the other coverage-gap totals) could be attributed to the wrong scan. The counter-isolation lease was released when a scan's chunk iterator dropped, but the filesystem reader crew records skip events from its own threads and outlives that iterator whenever a consumer stops early, so a finished scan's increments could land in a later scan's window. The lease is now scan-scoped rather than thread-scoped: it is held by every thread doing work for the scan and released only when the last one finishes, and the recording call itself carries the gate. Coverage-gap events are delayed rather than dropped, so a gap is never lost."
-crates = ["sources"]

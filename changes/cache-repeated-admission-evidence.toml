@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "CPU autoroute now reuses bounded exact payload evidence across source batches while rejecting sampled-fingerprint collisions and stale policy identities."
-crates = ["scanner"]

@@ -1,3 +1,0 @@
-category = "Changed"
-summary = "Watch finding lines now include a stable `sha256:<digest>` credential identity beside the redacted value, enabling redaction-safe parity and deduplication across events."
-crates = ["cli"]

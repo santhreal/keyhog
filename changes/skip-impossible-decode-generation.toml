@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Scanner post-processing now skips decode generation for whole chunks and bounded filesystem windows whose decoder admission proof is impossible."
-crates = ["scanner"]

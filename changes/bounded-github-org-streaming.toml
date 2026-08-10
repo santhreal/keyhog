@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "GitHub organization scans now preserve concurrent shallow cloning while streaming repository chunks in configured repository order with one-row channels, instead of retaining every cloned repository result until the organization finishes."
-crates = ["sources"]

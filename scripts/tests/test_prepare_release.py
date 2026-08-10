@@ -274,7 +274,6 @@ class ReleaseTransformationTests(unittest.TestCase):
             versioned = (
                 root / "README.md",
                 root / ".github/actions/keyhog/README.md",
-                root / ".github/workflows/action-e2e.yml",
                 root / "docs/src/install.md",
             )
             for path in versioned:
@@ -284,7 +283,7 @@ class ReleaseTransformationTests(unittest.TestCase):
 
             preview = release.prepare(root, "0.5.49", "2026-07-28", False)
 
-            self.assertEqual(len(preview), 13)
+            self.assertEqual(len(preview), 12)
             self.assertEqual((root / "Cargo.toml").read_text(), manifest)
             self.assertTrue(fragment.exists())
             for path in versioned:

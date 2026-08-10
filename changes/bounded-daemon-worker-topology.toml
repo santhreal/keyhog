@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Persistent daemons now configure at most eight physical-core Rayon workers before detector loading, preventing accidental logical-core pools and bounding resident worker-local caches."
-crates = ["cli"]

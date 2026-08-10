@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "SIMD scans now cache bounded exact trigger rows across repeated authenticated batches while requiring full payload equality after sampled lookup."
-crates = ["scanner"]

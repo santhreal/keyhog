@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "HTML reports now serialize findings directly to their output stream with bounded per-finding memory while preserving verification-error redaction and script-breakout protection."
-crates = ["core"]

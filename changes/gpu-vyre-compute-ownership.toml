@@ -1,3 +1,0 @@
-category = "Changed"
-summary = "GPU routes now execute detection only through VYRE-owned CUDA, Metal, and WGPU programs. KeyHog no longer ships a WGPU MoE shader: ML confidence scoring is deterministic CPU work for every backend, the `[tuning].gpu_moe_timeout_ms` key is removed, and GPU health reports expose only VYRE literal-set and production region-presence probes."
-crates = ["scanner", "cli"]
