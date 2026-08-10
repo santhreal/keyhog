@@ -200,18 +200,31 @@ pub(super) fn member_needs_source_bytes(name: &str) -> bool {
         .unwrap_or(false) // LAW10: a member without an extension is not TeX source; recall-preserving ordinary archive scanning still handles the member.
 }
 
-pub(super) fn bytes_might_contain_source_extension(bytes: &[u8]) -> bool {
-    bytes.windows(4).any(|window| {
-        window[0] == b'.'
-            && matches!(
-                [
-                    window[1].to_ascii_lowercase(),
-                    window[2].to_ascii_lowercase(),
-                    window[3].to_ascii_lowercase(),
-                ],
-                [b't', b'e', b'x'] | [b'l', b't', b'x'] | [b's', b't', b'y'] | [b'c', b'l', b's']
-            )
-    })
+/// True when any tar member **path** looks like TeX source.
+///
+/// Uses `tar::Archive` so GNU long-name (`././@LongLink`) and pax extended
+/// header paths resolve the same way the subsequent provenance pass does.
+/// Payload *content* bytes are still ignored on purpose: a nested compressed
+/// member can contain the four-byte sequence `.tex` / `.sty` / … inside DEFLATE
+/// output without any TeX source existing. Header/path names are the same
+/// signal the zip path already uses (`file_names().any(member_needs_source_bytes)`).
+pub(super) fn tar_header_names_might_need_tex(bytes: &[u8]) -> bool {
+    let mut archive = tar::Archive::new(std::io::Cursor::new(bytes));
+    let Ok(entries) = archive.entries() else {
+        return false;
+    };
+    for entry in entries {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let Ok(path) = entry.path() else {
+            continue;
+        };
+        if member_needs_source_bytes(&path.to_string_lossy()) {
+            return true;
+        }
+    }
+    false
 }
 
 #[derive(Debug)]
