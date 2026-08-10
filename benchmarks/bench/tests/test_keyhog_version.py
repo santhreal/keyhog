@@ -577,30 +577,33 @@ def test_build_evidence_inventory_produces_catalog_workloads():
     assert isinstance(inventory["detector_corpus_sha256"], str)
 
 
-def test_execution_pack_manifest_validation_in_inventory_and_baseline(tmp_path):
-    """WHY: Execution pack manifest with version=1 and valid digests must validate cleanly in both evidence inventory and baseline capture."""
-    from bench.keyhog_version import build_evidence_inventory, workspace_detector_corpus_sha256
-    from bench.readme_matrix import BENCH_ROOT
+def test_execution_pack_manifest_records_native_digest_identities(tmp_path):
+    """WHY: evidence inventory must accept the native BLAKE3 and generation identities emitted by a real execution-pack manifest without comparing them to unrelated SHA-256 files."""
+    from bench.keyhog_version import build_evidence_inventory
     import json
-    import hashlib
-    import pathlib
-
-    lock_path = pathlib.Path(BENCH_ROOT) / "workload-fixtures.lock.json"
-    lock_sha256 = hashlib.sha256(lock_path.read_bytes()).hexdigest()
-    det_sha256 = workspace_detector_corpus_sha256()
 
     manifest_path = tmp_path / "manifest.json"
     manifest_data = {
         "version": 1,
-        "detector_digest": det_sha256,
-        "binary_digest": "a" * 64,
-        "fixture_digest": lock_sha256,
+        "detector_digest": "1" * 64,
+        "target_digest": "2" * 64,
+        "binary_digest": "3" * 64,
+        "feature_digest": "4" * 64,
+        "fixture_digest": "5" * 64,
+        "packs": [],
     }
     manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
 
     inventory = build_evidence_inventory(execution_pack_manifest_path=manifest_path)
-    assert inventory["execution_pack_manifest"]["version"] == 1
-    assert inventory["execution_pack_manifest"]["detector_digest"] == det_sha256
+    manifest = inventory["execution_pack_manifest"]
+    assert manifest["version"] == 1
+    assert manifest["detector_digest"] == manifest_data["detector_digest"]
+    assert manifest["target_digest"] == manifest_data["target_digest"]
+    assert manifest["binary_digest"] == manifest_data["binary_digest"]
+    assert manifest["feature_digest"] == manifest_data["feature_digest"]
+    assert manifest["fixture_digest"] == manifest_data["fixture_digest"]
+    assert manifest["pack_count"] == 0
+
 def test_build_evidence_inventory_handles_nonexistent_binary(tmp_path):
     """WHY: non-existent binary path raises KeyhogVersionError instead of raw OSError/FileNotFoundError."""
     fake_binary = tmp_path / "nonexistent_keyhog"

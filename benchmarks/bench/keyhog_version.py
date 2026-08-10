@@ -507,19 +507,28 @@ def build_evidence_inventory(
                 f"execution pack manifest schema version must be integer 1, got {pack_ver!r}"
             )
 
-        pack_det = pack_data.get("detector_digest")
-        pack_bin = pack_data.get("binary_digest")
-        pack_fix = pack_data.get("fixture_digest")
-
-        for f_name, f_val in [
-            ("detector_digest", pack_det),
-            ("binary_digest", pack_bin),
-            ("fixture_digest", pack_fix),
-        ]:
-            if not isinstance(f_val, str) or not f_val:
+        digest_fields = {
+            "detector_digest": pack_data.get("detector_digest"),
+            "target_digest": pack_data.get("target_digest"),
+            "binary_digest": pack_data.get("binary_digest"),
+            "feature_digest": pack_data.get("feature_digest"),
+            "fixture_digest": pack_data.get("fixture_digest"),
+        }
+        for field_name, field_value in digest_fields.items():
+            if (
+                not isinstance(field_value, str)
+                or len(field_value) != 64
+                or any(char not in "0123456789abcdef" for char in field_value)
+            ):
                 raise KeyhogVersionError(
-                    f"execution pack manifest field {f_name!r} must be a non-empty string"
+                    f"execution pack manifest field {field_name!r} must be a 64-character lowercase hexadecimal digest"
                 )
+
+        packs = pack_data.get("packs")
+        if not isinstance(packs, list):
+            raise KeyhogVersionError(
+                "execution pack manifest field 'packs' must be a JSON array"
+            )
 
         ws_ver = pack_data.get("workspace_version")
         if ws_ver is not None and ws_ver != workspace_ver:
@@ -527,30 +536,11 @@ def build_evidence_inventory(
                 f"execution pack manifest workspace_version {ws_ver!r} does not match workspace version {workspace_ver!r}"
             )
 
-        if pack_det != detector_sha256:
-            raise KeyhogVersionError(
-                f"execution pack manifest detector_digest {pack_det!r} does not match detector corpus sha256 {detector_sha256!r}"
-            )
-        try:
-            with l_path.open("rb") as f:
-                l_sha256_check = hashlib.sha256(f.read()).hexdigest()
-        except OSError as exc:
-            raise KeyhogVersionError(f"cannot compute fixture lock digest: {exc}") from exc
-        if pack_fix != l_sha256_check:
-            raise KeyhogVersionError(
-                f"execution pack manifest fixture_digest {pack_fix!r} does not match fixture lock sha256 {l_sha256_check!r}"
-            )
-        if binary_info is not None and pack_bin != binary_info["sha256"]:
-            raise KeyhogVersionError(
-                f"execution pack manifest binary_digest {pack_bin!r} does not match binary sha256 {binary_info['sha256']!r}"
-            )
-
         pack_info = {
             "path": str(p_path),
             "version": pack_ver,
-            "detector_digest": pack_det,
-            "binary_digest": pack_bin,
-            "fixture_digest": pack_fix,
+            **digest_fields,
+            "pack_count": len(packs),
         }
         if ws_ver is not None:
             pack_info["workspace_version"] = ws_ver
