@@ -32,7 +32,7 @@ concurrency:
 jobs:
   matrix:
     name: ${{ matrix.variant }} integration
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     # Build times: glibc builds `--features ci-lean` (Hyperscan ON, GPU stack
     # OFF) under release-fast (thin LTO); musl builds `--features portable`
     # under `--release`. Both drop the wgpu/vyre/cuda graph, so both link in
@@ -48,6 +48,13 @@ jobs:
       matrix:
         variant: [glibc, musl]
     steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run ${{ matrix.variant }} Docker integration matrix
         run: bash tests/docker/run.sh ${{ matrix.variant }}

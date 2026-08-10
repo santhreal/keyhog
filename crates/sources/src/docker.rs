@@ -1,5 +1,6 @@
-//! Docker image source: exports an image with `docker image save`, unpacks each
-//! layer, and reuses the filesystem source to scan extracted files safely.
+//! Docker image source: exports an image with `docker image save`, then streams
+//! each layer's tar members through the shared in-memory archive scanner without
+//! materializing layer files to disk.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -39,7 +40,7 @@ pub(super) fn exhaustive_archive_walker(root_path: &Path) -> CodeWalker {
     )
 }
 
-/// Scan a Docker image by saving it as a tar archive and unpacking each layer.
+/// Scan a Docker image by saving it as a tar archive and streaming each layer.
 ///
 /// # Examples
 ///
@@ -196,6 +197,8 @@ fn stream_docker_chunks(
 }
 
 struct DockerScanWorkspace {
+    /// Owns the scratch tree behind `root_path` until the scan finishes.
+    #[allow(dead_code)]
     tempdir: tempfile::TempDir,
     archive_temppath: tempfile::TempPath,
     root_path: PathBuf,
@@ -226,13 +229,6 @@ impl DockerScanWorkspace {
 
     fn root_path(&self) -> &Path {
         &self.root_path
-    }
-
-    fn layer_dir(&self, layer_name: &str) -> PathBuf {
-        self.tempdir
-            .path()
-            .join("layers")
-            .join(layer::sanitize_layer_name(layer_name))
     }
 }
 
@@ -468,6 +464,28 @@ pub(crate) fn unpack_layer_archive_for_test(
     .map(archive::DockerExtractReport::into_errors)
 }
 
+pub(crate) fn stream_layer_archive_chunks_for_test(
+    archive_path: &Path,
+    limits: crate::SourceLimits,
+    total_cap: u64,
+    respect_default_excludes: bool,
+) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
+    let budget = archive::DockerUnpackBudget::new(total_cap);
+    let mut rows = Vec::new();
+    let keep_going = archive::stream_layer_archive_chunks(
+        archive_path,
+        limits,
+        &budget,
+        respect_default_excludes,
+        &mut |row| {
+            rows.push(row);
+            true
+        },
+    )?;
+    debug_assert!(keep_going);
+    Ok(rows)
+}
+
 pub(crate) fn unpack_layer_archive_with_total_cap_for_test(
     archive_path: &Path,
     destination: &Path,
@@ -562,6 +580,43 @@ pub(crate) fn unpack_layers_with_shared_budget_for_test(
         );
     }
     Ok(errors)
+}
+
+pub(crate) fn stream_layers_with_shared_budget_for_test(
+    archives: &[&Path],
+    total_cap: u64,
+    respect_default_excludes: bool,
+) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
+    let limits = crate::SourceLimits {
+        docker_tar_total_bytes: total_cap,
+        ..crate::SourceLimits::default()
+    };
+    let budget = archive::DockerUnpackBudget::new(total_cap);
+    let mut rows = Vec::new();
+    for archive_path in archives {
+        let keep_going = archive::stream_layer_archive_chunks(
+            archive_path,
+            limits,
+            &budget,
+            respect_default_excludes,
+            &mut |row| {
+                rows.push(row);
+                true
+            },
+        )?;
+        if !keep_going {
+            break;
+        }
+    }
+    Ok(rows)
+}
+
+pub(crate) fn rewrite_streamed_layer_chunk_for_test(
+    chunk: Chunk,
+    image: &str,
+    layer_name: &str,
+) -> Result<Chunk, SourceError> {
+    layer::rewrite_streamed_chunk_for_test(chunk, image, layer_name)
 }
 
 pub(crate) fn rewrite_layer_chunks_for_test<I>(
