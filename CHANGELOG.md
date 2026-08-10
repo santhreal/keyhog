@@ -2,6 +2,16 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.70] - 2026-08-10
+
+### Changed
+
+- fix(profile): fail-closed overlapping allocation session peaks.
+
+### Security
+
+- Fail-closed overlapping allocation sessions instead of misattributing process-global peaks
+
 ## [0.5.69] - 2026-08-10
 
 ### Added

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.70 - 2026-08-10
+
+- fix(profile): fail-closed overlapping allocation session peaks.
+
 ## 0.5.69 - 2026-08-10
 
 - Azure Blob Storage scans now stream blob bodies in deterministic order through the shared bounded cloud fetch window instead of retaining a container-wide result vector.
