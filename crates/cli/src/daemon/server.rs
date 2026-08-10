@@ -501,7 +501,13 @@ pub(crate) async fn run_with_backend_override(
                     Some(Arc::new(store))
                 }
                 Err(e) => {
-                    tracing::warn!("daemon: failed to open guard store at {}: {}; continuing without durable state", path.display(), e);
+                    tracing::warn!(
+                        "daemon: failed to open guard store at {}: {}; \
+                         continuing without durable state; \
+                         run 'keyhog guard rebuild <root>' after restarting to recover",
+                        path.display(),
+                        e
+                    );
                     None
                 }
             }
@@ -578,7 +584,11 @@ pub(crate) async fn run_with_backend_override(
                 }
             }
             Err(e) => {
-                tracing::warn!("daemon: failed to load roots from durable store: {}", e);
+                tracing::warn!(
+                    "daemon: failed to load roots from durable store: {}; \
+                     run 'keyhog guard rebuild <root>' for each affected root to recover",
+                    e
+                );
             }
         }
         // Load persisted attestations.
@@ -591,7 +601,11 @@ pub(crate) async fn run_with_backend_override(
                 tracing::info!("daemon: loaded {} attestations from durable store", count);
             }
             Err(e) => {
-                tracing::warn!("daemon: failed to load attestations from durable store: {}", e);
+                tracing::warn!(
+                    "daemon: failed to load attestations from durable store: {}; \
+                     attestation cache is empty, run 'keyhog guard rebuild <root>' to recover",
+                    e
+                );
             }
         }
     }
