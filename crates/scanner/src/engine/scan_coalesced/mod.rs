@@ -466,11 +466,7 @@ impl CompiledScanner {
                             })
                     })
                     .as_ref()
-                    .map(|triggers| {
-                        triggers
-                            .as_ref()
-                            .map(|row| row.as_ref().to_vec())
-                    })
+                    .map(|triggers| triggers.as_ref().map(|row| row.as_ref().to_vec()))
                     .map_err(Clone::clone);
             }
             self.compute_one_coalesced_simd_trigger(data, prefilter, ac_len, words_needed)

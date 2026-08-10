@@ -81,9 +81,7 @@ impl ReusableSimdTriggerCache {
         compute: impl FnOnce() -> Result<Option<Vec<u64>>, String>,
     ) -> Result<Option<Arc<[u64]>>, String> {
         let (fingerprint, payload_hash, payload_len) = Self::payload_identity(payload);
-        if let Some(triggers) =
-            self.get_with_identity(fingerprint, payload_hash, payload_len)
-        {
+        if let Some(triggers) = self.get_with_identity(fingerprint, payload_hash, payload_len) {
             return Ok(triggers);
         }
 

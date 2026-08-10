@@ -721,4 +721,3 @@ const _: () = {
     const fn assert_send_sync<T: Send + Sync>() {}
     let _ = assert_send_sync::<CompiledScanner>; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
 };
-

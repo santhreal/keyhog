@@ -223,11 +223,7 @@ impl ExecutionPack {
     /// so later section faults do not repeat storage I/O, but the whole pack no
     /// longer overlaps decoded runtime state in RSS.
     pub fn release_resident_pages(&self) -> Result<(), ExecutionPackError> {
-        release_entire_mapping(
-            &self.mapping,
-            &self.path,
-            "discard authenticated pages",
-        )
+        release_entire_mapping(&self.mapping, &self.path, "discard authenticated pages")
     }
     /// Drop full pages covered by one decoded section field while retaining the
     /// immutable mapping and any partial edge pages. Callers must pass a slice

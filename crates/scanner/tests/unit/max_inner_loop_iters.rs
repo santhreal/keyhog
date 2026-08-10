@@ -36,11 +36,9 @@ fn boundary_seam_cap_matches_window_overlap() {
 
 #[test]
 fn finish_partition_clears_every_cross_call_cache() {
-    let scanner = CompiledScanner::compile_for_backend(
-        vec![],
-        crate::hw_probe::ScanBackend::CpuFallback,
-    )
-    .unwrap();
+    let scanner =
+        CompiledScanner::compile_for_backend(vec![], crate::hw_probe::ScanBackend::CpuFallback)
+            .unwrap();
 
     scanner
         .fragment_cache

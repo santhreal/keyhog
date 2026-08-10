@@ -760,7 +760,6 @@ fn scan_keyword_free_candidates(
     let dogfood_enabled = crate::telemetry::is_dogfood_enabled();
     let mut keyword_line_cursor = 0usize;
     for line_idx in 0..lines.len() {
-
         let Some(line) = lines.line(line_idx) else {
             continue;
         };

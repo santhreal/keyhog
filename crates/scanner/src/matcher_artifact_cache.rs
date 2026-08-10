@@ -1026,4 +1026,3 @@ fn hydrate_matcher_artifact_state(
     )
     .map_err(|error| ScanError::Config(error.to_string()))
 }
-
