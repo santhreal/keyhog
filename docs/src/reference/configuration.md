@@ -497,6 +497,7 @@ confirmed_suffix_gate = true
 no_candidate_gate = true
 fallback_localizer = true
 gpu_recall_floor = false
+chunk_lane_threshold = 65536
 ```
 
 These keys tune scanner-internal detection and recall route gates. They are
@@ -515,6 +516,12 @@ before automatic use.
 trigger net during parity/debug scans and report any GPU under-fire it recovers.
 ML confidence scoring is deterministic CPU work for every backend; GPU routes
 accelerate detection only through VYRE-owned programs.
+`chunk_lane_threshold` sets the byte boundary between coalesced small-chunk
+lanes and independently scheduled large chunks. It accepts values from
+`ScannerTuningConfig::CHUNK_LANE_THRESHOLD_MIN` through
+`ScannerTuningConfig::CHUNK_LANE_THRESHOLD_MAX`, currently 1 through one less
+than the platform `usize` maximum. Zero and the platform maximum fail closed as
+configuration errors. The default is 65536 bytes.
 
 ### `[allowlist]`
 
