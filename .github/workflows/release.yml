@@ -8,9 +8,6 @@ on:
 permissions:
   contents: write
   id-token: write
-  # prepare_release bumps version pins inside action-e2e.yml; without workflows
-  # write the release commit cannot push.
-  workflows: write
 
 concurrency:
   group: keyhog-auto-release

@@ -36,7 +36,6 @@ VERSIONED_TEXT_PATHS = (
     Path("README.md"),
     Path("PUBLISHING.md"),
     Path(".github/actions/keyhog/README.md"),
-    Path(".github/workflows/action-e2e.yml"),
     # Both published Action entrypoints state the minimum version they install,
     # and a contract test requires them to stay byte-identical. Neither was in
     # this list, so both sat on v0.5.50 through two releases and
@@ -44,6 +43,10 @@ VERSIONED_TEXT_PATHS = (
     # failed as soon as that suite ran.
     Path("action.yml"),
     Path(".github/actions/keyhog/action.yml"),
+    # Intentionally omit `.github/workflows/action-e2e.yml`: `GITHUB_TOKEN`
+    # cannot push workflow-file changes (and `workflows:` is not a valid token
+    # permission), so auto-release must not touch workflow YAML. Bump that
+    # workflow's version pins in a human PR when they drift.
 )
 _VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 _FRAGMENT_RE = re.compile(r"^[a-z0-9][a-z0-9-]*\.toml$")
