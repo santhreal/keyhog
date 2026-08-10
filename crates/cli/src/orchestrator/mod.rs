@@ -448,6 +448,57 @@ pub(crate) struct DefaultScanFilter {
     allowlist: keyhog_core::Allowlist,
 }
 
+impl DefaultScanFilter {
+    /// Build a guard scan filter from detector specs. Uses bundled
+    /// test-fixture suppressions and an empty allowlist (the daemon
+    /// does not load a per-root allowlist for guard scans).
+    pub(crate) fn for_guard(detectors: &[DetectorSpec]) -> Self {
+        let signatures = collect_detector_signatures(detectors);
+        // Disabled detectors are already filtered out before the
+        // daemon compiles its scanner, so the guard filter starts
+        // with an empty disabled set.
+        let disabled_detectors = std::collections::HashSet::new();
+        let detector_min_confidence = compose_detector_min_confidence(
+            &mut detectors.to_vec(),
+            std::collections::HashMap::new(),
+        );
+        Self {
+            signatures,
+            disabled_detectors,
+            detector_min_confidence,
+            test_fixture_suppressions:
+                crate::test_fixture_suppressions::TestFixtureSuppressions::bundled(),
+            no_suppress_test_fixtures: false,
+            min_confidence: 0.0,
+            min_severity: None,
+            allowlist: keyhog_core::Allowlist::default(),
+        }
+    }
+
+    /// Finalize raw scanner matches through the suppression pipeline.
+    /// Returns the count of finalized findings.
+    pub(crate) fn finalize_count(
+        &self,
+        scanner: &CompiledScanner,
+        matches: Vec<RawMatch>,
+    ) -> usize {
+        let filter = postprocess::MatchFilter {
+            scanner,
+            signatures: &self.signatures,
+            disabled_detectors: &self.disabled_detectors,
+            test_fixture_suppressions: &self.test_fixture_suppressions,
+            no_suppress_test_fixtures: self.no_suppress_test_fixtures,
+            detector_min_confidence: &self.detector_min_confidence,
+            min_confidence: self.min_confidence,
+            min_severity: self.min_severity,
+        };
+        match postprocess::filter_and_resolve_matches(&filter, matches, &self.allowlist) {
+            Ok(finalized) => finalized.len(),
+            Err(_) => 0,
+        }
+    }
+}
+
 /// Compose detector-declared confidence floors with operator overrides and
 /// write the effective value back into the ACTIVE corpus before compilation.
 /// The returned map is the same policy used by post-processing, so early engine

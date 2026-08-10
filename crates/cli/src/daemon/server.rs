@@ -251,6 +251,9 @@ struct ServerState {
     /// Guard runtime: root registry, attestation index, policy identity.
     guard: Arc<crate::daemon::guard_runtime::GuardRuntime>,
     /// Guard filesystem watcher: native watchers for all guard roots.
+    /// Guard scan filter: finalizes raw matches through the same
+    /// suppression/allowlist/confidence pipeline as `keyhog scan`.
+    guard_filter: Arc<crate::orchestrator::DefaultScanFilter>,
     guard_watcher: Arc<parking_lot::Mutex<crate::daemon::guard_watcher::GuardWatcher>>,
 }
 
@@ -265,6 +268,7 @@ impl ServerState {
         backend_override: Option<ScanBackend>,
         warm_backend: WarmBackendReadiness,
         guard_hot_index_budget: Option<usize>,
+        guard_filter: crate::orchestrator::DefaultScanFilter,
     ) -> Self {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -297,6 +301,7 @@ impl ServerState {
                 Some(budget) => crate::daemon::guard_runtime::GuardRuntime::with_hot_index_budget(budget),
                 None => crate::daemon::guard_runtime::GuardRuntime::new(),
             }),
+            guard_filter: Arc::new(guard_filter),
             guard_watcher: Arc::new(parking_lot::Mutex::new(
                 crate::daemon::guard_watcher::GuardWatcher::new(
                     keyhog_sources::guard::GuardReconciliationConfig::default(),
@@ -454,6 +459,7 @@ pub(crate) async fn run_with_backend_override(
     // The count is the pre-compile spec count; the ready line reports the final
     // compiled count.
     announce_daemon_starting(detectors.len());
+    let guard_filter = crate::orchestrator::DefaultScanFilter::for_guard(&detectors);
     let (scanner, router, detector_count, required_backends) =
         compile_daemon_scan_runtime(detectors, backend_override)?;
     let warm_backend =
@@ -470,6 +476,7 @@ pub(crate) async fn run_with_backend_override(
         backend_override,
         warm_backend,
         guard_hot_index_budget,
+        guard_filter,
     ));
 
     // Set the guard policy identity from the daemon's scanner and build
@@ -1367,12 +1374,13 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     objects_skipped += 1;
                     continue;
                 }
-                bytes_requested += entry.object_size;
                 if !seen_oids.insert(entry.object_oid.clone()) {
-                    // Duplicate OID: already classified above. Count
-                    // the bytes but do not add to the streaming set.
+                    // Duplicate OID: identical content is scanned
+                    // once, so its bytes are accounted once too
+                    // (conservation).
                     continue;
                 }
+                bytes_requested += entry.object_size;
                 if let Some(_att) = state.guard.lookup_attestation(
                     git_hash,
                     &entry.object_oid,
@@ -1473,17 +1481,17 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let _fragment_guard = fragment_scan_lock.lock_owned().await;
             scanner.clear_fragment_cache();
             let bytes_scanned: u64 = payload.iter().map(|c| c.data.len() as u64).sum();
-            let scan_result = tokio::task::spawn_blocking(move || -> Result<usize> {
-                let count = keyhog_scanner::telemetry::with_scan_telemetry(
+            let scan_result = tokio::task::spawn_blocking(move || -> Result<Vec<RawMatch>> {
+                let matches = keyhog_scanner::telemetry::with_scan_telemetry(
                     &telemetry,
-                    || -> Result<usize> {
+                    || -> Result<Vec<RawMatch>> {
                         scanner.clear_fragment_cache();
                         let total_bytes: usize = payload.iter().map(|c| c.data.len()).sum();
                         keyhog_profile::add_input_units(1);
                         keyhog_profile::add_input_bytes(total_bytes as u64);
                         if payload.is_empty() {
                             scanner.clear_fragment_cache();
-                            return Ok(0);
+                            return Ok(Vec::new());
                         }
                         let selection = router.choose_with_plan(
                             scanner.as_ref(),
@@ -1506,15 +1514,16 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                                 selection.backend.label()
                             )
                         })?;
-                        let total: usize = outcome.per_chunk.iter().map(|v| v.len()).sum();
-                        Ok(total)
+                        let raw: Vec<RawMatch> =
+                            outcome.per_chunk.into_iter().flatten().collect();
+                        Ok(raw)
                     },
                 )?;
-                Ok(count)
+                Ok(matches)
             })
             .await;
-            let findings = match scan_result {
-                Ok(Ok(count)) => count,
+            let raw_matches = match scan_result {
+                Ok(Ok(matches)) => matches,
                 Ok(Err(e)) => {
                     // Scan failed: record as coverage gap so the
                     // transaction terminates as Degraded, not Current.
@@ -1531,6 +1540,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     };
                 }
             };
+            // Finalize raw matches through the suppression pipeline
+            // (allowlist, test-fixture, confidence, inline suppression)
+            // so suppressed/example values do not count as findings.
+            let findings = state.guard_filter.finalize_count(&state.scanner, raw_matches);
             if let Err(msg) = state.guard.record_scanned_blob(txn_id, &oid, bytes_scanned, findings as u64) {
                 return Response::Error { message: msg };
             }
@@ -1570,12 +1583,23 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     };
                 }
             };
-            // Validate conservation: client must have streamed all required blobs.
+            // Validate conservation: the server must have actually
+            // scanned every required blob. The client-supplied count
+            // is a cross-check, not the primary authority.
             let required_count = txn.required_blob_oids.len() as u64;
+            let server_scanned = txn.scanned_oids.len() as u64;
+            if server_scanned != required_count {
+                return Response::Error {
+                    message: format!(
+                        "daemon: guard commit: server scanned {} of {} required blobs",
+                        server_scanned, required_count
+                    ),
+                };
+            }
             if client_objects_streamed != required_count {
                 return Response::Error {
                     message: format!(
-                        "daemon: guard commit: object count mismatch: client streamed {}, required {}",
+                        "daemon: guard commit: client streamed {} but required {}",
                         client_objects_streamed, required_count
                     ),
                 };
@@ -1661,15 +1685,19 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     }
                 }
             };
-            // The client canonicalizes the path before sending. The daemon
-            // must not re-resolve it against its own working directory.
-            let canonical = root;
-            let canonical_path = std::path::PathBuf::from(&canonical);
-            if !canonical_path.is_absolute() {
-                return Response::Error {
-                    message: format!("daemon: guard add: path must be absolute and canonical: {}", canonical),
-                };
-            }
+            // Canonicalize the path server-side. The client sends
+            // an absolute path, but the daemon must verify it does
+            // not contain `..` segments or symlinked intermediates
+            // that would resolve to an unexpected directory.
+            let canonical_path = match std::fs::canonicalize(&root) {
+                Ok(p) => p,
+                Err(e) => {
+                    return Response::Error {
+                        message: format!("daemon: guard add: cannot canonicalize {}: {}", root, e),
+                    };
+                }
+            };
+            let canonical = canonical_path.to_string_lossy().into_owned();
             // Use symlink_metadata to avoid following symlinks. The design
             // contract requires roots be validated without following symlinks.
             let meta = match std::fs::symlink_metadata(&canonical_path) {
@@ -2602,6 +2630,7 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
     );
     let fragment_scan_lock = state.fragment_scan_lock.clone();
     let root_path = std::path::PathBuf::from(root);
+    let guard_filter = state.guard_filter.clone();
     let _fragment_guard = fragment_scan_lock.lock_owned().await;
     scanner.clear_fragment_cache();
     let result = tokio::task::spawn_blocking(move || -> Result<(usize, usize)> {
@@ -2622,7 +2651,7 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
             let telemetry = std::sync::Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
             let scan_out = keyhog_scanner::telemetry::with_scan_telemetry(
                 &telemetry,
-                || -> Result<usize> {
+                || -> Result<Vec<RawMatch>> {
                     let batch = vec![chunk];
                     let total_bytes: usize = batch.iter().map(|c| c.data.len()).sum();
                     keyhog_profile::add_input_units(1);
@@ -2648,12 +2677,14 @@ async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> Bas
                             root_path.display()
                         )
                     })?;
-                    let total: usize = outcome.per_chunk.iter().map(|v| v.len()).sum();
-                    Ok(total)
+                    let raw: Vec<RawMatch> =
+                        outcome.per_chunk.into_iter().flatten().collect();
+                    Ok(raw)
                 },
             );
             match scan_out {
-                Ok(count) => {
+                Ok(raw_matches) => {
+                    let count = guard_filter.finalize_count(&scanner, raw_matches);
                     total_findings += count;
                 }
                 Err(_) => {

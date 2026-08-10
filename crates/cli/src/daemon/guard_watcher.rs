@@ -124,10 +124,6 @@ impl GuardWatcher {
                                     buf.push(ge.clone());
                                 }
                             }
-                            results
-                                .entry(root)
-                                .or_default()
-                                .extend(guard_events);
                         }
                     }
                 }
