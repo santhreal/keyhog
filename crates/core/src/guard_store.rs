@@ -336,6 +336,16 @@ const ROOTS_TABLE: redb::TableDefinition<&[u8], &[u8]> = redb::TableDefinition::
 const ATTESTATIONS_TABLE: redb::TableDefinition<&[u8], &[u8]> =
     redb::TableDefinition::new("git_clean_attestations");
 
+/// redb table definition for root coverage gaps, keyed by
+/// (canonical_path || 0x00 || blob_oid). Value is the gap description.
+const ROOT_GAPS_TABLE: redb::TableDefinition<&[u8], &[u8]> =
+    redb::TableDefinition::new("root_gaps");
+
+/// redb table definition for the service state singleton.
+/// Key is "clean_shutdown", value is 1 (clean) or 0 (unclean).
+const SERVICE_STATE_TABLE: redb::TableDefinition<&str, u8> =
+    redb::TableDefinition::new("service_state");
+
 /// Durable guard state store backed by redb.
 ///
 /// Persists root records and clean attestations to a single file.
@@ -573,6 +583,223 @@ impl DurableGuardStore {
         txn.commit()
             .map_err(|e| GuardStoreError::Io(format!("commit clear attestations: {e}")))?;
         Ok(removed)
+    }
+
+    /// Save a coverage gap for a root. The key is
+    /// canonical_path || 0x00 || blob_oid.
+    pub fn save_root_gap(
+        &self,
+        canonical_path: &[u8],
+        blob_oid: &str,
+        description: &str,
+    ) -> Result<(), GuardStoreError> {
+        let mut key = Vec::with_capacity(canonical_path.len() + 1 + blob_oid.len());
+        key.extend_from_slice(canonical_path);
+        key.push(0);
+        key.extend_from_slice(blob_oid.as_bytes());
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| GuardStoreError::Io(format!("begin write: {e}")))?;
+        {
+            let mut table = txn
+                .open_table(ROOT_GAPS_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("open root_gaps table: {e}")))?;
+            table
+                .insert(key.as_slice(), description.as_bytes())
+                .map_err(|e| GuardStoreError::Io(format!("insert root gap: {e}")))?;
+        }
+        txn.commit()
+            .map_err(|e| GuardStoreError::Io(format!("commit root gap: {e}")))?;
+        Ok(())
+    }
+
+    /// Load all coverage gaps for a root.
+    pub fn load_root_gaps(
+        &self,
+        canonical_path: &[u8],
+    ) -> Result<Vec<(String, String)>, GuardStoreError> {
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| GuardStoreError::Io(format!("begin read: {e}")))?;
+        let table = txn
+            .open_table(ROOT_GAPS_TABLE)
+            .map_err(|e| GuardStoreError::Io(format!("open root_gaps table: {e}")))?;
+        let prefix = canonical_path;
+        let mut gaps = Vec::new();
+        for entry in table
+            .range::<&[u8]>(..)
+            .map_err(|e| GuardStoreError::Io(format!("iterate root_gaps: {e}")))?
+        {
+            let (key, value) =
+                entry.map_err(|e| GuardStoreError::Io(format!("read root gap entry: {e}")))?;
+            let k = key.value();
+            if !k.starts_with(prefix) {
+                continue;
+            }
+            // Extract blob_oid after the null separator.
+            let rest = &k[prefix.len() + 1..];
+            let blob_oid = String::from_utf8_lossy(rest).to_string();
+            let desc = String::from_utf8_lossy(value.value()).to_string();
+            gaps.push((blob_oid, desc));
+        }
+        Ok(gaps)
+    }
+
+    /// Remove all coverage gaps for a root.
+    pub fn clear_root_gaps(&self, canonical_path: &[u8]) -> Result<usize, GuardStoreError> {
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| GuardStoreError::Io(format!("begin write: {e}")))?;
+        let removed = {
+            let mut table = txn
+                .open_table(ROOT_GAPS_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("open root_gaps table: {e}")))?;
+            let prefix = canonical_path;
+            let keys_to_remove: Vec<Vec<u8>> = table
+                .range::<&[u8]>(..)
+                .map_err(|e| GuardStoreError::Io(format!("iterate root_gaps: {e}")))?
+                .filter_map(|entry| {
+                    let (key, _) = entry.ok()?;
+                    let k = key.value();
+                    if k.starts_with(prefix) {
+                        Some(k.to_vec())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let count = keys_to_remove.len();
+            for key in keys_to_remove {
+                table
+                    .remove(key.as_slice())
+                    .map_err(|e| GuardStoreError::Io(format!("remove root gap: {e}")))?;
+            }
+            count
+        };
+        txn.commit()
+            .map_err(|e| GuardStoreError::Io(format!("commit clear root gaps: {e}")))?;
+        Ok(removed)
+    }
+
+    /// Mark the service state as unclean (startup). This is set before
+    /// the daemon begins serving requests and cleared after all state
+    /// is flushed during a clean shutdown.
+    pub fn mark_unclean_shutdown(&self) -> Result<(), GuardStoreError> {
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| GuardStoreError::Io(format!("begin write: {e}")))?;
+        {
+            let mut table = txn
+                .open_table(SERVICE_STATE_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("open service_state table: {e}")))?;
+            table
+                .insert("clean_shutdown", 0u8)
+                .map_err(|e| GuardStoreError::Io(format!("write clean_shutdown: {e}")))?;
+        }
+        txn.commit()
+            .map_err(|e| GuardStoreError::Io(format!("commit service state: {e}")))?;
+        Ok(())
+    }
+
+    /// Mark the service state as clean (graceful shutdown). Called after
+    /// all root records and attestations have been flushed.
+    pub fn mark_clean_shutdown(&self) -> Result<(), GuardStoreError> {
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| GuardStoreError::Io(format!("begin write: {e}")))?;
+        {
+            let mut table = txn
+                .open_table(SERVICE_STATE_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("open service_state table: {e}")))?;
+            table
+                .insert("clean_shutdown", 1u8)
+                .map_err(|e| GuardStoreError::Io(format!("write clean_shutdown: {e}")))?;
+        }
+        txn.commit()
+            .map_err(|e| GuardStoreError::Io(format!("commit service state: {e}")))?;
+        Ok(())
+    }
+
+    /// Check whether the last shutdown was clean.
+    /// Returns `true` if the clean_shutdown marker is set to 1,
+    /// `false` if it is 0 or absent (treat absent as unclean).
+    pub fn was_clean_shutdown(&self) -> Result<bool, GuardStoreError> {
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| GuardStoreError::Io(format!("begin read: {e}")))?;
+        let table = txn
+            .open_table(SERVICE_STATE_TABLE)
+            .map_err(|e| GuardStoreError::Io(format!("open service_state table: {e}")))?;
+        let value = table
+            .get("clean_shutdown")
+            .map_err(|e| GuardStoreError::Io(format!("read clean_shutdown: {e}")))?;
+        Ok(value.map(|v| v.value() == 1u8).unwrap_or(false))
+    }
+
+    /// Atomically save a root record and its coverage gaps in one
+    /// transaction. This ensures the root state and gap records are
+    /// consistent across crashes.
+    pub fn save_root_with_gaps(
+        &self,
+        record: &GuardRootRecord,
+        gaps: &[(String, String)],
+    ) -> Result<(), GuardStoreError> {
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| GuardStoreError::Io(format!("begin write: {e}")))?;
+        {
+            let mut roots = txn
+                .open_table(ROOTS_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("open roots table: {e}")))?;
+            let value = serde_json::to_vec(record)
+                .map_err(|e| GuardStoreError::Io(format!("serialize root record: {e}")))?;
+            roots
+                .insert(record.canonical_path.as_slice(), value.as_slice())
+                .map_err(|e| GuardStoreError::Io(format!("insert root: {e}")))?;
+
+            // Clear old gaps for this root, then insert new ones.
+            let mut gaps_table = txn
+                .open_table(ROOT_GAPS_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("open root_gaps table: {e}")))?;
+            let prefix = record.canonical_path.as_slice();
+            let keys_to_remove: Vec<Vec<u8>> = gaps_table
+                .range::<&[u8]>(..)
+                .map_err(|e| GuardStoreError::Io(format!("iterate root_gaps: {e}")))?
+                .filter_map(|entry| {
+                    let (key, _) = entry.ok()?;
+                    let k = key.value();
+                    if k.starts_with(prefix) {
+                        Some(k.to_vec())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for key in keys_to_remove {
+                gaps_table
+                    .remove(key.as_slice())
+                    .map_err(|e| GuardStoreError::Io(format!("remove old root gap: {e}")))?;
+            }
+            for (blob_oid, desc) in gaps {
+                let mut key = Vec::with_capacity(prefix.len() + 1 + blob_oid.len());
+                key.extend_from_slice(prefix);
+                key.push(0);
+                key.extend_from_slice(blob_oid.as_bytes());
+                gaps_table
+                    .insert(key.as_slice(), desc.as_bytes())
+                    .map_err(|e| GuardStoreError::Io(format!("insert root gap: {e}")))?;
+            }
+        }
+        txn.commit()
+            .map_err(|e| GuardStoreError::Io(format!("commit root with gaps: {e}")))?;
+        Ok(())
     }
 }
 
