@@ -8,6 +8,12 @@ pub(crate) struct Phase2GpuDfaAdmission {
     /// Distinct (region, shard-local pattern) admission bits observed. This is
     /// telemetry only; exact extraction remains owned by the shared CPU tail.
     pub(crate) matches_seen: usize,
+    /// Concatenated shard-local candidate words for each region. Word order is
+    /// deterministic catalog shard order; extraction remains on the CPU.
+    pub(crate) candidate_bits: Vec<u32>,
+    pub(crate) candidate_words_per_region: usize,
+    /// Bit-position to production phase-2 index. Padding bits use `u32::MAX`.
+    pub(crate) candidate_phase2_indices: Vec<u32>,
 }
 
 pub(in crate::engine) enum Phase2GpuAdmissionWorkload<'a> {
@@ -89,8 +95,22 @@ pub(in crate::engine) fn expand_phase2_gpu_admission(
 ) -> Phase2GpuDfaAdmission {
     let mut admitted = vec![false; full_len];
     let mut complete = vec![false; full_len];
+    let candidate_len_matches = subset
+        .candidate_words_per_region
+        .checked_mul(workload_indices.len())
+        .is_some_and(|length| length == subset.candidate_bits.len());
+    let candidate_map_matches = subset
+        .candidate_words_per_region
+        .checked_mul(u32::BITS as usize)
+        .is_some_and(|length| length == subset.candidate_phase2_indices.len());
+    let indices_in_range = workload_indices.iter().all(|&index| index < full_len);
+    let candidate_full_len = subset.candidate_words_per_region.checked_mul(full_len);
     let length_mismatch = subset.admitted.len() != workload_indices.len()
-        || subset.complete.len() != workload_indices.len();
+        || subset.complete.len() != workload_indices.len()
+        || !indices_in_range
+        || candidate_full_len.is_none()
+        || !candidate_len_matches
+        || !candidate_map_matches;
     for (&is_admitted, &full_idx) in subset.admitted.iter().zip(workload_indices.iter()) {
         if is_admitted {
             if let Some(slot) = admitted.get_mut(full_idx) {
@@ -103,6 +123,22 @@ pub(in crate::engine) fn expand_phase2_gpu_admission(
             if let Some(slot) = complete.get_mut(full_idx) {
                 *slot = true;
             }
+        }
+    }
+    let candidate_words_per_region = subset.candidate_words_per_region;
+    let mut candidate_bits = if length_mismatch {
+        Vec::new()
+    } else {
+        vec![0; candidate_full_len.expect("validated candidate length")]
+    };
+    if !length_mismatch {
+        for (subset_row, &full_idx) in workload_indices.iter().enumerate() {
+            let source_start = subset_row * candidate_words_per_region;
+            let destination_start = full_idx * candidate_words_per_region;
+            candidate_bits[destination_start..destination_start + candidate_words_per_region]
+                .copy_from_slice(
+                    &subset.candidate_bits[source_start..source_start + candidate_words_per_region],
+                );
         }
     }
     if length_mismatch {
@@ -121,5 +157,20 @@ pub(in crate::engine) fn expand_phase2_gpu_admission(
             complete
         },
         matches_seen: subset.matches_seen,
+        candidate_bits: if length_mismatch {
+            Vec::new()
+        } else {
+            candidate_bits
+        },
+        candidate_words_per_region: if length_mismatch {
+            0
+        } else {
+            candidate_words_per_region
+        },
+        candidate_phase2_indices: if length_mismatch {
+            Vec::new()
+        } else {
+            subset.candidate_phase2_indices
+        },
     }
 }

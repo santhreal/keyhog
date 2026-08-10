@@ -417,6 +417,322 @@ fn embedded_detector_set_has_complete_ascii_prefixless_catalog() {
 }
 
 #[test]
+fn generated_coverage_evidence_accounts_for_the_compiled_phase2_universe() {
+    let detectors = keyhog_core::load_embedded_detectors_or_fail()
+        .expect("embedded detector corpus must parse");
+    let scanner = CompiledScanner::compile_with_gpu_policy(detectors, GpuInitPolicy::ForceDisabled)
+        .expect("embedded detector corpus must compile");
+    let catalog = Phase2GpuDfaCatalog::build(
+        &scanner.phase2_patterns,
+        &scanner.phase2_always_active_indices,
+        Phase2GpuDfaProgramKind::CudaCompatible,
+    )
+    .expect("every row-relevant embedded ASCII pattern must lower");
+
+    assert_eq!(catalog.evidence.len(), scanner.phase2_patterns.len());
+    assert_eq!(
+        catalog.coverage().total_patterns,
+        scanner.phase2_patterns.len()
+    );
+    assert_eq!(
+        catalog.coverage().covered_ascii_patterns + catalog.coverage().cpu_required_patterns,
+        scanner.phase2_patterns.len()
+    );
+    for (index, entry) in catalog.evidence.iter().enumerate() {
+        assert_eq!(entry.phase2_index as usize, index);
+        match entry.disposition {
+            PatternCoverageDisposition::GpuCovered { shard } => {
+                assert!(catalog.shards[shard as usize]
+                    .phase2_indices
+                    .contains(&index));
+            }
+            PatternCoverageDisposition::CpuRequired(reason) => {
+                assert!(matches!(
+                    reason,
+                    CpuRequiredReason::KeywordGated
+                        | CpuRequiredReason::GatePrefixed
+                        | CpuRequiredReason::AsciiHomoglyphRedundant
+                        | CpuRequiredReason::LoweringUnsupported
+                ));
+            }
+        }
+    }
+
+    let bytes = catalog
+        .coverage_artifact_bytes_for_test()
+        .expect("coverage artifact serialization");
+    catalog
+        .validate_coverage_artifact_for_test(&bytes)
+        .expect("coverage artifact round trip");
+    let cache = Phase2GpuDfaCatalogCache::from_artifact(
+        &scanner.phase2_patterns,
+        &scanner.phase2_always_active_indices,
+        Some("cuda"),
+        &bytes,
+    )
+    .expect("production cache consumes validated artifact");
+    let loaded = cache
+        .catalog(
+            &scanner.phase2_patterns,
+            &scanner.phase2_always_active_indices,
+            Some("cuda"),
+        )
+        .expect("validated artifact-backed catalog");
+    assert_eq!(loaded.catalog_digest, catalog.catalog_digest);
+    let mut changed_patterns = scanner.phase2_patterns.clone();
+    changed_patterns.push((test_pattern("[A-Z]{7}[0-9]{5}", false), Vec::new()));
+    let mut changed_always_active = scanner.phase2_always_active_indices.clone();
+    changed_always_active.push(changed_patterns.len() - 1);
+    let changed_error = Phase2GpuDfaCatalogCache::from_artifact(
+        &changed_patterns,
+        &changed_always_active,
+        Some("cuda"),
+        &bytes,
+    )
+    .expect_err("a new registry member requires rebuilt coverage evidence");
+    assert!(
+        changed_error.contains("detector digest") || changed_error.contains("partial"),
+        "{changed_error}"
+    );
+}
+
+#[test]
+fn lowered_production_patterns_are_language_equivalent_over_full_fixture_matrix() {
+    const MAX_CASES_PER_DETECTOR: usize = 4096;
+    const MAX_CASE_BYTES_PER_DETECTOR: usize = 4 * 1024 * 1024;
+
+    let detectors =
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus");
+    let scanner =
+        CompiledScanner::compile_with_gpu_policy(detectors.clone(), GpuInitPolicy::ForceDisabled)
+            .expect("embedded scanner");
+    let catalog = Phase2GpuDfaCatalog::build(
+        &scanner.phase2_patterns,
+        &scanner.phase2_always_active_indices,
+        Phase2GpuDfaProgramKind::CudaCompatible,
+    )
+    .expect("complete production coverage");
+
+    for entry in &catalog.evidence {
+        let PatternCoverageDisposition::GpuCovered { .. } = entry.disposition else {
+            continue;
+        };
+        let phase2_index = entry.phase2_index as usize;
+        let pattern = &scanner.phase2_patterns[phase2_index].0;
+        let detector = &detectors[pattern.detector_index];
+        let mut fixture_count = 0usize;
+        let mut fixture_bytes = 0usize;
+        for fixture in &detector.tests {
+            for value in [
+                fixture.test_positive.as_deref(),
+                fixture.test_negative.as_deref(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                fixture_count = fixture_count
+                    .checked_add(1)
+                    .expect("fixture count overflow");
+                fixture_bytes = fixture_bytes
+                    .checked_add(value.len())
+                    .expect("fixture byte count overflow");
+            }
+        }
+        assert!(fixture_count <= MAX_CASES_PER_DETECTOR);
+        assert!(fixture_bytes <= MAX_CASE_BYTES_PER_DETECTOR);
+
+        let mut cases = Vec::new();
+        cases
+            .try_reserve(fixture_count.saturating_mul(3).saturating_add(10))
+            .expect("bounded language matrix reserve");
+        for fixture in &detector.tests {
+            for value in [
+                fixture.test_positive.as_deref(),
+                fixture.test_negative.as_deref(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                cases.push(value.to_owned());
+                cases.push(format!("\r\n{value}\r\n"));
+                cases.push(format!("λ{value}雪"));
+            }
+        }
+        cases.extend(
+            [
+                "",
+                "\r\n",
+                "ordinary source without credentials",
+                "AAAA",
+                "00000000000000000000000000000000",
+                "λ雪",
+                "prefix\0suffix",
+                "a-b_c.d/e",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        );
+        let cpu: Vec<bool> = cases
+            .iter()
+            .map(|case| pattern.regex.get().is_match(case))
+            .collect();
+        assert!(
+            cpu.iter().any(|&matched| matched),
+            "production covered phase-2 pattern {phase2_index} has no positive fixture"
+        );
+        assert!(
+            cpu.iter().any(|&matched| !matched),
+            "production covered phase-2 pattern {phase2_index} has no negative fixture"
+        );
+        let chunks: Vec<keyhog_core::Chunk> =
+            cases.into_iter().map(keyhog_core::Chunk::from).collect();
+        let single = Phase2GpuDfaCatalog::build_from_selected_candidates(
+            &scanner.phase2_patterns,
+            1,
+            0,
+            &[phase2_index],
+            Phase2GpuDfaProgramKind::CudaCompatible,
+        )
+        .unwrap_or_else(|| panic!("single production pattern {phase2_index} must lower"));
+        assert_eq!(
+            replay_catalog_admission(&single, &chunks),
+            cpu,
+            "VYRE language differs from CPU regex for production phase-2 pattern {phase2_index}"
+        );
+    }
+}
+
+#[test]
+fn coverage_artifact_rejects_corrupt_stale_partial_and_detector_changed_evidence() {
+    let patterns = vec![
+        (test_pattern("alpha[0-9]{4}", false), Vec::new()),
+        (test_pattern("beta[A-Z]{4}", false), Vec::new()),
+    ];
+    let catalog = Phase2GpuDfaCatalog::build_from_selected_candidates(
+        &patterns,
+        patterns.len(),
+        0,
+        &[0, 1],
+        Phase2GpuDfaProgramKind::CudaCompatible,
+    )
+    .expect("artifact fixture catalog");
+    let bytes = catalog
+        .coverage_artifact_bytes_for_test()
+        .expect("artifact bytes");
+
+    let mut corrupt = bytes.clone();
+    let middle = corrupt.len() / 2;
+    corrupt[middle] ^= 0x5a;
+    assert!(catalog
+        .validate_coverage_artifact_for_test(&corrupt)
+        .is_err());
+
+    let json = String::from_utf8(bytes.clone()).expect("JSON artifact");
+    let unknown = format!("{{\"unexpected\":0,{}", &json[1..]);
+    let unknown_error = catalog
+        .validate_coverage_artifact_for_test(unknown.as_bytes())
+        .expect_err("unknown artifact fields must fail");
+    assert!(unknown_error.contains("unknown field"), "{unknown_error}");
+
+    let stale = String::from_utf8(bytes.clone())
+        .expect("JSON artifact")
+        .replacen("\"version\":1", "\"version\":0", 1);
+    let stale_error = catalog
+        .validate_coverage_artifact_for_test(stale.as_bytes())
+        .expect_err("stale artifact must fail");
+    assert!(stale_error.contains("stale"), "{stale_error}");
+
+    let partial = Phase2GpuDfaArtifact::build(catalog.detector_digest, Vec::new(), Vec::new())
+        .expect("syntactically valid partial artifact")
+        .encode()
+        .expect("partial artifact bytes");
+    assert!(catalog
+        .validate_coverage_artifact_for_test(&partial)
+        .is_err());
+
+    let artifact = catalog.coverage_artifact().expect("coverage artifact");
+    let mut duplicate_shards = artifact.shards.clone();
+    let duplicate_index = duplicate_shards[0][0];
+    duplicate_shards[0].push(duplicate_index);
+    let duplicate = Phase2GpuDfaArtifact::build(
+        catalog.detector_digest,
+        artifact.entries.clone(),
+        duplicate_shards,
+    )
+    .expect("digest-valid duplicate artifact")
+    .encode()
+    .expect("duplicate artifact bytes");
+    let duplicate_error = catalog
+        .validate_coverage_artifact_for_test(&duplicate)
+        .expect_err("duplicate shard indices must fail");
+    assert!(duplicate_error.contains("duplicate"), "{duplicate_error}");
+
+    let mut changed_patterns = patterns.clone();
+    changed_patterns.push((test_pattern("gamma[0-9]{4}", false), Vec::new()));
+    let changed = Phase2GpuDfaCatalog::build_from_selected_candidates(
+        &changed_patterns,
+        changed_patterns.len(),
+        0,
+        &[0, 1, 2],
+        Phase2GpuDfaProgramKind::CudaCompatible,
+    )
+    .expect("changed registry catalog");
+    let changed_error = changed
+        .validate_coverage_artifact_for_test(&bytes)
+        .expect_err("new registry member must invalidate old evidence");
+    assert!(changed_error.contains("detector digest"), "{changed_error}");
+}
+#[test]
+fn generated_coverage_keeps_keyword_gated_patterns_cpu_owned() {
+    let patterns = vec![
+        (test_pattern("[a-z]{4}[0-9]{4}", false), Vec::new()),
+        (
+            test_pattern("credential[0-9]{4}", false),
+            vec!["credential".to_string()],
+        ),
+    ];
+    let catalog =
+        Phase2GpuDfaCatalog::build(&patterns, &[0], Phase2GpuDfaProgramKind::CudaCompatible)
+            .expect("mixed coverage catalog");
+
+    assert!(matches!(
+        catalog.evidence[0].disposition,
+        PatternCoverageDisposition::GpuCovered { .. }
+    ));
+    assert_eq!(
+        catalog.evidence[1].disposition,
+        PatternCoverageDisposition::CpuRequired(CpuRequiredReason::KeywordGated)
+    );
+    assert_eq!(catalog.coverage().covered_ascii_patterns, 1);
+    assert_eq!(catalog.coverage().cpu_required_patterns, 1);
+}
+
+#[test]
+fn catalog_totals_accept_exact_ceilings_and_reject_each_one_over_boundary() {
+    use lowering::{
+        validate_catalog_totals, PHASE2_GPU_DFA_MAX_AGGREGATE_STATES,
+        PHASE2_GPU_DFA_MAX_OUTPUT_RECORDS, PHASE2_GPU_DFA_MAX_RESIDENT_BYTES,
+        PHASE2_GPU_DFA_MAX_SHARDS,
+    };
+
+    validate_catalog_totals(
+        PHASE2_GPU_DFA_MAX_SHARDS,
+        PHASE2_GPU_DFA_MAX_AGGREGATE_STATES,
+        PHASE2_GPU_DFA_MAX_OUTPUT_RECORDS,
+        PHASE2_GPU_DFA_MAX_RESIDENT_BYTES,
+    )
+    .expect("exact catalog ceilings are valid");
+    for error in [
+        validate_catalog_totals(PHASE2_GPU_DFA_MAX_SHARDS + 1, 0, 0, 0),
+        validate_catalog_totals(0, PHASE2_GPU_DFA_MAX_AGGREGATE_STATES + 1, 0, 0),
+        validate_catalog_totals(0, 0, PHASE2_GPU_DFA_MAX_OUTPUT_RECORDS + 1, 0),
+        validate_catalog_totals(0, 0, 0, PHASE2_GPU_DFA_MAX_RESIDENT_BYTES + 1),
+    ] {
+        assert!(error.is_err(), "one-over ceiling must be rejected");
+    }
+}
+
+#[test]
 fn resident_capacity_growth_preserves_gpu_element_alignment() {
     let packed = 8 * 1024 * 1024 + 8;
     let (capacity, regions) =
@@ -449,6 +765,81 @@ fn forced_catalog_exercises_multiple_complete_dfa_shards() {
     );
     assert_eq!(coverage.covered_ascii_patterns, 256);
     assert_eq!(coverage.uncovered_ascii_patterns, 0);
+}
+
+#[cfg(feature = "gpu")]
+#[test]
+#[ignore = "requires real CUDA, Metal, or WGPU hardware for full detector-corpus parity"]
+fn production_gpu_routes_preserve_exact_full_detector_fixture_findings() {
+    const MAX_FIXTURE_BYTES: usize = 64 * 1024 * 1024;
+    const MAX_FIXTURES: usize = 100_000;
+
+    let detectors =
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus");
+    let mut fixture_count = 0usize;
+    let mut fixture_bytes = 0usize;
+    for detector in &detectors {
+        for fixture in &detector.tests {
+            for text in [
+                fixture.test_positive.as_deref(),
+                fixture.test_negative.as_deref(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                fixture_count = fixture_count
+                    .checked_add(1)
+                    .expect("detector fixture count overflow");
+                fixture_bytes = fixture_bytes
+                    .checked_add(text.len())
+                    .expect("detector fixture byte count overflow");
+            }
+        }
+    }
+    assert!(fixture_count <= MAX_FIXTURES);
+    assert!(fixture_bytes <= MAX_FIXTURE_BYTES);
+
+    let mut chunks = Vec::new();
+    chunks
+        .try_reserve(fixture_count)
+        .expect("bounded detector fixture reserve");
+    for detector in &detectors {
+        for fixture in &detector.tests {
+            for text in [
+                fixture.test_positive.as_deref(),
+                fixture.test_negative.as_deref(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                chunks.push(keyhog_core::Chunk::from(text.to_owned()));
+            }
+        }
+    }
+    let scanner = CompiledScanner::compile_with_gpu_policy(detectors, GpuInitPolicy::ForceEnabled)
+        .expect("scanner with GPU peers");
+    let reference = scanner
+        .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+        .expect("CPU reference scan");
+    let mut exercised = 0usize;
+    for route in [
+        ScanBackend::GpuCuda,
+        ScanBackend::GpuMetal,
+        ScanBackend::GpuWgpu,
+    ] {
+        if scanner.gpu_backend(route).is_none() {
+            continue;
+        }
+        let actual = scanner
+            .scan_chunks_with_backend(&chunks, route)
+            .expect("selected GPU corpus scan");
+        assert_eq!(actual, reference, "{} finding parity", route.label());
+        exercised += 1;
+    }
+    assert!(
+        exercised > 0,
+        "hardware parity requires an acquired GPU peer"
+    );
 }
 
 #[cfg(feature = "gpu")]

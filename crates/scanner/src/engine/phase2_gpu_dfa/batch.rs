@@ -96,6 +96,12 @@ where
             "phase-2 GPU regex-DFA coalesced batch length overflows host usize".to_string()
         })?;
     }
+    let byte_ceiling = vyre::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize;
+    if total > byte_ceiling {
+        return Err(format!(
+            "phase-2 GPU regex-DFA coalesced batch is {total} byte(s), above the {byte_ceiling}-byte scan ceiling; split the batch before allocation"
+        ));
+    }
     if total > u32::MAX as usize {
         return Err(format!(
             "phase-2 GPU regex-DFA coalesced batch is {total} byte(s), above the u32 GPU ABI; split the batch before dispatch"

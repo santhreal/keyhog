@@ -510,6 +510,11 @@ fn cuda_pack_contains_exact_vyre_orchestration_program() {
         decoded.matcher_digest,
         *blake3::hash(&decoded.matcher_bytes).as_bytes()
     );
+    assert!(!decoded.phase2_catalog_bytes.is_empty());
+    assert_eq!(
+        decoded.phase2_catalog_digest,
+        *blake3::hash(&decoded.phase2_catalog_bytes).as_bytes()
+    );
 
     let cpu = CompiledNativeBackendPrograms::compile(&ir).expect("compile CPU oracle");
     let artifacts = [cpu.artifacts()[0], program.artifact()];
@@ -577,6 +582,11 @@ fn wgpu_pack_contains_exact_vyre_orchestration_program() {
         decoded.matcher_digest,
         *blake3::hash(&decoded.matcher_bytes).as_bytes()
     );
+    assert!(!decoded.phase2_catalog_bytes.is_empty());
+    assert_eq!(
+        decoded.phase2_catalog_digest,
+        *blake3::hash(&decoded.phase2_catalog_bytes).as_bytes()
+    );
 }
 
 /// WHY: backend relabeling would run a VYRE plan against unproved runtime semantics, so CUDA and WGPU receipts are never interchangeable.
@@ -619,6 +629,11 @@ fn metal_pack_contains_exact_vyre_orchestration_program() {
     assert_eq!(
         decoded.matcher_digest,
         *blake3::hash(&decoded.matcher_bytes).as_bytes()
+    );
+    assert!(!decoded.phase2_catalog_bytes.is_empty());
+    assert_eq!(
+        decoded.phase2_catalog_digest,
+        *blake3::hash(&decoded.phase2_catalog_bytes).as_bytes()
     );
 }
 

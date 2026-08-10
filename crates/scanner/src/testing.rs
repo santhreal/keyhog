@@ -1642,12 +1642,17 @@ pub fn scan_coalesced_phase2_with_admission_for_test(
     let negative_keyword_hints =
         phase2_admission_complete.map(|_| vec![Vec::<u32>::new(); chunks.len()]);
     let negative_anchor_presence = phase2_admission_complete.map(|_| vec![false; chunks.len()]);
+    let negative_candidate_bits = phase2_admission_complete.map(|_| Vec::<u32>::new());
+    let negative_candidate_map = phase2_admission_complete.map(|_| Vec::<u32>::new());
     scanner
         .scan_coalesced_phase2_with_admission(
             chunks,
             triggers,
             phase2_admission,
             phase2_admission_complete,
+            negative_candidate_bits.as_deref(),
+            0,
+            negative_candidate_map.as_deref(),
             negative_keyword_hints.as_deref(),
             negative_anchor_presence.as_deref(),
             None,

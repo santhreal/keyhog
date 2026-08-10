@@ -955,13 +955,18 @@ impl CompiledScanner {
                 &expected_identity,
             )
             .map_err(|error| crate::error::ScanError::Config(error.to_string()))?;
-            Some(
-                crate::gpu_literal_artifacts::install_compiled_gpu_literal_artifact(
-                    program.matcher_cache_key,
-                    program.matcher_pattern_count,
-                    &program.matcher_bytes,
-                )?,
-            )
+            let backend_id = match source.pack_identity.backend {
+                crate::execution_pack::ExecutionPackBackend::GpuCuda => Some("cuda"),
+                crate::execution_pack::ExecutionPackBackend::GpuWgpu => Some("wgpu"),
+                crate::execution_pack::ExecutionPackBackend::GpuMetal => Some("metal"),
+                _ => None,
+            };
+            let installed = crate::gpu_literal_artifacts::install_compiled_gpu_literal_artifact(
+                program.matcher_cache_key,
+                program.matcher_pattern_count,
+                &program.matcher_bytes,
+            )?;
+            Some((installed, program.phase2_catalog_bytes, backend_id))
         } else {
             None
         };
@@ -1047,15 +1052,27 @@ impl CompiledScanner {
             generic_keyword_plan.map_or(0, |plan| plan.stem_literals().count());
         let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
         #[cfg(feature = "gpu")]
-        let (gpu_literals, packed_gpu_matcher, gpu_max_literal_len) =
-            if let Some(artifact) = packed_gpu_artifact {
+        let (gpu_literals, packed_gpu_matcher, gpu_max_literal_len, phase2_gpu_dfa) =
+            if let Some((artifact, phase2_catalog_bytes, backend_id)) = packed_gpu_artifact {
                 tracing::debug!(
                     target: "keyhog::routing",
                     cache_key = %artifact.cache_key,
                     pattern_count = artifact.pattern_count,
                     "installed authenticated packed VYRE matcher"
                 );
-                (None, Some(artifact.matcher), artifact.max_literal_len)
+                let phase2_gpu_dfa = Phase2GpuDfaCatalogCache::from_artifact(
+                    &state.phase2_patterns,
+                    &phase2_always_active_indices,
+                    backend_id,
+                    &phase2_catalog_bytes,
+                )
+                .map_err(crate::error::ScanError::Config)?;
+                (
+                    None,
+                    Some(artifact.matcher),
+                    artifact.max_literal_len,
+                    phase2_gpu_dfa,
+                )
             } else {
                 let literals = if backend_state.gpu_availability().any() {
                     let phase2_always_anchor_literals = phase2_anchor_index
@@ -1079,7 +1096,12 @@ impl CompiledScanner {
                         .iter()
                         .fold(0, |longest, literal| longest.max(literal.len()))
                 });
-                (literals, None, max_literal_len)
+                (
+                    literals,
+                    None,
+                    max_literal_len,
+                    Phase2GpuDfaCatalogCache::default(),
+                )
             };
         #[cfg(not(feature = "gpu"))]
         let gpu_literals: Option<Arc<Vec<Vec<u8>>>> = None;
@@ -1287,7 +1309,7 @@ impl CompiledScanner {
             phase2_always_active_prefilter,
             phase2_anchor_index,
             #[cfg(feature = "gpu")]
-            phase2_gpu_dfa: Phase2GpuDfaCatalogCache::default(),
+            phase2_gpu_dfa,
             tuning: phase2::ScannerTuning::from_defaults(),
             #[cfg(feature = "simd")]
             simd_candidate_available,

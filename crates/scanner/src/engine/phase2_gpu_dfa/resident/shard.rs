@@ -97,6 +97,10 @@ impl ShardResident {
         })
     }
 
+    pub(super) const fn presence_words(&self) -> usize {
+        self.presence_words
+    }
+
     pub(super) fn used_presence_bytes(&self, regions: usize) -> Result<usize, String> {
         regions
             .checked_mul(self.presence_words)
@@ -166,6 +170,9 @@ impl ShardResident {
         presence: &[u8],
         expected_bytes: usize,
         admitted: &mut [bool],
+        candidate_bits: &mut [u32],
+        candidate_words_per_region: usize,
+        candidate_word_offset: usize,
     ) -> Result<usize, String> {
         if presence.len() != expected_bytes {
             return Err(format!(
@@ -183,13 +190,31 @@ impl ShardResident {
                     .to_string(),
             );
         }
+        let candidate_end = candidate_word_offset
+            .checked_add(self.presence_words)
+            .ok_or_else(|| "phase-2 GPU candidate word range overflow".to_string())?;
+        if candidate_end > candidate_words_per_region {
+            return Err("phase-2 GPU candidate word range exceeds its row stride".to_string());
+        }
+        let expected_candidate_words = admitted
+            .len()
+            .checked_mul(candidate_words_per_region)
+            .ok_or_else(|| "phase-2 GPU candidate output size overflow".to_string())?;
+        if candidate_bits.len() != expected_candidate_words {
+            return Err("phase-2 GPU candidate output length changed during decode".to_string());
+        }
         let mut evidence_bits = 0usize;
         for (region, row) in presence.chunks_exact(row_bytes).enumerate() {
             let mut row_admitted = false;
-            for word in row.chunks_exact(U32_BYTES) {
+            let destination = region
+                .checked_mul(candidate_words_per_region)
+                .and_then(|base| base.checked_add(candidate_word_offset))
+                .ok_or_else(|| "phase-2 GPU candidate row offset overflow".to_string())?;
+            for (word_index, word) in row.chunks_exact(U32_BYTES).enumerate() {
                 let word = u32::from_le_bytes([word[0], word[1], word[2], word[3]]);
                 row_admitted |= word != 0;
                 evidence_bits = evidence_bits.saturating_add(word.count_ones() as usize);
+                candidate_bits[destination + word_index] = word;
             }
             admitted[region] |= row_admitted;
         }

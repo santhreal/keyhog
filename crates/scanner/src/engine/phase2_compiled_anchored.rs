@@ -33,7 +33,7 @@ impl CompiledScanner {
                 &mut scratch,
                 true,
                 phase2_keyword_hints,
-                phase2_always_active_gpu_evidence.is_some_and(|evidence| evidence.absence_proven()),
+                phase2_always_active_gpu_evidence,
                 route,
             );
             if self.tuning.phase2_reverse_enabled() {
@@ -237,7 +237,7 @@ impl CompiledScanner {
                     && scan_text_is_ascii
                     && anchor_idx.has_plain_localizer(route.phase2_plain_localizer)
                     && !phase2_always_active_gpu_evidence
-                        .is_some_and(Phase2AlwaysActiveGpuEvidence::prefixless_absence_proven)
+                        .is_some_and(|evidence| self.phase2_prefixless_gpu_absence_proven(evidence))
                 {
                     super::with_candidate_scratch(|cands| {
                         {

@@ -968,6 +968,15 @@ impl CompiledScanner {
                 phase2_gpu_admission
                     .as_ref()
                     .map(|admission| admission.complete.as_slice()),
+                phase2_gpu_admission
+                    .as_ref()
+                    .map(|admission| admission.candidate_bits.as_slice()),
+                phase2_gpu_admission
+                    .as_ref()
+                    .map_or(0, |admission| admission.candidate_words_per_region),
+                phase2_gpu_admission
+                    .as_ref()
+                    .map(|admission| admission.candidate_phase2_indices.as_slice()),
                 gpu_evidence_complete.then_some(phase2_keyword_hints.as_slice()),
                 gpu_evidence_complete.then_some(phase2_always_anchor_presence.as_slice()),
                 gpu_evidence_complete
