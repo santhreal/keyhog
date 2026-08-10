@@ -50,6 +50,31 @@ pub(super) fn probe_kind(path: &Path, ext: &str) -> Result<Option<ImageKind>, st
     Ok(recognized.then_some(candidate))
 }
 
+pub(super) fn probe_kind_from_bytes(ext: &str, prefix: &[u8]) -> Option<ImageKind> {
+    let candidate = if ext.eq_ignore_ascii_case("png") {
+        ImageKind::Png
+    } else if ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg") {
+        ImageKind::Jpeg
+    } else if ext.eq_ignore_ascii_case("tif") || ext.eq_ignore_ascii_case("tiff") {
+        ImageKind::Tiff
+    } else if ext.eq_ignore_ascii_case("webp") {
+        ImageKind::Webp
+    } else {
+        return None;
+    };
+    let recognized = match candidate {
+        ImageKind::Png => prefix.len() >= 8 && &prefix[..8] == PNG_SIGNATURE,
+        ImageKind::Jpeg => prefix.len() >= 2 && &prefix[..2] == JPEG_SOI,
+        ImageKind::Tiff => {
+            prefix.len() >= 4 && matches!(&prefix[..4], [b'I', b'I', 42, 0] | [b'M', b'M', 0, 42])
+        }
+        ImageKind::Webp => {
+            prefix.len() >= 12 && &prefix[..4] == b"RIFF" && &prefix[8..12] == b"WEBP"
+        }
+    };
+    recognized.then_some(candidate)
+}
+
 pub(super) fn extract(
     path: &Path,
     kind: ImageKind,
@@ -85,6 +110,44 @@ pub(super) fn extract(
         ImageKind::Webp => parse_webp(&mut file, file_size, &mut collector),
     };
     let coverage_error = result.err().map(|reason| image_error(path, &reason));
+    Ok(Extraction {
+        chunks: collector.chunks,
+        coverage_error,
+    })
+}
+
+pub(super) fn extract_from_bytes(
+    display: &str,
+    bytes: &[u8],
+    kind: ImageKind,
+    max_size: u64,
+) -> Result<Extraction, SourceError> {
+    let file_size = bytes.len() as u64;
+    let budget_u64 = super::extraction_total_budget(max_size).min(file_size);
+    let budget = usize::try_from(budget_u64).map_err(|_| {
+        SourceError::Other(format!(
+            "failed to scan image metadata for '{display}': metadata extraction budget does not fit this platform; image metadata coverage is incomplete"
+        ))
+    })?;
+    let mut collector = Collector {
+        chunks: Vec::new(),
+        path: display.to_string(),
+        mtime_ns: None,
+        file_size,
+        remaining: budget,
+    };
+    let mut cursor = Cursor::new(bytes);
+    let result = match kind {
+        ImageKind::Png => parse_png(&mut cursor, file_size, &mut collector),
+        ImageKind::Jpeg => parse_jpeg(&mut cursor, file_size, &mut collector),
+        ImageKind::Tiff => parse_tiff(&mut cursor, file_size, 0, &mut collector),
+        ImageKind::Webp => parse_webp(&mut cursor, file_size, &mut collector),
+    };
+    let coverage_error = result.err().map(|reason| {
+        SourceError::Other(format!(
+            "failed to scan image metadata for '{display}': {reason}; image metadata coverage is incomplete"
+        ))
+    });
     Ok(Extraction {
         chunks: collector.chunks,
         coverage_error,
