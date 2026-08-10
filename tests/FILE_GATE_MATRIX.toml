@@ -2696,6 +2696,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/gpu/device_set.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/checksum/compiled.rs"
 error = true
 adversarial = true

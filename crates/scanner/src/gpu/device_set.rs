@@ -4,7 +4,9 @@ use crate::hw_probe::ScanBackend;
 use serde::{Deserialize, Serialize};
 
 /// Persisted schema for calibrated ordered GPU device routes.
-pub const GPU_DEVICE_ROUTE_SCHEMA_VERSION: u32 = 1;
+///
+/// v2 authenticates adapter name and PCI vendor/device identity.
+pub const GPU_DEVICE_ROUTE_SCHEMA_VERSION: u32 = 2;
 /// Hard ceiling for adapters admitted into one process route.
 pub const MAX_GPU_ROUTE_DEVICES: usize = 64;
 /// Hard ceiling for exact chunk/shard rows accepted by one scheduling call.
@@ -68,6 +70,9 @@ impl GpuDeviceExposure {
         if self.topology_identity.trim().is_empty() {
             return Err("physical adapter topology identity is unavailable".to_string());
         }
+        if self.name.trim().is_empty() || self.vendor_id == 0 || self.device_id == 0 {
+            return Err("GPU name, vendor, or device identity is unavailable".to_string());
+        }
         if self.driver_identity.trim().is_empty() {
             return Err("GPU driver identity is unavailable".to_string());
         }
@@ -127,27 +132,24 @@ pub fn deduplicate_gpu_exposures(
     exposures.sort_by(|left, right| {
         left.physical_identity
             .cmp(&right.physical_identity)
-            .then_with(|| left.topology_identity.cmp(&right.topology_identity))
             .then_with(|| right.api.preference().cmp(&left.api.preference()))
             .then_with(|| left.api.cmp(&right.api))
             .then_with(|| left.api_ordinal.cmp(&right.api_ordinal))
+            .then_with(|| left.topology_identity.cmp(&right.topology_identity))
     });
 
     let mut eligible = Vec::new();
     eligible
         .try_reserve(exposures.len().min(MAX_GPU_ROUTE_DEVICES))
         .map_err(|error| format!("GPU eligible-device census reserve failed: {error}"))?;
-    let mut last_selected: Option<(String, String, usize)> = None;
+    let mut last_selected: Option<(String, usize)> = None;
     for index in 0..exposures.len() {
         if exposures[index].ineligible_reason.is_some() {
             continue;
         }
-        let key = (
-            exposures[index].physical_identity.clone(),
-            exposures[index].topology_identity.clone(),
-        );
-        if let Some((physical, topology, selected)) = &last_selected {
-            if physical == &key.0 && topology == &key.1 {
+        let physical_identity = exposures[index].physical_identity.clone();
+        if let Some((physical, selected)) = &last_selected {
+            if physical == &physical_identity {
                 let winner = &exposures[*selected];
                 exposures[index].ineligible_reason = Some(format!(
                     "duplicate API exposure of {} through {:?} ordinal {}",
@@ -163,7 +165,7 @@ pub fn deduplicate_gpu_exposures(
             continue;
         }
         eligible.push(index);
-        last_selected = Some((key.0, key.1, index));
+        last_selected = Some((physical_identity, index));
     }
     Ok(GpuAdapterCensus {
         exposures,
@@ -200,7 +202,9 @@ pub fn derive_resident_budgets(
     }
     let total_capacity = capacities
         .iter()
-        .try_fold(0u128, |total, capacity| total.checked_add(u128::from(*capacity)))
+        .try_fold(0u128, |total, capacity| {
+            total.checked_add(u128::from(*capacity))
+        })
         .ok_or_else(|| "GPU capacity sum overflows u128".to_string())?;
     let usable_process = u128::from(process_resident_limit_bytes).min(total_capacity);
     let base_bytes = capacities.len() as u128;
@@ -249,6 +253,9 @@ pub struct CalibratedGpuDevice {
     pub api_ordinal: usize,
     pub physical_identity: String,
     pub topology_identity: String,
+    pub name: String,
+    pub vendor_id: u32,
+    pub device_id: u32,
     pub software_eligible: bool,
     pub display_eligible: bool,
     pub driver_identity: String,
@@ -304,6 +311,66 @@ impl OrderedGpuDeviceRoute {
         }
         Ok(())
     }
+    /// Compare the persisted route identity that must remain stable across
+    /// measured representatives in one workload class. Per-representative
+    /// timings and derived weights are deliberately excluded.
+    #[must_use]
+    pub fn has_same_device_set_identity(&self, other: &Self) -> bool {
+        self.schema_version == other.schema_version
+            && self.workload_identity == other.workload_identity
+            && self.detector_digest == other.detector_digest
+            && self.config_digest == other.config_digest
+            && self.process_resident_limit_bytes == other.process_resident_limit_bytes
+            && self.devices.len() == other.devices.len()
+            && self
+                .devices
+                .iter()
+                .zip(&other.devices)
+                .all(|(left, right)| {
+                    left.api == right.api
+                        && left.api_ordinal == right.api_ordinal
+                        && left.physical_identity == right.physical_identity
+                        && left.topology_identity == right.topology_identity
+                        && left.name == right.name
+                        && left.vendor_id == right.vendor_id
+                        && left.device_id == right.device_id
+                        && left.software_eligible == right.software_eligible
+                        && left.display_eligible == right.display_eligible
+                        && left.driver_identity == right.driver_identity
+                        && left.runtime_identity == right.runtime_identity
+                        && left.capacity_bytes == right.capacity_bytes
+                        && left.resident_budget_bytes == right.resident_budget_bytes
+                })
+    }
+
+    /// Stable acquisition identity shared by workload routes that use the same
+    /// physical devices and resident-memory contract.
+    #[must_use]
+    pub fn device_set_identity_digest(&self) -> String {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"keyhog-gpu-device-set-identity-v1\0");
+        hasher.update(&self.schema_version.to_le_bytes());
+        hasher.update(&self.process_resident_limit_bytes.to_le_bytes());
+        hasher.update(&(self.devices.len() as u64).to_le_bytes());
+        for device in &self.devices {
+            hasher.update(&[device.api as u8]);
+            hasher.update(&(device.api_ordinal as u64).to_le_bytes());
+            hash_str(&mut hasher, &device.physical_identity);
+            hash_str(&mut hasher, &device.topology_identity);
+            hash_str(&mut hasher, &device.name);
+            hasher.update(&device.vendor_id.to_le_bytes());
+            hasher.update(&device.device_id.to_le_bytes());
+            hasher.update(&[
+                device.software_eligible as u8,
+                device.display_eligible as u8,
+            ]);
+            hash_str(&mut hasher, &device.driver_identity);
+            hash_str(&mut hasher, &device.runtime_identity);
+            hasher.update(&device.capacity_bytes.to_le_bytes());
+            hasher.update(&device.resident_budget_bytes.to_le_bytes());
+        }
+        hasher.finalize().to_hex().to_string()
+    }
 
     pub fn validate_live_set(&self, live: &GpuAdapterCensus) -> Result<(), String> {
         self.validate()?;
@@ -327,6 +394,9 @@ impl OrderedGpuDeviceRoute {
                 || actual.api_ordinal != expected.api_ordinal
                 || actual.physical_identity != expected.physical_identity
                 || actual.topology_identity != expected.topology_identity
+                || actual.name != expected.name
+                || actual.vendor_id != expected.vendor_id
+                || actual.device_id != expected.device_id
                 || actual.driver_identity != expected.driver_identity
                 || actual.runtime_identity != expected.runtime_identity
                 || actual.capacity_bytes != expected.capacity_bytes
@@ -350,7 +420,9 @@ impl OrderedGpuDeviceRoute {
             || self.detector_digest.trim().is_empty()
             || self.config_digest.trim().is_empty()
         {
-            return Err("GPU device route workload/detector/config identity is incomplete".to_string());
+            return Err(
+                "GPU device route workload/detector/config identity is incomplete".to_string(),
+            );
         }
         if self.devices.is_empty() || self.devices.len() > MAX_GPU_ROUTE_DEVICES {
             return Err(format!(
@@ -364,19 +436,24 @@ impl OrderedGpuDeviceRoute {
         let mut resident_total = 0u64;
         for (device_index, device) in self.devices.iter().enumerate() {
             if !device.software_eligible || !device.display_eligible {
-                return Err("GPU route contains an ineligible software or display-only adapter".to_string());
+                return Err(
+                    "GPU route contains an ineligible software or display-only adapter".to_string(),
+                );
             }
             if device.physical_identity.trim().is_empty()
                 || device.topology_identity.trim().is_empty()
+                || device.name.trim().is_empty()
+                || device.vendor_id == 0
+                || device.device_id == 0
                 || device.driver_identity.trim().is_empty()
                 || device.runtime_identity.trim().is_empty()
             {
                 return Err("GPU route contains incomplete device identity".to_string());
             }
-            if self.devices[..device_index].iter().any(|prior| {
-                prior.physical_identity == device.physical_identity
-                    && prior.topology_identity == device.topology_identity
-            }) {
+            if self.devices[..device_index]
+                .iter()
+                .any(|prior| prior.physical_identity == device.physical_identity)
+            {
                 return Err("GPU route contains a duplicate physical adapter".to_string());
             }
             if device.capacity_bytes == 0
@@ -395,7 +472,9 @@ impl OrderedGpuDeviceRoute {
                 || device.timing.trials_ns.len() > MAX_GPU_DEVICE_TIMING_TRIALS
                 || device.timing.trials_ns.iter().any(|trial| *trial == 0)
             {
-                return Err("GPU route contains missing per-workload weight or timing evidence".to_string());
+                return Err(
+                    "GPU route contains missing per-workload weight or timing evidence".to_string(),
+                );
             }
         }
         if resident_total > self.process_resident_limit_bytes {
@@ -421,7 +500,13 @@ impl OrderedGpuDeviceRoute {
             hasher.update(&(device.api_ordinal as u64).to_le_bytes());
             hash_str(&mut hasher, &device.physical_identity);
             hash_str(&mut hasher, &device.topology_identity);
-            hasher.update(&[device.software_eligible as u8, device.display_eligible as u8]);
+            hash_str(&mut hasher, &device.name);
+            hasher.update(&device.vendor_id.to_le_bytes());
+            hasher.update(&device.device_id.to_le_bytes());
+            hasher.update(&[
+                device.software_eligible as u8,
+                device.display_eligible as u8,
+            ]);
             hash_str(&mut hasher, &device.driver_identity);
             hash_str(&mut hasher, &device.runtime_identity);
             hasher.update(&device.capacity_bytes.to_le_bytes());
@@ -468,103 +553,61 @@ pub fn partition_exact_shards<'a>(
     route.validate()?;
     if shards.len() > MAX_GPU_ROUTE_SHARDS {
         return Err(format!(
-            "GPU shard count {} exceeds bounded limit {MAX_GPU_ROUTE_SHARDS}",
+            "GPU shard count {} is above the bounded limit of {MAX_GPU_ROUTE_SHARDS}",
             shards.len()
         ));
     }
     if route.devices.len() == 1 {
         return Ok(WeightedShardPlan::SingleDevice(shards));
     }
-    let mut assigned_cost = vec![0u128; route.devices.len()];
+    let total_cost = shards.iter().try_fold(0u128, |total, shard| {
+        total
+            .checked_add(u128::from(shard.bytes.max(1)))
+            .ok_or_else(|| "GPU total shard cost overflows u128".to_string())
+    })?;
+    let total_weight = route.devices.iter().try_fold(0u128, |total, device| {
+        total
+            .checked_add(u128::from(device.workload_weight))
+            .ok_or_else(|| "GPU total device weight overflows u128".to_string())
+    })?;
+    let doubled_total_cost = total_cost
+        .checked_mul(2)
+        .ok_or_else(|| "GPU doubled shard cost overflows u128".to_string())?;
     let mut assignments = Vec::new();
     assignments
         .try_reserve_exact(shards.len())
         .map_err(|error| format!("GPU shard assignment reserve failed: {error}"))?;
+    let mut assigned_cost = 0u128;
+    let mut device_index = 0usize;
+    let mut cumulative_weight = u128::from(route.devices[0].workload_weight);
     for shard in shards {
         let cost = u128::from(shard.bytes.max(1));
-        let mut selected = 0usize;
-        for candidate in 1..route.devices.len() {
-            let left = assigned_cost[candidate]
-                .checked_mul(u128::from(route.devices[selected].workload_weight))
-                .ok_or_else(|| "GPU weighted shard comparison overflows u128".to_string())?;
-            let right = assigned_cost[selected]
-                .checked_mul(u128::from(route.devices[candidate].workload_weight))
-                .ok_or_else(|| "GPU weighted shard comparison overflows u128".to_string())?;
-            if left < right {
-                selected = candidate;
+        let midpoint = assigned_cost
+            .checked_mul(2)
+            .and_then(|value| value.checked_add(cost))
+            .and_then(|value| value.checked_mul(total_weight))
+            .ok_or_else(|| "GPU weighted shard midpoint overflows u128".to_string())?;
+        while device_index + 1 < route.devices.len() {
+            let boundary = doubled_total_cost
+                .checked_mul(cumulative_weight)
+                .ok_or_else(|| "GPU weighted shard boundary overflows u128".to_string())?;
+            if midpoint < boundary {
+                break;
             }
+            device_index += 1;
+            cumulative_weight = cumulative_weight
+                .checked_add(u128::from(route.devices[device_index].workload_weight))
+                .ok_or_else(|| "GPU cumulative device weight overflows u128".to_string())?;
         }
-        assigned_cost[selected] = assigned_cost[selected]
-            .checked_add(cost)
-            .ok_or_else(|| "GPU assigned shard cost overflows u128".to_string())?;
         assignments.push(ShardAssignment {
             shard_index: shard.index,
-            device_index: selected,
+            device_index,
         });
+        assigned_cost = assigned_cost
+            .checked_add(cost)
+            .ok_or_else(|| "GPU assigned shard cost overflows u128".to_string())?;
     }
     Ok(WeightedShardPlan::MultiDevice(assignments))
-}
-
-/// Checked resident-byte accounting performed before backend allocation.
-#[derive(Debug)]
-pub struct ResidentBudgetTracker<'a> {
-    route: &'a OrderedGpuDeviceRoute,
-    per_device: Vec<u64>,
-    process: u64,
-}
-
-impl<'a> ResidentBudgetTracker<'a> {
-    pub fn new(route: &'a OrderedGpuDeviceRoute) -> Result<Self, String> {
-        route.validate()?;
-        Ok(Self {
-            route,
-            per_device: vec![0; route.devices.len()],
-            process: 0,
-        })
-    }
-
-    pub fn reserve(&mut self, device_index: usize, bytes: u64) -> Result<(), String> {
-        let device = self.route.devices.get(device_index).ok_or_else(|| {
-            format!("GPU resident reservation names missing device {device_index}")
-        })?;
-        let current = self.per_device[device_index];
-        let next_device = current
-            .checked_add(bytes)
-            .ok_or_else(|| "GPU per-device resident accounting overflows u64".to_string())?;
-        let next_process = self
-            .process
-            .checked_add(bytes)
-            .ok_or_else(|| "GPU process resident accounting overflows u64".to_string())?;
-        if next_device > device.resident_budget_bytes {
-            return Err(format!(
-                "GPU device {device_index} resident request exceeds calibrated budget {}",
-                device.resident_budget_bytes
-            ));
-        }
-        if next_process > self.route.process_resident_limit_bytes {
-            return Err(format!(
-                "GPU process resident request exceeds ceiling {}",
-                self.route.process_resident_limit_bytes
-            ));
-        }
-        self.per_device[device_index] = next_device;
-        self.process = next_process;
-        Ok(())
-    }
-
-    pub fn release(&mut self, device_index: usize, bytes: u64) -> Result<(), String> {
-        let current = self.per_device.get_mut(device_index).ok_or_else(|| {
-            format!("GPU resident release names missing device {device_index}")
-        })?;
-        *current = current
-            .checked_sub(bytes)
-            .ok_or_else(|| "GPU per-device resident release underflows".to_string())?;
-        self.process = self
-            .process
-            .checked_sub(bytes)
-            .ok_or_else(|| "GPU process resident release underflows".to_string())?;
-        Ok(())
-    }
 }
 
 /// Bounded deterministic retirement owner. Any required-device failure poisons
@@ -572,7 +615,6 @@ impl<'a> ResidentBudgetTracker<'a> {
 pub struct DeterministicRetirement<T> {
     slots: Vec<Option<T>>,
     failure: Option<String>,
-    cancelled: bool,
 }
 
 impl<T> DeterministicRetirement<T> {
@@ -590,12 +632,11 @@ impl<T> DeterministicRetirement<T> {
         Ok(Self {
             slots,
             failure: None,
-            cancelled: false,
         })
     }
 
     pub fn record_success(&mut self, shard_index: usize, value: T) -> Result<(), String> {
-        if self.cancelled || self.failure.is_some() {
+        if self.failure.is_some() {
             return Err("GPU route is already invalidated".to_string());
         }
         let slot = self
@@ -603,7 +644,9 @@ impl<T> DeterministicRetirement<T> {
             .get_mut(shard_index)
             .ok_or_else(|| format!("GPU retirement shard {shard_index} is out of bounds"))?;
         if slot.is_some() {
-            return Err(format!("GPU retirement shard {shard_index} completed twice"));
+            return Err(format!(
+                "GPU retirement shard {shard_index} completed twice"
+            ));
         }
         *slot = Some(value);
         Ok(())
@@ -617,14 +660,7 @@ impl<T> DeterministicRetirement<T> {
         }
     }
 
-    pub fn cancel(&mut self) {
-        self.cancelled = true;
-    }
-
     pub fn finish(self) -> Result<Vec<T>, String> {
-        if self.cancelled {
-            return Err("ordered GPU device-set route was cancelled before complete retirement".to_string());
-        }
         if let Some(error) = self.failure {
             return Err(error);
         }

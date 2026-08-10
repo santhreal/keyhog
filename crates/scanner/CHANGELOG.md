@@ -20,7 +20,7 @@
 - Keep GPU literal rows, regex-bound rows, matcher programs, peers, and dispatch scratch absent from exact CPU and SIMD scanners.
 - Make worker scratch lazy and bounded: uppercase, checksum-decode, generic-keyword, and decode-fact pools no longer retain hostile-input or eager per-thread allocations.
 - Compile complete phase-two GPU DFA coverage evidence from the detector registry, split oversized compatible programs into bounded deterministic shards, emit compact candidate bitmaps, and reject incomplete or identity-mismatched versioned catalogs.
-- Add authenticated ordered GPU device sets with cross-API physical-adapter deduplication, explicit exclusion reasons, all-or-nothing per-ordinal acquisition, measured integer-weight shard assignment, checked per-device/process resident budgets, and deterministic fail-closed retirement.
+- Add authenticated ordered GPU device sets with cross-API physical-adapter deduplication, explicit exclusion reasons, all-or-nothing per-ordinal acquisition, measured integer-weight contiguous shard assignment, bounded per-device resident slots, concurrent dispatch, and source-ordered fail-closed retirement.
 
 - Move two large co-located test suites out of scanner source files and into the tests tree, shrinking `detector_ids.rs` from 414 lines to 127 and the Hyperscan scratch backend from 767 to 341. Both keep running against the crate-private state they exist to check, and both leave the inline-test allowlist, so the allowlist now names two fewer permanent exceptions.
 

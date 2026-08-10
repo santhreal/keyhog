@@ -13,6 +13,7 @@ pub(crate) struct GpuAdapterProbe {
 
 #[derive(Debug)]
 struct AdapterSnapshot {
+    adapter: wgpu::Adapter,
     adapter_index: usize,
     info: wgpu::AdapterInfo,
     max_buffer_size: u64,
@@ -40,10 +41,15 @@ fn probe() -> Option<GpuAdapterProbe> {
         .enumerate_adapters(wgpu::Backends::all())
         .into_iter()
         .enumerate()
-        .map(|(adapter_index, adapter)| AdapterSnapshot {
-            adapter_index,
-            info: adapter.get_info(),
-            max_buffer_size: adapter.limits().max_buffer_size,
+        .map(|(adapter_index, adapter)| {
+            let info = adapter.get_info();
+            let max_buffer_size = adapter.limits().max_buffer_size;
+            AdapterSnapshot {
+                adapter,
+                adapter_index,
+                info,
+                max_buffer_size,
+            }
         })
         .collect::<Vec<_>>();
     if adapters.is_empty() {
@@ -83,10 +89,15 @@ pub(crate) fn probe_wgpu_device_exposures(
         .enumerate_adapters(wgpu::Backends::all())
         .into_iter()
         .enumerate()
-        .map(|(adapter_index, adapter)| AdapterSnapshot {
-            adapter_index,
-            info: adapter.get_info(),
-            max_buffer_size: adapter.limits().max_buffer_size,
+        .map(|(adapter_index, adapter)| {
+            let info = adapter.get_info();
+            let max_buffer_size = adapter.limits().max_buffer_size;
+            AdapterSnapshot {
+                adapter,
+                adapter_index,
+                info,
+                max_buffer_size,
+            }
         })
         .collect::<Vec<_>>();
     if adapters.len() > super::device_set::MAX_GPU_ROUTE_DEVICES.saturating_mul(8) {
@@ -99,7 +110,6 @@ pub(crate) fn probe_wgpu_device_exposures(
     adapters.sort_by(|left, right| adapter_identity(left).cmp(&adapter_identity(right)));
     #[cfg(target_os = "linux")]
     let pci = linux_pci_gpus();
-    let mut occurrences = std::collections::BTreeMap::<(String, u32, u32), usize>::new();
     let mut exposures = Vec::new();
     exposures
         .try_reserve_exact(adapters.len())
@@ -108,40 +118,51 @@ pub(crate) fn probe_wgpu_device_exposures(
         let api_ordinal = snapshot.adapter_index;
         let info = snapshot.info;
         let backend_identity = format!("{:?}", info.backend);
-        let occurrence = occurrences
-            .entry((backend_identity.clone(), info.vendor, info.device))
-            .or_default();
         #[cfg(target_os = "linux")]
-        let physical = pci
-            .iter()
-            .filter(|device| device.vendor == info.vendor && device.device == info.device)
-            .nth(*occurrence);
+        let physical = linux_vulkan_physical_identity(&snapshot.adapter).or_else(|| {
+            let mut matches = pci
+                .iter()
+                .filter(|device| device.vendor == info.vendor && device.device == info.device);
+            let first = matches.next();
+            if first.is_some() && matches.next().is_none() {
+                first.map(|device| {
+                    (
+                        format!("pci:{}", device.bdf),
+                        format!("pci:{}/numa:{}", device.bdf, device.numa_node),
+                        device.capacity_bytes.unwrap_or(0),
+                        device.driver.clone(),
+                    )
+                })
+            } else {
+                None
+            }
+        });
         #[cfg(not(target_os = "linux"))]
-        let physical: Option<&LinuxPciGpu> = None;
+        let physical: Option<(String, String, u64, String)> = None;
         let fallback_identity = format!(
             "wgpu:{backend_identity}:{:08x}:{:08x}:ordinal={api_ordinal}",
             info.vendor, info.device
         );
-        let (physical_identity, topology_identity, capacity_bytes, sysfs_driver) =
-            if let Some(physical) = physical {
-                (
-                    format!("pci:{}", physical.bdf),
-                    format!("pci:{}/numa:{}", physical.bdf, physical.numa_node),
-                    physical.capacity_bytes.unwrap_or(0),
-                    physical.driver.as_str(),
-                )
-            } else {
+        let physical_available = physical.is_some();
+        let (physical_identity, topology_identity, capacity_bytes, physical_driver) = physical
+            .unwrap_or_else(|| {
                 (
                     fallback_identity.clone(),
                     fallback_identity,
                     0,
-                    "unavailable",
+                    "unavailable".to_string(),
                 )
-            };
-        *occurrence = occurrence.saturating_add(1);
-        let ineligible_reason = (capacity_bytes == 0).then(|| {
-            "stable physical VRAM capacity is unavailable for this WGPU exposure".to_string()
-        });
+            });
+        let ineligible_reason = if !physical_available {
+            Some(
+                "stable physical topology mapping is unavailable for this WGPU exposure"
+                    .to_string(),
+            )
+        } else if capacity_bytes == 0 {
+            Some("stable physical VRAM capacity is unavailable for this WGPU exposure".to_string())
+        } else {
+            None
+        };
         let is_software = is_software_adapter(&info);
         exposures.push(super::device_set::GpuDeviceExposure {
             api: super::device_set::GpuApi::Wgpu,
@@ -152,7 +173,7 @@ pub(crate) fn probe_wgpu_device_exposures(
             vendor_id: info.vendor,
             device_id: info.device,
             driver_identity: format!(
-                "wgpu={}:{};os-driver={sysfs_driver}",
+                "wgpu={}:{};physical-driver={physical_driver}",
                 info.driver, info.driver_info
             ),
             runtime_identity: format!(
@@ -166,6 +187,67 @@ pub(crate) fn probe_wgpu_device_exposures(
         });
     }
     Ok(exposures)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_vulkan_physical_identity(
+    adapter: &wgpu::Adapter,
+) -> Option<(String, String, u64, String)> {
+    if adapter.get_info().backend != wgpu::Backend::Vulkan {
+        return None;
+    }
+    // SAFETY: the callback only performs read-only Vulkan property queries
+    // through the instance and physical-device handle owned by this live adapter.
+    unsafe {
+        adapter.as_hal::<wgpu::hal::api::Vulkan, _, _>(|hal| {
+            let hal = hal?;
+            let mut identity = ash::vk::PhysicalDeviceIDProperties::default();
+            let mut properties =
+                ash::vk::PhysicalDeviceProperties2::default().push_next(&mut identity);
+            let raw_instance = hal.shared_instance().raw_instance();
+            raw_instance
+                .get_physical_device_properties2(hal.raw_physical_device(), &mut properties);
+            if identity.device_uuid.iter().all(|byte| *byte == 0) {
+                return None;
+            }
+            let memory =
+                raw_instance.get_physical_device_memory_properties(hal.raw_physical_device());
+            let capacity_bytes = memory.memory_heaps[..memory.memory_heap_count as usize]
+                .iter()
+                .filter(|heap| heap.flags.contains(ash::vk::MemoryHeapFlags::DEVICE_LOCAL))
+                .try_fold(0u64, |total, heap| total.checked_add(heap.size))?;
+            let pci_identity = if hal
+                .physical_device_capabilities()
+                .supports_extension(ash::ext::pci_bus_info::NAME)
+            {
+                let mut pci = ash::vk::PhysicalDevicePCIBusInfoPropertiesEXT::default();
+                let mut properties =
+                    ash::vk::PhysicalDeviceProperties2::default().push_next(&mut pci);
+                raw_instance
+                    .get_physical_device_properties2(hal.raw_physical_device(), &mut properties);
+                Some(format!(
+                    "pci:{:04x}:{:02x}:{:02x}.{}",
+                    pci.pci_domain, pci.pci_bus, pci.pci_device, pci.pci_function
+                ))
+            } else {
+                None
+            };
+            let uuid = keyhog_core::hex_encode(&identity.device_uuid);
+            let physical_identity = pci_identity
+                .clone()
+                .unwrap_or_else(|| format!("vulkan-device-uuid:{uuid}"));
+            let topology_identity = pci_identity.map_or_else(
+                || format!("vulkan-device-uuid:{uuid}"),
+                |pci| format!("{pci}/vulkan-device-uuid:{uuid}"),
+            );
+            Some((
+                physical_identity,
+                topology_identity,
+                capacity_bytes,
+                "vulkan".to_string(),
+            ))
+        })
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -196,19 +278,20 @@ fn linux_pci_gpus() -> Vec<LinuxPciGpu> {
             .unwrap_or_else(|_| "unknown".to_string());
         let driver = std::fs::read_link(path.join("driver"))
             .ok()
-            .and_then(|driver| driver.file_name().map(|name| name.to_string_lossy().into_owned()))
+            .and_then(|driver| {
+                driver
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
             .unwrap_or_else(|| "unavailable".to_string());
-        let capacity_bytes = [
-            "mem_info_vram_total",
-            "mem_info_vis_vram_total",
-        ]
-        .into_iter()
-        .find_map(|name| {
-            std::fs::read_to_string(path.join(name))
-                .ok()
-                .and_then(|value| value.trim().parse::<u64>().ok())
-                .filter(|bytes| *bytes > 0)
-        });
+        let capacity_bytes = ["mem_info_vram_total", "mem_info_vis_vram_total"]
+            .into_iter()
+            .find_map(|name| {
+                std::fs::read_to_string(path.join(name))
+                    .ok()
+                    .and_then(|value| value.trim().parse::<u64>().ok())
+                    .filter(|bytes| *bytes > 0)
+            });
         devices.push(LinuxPciGpu {
             bdf,
             vendor,
@@ -223,13 +306,11 @@ fn linux_pci_gpus() -> Vec<LinuxPciGpu> {
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) fn linux_nvidia_pci_identity(
-    ordinal: usize,
-) -> Option<(String, String, u32, String)> {
+pub(crate) fn linux_nvidia_pci_identity(pci_bus_id: &str) -> Option<(String, String, u32, String)> {
+    let normalized = pci_bus_id.trim().to_ascii_lowercase();
     let device = linux_pci_gpus()
         .into_iter()
-        .filter(|device| device.vendor == 0x10de)
-        .nth(ordinal)?;
+        .find(|device| device.vendor == 0x10de && device.bdf.to_ascii_lowercase() == normalized)?;
     Some((
         format!("pci:{}", device.bdf),
         format!("pci:{}/numa:{}", device.bdf, device.numa_node),

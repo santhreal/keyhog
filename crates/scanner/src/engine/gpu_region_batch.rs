@@ -137,8 +137,17 @@ pub(super) const WGPU_BYTE_SCAN_DISPATCH_LIMIT: usize = 65_535 * 128;
 pub(super) const MAX_REGION_PRESENCE_REQUEST_DISPATCHES: usize = 4_096;
 
 pub(super) fn region_presence_batch_byte_limit(backend_id: &str) -> usize {
-    region_presence_batch_byte_limit_for_depth(backend_id, 1)
-        .expect("depth one is always a valid resident pipeline configuration")
+    let live = region_presence_batch_byte_limit_for_input_budget(
+        backend_id,
+        super::gpu_input_budget::gpu_batch_input_limit(),
+    );
+    #[cfg(test)]
+    {
+        return TEST_REGION_PRESENCE_BYTE_LIMIT
+            .with(|limit| limit.get().map_or(live, |test_limit| live.min(test_limit)));
+    }
+    #[cfg(not(test))]
+    live
 }
 
 pub(super) fn region_presence_batch_byte_limit_for_depth(

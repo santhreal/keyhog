@@ -2849,6 +2849,7 @@ dependencies = [
  "aes 0.8.4",
  "ahash",
  "aho-corasick",
+ "ash",
  "base64",
  "base64-simd",
  "blake3",

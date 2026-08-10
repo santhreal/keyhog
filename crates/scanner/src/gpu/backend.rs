@@ -12,19 +12,20 @@ pub(crate) use acquisition::load_dynamic_library;
 #[cfg(all(feature = "gpu", target_os = "linux"))]
 pub(crate) use acquisition::probe_cuda_peer;
 pub use acquisition::GpuBackendAvailability;
-pub(crate) use acquisition::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
 #[cfg(feature = "gpu")]
 pub use acquisition::{
     acquire_ordered_gpu_device_set, enumerate_gpu_device_census, AcquiredGpuDeviceSet,
 };
+pub(crate) use acquisition::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
 
+#[cfg(feature = "gpu")]
+pub(crate) use resident_evidence::{
+    gpu_resident_literal_required_device_bytes, scan_gpu_literal_evidence_by_region_resident,
+    GpuResidentLiteralOverlap, GpuResidentLiteralSlot,
+};
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) use resident_evidence::{
     reset_test_max_in_flight_slots, test_max_in_flight_slots, with_test_resident_dispatch_failure,
-};
-#[cfg(feature = "gpu")]
-pub(crate) use resident_evidence::{
-    scan_gpu_literal_evidence_by_region_resident, GpuResidentLiteralOverlap, GpuResidentLiteralSlot,
 };
 
 #[cfg(all(test, feature = "gpu"))]

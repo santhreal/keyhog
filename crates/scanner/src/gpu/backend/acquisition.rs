@@ -434,8 +434,7 @@ pub(crate) fn probe_cuda_peer() -> Result<vyre_driver_cuda::device::CudaDeviceCa
 }
 
 #[cfg(feature = "gpu")]
-pub fn enumerate_gpu_device_census(
-) -> Result<crate::gpu::device_set::GpuAdapterCensus, String> {
+pub fn enumerate_gpu_device_census() -> Result<crate::gpu::device_set::GpuAdapterCensus, String> {
     let mut failures = Vec::new();
     let mut exposures = match crate::gpu::adapter_probe::probe_wgpu_device_exposures() {
         Ok(exposures) => exposures,
@@ -458,31 +457,19 @@ pub fn enumerate_gpu_device_census(
                 .try_reserve(caps.len())
                 .map_err(|error| format!("CUDA device census reserve failed: {error}"))?;
             let runtime_identity = cuda_runtime_identity();
-            let cuda_pci_order_proven =
-                std::env::var("CUDA_DEVICE_ORDER").as_deref() == Ok("PCI_BUS_ID")
-                    && std::env::var_os("CUDA_VISIBLE_DEVICES").is_none();
             for caps in caps {
-                let topology = cuda_pci_order_proven
-                    .then(|| {
-                        crate::gpu::adapter_probe::linux_nvidia_pci_identity(caps.ordinal)
-                    })
-                    .flatten();
-                let (physical_identity, topology_identity, device_id, os_driver) =
-                    topology.unwrap_or_else(|| {
+                let topology = cuda_pci_bus_id(caps.ordinal).ok().and_then(|pci_bus_id| {
+                    crate::gpu::adapter_probe::linux_nvidia_pci_identity(&pci_bus_id)
+                });
+                let (physical_identity, topology_identity, device_id, os_driver) = topology
+                    .unwrap_or_else(|| {
                         let fallback = format!("cuda:ordinal={}", caps.ordinal);
-                        (
-                            fallback.clone(),
-                            fallback,
-                            0,
-                            "unavailable".to_string(),
-                        )
+                        (fallback.clone(), fallback, 0, "unavailable".to_string())
                     });
                 let mut ineligible_reason = None;
                 if physical_identity.starts_with("cuda:ordinal=") {
-                    ineligible_reason = Some(
-                        "stable CUDA PCI topology identity is unavailable; calibrate with CUDA_DEVICE_ORDER=PCI_BUS_ID and no CUDA_VISIBLE_DEVICES remapping"
-                            .to_string(),
-                    );
+                    ineligible_reason =
+                        Some("stable CUDA PCI topology identity is unavailable".to_string());
                 }
                 if runtime_identity.is_err() {
                     ineligible_reason =
@@ -534,6 +521,108 @@ fn cuda_runtime_identity() -> Result<String, String> {
     }
 }
 
+#[cfg(all(feature = "gpu", target_os = "linux"))]
+fn cuda_pci_bus_id(ordinal: usize) -> Result<String, String> {
+    type CuInit = unsafe extern "C" fn(u32) -> i32;
+    type CuDeviceGet = unsafe extern "C" fn(*mut i32, i32) -> i32;
+    type CuDeviceGetPciBusId = unsafe extern "C" fn(*mut std::ffi::c_char, i32, i32) -> i32;
+
+    struct DriverHandle(*mut std::ffi::c_void);
+    impl Drop for DriverHandle {
+        fn drop(&mut self) {
+            // SAFETY: the handle came from a successful `dlopen` in this function.
+            unsafe {
+                libc::dlclose(self.0);
+            }
+        }
+    }
+
+    unsafe fn symbol<T: Copy>(
+        handle: *mut std::ffi::c_void,
+        name: &std::ffi::CStr,
+    ) -> Result<T, String> {
+        // SAFETY: `handle` is live and `name` is NUL-terminated.
+        let address = unsafe { libc::dlsym(handle, name.as_ptr()) };
+        if address.is_null() {
+            return Err(format!(
+                "CUDA driver symbol {} is unavailable",
+                name.to_string_lossy()
+            ));
+        }
+        if std::mem::size_of::<T>() != std::mem::size_of_val(&address) {
+            return Err(
+                "CUDA driver function pointer has an unsupported representation".to_string(),
+            );
+        }
+        // SAFETY: CUDA's stable driver ABI defines each requested symbol with `T`.
+        Ok(unsafe { std::mem::transmute_copy(&address) })
+    }
+
+    let mut first_error = None;
+    let handle = [c"libcuda.so.1", c"libcuda.so"]
+        .into_iter()
+        .find_map(|name| {
+            // SAFETY: each static C string is NUL-terminated.
+            let handle = unsafe { libc::dlopen(name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+            if handle.is_null() {
+                if first_error.is_none() {
+                    first_error = Some(name.to_string_lossy().into_owned());
+                }
+                None
+            } else {
+                Some(DriverHandle(handle))
+            }
+        })
+        .ok_or_else(|| {
+            format!(
+                "CUDA driver library is unavailable while resolving PCI identity{}",
+                first_error
+                    .as_deref()
+                    .map(|name| format!(" (first attempted {name})"))
+                    .unwrap_or_default()
+            )
+        })?;
+    // SAFETY: the symbols are resolved from the live CUDA driver handle and are
+    // called with their documented driver-API signatures.
+    unsafe {
+        let cu_init: CuInit = symbol(handle.0, c"cuInit")?;
+        let cu_device_get: CuDeviceGet = symbol(handle.0, c"cuDeviceGet")?;
+        let cu_device_get_pci_bus_id: CuDeviceGetPciBusId =
+            symbol(handle.0, c"cuDeviceGetPCIBusId")?;
+        let init_status = cu_init(0);
+        if init_status != 0 {
+            return Err(format!(
+                "CUDA driver initialization failed with status {init_status}"
+            ));
+        }
+        let ordinal =
+            i32::try_from(ordinal).map_err(|_| "CUDA device ordinal exceeds i32".to_string())?;
+        let mut device = 0i32;
+        let device_status = cu_device_get(&mut device, ordinal);
+        if device_status != 0 {
+            return Err(format!(
+                "CUDA device {ordinal} lookup failed with status {device_status}"
+            ));
+        }
+        let mut pci_bus_id = [0 as std::ffi::c_char; 32];
+        let pci_status =
+            cu_device_get_pci_bus_id(pci_bus_id.as_mut_ptr(), pci_bus_id.len() as i32, device);
+        if pci_status != 0 {
+            return Err(format!(
+                "CUDA device {ordinal} PCI identity failed with status {pci_status}"
+            ));
+        }
+        let pci_bus_id = std::ffi::CStr::from_ptr(pci_bus_id.as_ptr())
+            .to_str()
+            .map_err(|_| format!("CUDA device {ordinal} PCI identity is not UTF-8"))?
+            .trim();
+        if pci_bus_id.is_empty() {
+            return Err(format!("CUDA device {ordinal} PCI identity is empty"));
+        }
+        Ok(pci_bus_id.to_string())
+    }
+}
+
 #[cfg(feature = "gpu")]
 /// Acquire every device in an already authenticated ordered route. Acquisition
 /// is all-or-nothing; one required device failure drops successful siblings.
@@ -547,23 +636,60 @@ pub fn acquire_ordered_gpu_device_set(
         .try_reserve_exact(route.devices.len())
         .map_err(|error| format!("ordered GPU backend set reserve failed: {error}"))?;
     for (position, device) in route.devices.iter().enumerate() {
-        let backend = acquire_peer_ordinal(device.api, device.api_ordinal).map_err(|error| {
-            format!(
-                "required GPU device {position} acquisition failed: {error}; the ordered device-set route is invalid"
-            )
-        })?;
-        devices.push(backend);
+        let (backend, resident_timed_dispatch_supported) =
+            acquire_peer_ordinal(device.api, device.api_ordinal).map_err(|error| {
+                format!(
+                    "required GPU device {position} acquisition failed: {error}; the ordered device-set route is invalid"
+                )
+            })?;
+        devices.push(AcquiredGpuDevice {
+            backend,
+            resident_timed_dispatch_supported,
+            resident_literal: std::sync::Mutex::new(
+                super::resident_evidence::GpuResidentLiteralSlot::Empty,
+            ),
+        });
     }
+    let post_acquisition = enumerate_gpu_device_census()
+        .map_err(|error| format!("post-acquisition GPU census failed: {error}"))?;
+    route.validate_live_set(&post_acquisition).map_err(|error| {
+        format!(
+            "ordered GPU device set changed during acquisition: {error}; all acquired devices were released"
+        )
+    })?;
     Ok(AcquiredGpuDeviceSet {
-        authenticated_route_digest: route.authenticated_digest.clone(),
+        device_set_identity_digest: route.device_set_identity_digest(),
+        dispatch: std::sync::Mutex::new(()),
         devices,
     })
 }
 
 #[cfg(feature = "gpu")]
+struct AcquiredGpuDevice {
+    backend: Arc<dyn vyre::VyreBackend>,
+    resident_timed_dispatch_supported: bool,
+    resident_literal: std::sync::Mutex<super::resident_evidence::GpuResidentLiteralSlot>,
+}
+
+#[cfg(feature = "gpu")]
 pub struct AcquiredGpuDeviceSet {
-    authenticated_route_digest: String,
-    devices: Vec<Arc<dyn vyre::VyreBackend>>,
+    device_set_identity_digest: String,
+    dispatch: std::sync::Mutex<()>,
+    devices: Vec<AcquiredGpuDevice>,
+}
+
+#[cfg(feature = "gpu")]
+impl std::fmt::Debug for AcquiredGpuDeviceSet {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AcquiredGpuDeviceSet")
+            .field(
+                "device_set_identity_digest",
+                &self.device_set_identity_digest,
+            )
+            .field("devices", &self.devices.len())
+            .finish()
+    }
 }
 
 #[cfg(feature = "gpu")]
@@ -578,14 +704,36 @@ impl AcquiredGpuDeviceSet {
         self.devices.is_empty()
     }
 
-    #[must_use]
-    pub fn authenticated_route_digest(&self) -> &str {
-        &self.authenticated_route_digest
+    pub fn device_set_identity_digest(&self) -> &str {
+        &self.device_set_identity_digest
+    }
+
+    pub(crate) fn lock_complete_dispatch(&self) -> Result<std::sync::MutexGuard<'_, ()>, String> {
+        self.dispatch
+            .lock()
+            .map_err(|_| "ordered GPU dispatch lock is unavailable after an internal panic".into())
     }
 
     #[must_use]
     pub fn backend(&self, position: usize) -> Option<&Arc<dyn vyre::VyreBackend>> {
-        self.devices.get(position)
+        self.devices.get(position).map(|device| &device.backend)
+    }
+
+    #[must_use]
+    pub(crate) fn resident_timed_dispatch_supported(&self, position: usize) -> Option<bool> {
+        self.devices
+            .get(position)
+            .map(|device| device.resident_timed_dispatch_supported)
+    }
+
+    #[must_use]
+    pub(crate) fn resident_literal(
+        &self,
+        position: usize,
+    ) -> Option<&std::sync::Mutex<super::resident_evidence::GpuResidentLiteralSlot>> {
+        self.devices
+            .get(position)
+            .map(|device| &device.resident_literal)
     }
 }
 
@@ -593,7 +741,7 @@ impl AcquiredGpuDeviceSet {
 fn acquire_peer_ordinal(
     api: crate::gpu::device_set::GpuApi,
     ordinal: usize,
-) -> Result<Arc<dyn vyre::VyreBackend>, String> {
+) -> Result<(Arc<dyn vyre::VyreBackend>, bool), String> {
     match api {
         crate::gpu::device_set::GpuApi::Wgpu => {
             let backend = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -606,7 +754,9 @@ fn acquire_peer_ordinal(
                 )
             })?
             .map_err(|error| error.to_string())?;
-            Ok(Arc::new(backend))
+            let resident_timed_dispatch_supported =
+                wgpu_resident_timed_dispatch_supported(backend.device_queue().0.features());
+            Ok((Arc::new(backend), resident_timed_dispatch_supported))
         }
         crate::gpu::device_set::GpuApi::Cuda => {
             #[cfg(all(feature = "gpu", target_os = "linux"))]
@@ -614,16 +764,16 @@ fn acquire_peer_ordinal(
                 let backend = run_cuda_after_preflight(
                     ensure_cuda_driver_library_loadable,
                     || {
-                        vyre_driver_cuda::backend::CudaBackend::acquire_ordinal(ordinal)
-                            .map(|cuda| {
-                                Arc::new(
-                                    vyre_driver_cuda::CudaBackendRegistration::new(cuda),
-                                ) as Arc<dyn vyre::VyreBackend>
-                            })
+                        vyre_driver_cuda::backend::CudaBackend::acquire_ordinal(ordinal).map(
+                            |cuda| {
+                                Arc::new(vyre_driver_cuda::CudaBackendRegistration::new(cuda))
+                                    as Arc<dyn vyre::VyreBackend>
+                            },
+                        )
                     },
                     "ordered device acquisition",
                 )?;
-                Ok(backend)
+                Ok((backend, true))
             }
             #[cfg(not(all(feature = "gpu", target_os = "linux")))]
             {
@@ -637,7 +787,7 @@ fn acquire_peer_ordinal(
                     "Metal adapter ordinal {ordinal} is not enumerable through the current VYRE API"
                 ));
             }
-            acquire_metal_peer().map(|peer| peer.backend)
+            acquire_metal_peer().map(|peer| (peer.backend, peer.resident_timed_dispatch_supported))
         }
     }
 }

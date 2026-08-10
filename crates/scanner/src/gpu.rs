@@ -18,13 +18,14 @@ pub use backend::GpuBackendAvailability;
 pub use backend::{
     acquire_ordered_gpu_device_set, enumerate_gpu_device_census, AcquiredGpuDeviceSet,
 };
+#[cfg(feature = "gpu")]
+pub(crate) use backend::{
+    gpu_resident_literal_required_device_bytes, scan_gpu_literal_evidence_by_region_resident,
+    GpuResidentLiteralOverlap, GpuResidentLiteralSlot,
+};
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) use backend::{
     reset_test_max_in_flight_slots, test_max_in_flight_slots, with_test_resident_dispatch_failure,
-};
-#[cfg(feature = "gpu")]
-pub(crate) use backend::{
-    scan_gpu_literal_evidence_by_region_resident, GpuResidentLiteralOverlap, GpuResidentLiteralSlot,
 };
 pub(crate) use backend::{GpuBackendAcquisitionFailure, GpuBackendPeers, SelectedGpuPeer};
 type RecoveryReceiptCounter = std::sync::Arc<std::sync::atomic::AtomicU64>;

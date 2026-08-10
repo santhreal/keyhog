@@ -182,6 +182,7 @@ fn automatic_gpu_recovery_rescans_only_unprocessed_dispatch_ranges() {
                     backend,
                     scanner.default_execution_route(),
                     true,
+                    None,
                 )
                 .expect("automatic route must recover stable dispatch ranges")
         })
@@ -231,7 +232,7 @@ fn issue32_gpu_region_batches_use_every_eligible_resident_depth() {
         route.gpu_pipeline_depth = depth;
         let outcome = with_test_region_presence_byte_limit(64, || {
             scanner
-                .scan_coalesced_gpu_region_presence_recovering(&chunks, backend, route, false)
+                .scan_coalesced_gpu_region_presence_recovering(&chunks, backend, route, false, None)
                 .expect("resident depth must preserve production scan parity")
         });
         assert_eq!(outcome.matches, expected, "finding drift at depth {depth}");
@@ -272,6 +273,7 @@ fn automatic_phase2_gpu_recovery_preserves_completed_shards() {
                     backend,
                     scanner.default_execution_route(),
                     true,
+                    None,
                 )
                 .expect("automatic route must recover phase-two admission ranges")
         })

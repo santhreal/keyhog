@@ -27,6 +27,9 @@ fn device(ordinal: usize, physical: &str, weight: u64, budget: u64) -> Calibrate
         api_ordinal: ordinal,
         physical_identity: physical.to_string(),
         topology_identity: format!("pci:0000:{ordinal:02x}:00.0/numa:0"),
+        name: format!("device-{physical}"),
+        vendor_id: 0x10de,
+        device_id: 0x1234,
         software_eligible: true,
         display_eligible: true,
         driver_identity: "driver-1".to_string(),
@@ -59,7 +62,7 @@ fn route(weights: &[u64]) -> OrderedGpuDeviceRoute {
 #[test]
 fn duplicate_api_exposure_is_retained_with_explicit_reason() {
     let census = deduplicate_gpu_exposures(vec![
-        exposure(GpuApi::Wgpu, 0, "gpu-a", "pci:0000:01:00.0"),
+        exposure(GpuApi::Wgpu, 0, "gpu-a", "vulkan:adapter-0"),
         exposure(GpuApi::Cuda, 0, "gpu-a", "pci:0000:01:00.0"),
         exposure(GpuApi::Wgpu, 1, "gpu-b", "pci:0000:02:00.0"),
     ])
@@ -97,9 +100,13 @@ fn software_display_and_incomplete_adapters_have_specific_reasons() {
         .iter()
         .map(|row| row.ineligible_reason.as_deref().expect("reason"))
         .collect::<Vec<_>>();
-    assert!(reasons.iter().any(|reason| reason.contains("software adapter")));
+    assert!(reasons
+        .iter()
+        .any(|reason| reason.contains("software adapter")));
     assert!(reasons.iter().any(|reason| reason.contains("display-only")));
-    assert!(reasons.iter().any(|reason| reason.contains("physical adapter identity")));
+    assert!(reasons
+        .iter()
+        .any(|reason| reason.contains("physical adapter identity")));
 }
 
 #[test]
@@ -111,18 +118,15 @@ fn identical_devices_are_stably_balanced_without_splitting_shards() {
     let first = partition_exact_shards(&route, &shards).expect("partition");
     let second = partition_exact_shards(&route, &shards).expect("partition");
     assert_eq!(first, second);
+    let WeightedShardPlan::MultiDevice(assignments) = first else {
+        panic!("two-device route must partition")
+    };
     assert_eq!(
-        first,
-        WeightedShardPlan::MultiDevice(vec![
-            ShardAssignment { shard_index: 0, device_index: 0 },
-            ShardAssignment { shard_index: 1, device_index: 1 },
-            ShardAssignment { shard_index: 2, device_index: 0 },
-            ShardAssignment { shard_index: 3, device_index: 1 },
-            ShardAssignment { shard_index: 4, device_index: 0 },
-            ShardAssignment { shard_index: 5, device_index: 1 },
-            ShardAssignment { shard_index: 6, device_index: 0 },
-            ShardAssignment { shard_index: 7, device_index: 1 },
-        ])
+        assignments
+            .iter()
+            .map(|assignment| assignment.device_index)
+            .collect::<Vec<_>>(),
+        vec![0, 0, 0, 0, 1, 1, 1, 1]
     );
 }
 
@@ -142,6 +146,38 @@ fn asymmetric_weights_use_only_persisted_integer_evidence() {
         counts
     });
     assert_eq!(counts, [2, 6]);
+    assert!(
+        plan.windows(2)
+            .all(|pair| pair[0].device_index <= pair[1].device_index),
+        "each device must own one contiguous shard range"
+    );
+}
+
+#[test]
+fn device_set_identity_ignores_measurements_but_rejects_hardware_drift() {
+    let baseline = route(&[1, 3]);
+    let remeasured = route(&[2, 5]);
+    assert!(baseline.has_same_device_set_identity(&remeasured));
+    assert_eq!(
+        baseline.device_set_identity_digest(),
+        remeasured.device_set_identity_digest()
+    );
+
+    let mut changed_devices = remeasured.devices.clone();
+    changed_devices[1].driver_identity = "driver-2".to_string();
+    let changed = OrderedGpuDeviceRoute::new(
+        remeasured.workload_identity.clone(),
+        remeasured.detector_digest.clone(),
+        remeasured.config_digest.clone(),
+        remeasured.process_resident_limit_bytes,
+        changed_devices,
+    )
+    .expect("changed hardware route remains structurally valid");
+    assert!(!baseline.has_same_device_set_identity(&changed));
+    assert_ne!(
+        baseline.device_set_identity_digest(),
+        changed.device_set_identity_digest()
+    );
 }
 
 #[test]
@@ -162,18 +198,30 @@ fn zero_bytes_huge_shard_and_many_tiny_shards_remain_bounded_and_deterministic()
         }])
     );
 
-    let tiny = (0..65_537)
+    let tiny = (0..MAX_GPU_ROUTE_SHARDS)
         .map(|index| ExactShard { index, bytes: 1 })
         .collect::<Vec<_>>();
-    let first = partition_exact_shards(&route, &tiny).expect("tiny partition");
-    let second = partition_exact_shards(&route, &tiny).expect("tiny partition replay");
+    let first = partition_exact_shards(&route, &tiny).expect("maximum tiny-shard partition");
+    let second =
+        partition_exact_shards(&route, &tiny).expect("maximum tiny-shard partition replay");
     assert_eq!(first, second);
+    let mut over = tiny;
+    over.push(ExactShard {
+        index: MAX_GPU_ROUTE_SHARDS,
+        bytes: 1,
+    });
+    assert!(partition_exact_shards(&route, &over)
+        .expect_err("over-limit shard count rejected")
+        .contains("above the bounded limit"));
 }
 
 #[test]
 fn single_device_route_borrows_exact_shards_without_hot_path_allocation() {
     let route = route(&[7]);
-    let shards = [ExactShard { index: 4, bytes: 99 }];
+    let shards = [ExactShard {
+        index: 4,
+        bytes: 99,
+    }];
     let WeightedShardPlan::SingleDevice(borrowed) =
         partition_exact_shards(&route, &shards).expect("single route")
     else {
@@ -213,11 +261,11 @@ fn reordered_partial_stale_and_tampered_live_sets_fail_before_scheduling() {
         .contains("requires 2 device"));
 
     let mut stale = route.clone();
-    stale.schema_version = 0;
+    stale.schema_version = 1;
     assert!(stale
         .validate()
-        .expect_err("stale schema rejected")
-        .contains("unsupported GPU device route schema"));
+        .expect_err("v1 route without authenticated adapter identity rejected")
+        .contains("unsupported GPU device route schema 1; expected 2"));
 
     let mut tampered = route.clone();
     tampered.devices[0].workload_weight = 99;
@@ -225,6 +273,19 @@ fn reordered_partial_stale_and_tampered_live_sets_fail_before_scheduling() {
         .validate()
         .expect_err("tampered route rejected")
         .contains("authentication digest mismatch"));
+
+    let mut duplicate_physical = route.clone();
+    duplicate_physical.devices[1].physical_identity =
+        duplicate_physical.devices[0].physical_identity.clone();
+    assert_ne!(
+        duplicate_physical.devices[1].topology_identity,
+        duplicate_physical.devices[0].topology_identity
+    );
+    duplicate_physical.authenticated_digest = duplicate_physical.compute_digest();
+    assert!(duplicate_physical
+        .validate()
+        .expect_err("one physical GPU cannot enter through divergent topology labels")
+        .contains("duplicate physical adapter"));
 }
 
 #[test]
@@ -246,28 +307,9 @@ fn resident_budgets_are_derived_from_capacity_and_process_ceiling() {
         .contains("at least one process byte"));
 }
 
+/// WHY: completion order must not change the logical source/shard ordering.
 #[test]
-fn resident_capacity_is_checked_per_device_and_process_before_use() {
-    let calibrated_route = route(&[1, 1]);
-    let mut budget = ResidentBudgetTracker::new(&calibrated_route).expect("budget tracker");
-    budget.reserve(0, 1 << 30).expect("device budget exact");
-    assert!(budget
-        .reserve(0, 1)
-        .expect_err("device overflow")
-        .contains("device 0"));
-    budget.release(0, 1 << 30).expect("release");
-    assert!(budget.release(0, 1).expect_err("underflow").contains("underflows"));
-
-    let mut process_route = route(&[1, 1]);
-    process_route.process_resident_limit_bytes = (1 << 30) + 1;
-    process_route.authenticated_digest = process_route.compute_digest();
-    assert!(ResidentBudgetTracker::new(&process_route)
-        .expect_err("oversubscribed process route rejected before allocation")
-        .contains("above process ceiling"));
-}
-
-#[test]
-fn dense_replay_retires_in_source_order_with_exact_scalar_parity() {
+fn retirement_restores_source_order_after_reverse_completion() {
     let rows = (0..10_000)
         .map(|index| vec![index * 3, index * 3 + 1, index * 3 + 2])
         .collect::<Vec<_>>();
@@ -288,9 +330,9 @@ fn dense_replay_retires_in_source_order_with_exact_scalar_parity() {
 }
 
 #[test]
-fn every_device_submit_and_retire_failure_invalidates_complete_route() {
+fn every_required_device_failure_invalidates_complete_route() {
     for device_index in 0..3 {
-        for phase in ["submit", "retire"] {
+        for phase in ["submit", "retire", "cancellation"] {
             let mut retirement = DeterministicRetirement::new(3).expect("retirement");
             for shard in 0..3 {
                 retirement
@@ -306,15 +348,7 @@ fn every_device_submit_and_retire_failure_invalidates_complete_route() {
 }
 
 #[test]
-fn cancellation_and_incomplete_retirement_are_visible() {
-    let mut cancelled = DeterministicRetirement::new(2).expect("retirement");
-    cancelled.record_success(0, 1).expect("first shard");
-    cancelled.cancel();
-    assert!(cancelled
-        .finish()
-        .expect_err("cancelled route fails")
-        .contains("cancelled"));
-
+fn incomplete_retirement_is_visible() {
     let mut incomplete = DeterministicRetirement::new(2).expect("retirement");
     incomplete.record_success(1, 2).expect("second shard");
     assert!(incomplete

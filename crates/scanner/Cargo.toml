@@ -60,6 +60,7 @@ simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (
 # macOS release assets without a mutable Homebrew Vectorscan dependency.
 gpu = [
     "dep:wgpu",
+    "dep:ash",
     "dep:pollster",
     "dep:bytemuck",
     "dep:vyre-driver-wgpu",
@@ -79,6 +80,7 @@ flate2 = { workspace = true }
 # are kept unconditional because their CPU primitives (LiteralMatch,
 # GpuLiteralSet, RulePipeline) are woven into the scan types.
 wgpu = { workspace = true, optional = true }
+ash = { workspace = true, optional = true }
 pollster = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }
 aho-corasick = { workspace = true }
