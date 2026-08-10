@@ -414,6 +414,7 @@ reports that clearly instead of silently doing nothing.
 | `add` |  | Register a repository or filesystem root for continuous guard protection. Waits for initial reconciliation to complete before returning |
 | `help` |  | Print this message or the help of the given subcommand(s) |
 | `list` |  | List all registered guard roots and their current states |
+| `rebuild` |  | Delete and recreate the durable guard store for a root. Use after store corruption or when the persisted state is irrecoverably stale. The root is re-registered and a full reconciliation is triggered |
 | `reconcile` |  | Force a full reconciliation of a guarded root after an intentional policy or filesystem change |
 | `remove` |  | Stop protecting a root and remove its persisted non-secret state |
 | `status` |  | Print the exact state and current policy identity of a guarded root |
@@ -432,6 +433,12 @@ reports that clearly instead of silently doing nothing.
 ### `keyhog guard list`
 
 *No arguments.*
+
+### `keyhog guard rebuild`
+
+| Argument | Value | Default | Description |
+|----------|-------|---------|-------------|
+| `<ROOT>` *(required)* | `ROOT` |  | Root path to rebuild |
 
 ### `keyhog guard reconcile`
 

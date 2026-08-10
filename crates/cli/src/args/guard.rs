@@ -44,4 +44,11 @@ pub enum GuardAction {
         /// Root path to reconcile.
         root: PathBuf,
     },
+    /// Delete and recreate the durable guard store for a root. Use after
+    /// store corruption or when the persisted state is irrecoverably stale.
+    /// The root is re-registered and a full reconciliation is triggered.
+    Rebuild {
+        /// Root path to rebuild.
+        root: PathBuf,
+    },
 }

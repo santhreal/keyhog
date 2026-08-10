@@ -19,6 +19,7 @@ pub(crate) async fn run(args: GuardArgs) -> anyhow::Result<ExitCode> {
         GuardAction::List => run_list().await,
         GuardAction::Status { root, format } => run_status(root, format).await,
         GuardAction::Reconcile { root } => run_reconcile(root).await,
+        GuardAction::Rebuild { root } => run_rebuild(root).await,
     }
 }
 
@@ -431,6 +432,99 @@ async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
         other => {
             anyhow::bail!(
                 "guard reconcile: protocol mismatch (got {})",
+                response_kind(&other)
+            );
+        }
+    }
+}
+
+/// Rebuild the guard state for a root. This removes the root from the
+/// guard, which clears its persisted state and attestations from the
+/// durable store, then re-adds it, triggering a fresh baseline
+/// reconciliation. Use after store corruption or when the persisted
+/// state is irrecoverably stale.
+async fn run_rebuild(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
+    let socket = default_socket_path();
+    let mut conn = match client::connect(&socket).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            anyhow::bail!(
+                "guard rebuild: no compatible daemon at {} (start one with `keyhog daemon start`): {error}",
+                socket.display()
+            );
+        }
+    };
+    let canonical = canonicalize_root(&root)?;
+    let palette = style::for_stderr();
+
+    // 1. Remove the root from the guard. This clears its durable store
+    //    entries (root record, root gaps, attestations for that root).
+    let remove_request = Request::GuardRemove {
+        root: canonical.clone(),
+    };
+    match conn.round_trip(&remove_request).await? {
+        Response::GuardRemoved => {
+            eprintln!(
+                "{} guard: removed root {} for rebuild",
+                style::pass("OK", &palette),
+                root.display()
+            );
+        }
+        Response::Error { message } => {
+            // If the root is not registered, continue with rebuild.
+            if message.contains("not registered") {
+                eprintln!(
+                    "{} guard: root {} was not registered, proceeding with add",
+                    style::warn("WARN", &palette),
+                    root.display()
+                );
+            } else {
+                anyhow::bail!("guard rebuild: remove failed: {message}");
+            }
+        }
+        other => {
+            anyhow::bail!(
+                "guard rebuild: remove protocol mismatch (got {})",
+                response_kind(&other)
+            );
+        }
+    }
+
+    // 2. Re-add the root. This triggers a fresh baseline reconciliation.
+    let add_request = Request::GuardAdd {
+        root: canonical.clone(),
+        mode: "repo".to_string(),
+    };
+    match conn.round_trip(&add_request).await? {
+        Response::GuardAdded {
+            state,
+            terminal_sequence,
+            ..
+        } => {
+            eprintln!(
+                "{} guard: rebuild complete for {}, state is {} (sequence {})",
+                style::pass("OK", &palette),
+                root.display(),
+                state,
+                terminal_sequence
+            );
+            if matches!(
+                state.as_str(),
+                "stopped" | "indexing" | "degraded" | "stale-policy"
+            ) {
+                Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
+            } else if state == "blocked" {
+                Ok(ExitCode::from(exit_codes::EXIT_FINDINGS))
+            } else {
+                Ok(ExitCode::SUCCESS)
+            }
+        }
+        Response::Error { message } => {
+            anyhow::bail!("guard rebuild: add failed: {message}");
+        }
+        other => {
+            anyhow::bail!(
+                "guard rebuild: add protocol mismatch (got {})",
                 response_kind(&other)
             );
         }
