@@ -10,7 +10,7 @@ fn canonical_hot_patterns_delegate_to_process_match() {
     let hot_patterns = uncommented_code(&read(&src.join("engine/hot_patterns.rs")));
     let compile = uncommented_code(&read(&src.join("compiled_scanner/compile.rs")));
     let compile_helpers = uncommented_code(&read(&src.join("compiled_scanner/compile_helpers.rs")));
-    let backend_triggered = uncommented_code(&read(&src.join("engine/backend_triggered.rs")));
+    let backend_triggered = uncommented_code(&read(&src.join("engine/backend/triggered.rs")));
 
     assert!(
         hot_patterns.contains("let slot = &self.hot_pattern_slots[pattern_idx];")

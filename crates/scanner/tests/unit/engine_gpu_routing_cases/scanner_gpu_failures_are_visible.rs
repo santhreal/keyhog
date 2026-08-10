@@ -86,7 +86,7 @@ fn phase2_prefilter_compile_failures_warn() {
 #[test]
 fn phase2_gpu_admission_loss_terminates_selected_route() {
     let dispatch_src = engine_src("gpu_region_dispatch/mod.rs");
-    let owner_src = engine_src("backend_dispatch.rs");
+    let owner_src = engine_src("backend/dispatch.rs");
     assert!(
         dispatch_src.contains("SelectedGpuDispatchError::new(reason)")
             && dispatch_src
@@ -104,7 +104,7 @@ fn phase2_gpu_admission_loss_terminates_selected_route() {
 #[test]
 fn positioned_gpu_candidate_loss_updates_runtime_status() {
     let src = engine_src("gpu_region_dispatch/mod.rs");
-    let owner = engine_src("backend_dispatch.rs");
+    let owner = engine_src("backend/dispatch.rs");
     assert!(
         owner.contains("self.record_gpu_runtime_fault(error.reason())")
             && owner.contains("crate::error::ScanError::Gpu(error.to_string())")
@@ -388,7 +388,7 @@ fn backend_affecting_config_parse_failures_are_loud() {
     );
 
     let simd = scanner_src("simd/backend.rs");
-    let backend_prepared = scanner_src("engine/backend_prepared.rs");
+    let backend_prepared = scanner_src("engine/backend/prepared.rs");
     assert!(
         !simd.contains("KEYHOG_SHARD_TARGET")
             && !simd.contains("keyhog_core::env_config")

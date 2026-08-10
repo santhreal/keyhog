@@ -8,141 +8,10 @@ use super::scan_filters::*;
 use super::*;
 
 #[cfg(feature = "simd")]
-use std::cell::RefCell;
+pub(crate) mod trigger_cache;
 
 #[cfg(feature = "simd")]
-const REUSABLE_SIMD_TRIGGER_MAX_BYTES: usize = 1024 * 1024;
-#[cfg(feature = "simd")]
-const REUSABLE_SIMD_TRIGGER_MAX_ENTRIES: usize = 16;
-
-#[cfg(feature = "simd")]
-struct ReusableSimdTriggerEntry {
-    fingerprint: [u8; 32],
-    payload: keyhog_core::SensitiveString,
-    triggers: Option<Vec<u64>>,
-}
-
-#[cfg(feature = "simd")]
-impl ReusableSimdTriggerEntry {
-    fn resident_bytes(&self) -> usize {
-        self.payload
-            .len()
-            .saturating_add(self.triggers.as_ref().map_or(0, |row| {
-                row.len().saturating_mul(std::mem::size_of::<u64>())
-            }))
-    }
-}
-
-#[cfg(feature = "simd")]
-#[derive(Default)]
-pub(crate) struct ReusableSimdTriggerCache {
-    entries: std::collections::VecDeque<ReusableSimdTriggerEntry>,
-    resident_bytes: usize,
-    #[cfg(debug_assertions)]
-    hits: u64,
-}
-
-#[cfg(feature = "simd")]
-impl ReusableSimdTriggerCache {
-    fn get_or_compute(
-        &mut self,
-        payload: &keyhog_core::SensitiveString,
-        compute: impl FnOnce() -> Result<Option<Vec<u64>>, String>,
-    ) -> Result<Option<Vec<u64>>, String> {
-        let fingerprint = super::phase1_admission::phase1_payload_fingerprint(payload.as_bytes());
-        if let Some(position) = self
-            .entries
-            .iter()
-            .position(|entry| entry.fingerprint == fingerprint && entry.payload.eq(payload))
-        {
-            let entry = self
-                .entries
-                .remove(position)
-                .expect("cache position came from the same deque");
-            let triggers = entry.triggers.clone();
-            self.entries.push_back(entry);
-            #[cfg(debug_assertions)]
-            {
-                self.hits = self.hits.saturating_add(1);
-            }
-            return Ok(triggers);
-        }
-
-        let triggers = compute()?;
-        let entry = ReusableSimdTriggerEntry {
-            fingerprint,
-            payload: payload.clone(),
-            triggers: triggers.clone(),
-        };
-        let resident_bytes = entry.resident_bytes();
-        if resident_bytes > REUSABLE_SIMD_TRIGGER_MAX_BYTES {
-            return Ok(triggers);
-        }
-        while self.entries.len() >= REUSABLE_SIMD_TRIGGER_MAX_ENTRIES
-            || self.resident_bytes.saturating_add(resident_bytes) > REUSABLE_SIMD_TRIGGER_MAX_BYTES
-        {
-            let Some(evicted) = self.entries.pop_front() else {
-                break;
-            };
-            self.resident_bytes = self.resident_bytes.saturating_sub(evicted.resident_bytes());
-        }
-        self.resident_bytes = self.resident_bytes.saturating_add(resident_bytes);
-        self.entries.push_back(entry);
-        Ok(triggers)
-    }
-
-    #[cfg(debug_assertions)]
-    pub(super) fn reset_hits(&mut self) {
-        self.hits = 0;
-    }
-
-    #[cfg(debug_assertions)]
-    pub(super) fn hits(&self) -> u64 {
-        self.hits
-    }
-}
-
-// The trigger-buffer pool is only used in the Hyperscan-prefilter scratch path
-// of `scan_coalesced`. The pool's win is reuse of buffers that stay inside the
-// pool; extending it to per-chunk trigger builders regressed long-lines benches.
-#[cfg(feature = "simd")]
-thread_local! {
-    /// Per-thread pool of trigger-bitmask vectors. Phase-1 of `scan_coalesced`
-    /// allocates one `Vec<u64>` of size `ac_len.div_ceil(64)` per chunk.
-    static TRIGGER_POOL: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
-}
-
-#[cfg(feature = "simd")]
-#[inline]
-fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u64]) -> R) -> R {
-    TRIGGER_POOL.with(|cell| {
-        let mut buf = cell.borrow_mut();
-        if buf.len() < words_needed {
-            buf.resize(words_needed, 0);
-        }
-        let slice = &mut buf[..words_needed];
-        slice.fill(0);
-        f(slice)
-    })
-}
-
-#[cfg(feature = "simd")]
-#[inline]
-fn mark_hs_trigger(
-    scratch: &mut [u64],
-    prefilter: &super::SimdPhase1Prefilter,
-    ac_len: usize,
-    hs_id: usize,
-) {
-    if let Some(orig) = prefilter.original_indices(hs_id) {
-        for &idx in orig {
-            let idx = idx as usize;
-            if idx < ac_len {
-                scratch[idx / 64] |= 1u64 << (idx % 64);
-            }
-        }
-    }
-}
+pub(crate) use trigger_cache::{mark_hs_trigger, with_trigger_buffer, ReusableSimdTriggerCache};
 
 impl CompiledScanner {
     // The coalesced phase-2 tail is only reachable from the SIMD producer
@@ -522,7 +391,8 @@ impl CompiledScanner {
         let reusable_triggers = admission_plan.map(|plan| {
             (0..plan.payload_evidence_row_count())
                 .map(|_| std::sync::OnceLock::new())
-                .collect::<Vec<std::sync::OnceLock<Result<Option<Vec<u64>>, String>>>>()
+                .collect::<Vec<std::sync::OnceLock<Result<Option<std::sync::Arc<[u64]>>, String>>>>(
+                )
         });
         let lane_width = super::batch_topology::coalesced_lane_width(chunks);
         let triggers = if lane_width == 1 {
@@ -549,21 +419,22 @@ impl CompiledScanner {
                                 rows.get(row)
                             });
                     if let Some(reusable) = reusable {
-                        return reusable
-                            .get_or_init(|| {
-                                self.reusable_simd_triggers.lock().get_or_compute(
-                                    &chunk.data,
-                                    || {
-                                        self.compute_one_coalesced_simd_trigger(
-                                            data,
-                                            prefilter,
-                                            ac_len,
-                                            words_needed,
-                                        )
-                                    },
-                                )
-                            })
-                            .clone();
+                        let res = reusable.get_or_init(|| {
+                            self.reusable_simd_triggers
+                                .lock()
+                                .get_or_compute(&chunk.data, || {
+                                    self.compute_one_coalesced_simd_trigger(
+                                        data,
+                                        prefilter,
+                                        ac_len,
+                                        words_needed,
+                                    )
+                                })
+                        });
+                        return res
+                            .as_ref()
+                            .map(|opt| opt.as_ref().map(|arc| arc.as_ref().to_vec()))
+                            .map_err(Clone::clone);
                     }
                     self.compute_one_coalesced_simd_trigger(data, prefilter, ac_len, words_needed)
                 })

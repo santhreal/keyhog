@@ -1,4 +1,4 @@
-use super::*;
+use super::super::*;
 use crate::hw_probe::ScanBackend;
 use keyhog_core::Chunk;
 
@@ -17,21 +17,11 @@ impl CompiledScanner {
             return Ok(vec![Vec::new(); chunks.len()]);
         }
 
-        // Non-GPU backends (and empty batches) run the parallel CPU path. rayon's
-        // global pool is configured by the CLI orchestrator (--threads /
-        // [scan].threads / physical cores); Hyperscan + AC scans are CPU-bound
-        // and independent per-chunk, so par_iter() saturates cores. The
-        // `scan_chunk_boundaries` pass reassembles secrets straddling the seam
-        // between adjacent gapless chunks of the same file (a per-chunk scan sees
-        // each half too short to match) (load-bearing recall, not optional).
         let gpu_path = backend.is_gpu();
         if !gpu_path || chunks.is_empty() {
             return self.scan_chunks_cpu_parallel(chunks, backend, admission_plan, route);
         }
 
-        // The batched region-presence literal set is the SINGLE on-GPU trigger
-        // producer. Dispatch failures remain structured and never substitute
-        // CPU/SIMD for the selected route.
         #[cfg(feature = "gpu")]
         {
             self.scan_coalesced_gpu_region_presence(chunks, backend, route)
@@ -50,11 +40,7 @@ impl CompiledScanner {
         }
     }
 
-    /// Parallel per-chunk CPU scan + cross-chunk boundary reassembly. The single
-    /// owner of this path: it is taken only for non-GPU routes. GPU routes never
-    /// enter it; a GPU route compiled without GPU support returns a structured
-    /// [`crate::error::ScanError::Gpu`] from the caller instead of substituting a
-    /// CPU scan or taking process-exit ownership.
+    /// Parallel per-chunk CPU scan + cross-chunk boundary reassembly.
     fn scan_chunks_cpu_parallel(
         &self,
         chunks: &[Chunk],
@@ -219,190 +205,5 @@ impl CompiledScanner {
         };
         super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route)?;
         Ok(results)
-    }
-
-    pub(crate) fn prepare_chunk<'a>(&'a self, chunk: &'a Chunk) -> PreparedChunk<'a> {
-        self.prepare_chunk_with_normalization_passthrough(chunk, false, false, None)
-    }
-
-    pub(crate) fn prepare_chunk_with_normalization_passthrough<'a>(
-        &'a self,
-        chunk: &'a Chunk,
-        normalization_passthrough: bool,
-        multiline_absence: bool,
-        line_context_index: Option<&std::sync::Arc<crate::context::LineContextIndex>>,
-    ) -> PreparedChunk<'a> {
-        let _g = super::profile::span(keyhog_profile::Stage::Preprocess);
-        // Note: non-ASCII normalization used to swap `chunk` to an
-        // owned `Chunk` via `normalize_scannable_chunk`. That path
-        // is rarely-hit (most source code is pure ASCII) and the
-        // returned Chunk was immediately consumed via clone into the
-        // owned PreparedChunk anyway, so the borrow design works:
-        // for non-ASCII inputs we still feed the normalization
-        // through `unicode_hardening::normalize_homoglyphs` Cow
-        // below, which lands the normalized text in
-        // `preprocessed.text`. The raw `chunk.data` borrow remains
-        // intact for the few downstream consumers that read it
-        // (extract_confirmed_patterns uses preprocessed.text by
-        // default; raw `chunk.data` only via the drift fallback).
-
-        // Homoglyph normalization: zero-allocation Cow fast path. Pure-ASCII
-        // and evasion-free inputs (the 99% case) borrow `chunk.data` directly.
-        // Only inputs containing actual homoglyphs/zero-width/RTL allocate.
-        //
-        // The Cow MUST borrow `chunk.data` (lifetime `'a`) on the no-op path,
-        // not a local, so the borrowed passthrough text below can outlive this
-        // call inside `PreparedChunk<'a>`. We therefore chain the two
-        // normalization stages explicitly: a stage that rewrites bytes yields
-        // `Cow::Owned`; a no-op stage preserves the `&'a chunk.data` borrow.
-        #[cfg(debug_assertions)]
-        if self.config.unicode_normalization && !normalization_passthrough {
-            self.normalization_scanned_bytes.fetch_add(
-                // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; scan behavior is unchanged.
-                u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
-                std::sync::atomic::Ordering::Relaxed,
-            );
-        }
-        let data_to_pp: std::borrow::Cow<'a, str> = if normalization_passthrough {
-            std::borrow::Cow::Borrowed(&chunk.data)
-        } else if self.config.unicode_normalization {
-            match crate::unicode_hardening::normalize_homoglyphs(&chunk.data) {
-                // Homoglyph stage rewrote the bytes: the owned String is the
-                // canonical text. The interior-control strip then operates on
-                // that owned buffer; either outcome stays owned.
-                std::borrow::Cow::Owned(normalized) => {
-                    match crate::unicode_hardening::strip_interior_evasion_controls(&normalized) {
-                        std::borrow::Cow::Owned(stripped) => std::borrow::Cow::Owned(stripped),
-                        std::borrow::Cow::Borrowed(_) => std::borrow::Cow::Owned(normalized),
-                    }
-                }
-                // Homoglyph stage was a no-op: bytes are still `chunk.data`.
-                // Run the interior-control strip against `chunk.data` itself so
-                // a no-op there preserves the `'a` borrow on the chunk.
-                std::borrow::Cow::Borrowed(_) => {
-                    crate::unicode_hardening::strip_interior_evasion_controls(&chunk.data)
-                }
-            }
-        } else {
-            std::borrow::Cow::Borrowed(&chunk.data)
-        };
-
-        // For the structured / multiline-join paths the preprocessed text is
-        // freshly synthesized (owned regardless of `data_to_pp`), so they read
-        // it through a plain `&str`. The passthrough path, by contrast, is
-        // byte-identical to `data_to_pp` and carries the Cow through unchanged
-        // so a borrowed chunk stays borrowed (no full-body copy).
-        // A chunk the decode-through pipeline produced carries `decoded_span`;
-        // on such a derived buffer a structured-format parse failure is expected
-        // and loses nothing (the encoded surface was already decoded + scanned),
-        // so it must not be counted/announced as a lost decode surface.
-        let decode_derived = chunk.metadata.decoded_span.is_some();
-        let preprocessed = if let Some(pp) = crate::structured::preprocess(
-            &data_to_pp,
-            chunk.metadata.path.as_deref(),
-            decode_derived,
-        ) {
-            pp
-        } else {
-            #[cfg(feature = "multiline")]
-            {
-                #[cfg(debug_assertions)]
-                if !multiline_absence {
-                    self.multiline_admission_scanned_bytes.fetch_add(
-                        // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; scan behavior is unchanged.
-                        u64::try_from(data_to_pp.len()).unwrap_or(u64::MAX),
-                        std::sync::atomic::Ordering::Relaxed,
-                    );
-                }
-                let has_multiline_candidate = !multiline_absence
-                    && crate::multiline::config::has_concatenation_indicators_with_keyword_gate(
-                        &data_to_pp,
-                        |bytes| {
-                            let matcher = self
-                                .assignment_keyword_matcher
-                                .lock()
-                                // LAW10: recall-preserving; Mutex poison does not invalidate the matcher cache value, so resolution continues with the complete cached matcher.
-                                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                                .resolve(
-                                    &self.config.secret_keywords,
-                                    self.detector_plans.generic_ownership().policy_keywords(),
-                                );
-                            matcher.matches(bytes)
-                        },
-                    );
-                if has_multiline_candidate {
-                    crate::multiline::preprocess_multiline_admitted(
-                        data_to_pp,
-                        &self.config.multiline,
-                        &self.fragment_cache,
-                    )
-                } else {
-                    ScannerPreprocessedText::passthrough(data_to_pp)
-                }
-            }
-            #[cfg(not(feature = "multiline"))]
-            ScannerPreprocessedText::passthrough(data_to_pp)
-        };
-
-        let line_index = line_context_index
-            .filter(|_| {
-                preprocessed.text.as_ptr() == chunk.data.as_ptr()
-                    && preprocessed.text.len() == chunk.data.len()
-            })
-            .map_or_else(std::sync::OnceLock::new, |index| {
-                std::sync::OnceLock::from(std::sync::Arc::clone(index))
-            });
-        PreparedChunk {
-            chunk,
-            preprocessed,
-            line_index,
-            #[cfg(debug_assertions)]
-            line_index_scanned_bytes: Some(&self.line_index_scanned_bytes),
-        }
-    }
-
-    #[doc(hidden)]
-    #[cfg(debug_assertions)]
-    pub fn reset_normalization_scanned_bytes_for_diagnostics(&self) {
-        self.normalization_scanned_bytes
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    #[doc(hidden)]
-    #[cfg(debug_assertions)]
-    #[must_use]
-    pub fn normalization_scanned_bytes_for_diagnostics(&self) -> u64 {
-        self.normalization_scanned_bytes
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    #[doc(hidden)]
-    #[cfg(debug_assertions)]
-    pub fn reset_line_index_scanned_bytes_for_diagnostics(&self) {
-        self.line_index_scanned_bytes
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    #[doc(hidden)]
-    #[cfg(debug_assertions)]
-    #[must_use]
-    pub fn line_index_scanned_bytes_for_diagnostics(&self) -> u64 {
-        self.line_index_scanned_bytes
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    #[doc(hidden)]
-    #[cfg(debug_assertions)]
-    pub fn reset_multiline_admission_scanned_bytes_for_diagnostics(&self) {
-        self.multiline_admission_scanned_bytes
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    #[doc(hidden)]
-    #[cfg(debug_assertions)]
-    #[must_use]
-    pub fn multiline_admission_scanned_bytes_for_diagnostics(&self) -> u64 {
-        self.multiline_admission_scanned_bytes
-            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }

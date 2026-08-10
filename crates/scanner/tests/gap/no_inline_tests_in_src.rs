@@ -40,16 +40,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // (The former `validate_rule_detector_ids` rule-file id validator was removed
     // by the DET-0 migration, no rule file carries a detector-id list anymore.)
     "detector_catalog.rs",
-    // `engine/backend_prepared.rs` co-locates white-box tests for the `pub(crate)`
-    // `PreparedChunk::code_lines` (KH-1226): they construct a `PreparedChunk` over
-    // its `pub(crate)` fields (`chunk`, `preprocessed`, `line_offsets`) via the
-    // `pub(crate) ScannerPreprocessedText::passthrough` constructor and assert that
-    // `code_lines` slices `preprocessed.text` (the buffer `line_offsets` was
-    // computed on) even when preprocessing rewrote the bytes. `PreparedChunk`, its
-    // fields, and `code_lines` are crate-internal, so external placement would
-    // force them `pub` solely for the test - the same white-box trade as the
-    // other `engine/*` entries.
-    "engine/backend_prepared.rs",
     // Sibling `suppression/shape/*` predicate modules with the SAME white-box
     // justification as `canonical.rs`: each pins one `pub(crate)` shape predicate
     // whose exact single-pass boundary is recall-load-bearing

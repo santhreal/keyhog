@@ -83,6 +83,7 @@ pub mod detector_short_anchor_boundary;
 pub mod doc_marker_example_domain_case_insensitive;
 pub mod engine;
 pub mod engine_backend;
+pub mod engine_backend_prepared;
 pub mod engine_cases;
 pub mod engine_gpu_routing_cases;
 pub mod engine_recovery;
@@ -120,8 +121,10 @@ pub mod flaw_investigation;
 pub mod gates;
 pub mod gpu_cases;
 pub mod gpu_input_budget;
+pub mod max_inner_loop_iters;
 pub mod phase1_admission;
 pub mod phase2_truncate_prefilter;
+pub mod reusable_simd_trigger_cache_secrets;
 // gpu_regex_dfa_basic: requires `keyhog_scanner::engine::{build_regex_dfa, RegexDfaError}`
 // which are not publicly exported. Needs engine API export or test restructuring.
 // pub mod gpu_regex_dfa_basic;

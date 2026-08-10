@@ -209,7 +209,7 @@ def check_current_claims(violations: list[str]) -> None:
                 continue
             if (
                 pattern == r"\bgpu-zero-copy\b"
-                and rel_path == "crates/cli/src/orchestrator/dispatch/backend/tests.rs"
+                and rel_path.startswith("crates/cli/src/orchestrator/dispatch/backend/tests")
                 and "autoroute_cache_rejects_legacy_backend_alias_labels" in src
             ):
                 continue

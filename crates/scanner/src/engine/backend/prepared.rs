@@ -1,4 +1,4 @@
-use super::*;
+use super::super::*;
 use keyhog_core::Chunk;
 
 pub(crate) struct PreparedChunk<'a> {
@@ -32,13 +32,163 @@ impl<'a> PreparedChunk<'a> {
                         std::sync::atomic::Ordering::Relaxed,
                     );
                 }
-                std::sync::Arc::new(
-                    crate::context::LineContextIndex::try_new(&self.preprocessed.text).expect(
-                        "preprocessed chunk length exceeds the checked u32 line-index boundary",
+                match crate::context::LineContextIndex::try_new(&self.preprocessed.text) {
+                    Ok(line_index) => std::sync::Arc::new(line_index),
+                    // LAW10: fail-closed; exceeding u32 line boundary panics cleanly rather than truncating offsets.
+                    Err(_) => panic!(
+                        "preprocessed chunk length exceeds the checked u32 line-index boundary"
                     ),
-                )
+                }
             })
             .as_ref()
+    }
+}
+
+impl CompiledScanner {
+    pub(crate) fn prepare_chunk<'a>(&'a self, chunk: &'a Chunk) -> PreparedChunk<'a> {
+        self.prepare_chunk_with_normalization_passthrough(chunk, false, false, None)
+    }
+
+    pub(crate) fn prepare_chunk_with_normalization_passthrough<'a>(
+        &'a self,
+        chunk: &'a Chunk,
+        normalization_passthrough: bool,
+        multiline_absence: bool,
+        line_context_index: Option<&std::sync::Arc<crate::context::LineContextIndex>>,
+    ) -> PreparedChunk<'a> {
+        let _g = super::super::profile::span(keyhog_profile::Stage::Preprocess);
+        #[cfg(debug_assertions)]
+        if self.config.unicode_normalization && !normalization_passthrough {
+            self.normalization_scanned_bytes.fetch_add(
+                u64::try_from(chunk.data.len()).unwrap_or(u64::MAX), // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; normalization accounting is unchanged.
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
+        let data_to_pp: std::borrow::Cow<'a, str> = if normalization_passthrough {
+            std::borrow::Cow::Borrowed(&chunk.data)
+        } else if self.config.unicode_normalization {
+            match crate::unicode_hardening::normalize_homoglyphs(&chunk.data) {
+                std::borrow::Cow::Owned(normalized) => {
+                    match crate::unicode_hardening::strip_interior_evasion_controls(&normalized) {
+                        std::borrow::Cow::Owned(stripped) => std::borrow::Cow::Owned(stripped),
+                        std::borrow::Cow::Borrowed(_) => std::borrow::Cow::Owned(normalized),
+                    }
+                }
+                std::borrow::Cow::Borrowed(_) => {
+                    crate::unicode_hardening::strip_interior_evasion_controls(&chunk.data)
+                }
+            }
+        } else {
+            std::borrow::Cow::Borrowed(&chunk.data)
+        };
+
+        let decode_derived = chunk.metadata.decoded_span.is_some();
+        let preprocessed = if let Some(pp) = crate::structured::preprocess(
+            &data_to_pp,
+            chunk.metadata.path.as_deref(),
+            decode_derived,
+        ) {
+            pp
+        } else {
+            #[cfg(feature = "multiline")]
+            {
+                #[cfg(debug_assertions)]
+                if !multiline_absence {
+                    self.multiline_admission_scanned_bytes.fetch_add(
+                        u64::try_from(data_to_pp.len()).unwrap_or(u64::MAX), // LAW10: debug accounting saturates on impossible usize-to-u64 overflow; multiline admission accounting is unchanged.
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
+                let has_multiline_candidate = !multiline_absence
+                    && crate::multiline::config::has_concatenation_indicators_with_keyword_gate(
+                        &data_to_pp,
+                        |bytes| {
+                            let matcher = self
+                                .assignment_keyword_matcher
+                                .lock()
+                                // LAW10: poisoned mutex recovery retains inner matcher; findings are unchanged.
+                                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                .resolve(
+                                    &self.config.secret_keywords,
+                                    self.detector_plans.generic_ownership().policy_keywords(),
+                                );
+                            matcher.matches(bytes)
+                        },
+                    );
+                if has_multiline_candidate {
+                    crate::multiline::preprocess_multiline_admitted(
+                        data_to_pp,
+                        &self.config.multiline,
+                        &self.fragment_cache,
+                    )
+                } else {
+                    ScannerPreprocessedText::passthrough(data_to_pp)
+                }
+            }
+            #[cfg(not(feature = "multiline"))]
+            ScannerPreprocessedText::passthrough(data_to_pp)
+        };
+
+        let line_index = line_context_index
+            .filter(|_| {
+                preprocessed.text.as_ptr() == chunk.data.as_ptr()
+                    && preprocessed.text.len() == chunk.data.len()
+            })
+            .map_or_else(std::sync::OnceLock::new, |index| {
+                std::sync::OnceLock::from(std::sync::Arc::clone(index))
+            });
+        PreparedChunk {
+            chunk,
+            preprocessed,
+            line_index,
+            #[cfg(debug_assertions)]
+            line_index_scanned_bytes: Some(&self.line_index_scanned_bytes),
+        }
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_normalization_scanned_bytes_for_diagnostics(&self) {
+        self.normalization_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn normalization_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.normalization_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_line_index_scanned_bytes_for_diagnostics(&self) {
+        self.line_index_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn line_index_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.line_index_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    pub fn reset_multiline_admission_scanned_bytes_for_diagnostics(&self) {
+        self.multiline_admission_scanned_bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn multiline_admission_scanned_bytes_for_diagnostics(&self) -> u64 {
+        self.multiline_admission_scanned_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -116,7 +266,7 @@ enum SimdPhase1PlanSource {
 pub(crate) struct SimdPhase1CompilePlan {
     source: SimdPhase1PlanSource,
     index_map: super::CsrU32,
-    ac_literals: std::sync::Arc<[String]>,
+    pub(crate) ac_literals: std::sync::Arc<[String]>,
 }
 
 #[cfg(feature = "simd")]
@@ -260,26 +410,23 @@ pub(crate) fn build_packed_simd_compile_plan(
         ));
     }
 
-    let unsupported = program
+    let unsupported: Vec<usize> = program
         .unsupported_pattern_ids
         .iter()
         .map(|&id| id as usize)
-        .collect::<Vec<_>>();
-    let unsupported_set = unsupported
-        .iter()
-        .copied()
-        .collect::<std::collections::HashSet<_>>();
+        .collect();
+    let unsupported_set: std::collections::HashSet<usize> = unsupported.iter().copied().collect();
     let pattern_map = program
         .patterns
         .iter()
         .enumerate()
         .filter(|(id, _)| !unsupported_set.contains(id))
-        .map(|(id, pattern)| {
+        .map(|(id, p)| {
             (
                 id,
-                pattern.detector_index as usize,
-                pattern.pattern_index as usize,
-                pattern.reports_start,
+                p.detector_index as usize,
+                p.pattern_index as usize,
+                p.reports_start,
             )
         })
         .collect();
@@ -351,92 +498,5 @@ impl SimdPhase1CompilePlan {
 
         SimdPhase1Prefilter::new(scanner, self.index_map, &self.ac_literals, &unsupported_ac)
             .map_err(|error| error.to_string())
-    }
-}
-
-#[cfg(test)]
-mod line_index_tests {
-    use super::*;
-    use keyhog_core::Chunk;
-    use std::sync::{Arc, OnceLock};
-
-    /// WHY: line context must use the rewritten preprocessed bytes whose offsets
-    /// locate matches, never the differently shaped raw chunk.
-    #[test]
-    fn line_index_follows_preprocessed_text_not_raw_chunk_when_bytes_differ() {
-        let raw = "AAAAAA\nBBBBBB\nCCCCCC";
-        let preprocessed_text = "xxx\nyyy\nzzz";
-        let chunk: Chunk = raw.to_string().into();
-        let prepared = PreparedChunk {
-            chunk: &chunk,
-            preprocessed: ScannerPreprocessedText::passthrough(preprocessed_text),
-            line_index: OnceLock::<Arc<_>>::new(),
-            #[cfg(debug_assertions)]
-            line_index_scanned_bytes: None,
-        };
-
-        let lines: Vec<_> = prepared
-            .line_index()
-            .lines(&prepared.preprocessed.text)
-            .collect();
-        assert_eq!(lines, ["xxx", "yyy", "zzz"]);
-        assert!(!lines.iter().any(|line| line.starts_with('A')));
-        assert_eq!(prepared.line_index().line_number_for_offset(5), 2);
-    }
-
-    #[test]
-    fn passthrough_lines_are_sliced_on_demand() {
-        let text = "key = one\nother = two\nlast = three";
-        let chunk: Chunk = text.to_string().into();
-        let prepared = PreparedChunk {
-            chunk: &chunk,
-            preprocessed: ScannerPreprocessedText::passthrough(text),
-            line_index: OnceLock::<Arc<_>>::new(),
-            #[cfg(debug_assertions)]
-            line_index_scanned_bytes: None,
-        };
-        assert_eq!(
-            prepared
-                .line_index()
-                .lines(&prepared.preprocessed.text)
-                .collect::<Vec<_>>(),
-            ["key = one", "other = two", "last = three"]
-        );
-    }
-}
-
-#[cfg(all(test, feature = "simd"))]
-mod simd_literal_ownership_tests {
-    use super::*;
-
-    fn pattern(regex: &str) -> CompiledPattern {
-        CompiledPattern {
-            detector_index: 0,
-            regex: LazyRegex::detector(regex),
-            group: None,
-            client_safe: false,
-            weak_anchor: false,
-            structural_password_slot: false,
-            match_proves_keyword_nearby: false,
-            allows_repeated_keyword_separator: false,
-            homoglyph_variant: false,
-        }
-    }
-
-    /// WHY: copying every canonical literal into the lazy SIMD plan doubled the complete literal table until first backend use.
-    #[test]
-    fn simd_compile_plan_shares_the_canonical_literal_table() {
-        let literals: std::sync::Arc<[String]> = vec!["STATIC_SECRET_".to_owned()].into();
-        let plan = build_simd_compile_plan(
-            &[pattern(r"STATIC_SECRET_[A-Z0-9]{16}")],
-            std::sync::Arc::clone(&literals),
-            &crate::scanner_config::ScannerTuningConfig::default(),
-        )
-        .expect("fixture produces a SIMD plan");
-
-        assert!(
-            std::sync::Arc::ptr_eq(&plan.ac_literals, &literals),
-            "SIMD plan must share the canonical literal allocation"
-        );
     }
 }

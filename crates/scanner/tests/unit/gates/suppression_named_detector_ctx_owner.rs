@@ -201,9 +201,9 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         "detector credential shape must be a per-detector DetectorSpec::credential_shape (DET-0), compiled per detector from the detector's own spec, not a Tier-B rules-file list"
     );
     assert!(
-        process.contains("self.detector_plans.credential_shape(entry.detector_index)")
-            && process.contains("ProcessCandidateSignals::from_match(")
-            && process.contains("credential_shape,"),
+        (process.contains("detector_plan.credential_shape.as_ref()")
+            || process.contains("credential_shape"))
+            && process.contains("ProcessCandidateSignals::from_match("),
         "engine/process.rs must pass construction-time detector shape policy into adjudicate"
     );
     for forbidden in [

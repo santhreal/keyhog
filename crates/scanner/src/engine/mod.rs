@@ -51,10 +51,7 @@
 //! - loud GPU-degrade / fail-closed helpers ....................... gpu_forced.rs
 //! - compile (build the scanner, acquire backends) .... compiled_scanner/compile.rs
 
-mod backend;
-mod backend_dispatch;
-mod backend_prepared;
-mod backend_triggered;
+pub(crate) mod backend;
 mod batch_topology;
 mod boundary;
 pub(crate) use boundary::derive_pattern_boundary_context;
@@ -62,6 +59,8 @@ pub(crate) use boundary::derive_pattern_boundary_context;
 pub(crate) use boundary::regex_match_byte_upper_bound;
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries as scan_chunk_boundaries_for_test;
+#[cfg(test)]
+pub(crate) use boundary::MAX_BOUNDARY_SEAM_BYTES;
 mod csr;
 pub(crate) use csr::CsrU32;
 mod extract;
@@ -157,9 +156,9 @@ mod windowed_support;
 // too. Gate the
 // import to match, or non-simd builds (the `portable` feature used for the
 // macOS/Windows/musl release assets) fail with E0432.
-pub(crate) use backend_prepared::PreparedChunk;
+pub(crate) use backend::PreparedChunk;
 #[cfg(feature = "simd")]
-pub(crate) use backend_prepared::{
+pub(crate) use backend::{
     build_packed_simd_compile_plan, build_simd_compile_plan, SimdPhase1CompilePlan,
     SimdPhase1Prefilter,
 };
@@ -675,55 +674,3 @@ const _: () = {
     const fn assert_send_sync<T: Send + Sync>() {}
     let _ = assert_send_sync::<CompiledScanner>; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
 };
-
-#[cfg(test)]
-mod max_inner_loop_iters_tests {
-    use super::MAX_INNER_LOOP_ITERS;
-    use crate::deadline::HOT_LOOP_DEADLINE_CADENCE;
-
-    /// The canonical per-pattern hard cap is exactly the value the three engine
-    /// walk sites (`extract.rs` ×2, `phase2_anchor_scan.rs`) used to each hardcode.
-    /// If this drifts, an adversarial chunk's per-pattern iteration budget changes
-    /// silently for every walk at once (pin the concrete value).
-    #[test]
-    fn canonical_cap_is_one_million() {
-        assert_eq!(MAX_INNER_LOOP_ITERS, 1_000_000);
-    }
-
-    /// The wall-clock deadline is re-checked once every `HOT_LOOP_DEADLINE_CADENCE`
-    /// iterations, so a walk that runs to the hard cap performs exactly
-    /// `MAX_INNER_LOOP_ITERS / HOT_LOOP_DEADLINE_CADENCE` deadline checks. The cap
-    /// must be an exact whole multiple of the cadence (last check lands on the cap)
-    /// and yield the concrete 15625 checks, proving the deadline path can still
-    /// abort well before the hard cap is reached.
-    #[test]
-    fn cap_is_whole_multiple_of_deadline_cadence() {
-        assert_eq!(HOT_LOOP_DEADLINE_CADENCE, 64);
-        assert_eq!(MAX_INNER_LOOP_ITERS % HOT_LOOP_DEADLINE_CADENCE, 0);
-        assert_eq!(MAX_INNER_LOOP_ITERS / HOT_LOOP_DEADLINE_CADENCE, 15_625);
-    }
-
-    /// The bigram-bloom admission threshold shared by the coalesced producer and
-    /// the single-chunk entry is exactly the bare `64` those two sites used to
-    /// hardcode. Pin the concrete value: if it drifts, both admission gates
-    /// change their short-chunk skip boundary at once and a silent recall shift
-    /// would be invisible without this lock.
-    #[test]
-    fn bigram_bloom_min_chunk_bytes_is_sixty_four() {
-        assert_eq!(super::BIGRAM_BLOOM_MIN_CHUNK_BYTES, 64);
-    }
-
-    /// The unbounded/entropy cross-seam reassembly cap replaced a `usize::MAX`
-    /// full-chunk splice (O(pairs x chunk_bytes) rescan). It is pinned to the
-    /// FilesystemSource window overlap so the seam covers exactly the straddle
-    /// range the overlap design assumes catchable; drifting it silently changes
-    /// boundary recall AND the per-pair reassembly cost.
-    #[test]
-    fn boundary_seam_cap_matches_window_overlap() {
-        assert_eq!(
-            super::boundary::MAX_BOUNDARY_SEAM_BYTES,
-            crate::types::WINDOW_OVERLAP_BYTES
-        );
-        assert_eq!(super::boundary::MAX_BOUNDARY_SEAM_BYTES, 128 * 1024);
-    }
-}

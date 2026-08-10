@@ -21,7 +21,7 @@ fn read_src(rel: &str) -> String {
 
 #[test]
 fn windowed_triggered_passes_slice_not_per_window_clone() {
-    let backend = read_src("src/engine/backend_triggered.rs");
+    let backend = read_src("src/engine/backend/triggered.rs");
     // The receiver borrows the bitmap, owned `Vec<u64>` would force callers to
     // allocate to satisfy it.
     assert!(
