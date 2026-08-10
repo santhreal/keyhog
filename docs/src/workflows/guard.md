@@ -114,3 +114,48 @@ under the same policy skip the payload scan entirely.
 A policy identity change (new detectors, new suppression rules, new
 configuration) invalidates all existing attestations and transitions active
 roots to `stale-policy`.
+
+## Durable state persistence
+
+Set `[guard].state_path` in `.keyhog.toml` to persist root records and clean
+attestations across daemon restarts:
+
+```toml
+[guard]
+state_path = "~/.local/state/keyhog/guard.redb"
+```
+
+The durable store is a redb database with owner-only file permissions (0600)
+and parent directory permissions (0700). Symlinked state paths are rejected.
+
+On daemon restart, persisted roots are loaded as `stopped` (never `current`)
+and the filesystem watcher is re-registered for each root that still exists.
+The operator must run `keyhog guard reconcile` to transition a root back to
+`current` after a restart.
+
+In lockdown mode (`[lockdown] require = true`), the durable store is disabled.
+The guard operates in ephemeral mode with no on-disk persistence.
+
+## Rebuild a corrupted root
+
+```sh
+keyhog guard rebuild /path/to/repo
+```
+
+Rebuild removes the root from the guard (clearing its durable store entries)
+and re-adds it, triggering a fresh baseline reconciliation. Use it after store
+corruption or when persisted state is irrecoverably stale.
+
+## Periodic scrub
+
+Set `[guard].scrub_interval` to periodically re-scan all `current` roots:
+
+```toml
+[guard]
+scrub_interval = "24h"
+```
+
+The scrub catches changes that filesystem events missed: NFS mounts, bind
+mounts, and external edits that bypass inotify. When the interval elapses, each
+`current` root transitions to `indexing` for a full re-reconciliation. Omit the
+setting to disable scrubbing.
