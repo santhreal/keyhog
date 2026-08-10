@@ -11,9 +11,14 @@ on:
 permissions:
   contents: read
 
-# Linux PR and main CI run on axiomexec self-hosted runners to bypass hosted
-# queue starvation. Tagged releases (`v*`) keep GitHub-hosted Linux for the
-# full release matrix. macOS/Windows stay on GitHub-hosted runners for all events.
+# Linux self-hosted (axiomexec) is ONLY for same-repo PRs authored by
+# `santhreal`. Everyone else (forks, other authors, push/main, tags) stays on
+# GitHub-hosted `ubuntu-24.04`. This is intentional lockdown for a public
+# repo: random GitHub users must not be able to schedule jobs onto our
+# machines. macOS/Windows stay GitHub-hosted for all events.
+# Residual risk: a same-repo collaborator with push can edit workflow
+# `runs-on` on their branch, so keep the collaborator set to santhreal only,
+# and require approval for outside-collaborator / fork workflow runs.
 # Cancel older in-flight CI when a newer push lands on the same ref.
 # Without this a rapid succession of pushes stacks 5+ deep, each one
 # burning ~25 minutes of macOS + linux runner time on already-stale
@@ -39,14 +44,19 @@ env:
 jobs:
   test:
     name: Test
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     steps:
       - name: Repair self-hosted workspace ownership
         if: runner.environment == 'self-hosted'
         run: |
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
           if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -161,7 +171,7 @@ jobs:
   # long scanner binary no longer strands every other integration verdict.
   integration-core-scanner:
     name: Integration (core + scanner aggregators)
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 120
     steps:
       - name: Repair self-hosted workspace ownership
@@ -169,7 +179,12 @@ jobs:
         run: |
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
           if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -200,7 +215,7 @@ jobs:
   # several assert process-global skip counters and cannot be co-scheduled.
   integration-sources:
     name: Integration (sources)
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 120
     steps:
       - name: Repair self-hosted workspace ownership
@@ -208,7 +223,12 @@ jobs:
         run: |
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
           if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -229,7 +249,7 @@ jobs:
 
   integration-verifier:
     name: Integration (verifier)
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - name: Repair self-hosted workspace ownership
@@ -237,7 +257,12 @@ jobs:
         run: |
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
           if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -258,7 +283,7 @@ jobs:
 
   integration-cli:
     name: Integration (CLI)
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - name: Repair self-hosted workspace ownership
@@ -266,7 +291,12 @@ jobs:
         run: |
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
           if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -300,7 +330,7 @@ jobs:
 
   integration-detector-contracts:
     name: Integration (detector + recall contracts)
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - name: Repair self-hosted workspace ownership
@@ -308,7 +338,12 @@ jobs:
         run: |
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
           if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -360,7 +395,7 @@ jobs:
       - integration-verifier
       - integration-cli
       - integration-detector-contracts
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     permissions: {}
     env:
       KEYHOG_INTEGRATION_RESULTS: ${{ toJSON(needs) }}
@@ -382,7 +417,12 @@ jobs:
         run: |
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
           if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -416,7 +456,12 @@ jobs:
         run: |
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
           if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -430,7 +475,7 @@ jobs:
 
   feature-matrix:
     name: Feature matrix sanity check
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     # Cross-package feature combinations the release workflows and the
     # composite Action depend on. Anything anyone might `cargo install`
     # has to compile cleanly with the documented feature set.
@@ -440,7 +485,12 @@ jobs:
         run: |
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
           if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -541,7 +591,7 @@ jobs:
 
   clippy:
     name: Clippy (advisory)
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     # Clippy is ADVISORY, not a gate. `-D warnings` made every stylistic lint a
     # release blocker, which pushed us toward churn-y renames and `#[allow]`
     # suppressions that obscured real code more than the lints helped. Clippy
@@ -555,7 +605,12 @@ jobs:
         run: |
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
           if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
-            git config --file "$GITHUB_WORKSPACE/.git/config" core.hooksPath /dev/null
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -579,7 +634,7 @@ jobs:
 
   install-scripts:
     name: Install scripts (install.sh edge cases)
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     steps:
       - name: Repair self-hosted workspace ownership
         if: runner.environment == 'self-hosted'
@@ -635,7 +690,7 @@ jobs:
 
   fuzz-smoke:
     name: Fuzz target smoke
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - name: Repair self-hosted workspace ownership
@@ -669,7 +724,7 @@ jobs:
 
   fmt:
     name: Format
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     steps:
       - name: Repair self-hosted workspace ownership
         if: runner.environment == 'self-hosted'
@@ -694,7 +749,7 @@ jobs:
 
   build:
     name: Build Release
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     steps:
       - name: Repair self-hosted workspace ownership
         if: runner.environment == 'self-hosted'
@@ -784,7 +839,7 @@ jobs:
   # proves Marketplace users never need a mutable apt Hyperscan runtime.
   static-release-linkage:
     name: Static Hyperscan release linkage
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
       - name: Repair self-hosted workspace ownership
@@ -843,7 +898,7 @@ jobs:
       - fmt
       - build
       - static-release-linkage
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
     permissions: {}
     env:
       KEYHOG_BLOCKING_RESULTS: ${{ toJSON(needs) }}
