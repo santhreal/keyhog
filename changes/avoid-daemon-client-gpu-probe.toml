@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Daemon compatibility checks now derive worker topology without initializing GPU runtime libraries in client processes."
-crates = ["cli"]

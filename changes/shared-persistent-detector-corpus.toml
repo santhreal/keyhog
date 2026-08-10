@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Persistent daemon, watch, and system-scan runtimes now compile from one shared detector corpus allocation instead of cloning every detector before scanner construction."
-crates = ["cli"]

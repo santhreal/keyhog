@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Automatic daemon fallback now shares the acquired stdin payload and scans it through bounded overlapping windows, avoiding a second whole-input byte copy and a whole-input decoded retry buffer."
-crates = ["cli", "sources"]

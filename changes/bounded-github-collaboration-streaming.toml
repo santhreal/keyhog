@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "GitHub collaboration scans now stream issue, pull-request, discussion, wiki, gist, and release chunks through one-row backpressure without retaining a selected surface's full content, and share one token allocation across the worker."
-crates = ["sources"]

@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Linux filesystem scans now traverse and safely open paths beyond the pathname syscall limit with directory descriptors while preserving deterministic ordering and symlink protections."
-crates = ["sources"]

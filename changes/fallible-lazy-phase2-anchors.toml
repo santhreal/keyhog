@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Lazy phase-two anchor construction now warns and keeps affected patterns on recall-preserving whole-chunk or folded RegexSet paths instead of panicking when an Aho-Corasick build fails."
-crates = ["scanner"]

@@ -1,3 +1,0 @@
-category = "Security"
-summary = "Bind hosted-git askpass credentials to exact URL host boundaries, not origin substrings"
-crates = ["sources"]

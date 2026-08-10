@@ -1,3 +1,0 @@
-category = "Changed"
-summary = "Builds now resolve VYRE 0.7.2 from one reviewed upstream commit instead of requiring a sibling source checkout, while keeping CUDA, native Metal, WGPU, and runtime crates on the same immutable identity."
-crates = ["cli", "scanner"]

@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Detect container formats by content signature rather than by filename extension. An archive member or file whose name carried no recognized extension was never opened, so a secret inside it was missed and the scan reported clean with no error row. This is the normal shape of an OCI layer, which is named by digest. Members with no in-memory extractor now emit a counted error row instead of vanishing."
-crates = ["sources"]

@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Large filesystem scans now retire explicit CPU and SIMD windows in bounded worker waves, share byte-identical source windows, and reuse verified repeated-window findings with rebased locations."
-crates = ["cli", "sources"]

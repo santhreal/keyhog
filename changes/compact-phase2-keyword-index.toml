@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "CPU scanner startup now hydrates a compact phase-two keyword index and reuses install-compiled repeated-separator metadata; matcher packs require schema version 5."
-crates = ["scanner"]

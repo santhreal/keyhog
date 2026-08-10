@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Installed scans now collect freed source-construction arenas at the source boundary and periodically reclaim idle mimalloc pages, reducing retained memory without changing finding order or coverage."
-crates = ["cli"]

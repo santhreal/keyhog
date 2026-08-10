@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Out-of-band verification now polls only while callbacks are pending and uses a bounded three-request lifecycle burst while preserving the configured sustained collector rate."
-crates = ["verifier"]

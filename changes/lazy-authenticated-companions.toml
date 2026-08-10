@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Authenticated execution packs now retain install-validated companion regexes as lazy matchers instead of recompiling every companion during scanner startup."
-crates = ["scanner"]

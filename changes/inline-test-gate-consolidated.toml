@@ -1,3 +1,0 @@
-category = "Changed"
-summary = "Replace twenty-six near-identical inline-test gate files with one that scans the whole CLI source tree. Each of the old files hardcoded a single path, so they covered twenty-four files while the tree actually had twenty-five with inline test bodies, including the entire autoroute backend directory that no gate reached. Net 357 lines of duplicated test scaffolding removed and the blind spot closed."
-crates = ["cli"]

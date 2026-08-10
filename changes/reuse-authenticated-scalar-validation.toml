@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Authenticated CPU execution packs now reuse whole-pack signature validation instead of reserializing the scalar program during hydration."
-crates = ["scanner"]

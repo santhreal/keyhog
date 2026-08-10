@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "`--git-blobs` collects commit blobs by parent-tree diff (added/changed/deleted sides) instead of rewalking every historical tree. Every ref tip under refs/ plus HEAD (detached CI checkouts), root commits, and unreadable parents still get a full tree walk so `--max-commits` keeps untouched tip blobs across custom namespaces. Unsupported non-blob tree-diff entries stay coverage gaps, already-collected parent-diff sides are kept when a later parent falls back to a full walk, default-excluded unsupported entries stay silent (same as the full walk), and blob decode stays on the already-open repository handle."
-crates = ["sources"]

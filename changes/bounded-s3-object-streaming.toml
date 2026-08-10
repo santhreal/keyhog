@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "S3 scans now stream listing-page objects in deterministic order with a 16-result backpressure window, retain prior-page findings when a later listing fails, and avoid accumulating downloaded object bodies across the bucket."
-crates = ["sources"]

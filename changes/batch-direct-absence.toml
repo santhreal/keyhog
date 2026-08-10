@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "CPU scans now bypass per-chunk parallel dispatch when authenticated admission evidence proves an entire bounded batch has no direct matches."
-crates = ["scanner"]

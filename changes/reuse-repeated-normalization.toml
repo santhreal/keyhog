@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "CPU scans now reuse exact normalization passthrough proofs for byte-identical repeated payloads instead of rescanning unchanged text."
-crates = ["scanner"]

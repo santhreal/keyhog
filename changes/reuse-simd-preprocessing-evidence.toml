@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "SIMD scans now reuse exact normalization, multiline, and line-index evidence from authenticated admission plans."
-crates = ["scanner"]

@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Execution packs now persist confirmed, suffix-gate, and phase-two localization plans so installed scans hydrate those indexes without reparsing the detector regex corpus."
-crates = ["scanner"]

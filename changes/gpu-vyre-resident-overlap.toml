@@ -1,3 +1,0 @@
-category = "Changed"
-summary = "GPU region batches now pipeline two VYRE-owned resident IO slots: KeyHog builds and submits the next batch before retiring the previous readback, while immutable matcher tables remain shared and result consumption stays ordered."
-crates = ["scanner"]

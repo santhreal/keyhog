@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "CPU and SIMD routing now classify each byte-distinct payload once per batch while preserving exact per-chunk admission evidence."
-crates = ["scanner"]

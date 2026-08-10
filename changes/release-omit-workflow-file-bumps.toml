@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Stop auto-release from bumping workflow YAML that GITHUB_TOKEN cannot push"
-crates = []

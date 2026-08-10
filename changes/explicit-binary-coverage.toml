@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Explicit `--binary <file>` scans no longer also run the plain filesystem classifier, eliminating a contradictory binary-skip coverage gap after strings or sections were scanned."
-crates = ["cli"]

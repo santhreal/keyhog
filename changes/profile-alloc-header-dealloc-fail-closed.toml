@@ -1,3 +1,0 @@
-category = "Security"
-summary = "Fail-closed TrackingAllocator dealloc validates header magic/stage/bytes before SLOT indexing"
-crates = ["profile"]

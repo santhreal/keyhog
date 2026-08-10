@@ -1,3 +1,0 @@
-category = "Fixed"
-crates = ["verifier"]
-summary = "Script auth verification requires exact STATUS: LIVE/DEAD lines and rejects ambiguous mixed output."

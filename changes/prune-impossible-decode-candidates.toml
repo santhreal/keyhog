@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "The bundled decoder plan now skips allocating short alphanumeric assignment values that cannot satisfy any built-in decoder while preserving custom-decoder extraction semantics."
-crates = ["scanner"]

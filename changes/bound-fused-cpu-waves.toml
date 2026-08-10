@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Explicit CPU and SIMD filesystem scans now retain at most four bounded fused batches per parallel wave."
-crates = ["cli"]

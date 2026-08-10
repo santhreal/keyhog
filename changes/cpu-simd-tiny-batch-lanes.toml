@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Filesystem scans now coalesce tiny files up to the existing 1 MiB payload ceiling and execute them in worker-sized CPU and SIMD lanes, reducing per-file scheduler, channel, and Hyperscan scratch churn."
-crates = ["cli", "scanner"]

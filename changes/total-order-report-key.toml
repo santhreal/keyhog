@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Report ordering and duplicate-winner selection no longer depend on filesystem enumeration order. Matches are now sorted by a total key (severity, source, path, commit, line, offset, detector, credential digest) instead of by severity alone, which as a stable sort had silently inherited walk order for every equal-severity match."
-crates = ["cli"]

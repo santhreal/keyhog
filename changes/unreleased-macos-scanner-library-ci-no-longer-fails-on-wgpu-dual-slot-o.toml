@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "macOS scanner library CI no longer fails on wgpu dual-slot overlap or a backblaze-shaped proptest seed."
-crates = []

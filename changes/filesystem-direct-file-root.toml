@@ -1,3 +1,0 @@
-category = "Fixed"
-summary = "Filesystem scans now reconstruct an empty relative walk path as the directly requested file itself instead of appending a directory separator and reporting zero coverage."
-crates = ["sources"]

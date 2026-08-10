@@ -1,3 +1,0 @@
-category = "Performance"
-summary = "Google Cloud Storage scans now stream object bodies in deterministic order through the shared bounded cloud fetch window instead of retaining a bucket-wide result vector."
-crates = ["sources"]
