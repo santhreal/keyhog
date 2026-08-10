@@ -242,6 +242,8 @@ async fn run_status(
             mode,
             state,
             terminal_sequence,
+            accepted_event_sequence,
+            completed_event_sequence,
             pending_events,
             files_scanned,
             bytes_scanned,
@@ -249,7 +251,10 @@ async fn run_status(
             attestation_misses,
             findings_count,
             coverage_gaps,
+            initial_reconciliation_time,
+            last_reconciliation_time,
             scanner_residency,
+            backend_route_label,
             repair_command,
         } => {
             if format != "human" && format != "json" {
@@ -264,6 +269,8 @@ async fn run_status(
                     "mode": mode,
                     "state": state,
                     "terminal_sequence": terminal_sequence,
+                    "accepted_event_sequence": accepted_event_sequence,
+                    "completed_event_sequence": completed_event_sequence,
                     "pending_events": pending_events,
                     "files_scanned": files_scanned,
                     "bytes_scanned": bytes_scanned,
@@ -271,7 +278,10 @@ async fn run_status(
                     "attestation_misses": attestation_misses,
                     "findings_count": findings_count,
                     "coverage_gaps": coverage_gaps,
+                    "initial_reconciliation_time": initial_reconciliation_time,
+                    "last_reconciliation_time": last_reconciliation_time,
                     "scanner_residency": scanner_residency,
+                    "backend_route_label": backend_route_label,
                     "repair_command": repair_command,
                 });
                 println!("{json}");
@@ -281,6 +291,8 @@ async fn run_status(
                 eprintln!("mode:           {mode}");
                 eprintln!("state:          {state}");
                 eprintln!("sequence:       {terminal_sequence}");
+                eprintln!("accepted seq:   {accepted_event_sequence}");
+                eprintln!("completed seq:  {completed_event_sequence}");
                 eprintln!("pending events: {pending_events}");
                 eprintln!("files scanned:  {files_scanned}");
                 eprintln!("bytes scanned:  {bytes_scanned}");
@@ -288,7 +300,14 @@ async fn run_status(
                 eprintln!("cache misses:   {attestation_misses}");
                 eprintln!("findings:       {findings_count}");
                 eprintln!("coverage gaps:  {coverage_gaps}");
+                if let Some(t) = initial_reconciliation_time {
+                    eprintln!("initial recon:  {t}");
+                }
+                if let Some(t) = last_reconciliation_time {
+                    eprintln!("last recon:     {t}");
+                }
                 eprintln!("residency:      {scanner_residency}");
+                eprintln!("backend route:  {backend_route_label}");
                 if state == "degraded" || state == "stale-policy" {
                     eprintln!(
                         "{} repair: {repair_command}",

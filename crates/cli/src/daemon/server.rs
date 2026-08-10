@@ -1894,6 +1894,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         mode: record.mode.label().to_string(),
                         state: record.state.label().to_string(),
                         terminal_sequence: record.terminal_sequence,
+                        accepted_event_sequence: record.accepted_event_sequence,
+                        completed_event_sequence: record.completed_event_sequence,
                         pending_events: state.guard_watcher.lock().pending_event_count(std::path::Path::new(&root)) as u64,
                         files_scanned,
                         bytes_scanned,
@@ -1901,7 +1903,10 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                         attestation_misses,
                         findings_count,
                         coverage_gaps,
+                        initial_reconciliation_time: record.initial_reconciliation_time,
+                        last_reconciliation_time: record.last_reconciliation_time,
                         scanner_residency: state.guard.scanner_residency().to_string(),
+                        backend_route_label: record.backend_route_label.clone(),
                         repair_command: format!("keyhog guard reconcile {}", root),
                     }
                 }

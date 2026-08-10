@@ -272,6 +272,11 @@ impl RootRegistry {
             mode,
             state: GuardRootState::Stopped,
             terminal_sequence: 0,
+            accepted_event_sequence: 0,
+            completed_event_sequence: 0,
+            initial_reconciliation_time: None,
+            last_reconciliation_time: None,
+            backend_route_label: String::new(),
             last_receipt: None,
         };
         self.roots.insert(canonical_path, record.clone());

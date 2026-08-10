@@ -456,6 +456,10 @@ pub(crate) enum Response {
         state: String,
         /// Terminal event sequence.
         terminal_sequence: u64,
+        /// Accepted event sequence (events received from the watcher).
+        accepted_event_sequence: u64,
+        /// Completed event sequence (events fully processed).
+        completed_event_sequence: u64,
         /// Pending event count.
         pending_events: u64,
         /// Files scanned in the current receipt.
@@ -470,8 +474,14 @@ pub(crate) enum Response {
         findings_count: u64,
         /// Coverage gaps count.
         coverage_gaps: u64,
+        /// Unix timestamp of the initial reconciliation completion.
+        initial_reconciliation_time: Option<u64>,
+        /// Unix timestamp of the last reconciliation completion.
+        last_reconciliation_time: Option<u64>,
         /// Scanner residency label.
         scanner_residency: String,
+        /// Backend route label used for the last scan.
+        backend_route_label: String,
         /// Exact repair command.
         repair_command: String,
     },

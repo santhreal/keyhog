@@ -452,6 +452,16 @@ pub struct GuardRootRecord {
     pub state: GuardRootState,
     /// Terminal event sequence.
     pub terminal_sequence: u64,
+    /// Accepted event sequence (events received from the watcher).
+    pub accepted_event_sequence: u64,
+    /// Completed event sequence (events fully processed).
+    pub completed_event_sequence: u64,
+    /// Unix timestamp (seconds) of the initial reconciliation completion.
+    pub initial_reconciliation_time: Option<u64>,
+    /// Unix timestamp (seconds) of the last reconciliation completion.
+    pub last_reconciliation_time: Option<u64>,
+    /// Backend route label used for the last scan.
+    pub backend_route_label: String,
     /// Last complete receipt summary (non-secret).
     pub last_receipt: Option<GuardReceipt>,
 }

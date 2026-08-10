@@ -393,6 +393,14 @@ impl GuardRuntime {
         // would reject EventsClean from Current, for example).
         record.state = receipt.terminal_state;
         record.terminal_sequence = record.terminal_sequence.saturating_add(1);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        if record.initial_reconciliation_time.is_none() {
+            record.initial_reconciliation_time = Some(now);
+        }
+        record.last_reconciliation_time = Some(now);
         record.last_receipt = Some(receipt);
         Ok(())
     }
