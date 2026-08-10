@@ -76,6 +76,15 @@ impl ExpectedCloneOrigin {
         Ok(origin)
     }
 
+    /// Host[:port] suitable for an `https://` clone URL authority.
+    pub(crate) fn https_authority(&self) -> String {
+        if self.port == 443 {
+            self.host.clone()
+        } else {
+            format!("{}:{}", self.host, self.port)
+        }
+    }
+
     #[cfg(feature = "gitlab")]
     pub(crate) fn from_api_root(api_root: &reqwest::Url) -> Result<Self, SourceError> {
         let host = api_root.host_str().ok_or_else(|| {

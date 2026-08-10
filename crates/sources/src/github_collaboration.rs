@@ -470,20 +470,26 @@ impl GitHubCollaborationSource {
             )
         })?;
         let clone_path = temp.path().join("wiki");
-        let default_clone_url;
-        let clone_url = if let Some(url) = self.wiki_clone_url.as_deref() {
-            url
-        } else {
-            default_clone_url = format!("https://github.com/{}/{}.wiki.git", self.owner, self.repo);
-            &default_clone_url
-        };
-        // Same shape + origin screen org clones use. Without it `--github-wiki-url`
-        // could point askpass credentials at ssh:// / cross-host / gadget URLs.
+        // Derive clone origin from the API endpoint first so GHES defaults land on
+        // the enterprise host (not hardcoded github.com), then apply the same
+        // shape + origin screen org clones use.
         let expected_clone_origin =
             crate::hosted_git::ExpectedCloneOrigin::github_from_api_endpoint(&self.endpoint)
                 .map_err(|error| {
                     GitHubGap::inaccessible("wiki", self.repository(), error.to_string())
                 })?;
+        let default_clone_url;
+        let clone_url = if let Some(url) = self.wiki_clone_url.as_deref() {
+            url
+        } else {
+            default_clone_url = format!(
+                "https://{}/{}/{}.wiki.git",
+                expected_clone_origin.https_authority(),
+                self.owner,
+                self.repo
+            );
+            &default_clone_url
+        };
         crate::hosted_git::validate_clone_url_for_origin(
             "github",
             clone_url,

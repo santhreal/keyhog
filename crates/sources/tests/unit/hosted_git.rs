@@ -299,4 +299,11 @@ fn github_from_api_endpoint_maps_public_api_host_to_clone_host() {
         .expect("GHES API endpoint must keep its host as clone origin");
     assert_eq!(ghes.host, "ghe.example");
     assert_eq!(ghes.port, 443);
+    assert_eq!(origin.https_authority(), "github.com");
+    assert_eq!(ghes.https_authority(), "ghe.example");
+
+    let custom_port =
+        ExpectedCloneOrigin::github_from_api_endpoint("https://ghe.example:8443/api/v3")
+            .expect("custom-port GHES endpoint must keep host:port as clone origin");
+    assert_eq!(custom_port.https_authority(), "ghe.example:8443");
 }

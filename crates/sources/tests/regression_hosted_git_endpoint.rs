@@ -630,3 +630,46 @@ fn github_collaboration_wiki_cross_host_url_refused_before_clone() {
         "cross-host wiki URL must be refused before askpass, got: {joined}"
     );
 }
+
+#[test]
+fn github_collaboration_default_wiki_follows_ghe_api_endpoint_host() {
+    // Before: default wiki always targeted github.com, so a GHES/custom API
+    // endpoint failed the origin screen even when the operator never passed
+    // `--github-wiki-url`. After: default wiki authority tracks the API clone
+    // origin (loopback mock here stands in for GHES).
+    let server = httpmock::MockServer::start();
+    let http = keyhog_sources::http::HttpClientConfig {
+        allow_private_endpoint: true,
+        timeout: Some(Duration::from_millis(800)),
+        ..Default::default()
+    };
+    let source = keyhog_sources::GitHubCollaborationSource::new(
+        "acme/repo",
+        "ghp_testtoken",
+        keyhog_sources::GitHubCollaborationSelection {
+            issues: false,
+            pull_requests: false,
+            discussions: false,
+            wiki: true,
+            gists: false,
+            releases: false,
+        },
+    )
+    .expect("collaboration source constructs")
+    .with_endpoint(server.url(""))
+    .with_http_config(http);
+    let rows: Vec<_> = source.chunks().collect();
+    let joined = rows
+        .iter()
+        .filter_map(|row| row.as_ref().err().map(|error| error.to_string()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !joined.contains("outside expected clone origin"),
+        "default wiki clone must target the API endpoint host, not hardcoded github.com; got: {joined}"
+    );
+    assert!(
+        !joined.is_empty(),
+        "wiki clone against a non-git mock endpoint must still surface a coverage/inaccessible gap"
+    );
+}
