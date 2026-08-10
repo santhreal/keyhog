@@ -1841,6 +1841,8 @@ adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_anchor.rs"
+error = true
+adversarial = true
 
 [[module]]
 path = "crates/scanner/src/engine/scan_filters.rs"

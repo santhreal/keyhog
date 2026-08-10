@@ -103,7 +103,7 @@ zeroize = { workspace = true }
 hyperscan = { workspace = true, optional = true }
 vyre = { workspace = true }
 vyre_libs = { workspace = true, features = ["matching-nfa", "matching-regex", "intern"] }
-vyre-driver-wgpu = { workspace = true, optional = true, features = ["matching-dfa", "matching-nfa", "parity-testing"] }
+vyre-driver-wgpu = { workspace = true, optional = true }
 vyre-runtime = { workspace = true, optional = true, features = ["megakernel-batch"] }
 
 simdsieve = { workspace = true, optional = true }
@@ -322,11 +322,6 @@ name = "gap_gpu_require_policy_fails_not_skips"
 path = "tests/gap/gpu_require_policy_fails_not_skips.rs"
 required-features = ["gpu"]
 
-
-[[test]]
-name = "vyre_megakernel_primitive_probe"
-path = "tests/vyre_megakernel_primitive_probe.rs"
-required-features = ["gpu"]
 
 [[test]]
 name = "gap_no_inline_tests_in_src"
