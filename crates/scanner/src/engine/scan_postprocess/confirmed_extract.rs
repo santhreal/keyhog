@@ -12,19 +12,17 @@ use std::sync::atomic::Ordering::Relaxed;
 
 thread_local! {
     /// Per-worker scratch for [`CompiledScanner::extract_confirmed_patterns`],
-    /// reused across every chunk the worker handles so the confirmed pass makes
-    /// no per-chunk heap allocation for either of its two lookup structures.
+    /// reused across chunks so candidate lookup storage retains one bounded
+    /// allocation per worker.
     static CONFIRMED_SCRATCH: RefCell<ConfirmedScratch> =
         RefCell::new(ConfirmedScratch::default());
 }
 
-/// Two dense bitsets the confirmed pass probes once per candidate.
+/// Reusable dense bitsets and direct-offset set for confirmed extraction.
 ///
-/// They replace a per-chunk `HashSet<usize>` (suffix-literal presence) and a
-/// `binary_search` over `confirmed_patterns` (active-pattern membership). Both
-/// describe exactly the same sets as the structures they replace, so the set of
-/// patterns admitted to extraction is unchanged; only allocation and probe cost
-/// differ.
+/// The active, suffix, and companion bitsets preserve their respective
+/// candidate sets without per-candidate searches. The bounded offset set
+/// suppresses duplicates already emitted by direct lanes.
 pub(crate) const HOT_DIRECT_OFFSETS_CEILING: usize = 4096;
 #[derive(Default)]
 struct ConfirmedScratch {

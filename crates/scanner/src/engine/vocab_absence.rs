@@ -1,37 +1,6 @@
-//! Markerless-shape predicates and vocabulary-stage absence memos shared by
-//! decode admission, backend_triggered skips, and windowed/postprocess paths.
-//! Extracted from `scan.rs` to keep that file under the STANDARD 500 LOC cap.
+//! Content-scoped stage-absence memos shared by decode admission,
+//! backend-triggered skips, and windowed postprocessing.
 
-/// Single-line text with no classical encode markers. Used to skip decode-through
-/// and always-active phase-2 work on minified / dense JSON blobs where that work
-/// cannot distinguish opaque identifiers from nopad encodings.
-#[inline]
-pub(crate) fn text_is_markerless_single_line(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    if bytes.is_empty() || bytes.contains(&b'\n') {
-        return false;
-    }
-    !bytes
-        .iter()
-        .any(|&byte| matches!(byte, b'+' | b'/' | b'=' | b'%' | b'\\'))
-}
-
-/// Minimum size before markerless single-line no-hit / always-active skips engage.
-/// Short unterminated lines (bare high-entropy tokens) still reach the keyword-free
-/// entropy lane; dense minified JSON (one_long_line) stays skipped.
-pub(crate) const MARKERLESS_NO_HIT_MIN_BYTES: usize = 64 * 1024;
-
-/// Dense markerless single-line: same shape as [`text_is_markerless_single_line`]
-/// but only for large windows where the entropy-only no-hit storm dominates.
-#[inline]
-pub(crate) fn text_is_dense_markerless_single_line(text: &str) -> bool {
-    text.len() >= MARKERLESS_NO_HIT_MIN_BYTES && text_is_markerless_single_line(text)
-}
-
-/// Cap on unique lines participating in a decode-vocab fingerprint. Above this,
-/// the window is too diverse for cross-window empty-decode memoization to help,
-/// and hashing every distinct line would dominate the skip check.
-const DECODE_VOCAB_FINGERPRINT_MAX_UNIQUE_LINES: usize = 512;
 const DECODE_VOCAB_EMPTY_CACHE_CAP: usize = 1024;
 
 #[derive(Clone, Copy, Default)]
@@ -39,7 +8,7 @@ pub(crate) struct VocabStageAbsence {
     pub(crate) decode_empty: bool,
     pub(crate) confirmed: bool,
     pub(crate) entropy: bool,
-    /// Whole prepared-scan produced no matches for this vocabulary.
+    /// Whole prepared scan produced no matches for this exact content.
     pub(crate) clean: bool,
 }
 
@@ -48,47 +17,16 @@ pub(crate) struct VocabAbsenceKey {
     pub(crate) detector_digest: u64,
     pub(crate) entropy_config_digest: [u8; 32],
     pub(crate) path_class: u64,
-    pub(crate) vocab_fp: [u8; 16],
+    pub(crate) content_digest: [u8; 32],
 }
 
-/// Order-independent fingerprint of the unique-line vocabulary in `text`.
+/// Exact-content fingerprint for a proven-empty parent window.
 ///
-/// Every unique line participates, including first/last lines, so a one-off
-/// secret on an edge line cannot alias onto a previously proven-clean filler
-/// vocabulary. Returns `None` when the text is empty or too diverse to memoize.
-///
-/// Clean short-circuits that consume this fingerprint are limited to
-/// `filesystem/windowed` parent windows and are path-scoped, so a reordering on
-/// another path cannot inherit a clean proof. Autoroute classification does not
-/// short-circuit on these proofs. Overlapping windows of repetitive corpora share
-/// the same unique-line set; an ordered/multiplicity-sensitive fingerprint would
-/// miss those hits and erase the one_large residual win.
+/// Order and multiplicity are load-bearing. The same unique lines in another
+/// order can create different multiline, decode, or companion matches.
 #[inline]
-pub(crate) fn decode_vocab_fingerprint(text: &str) -> Option<[u8; 16]> {
-    if text.is_empty() {
-        return None;
-    }
-    let mut unique: ahash::AHashSet<&str> = ahash::AHashSet::with_capacity(16);
-    for line in text.lines() {
-        if unique.len() >= DECODE_VOCAB_FINGERPRINT_MAX_UNIQUE_LINES && !unique.contains(line) {
-            return None;
-        }
-        unique.insert(line);
-    }
-    if unique.is_empty() {
-        return None;
-    }
-    let mut lines: Vec<&str> = unique.into_iter().collect();
-    lines.sort_unstable();
-    let mut hasher = blake3::Hasher::new();
-    for line in &lines {
-        hasher.update(line.as_bytes());
-        hasher.update(&[0]);
-    }
-    let full = hasher.finalize();
-    let mut out = [0u8; 16];
-    out.copy_from_slice(&full.as_bytes()[..16]);
-    Some(out)
+fn window_content_digest(text: &str) -> Option<[u8; 32]> {
+    (!text.is_empty()).then(|| *blake3::hash(text.as_bytes()).as_bytes())
 }
 #[inline]
 pub(crate) fn vocab_path_class(source_type: &str, path: Option<&str>) -> u64 {
@@ -111,12 +49,12 @@ fn vocab_absence_key(
     path_class: u64,
     text: &str,
 ) -> Option<VocabAbsenceKey> {
-    let vocab_fp = decode_vocab_fingerprint(text)?;
+    let content_digest = window_content_digest(text)?;
     Some(VocabAbsenceKey {
         detector_digest,
         entropy_config_digest,
         path_class,
-        vocab_fp,
+        content_digest,
     })
 }
 

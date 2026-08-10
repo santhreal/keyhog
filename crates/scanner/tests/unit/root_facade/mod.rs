@@ -35,12 +35,12 @@ mod gpu_resident_throughput;
 mod homoglyph_ascii_skip_parity;
 mod homoglyph_gate_repro;
 mod lazy_regex;
-mod markerless_dense_skip;
 mod perf_decode_caesar;
 mod perf_locality_intern;
 mod perf_ml_scoring;
 mod perf_phase2_confirmed_collect;
 mod perf_phase2_literal_prefix_memoized;
+mod phase2_absence_parity;
 mod phase2_anchor_analysis;
 mod phase2_anchor_parity;
 #[cfg(feature = "simd")]

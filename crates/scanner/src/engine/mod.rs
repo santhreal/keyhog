@@ -128,10 +128,7 @@ mod recovery;
 pub use recovery::{BackendRecoveryReceipt, CoalescedScanOutcome, RecoveredInputRange};
 mod scan;
 mod vocab_absence;
-pub(crate) use scan::{
-    text_is_dense_markerless_single_line, text_is_markerless_single_line, vocab_path_class,
-    vocab_previously_clean, MARKERLESS_NO_HIT_MIN_BYTES,
-};
+pub(crate) use scan::{vocab_path_class, vocab_previously_clean};
 mod scan_coalesced;
 #[cfg(feature = "simd")]
 pub(crate) use scan_coalesced::ReusableSimdTriggerCache;

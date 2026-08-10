@@ -2718,20 +2718,6 @@ pub fn companions_deny_absent_for_test(
     crate::engine::companions_deny_absent(detector_digest, patterns, text, deny)
 }
 
-/// Size gate for markerless no-hit / always-active / decode skips (64 KiB).
-pub fn markerless_no_hit_min_bytes_for_test() -> usize {
-    crate::engine::MARKERLESS_NO_HIT_MIN_BYTES
-}
-
-/// Dense markerless predicate used by production skip sites.
-pub fn text_is_dense_markerless_single_line_for_test(text: &str) -> bool {
-    crate::engine::text_is_dense_markerless_single_line(text)
-}
-
-/// Shape-only markerless predicate (no size gate).
-pub fn text_is_markerless_single_line_for_test(text: &str) -> bool {
-    crate::engine::text_is_markerless_single_line(text)
-}
 pub fn new_trigger_bitmap_for_test(n_patterns: usize) -> Vec<u64> {
     crate::engine::trigger_bitmap::new_trigger_bitmap(n_patterns)
 }

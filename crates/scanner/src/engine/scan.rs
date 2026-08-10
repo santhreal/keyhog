@@ -42,17 +42,6 @@ impl CompiledScanner {
             && (chunk.data.len() <= self.config.max_decode_bytes
                 || self.chunk_uses_bounded_decode_windows(chunk))
             && !decoder_absence
-            // Single-line blobs without classical encode markers (`+`, `/`, `=`,
-            // `%`, `\`) are dominated by opaque alphanumeric JSON/minified
-            // tokens. Trial-decoding every repeated value is pure waste: the
-            // root plaintext scan already covers bare credentials, and nopad
-            // base64 without those markers is not distinguishable from ordinary
-            // identifiers at admission time. Skip decode-through on that shape
-            // so one_long_line residual stays bounded; windows that do carry a
-            // marker still decode normally.
-            && !text_is_dense_markerless_single_line(&chunk.data)
-            // Size-gated: short markerless lines still decode (regression fixtures
-            // and small encoded payloads). Dense minified JSON (one_long_line) skips.
             // Repetitive multi-line corpora (one_large) share a tiny line
             // vocabulary across overlapping windows. Once a vocab has been
             // decode-through'd to an empty child set, later windows with the

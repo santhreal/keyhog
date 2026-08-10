@@ -1,6 +1,7 @@
 use keyhog_core::Chunk;
 
 pub(crate) const SMALL_CHUNK_MAX_BYTES: usize = 64 * 1024;
+const MAX_SMALL_LANE_BYTES_TARGET: usize = 512 * 1024;
 
 /// One independently scheduled work item in a chunk batch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,7 +42,18 @@ pub(crate) fn coalesced_work_lanes_for_workers(
         .enumerate()
         .filter_map(|(index, chunk)| (chunk.data.len() <= threshold_bytes).then_some(index))
         .collect();
-    let lane_width = small_indices.len().div_ceil(workers).max(1);
+    let worker_lane_width = small_indices.len().div_ceil(workers).max(1);
+    let max_small_chunk_bytes = small_indices
+        .iter()
+        .map(|&index| chunks[index].data.len())
+        .max()
+        .unwrap_or(0);
+    let byte_bounded_width = if max_small_chunk_bytes == 0 {
+        worker_lane_width
+    } else {
+        (MAX_SMALL_LANE_BYTES_TARGET / max_small_chunk_bytes).max(1)
+    };
+    let lane_width = worker_lane_width.min(byte_bounded_width).max(1);
     let large_count = chunks.len() - small_indices.len();
     let mut lanes = Vec::with_capacity(small_indices.len().div_ceil(lane_width) + large_count);
     lanes.extend(

@@ -1,114 +1,39 @@
 //! Migrated from src/engine/batch_topology.rs
 
 use keyhog_core::Chunk;
-use keyhog_scanner::engine::batch_topology::{BatchEvidence, BatchTopology};
 
 #[test]
-fn test_batch_evidence_measurement() {
-    let chunks = vec![
-        Chunk {
-            data: keyhog_core::SensitiveString::from("a".repeat(100)),
-            metadata: Default::default(),
-        },
-        Chunk {
-            data: keyhog_core::SensitiveString::from("a".repeat(100_000)),
-            metadata: Default::default(),
-        },
-    ];
-    let evidence = BatchEvidence::measure(&chunks);
-    assert_eq!(evidence.total_chunks, 2);
-    assert_eq!(evidence.small_chunks, 1);
-    assert_eq!(evidence.large_chunks, 1);
-    assert_eq!(evidence.max_chunk_bytes, 100_000);
-}
+fn skewed_small_chunks_bound_lane_bytes_by_the_largest_chunk() {
+    const TARGET_BYTES: usize = 512 * 1024;
+    const THRESHOLD: usize = 64 * 1024;
 
-#[test]
-fn skewed_small_chunks_enforce_actual_lane_bytes_for_worker_siblings() {
     for outlier_index in [0, 49, 99] {
-        let chunks: Vec<Chunk> = (0..100)
-            .map(|index| Chunk {
-                data: keyhog_core::SensitiveString::from("x".repeat(if index == outlier_index {
-                    64 * 1_024
+        let sizes: Vec<usize> = (0..100)
+            .map(|index| {
+                if index == outlier_index {
+                    THRESHOLD
                 } else {
                     1_024
-                })),
-                metadata: Default::default(),
+                }
             })
             .collect();
-        let evidence = BatchEvidence::measure(&chunks);
         for workers in [1, 2, 4, 8] {
-            let topology = BatchTopology::select(&evidence, workers);
-            let actual_max_lane_bytes = chunks
-                .chunks(topology.lane_width)
-                .map(|lane| lane.iter().map(|chunk| chunk.data.len()).sum::<usize>())
-                .max()
-                .unwrap();
-            assert!(
-                actual_max_lane_bytes <= 512 * 1_024,
-                "workers={workers} outlier={outlier_index} lane_width={}",
-                topology.lane_width
-            );
-            assert!(topology.max_memory_per_lane_bytes <= 512 * 1_024);
+            let lanes =
+                keyhog_scanner::testing::chunk_lane_topology_for_test(&sizes, THRESHOLD, workers);
+            let mut scheduled = Vec::with_capacity(sizes.len());
+            for (is_large, indices) in lanes {
+                assert!(!is_large);
+                let lane_bytes = indices.iter().map(|&index| sizes[index]).sum::<usize>();
+                assert!(
+                    lane_bytes <= TARGET_BYTES,
+                    "workers={workers} outlier={outlier_index} lane_bytes={lane_bytes}"
+                );
+                scheduled.extend(indices);
+            }
+            scheduled.sort_unstable();
+            assert_eq!(scheduled, (0..sizes.len()).collect::<Vec<_>>());
         }
     }
-}
-
-#[test]
-fn test_all_large_chunks_topology() {
-    let evidence = BatchEvidence {
-        total_chunks: 10,
-        small_chunks: 0,
-        large_chunks: 10,
-        total_bytes: 10_000_000,
-        max_chunk_bytes: 1_000_000,
-    };
-    let topology = BatchTopology::select(&evidence, 4);
-    assert_eq!(topology.lane_width, 1);
-}
-
-#[test]
-fn test_empty_batch_topology() {
-    let evidence = BatchEvidence {
-        total_chunks: 0,
-        small_chunks: 0,
-        large_chunks: 0,
-        total_bytes: 0,
-        max_chunk_bytes: 0,
-    };
-    let topology = BatchTopology::select(&evidence, 4);
-    assert_eq!(topology.lane_width, 1);
-    assert_eq!(topology.fused_waves, 1);
-    assert_eq!(topology.max_memory_per_lane_bytes, 0);
-}
-#[test]
-fn test_fused_waves_ceiling_division_non_multiple() {
-    let evidence = BatchEvidence {
-        total_chunks: 5,
-        small_chunks: 5,
-        large_chunks: 0,
-        total_bytes: 5 * 100,
-        max_chunk_bytes: 100,
-    };
-    let topology = BatchTopology::select(&evidence, 1);
-    assert!(topology.fused_waves >= 1);
-    assert_eq!(
-        topology.fused_waves,
-        evidence.total_chunks.div_ceil(topology.lane_width)
-    );
-}
-
-#[test]
-fn test_mixed_batch_with_adjacent_large_chunks() {
-    let evidence = BatchEvidence {
-        total_chunks: 10,
-        small_chunks: 8,
-        large_chunks: 2,
-        total_bytes: 400_000,
-        max_chunk_bytes: 150_000,
-    };
-    let topology = BatchTopology::select(&evidence, 4);
-    assert_eq!(topology.lane_width, 1);
-    assert_eq!(topology.max_memory_per_lane_bytes, 150_000);
 }
 #[cfg(target_os = "linux")]
 fn proc_status_kib(field: &str) -> u64 {

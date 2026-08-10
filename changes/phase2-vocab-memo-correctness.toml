@@ -1,3 +1,3 @@
 category = "Fixed"
-summary = "Windowed vocab absence memos keep unique-line fingerprints (accepted order/multiplicity YELLOW for overlapping-window one_large), only engage for parent filesystem/windowed slices, reuse the batch entropy config digest, and drop new keys at capacity instead of clearing unrelated proofs."
+summary = "Windowed absence memos bind to exact ordered content, only engage for parent filesystem/windowed slices, reuse the batch entropy configuration digest, and drop new keys at capacity instead of clearing unrelated proofs."
 crates = ["scanner"]

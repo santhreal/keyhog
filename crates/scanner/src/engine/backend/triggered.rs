@@ -79,7 +79,7 @@ impl CompiledScanner {
                 &prepared.chunk.data,
             )
         {
-            return scan_state;
+            return Ok(scan_state);
         }
 
         {
