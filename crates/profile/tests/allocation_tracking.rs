@@ -312,6 +312,49 @@ mod tracked {
             .expect("live gauge drained");
         assert_eq!(live_record.kind, MetricKind::Gauge);
     }
+
+    /// Nested/overlapping sessions share process-global allocation counters.
+    /// Both windows must fail-closed with an explicit Unavailable gap rather
+    /// than publishing each other's allocations as session totals.
+    #[test]
+    fn nested_sessions_gap_allocation_evidence_instead_of_cross_talk() {
+        let _guard = lock();
+        let outer = session("allocation-outer");
+        {
+            let _decode = span(Stage::Decode);
+            let held = vec![1_u8; 512];
+            std::hint::black_box(&held);
+        }
+        let inner = session("allocation-inner");
+        {
+            let _merge = span(Stage::ResultMerge);
+            let held = vec![2_u8; 768];
+            std::hint::black_box(&held);
+        }
+        let inner_profile = inner.finish(RunState::Completed);
+        let outer_profile = outer.finish(RunState::Completed);
+
+        for (label, profile) in [("inner", &inner_profile), ("outer", &outer_profile)] {
+            let system = match &profile.system {
+                Evidence::Recorded { value } => value,
+                other => panic!("{label} system evidence must be recorded: {other:?}"),
+            };
+            assert!(
+                matches!(
+                    &system.allocation.totals,
+                    Evidence::Unavailable {
+                        reason: keyhog_profile::EvidenceGap::Unavailable
+                    }
+                ),
+                "{label} allocation totals must gap on overlap: {:?}",
+                system.allocation.totals
+            );
+            assert!(
+                system.allocation.stages.is_empty(),
+                "{label} overlapped allocation stages must be empty"
+            );
+        }
+    }
 }
 
 #[test]

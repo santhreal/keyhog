@@ -7,7 +7,9 @@
 //! cannot produce carry an explicit [`Evidence`] gap with the attempted
 //! [`HardwareFieldSourceV2`]; nothing is inferred silently.
 
-use crate::allocation::{allocation_capability, allocation_snapshot, AllocationSnapshotV2};
+use crate::allocation::{
+    allocation_capability, allocation_snapshot, AllocationSessionToken, AllocationSnapshotV2,
+};
 use crate::collector::{CollectorCapability, SnapshotCollector};
 use crate::hardware::{milli_ratio, HardwareFieldSourceV2, SourcedEvidenceV2};
 use crate::schema::ResourceSnapshot;
@@ -322,6 +324,7 @@ pub(crate) struct SystemSession {
     pressure_collector: PressureThermalCollector,
     io_start: Option<SystemIoSampleV2>,
     allocation_start: Option<AllocationSnapshotV2>,
+    allocation_session: AllocationSessionToken,
 }
 
 impl SystemSession {
@@ -334,14 +337,20 @@ impl SystemSession {
         let io_start = io_available.then(|| io_collector.sample());
         let allocation_start = crate::allocation::allocation_tracking_installed()
             .then(crate::allocation::allocation_snapshot);
-        if allocation_start.is_some() {
-            crate::allocation::reset_allocation_peaks();
-        }
+        // Snapshot first, then enter: only the sole active session may reset
+        // peaks. Overlapping sessions mark the process contaminated and later
+        // fail-close allocation evidence instead of misattributing globals.
+        let allocation_session = if allocation_start.is_some() {
+            crate::allocation::enter_allocation_session()
+        } else {
+            AllocationSessionToken::inactive()
+        };
         Self {
             io_collector,
             pressure_collector: PressureThermalCollector::new(),
             io_start,
             allocation_start,
+            allocation_session,
         }
     }
 
@@ -498,6 +507,15 @@ impl SystemSession {
                 stages: Vec::new(),
             };
         };
+        // Process-global counters cannot isolate overlapping sessions. Prefer an
+        // explicit gap over publishing another session's allocations as ours.
+        if !self.allocation_session.evidence_is_reliable() {
+            return AllocationEvidenceV2 {
+                version: SYSTEM_EVIDENCE_V2_VERSION,
+                totals: gap(EvidenceGap::Unavailable),
+                stages: Vec::new(),
+            };
+        }
         let end = allocation_snapshot();
         let totals = AllocationTotalsV2 {
             version: SYSTEM_EVIDENCE_V2_VERSION,
