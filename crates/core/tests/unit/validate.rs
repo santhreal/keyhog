@@ -1212,6 +1212,81 @@ fn grouped_companion_literal_satisfies_context_anchor() {
         )),
         "AST literal run inside a group must count as companion context; got {issues:?}"
     );
+
+    // Broad companion without literal run:
+    let mut broad = detector_with_pattern("token_[A-Z0-9]{8}");
+    broad.companions.push(CompanionSpec {
+        name: "secret".into(),
+        regex: "(?:[A-Z0-9]+)".into(),
+        within_lines: 12,
+        required: false,
+        ..Default::default()
+    });
+    let broad_issues = validate_detector(&broad);
+    assert!(
+        broad_issues.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Warning(message) if message.contains("too broad")
+        )),
+        "grouped companion without literal run must produce too-broad warning; got {broad_issues:?}"
+    );
+}
+
+#[test]
+fn regex_validator_uses_one_iterative_ast_walk() {
+    let source = keyhog_core::testing::read_crate_source("src/spec/validate/regex_complexity.rs");
+
+    assert!(source.contains("struct RegexWalkFrame"));
+    assert!(source.contains("fn collect_regex_stats"));
+    assert!(!source.contains("collect_regex_complexity("));
+    assert!(!source.contains("collect_redos_risks("));
+    assert!(!source.contains("literalish_prefix(&group.ast)"));
+    assert!(!source.contains(".any(ast_contains_repetition)"));
+}
+
+#[test]
+fn regex_validation_uses_typed_kinds_not_string_labels() {
+    let source = keyhog_core::testing::read_crate_source("src/spec/validate.rs");
+
+    assert!(source.contains("enum RegexKind"));
+    assert!(source.contains("RegexKind::Pattern"));
+    assert!(source.contains("RegexKind::Companion"));
+    assert!(!source.contains("kind: &str"));
+    assert!(!source.contains("validate_regex_definition(\"pattern\""));
+    assert!(!source.contains("validate_regex_definition(\"companion\""));
+}
+
+#[test]
+fn pattern_group_bounds_are_validated_before_scanner_compile() {
+    let source = format!(
+        "{}\n{}",
+        keyhog_core::testing::read_crate_source("src/spec/validate.rs"),
+        keyhog_core::testing::read_crate_source("src/spec/validate/regex_ast.rs")
+    );
+
+    assert!(source.contains("fn validate_pattern_groups<'a>("));
+    assert!(source.contains("fn ast_captures_len(ast: &ast::Ast) -> usize"));
+    assert!(source.contains("fn ast_max_capture_index(ast: &ast::Ast) -> Option<u32>"));
+    assert!(source.contains("let mut stack = vec![ast];"));
+    assert!(!source.contains("chain(ast_max_capture_index(&group.ast))"));
+    assert!(!source.contains("filter_map(ast_max_capture_index)"));
+    assert!(source.contains("group >= captures"));
+    assert!(!source.contains("regex::Regex::new(&pat.regex)"));
+}
+
+#[test]
+fn spec_field_bounds_are_named_and_validated() {
+    let source = format!(
+        "{}\n{}",
+        keyhog_core::testing::read_crate_source("src/spec/validate.rs"),
+        keyhog_core::testing::read_crate_source("src/spec/validate/verify.rs")
+    );
+
+    assert!(source.contains("const MAX_COMPANION_WITHIN_LINES: usize = 100;"));
+    assert!(source.contains("const MIN_HTTP_STATUS: u16 = 100;"));
+    assert!(source.contains("const MAX_HTTP_STATUS: u16 = 599;"));
+    assert!(source.contains("fn validate_success_policy("));
+    assert!(source.contains("fn validate_http_status("));
 }
 
 #[test]

@@ -178,13 +178,14 @@ fn precision_mode_respects_min_confidence_when_higher() {
 
 /// Precision mode on an empty file exits 0 with no findings.
 #[test]
-fn precision_mode_empty_file_exits_zero() {
+fn precision_mode_empty_file_exits_thirteen() {
     let fixture = "";
-    let (out, _, code) = scan_with_args(fixture, &["--precision"]);
-    assert_eq!(code, Some(0), "empty file must exit 0");
-    let findings: serde_json::Value = serde_json::from_str(&out).expect("JSON");
-    let arr = findings.as_array().expect("array");
-    assert!(arr.is_empty(), "empty file must have no findings");
+    let (_out, _, code) = scan_with_args(fixture, &["--precision"]);
+    assert_eq!(
+        code,
+        Some(13),
+        "empty file scans zero bytes and must exit 13"
+    );
 }
 
 /// Precision mode on a file with only comments/whitespace exits 0.

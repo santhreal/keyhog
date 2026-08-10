@@ -167,11 +167,10 @@ impl CompiledScanner {
             );
         #[cfg(feature = "simd")]
         let has_unclaimed_entropy_run = if restrict_source_entropy_to_assignments {
-            keyword_assignment_lines.iter().any(|&line_id| {
-                let line_index_value = line_id as usize;
-                !skip_lines.contains(&line_index_value)
+            keyword_assignment_lines.iter().any(|&line_idx| {
+                !skip_lines.contains(&line_idx)
                     && line_index
-                        .line(&preprocessed.text, line_index_value)
+                        .line(&preprocessed.text, line_idx)
                         .is_some_and(|line| {
                             super::scan_filters::has_high_entropy_run_at_least(
                                 line.as_bytes(),

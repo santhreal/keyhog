@@ -1290,11 +1290,54 @@ fn csv_no_unquoted_formula_trigger_cells() {
     }
 }
 
-/// Boundary: an empty input FILE (zero bytes) is a clean corpus for every
-/// format and exits 0. Exercises the no-finding path with a degenerate
-/// input rather than clean source code.
+/// Boundary: a clean input file (non-zero bytes) is a clean corpus for every
+/// format and exits 0.
 #[test]
-fn empty_file_is_clean_for_every_format() {
+fn clean_file_is_clean_for_every_format() {
+    for fmt in [
+        "text",
+        "json-envelope",
+        "jsonl-envelope",
+        "sarif",
+        "csv",
+        "github-annotations",
+        "gitlab-sast",
+        "html",
+        "junit",
+    ] {
+        let (_stdout, stderr, code) = scan_with_format(CLEAN_FIXTURE, fmt);
+        assert_eq!(
+            code,
+            Some(0),
+            "format `{fmt}` on a clean file must exit 0 (clean); stderr={stderr}"
+        );
+    }
+    // And the empty-corpus structural invariants still hold.
+    let (json_out, _e, _c) = scan_with_format(CLEAN_FIXTURE, "json-envelope");
+    let json: serde_json::Value = serde_json::from_str(json_out.trim()).expect("JSON envelope");
+    assert!(
+        json_findings(&json).is_empty(),
+        "clean file JSON envelope must contain no findings"
+    );
+    let (jsonl_out, _e, _c) = scan_with_format(CLEAN_FIXTURE, "jsonl-envelope");
+    let jsonl_lines: Vec<&str> = jsonl_out.lines().collect();
+    assert_eq!(
+        jsonl_lines.len(),
+        2,
+        "clean JSONL envelope must contain header and terminal summary"
+    );
+    assert!(
+        jsonl_lines[0].contains("\"schema_version\""),
+        "JSONL envelope must start with its schema header"
+    );
+    assert!(
+        jsonl_lines[1].contains("\"scan_status\":\"success\""),
+        "JSONL envelope must carry the terminal success summary"
+    );
+}
+/// Boundary: an empty input file (zero bytes) returns exit code 13 (incomplete coverage) for every format.
+#[test]
+fn empty_file_exits_thirteen_for_every_format() {
     for fmt in [
         "text",
         "json-envelope",
@@ -1309,32 +1352,10 @@ fn empty_file_is_clean_for_every_format() {
         let (_stdout, stderr, code) = scan_with_format("", fmt);
         assert_eq!(
             code,
-            Some(0),
-            "format `{fmt}` on a zero-byte file must exit 0 (clean); stderr={stderr}"
+            Some(13),
+            "format `{fmt}` on an empty file must exit 13 (incomplete coverage); stderr={stderr}"
         );
     }
-    // And the empty-corpus structural invariants still hold.
-    let (json_out, _e, _c) = scan_with_format("", "json-envelope");
-    let json: serde_json::Value = serde_json::from_str(json_out.trim()).expect("JSON envelope");
-    assert!(
-        json_findings(&json).is_empty(),
-        "zero-byte file JSON envelope must contain no findings"
-    );
-    let (jsonl_out, _e, _c) = scan_with_format("", "jsonl-envelope");
-    let jsonl_lines: Vec<&str> = jsonl_out.lines().collect();
-    assert_eq!(
-        jsonl_lines.len(),
-        2,
-        "zero-byte JSONL envelope must contain header and terminal summary"
-    );
-    assert!(
-        jsonl_lines[0].contains("\"schema_version\""),
-        "JSONL envelope must start with its schema header"
-    );
-    assert!(
-        jsonl_lines[1].contains("\"scan_status\":\"success\""),
-        "JSONL envelope must carry the terminal success summary"
-    );
 }
 
 /// Boundary: an UNKNOWN `--format` value is rejected by clap as a usage

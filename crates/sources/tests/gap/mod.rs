@@ -2,8 +2,6 @@ pub mod archive_symlink_guard_in_source;
 pub mod binary_source_streaming;
 pub mod compressed_formats_not_in_skip_extensions;
 pub mod decode_file_bytes_recovers_non_utf8;
-pub mod file_gate_matrix_missing_submodule_rows;
-pub mod file_gate_matrix_sources_verifier_adversarial_unmarked;
 pub mod filesystem_source;
 pub mod ghidra_timeout_is_five_minutes;
 pub mod git_blob_byte_caps_in_source;

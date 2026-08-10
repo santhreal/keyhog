@@ -51,6 +51,8 @@ fn scan_with_options(dir: &Path, pipeline: &str, backend: &str, extra: &[&str]) 
             "scan",
             "--daemon=off",
             "--no-config",
+            "--max-file-size",
+            "100MB",
             "--backend",
             backend,
             pipeline,

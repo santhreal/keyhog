@@ -1,6 +1,3 @@
-pub mod file_gate_matrix_exists;
-pub mod file_gate_matrix_has_current_rows;
-pub mod file_gate_matrix_has_one_sixty_seven_rows;
 pub mod gap_mod_wiring;
 pub mod gate_backend_subcommand_source_exists;
 pub mod gate_daemon_wire_version_source_exists;

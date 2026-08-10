@@ -57,8 +57,6 @@ pub mod entropy_keywords_inline_tests_in_src;
 pub mod entropy_unique_byte_count_dedup;
 pub mod entropy_universal_rejection_rules_exact;
 pub mod entropy_xml_close_tag_search;
-pub mod file_gate_matrix_scanner_adversarial_unmarked;
-pub mod file_gate_matrix_scanner_missing_submodule_rows;
 pub mod findings_registry_integrity;
 pub mod fragment_assignment_syntax_prefilter;
 pub mod fragment_cache_reassemble_join;

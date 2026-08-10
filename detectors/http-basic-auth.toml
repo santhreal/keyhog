@@ -32,7 +32,6 @@ keywords = ["Basic"]
 regex = "Basic\\s+([A-Za-z0-9+/]{16,}={0,2})"
 group = 1
 description = "HTTP Authorization: Basic <base64(user:password)> credential blob"
-
 [[detector.tests]]
-test_positive = "Authorization: Basic dXNlcjpwYXNzd29yZA=="
-test_negative = "Authorization: Basic dGVzdA=="
+test_positive = "Authorization: Basic dXNlcm5hbWU6cGFzc3dvcmQxMjM="
+test_negative = "Authorization: Basic short"

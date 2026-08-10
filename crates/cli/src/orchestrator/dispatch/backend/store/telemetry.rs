@@ -298,5 +298,19 @@ pub(crate) fn render_missing_buckets(stats: &AutorouteCacheStats) -> Vec<String>
 }
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/orchestrator/backend_store_telemetry.rs"]
+pub(crate) fn reset_for_test() {
+    HITS.store(0, Ordering::Relaxed);
+    CALIBRATION_REUSES.store(0, Ordering::Relaxed);
+    for cause in AutorouteCacheMiss::ALL {
+        cause.counter().store(0, Ordering::Relaxed);
+    }
+    MISSING_BUCKETS_ELIDED.store(0, Ordering::Relaxed);
+    if let Ok(mut buckets) = MISSING_BUCKETS.lock() {
+        // LAW10: test-only telemetry reset tolerates a poisoned metric lock; production routing and findings are untouched.
+        buckets.clear();
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../../../tests/unit/autoroute_telemetry.rs"]
 mod tests;

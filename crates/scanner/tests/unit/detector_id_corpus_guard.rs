@@ -255,6 +255,62 @@ fn weak_anchor_family_is_toml_declared() {
     );
 }
 
+/// WHY: the structurally named OAuth assignment is not a weak anchor. Runtime
+/// coverage must preserve its value floor and detector-owned negative shapes.
+#[test]
+fn oauth_client_secret_runtime_boundaries_are_explicit() {
+    let detector = keyhog_core::load_embedded_detectors_or_fail()
+        .expect("embedded corpus loads")
+        .into_iter()
+        .find(|detector| detector.id == "oauth-client-secret")
+        .expect("OAuth client-secret detector exists");
+    assert!(
+        !detector.weak_anchor,
+        "a named client_secret assignment must not enable generic Tier-B gates"
+    );
+    let scanner = crate::CompiledScanner::compile(vec![detector])
+        .expect("OAuth client-secret detector compiles");
+    let credentials = |payload: &str| {
+        scanner
+            .scan(&keyhog_core::Chunk::from(payload))
+            .expect("OAuth fixture scans")
+            .into_iter()
+            .filter(|finding| finding.detector_id.as_ref() == "oauth-client-secret")
+            .map(|finding| finding.credential.as_ref().to_owned())
+            .collect::<Vec<_>>()
+    };
+
+    for (payload, expected) in [
+        ("client_secret=A7f9K2m4P8q1R6t3V5x0", "A7f9K2m4P8q1R6t3V5x0"),
+        (
+            "clientSecret: \"9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e\"",
+            "9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e",
+        ),
+        (
+            "CLIENT_SECRET = C113nt53KR3TN6N90yVuAgICxIRwsObLi0E67/N8eRN=",
+            "C113nt53KR3TN6N90yVuAgICxIRwsObLi0E67/N8eRN=",
+        ),
+    ] {
+        assert_eq!(
+            credentials(payload),
+            vec![expected],
+            "named OAuth fixture must preserve the exact credential span"
+        );
+    }
+
+    for payload in [
+        "client_secret=A7f9K2m4P8q1R6t3V5x",
+        "client_secret=${OAUTH_CLIENT_SECRET}",
+        "client_secret=b15decee-d2f0-15f2-0f1c-fcbb05d0bb15",
+        "client_secret=00000000000000000000",
+    ] {
+        assert!(
+            credentials(payload).is_empty(),
+            "non-secret OAuth value class must stay rejected: {payload}"
+        );
+    }
+}
+
 /// The private-key-block family membership is DECLARED in the detector TOMLs
 /// (`private_key_block = true`), read back through
 /// `DetectorSpec::private_key_block` (DET-0; migrated out of the

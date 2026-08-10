@@ -130,10 +130,14 @@ fn clean_file_json_is_empty_array_and_exits_zero() {
 }
 
 #[test]
-fn empty_file_exits_zero() {
+fn empty_file_exits_thirteen_incomplete_coverage() {
     let (_g, path) = fixture("empty.txt", "");
     let (_stdout, _stderr, code) = scan_in_process(&path, &["--format", "json"]);
-    assert_eq!(code, Some(0), "empty file must exit 0 (nothing to find)");
+    assert_eq!(
+        code,
+        Some(13),
+        "empty file scans zero bytes and must exit 13 (incomplete coverage)"
+    );
 }
 
 // ---------------------------------------------------------------------------

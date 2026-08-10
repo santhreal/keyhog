@@ -112,7 +112,7 @@ fn scan_autoroute_zero_byte_file_does_not_require_cache_bucket() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert_eq!(
             output.status.code(),
-            Some(0),
+            Some(13),
             "zero-byte autoroute scan must not require an impossible cache bucket; args={extra_args:?}; stderr={stderr}"
         );
         assert_eq!(

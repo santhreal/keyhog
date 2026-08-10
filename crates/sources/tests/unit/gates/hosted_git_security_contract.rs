@@ -116,3 +116,71 @@ fn hosted_git_clone_origin_and_wait_cleanup_contracts_stay_wired() {
         "hosted Git clone wait must not return directly from try_wait errors before child cleanup"
     );
 }
+
+#[test]
+fn hosted_git_scan_orchestrator_keeps_single_repo_worker_boundary() {
+    let hosted_git = source("src/hosted_git.rs");
+    let scan_start = hosted_git
+        .find("pub(crate) fn stream_hosted_repos(")
+        .expect("stream_hosted_repos present");
+    let worker_start = hosted_git
+        .find("fn scan_single_hosted_repo_into(")
+        .expect("single hosted repo worker present");
+    assert!(
+        scan_start < worker_start,
+        "scan_hosted_repos must appear before scan_single_hosted_repo for this bounded source contract"
+    );
+    let scan_block = &hosted_git[scan_start..worker_start];
+    let scan_code = without_line_comments(scan_block);
+    assert!(
+        scan_code.contains("tempfile::tempdir()")
+            && scan_code.contains("scan_single_hosted_repo_into("),
+        "scan_hosted_repos should own temp-root setup, bounded fanout, worker dispatch, and merge only"
+    );
+    for forbidden in [
+        "validate_repo_name(",
+        "validate_display_path(",
+        "validate_clone_url_for_origin(",
+        "clone_repo(",
+        "scan_repo(",
+    ] {
+        assert!(
+            !scan_code.contains(forbidden),
+            "scan_hosted_repos must not inline single-repo pipeline step {forbidden}"
+        );
+    }
+
+    let worker_end = hosted_git[worker_start..]
+        .find("fn repo_unreadable_error(")
+        .map(|offset| worker_start + offset)
+        .unwrap_or(hosted_git.len());
+    let worker_block = &hosted_git[worker_start..worker_end];
+    let worker_code = without_line_comments(worker_block);
+    for required in [
+        "validate_repo_name(",
+        "validate_display_path(",
+        "validate_clone_url_for_origin(",
+        "clone_repo(",
+    ] {
+        assert!(
+            worker_code.contains(required),
+            "single hosted repo worker must own pipeline step {required}"
+        );
+    }
+    let val_pos = worker_code
+        .find("validate_clone_url_for_origin(")
+        .expect("validate_clone_url_for_origin present");
+    let clone_pos = worker_code.find("clone_repo(").expect("clone_repo present");
+    let scan_pos = worker_code
+        .find("scan_repo_into(")
+        .or_else(|| worker_code.find("scan_repo("))
+        .expect("scan_repo present");
+    assert!(
+        val_pos < clone_pos,
+        "validation must precede clone_repo in worker"
+    );
+    assert!(
+        clone_pos < scan_pos,
+        "clone_repo must precede scan_repo in worker"
+    );
+}

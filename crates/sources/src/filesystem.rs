@@ -1015,7 +1015,10 @@ impl Source for FilesystemSource {
                             self.root.display()
                         ),
                     ));
-                    return Box::new(std::iter::once(Err(error)));
+                    return crate::attach_scan_lease(
+                        scan_lease,
+                        Box::new(std::iter::once(Err(error))),
+                    );
                 }
                 Err(error) => {
                     self.discovery_tracker.record_error();
@@ -1026,7 +1029,10 @@ impl Source for FilesystemSource {
                             self.root.display()
                         ),
                     ));
-                    return Box::new(std::iter::once(Err(error)));
+                    return crate::attach_scan_lease(
+                        scan_lease,
+                        Box::new(std::iter::once(Err(error))),
+                    );
                 }
             }
         }
