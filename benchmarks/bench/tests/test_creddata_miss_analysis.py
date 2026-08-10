@@ -190,14 +190,26 @@ def test_cluster_fn_misses_recomputes_precision_with_fp_count():
 def test_cluster_is_a_registered_command():
     rc = cma.main(["cluster", "--root", "/nonexistent-corpus-xyz", "--scanner-bin", "keyhog"])
     assert rc == 2
-def test_cmd_cluster_near_miss_fallback_attributes_detector():
-    # If a finding is not byte-identical but overlaps the ground-truth value,
-    # the fallback attributes the owning detector rather than unmapped_detector.
-    pos = [("src/config.py", "secret_value_12345")]
-    finds = {"src/config.py": [("secret_value", "my-custom-detector")]}
-    # For a FN with no exact match and no suppression, overlap finding attributes detector
-    rel, val = pos[0]
-    matched_find = [det for (c, det) in finds.get(rel, []) if val == c]
-    assert not matched_find
-    matched_finds = [det for (c, det) in finds.get(rel, []) if (c in val or val in c)]
-    assert matched_finds == ["my-custom-detector"]
+def test_cmd_cluster_uses_one_matching_relation_for_near_hits():
+    """Containment matches are TPs in both miss attribution and FP accounting."""
+    positive = "secret_value_12345"
+    rel = "src/config.py"
+    supp: dict[str, set[tuple[str, str, str]]] = {}
+
+    for finding in [positive, "secret_value", f'"{positive}"']:
+        is_tp, fn_item = cma.attribute_miss(
+            positive,
+            rel,
+            {rel: [(finding, "my-custom-detector")]},
+            supp,
+        )
+        assert is_tp
+        assert fn_item is None
+    finds = {
+        rel: [
+            ("secret_value", "narrow-span"),
+            (f'"{positive}"', "wide-span"),
+            ("unrelated_finding", "false-positive"),
+        ]
+    }
+    assert cma.count_false_positives(finds, [(rel, positive)]) == 1

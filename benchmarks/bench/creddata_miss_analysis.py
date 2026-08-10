@@ -525,9 +525,54 @@ def cluster_fn_misses(
     ranked.sort(key=lambda r: (-r["recoverable_f1_gain"], -r["fn_count"], r["detector"], r["failed_gate"]))
     return ranked
 
+def _finding_matches_positive(finding: str, positive: str) -> bool:
+    """Use the containment relation shared with CredData decomposition."""
+    return finding == positive or finding in positive or positive in finding
+
+
+def attribute_miss(
+    val: str,
+    rel: str,
+    finds: dict[str, list[tuple[str, str]]],
+    supp: dict[str, set[tuple[str, str, str]]],
+) -> tuple[bool, dict[str, str] | None]:
+    """Attribute a ground-truth positive to TP (True) or a FN miss dict (False)."""
+    rel_finds = finds.get(rel, [])
+    if any(_finding_matches_positive(credential, val) for credential, _ in rel_finds):
+        return True, None
+
+    rv = _redact(val)
+    matched_supp = [(r, d) for (cr, r, d) in supp.get(rel, set()) if cr == rv]
+    if matched_supp:
+        dets = sorted({d for (r, d) in matched_supp if d})
+        det = f"ambiguous:{','.join(dets)}" if len(dets) > 1 else (dets[0] if dets else "unmapped_detector")
+        gates = sorted({r for (r, d) in matched_supp if r})
+        gate = ",".join(gates) if gates else "un-generated_candidate"
+    else:
+        det = "unmapped_detector"
+        gate = "un-generated_candidate"
+
+    return False, {"detector": det, "failed_gate": gate}
+
+
+def count_false_positives(
+    finds: dict[str, list[tuple[str, str]]],
+    positives: list[tuple[str, str]],
+) -> int:
+    """Count findings that do not match any positive in the same file."""
+    return sum(
+        1
+        for rel, find_list in finds.items()
+        for credential, _detector in find_list
+        if not any(
+            rel == positive_rel
+            and _finding_matches_positive(credential, positive)
+            for positive_rel, positive in positives
+        )
+    )
+
 
 def cmd_cluster(root: pathlib.Path, scanner_bin: str, backend: str = "simd") -> int:
-    """Cluster FNs by owning detector and failed gate, ranked by recoverable F1 gain."""
     cache = _LineCache(root)
     pos: list[tuple[str, str]] = []
     for row in _iter_meta(root):
@@ -606,35 +651,14 @@ def cmd_cluster(root: pathlib.Path, scanner_bin: str, backend: str = "simd") -> 
 
     tp_count = 0
     fn_items: list[dict[str, str]] = []
-    fp_count = sum(
-        1
-        for r, find_list in finds.items()
-        for c, det in find_list
-        if not any(val == c for rel_pos, val in pos if rel_pos == r)
-    )
+    fp_count = count_false_positives(finds, pos)
 
     for rel, val in pos:
-        rv = _redact(val)
-        matched_find = [det for (c, det) in finds.get(rel, []) if val == c]
-        if matched_find:
+        is_tp, item = attribute_miss(val, rel, finds, supp)
+        if is_tp:
             tp_count += 1
-            continue
-        matched_supp = [(r, d) for (cr, r, d) in supp.get(rel, set()) if cr == rv]
-        if matched_supp:
-            dets = sorted({d for (r, d) in matched_supp if d})
-            det = f"ambiguous:{','.join(dets)}" if len(dets) > 1 else (dets[0] if dets else "unmapped_detector")
-            gates = sorted({r for (r, d) in matched_supp if r})
-            gate = ",".join(gates) if gates else "un-generated_candidate"
-        else:
-            matched_finds = [det for (c, det) in finds.get(rel, []) if (c in val or val in c)]
-            if matched_finds:
-                dets = sorted({d for d in matched_finds if d})
-                det = f"ambiguous:{','.join(dets)}" if len(dets) > 1 else (dets[0] if dets else "unmapped_detector")
-                gate = "un-generated_candidate"
-            else:
-                det = "unmapped_detector"
-                gate = "un-generated_candidate"
-        fn_items.append({"detector": det, "failed_gate": gate})
+        elif item is not None:
+            fn_items.append(item)
 
     clusters = cluster_fn_misses(fn_items, tp_count, len(pos), fp_count)
     print("\n=== CredData Miss Clusters (Ranked by Recoverable F1 Gain) ===")
