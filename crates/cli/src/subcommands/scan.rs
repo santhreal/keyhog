@@ -379,25 +379,6 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     }
 
 
-    let single_file = match effective_single_file_path(args) {
-        Ok(path) => path.is_some(),
-        Err(error) => {
-            return daemon_cannot_serve(
-                forced_on,
-                format!(
-                    "the daemon single-file route cannot inspect the requested path: {error:#}"
-                ),
-            );
-        }
-    };
-    let primary_sources = usize::from(args.stdin) + usize::from(single_file);
-    if primary_sources != 1 || has_daemon_incompatible_extra_sources(args) {
-        return daemon_cannot_serve(
-            forced_on,
-            "the daemon only supports exactly one source: --stdin or a single regular file; directories, git, remote, binary, dynamic, and multi-source scans require the in-process scanner",
-        );
-    }
-
     // The daemon's client-side finalize mirrors allowlist/rule suppression,
     // inline suppression, match resolution, and dedup for daemon-eligible scans.
     // It still does NOT run live verification or enforce the policy/security
@@ -408,13 +389,6 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     // merely because a daemon socket exists. Force the in-process path whenever
     // such policy is in play, so behavior never depends on whether a daemon
     // happens to be running.
-    //
-    // This SECURITY-policy check runs BEFORE the generic backend/GPU/batch
-    // operational-controls check below: when a scan requests BOTH a fail-closed
-    // security control (lockdown, secret-output) AND an operational control
-    // (e.g. `--backend`), the refusal must name the security policy that cannot
-    // be enforced, not merely the operational knob, the operator needs to know
-    // their lockdown / secret-output intent is what the daemon can't honor.
     //
     // Critically, the floor / lockdown-require / show_secrets / severity checks
     // read the EFFECTIVE post-`.keyhog.toml`-merge policy, not just the raw CLI
@@ -451,7 +425,9 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     // transaction instead of the in-process scanner. The daemon's clean
     // attestation cache skips blobs whose content and policy identity are
     // unchanged. Security policy checks above already ran, so lockdown,
-    // show_secrets, and verification are still enforced.
+    // show_secrets, and verification are still enforced. This runs before
+    // the single-file/primary-source gate because --git-staged is a
+    // multi-object source the guard transaction handles natively.
     #[cfg(feature = "git")]
     if args.git_staged {
         if forced_on {
@@ -465,6 +441,26 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
             effective_daemon_socket(args).display()
         )));
     }
+
+    let single_file = match effective_single_file_path(args) {
+        Ok(path) => path.is_some(),
+        Err(error) => {
+            return daemon_cannot_serve(
+                forced_on,
+                format!(
+                    "the daemon single-file route cannot inspect the requested path: {error:#}"
+                ),
+            );
+        }
+    };
+    let primary_sources = usize::from(args.stdin) + usize::from(single_file);
+    if primary_sources != 1 || has_daemon_incompatible_extra_sources(args) {
+        return daemon_cannot_serve(
+            forced_on,
+            "the daemon only supports exactly one source: --stdin or a single regular file; directories, git, remote, binary, dynamic, and multi-source scans require the in-process scanner",
+        );
+    }
+
 
     if forced_on {
         return DaemonRoute::Required;

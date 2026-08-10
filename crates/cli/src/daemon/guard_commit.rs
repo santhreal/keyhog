@@ -61,6 +61,12 @@ pub(crate) async fn run_guard_commit(
     repo_path: &Path,
     detector_rules_digest: &str,
 ) -> Result<GuardCommitResult> {
+    // Canonicalize the repo path so the daemon can verify the staged
+    // fingerprint against the correct working tree, not its own CWD.
+    let repo_path = match std::fs::canonicalize(repo_path) {
+        Ok(p) => p,
+        Err(e) => bail!("guard commit: cannot resolve repo path {}: {e}", repo_path.display()),
+    };
     let mut conn = client::connect_with_detector_rules_digest(
         socket_path,
         detector_rules_digest.to_string(),
@@ -78,11 +84,11 @@ pub(crate) async fn run_guard_commit(
         }
     }
 
-    match run_guard_commit_on_connection(&mut conn, repo_path).await {
+    match run_guard_commit_on_connection(&mut conn, &repo_path).await {
         Ok(result) if result.fingerprint_changed => {
             // Retry once: the index changed during the first transaction.
             // The second pass re-acquires the manifest with the current state.
-            let retry = run_guard_commit_on_connection(&mut conn, repo_path).await?;
+            let retry = run_guard_commit_on_connection(&mut conn, &repo_path).await?;
             Ok(retry)
         }
         other => other,

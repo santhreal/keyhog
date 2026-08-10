@@ -232,3 +232,98 @@ fn guard_commit_auto_falls_back_to_in_process() {
         "auto fallback to in-process should succeed for clean; stderr: {stderr}"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn guard_commit_unstaged_secret_not_scanned() {
+    let daemon = DaemonGuard::start_cpu_embedded();
+    let dir = TempDir::new().expect("tempdir");
+    let repo = dir.path();
+    init_git_repo(repo);
+    std::fs::write(repo.join("clean.txt"), STAGED_CLEAN).unwrap();
+    git_add(repo, "clean.txt");
+    git_commit(repo, "init");
+
+    // Stage a clean file.
+    std::fs::write(repo.join("staged_clean.txt"), "all good\n").unwrap();
+    git_add(repo, "staged_clean.txt");
+
+    // Write but do NOT stage a secret.
+    std::fs::write(repo.join("unstaged_secret.txt"), STAGED_SECRET).unwrap();
+
+    let output = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
+        .args([
+            "scan",
+            "--git-staged",
+            "--daemon=auto",
+            "--no-suppress-test-fixtures",
+            "--format",
+            "json",
+        ])
+        .current_dir(repo)
+        .arg(".")
+        .output()
+        .expect("spawn scan");
+
+    let code = output.status.code().unwrap_or(-1);
+    assert_eq!(
+        code, 0,
+        "unstaged secret must not be found by --git-staged scan"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn guard_commit_cache_hit_skips_rescan() {
+    let daemon = DaemonGuard::start_cpu_embedded();
+    let dir = TempDir::new().expect("tempdir");
+    let repo = dir.path();
+    init_git_repo(repo);
+    std::fs::write(repo.join("clean.txt"), STAGED_CLEAN).unwrap();
+    git_add(repo, "clean.txt");
+    git_commit(repo, "init");
+
+    // Stage a clean file.
+    std::fs::write(repo.join("staged_clean.txt"), "cache me\n").unwrap();
+    git_add(repo, "staged_clean.txt");
+
+    // First scan: should scan the blob and cache the clean attestation.
+    let first = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
+        .args([
+            "scan",
+            "--git-staged",
+            "--daemon=auto",
+            "--format",
+            "json",
+        ])
+        .current_dir(repo)
+        .arg(".")
+        .output()
+        .expect("first scan");
+    assert_eq!(first.status.code(), Some(0), "first scan should exit 0");
+
+    // Second scan: same staged content, should hit the cache.
+    let second = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
+        .args([
+            "scan",
+            "--git-staged",
+            "--daemon=auto",
+            "--format",
+            "json",
+        ])
+        .current_dir(repo)
+        .arg(".")
+        .output()
+        .expect("second scan");
+    assert_eq!(second.status.code(), Some(0), "second scan should exit 0");
+
+    // The second scan's stderr should mention cache hits.
+    let stderr = String::from_utf8_lossy(&second.stderr);
+    assert!(
+        stderr.contains("cache hit"),
+        "second scan should report cache hits; stderr: {stderr}"
+    );
+}
