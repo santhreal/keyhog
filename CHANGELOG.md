@@ -23,6 +23,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - Detector property gates now preserve declared source-admission paths, compare Caesar prefix admission at exact token boundaries, compile backend-specific CPU and SIMD plans, and retain minimized parity cases. The WordPress token contract again carries its required `wpcom` owner anchor.
 
+- Complete autoroute sweeps now retry measured-point backend and recovery-route disagreements instead of treating timing variance as a permanent calibration failure. Non-timing failures remain non-retryable and leave the staged generation unpublished.
+
 - Filesystem discovery prunes default-excluded directories (for example
   `node_modules/`) during the walk and counts each pruned directory once in the
   Excluded coverage signal. Linux unbounded walks abort at the first

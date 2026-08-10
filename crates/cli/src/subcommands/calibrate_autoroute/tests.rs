@@ -35,6 +35,18 @@ fn only_inconclusive_timing_failures_are_retryable() {
     assert!(retryable_inconclusive_calibration(&anyhow::anyhow!(
         "calibration timing does not resolve one route: the measured points disagree"
     )));
+    for diagnostic in [
+        "workload class changes its confidence-supported backend across measured points",
+        "workload class changes its confidence-supported remaining daemon recovery backend",
+        "existing workload evidence has no unanimous daemon recovery route after simd-regex",
+        "new workload point does not resolve one one-shot route",
+        "new workload point has no daemon recovery route after gpu-cuda-region-presence",
+    ] {
+        assert!(
+            retryable_inconclusive_calibration(&anyhow::anyhow!(diagnostic)),
+            "timing disagreement must be retried: {diagnostic}",
+        );
+    }
     assert!(
         !retryable_inconclusive_calibration(&anyhow::anyhow!(
             "calibration timing is inconclusive: intervals overlap"

@@ -407,6 +407,14 @@ fn retryable_inconclusive_calibration(error: &anyhow::Error) -> bool {
     diagnostic.contains("calibration timing does not resolve one route")
         || diagnostic.contains("no confidence-supported one-shot route")
         || diagnostic.contains("no confidence-supported daemon route")
+        || diagnostic.contains(
+            "workload class changes its confidence-supported backend across measured points",
+        )
+        || diagnostic.contains("workload class changes its confidence-supported remaining")
+        || diagnostic.contains("workload evidence has no unanimous")
+        || diagnostic.contains("workload point does not resolve one")
+        || (diagnostic.contains("workload point has no ")
+            && diagnostic.contains(" recovery route after "))
 }
 
 fn policy_cli_value(policy: AutorouteCalibrationPolicy) -> &'static str {
