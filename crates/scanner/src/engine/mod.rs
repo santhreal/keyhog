@@ -512,6 +512,11 @@ pub struct CompiledScanner {
         crate::engine::scan::VocabStageAbsence,
         ahash::RandomState,
     >,
+    /// Cached [`Self::entropy_evidence_config_digest`]. Cleared by `with_config`
+    /// and `clear_fragment_cache` (the latter covers the known in-place config
+    /// mutation test path). Callers that mutate `config` in place must clear
+    /// via one of those entry points so absence keys track live policy.
+    pub(crate) entropy_config_digest_cache: parking_lot::Mutex<Option<[u8; 32]>>,
     /// Complete BLAKE3 identity for the compiled detector and decoder execution plan.
     pub(crate) compiled_plan_digest: [u8; 32],
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,

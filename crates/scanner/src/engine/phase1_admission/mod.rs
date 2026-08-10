@@ -888,12 +888,15 @@ impl CompiledScanner {
     }
 
     pub(crate) fn entropy_evidence_config_digest(&self) -> [u8; 32] {
-        // Recomputed from live config: `config` is a public field and callers
-        // (including tests) may mutate policy in place. This digest also keys
-        // vocab-stage absence memos, so it covers every scan setting that can
-        // change clean/confirmed/entropy/decode proofs (not only entropy).
-        // Hot paths must avoid calling this unless a vocab/absence memo can
-        // actually hit (parent filesystem/windowed slices).
+        // Cached on the scanner. `with_config` and `clear_fragment_cache` clear
+        // it. This digest keys vocab-stage absence memos and covers every scan
+        // setting that can change clean/confirmed/entropy/decode proofs (not
+        // only entropy). Callers that mutate `config` in place must clear via
+        // one of those entry points. Hot paths still avoid calling this unless
+        // a vocab/absence memo can actually hit (parent filesystem/windowed).
+        if let Some(cached) = *self.entropy_config_digest_cache.lock() {
+            return cached;
+        }
         fn update_strings(hasher: &mut blake3::Hasher, values: &[String]) {
             hasher.update(&(values.len() as u64).to_le_bytes());
             for value in values {
@@ -917,7 +920,9 @@ impl CompiledScanner {
         hasher.update(&(self.config.max_decode_depth as u64).to_le_bytes());
         hasher.update(&(self.config.max_decode_bytes as u64).to_le_bytes());
         hasher.update(&[u8::from(self.config.penalize_test_paths)]);
-        *hasher.finalize().as_bytes()
+        let digest = *hasher.finalize().as_bytes();
+        *self.entropy_config_digest_cache.lock() = Some(digest);
+        digest
     }
 
     #[cfg(feature = "entropy")]
