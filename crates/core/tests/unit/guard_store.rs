@@ -613,6 +613,30 @@ fn durable_store_corruption_detected_by_redb() {
     assert_eq!(loaded.len(), 1);
     assert_eq!(loaded.list()[0].canonical_path, record.canonical_path);
 }
+
+#[test]
+fn durable_store_contains_no_secret_payloads() {
+    let (_dir, path) = temp_store_path();
+    let store = DurableGuardStore::open(&path).expect("open store");
+
+    let record = sample_root_record("/no/secrets/here");
+    store.save_root(&record).expect("save root");
+
+    let att = sample_attestation("oid_no_payload", 1);
+    store.save_attestation(&att).expect("save attestation");
+
+    let raw = std::fs::read(&path).expect("read store file");
+    let raw_str = String::from_utf8_lossy(&raw);
+
+    assert!(
+        !raw_str.contains("AKIA") && !raw_str.contains("BEGIN PRIVATE KEY"),
+        "store file should not contain common secret patterns"
+    );
+    assert!(
+        raw_str.contains("/no/secrets/here"),
+        "root path should be in the store"
+    );
+}
 #[test]
 fn durable_store_persists_across_reopen() {
     let (_dir, path) = temp_store_path();
