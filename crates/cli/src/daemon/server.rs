@@ -263,6 +263,8 @@ struct ServerState {
     guard_watcher: Arc<parking_lot::Mutex<crate::daemon::guard_watcher::GuardWatcher>>,
     /// Durable guard store for crash recovery. None when no store path is configured.
     guard_store: Option<Arc<keyhog_core::guard_store::DurableGuardStore>>,
+    /// Periodic scrub interval in seconds. None disables scrubbing.
+    guard_scrub_interval: Option<std::time::Duration>,
 }
 
 impl ServerState {
@@ -279,6 +281,7 @@ impl ServerState {
         guard_filter: crate::orchestrator::DefaultScanFilter,
         guard_recon_config: keyhog_sources::guard::GuardReconciliationConfig,
         guard_store: Option<Arc<keyhog_core::guard_store::DurableGuardStore>>,
+        guard_scrub_interval: Option<std::time::Duration>,
     ) -> Self {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -322,6 +325,7 @@ impl ServerState {
                 }),
             )),
             guard_store,
+            guard_scrub_interval,
         }
     }
 
@@ -466,6 +470,7 @@ pub(crate) async fn run_with_backend_override(
     guard_recon_config: keyhog_sources::guard::GuardReconciliationConfig,
     guard_scanner_idle_timeout: Option<u64>,
     guard_store_path: Option<PathBuf>,
+    guard_scrub_interval: Option<u64>,
 ) -> Result<()> {
     ignore_sigpipe_while_serving();
     // Tell the operator the daemon is working before scanner compile and warmup.
@@ -528,6 +533,7 @@ pub(crate) async fn run_with_backend_override(
         guard_filter,
         guard_recon_config,
         guard_store,
+        guard_scrub_interval.map(std::time::Duration::from_secs),
     ));
 
     // Set the guard policy identity from the daemon's scanner and build
@@ -739,6 +745,11 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
         let coalesce_window = std::time::Duration::from_millis(
             state.guard_watcher.lock().coalesce_window_ms(),
         );
+        // Periodic scrub: re-scan all Current roots on a configured
+        // interval to catch changes that filesystem events missed.
+        // None disables scrubbing.
+        let scrub_interval = state.guard_scrub_interval;
+        let mut last_scrub = std::time::Instant::now();
         loop {
             tokio::select! {
                 _ = state.shutdown.notified() => return,
@@ -749,10 +760,55 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
                     }
                     // Sweep abandoned transactions each cycle.
                     state.guard.sweep_stale_transactions();
+
+                    // Periodic scrub: if the interval has elapsed,
+                    // trigger reconciliation for all Current roots.
+                    // This catches changes that filesystem events
+                    // missed (NFS, bind mounts, external edits).
+                    if let Some(interval) = scrub_interval {
+                        if last_scrub.elapsed() >= interval {
+                            scrub_guard_roots(&state);
+                            last_scrub = std::time::Instant::now();
+                        }
+                    }
                 }
             }
         }
     })
+}
+
+/// Trigger reconciliation for all Current roots. Called periodically
+/// by the watcher loop when a scrub interval is configured. This
+/// catches changes that filesystem events missed (NFS, bind mounts,
+/// external edits that bypass inotify).
+fn scrub_guard_roots(state: &ServerState) {
+    use keyhog_core::guard_state::{GuardRootState, GuardTransition};
+    let roots = state.guard.list_roots();
+    let mut scrubbed = 0;
+    for record in roots {
+        if record.state == GuardRootState::Current {
+            let path_str = String::from_utf8_lossy(&record.canonical_path);
+            match state.guard.transition_root(
+                &record.canonical_path,
+                &GuardTransition::ReconciliationStarted,
+            ) {
+                Ok(_) => {
+                    tracing::info!("daemon: scrub: re-reconciling root {}", path_str);
+                    scrubbed += 1;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "daemon: scrub: failed to start reconciliation for {}: {}",
+                        path_str,
+                        e
+                    );
+                }
+            }
+        }
+    }
+    if scrubbed > 0 {
+        tracing::info!("daemon: scrub triggered reconciliation for {} root(s)", scrubbed);
+    }
 }
 
 /// Process a batch of guard events for one root. Advisory filesystem

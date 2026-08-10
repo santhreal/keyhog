@@ -86,7 +86,7 @@ async fn start(
             keyhog_core::detector_digest().to_owned(),
         )
     };
-    let (guard_hot_index_budget, guard_recon_config, guard_scanner_idle_timeout, guard_store_path) = load_guard_config();
+    let (guard_hot_index_budget, guard_recon_config, guard_scanner_idle_timeout, guard_store_path, guard_scrub_interval) = load_guard_config();
     let options = server::ServerOptions {
         request_read_timeout: Duration::from_secs(request_timeout_secs),
         mass_service: mass,
@@ -102,6 +102,7 @@ async fn start(
         guard_recon_config,
         guard_scanner_idle_timeout,
         guard_store_path,
+        guard_scrub_interval,
     )
     .await?;
     Ok(ExitCode::SUCCESS)
@@ -434,29 +435,28 @@ async fn status_over_control_channel(
 /// Load guard configuration from the KeyHog config file. Returns
 /// the hot index memory budget and the reconciliation config.
 /// Missing or invalid values fall back to defaults and do not
-/// prevent daemon startup.
-fn load_guard_config() -> (Option<usize>, keyhog_sources::guard::GuardReconciliationConfig, Option<u64>, Option<PathBuf>) {
+fn load_guard_config() -> (Option<usize>, keyhog_sources::guard::GuardReconciliationConfig, Option<u64>, Option<PathBuf>, Option<u64>) {
     let config_path = match crate::config::find_config_file(None) {
         Some(p) => p,
-        None => return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None, None),
+        None => return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None, None, None),
     };
     let raw = match std::fs::read_to_string(&config_path) {
         Ok(content) => content,
         Err(e) => {
             tracing::warn!("daemon: failed to read {}: {}", config_path.display(), e);
-            return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None, None);
+            return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None, None, None);
         }
     };
     let config: crate::config::ConfigFile = match toml::from_str(&raw) {
         Ok(c) => c,
         Err(e) => {
             tracing::warn!("daemon: failed to parse {}: {}", config_path.display(), e);
-            return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None, None);
+            return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None, None, None);
         }
     };
     let guard = match config.guard {
         Some(g) => g,
-        None => return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None, None),
+        None => return (None, keyhog_sources::guard::GuardReconciliationConfig::default(), None, None, None),
     };
     let budget = guard.hot_index_memory.as_deref().and_then(parse_byte_size);
     let defaults = keyhog_sources::guard::GuardReconciliationConfig::default();
@@ -496,7 +496,12 @@ fn load_guard_config() -> (Option<usize>, keyhog_sources::guard::GuardReconcilia
     } else {
         state_path
     };
-    (budget, recon_config, scanner_idle_timeout_secs, state_path)
+
+    let scrub_interval_secs = guard
+        .scrub_interval
+        .as_deref()
+        .and_then(parse_duration_secs);
+    (budget, recon_config, scanner_idle_timeout_secs, state_path, scrub_interval_secs)
 }
 
 /// Expand a state path string, resolving `~` to the home directory.
