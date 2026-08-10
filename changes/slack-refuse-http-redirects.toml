@@ -1,0 +1,3 @@
+category = "Security"
+summary = "Refuse Slack API HTTP redirects so bearer tokens cannot pivot after the first request"
+crates = ["sources"]

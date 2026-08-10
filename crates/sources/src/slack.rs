@@ -344,8 +344,13 @@ impl SlackSource {
         } else {
             self.http.clone()
         };
+        // Slack Web API never needs redirect-following. Default
+        // Policy::limited would let a compromised endpoint 3xx-pivot the
+        // bearer token after the first request, unlike github/gitlab/bitbucket
+        // and cloud clients which refuse redirects entirely.
         let client = crate::http::blocking_client_builder(&http)
             .map_err(SourceError::Other)?
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|error| {
                 SourceError::Other(format!("failed to build Slack client: {error}"))
