@@ -19,7 +19,7 @@ pub(crate) async fn run(args: GuardArgs) -> anyhow::Result<ExitCode> {
         GuardAction::List => run_list().await,
         GuardAction::Status { root, format } => run_status(root, format).await,
         GuardAction::Reconcile { root } => run_reconcile(root).await,
-        GuardAction::Rebuild { root } => run_rebuild(root).await,
+        GuardAction::Rebuild { root, mode } => run_rebuild(root, mode).await,
     }
 }
 
@@ -443,7 +443,7 @@ async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
 /// durable store, then re-adds it, triggering a fresh baseline
 /// reconciliation. Use after store corruption or when the persisted
 /// state is irrecoverably stale.
-async fn run_rebuild(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
+async fn run_rebuild(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitCode> {
     let socket = default_socket_path();
     let mut conn = match client::connect(&socket).await {
         Ok(conn) => conn,
@@ -493,7 +493,7 @@ async fn run_rebuild(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
     // 2. Re-add the root. This triggers a fresh baseline reconciliation.
     let add_request = Request::GuardAdd {
         root: canonical.clone(),
-        mode: "repo".to_string(),
+        mode: mode.clone(),
     };
     match conn.round_trip(&add_request).await? {
         Response::GuardAdded {

@@ -595,7 +595,7 @@ impl DurableGuardStore {
         Ok(())
     }
 
-    /// Remove all attestations for a given policy identity short digest.
+    /// Remove all attestations for a given detector digest.
     pub fn clear_attestations_for_policy(
         &self,
         policy_short: &str,
@@ -691,6 +691,12 @@ impl DurableGuardStore {
             if !k.starts_with(prefix) {
                 continue;
             }
+            // Verify the null separator follows the prefix to avoid
+            // matching a root whose path is a prefix of another
+            // (e.g. /repo vs /repo/sub).
+            if k.len() <= prefix.len() || k[prefix.len()] != 0 {
+                continue;
+            }
             // Extract blob_oid after the null separator.
             let rest = &k[prefix.len() + 1..];
             let blob_oid = String::from_utf8_lossy(rest).to_string();
@@ -717,7 +723,7 @@ impl DurableGuardStore {
                 .filter_map(|entry| {
                     let (key, _) = entry.ok()?;
                     let k = key.value();
-                    if k.starts_with(prefix) {
+                    if k.starts_with(prefix) && k.len() > prefix.len() && k[prefix.len()] == 0 {
                         Some(k.to_vec())
                     } else {
                         None
@@ -828,7 +834,7 @@ impl DurableGuardStore {
                 .filter_map(|entry| {
                     let (key, _) = entry.ok()?;
                     let k = key.value();
-                    if k.starts_with(prefix) {
+                    if k.starts_with(prefix) && k.len() > prefix.len() && k[prefix.len()] == 0 {
                         Some(k.to_vec())
                     } else {
                         None
@@ -857,7 +863,7 @@ impl DurableGuardStore {
 }
 
 /// Build the durable key for a clean attestation:
-/// hash_algorithm_label || 0x00 || blob_oid_hex || 0x00 || policy_short_digest
+/// hash_algorithm_label || 0x00 || blob_oid_hex || 0x00 || detector_digest
 fn attestation_key(att: &GitCleanAttestation) -> Vec<u8> {
     let label = match att.hash_algorithm {
         GitHashAlgorithm::Sha1 => "sha1",

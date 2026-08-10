@@ -2258,6 +2258,12 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     SHUTDOWN_DRAIN_TIMEOUT.as_secs()
                 );
             }
+            // Mark the durable store as clean on graceful shutdown.
+            if let Some(store) = &state.guard_store {
+                if let Err(e) = store.mark_clean_shutdown() {
+                    tracing::warn!("daemon: failed to mark clean shutdown: {}", e);
+                }
+            }
             Response::Shutdown
         }
     }

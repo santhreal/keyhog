@@ -675,3 +675,43 @@ fn durable_store_service_state_persists_across_reopen() {
         "clean shutdown marker should persist across reopen"
     );
 }
+
+#[test]
+fn durable_store_root_gaps_prefix_collision() {
+    // A root path that is a prefix of another (e.g. /repo vs /repo/sub)
+    // must not cause gap operations on one to affect the other.
+    let (_dir, path) = temp_store_path();
+    let store = DurableGuardStore::open(&path).expect("open store");
+
+    let parent = b"/repo";
+    let child = b"/repo/sub";
+
+    store
+        .save_root_gap(parent, "oid_p", "gap in parent")
+        .expect("save parent gap");
+    store
+        .save_root_gap(child, "oid_c", "gap in child")
+        .expect("save child gap");
+
+    // Loading parent gaps should return only the parent gap, not the child.
+    let parent_gaps = store.load_root_gaps(parent).expect("load parent gaps");
+    assert_eq!(parent_gaps.len(), 1, "parent should have exactly 1 gap");
+    assert_eq!(parent_gaps[0].0, "oid_p");
+
+    // Loading child gaps should return only the child gap.
+    let child_gaps = store.load_root_gaps(child).expect("load child gaps");
+    assert_eq!(child_gaps.len(), 1, "child should have exactly 1 gap");
+    assert_eq!(child_gaps[0].0, "oid_c");
+
+    // Clearing parent gaps should not affect child gaps.
+    let removed = store.clear_root_gaps(parent).expect("clear parent gaps");
+    assert_eq!(removed, 1, "should remove exactly 1 parent gap");
+
+    let child_gaps_after = store.load_root_gaps(child).expect("load child after parent clear");
+    assert_eq!(
+        child_gaps_after.len(),
+        1,
+        "child gaps must survive clearing parent gaps"
+    );
+    assert_eq!(child_gaps_after[0].0, "oid_c");
+}

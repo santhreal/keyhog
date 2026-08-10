@@ -439,6 +439,7 @@ reports that clearly instead of silently doing nothing.
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
 | `<ROOT>` *(required)* | `ROOT` |  | Root path to rebuild |
+| `--mode` | `MODE` | `repo` | Guard mode: `repo` or `filesystem`. Defaults to `repo` |
 
 ### `keyhog guard reconcile`
 

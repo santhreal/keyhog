@@ -50,5 +50,8 @@ pub enum GuardAction {
     Rebuild {
         /// Root path to rebuild.
         root: PathBuf,
+        /// Guard mode: `repo` or `filesystem`. Defaults to `repo`.
+        #[arg(long, value_name = "MODE", default_value = "repo")]
+        mode: String,
     },
 }
