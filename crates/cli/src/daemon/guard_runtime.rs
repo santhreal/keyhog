@@ -75,6 +75,11 @@ pub struct GuardRuntime {
 /// Seconds of guard inactivity before the scanner is considered idle-unloaded.
 const SCANNER_IDLE_UNLOAD_SECS: u64 = 300;
 
+/// Maximum age of an in-flight transaction before it is swept as
+/// abandoned. A client that disconnects mid-transaction leaves it
+/// behind; this reclaims the memory and unblocks the residency label.
+const TRANSACTION_TIMEOUT_SECS: u64 = 600;
+
 impl GuardRuntime {
     /// Create a new empty guard runtime.
     pub fn new() -> Self {
@@ -315,11 +320,28 @@ impl GuardRuntime {
         self.touch_activity();
         Ok(())
     }
-
     /// Finish a transaction and return its final state. Removes it
     /// from the in-flight map.
     pub fn finish_transaction(&self, txn_id: u64) -> Option<GuardTransaction> {
         self.transactions.lock().remove(&txn_id)
+    }
+
+    /// Remove transactions older than `TRANSACTION_TIMEOUT_SECS`.
+    /// Called periodically from the watcher loop to reclaim memory
+    /// from clients that disconnected mid-transaction.
+    pub fn sweep_stale_transactions(&self) {
+        let now = Instant::now();
+        let timeout = std::time::Duration::from_secs(TRANSACTION_TIMEOUT_SECS);
+        let mut txns = self.transactions.lock();
+        let stale_ids: Vec<u64> = txns
+            .iter()
+            .filter(|(_, txn)| now.duration_since(txn.started_at) > timeout)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &stale_ids {
+            txns.remove(id);
+            tracing::warn!("daemon: guard transaction {} abandoned (timed out after {}s)", id, TRANSACTION_TIMEOUT_SECS);
+        }
     }
 
     /// Number of in-flight transactions.

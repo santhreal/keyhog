@@ -13,7 +13,7 @@ mod source;
 mod staged;
 mod tag_messages;
 pub(crate) use staged::consume_oversized_staged_header_path;
-pub use manifest::{StagedManifest, StagedManifestEntry, StagedEntryKind};
+pub use manifest::{StagedManifest, StagedManifestEntry, StagedEntryKind, verify_staged_fingerprint};
 
 /// Resolve `git` to an absolute path inside a trusted system bin dir.
 /// SECURITY: kimi-wave1 audit finding 3.PATH-git. Refuses to fall back

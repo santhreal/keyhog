@@ -624,6 +624,8 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
                     for (root, evts) in events {
                         process_guard_events(&state, &root, evts);
                     }
+                    // Sweep abandoned transactions each cycle.
+                    state.guard.sweep_stale_transactions();
                 }
             }
         }
@@ -1575,6 +1577,18 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     message: format!(
                         "daemon: guard commit: object count mismatch: client streamed {}, required {}",
                         client_objects_streamed, required_count
+                    ),
+                };
+            }
+            // Revalidate the staged index fingerprint. If the index
+            // changed between Begin and Finish, the scanned content
+            // may not match what is now staged, so refuse the receipt.
+            let repo_path = std::path::PathBuf::from(&txn.repo_path);
+            if !keyhog_sources::verify_staged_fingerprint(&repo_path, &txn.index_fingerprint) {
+                return Response::Error {
+                    message: format!(
+                        "daemon: guard commit finish: index fingerprint mismatch for {}; the staged content changed during the transaction",
+                        txn.repo_path
                     ),
                 };
             }
