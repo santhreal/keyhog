@@ -1,29 +1,8 @@
 name: action-e2e
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'action.yml'
-      - '.github/actions/keyhog/**'
-      - '.github/workflows/action-e2e.yml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.cargo/**'
-      - 'crates/**'
-      - 'detectors/**'
-      - 'rules/**'
-  pull_request:
-    paths:
-      - 'action.yml'
-      - '.github/actions/keyhog/**'
-      - '.github/workflows/action-e2e.yml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.cargo/**'
-      - 'crates/**'
-      - 'detectors/**'
-      - 'rules/**'
+  schedule:
+    - cron: "0 7 * * *"
   workflow_dispatch:
     inputs:
       version:
@@ -31,6 +10,7 @@ on:
         required: true
         default: '0.5.68'
         type: string
+
 
 concurrency:
   group: action-e2e-${{ github.ref }}

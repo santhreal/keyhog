@@ -107,21 +107,24 @@ fn warm_identity_digest_does_not_create_the_rayon_global_pool() {
          \nbody was:\n{body}"
     );
 
-    // The helper must stay byte-equivalent to what Rayon would have reported,
-    // or the daemon warm-identity digest moves and `--daemon=mass` fails its
-    // policy gate (subcommands/scan.rs still resolves that config with a direct
-    // `rayon::current_num_threads()` call, and validate_mass_daemon_policy
-    // compares the two digests). Reading RAYON_NUM_THREADS differently from
-    // Rayon split them and broke every mass scan with that variable set.
+    // The helper must remain a non-constructing read of the KeyHog-owned width:
+    // an already-configured pool, else the bounded persistent-daemon physical-core
+    // width. Reintroducing rayon::current_num_threads() here recreates the pool
+    // side effect this gate exists to prevent.
     let runtime = repo_src("crates/cli/src/orchestrator_config/runtime.rs");
     let helper = fn_body(&runtime, "keyhog_worker_threads")
         .expect("keyhog_worker_threads must exist in orchestrator_config/runtime.rs");
     let helper_code = code_only(helper);
     assert!(
-        helper_code.contains("RAYON_NUM_THREADS") && helper_code.contains("available_parallelism"),
-        "keyhog_worker_threads must resolve Rayon's unconfigured default the way Rayon does \
-         (a positive RAYON_NUM_THREADS, else available_parallelism), or the warm-identity \
-         digest diverges from the --daemon=mass policy digest.\nbody was:\n{helper}"
+        !helper_code.contains("rayon::current_num_threads"),
+        "keyhog_worker_threads must not call rayon::current_num_threads(); that recreates \
+         the global-pool side effect this gate exists to prevent.\nbody was:\n{helper}"
+    );
+    assert!(
+        helper_code.contains("CONFIGURED_RAYON_THREADS")
+            && helper_code.contains("persistent_daemon_worker_width"),
+        "keyhog_worker_threads must report an already-configured KeyHog pool, else the \
+         bounded persistent-daemon physical-core width.\nbody was:\n{helper}"
     );
 }
 

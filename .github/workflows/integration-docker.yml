@@ -6,25 +6,13 @@ name: Docker integration matrix
 # tests/docker/ for how to add a row.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/**'
-      - 'detectors/**'
-      - 'tests/docker/**'
-      - 'Cargo.*'
-      - '.github/workflows/integration-docker.yml'
-  pull_request:
-    paths:
-      - 'crates/**'
-      - 'tests/docker/**'
-      - 'Cargo.*'
+  schedule:
+    - cron: "15 7 * * *"
   workflow_dispatch:
 
-# A new push to main supersedes the prior image, so cancel any in-flight run on
-# the same ref rather than letting glibc+musl fat-LTO rebuilds pile up. This was
-# the source of the multi-hour "queued" backlog: no concurrency gate meant every
-# push to crates/** stacked a fresh from-scratch matrix behind the previous one.
+
+# Cancel superseded manual/nightly runs on the same ref so glibc+musl rebuilds
+# do not stack behind a stale matrix.
 concurrency:
   group: docker-integration-${{ github.ref }}
   cancel-in-progress: true

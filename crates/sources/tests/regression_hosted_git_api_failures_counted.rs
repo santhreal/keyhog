@@ -28,16 +28,6 @@ fn limits_with_api_response_cap(web_response_bytes: usize) -> keyhog_sources::So
 }
 
 #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
-fn http_allowing_private_mock() -> keyhog_sources::http::HttpClientConfig {
-    // httpmock binds 127.0.0.1; hosted-git endpoint SSRF screening refuses
-    // loopback unless allow_private_endpoint is set (same Tier-A knob as cloud).
-    keyhog_sources::http::HttpClientConfig {
-        allow_private_endpoint: true,
-        ..Default::default()
-    }
-}
-
-#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
 fn assert_one_unreadable_error(
     source: Box<dyn keyhog_core::Source>,
     before: keyhog_sources::SkipCounts,
@@ -128,7 +118,7 @@ fn gitlab_oversized_api_response_is_counted_unreadable() {
     let source = keyhog_sources::create_source_with_http_config_and_limits(
         "gitlab-group",
         Some(&format!("acme\nglt_testtoken\n{}", server.url(""))),
-        http_allowing_private_mock(),
+        keyhog_sources::http::HttpClientConfig::allowing_private_endpoint(),
         limits_with_api_response_cap(cap),
     )
     .expect("gitlab-group source can be constructed");
@@ -184,7 +174,7 @@ fn bitbucket_oversized_api_response_is_counted_unreadable() {
     let source = keyhog_sources::create_source_with_http_config_and_limits(
         "bitbucket-workspace",
         Some(&format!("acme\nuser\napp-password\n{}", server.url("/2.0"))),
-        http_allowing_private_mock(),
+        keyhog_sources::http::HttpClientConfig::allowing_private_endpoint(),
         limits_with_api_response_cap(cap),
     )
     .expect("bitbucket-workspace source can be constructed");
