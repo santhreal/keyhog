@@ -99,7 +99,7 @@ A dash means that layer intentionally has no surface.
 | Show secrets | off | `show_secrets` | `--show-secrets` | Print plaintext credentials. **Never enable in CI/logs.** |
 | Incremental cache | off | `[scan].incremental` / `[scan].incremental_cache` | `--incremental` / `--incremental-cache` | BLAKE3 Merkle skip-cache; 10-100× on CI re-runs. |
 | Hyperscan cache dir | platform cache dir | `[system].cache_dir` | `--cache-dir` | Compiled-database cache directory. Must be an absolute user-owned path under the home directory or per-user keyhog temp cache root. |
-| Autoroute cache file | platform cache file | `[system].autoroute_cache` | `--autoroute-cache` | Persisted fastest-correct backend decisions. Use an absolute file path or `off` to disable persistence; cache misses then warn, complete through scalar recovery, and cannot be reported as autoroute. |
+| Autoroute cache file | platform cache file | `[system].autoroute_cache` | `--autoroute-cache` | Persisted fastest-correct backend decisions. Use an absolute file path or `off` to disable persistence. Missing, stale, invalid, incomplete, or quarantined evidence selects no backend, leaves the affected batch unscanned, and returns incomplete coverage. |
 | MatcherArtifact cache dir | platform cache dir | `[system].matcher_cache` | `--matcher-cache` | Persisted eager compiled matcher graph reused across process invocations. Distinct from Hyperscan `--cache-dir` `.db` shards. Default-on mirrors Hyperscan's local shard cache (unsigned, identity-bound). `--lockdown` disables it. Use an absolute directory or `off` to disable. Identity binds binary, features, detector digest, matcher-relevant config digest, pack generation, backend, and runtime identity; mismatches miss and rebuild. LazyRegex residency is not retained. |
 | Bayesian calibration cache | off | `[system].calibration_cache` | `--calibration-cache` | Explicit per-detector confidence calibration file written by `keyhog calibrate`. Missing or damaged explicit files fail closed before scanning. |
 | GPU runtime policy | `auto` | `[system].gpu` | `--no-gpu` / `--require-gpu` | `auto` probes when routing can use GPU, `off` skips GPU init, and `required` fails closed when no usable GPU stack is available. Printed by `keyhog config --effective` and included in autoroute scan identity. |
@@ -521,8 +521,9 @@ Each setting creates a distinct autoroute configuration that must be calibrated
 before automatic use.
 `gpu_recall_floor` forces the VYRE region-presence path to compute the full CPU
 trigger net during parity/debug scans and report any GPU under-fire it recovers.
-ML confidence scoring is deterministic CPU work for every backend; GPU routes
-accelerate detection only through VYRE-owned programs.
+Authenticated GPU routes score eligible candidates through a separate bounded
+quantized VYRE program. CPU and SIMD use the same fixed-point model, while
+CPU-owned rows and the shared confidence-policy tail remain on the CPU.
 `chunk_lane_threshold` sets the byte boundary between coalesced small-chunk
 lanes and independently scheduled large chunks. It accepts values from
 `ScannerTuningConfig::CHUNK_LANE_THRESHOLD_MIN` through

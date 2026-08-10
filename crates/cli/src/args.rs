@@ -115,8 +115,8 @@ pub enum Command {
 
     /// Prime autoroute: calibrate every scan-policy preset × workload bucket.
     ///
-    /// Statistically overlapping timings are inconclusive: exits 2 and publishes
-    /// no generation. Rerun on an idle host; explicit --backend is diagnostic only.
+    /// Overlapping timings resolve to the lowest-complexity non-inferior route.
+    /// Unusable or cross-point-inconsistent evidence exits 2 without publication.
     #[command(verbatim_doc_comment)]
     CalibrateAutoroute(CalibrateAutorouteArgs),
 

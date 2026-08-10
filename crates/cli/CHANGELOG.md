@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Daemon guard and bounded batch dispatch now propagate authenticated ordered GPU selections into the shared scanner boundary, restoring GPU-feature builds and preserving multi-device route ownership.
+- Autoroute help and operator documentation now describe deterministic dead-heat resolution and fail-closed invalid-state behavior instead of claiming overlapping timings always fail or that missing evidence silently recovers through scalar execution.
+
 ## 0.5.70 - 2026-08-10
 
 - fix(profile): fail-closed overlapping allocation session peaks.
@@ -18,7 +23,7 @@
 - Persistent daemons now configure at most eight physical-core Rayon workers before detector loading, preventing accidental logical-core pools and bounding resident worker-local caches.
 - Large filesystem scans now retire explicit CPU and SIMD windows in bounded worker waves, share byte-identical source windows, and reuse verified repeated-window findings with rebased locations.
 - Filesystem scans now coalesce tiny files up to the existing 1 MiB payload ceiling and execute them in worker-sized CPU and SIMD lanes, reducing per-file scheduler, channel, and Hyperscan scratch churn.
-- GPU routes now execute detection only through VYRE-owned CUDA, Metal, and WGPU programs. KeyHog no longer ships a WGPU MoE shader: ML confidence scoring is deterministic CPU work for every backend, the `[tuning].gpu_moe_timeout_ms` key is removed, and GPU health reports expose only VYRE literal-set and production region-presence probes.
+- GPU routes now execute detection only through VYRE-owned CUDA, Metal, and WGPU programs. KeyHog no longer ships the retired hand-written WGPU MoE shader, the `[tuning].gpu_moe_timeout_ms` key is removed, and GPU health reports expose only VYRE literal-set and production region-presence probes. The separately retired quantized VYRE confidence program is described below.
 - Replace twenty-six near-identical inline-test gate files with one that scans the whole CLI source tree. Each of the old files hardcoded a single path, so they covered twenty-four files while the tree actually had twenty-five with inline test bodies, including the entire autoroute backend directory that no gate reached. Net 357 lines of duplicated test scaffolding removed and the blind spot closed.
 - Builds now resolve VYRE 0.7.2 from one reviewed upstream commit instead of requiring a sibling source checkout, while keeping CUDA, native Metal, WGPU, and runtime crates on the same immutable identity.
 - Out-of-band verification now overlaps its one-shot RSA session-key generation with scanning before collector registration.

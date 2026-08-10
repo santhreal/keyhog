@@ -347,8 +347,9 @@ pub(crate) enum Response {
         /// the daemon's process-local counters directly, so missing this field
         /// used to let binary/unreadable/truncated daemon input exit clean.
         source_coverage_gaps: SourceCoverageGaps,
-        /// Exact completed recovery for this request, when a selected route
-        /// faulted or autoroute state was invalid. `None` means no recovery.
+        /// Exact completed recovery for this request after an authenticated
+        /// selected route faulted. Invalid autoroute state never creates a
+        /// recovery receipt. `None` means no recovery.
         backend_recovery: RequiredOption<BackendRecoveryStatus>,
         /// Isolated profile of this exact request. Present only when the
         /// request carried `profile: true`; `None` means the daemon recorded

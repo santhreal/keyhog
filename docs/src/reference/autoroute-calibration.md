@@ -33,6 +33,28 @@ CPU and GPU use their normal batch paths, including the measured GPU resident
 pipeline depth. A timing row therefore measures the implementation that the
 persisted route authorizes.
 
+## Ordered multi-device GPU routes
+
+When one GPU API exposes two or more distinct physical adapters, calibration
+also measures the complete ordered device set as a peer route. The route binds
+each adapter's stable topology, driver/runtime identity, capacity, and measured
+integer throughput weight. Cross-API aliases for one physical adapter are
+deduplicated before the set is formed.
+
+Acquisition is all-or-nothing. A missing, reordered, reset, or identity-changed
+member invalidates the complete route before any batch is scanned. KeyHog
+allocates each member's bounded resident slots before dispatch, checks the
+aggregate process ceiling, assigns one contiguous weighted source range to each
+member, dispatches concurrently, and retires results in source order. An error,
+panic, incomplete receipt, or missing shard on any required member invalidates
+the whole route; sibling results are not reported as complete.
+
+The device-set identity is stable across workload-specific throughput weights.
+One scanner therefore acquires one resident set for that physical topology,
+while each workload decision retains its own authenticated weights, budgets,
+pipeline depths, detector/config digests, and correctness receipt. Normal scans
+never retime or rebalance the set.
+
 The workload key preserves the canonical source execution mixture, not only the
 top-level source families. Each sorted, raw-label-free BLAKE3 identity and size-provenance
 entry records exact reduced chunk and payload proportions plus the maximum
@@ -124,9 +146,10 @@ Before calibration:
   scanner feature identity are part of every decision.
 - Use a writable persistent cache path. `--autoroute-cache off` is rejected
   because calibration must publish durable evidence.
-- Keep the host idle. Keep the CPU power policy, accelerator drivers, and
-  runtime libraries stable for the sweep. Overlapping timing intervals exit
-  without publishing a generation.
+- Keep the host reasonably idle. Route trials are interleaved across peers so
+  common drift is shared. Overlapping intervals resolve deterministically to a
+  non-inferior low-complexity route; unusable evidence or backend disagreement
+  across retained points exits without publication.
 - Make every source prerequisite available. The subcommand covers the core
   stdin and filesystem ladder. Git, Docker, and web fixtures use the low-level
   `scan --autoroute-calibrate` probe on the exact source.
@@ -416,10 +439,10 @@ timing for the representative that was
 measured under that key. It does **not** prove that the same backend is fastest
 for every individual byte length inside the numeric range. A neighbouring range
 is not evidence for this one. Uncalibrated keys never interpolate or clamp to
-a guessed route. A normal scan warns, completes that exact input through scalar
-correctness recovery, and reports the invalid autoroute state; calibration and
-explicit backend contracts still fail when their requested evidence or route
-cannot be produced.
+an unauthenticated route. A normal scan selects no backend for the affected
+batch, leaves that batch unscanned, records incomplete coverage, and exits
+nonzero with recalibration guidance. Calibration and explicit backend contracts
+also fail when their requested evidence or route cannot be produced.
 
 Large directory and multi-source scans run in process and produce multiple real
 batches. Each batch needs an exact key in the cache; one calibrated single-file

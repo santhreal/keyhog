@@ -26,9 +26,10 @@ pub enum AutorouteCalibrationPolicy {
 /// External source classes that need repositories, services, containers, or
 /// remote endpoints remain installer-owned.
 ///
-/// Statistically overlapping route timings are inconclusive: the command exits
-/// 2 and publishes no generation rather than choosing an unproved winner.
-/// Rerun on an idle host. An explicit `--backend` remains diagnostic only.
+/// Overlapping route timings resolve deterministically to the lowest-complexity
+/// non-inferior route. Unusable evidence or measured points that disagree about
+/// the backend exit 2 without publication. An explicit `--backend` remains
+/// diagnostic only.
 #[derive(Parser)]
 pub struct CalibrateAutorouteArgs {
     /// Override the persistent autoroute cache file every probe writes to.

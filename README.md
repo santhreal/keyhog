@@ -519,14 +519,27 @@ contract:
 | `simd-regex` | Hyperscan compiled and live | parallel Hyperscan trigger scan plus full-regex extraction; portable builds do not expose this backend and report `cpu-fallback` instead |
 | `cpu-fallback` | portable build or explicit CPU selection | Aho-Corasick prefix + Rust `regex` extraction |
 
+An authenticated GPU route may name an ordered physical-device set rather than
+one adapter. Calibration proves every member and the complete set against the
+scalar reference, records per-device budgets and integer throughput weights,
+then normal scans shard one contiguous source range per device and retire the
+results in source order. Acquisition and dispatch are all-or-nothing.
+
+ML-enabled routes use one authenticated quantized confidence model across CPU,
+SIMD, and GPU execution. GPU candidates run through a separately retired,
+bounded VYRE score program after literal matching; it is not fused into the
+resident literal kernel. Invalid UTF-8 and unquantizable rows remain explicitly
+CPU-owned under the established confidence policy.
+
 ### Autoroute
 
 KeyHog autoroute measures every eligible backend with phase-two localization on
 and off, then persists the fastest parity-checked route for the exact binary,
 host, resolved policy, and workload class. It is not a hardware heuristic or
-fallback hierarchy. A missing, stale, invalid, or quarantined decision is never
-called autoroute: KeyHog warns, scans every byte through the scalar correctness
-oracle, and reports `complete_after_recovery` with the recalibration command.
+fallback hierarchy. A missing, stale, invalid, incomplete, or quarantined
+decision selects no backend: affected batches remain unscanned, the report
+records incomplete coverage, and the process returns a non-success exit with
+the recalibration command.
 
 Install performs the visible calibration. To recalibrate an installed binary,
 run `keyhog calibrate-autoroute`; inspect evidence with

@@ -171,8 +171,9 @@ Autoroute calibration evidence is also explicit scan configuration: use
 `keyhog scan --autoroute-cache <PATH|off>` or `.keyhog.toml`
 `[system].autoroute_cache`.
 GPU region-presence parity/debug recall-floor runs use `.keyhog.toml`
-`[tuning].gpu_recall_floor = true`. ML confidence scoring remains on CPU for
-every route; GPU compute is owned by VYRE detection programs.
+`[tuning].gpu_recall_floor = true`. Authenticated GPU routes score eligible
+candidates through the separate quantized VYRE program; CPU-owned rows and the
+shared policy tail remain on the CPU.
 
 Custom S3 and GCS endpoints never receive ambient cloud credentials unless the
 operator explicitly passes `--allow-s3-credential-forward` or
