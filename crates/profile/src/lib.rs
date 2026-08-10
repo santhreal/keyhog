@@ -153,7 +153,7 @@ pub use runtime::{
     set_work_origin, span, span_with_parent, take_input_totals, take_metric_distributions,
     take_typed_metrics, Attribution, CausalParent, ContextGuard, CounterSpan, DecisionTimer,
     EventLossCounts, QueueLinkLossCounts, Runtime, SamplingPolicy, Span, MAX_ANNOTATIONS,
-    MAX_POINT_EVENTS, MAX_QUEUE_LINKS, MAX_RECORDED_SPANS,
+    MAX_BATCH_ROUTES, MAX_POINT_EVENTS, MAX_QUEUE_LINKS, MAX_RECORDED_SPANS,
 };
 pub use schema::{
     CacheState, DaemonState, ResourceSample, ResourceSnapshot, ResourceUsage, RunIdentity,

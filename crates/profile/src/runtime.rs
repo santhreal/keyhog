@@ -25,6 +25,8 @@ pub const MAX_POINT_EVENTS: usize = 16_384;
 pub const MAX_ANNOTATIONS: usize = 16_384;
 /// Maximum pending enqueues and completed links retained per runtime.
 pub const MAX_QUEUE_LINKS: usize = 16_384;
+/// Hard cap on retained batch-route records; further routes count as drops.
+pub const MAX_BATCH_ROUTES: usize = 16_384;
 
 /// Exact reasons queue causality records were not retained.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -394,6 +396,7 @@ struct RuntimeInner {
     session_recording: bool,
     session_route_sequence: AtomicU64,
     session_batch_routes: Mutex<Vec<BatchRouteV2>>,
+    session_dropped_batch_routes: AtomicU64,
     started: Instant,
     session_span_sequence: AtomicU64,
     session_span_reservations: AtomicUsize,
@@ -455,6 +458,7 @@ impl RuntimeInner {
             session_recording,
             session_route_sequence: AtomicU64::new(0),
             session_batch_routes: Mutex::new(Vec::new()),
+            session_dropped_batch_routes: AtomicU64::new(0),
             started,
             session_span_sequence: AtomicU64::new(0),
             session_span_reservations: AtomicUsize::new(0),
@@ -1448,10 +1452,17 @@ impl Runtime {
                 |backend| Evidence::recorded(backend.to_owned()),
             ),
         };
-        match self.inner.session_batch_routes.lock() {
-            Ok(mut records) => records.push(record),
-            Err(poisoned) => poisoned.into_inner().push(record),
+        let mut records = match self.inner.session_batch_routes.lock() {
+            Ok(records) => records,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if records.len() >= MAX_BATCH_ROUTES {
+            self.inner
+                .session_dropped_batch_routes
+                .fetch_add(1, Ordering::Relaxed);
+            return;
         }
+        records.push(record);
     }
 
     /// Drain completed batch-route records from this profiling runtime.
@@ -1463,6 +1474,13 @@ impl Runtime {
         let mut drained = std::mem::take(&mut *records);
         drained.sort_unstable_by_key(|record| record.batch_sequence);
         drained
+    }
+
+    /// Drain the count of batch routes dropped after [`MAX_BATCH_ROUTES`].
+    pub fn take_session_dropped_batch_routes(&self) -> u64 {
+        self.inner
+            .session_dropped_batch_routes
+            .swap(0, Ordering::Relaxed)
     }
 
     fn record_queue_enqueue(&self, queue: crate::QueueId, sequence: u64) {
