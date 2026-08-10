@@ -1,4 +1,4 @@
-"""Contracts for the push-driven crates.io release workflow."""
+"""Contracts for the CI-gated bump + tag-driven crates.io publish workflow."""
 
 from __future__ import annotations
 
@@ -15,18 +15,26 @@ PUBLISH = (ROOT / "scripts/publish.sh").read_text(encoding="utf-8")
 class AutomaticReleaseWorkflowTests(unittest.TestCase):
     """Lock out manual, signed, or pre-CI publication regressions."""
 
-    def test_successful_main_push_is_the_only_release_trigger(self) -> None:
-        """Crates must publish only after the CI workflow reports success for main push."""
+    def test_successful_main_ci_gates_bumps_and_tag_push_publishes(self) -> None:
+        """Green CI on main still owns bumps; crates.io publish is tag/OIDC only."""
         self.assertIn("workflow_run:", RELEASE)
         self.assertIn("workflows: [CI]", RELEASE)
         self.assertIn("workflow_run.conclusion == 'success'", RELEASE)
         self.assertIn("workflow_run.event == 'push'", RELEASE)
         self.assertIn("workflow_run.head_branch == 'main'", RELEASE)
-        self.assertNotIn("workflow_dispatch", RELEASE)
-        self.assertNotIn("tags:", RELEASE)
+        # Trusted Publishing rejects workflow_run JWTs, so publish listens for
+        # the v* tag push (and workflow_dispatch for already-pushed tags).
+        self.assertIn('tags: ["v*"]', RELEASE)
+        self.assertIn("workflow_dispatch:", RELEASE)
+        bump_idx = RELEASE.index("Bump, changelog, and tag")
+        publish_idx = RELEASE.index("name: Publish crates.io packages")
+        auth_idx = RELEASE.index("rust-lang/crates-io-auth-action@")
+        self.assertLess(bump_idx, publish_idx)
+        self.assertLess(publish_idx, auth_idx)
+        self.assertNotIn("crates-io-auth", RELEASE[:publish_idx])
 
     def test_release_prepares_one_patch_commit_before_publication(self) -> None:
-        """A green push must bump versions and changelogs before cargo upload starts."""
+        """A green CI must bump versions/tag before the tag-triggered cargo upload."""
         prepare = RELEASE.index("scripts/auto_release.py")
         commit = RELEASE.index('git commit -m "release: v${version}"')
         publish = RELEASE.index("bash scripts/publish.sh")

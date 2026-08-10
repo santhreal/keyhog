@@ -1,9 +1,23 @@
 name: Automatic crates.io release
 
+# Two-phase release:
+# 1) workflow_run after green CI on main → bump versions, commit, tag, push.
+# 2) push of that v* tag (or workflow_dispatch of an existing tag) → OIDC
+#    crates.io publish. Trusted Publishing rejects `workflow_run` JWTs, so the
+#    publish job MUST run under `push` / `workflow_dispatch` only.
+
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to publish (for example v0.5.69)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -14,9 +28,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Bump, changelog, and publish
+  bump:
+    name: Bump, changelog, and tag
     if: >-
+      github.event_name == 'workflow_run' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
@@ -35,7 +50,6 @@ jobs:
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Prepare patch release
-        id: release
         shell: bash
         run: |
           set -euo pipefail
@@ -56,43 +70,67 @@ jobs:
             git tag "v${version}"
             git push --atomic origin HEAD:main "refs/tags/v${version}"
           elif [[ "$(git rev-parse HEAD^)" == "$CI_HEAD_SHA" && "$(git show -s --format=%s HEAD)" =~ ^release:\ v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            version="$(python3 -B - <<'PY'
-          import pathlib
-          import tomllib
-          print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['workspace']['package']['version'])
-          PY
-          )"
-            echo "Resuming v${version} from the existing automatic release commit."
+            echo "Release commit already exists for ${CI_HEAD_SHA}; tag push publishes."
+            exit 0
           else
             echo "A newer main push superseded ${CI_HEAD_SHA}; its successful CI run will release it."
             exit 0
           fi
-          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish crates.io packages
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Refusing to publish non-semver tag: ${tag}"
+            exit 1
+          fi
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Generate release integrity receipt
-        if: steps.release.outputs.version != ''
         run: >-
           python3 -B scripts/release_integrity_receipt.py
           --commit "$(git rev-parse HEAD)"
-          --version "${{ steps.release.outputs.version }}"
+          --version "${{ steps.tag.outputs.version }}"
           --output release-integrity.json
 
       - name: Authenticate to crates.io
-        if: steps.release.outputs.version != ''
         id: crates-io-auth
         uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
 
       - name: Publish crates.io packages
-        if: steps.release.outputs.version != ''
         run: bash scripts/publish.sh
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
 
       - name: Upload release integrity receipt
-        if: steps.release.outputs.version != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: keyhog-release-integrity-v${{ steps.release.outputs.version }}
+          name: keyhog-release-integrity-v${{ steps.tag.outputs.version }}
           path: release-integrity.json
           if-no-files-found: error
           retention-days: 90
