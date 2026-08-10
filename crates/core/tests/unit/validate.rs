@@ -1226,9 +1226,9 @@ fn grouped_companion_literal_satisfies_context_anchor() {
     assert!(
         broad_issues.iter().any(|issue| matches!(
             issue,
-            QualityIssue::Warning(message) if message.contains("too broad")
+            QualityIssue::Error(message) if message.contains("pure character class")
         )),
-        "grouped companion without literal run must produce too-broad warning; got {broad_issues:?}"
+        "grouped companion without literal run must reject as a wide pure character class; got {broad_issues:?}"
     );
 }
 
