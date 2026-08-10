@@ -484,6 +484,18 @@ fn load_guard_config() -> (Option<usize>, keyhog_sources::guard::GuardReconcilia
         .state_path
         .as_deref()
         .and_then(expand_state_path);
+    // Lockdown mode forbids on-disk persistence. If [lockdown] require = true
+    // is set alongside [guard].state_path, reject the durable store and
+    // operate in ephemeral mode.
+    let state_path = if state_path.is_some() && config.lockdown.as_ref().and_then(|l| l.require).unwrap_or(false) {
+        tracing::warn!(
+            "daemon: [guard].state_path ignored because [lockdown] require = true; \
+             guard operating in ephemeral mode (no durable persistence)"
+        );
+        None
+    } else {
+        state_path
+    };
     (budget, recon_config, scanner_idle_timeout_secs, state_path)
 }
 

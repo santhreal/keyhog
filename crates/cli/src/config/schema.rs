@@ -123,7 +123,7 @@ pub(super) struct DetectorSection {
 /// `[lockdown]` enforcement.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct LockdownSection {
+pub(crate) struct LockdownSection {
     pub require: Option<bool>,
 }
 
