@@ -146,6 +146,7 @@ pollster = "=0.4.0"
 bytemuck = { version = "=1.25.2", features = ["derive"] }
 hyperscan = "=0.3.2"
 lru = "=0.12.5"
+redb = "=2.4.0"
 naga = "=25.0.1"
 
 # Crypto and encodings

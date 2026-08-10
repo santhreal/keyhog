@@ -28,6 +28,7 @@ use crate::guard_state::{
 };
 use lru::LruCache;
 use parking_lot::Mutex;
+use redb::ReadableTable;
 use std::num::NonZeroUsize;
 
 /// Default hard memory budget for the hot clean attestation index (64 MiB).
@@ -320,4 +321,273 @@ impl RootRegistry {
             .filter(|r| r.state == state)
             .count()
     }
+}
+
+// ── Durable store (redb) ─────────────────────────────────────────────────
+
+/// redb table definition for the metadata singleton.
+const META_TABLE: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("meta");
+
+/// redb table definition for root records, keyed by canonical path bytes.
+const ROOTS_TABLE: redb::TableDefinition<&[u8], &[u8]> = redb::TableDefinition::new("roots");
+
+/// redb table definition for Git clean attestations, keyed by
+/// (hash_algorithm_label || blob_oid_hex || policy_short_digest).
+const ATTESTATIONS_TABLE: redb::TableDefinition<&[u8], &[u8]> =
+    redb::TableDefinition::new("git_clean_attestations");
+
+/// Durable guard state store backed by redb.
+///
+/// Persists root records and clean attestations to a single file.
+/// The in-memory `RootRegistry` and `HotAttestationIndex` remain the
+/// hot path; this store provides crash recovery across daemon restarts.
+pub struct DurableGuardStore {
+    db: redb::Database,
+    path: std::path::PathBuf,
+}
+
+impl DurableGuardStore {
+    /// Open or create the durable store at the given path.
+    pub fn open(path: &std::path::Path) -> Result<Self, GuardStoreError> {
+        let db = redb::Database::create(path)
+            .map_err(|e| GuardStoreError::Io(format!("open guard store: {e}")))?;
+        let store = Self {
+            db,
+            path: path.to_path_buf(),
+        };
+        store.ensure_schema()?;
+        Ok(store)
+    }
+
+    /// Return the store path.
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    /// Initialize or verify the schema version in the meta table.
+    fn ensure_schema(&self) -> Result<(), GuardStoreError> {
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| GuardStoreError::Io(format!("begin write: {e}")))?;
+        {
+            let mut meta = txn
+                .open_table(META_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("open meta table: {e}")))?;
+            let found_version: Option<u32> = meta
+                .get("schema_version")
+                .map_err(|e| GuardStoreError::Io(format!("read schema_version: {e}")))?
+                .map(|guard| {
+                    let bytes: &[u8] = guard.value();
+                    u32::from_le_bytes(bytes.try_into().unwrap_or([0, 0, 0, 0]))
+                });
+            match found_version {
+                Some(version) => {
+                    check_schema_version(version)?;
+                }
+                None => {
+                    // First open: write schema version.
+                    let version_bytes = GUARD_SCHEMA_VERSION.to_le_bytes();
+                    meta.insert("schema_version", version_bytes.as_slice())
+                        .map_err(|e| GuardStoreError::Io(format!("write schema_version: {e}")))?;
+                }
+            }
+        }
+        txn.commit()
+            .map_err(|e| GuardStoreError::Io(format!("commit schema: {e}")))?;
+        Ok(())
+    }
+
+    /// Load all root records from the durable store into a registry.
+    pub fn load_roots(&self) -> Result<RootRegistry, GuardStoreError> {
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| GuardStoreError::Io(format!("begin read: {e}")))?;
+        let table = txn
+            .open_table(ROOTS_TABLE)
+            .map_err(|e| GuardStoreError::Io(format!("open roots table: {e}")))?;
+        let mut registry = RootRegistry::new();
+        for entry in table
+            .range::<&[u8]>(..)
+            .map_err(|e| GuardStoreError::Io(format!("iterate roots: {e}")))?
+        {
+            let (key, value) =
+                entry.map_err(|e| GuardStoreError::Io(format!("read root entry: {e}")))?;
+            let record: GuardRootRecord = serde_json::from_slice(value.value())
+                .map_err(|e| GuardStoreError::Corrupt {
+                    detail: format!("deserialize root record: {e}"),
+                })?;
+            registry.roots.insert(key.value().to_vec(), record);
+        }
+        Ok(registry)
+    }
+
+    /// Save a single root record to the durable store.
+    pub fn save_root(&self, record: &GuardRootRecord) -> Result<(), GuardStoreError> {
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| GuardStoreError::Io(format!("begin write: {e}")))?;
+        {
+            let mut table = txn
+                .open_table(ROOTS_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("open roots table: {e}")))?;
+            let value = serde_json::to_vec(record)
+                .map_err(|e| GuardStoreError::Io(format!("serialize root record: {e}")))?;
+            table
+                .insert(record.canonical_path.as_slice(), value.as_slice())
+                .map_err(|e| GuardStoreError::Io(format!("insert root: {e}")))?;
+        }
+        txn.commit()
+            .map_err(|e| GuardStoreError::Io(format!("commit root: {e}")))?;
+        Ok(())
+    }
+
+    /// Remove a root record from the durable store.
+    pub fn remove_root(&self, canonical_path: &[u8]) -> Result<(), GuardStoreError> {
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| GuardStoreError::Io(format!("begin write: {e}")))?;
+        {
+            let mut table = txn
+                .open_table(ROOTS_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("open roots table: {e}")))?;
+            table
+            .remove(canonical_path)
+            .map_err(|e| GuardStoreError::Io(format!("remove root: {e}")))?;
+        }
+        txn.commit()
+            .map_err(|e| GuardStoreError::Io(format!("commit remove root: {e}")))?;
+        Ok(())
+    }
+
+    /// Load all clean attestations from the durable store.
+    pub fn load_attestations(
+        &self,
+    ) -> Result<Vec<GitCleanAttestation>, GuardStoreError> {
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| GuardStoreError::Io(format!("begin read: {e}")))?;
+        let table = txn
+            .open_table(ATTESTATIONS_TABLE)
+            .map_err(|e| GuardStoreError::Io(format!("open attestations table: {e}")))?;
+        let mut attestations = Vec::new();
+        for entry in table
+            .range::<&[u8]>(..)
+            .map_err(|e| GuardStoreError::Io(format!("iterate attestations: {e}")))?
+        {
+            let (_, value) =
+                entry.map_err(|e| GuardStoreError::Io(format!("read attestation entry: {e}")))?;
+            let att: GitCleanAttestation = serde_json::from_slice(value.value())
+                .map_err(|e| GuardStoreError::Corrupt {
+                    detail: format!("deserialize attestation: {e}"),
+                })?;
+            attestations.push(att);
+        }
+        Ok(attestations)
+    }
+
+    /// Save a clean attestation to the durable store.
+    pub fn save_attestation(&self, att: &GitCleanAttestation) -> Result<(), GuardStoreError> {
+        let key = attestation_key(att);
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| GuardStoreError::Io(format!("begin write: {e}")))?;
+        {
+            let mut table = txn
+                .open_table(ATTESTATIONS_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("open attestations table: {e}")))?;
+            let value = serde_json::to_vec(att)
+                .map_err(|e| GuardStoreError::Io(format!("serialize attestation: {e}")))?;
+            table
+                .insert(key.as_slice(), value.as_slice())
+                .map_err(|e| GuardStoreError::Io(format!("insert attestation: {e}")))?;
+        }
+        txn.commit()
+            .map_err(|e| GuardStoreError::Io(format!("commit attestation: {e}")))?;
+        Ok(())
+    }
+
+    /// Remove a clean attestation from the durable store.
+    pub fn remove_attestation(&self, att: &GitCleanAttestation) -> Result<(), GuardStoreError> {
+        let key = attestation_key(att);
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| GuardStoreError::Io(format!("begin write: {e}")))?;
+        {
+            let mut table = txn
+                .open_table(ATTESTATIONS_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("open attestations table: {e}")))?;
+            table
+                .remove(key.as_slice())
+                .map_err(|e| GuardStoreError::Io(format!("remove attestation: {e}")))?;
+        }
+        txn.commit()
+            .map_err(|e| GuardStoreError::Io(format!("commit remove attestation: {e}")))?;
+        Ok(())
+    }
+
+    /// Remove all attestations for a given policy identity short digest.
+    pub fn clear_attestations_for_policy(
+        &self,
+        policy_short: &str,
+    ) -> Result<usize, GuardStoreError> {
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| GuardStoreError::Io(format!("begin write: {e}")))?;
+        let removed = {
+            let mut table = txn
+                .open_table(ATTESTATIONS_TABLE)
+                .map_err(|e| GuardStoreError::Io(format!("open attestations table: {e}")))?;
+            let prefix = policy_short.as_bytes();
+            let mut count = 0usize;
+            let keys_to_remove: Vec<Vec<u8>> = table
+                .range::<&[u8]>(..)
+                .map_err(|e| GuardStoreError::Io(format!("iterate attestations: {e}")))?
+                .filter_map(|entry| {
+                    let (key, _) = entry.ok()?;
+                    let k = key.value();
+                    // Key format: hash_algo_label || blob_oid || policy_short
+                    // Check if the key ends with the policy prefix.
+                    if k.ends_with(prefix) {
+                        Some(k.to_vec())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for key in keys_to_remove {
+                table
+                    .remove(key.as_slice())
+                    .map_err(|e| GuardStoreError::Io(format!("remove attestation: {e}")))?;
+                count += 1;
+            }
+            count
+        };
+        txn.commit()
+            .map_err(|e| GuardStoreError::Io(format!("commit clear attestations: {e}")))?;
+        Ok(removed)
+    }
+}
+
+/// Build the durable key for a clean attestation:
+/// hash_algorithm_label || 0x00 || blob_oid_hex || 0x00 || policy_short_digest
+fn attestation_key(att: &GitCleanAttestation) -> Vec<u8> {
+    let label = match att.hash_algorithm {
+        GitHashAlgorithm::Sha1 => "sha1",
+        GitHashAlgorithm::Sha256 => "sha256",
+    };
+    let mut key = Vec::with_capacity(label.len() + 1 + att.blob_oid.len() + 1 + 64);
+    key.extend_from_slice(label.as_bytes());
+    key.push(0);
+    key.extend_from_slice(att.blob_oid.as_bytes());
+    key.push(0);
+    key.extend_from_slice(att.policy_identity.detector_digest.as_bytes());
+    key
 }
