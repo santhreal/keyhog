@@ -46,15 +46,17 @@ Valid crate names are `cli`, `core`, `profile`, `scanner`, `sources`, and `verif
 ## Configure crates.io trusted publishing
 
 Configure each published package on crates.io with a trusted publisher for this
-repository's `release.yml` workflow. The workflow requests `id-token: write` and
-uses `rust-lang/crates-io-auth-action` to obtain a short-lived publication token.
-It does not read a long-lived `CARGO_REGISTRY_TOKEN` repository secret.
+repository's `release.yml` workflow under a **`push` (tag) or `workflow_dispatch`**
+trigger — crates.io rejects `workflow_run` JWTs. The workflow requests
+`id-token: write` and uses `rust-lang/crates-io-auth-action` first. While those
+publisher configs are missing, publish falls back to the `CARGO_REGISTRY_TOKEN`
+repository secret.
 
 The trusted publisher must be authorized for all six packages, in publication
 order:
 
-1. `keyhog-core`
-2. `keyhog-profile`
+1. `keyhog-profile`
+2. `keyhog-core`
 3. `keyhog-verifier`
 4. `keyhog-sources`
 5. `keyhog-scanner`

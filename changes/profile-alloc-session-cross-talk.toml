@@ -1,0 +1,3 @@
+category = "Security"
+summary = "Fail-closed overlapping allocation sessions instead of misattributing process-global peaks"
+crates = ["profile"]

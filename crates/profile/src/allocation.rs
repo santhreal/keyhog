@@ -24,13 +24,17 @@ pub const ROOT_SLOT: usize = crate::runtime::STAGE_COUNT;
 mod tracked {
     use super::*;
     use std::cell::{Cell, UnsafeCell};
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
     const MAX_STAGE_DEPTH: usize = 64;
     const HEADER_BYTES: usize = 16;
     const HEADER_MAGIC: u8 = 0xA5;
 
     pub(super) static INSTALLED: AtomicBool = AtomicBool::new(false);
+    /// Process-wide count of SystemSessions currently sampling allocation totals.
+    static ACTIVE_ALLOC_SESSIONS: AtomicUsize = AtomicUsize::new(0);
+    /// Sticky while any overlapping allocation sessions share the global counters.
+    static ALLOC_SESSION_OVERLAP: AtomicBool = AtomicBool::new(false);
     static ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
     static DEALLOCATIONS: AtomicU64 = AtomicU64::new(0);
     static ALLOCATION_BYTES: AtomicU64 = AtomicU64::new(0);
@@ -155,6 +159,37 @@ mod tracked {
                 Ordering::Relaxed,
             );
         }
+    }
+
+    /// Enter a session window over the process-global allocation counters.
+    ///
+    /// Only the sole active session may reset peaks. A second concurrent
+    /// session marks the process contaminated so every overlapping window
+    /// fail-closes instead of publishing misattributed peaks/deltas.
+    pub(super) fn enter_session() -> (bool, bool) {
+        let prev = ACTIVE_ALLOC_SESSIONS.fetch_add(1, Ordering::AcqRel);
+        if prev == 0 {
+            ALLOC_SESSION_OVERLAP.store(false, Ordering::Release);
+            reset_peaks();
+            (true, false)
+        } else {
+            ALLOC_SESSION_OVERLAP.store(true, Ordering::Release);
+            (true, true)
+        }
+    }
+
+    pub(super) fn leave_session() {
+        ACTIVE_ALLOC_SESSIONS.fetch_sub(1, Ordering::AcqRel);
+    }
+
+    pub(super) fn session_evidence_reliable(joined_overlapped: bool) -> bool {
+        if joined_overlapped {
+            return false;
+        }
+        if ALLOC_SESSION_OVERLAP.load(Ordering::Acquire) {
+            return false;
+        }
+        ACTIVE_ALLOC_SESSIONS.load(Ordering::Acquire) == 1
     }
 
     #[repr(C)]
@@ -388,10 +423,71 @@ pub fn allocation_snapshot() -> AllocationSnapshotV2 {
 
 /// Restart peak-live tracking from the current live levels.
 ///
-/// A session calls this at start so its reported peak covers exactly its own
-/// window. The tracker is process-wide: concurrent sessions share one peak.
+/// A sole session calls this at start so its reported peak covers exactly its
+/// own window. The tracker is process-wide: overlapping sessions must not reset
+/// each other's peaks — `SystemSession` enforces that fail-closed.
 pub fn reset_allocation_peaks() {
     backend::reset_peaks();
+}
+
+/// RAII participation in the process-global allocation session window.
+///
+/// Dropping the token leaves the active-session count. Evidence is reliable
+/// only while this token is the sole uncontaminated participant.
+pub(crate) struct AllocationSessionToken {
+    active: bool,
+    overlapped: bool,
+}
+
+impl AllocationSessionToken {
+    pub(crate) const fn inactive() -> Self {
+        Self {
+            active: false,
+            overlapped: false,
+        }
+    }
+
+    pub(crate) fn evidence_is_reliable(&self) -> bool {
+        if !self.active {
+            return true;
+        }
+        #[cfg(feature = "allocation-tracking")]
+        {
+            backend::session_evidence_reliable(self.overlapped)
+        }
+        #[cfg(not(feature = "allocation-tracking"))]
+        {
+            true
+        }
+    }
+}
+
+impl Drop for AllocationSessionToken {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+        self.active = false;
+        #[cfg(feature = "allocation-tracking")]
+        {
+            backend::leave_session();
+        }
+    }
+}
+
+/// Snapshot-then-enter helper used by [`crate::system::SystemSession`].
+///
+/// Peaks reset only when this session is the sole active participant.
+pub(crate) fn enter_allocation_session() -> AllocationSessionToken {
+    #[cfg(feature = "allocation-tracking")]
+    {
+        let (active, overlapped) = backend::enter_session();
+        AllocationSessionToken { active, overlapped }
+    }
+    #[cfg(not(feature = "allocation-tracking"))]
+    {
+        AllocationSessionToken::inactive()
+    }
 }
 
 pub(crate) fn allocation_capability() -> CollectorCapability {

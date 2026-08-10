@@ -20,7 +20,7 @@ PY
     echo "error: missing workspace.package.version in Cargo.toml" >&2
     exit 2
 fi
-CRATES=(keyhog-core keyhog-profile keyhog-verifier keyhog-sources keyhog-scanner keyhog)
+CRATES=(keyhog-profile keyhog-core keyhog-verifier keyhog-sources keyhog-scanner keyhog)
 
 crate_visible() {
     python3 -B - "$1" "$VERSION" <<'PY'
