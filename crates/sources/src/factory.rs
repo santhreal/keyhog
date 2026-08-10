@@ -78,19 +78,28 @@ pub fn create_source_with_http_config_limits_and_policy(
         "github-org" => match params {
             None => Err(invalid_configuration(
                 "github-org",
-                "ORG and TOKEN parameters are required",
+                "ORG and TOKEN parameters are required; ENDPOINT is optional",
             )),
             #[cfg(feature = "github")]
             Some(params) => {
                 let fields = source_param_fields(params);
                 let org = required_source_param("github-org", &fields, 0, "ORG")?;
                 let token = required_source_param("github-org", &fields, 1, "TOKEN")?;
-                Ok(Box::new(
+                let allow_private_endpoint = http.allow_private_endpoint;
+                let mut source =
                     crate::github_org::GitHubOrgSource::new(org.to_string(), token.to_string())
                         .with_http_config(http)
                         .with_limits(limits)
-                        .with_default_excludes(respect_default_excludes),
-                ))
+                        .with_default_excludes(respect_default_excludes);
+                if let Some(endpoint) = optional_source_param(&fields, 2) {
+                    let (url, _screened) = crate::hosted_git::validated_api_endpoint(
+                        "github",
+                        endpoint,
+                        allow_private_endpoint,
+                    )?;
+                    source = source.with_endpoint(url.as_str());
+                }
+                Ok(Box::new(source))
             }
             #[cfg(not(feature = "github"))]
             Some(_) => Err(feature_unavailable("github-org", "github")),

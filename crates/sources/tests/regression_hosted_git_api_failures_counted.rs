@@ -72,6 +72,45 @@ fn github_api_transport_error_is_counted_unreadable() {
     assert_one_unreadable_error(source, before, "GitHub API request failed");
 }
 
+#[cfg(feature = "github")]
+#[test]
+fn github_oversized_api_response_is_counted_unreadable() {
+    use keyhog_sources::testing::TestApi;
+
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let before = keyhog_sources::skip_counts();
+
+    let cap = 32;
+    let server = httpmock::MockServer::start();
+    let list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/orgs/acme/repos")
+            .query_param("per_page", "100")
+            .query_param("page", "1");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(format!(
+                r#"[{{"name":"repo","clone_url":"https://github.com/acme/repo.git","padding":"{}"}}]"#,
+                "x".repeat(cap)
+            ));
+    });
+    let source = keyhog_sources::create_source_with_http_config_and_limits(
+        "github-org",
+        Some(&format!("acme\nghp_testtoken\n{}", server.url(""))),
+        keyhog_sources::http::HttpClientConfig::allowing_private_endpoint(),
+        limits_with_api_response_cap(cap),
+    )
+    .expect("github-org source can be constructed");
+
+    assert_one_unreadable_error(source, before, "web_response_bytes cap");
+    assert_eq!(
+        list.calls(),
+        1,
+        "GitHub oversized API response test must hit the mock listing exactly once"
+    );
+}
+
 #[cfg(feature = "gitlab")]
 #[test]
 fn gitlab_api_transport_error_is_counted_unreadable() {

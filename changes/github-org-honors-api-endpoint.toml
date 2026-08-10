@@ -1,0 +1,5 @@
+category = "Fixed"
+description = """`--github-api-endpoint` is now applied to `--github-org` scans.
+
+The CLI already forwarded the endpoint as the third github-org source parameter, but `create_source` ignored it and always talked to `api.github.com`. GitHub Enterprise org inventories and mock/private endpoints therefore never took effect for organization scans (collaboration already honored the flag). The factory now validates and applies the optional endpoint with the same SSRF screen GitLab/Bitbucket use, and an oversized listing response is counted as unreadable the same way as the other hosted-git providers.
+"""

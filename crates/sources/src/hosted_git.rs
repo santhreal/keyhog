@@ -456,8 +456,8 @@ pub(crate) fn read_api_json<T: DeserializeOwned>(
         .map_err(|error| api_unreadable_error(format!("failed to parse {context}: {error}")))
 }
 
-/// Validate an operator-supplied hosted-git API endpoint (`--gitlab-endpoint`,
-/// `--bitbucket-endpoint`) before any socket opens.
+/// Validate an operator-supplied hosted-git API endpoint (`--github-api-endpoint`,
+/// `--gitlab-endpoint`, `--bitbucket-endpoint`) before any socket opens.
 ///
 /// Shape rules: https only, or plain http to a loopback host for local testing;
 /// never embedded credentials, a query, or a fragment.
@@ -468,8 +468,8 @@ pub(crate) fn read_api_json<T: DeserializeOwned>(
 /// `crate::endpoint_screen` SSRF gate the cloud object stores and WebSource use.
 /// Without it a self-hosted endpoint aimed at `127.0.0.1`, `10.0.0.5`,
 /// `169.254.169.254`, or a public name that *resolves* to one of those was
-/// accepted, and the operator's GitLab/Bitbucket credential was carried to it.
-#[cfg(any(feature = "gitlab", feature = "bitbucket"))]
+/// accepted, and the operator's GitHub/GitLab/Bitbucket credential was carried to it.
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
 pub(crate) fn validated_api_endpoint(
     platform: &str,
     endpoint: &str,
@@ -514,7 +514,7 @@ pub(crate) fn validated_api_endpoint(
     Ok((url, screened))
 }
 
-#[cfg(any(feature = "gitlab", feature = "bitbucket"))]
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
 fn api_endpoint_for_error(endpoint: &str) -> String {
     let redacted = crate::url_redaction::redact_url(endpoint);
     if let Ok(mut url) = reqwest::Url::parse(redacted.as_ref()) {
@@ -873,7 +873,7 @@ fn make_relative_path(
     Ok(relative.to_string_lossy().into_owned())
 }
 
-#[cfg(any(feature = "gitlab", feature = "bitbucket"))]
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
 fn is_loopback_host(host: &str) -> bool {
     if host.eq_ignore_ascii_case("localhost") {
         return true;
