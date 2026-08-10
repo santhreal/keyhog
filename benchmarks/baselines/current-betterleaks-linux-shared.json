@@ -1,0 +1,1550 @@
+{
+  "backend": "betterleaks",
+  "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+  "catalog_sha256": "e6dd36fc15cc15778516cea3b0dc57eae873065599fe5d5c1bd5f1941e5aa9b0",
+  "execution_route": "in-process",
+  "fixture_lock_sha256": "d0adf36e152eb32282b4f69f74431f3f12ccc8ac4b6e37dffb740e275a7e49a9",
+  "host_evidence": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_driver": "580.178.04",
+    "gpu_vram_mb": 32607,
+    "kernel": "6.17.0-19-generic",
+    "logical_cores": 32,
+    "os": "linux",
+    "ram_mb": 94140
+  },
+  "output_format": "json",
+  "page_cache_state": "uncontrolled",
+  "policy": "default",
+  "process_state": "cold",
+  "repetitions": 5,
+  "schema_version": 1,
+  "target_id": "linux-x86_64-rtx5090",
+  "target_matrix_sha256": "f2ff8e62b861a0ae74b6a07deac3e53b5d3d11d83c03b21de895be3d3dd30fa6",
+  "workloads": [
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "fixture_input_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "max_peak_rss_kb": 75156,
+      "median_peak_rss_kb": 74664,
+      "p50_major_page_faults": 1,
+      "p50_minor_page_faults": 14230,
+      "p50_wall_ms": 161.54007500153966,
+      "p95_major_page_faults": 39.0,
+      "p95_minor_page_faults": 14480.0,
+      "p95_wall_ms": 170.98871200869326,
+      "parity_ok": true,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 39,
+          "minor_page_faults": 14230,
+          "peak_rss_kb": 73976,
+          "result_error": "",
+          "wall_ms": 164.82061699207406
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 1,
+          "minor_page_faults": 14480,
+          "peak_rss_kb": 75156,
+          "result_error": "",
+          "wall_ms": 156.28139399632346
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 2,
+          "minor_page_faults": 14015,
+          "peak_rss_kb": 74356,
+          "result_error": "",
+          "wall_ms": 170.98871200869326
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 14206,
+          "peak_rss_kb": 74664,
+          "result_error": "",
+          "wall_ms": 161.54007500153966
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 14333,
+          "peak_rss_kb": 74892,
+          "result_error": "",
+          "wall_ms": 150.20632499363273
+        }
+      ],
+      "workload_id": "filesystem-empty-directory"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "76446eb8d6c9fae61bdbcc1ff3ce99d98f4adbc14dd983662d4c320be0eabe13",
+      "fixture_input_sha256": "44ec73f54ded6cd62a676522226f9a0f2dac012615fc4e220db21cac97628d18",
+      "max_peak_rss_kb": 77884,
+      "median_peak_rss_kb": 77300,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 14519,
+      "p50_wall_ms": 157.60012899409048,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 14610.0,
+      "p95_wall_ms": 162.651298000128,
+      "parity_ok": true,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14424,
+          "peak_rss_kb": 77304,
+          "result_error": "",
+          "wall_ms": 162.651298000128
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14015,
+          "peak_rss_kb": 75320,
+          "result_error": "",
+          "wall_ms": 156.7549759929534
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14551,
+          "peak_rss_kb": 77108,
+          "result_error": "",
+          "wall_ms": 161.06030000082683
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14610,
+          "peak_rss_kb": 77884,
+          "result_error": "",
+          "wall_ms": 157.60012899409048
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14519,
+          "peak_rss_kb": 77300,
+          "result_error": "",
+          "wall_ms": 155.94891700311564
+        }
+      ],
+      "workload_id": "filesystem-single-tiny-file"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "2972b7a1281f6d01f59088ce825373d5a106ad5fee35427cd39710ef066d1b05",
+      "fixture_input_sha256": "7cd741484b9108ae8e36ebe997f0b394dc2987b807eb29a5644375476209a8b9",
+      "max_peak_rss_kb": 105080,
+      "median_peak_rss_kb": 104620,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 21687,
+      "p50_wall_ms": 1572.1141090034507,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 21791.0,
+      "p95_wall_ms": 1613.8396479946095,
+      "parity_ok": true,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 21693,
+          "peak_rss_kb": 105076,
+          "result_error": "",
+          "wall_ms": 1613.8396479946095
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 21611,
+          "peak_rss_kb": 104620,
+          "result_error": "",
+          "wall_ms": 1581.2741950066993
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 21687,
+          "peak_rss_kb": 104436,
+          "result_error": "",
+          "wall_ms": 1545.6637099996442
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 21446,
+          "peak_rss_kb": 103420,
+          "result_error": "",
+          "wall_ms": 1572.1141090034507
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 21791,
+          "peak_rss_kb": 105080,
+          "result_error": "",
+          "wall_ms": 1561.0200200026156
+        }
+      ],
+      "workload_id": "filesystem-single-large-file"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "17fd876b5938381f7fd39d612b35d0ccae8fcbd49a05e836be633fb83289f45a",
+      "fixture_input_sha256": "138221eb1b8a0dd9cd2bab532669cf35162e525d6762b1d42b533cf7a6fcd301",
+      "max_peak_rss_kb": 235580,
+      "median_peak_rss_kb": 209996,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 51476,
+      "p50_wall_ms": 277.4997349915793,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 57708.0,
+      "p95_wall_ms": 284.3656250042841,
+      "parity_ok": true,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 57708,
+          "peak_rss_kb": 235580,
+          "result_error": "",
+          "wall_ms": 267.43490700027905
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 50320,
+          "peak_rss_kb": 202620,
+          "result_error": "",
+          "wall_ms": 278.9358320005704
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 51476,
+          "peak_rss_kb": 212248,
+          "result_error": "",
+          "wall_ms": 260.7116160070291
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 53645,
+          "peak_rss_kb": 209996,
+          "result_error": "",
+          "wall_ms": 284.3656250042841
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 41884,
+          "peak_rss_kb": 184940,
+          "result_error": "",
+          "wall_ms": 277.4997349915793
+        }
+      ],
+      "workload_id": "filesystem-many-small-files"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "218937ab91a29b9d2c8e354c24f7c7345baf592cb43b7e4c9841c3b3a84f5eec",
+      "fixture_input_sha256": "6de1e19239ce1d6fb89608e298600f6ab12a661d8c3949c8baf2f1c8a1e01300",
+      "max_peak_rss_kb": 179260,
+      "median_peak_rss_kb": 173244,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 39656,
+      "p50_wall_ms": 1710.3982219996396,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 41646.0,
+      "p95_wall_ms": 1748.6767109949142,
+      "parity_ok": true,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 40905,
+          "peak_rss_kb": 178020,
+          "result_error": "",
+          "wall_ms": 1691.6588760068407
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38760,
+          "peak_rss_kb": 170552,
+          "result_error": "",
+          "wall_ms": 1699.9119600077393
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39656,
+          "peak_rss_kb": 173244,
+          "result_error": "",
+          "wall_ms": 1710.3982219996396
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38515,
+          "peak_rss_kb": 169076,
+          "result_error": "",
+          "wall_ms": 1721.324291997007
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 41646,
+          "peak_rss_kb": 179260,
+          "result_error": "",
+          "wall_ms": 1748.6767109949142
+        }
+      ],
+      "workload_id": "filesystem-flat-many-files"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "cfdd710675152406b118129bfaa9290474cca8c24b4a9203208decd24549fb9a",
+      "fixture_input_sha256": "41e513c6a200d3464c6edab99f9ecc32b08f66ef49343f2d0d0ff7a27dfdebbb",
+      "max_peak_rss_kb": 91700,
+      "median_peak_rss_kb": 90992,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 17885,
+      "p50_wall_ms": 279.9233120022109,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 17934.0,
+      "p95_wall_ms": 282.1097319974797,
+      "parity_ok": false,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 17856,
+          "peak_rss_kb": 90232,
+          "result_error": "",
+          "wall_ms": 277.1467889979249
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 17934,
+          "peak_rss_kb": 90992,
+          "result_error": "",
+          "wall_ms": 279.9233120022109
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 17885,
+          "peak_rss_kb": 91196,
+          "result_error": "",
+          "wall_ms": 276.5256780112395
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 17895,
+          "peak_rss_kb": 91700,
+          "result_error": "",
+          "wall_ms": 282.1097319974797
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 17848,
+          "peak_rss_kb": 90168,
+          "result_error": "",
+          "wall_ms": 280.1847149967216
+        }
+      ],
+      "workload_id": "filesystem-deep-directory-tree"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "7bea8767ec901d5be3b7bcda1a269d7faea1082eb0efd8ec8a3d6b723974684a",
+      "fixture_input_sha256": "b8d54a0af09343532f3feed219c8e7177802fac5d9b828f754cb9872aa30c86e",
+      "max_peak_rss_kb": 102708,
+      "median_peak_rss_kb": 102204,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 20752,
+      "p50_wall_ms": 406.24009299790487,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 21002.0,
+      "p95_wall_ms": 415.3321780031547,
+      "parity_ok": false,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "fb37dc651c0b3c674dea2eb17461055371442d69714d35659d0842fcf3f67ad9"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 20372,
+          "peak_rss_kb": 99836,
+          "result_error": "",
+          "wall_ms": 415.3321780031547
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "fb37dc651c0b3c674dea2eb17461055371442d69714d35659d0842fcf3f67ad9"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 20934,
+          "peak_rss_kb": 102708,
+          "result_error": "",
+          "wall_ms": 406.87742400041316
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "fb37dc651c0b3c674dea2eb17461055371442d69714d35659d0842fcf3f67ad9"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 20752,
+          "peak_rss_kb": 101628,
+          "result_error": "",
+          "wall_ms": 406.24009299790487
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "fb37dc651c0b3c674dea2eb17461055371442d69714d35659d0842fcf3f67ad9"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 21002,
+          "peak_rss_kb": 102708,
+          "result_error": "",
+          "wall_ms": 400.21260299545247
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "fb37dc651c0b3c674dea2eb17461055371442d69714d35659d0842fcf3f67ad9"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 20648,
+          "peak_rss_kb": 102204,
+          "result_error": "",
+          "wall_ms": 398.4156459919177
+        }
+      ],
+      "workload_id": "filesystem-one-long-line"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "fixture_input_sha256": "902d576a150d46420457f73405254f8d3cbb7dbe76aa74fe39a298ea2c7e7266",
+      "max_peak_rss_kb": 104700,
+      "median_peak_rss_kb": 102964,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 21019,
+      "p50_wall_ms": 639.1419260035036,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 21482.0,
+      "p95_wall_ms": 660.8963350008707,
+      "parity_ok": false,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 21192,
+          "peak_rss_kb": 103216,
+          "result_error": "",
+          "wall_ms": 636.8620290013496
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 21482,
+          "peak_rss_kb": 104700,
+          "result_error": "",
+          "wall_ms": 660.8963350008707
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 20928,
+          "peak_rss_kb": 102204,
+          "result_error": "",
+          "wall_ms": 643.5492319869809
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 21019,
+          "peak_rss_kb": 102964,
+          "result_error": "",
+          "wall_ms": 639.1419260035036
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 20747,
+          "peak_rss_kb": 101356,
+          "result_error": "",
+          "wall_ms": 632.518243000959
+        }
+      ],
+      "workload_id": "filesystem-over-size-limit"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "fixture_input_sha256": "e8bd0164eb4db58fb6d996dc6f406c3a41e24132ce4b20a38686b4415f3576ec",
+      "max_peak_rss_kb": 77052,
+      "median_peak_rss_kb": 76344,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 14337,
+      "p50_wall_ms": 153.36889399623033,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 14526.0,
+      "p95_wall_ms": 154.96590299881063,
+      "parity_ok": false,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 14526,
+          "peak_rss_kb": 77052,
+          "result_error": "",
+          "wall_ms": 153.21781899547204
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 13570,
+          "peak_rss_kb": 72956,
+          "result_error": "",
+          "wall_ms": 154.8170729947742
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 14337,
+          "peak_rss_kb": 76796,
+          "result_error": "",
+          "wall_ms": 153.36889399623033
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 13980,
+          "peak_rss_kb": 75776,
+          "result_error": "",
+          "wall_ms": 148.6311350017786
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 14352,
+          "peak_rss_kb": 76344,
+          "result_error": "",
+          "wall_ms": 154.96590299881063
+        }
+      ],
+      "workload_id": "filesystem-binary-rejection"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "3955269643d50099954763235a630a73d41637701c7175c641b585e9f97563c5",
+      "fixture_input_sha256": "0aedd17e61f91373db14563dbe0eacf0b1fb8b146f22452d3828b23d6b195eae",
+      "max_peak_rss_kb": 78136,
+      "median_peak_rss_kb": 77044,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 14432,
+      "p50_wall_ms": 157.24091000447515,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 14474.0,
+      "p95_wall_ms": 162.88912600430194,
+      "parity_ok": true,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14468,
+          "peak_rss_kb": 78136,
+          "result_error": "",
+          "wall_ms": 162.88912600430194
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 13819,
+          "peak_rss_kb": 74352,
+          "result_error": "",
+          "wall_ms": 160.66158800094854
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14432,
+          "peak_rss_kb": 77044,
+          "result_error": "",
+          "wall_ms": 157.24091000447515
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14474,
+          "peak_rss_kb": 77424,
+          "result_error": "",
+          "wall_ms": 154.6070670010522
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 13725,
+          "peak_rss_kb": 73720,
+          "result_error": "",
+          "wall_ms": 152.0049230020959
+        }
+      ],
+      "workload_id": "filesystem-no-extension"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "15daff0e7cbc24cc804105f9d6f3f87886858c0648c0fa7331f557417f6e7d81",
+      "fixture_input_sha256": "49862ae12b234b05bce6615bdffa438cad982df28fe325b89134cb3da735caaf",
+      "max_peak_rss_kb": 83316,
+      "median_peak_rss_kb": 80440,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 15625,
+      "p50_wall_ms": 159.41361601289827,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 15901.0,
+      "p95_wall_ms": 163.75774300831836,
+      "parity_ok": false,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 6,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 15625,
+          "peak_rss_kb": 80380,
+          "result_error": "",
+          "wall_ms": 163.75774300831836
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 6,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 15556,
+          "peak_rss_kb": 80760,
+          "result_error": "",
+          "wall_ms": 156.06787000433542
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 6,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 15901,
+          "peak_rss_kb": 83316,
+          "result_error": "",
+          "wall_ms": 163.1450979912188
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 6,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 15173,
+          "peak_rss_kb": 79928,
+          "result_error": "",
+          "wall_ms": 159.41361601289827
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 6,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 15647,
+          "peak_rss_kb": 80440,
+          "result_error": "",
+          "wall_ms": 156.0024360078387
+        }
+      ],
+      "workload_id": "filesystem-mixed-encodings"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "1ea0d1b96c40418cd1e792cf244ee4cb851341ed7396b7cb426599ca8c96e65c",
+      "fixture_input_sha256": "ac72206d916ccbc29f83ff84889d665d33730228a7cb0a2345fa840c54bda9ce",
+      "max_peak_rss_kb": 109936,
+      "median_peak_rss_kb": 108660,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 22630,
+      "p50_wall_ms": 478.67268200207036,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 23008.0,
+      "p95_wall_ms": 504.07437300600577,
+      "parity_ok": true,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 22630,
+          "peak_rss_kb": 107316,
+          "result_error": "",
+          "wall_ms": 472.6781429926632
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 22704,
+          "peak_rss_kb": 109172,
+          "result_error": "",
+          "wall_ms": 480.918703993666
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 22528,
+          "peak_rss_kb": 108660,
+          "result_error": "",
+          "wall_ms": 466.2638650042936
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 22534,
+          "peak_rss_kb": 108284,
+          "result_error": "",
+          "wall_ms": 504.07437300600577
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 23008,
+          "peak_rss_kb": 109936,
+          "result_error": "",
+          "wall_ms": 478.67268200207036
+        }
+      ],
+      "workload_id": "filesystem-sparse-files"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "ea79f414df966b4269b71d8e19a7273656c9ec0fcbfce113fb2ae3a9d49155f9",
+      "fixture_input_sha256": "fccdf0daef7d88ec42927577e61ed687f38155b6b2a48e2877a3952898b6f102",
+      "max_peak_rss_kb": 79988,
+      "median_peak_rss_kb": 76792,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 14312,
+      "p50_wall_ms": 157.56817699002568,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 15262.0,
+      "p95_wall_ms": 160.23867200419772,
+      "parity_ok": true,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 15262,
+          "peak_rss_kb": 79988,
+          "result_error": "",
+          "wall_ms": 156.23896299803164
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 13565,
+          "peak_rss_kb": 72644,
+          "result_error": "",
+          "wall_ms": 159.9251620064024
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14312,
+          "peak_rss_kb": 76792,
+          "result_error": "",
+          "wall_ms": 157.56817699002568
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 13659,
+          "peak_rss_kb": 74800,
+          "result_error": "",
+          "wall_ms": 151.50080301100388
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14540,
+          "peak_rss_kb": 77560,
+          "result_error": "",
+          "wall_ms": 160.23867200419772
+        }
+      ],
+      "workload_id": "filesystem-symlink-cycle"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "fixture_input_sha256": "b62b855d5f1cfd2e1f25932fc4e024a5cef5406a847bb2192ee3d37f196aa102",
+      "max_peak_rss_kb": 76660,
+      "median_peak_rss_kb": 75836,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 14371,
+      "p50_wall_ms": 155.51604000211228,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 14457.0,
+      "p95_wall_ms": 160.32655599701684,
+      "parity_ok": false,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 14371,
+          "peak_rss_kb": 75836,
+          "result_error": "",
+          "wall_ms": 155.51604000211228
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 14457,
+          "peak_rss_kb": 76348,
+          "result_error": "",
+          "wall_ms": 160.32655599701684
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 13794,
+          "peak_rss_kb": 75120,
+          "result_error": "",
+          "wall_ms": 154.8869139951421
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 14420,
+          "peak_rss_kb": 76660,
+          "result_error": "",
+          "wall_ms": 157.78204098751303
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 14137,
+          "peak_rss_kb": 75832,
+          "result_error": "",
+          "wall_ms": 153.55714899487793
+        }
+      ],
+      "workload_id": "stdin-empty"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "e55af0d0dccbc4fdf7493fb757e873e074b911f95cb569c5a019120949a74ec1",
+      "fixture_input_sha256": "5ea72fb28a4a32f2724f50f4a4135ba7371e46239d3f201586d564a2912e6eb1",
+      "max_peak_rss_kb": 77296,
+      "median_peak_rss_kb": 76796,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 14400,
+      "p50_wall_ms": 157.39123399544042,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 14599.0,
+      "p95_wall_ms": 162.2570040053688,
+      "parity_ok": true,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14411,
+          "peak_rss_kb": 76408,
+          "result_error": "",
+          "wall_ms": 157.39123399544042
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14361,
+          "peak_rss_kb": 76796,
+          "result_error": "",
+          "wall_ms": 153.25743399444036
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14352,
+          "peak_rss_kb": 75832,
+          "result_error": "",
+          "wall_ms": 156.70594199036714
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14599,
+          "peak_rss_kb": 77296,
+          "result_error": "",
+          "wall_ms": 162.2570040053688
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14400,
+          "peak_rss_kb": 77112,
+          "result_error": "",
+          "wall_ms": 161.56598200905137
+        }
+      ],
+      "workload_id": "stdin-tiny"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "e55af0d0dccbc4fdf7493fb757e873e074b911f95cb569c5a019120949a74ec1",
+      "fixture_input_sha256": "cb8124d3bc3997d448cbdbb88f4dbab8328e8a8f5a37015147d4189c5dcf7587",
+      "max_peak_rss_kb": 78136,
+      "median_peak_rss_kb": 76604,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 14521,
+      "p50_wall_ms": 159.11342899198644,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 14600.0,
+      "p95_wall_ms": 160.5569800012745,
+      "parity_ok": true,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14521,
+          "peak_rss_kb": 76596,
+          "result_error": "",
+          "wall_ms": 155.69599998707417
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14600,
+          "peak_rss_kb": 77112,
+          "result_error": "",
+          "wall_ms": 157.87062799790874
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14442,
+          "peak_rss_kb": 76604,
+          "result_error": "",
+          "wall_ms": 159.11342899198644
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14545,
+          "peak_rss_kb": 78136,
+          "result_error": "",
+          "wall_ms": 160.5569800012745
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 14369,
+          "peak_rss_kb": 76348,
+          "result_error": "",
+          "wall_ms": 159.1443579964107
+        }
+      ],
+      "workload_id": "stdin-medium"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "e55af0d0dccbc4fdf7493fb757e873e074b911f95cb569c5a019120949a74ec1",
+      "fixture_input_sha256": "a19c75000a0e33598325d34d172d7dbc98cdfa22974aa4cb39b014d935e6952f",
+      "max_peak_rss_kb": 83704,
+      "median_peak_rss_kb": 80636,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 15409,
+      "p50_wall_ms": 196.25263300258666,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 16107.0,
+      "p95_wall_ms": 197.75928299350198,
+      "parity_ok": false,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 15409,
+          "peak_rss_kb": 80636,
+          "result_error": "",
+          "wall_ms": 197.75928299350198
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 16107,
+          "peak_rss_kb": 83704,
+          "result_error": "",
+          "wall_ms": 188.3336789906025
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 15364,
+          "peak_rss_kb": 79928,
+          "result_error": "",
+          "wall_ms": 194.6718239923939
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 15481,
+          "peak_rss_kb": 81460,
+          "result_error": "",
+          "wall_ms": 197.3768320021918
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 15373,
+          "peak_rss_kb": 80180,
+          "result_error": "",
+          "wall_ms": 196.25263300258666
+        }
+      ],
+      "workload_id": "stdin-large-bounded"
+    },
+    {
+      "backend": "betterleaks",
+      "binary_sha256": "466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4",
+      "fixture_answer_sha256": "adbec292643375c1d90819110094bbe260b94e4ae315e53603a7943c8ebe70b6",
+      "fixture_input_sha256": "064a0bc676b3f8fae7d8ec299b272b4cd251cadb92ca97bfa6bac3f41ae37061",
+      "max_peak_rss_kb": 302952,
+      "median_peak_rss_kb": 301524,
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 57373,
+      "p50_wall_ms": 177.837958,
+      "p95_major_page_faults": 1.0,
+      "p95_minor_page_faults": 58039.0,
+      "p95_wall_ms": 185.135131,
+      "parity_ok": true,
+      "schema_version": 1,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 4,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 1,
+          "minor_page_faults": 58039,
+          "peak_rss_kb": 302932,
+          "result_error": "",
+          "wall_ms": 185.135131
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 4,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 58037,
+          "peak_rss_kb": 302952,
+          "result_error": "",
+          "wall_ms": 170.439906
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 4,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 57373,
+          "peak_rss_kb": 301524,
+          "result_error": "",
+          "wall_ms": 176.196094
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 4,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 56475,
+          "peak_rss_kb": 299800,
+          "result_error": "",
+          "wall_ms": 177.837958
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 4,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 57207,
+          "peak_rss_kb": 299656,
+          "result_error": "",
+          "wall_ms": 179.33529
+        }
+      ],
+      "workload_id": "concurrency-independent-partitions"
+    }
+  ]
+}

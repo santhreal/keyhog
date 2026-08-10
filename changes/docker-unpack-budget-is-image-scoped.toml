@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "BREAKING: --limit-docker-tar-total-bytes now bounds one whole image rather than one tar. It was enforced with a fresh accumulator per tar, so an image made of an outer tar plus one tar per layer got the full allowance for each; Docker permits 127 layers, so the 8 GiB default admitted roughly 1 TiB of unpacking per image while every individual check passed. A 2-layer image under a declared 5104-byte cap previously unpacked 13361 bytes with no truncation and now refuses at the image total. If you have tuned this flag, raise it to cover the sum across the image tar and every layer tar, or images that previously scanned will be refused with a counted coverage gap."
+crates = ["sources"]

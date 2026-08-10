@@ -10,6 +10,7 @@ pub mod contract_modules_all_wired;
 pub mod daemon_client_no_unwrap_expect;
 pub mod daemon_frame_no_unwrap_expect;
 pub mod daemon_protocol_no_unwrap_expect;
+pub mod daemon_route_identity_no_rayon_init;
 pub mod daemon_server_no_unwrap_expect;
 pub mod duplicate_primitive_leads;
 pub mod inline_suppression_no_unwrap_expect;

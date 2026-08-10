@@ -1,0 +1,112 @@
+{
+  "backend": "simd",
+  "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+  "catalog_sha256": "e6dd36fc15cc15778516cea3b0dc57eae873065599fe5d5c1bd5f1941e5aa9b0",
+  "fixture_lock_sha256": "d0adf36e152eb32282b4f69f74431f3f12ccc8ac4b6e37dffb740e275a7e49a9",
+  "host_evidence": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_driver": "580.178.04",
+    "gpu_vram_mb": 32607,
+    "kernel": "6.17.0-19-generic",
+    "logical_cores": 32,
+    "os": "linux",
+    "ram_mb": 94140
+  },
+  "repetitions": 5,
+  "schema_version": 2,
+  "target_id": "linux-x86_64-rtx5090",
+  "target_matrix_sha256": "f2ff8e62b861a0ae74b6a07deac3e53b5d3d11d83c03b21de895be3d3dd30fa6",
+  "workloads": [
+    {
+      "backend": "simd",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "44272531cb55d99d245d9227431a2fd46afbc41a4cc174f31d898a887a86ad96",
+      "fixture_input_sha256": "46875155b75029d7174e0b3b9822f7a087bcdad907da5ff72133aa421cc0b9b4",
+      "max_peak_rss_kb": 169840,
+      "median_peak_rss_kb": 163220,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 34756,
+      "p50_wall_ms": 345.68321000551805,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 36206.0,
+      "p95_wall_ms": 368.6890190001577,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35390,
+          "peak_rss_kb": 164972,
+          "result_error": "",
+          "wall_ms": 368.6890190001577
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34556,
+          "peak_rss_kb": 162760,
+          "result_error": "",
+          "wall_ms": 349.8352239985252
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 33411,
+          "peak_rss_kb": 157872,
+          "result_error": "",
+          "wall_ms": 340.9249020041898
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36206,
+          "peak_rss_kb": 169840,
+          "result_error": "",
+          "wall_ms": 345.68321000551805
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34756,
+          "peak_rss_kb": 163220,
+          "result_error": "",
+          "wall_ms": 342.3886930104345
+        }
+      ],
+      "workload_id": "system-mounted-drives"
+    }
+  ]
+}

@@ -1,0 +1,201 @@
+{
+  "backend": "cpu",
+  "binary_sha256": "af0c44576576049956a6f4ab7ec94e92a7a142cdffd5fb4e02ebc34cdd733ac8",
+  "catalog_sha256": "e6dd36fc15cc15778516cea3b0dc57eae873065599fe5d5c1bd5f1941e5aa9b0",
+  "fixture_lock_sha256": "d0adf36e152eb32282b4f69f74431f3f12ccc8ac4b6e37dffb740e275a7e49a9",
+  "host_evidence": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_driver": "580.178.04",
+    "gpu_vram_mb": 32607,
+    "kernel": "6.17.0-19-generic",
+    "logical_cores": 32,
+    "os": "linux",
+    "ram_mb": 94140
+  },
+  "repetitions": 5,
+  "schema_version": 2,
+  "target_id": "linux-x86_64-rtx5090",
+  "target_matrix_sha256": "f2ff8e62b861a0ae74b6a07deac3e53b5d3d11d83c03b21de895be3d3dd30fa6",
+  "workloads": [
+    {
+      "backend": "cpu",
+      "binary_sha256": "af0c44576576049956a6f4ab7ec94e92a7a142cdffd5fb4e02ebc34cdd733ac8",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "bc7d3333ed8f34c4adac5a02cd6cf3a15a76368bf72d790ab5fc944f03793e2b",
+      "max_peak_rss_kb": 181616,
+      "median_peak_rss_kb": 177316,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 38982,
+      "p50_wall_ms": 537.0215989969438,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 39994.0,
+      "p95_wall_ms": 575.6032440112904,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39994,
+          "peak_rss_kb": 181616,
+          "result_error": "",
+          "wall_ms": 575.6032440112904
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37482,
+          "peak_rss_kb": 171004,
+          "result_error": "",
+          "wall_ms": 537.0215989969438
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37537,
+          "peak_rss_kb": 170996,
+          "result_error": "",
+          "wall_ms": 534.9663149972912
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38982,
+          "peak_rss_kb": 177316,
+          "result_error": "",
+          "wall_ms": 531.6877129953355
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39770,
+          "peak_rss_kb": 181356,
+          "result_error": "",
+          "wall_ms": 540.4413060023217
+        }
+      ],
+      "workload_id": "bitbucket-workspace-repositories"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "af0c44576576049956a6f4ab7ec94e92a7a142cdffd5fb4e02ebc34cdd733ac8",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "139233cd658a5d6b4bfe82912b6d17b423a99a455f06dc2263555ff97c5ac35d",
+      "fixture_input_sha256": "bc1882e002de8b8b571fa816a8f3cb15d9b8397164d031fd6d65b23e49b2cbb0",
+      "max_peak_rss_kb": 181976,
+      "median_peak_rss_kb": 178120,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 39141,
+      "p50_wall_ms": 571.2681000004523,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 40338.0,
+      "p95_wall_ms": 590.2220830030274,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39141,
+          "peak_rss_kb": 176516,
+          "result_error": "",
+          "wall_ms": 590.2220830030274
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39263,
+          "peak_rss_kb": 177568,
+          "result_error": "",
+          "wall_ms": 571.2681000004523
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 40338,
+          "peak_rss_kb": 181976,
+          "result_error": "",
+          "wall_ms": 575.3465989982942
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39140,
+          "peak_rss_kb": 178616,
+          "result_error": "",
+          "wall_ms": 567.0860349928262
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39096,
+          "peak_rss_kb": 178120,
+          "result_error": "",
+          "wall_ms": 568.7150260055205
+        }
+      ],
+      "workload_id": "gitlab-group-projects"
+    }
+  ]
+}

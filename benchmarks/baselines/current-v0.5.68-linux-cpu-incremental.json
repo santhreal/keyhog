@@ -1,0 +1,201 @@
+{
+  "backend": "cpu",
+  "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+  "catalog_sha256": "e6dd36fc15cc15778516cea3b0dc57eae873065599fe5d5c1bd5f1941e5aa9b0",
+  "fixture_lock_sha256": "d0adf36e152eb32282b4f69f74431f3f12ccc8ac4b6e37dffb740e275a7e49a9",
+  "host_evidence": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_driver": "580.178.04",
+    "gpu_vram_mb": 32607,
+    "kernel": "6.17.0-19-generic",
+    "logical_cores": 32,
+    "os": "linux",
+    "ram_mb": 94140
+  },
+  "repetitions": 5,
+  "schema_version": 2,
+  "target_id": "linux-x86_64-rtx5090",
+  "target_matrix_sha256": "f2ff8e62b861a0ae74b6a07deac3e53b5d3d11d83c03b21de895be3d3dd30fa6",
+  "workloads": [
+    {
+      "backend": "cpu",
+      "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "84a2888294fc40db8938467a84a789ffaa1a9b00d2c546269b8efd7ce2dab72a",
+      "fixture_input_sha256": "f77125ee1917070c01a9947bcd3411d64697f8a049018ce58c73057a2dbbaab1",
+      "max_peak_rss_kb": 193104,
+      "median_peak_rss_kb": 187712,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 40854,
+      "p50_wall_ms": 402.87891699699685,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 41983.0,
+      "p95_wall_ms": 406.3724920124514,
+      "page_cache_state": "incremental-warm",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 40854,
+          "peak_rss_kb": 187712,
+          "result_error": "",
+          "wall_ms": 402.87891699699685
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36973,
+          "peak_rss_kb": 173576,
+          "result_error": "",
+          "wall_ms": 406.3724920124514
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 41226,
+          "peak_rss_kb": 189284,
+          "result_error": "",
+          "wall_ms": 403.97461199609097
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39860,
+          "peak_rss_kb": 184940,
+          "result_error": "",
+          "wall_ms": 395.82529199833516
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 41983,
+          "peak_rss_kb": 193104,
+          "result_error": "",
+          "wall_ms": 401.2189089989988
+        }
+      ],
+      "workload_id": "incremental-cold-index"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "84a2888294fc40db8938467a84a789ffaa1a9b00d2c546269b8efd7ce2dab72a",
+      "fixture_input_sha256": "f77125ee1917070c01a9947bcd3411d64697f8a049018ce58c73057a2dbbaab1",
+      "max_peak_rss_kb": 193608,
+      "median_peak_rss_kb": 182888,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 39626,
+      "p50_wall_ms": 392.60303899936844,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 42185.0,
+      "p95_wall_ms": 416.5905900008511,
+      "page_cache_state": "incremental-warm",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 42185,
+          "peak_rss_kb": 193608,
+          "result_error": "",
+          "wall_ms": 373.1656930031022
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39626,
+          "peak_rss_kb": 182888,
+          "result_error": "",
+          "wall_ms": 392.60303899936844
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 41523,
+          "peak_rss_kb": 190952,
+          "result_error": "",
+          "wall_ms": 400.2149349980755
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38717,
+          "peak_rss_kb": 179252,
+          "result_error": "",
+          "wall_ms": 416.5905900008511
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39436,
+          "peak_rss_kb": 182612,
+          "result_error": "",
+          "wall_ms": 392.0051110035274
+        }
+      ],
+      "workload_id": "incremental-warm-index"
+    }
+  ]
+}

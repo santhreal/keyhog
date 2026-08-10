@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Remove a detector pattern with no basis in its own documented format. jetadmin-credentials carried jet_[a-zA-Z0-9]{24,}, which appears nowhere in that detector's documented format (JET_ADMIN_ and JET_ prefixed environment variables) and, because detector patterns compile case-insensitively, matched any long Jet-prefixed identifier. Measured against a 2.2 GB cargo registry it produced 256 findings and all 256 were Microsoft JET database engine constants in the windows crate, with zero true positives. That tree now reports one finding, the detector's own test fixture vendored inside a published crate. The three assignment-anchored patterns cover the documented format."
+crates = []

@@ -863,7 +863,6 @@ fn scan_comments_flag_surfaces_credentials_in_comments() {
     );
 }
 
-
 #[cfg(feature = "git")]
 fn init_git_repo(repo_path: &std::path::Path) {
     use std::process::Command;
@@ -1116,12 +1115,7 @@ fn start_daemon() -> (
     // `<count>-<fnv>` stamp, failing every wire e2e with identity mismatch.
     let mut daemon = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
-        .args([
-            "daemon",
-            "start",
-            "--backend",
-            FUNCTIONAL_E2E_BACKEND,
-        ])
+        .args(["daemon", "start", "--backend", FUNCTIONAL_E2E_BACKEND])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()

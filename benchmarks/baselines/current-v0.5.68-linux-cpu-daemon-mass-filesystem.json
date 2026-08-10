@@ -1,0 +1,112 @@
+{
+  "backend": "cpu",
+  "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+  "catalog_sha256": "e6dd36fc15cc15778516cea3b0dc57eae873065599fe5d5c1bd5f1941e5aa9b0",
+  "fixture_lock_sha256": "d0adf36e152eb32282b4f69f74431f3f12ccc8ac4b6e37dffb740e275a7e49a9",
+  "host_evidence": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_driver": "580.178.04",
+    "gpu_vram_mb": 32607,
+    "kernel": "6.17.0-19-generic",
+    "logical_cores": 32,
+    "os": "linux",
+    "ram_mb": 94140
+  },
+  "repetitions": 5,
+  "schema_version": 2,
+  "target_id": "linux-x86_64-rtx5090",
+  "target_matrix_sha256": "f2ff8e62b861a0ae74b6a07deac3e53b5d3d11d83c03b21de895be3d3dd30fa6",
+  "workloads": [
+    {
+      "backend": "cpu",
+      "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+      "execution_route": "mass-daemon",
+      "fixture_answer_sha256": "e1f94e2b36aff19070cc6c354729972da8c14b3df8cfe8f6a347a6acc4456b44",
+      "fixture_input_sha256": "686a22bd6f1dc5cf7e04c0fc1397495509a40e137f0588c73aaf1c6d9ac46034",
+      "max_peak_rss_kb": 202844,
+      "median_peak_rss_kb": 197352,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 5714,
+      "p50_wall_ms": 143.39242300775368,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 6055.0,
+      "p95_wall_ms": 146.1707669950556,
+      "page_cache_state": "steady",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "warm",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5619,
+          "peak_rss_kb": 202816,
+          "result_error": "",
+          "wall_ms": 143.39242300775368
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5714,
+          "peak_rss_kb": 202844,
+          "result_error": "",
+          "wall_ms": 142.77042099274695
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5288,
+          "peak_rss_kb": 197352,
+          "result_error": "",
+          "wall_ms": 145.65202000085264
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 6055,
+          "peak_rss_kb": 197352,
+          "result_error": "",
+          "wall_ms": 146.1707669950556
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5853,
+          "peak_rss_kb": 197352,
+          "result_error": "",
+          "wall_ms": 140.21223099553026
+        }
+      ],
+      "workload_id": "daemon-mass-filesystem"
+    }
+  ]
+}

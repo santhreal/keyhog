@@ -1,0 +1,295 @@
+{
+  "role": "candidate",
+  "schema_version": "trial-set-v1",
+  "trials": [
+    {
+      "cache_state": "cold",
+      "index": 0,
+      "invalid_reasons": [],
+      "noise": {
+        "affinity_applied": false,
+        "affinity_cpus": 0,
+        "affinity_requested": false,
+        "frequency_mhz": 5590.674,
+        "governor": "performance",
+        "governor_required": "",
+        "load_avg_after": [
+          4.29638671875,
+          3.5224609375,
+          3.6484375
+        ],
+        "load_avg_before": [
+          4.06103515625,
+          3.46337890625,
+          3.6298828125
+        ]
+      },
+      "profile": {
+        "bytes": 125310,
+        "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/candidate/cold-0-profile.json",
+        "profile_schema": "keyhog-profile",
+        "profile_schema_major": 2,
+        "schema_version": "profile-artifact-v1",
+        "sha256": "d40695920c36795793b81a07f43ab8a056fcae2b40ea1a17fa1a1d753e21fef0"
+      },
+      "wall_ms": 9383.32199100114
+    },
+    {
+      "cache_state": "cold",
+      "index": 1,
+      "invalid_reasons": [],
+      "noise": {
+        "affinity_applied": false,
+        "affinity_cpus": 0,
+        "affinity_requested": false,
+        "frequency_mhz": 5617.465,
+        "governor": "performance",
+        "governor_required": "",
+        "load_avg_after": [
+          4.25732421875,
+          3.53857421875,
+          3.65185546875
+        ],
+        "load_avg_before": [
+          4.29638671875,
+          3.5224609375,
+          3.6484375
+        ]
+      },
+      "profile": {
+        "bytes": 125690,
+        "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/candidate/cold-1-profile.json",
+        "profile_schema": "keyhog-profile",
+        "profile_schema_major": 2,
+        "schema_version": "profile-artifact-v1",
+        "sha256": "61aa93e64e09474d3343ae6108f74c2abd11953314f1a9dac674e6cdc62d98b7"
+      },
+      "wall_ms": 9179.231881993474
+    },
+    {
+      "cache_state": "warm",
+      "index": 2,
+      "invalid_reasons": [],
+      "noise": {
+        "affinity_applied": false,
+        "affinity_cpus": 0,
+        "affinity_requested": false,
+        "frequency_mhz": 5611.958,
+        "governor": "performance",
+        "governor_required": "",
+        "load_avg_after": [
+          6.31640625,
+          4.046875,
+          3.81787109375
+        ],
+        "load_avg_before": [
+          5.51806640625,
+          3.81201171875,
+          3.73974609375
+        ]
+      },
+      "profile": {
+        "bytes": 125576,
+        "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/candidate/warm-2-profile.json",
+        "profile_schema": "keyhog-profile",
+        "profile_schema_major": 2,
+        "schema_version": "profile-artifact-v1",
+        "sha256": "51441d0c78f87e57753df0c1a4521471a0ffaad1eb76e6da591f093c61be5460"
+      },
+      "wall_ms": 9359.726819006028
+    },
+    {
+      "cache_state": "warm",
+      "index": 3,
+      "invalid_reasons": [],
+      "noise": {
+        "affinity_applied": false,
+        "affinity_cpus": 0,
+        "affinity_requested": false,
+        "frequency_mhz": 5566.952,
+        "governor": "performance",
+        "governor_required": "",
+        "load_avg_after": [
+          5.72607421875,
+          3.99560546875,
+          3.8037109375
+        ],
+        "load_avg_before": [
+          6.31640625,
+          4.046875,
+          3.81787109375
+        ]
+      },
+      "profile": {
+        "bytes": 125568,
+        "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/candidate/warm-3-profile.json",
+        "profile_schema": "keyhog-profile",
+        "profile_schema_major": 2,
+        "schema_version": "profile-artifact-v1",
+        "sha256": "f461e2a3583078e15ce077c56d2ee544ea7ab7958439948bcbd6f8fa0b3cd18e"
+      },
+      "wall_ms": 9298.581590002868
+    },
+    {
+      "cache_state": "steady",
+      "index": 4,
+      "invalid_reasons": [],
+      "noise": {
+        "affinity_applied": false,
+        "affinity_cpus": 0,
+        "affinity_requested": false,
+        "frequency_mhz": 5614.796,
+        "governor": "performance",
+        "governor_required": "",
+        "load_avg_after": [
+          5.5400390625,
+          4.01318359375,
+          3.81201171875
+        ],
+        "load_avg_before": [
+          5.72607421875,
+          3.99560546875,
+          3.8037109375
+        ]
+      },
+      "profile": {
+        "bytes": 125607,
+        "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/candidate/steady-4-profile.json",
+        "profile_schema": "keyhog-profile",
+        "profile_schema_major": 2,
+        "schema_version": "profile-artifact-v1",
+        "sha256": "3be65f50c4b68bd806cbf0a16b96034c271a074b8b81e08b6e969d10a0b0ad56"
+      },
+      "wall_ms": 9451.312927005347
+    },
+    {
+      "cache_state": "steady",
+      "index": 5,
+      "invalid_reasons": [],
+      "noise": {
+        "affinity_applied": false,
+        "affinity_cpus": 0,
+        "affinity_requested": false,
+        "frequency_mhz": 5615.276,
+        "governor": "performance",
+        "governor_required": "",
+        "load_avg_after": [
+          5.45068359375,
+          4.04541015625,
+          3.8251953125
+        ],
+        "load_avg_before": [
+          5.5400390625,
+          4.01318359375,
+          3.81201171875
+        ]
+      },
+      "profile": {
+        "bytes": 125343,
+        "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/candidate/steady-5-profile.json",
+        "profile_schema": "keyhog-profile",
+        "profile_schema_major": 2,
+        "schema_version": "profile-artifact-v1",
+        "sha256": "22c663d8944374c99269eb99c83e9caddb75e4eb42038c19681ad54945d4207f"
+      },
+      "wall_ms": 9599.17592900456
+    },
+    {
+      "cache_state": "steady",
+      "index": 6,
+      "invalid_reasons": [],
+      "noise": {
+        "affinity_applied": false,
+        "affinity_cpus": 0,
+        "affinity_requested": false,
+        "frequency_mhz": 5574.78,
+        "governor": "performance",
+        "governor_required": "",
+        "load_avg_after": [
+          5.2275390625,
+          4.04345703125,
+          3.8271484375
+        ],
+        "load_avg_before": [
+          5.45068359375,
+          4.04541015625,
+          3.8251953125
+        ]
+      },
+      "profile": {
+        "bytes": 125554,
+        "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/candidate/steady-6-profile.json",
+        "profile_schema": "keyhog-profile",
+        "profile_schema_major": 2,
+        "schema_version": "profile-artifact-v1",
+        "sha256": "845186d1a906e4f69d6e229f8d240cf90046a6d284366eabb4c3e9cebe26d472"
+      },
+      "wall_ms": 9591.477832000237
+    },
+    {
+      "cache_state": "steady",
+      "index": 7,
+      "invalid_reasons": [],
+      "noise": {
+        "affinity_applied": false,
+        "affinity_cpus": 0,
+        "affinity_requested": false,
+        "frequency_mhz": 5626.738,
+        "governor": "performance",
+        "governor_required": "",
+        "load_avg_after": [
+          4.96875,
+          4.00927734375,
+          3.81689453125
+        ],
+        "load_avg_before": [
+          5.2275390625,
+          4.04345703125,
+          3.8271484375
+        ]
+      },
+      "profile": {
+        "bytes": 125402,
+        "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/candidate/steady-7-profile.json",
+        "profile_schema": "keyhog-profile",
+        "profile_schema_major": 2,
+        "schema_version": "profile-artifact-v1",
+        "sha256": "c33715f7a2706c085ded6e3696ecb610893a707f16c266402fefc14de7b69ad9"
+      },
+      "wall_ms": 9231.809397009783
+    },
+    {
+      "cache_state": "steady",
+      "index": 8,
+      "invalid_reasons": [],
+      "noise": {
+        "affinity_applied": false,
+        "affinity_cpus": 0,
+        "affinity_requested": false,
+        "frequency_mhz": 5613.907,
+        "governor": "performance",
+        "governor_required": "",
+        "load_avg_after": [
+          4.66552734375,
+          3.9755859375,
+          3.80810546875
+        ],
+        "load_avg_before": [
+          4.96875,
+          4.00927734375,
+          3.81689453125
+        ]
+      },
+      "profile": {
+        "bytes": 125697,
+        "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/candidate/steady-8-profile.json",
+        "profile_schema": "keyhog-profile",
+        "profile_schema_major": 2,
+        "schema_version": "profile-artifact-v1",
+        "sha256": "94021ed5a7dba05b63b620517c49072cad63dc36cbebc1be69ff4d6f3512ae08"
+      },
+      "wall_ms": 9382.8685519984
+    }
+  ],
+  "workload": "filesystem-single-tiny-file"
+}

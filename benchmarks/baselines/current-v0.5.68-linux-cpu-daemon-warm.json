@@ -1,0 +1,201 @@
+{
+  "backend": "cpu",
+  "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+  "catalog_sha256": "e6dd36fc15cc15778516cea3b0dc57eae873065599fe5d5c1bd5f1941e5aa9b0",
+  "fixture_lock_sha256": "d0adf36e152eb32282b4f69f74431f3f12ccc8ac4b6e37dffb740e275a7e49a9",
+  "host_evidence": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_driver": "580.178.04",
+    "gpu_vram_mb": 32607,
+    "kernel": "6.17.0-19-generic",
+    "logical_cores": 32,
+    "os": "linux",
+    "ram_mb": 94140
+  },
+  "repetitions": 5,
+  "schema_version": 2,
+  "target_id": "linux-x86_64-rtx5090",
+  "target_matrix_sha256": "f2ff8e62b861a0ae74b6a07deac3e53b5d3d11d83c03b21de895be3d3dd30fa6",
+  "workloads": [
+    {
+      "backend": "cpu",
+      "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+      "execution_route": "warm-daemon",
+      "fixture_answer_sha256": "020cb4d5f7e7791b9215ff76fdda989a2ec14a430347b499ff5e201b575fdb04",
+      "fixture_input_sha256": "22677652a2a646cc4a65418e324506a294015686175b4dcdc34dff1b717ed181",
+      "max_peak_rss_kb": 209556,
+      "median_peak_rss_kb": 202804,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 5029,
+      "p50_wall_ms": 152.1266560012009,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 5407.0,
+      "p95_wall_ms": 155.40457099268679,
+      "page_cache_state": "warm",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "warm",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5013,
+          "peak_rss_kb": 209528,
+          "result_error": "",
+          "wall_ms": 152.2897630056832
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5029,
+          "peak_rss_kb": 209556,
+          "result_error": "",
+          "wall_ms": 155.40457099268679
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5407,
+          "peak_rss_kb": 202804,
+          "result_error": "",
+          "wall_ms": 144.85687999695074
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 4999,
+          "peak_rss_kb": 202804,
+          "result_error": "",
+          "wall_ms": 152.1266560012009
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5066,
+          "peak_rss_kb": 202804,
+          "result_error": "",
+          "wall_ms": 144.67087999219075
+        }
+      ],
+      "workload_id": "daemon-warm-single-file"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+      "execution_route": "warm-daemon",
+      "fixture_answer_sha256": "427a3af5ce6db994094bd6b99a4f4d3dacf96354acc3373e08de7755156fd715",
+      "fixture_input_sha256": "235f18c3909585a60b47c9d610eb2f5926b85361a126afbc657bc8d36038e452",
+      "max_peak_rss_kb": 202628,
+      "median_peak_rss_kb": 202628,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 5065,
+      "p50_wall_ms": 140.27622100547887,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 5443.0,
+      "p95_wall_ms": 145.58644501084927,
+      "page_cache_state": "warm",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "warm",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 4835,
+          "peak_rss_kb": 202628,
+          "result_error": "",
+          "wall_ms": 145.58644501084927
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5068,
+          "peak_rss_kb": 202628,
+          "result_error": "",
+          "wall_ms": 140.27622100547887
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5065,
+          "peak_rss_kb": 202628,
+          "result_error": "",
+          "wall_ms": 139.49077000143006
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5443,
+          "peak_rss_kb": 202628,
+          "result_error": "",
+          "wall_ms": 140.7171109894989
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 4980,
+          "peak_rss_kb": 202628,
+          "result_error": "",
+          "wall_ms": 137.87411600060295
+        }
+      ],
+      "workload_id": "daemon-warm-stdin"
+    }
+  ]
+}
