@@ -26,6 +26,7 @@ pub mod diff_identical_baselines_exit_zero;
 pub mod explain_aws_access_key;
 pub mod hook_blocks_secret_allows_clean;
 pub mod guard_lifecycle;
+pub mod guard_commit_daemon;
 pub mod incremental_rescan_reports_unchanged_secret;
 pub mod keyhogignore_excludes_file;
 pub mod named_detector_structured_keys_fire_at_default;
