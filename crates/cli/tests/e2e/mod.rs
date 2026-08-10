@@ -17,6 +17,7 @@ pub mod daemon_route_forced_contract;
 pub mod daemon_route_verify_config;
 pub mod daemon_scan_path_utf16;
 pub mod daemon_status_no_running_daemon;
+pub mod daemon_status_guard_aggregate;
 pub mod detectors_fix_invalid_rewrite;
 pub mod detectors_format_flag;
 pub mod detectors_format_json_nonempty;
