@@ -671,6 +671,7 @@ pub mod testing {
             HashMap<String, String>,
             bool,
         );
+        fn script_auth_result_for_test(&self, output: &str) -> keyhog_core::VerificationResult;
         fn valid_aws_format_for_test(&self, access_key: &str, secret_key: &str) -> bool;
         fn validate_aws_region_for_test(
             &self,
@@ -1034,6 +1035,10 @@ pub mod testing {
             bool,
         ) {
             crate::verify::classify_aws_sts_http_200(body)
+        }
+
+        fn script_auth_result_for_test(&self, output: &str) -> keyhog_core::VerificationResult {
+            crate::verify::script_auth_result(output)
         }
 
         fn valid_aws_format_for_test(&self, access_key: &str, secret_key: &str) -> bool {
