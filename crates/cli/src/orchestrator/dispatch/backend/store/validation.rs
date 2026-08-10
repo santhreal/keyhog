@@ -14,8 +14,32 @@ use super::super::workload::{
     validate_workload_source_mixture, workload_evidence_digest, WorkloadKey,
 };
 use super::super::AUTOROUTE_CALIBRATION_TRIALS;
-use super::artifact_identity::current_executable_sha256;
+use super::artifact_identity::{current_executable_sha256, current_gpu_sidecar_sha256};
 use super::schema::{AutorouteBuildFeatures, AutorouteCache};
+
+fn gpu_artifact_identity_matches(cache: &AutorouteCache) -> bool {
+    let Some(expected_sidecar) = &cache.gpu_sidecar_digest else {
+        return false;
+    };
+    current_gpu_sidecar_sha256().as_ref() == Some(expected_sidecar)
+}
+
+pub(crate) fn decision_requires_gpu_artifact_identity(decision: &AutorouteDecision) -> bool {
+    decision.backend.starts_with("gpu")
+        || decision
+            .resolved_persistent_backend()
+            .is_some_and(ScanBackend::is_gpu)
+        || decision.calibration_points.iter().any(|point| {
+            point
+                .candidate_receipts
+                .iter()
+                .any(|receipt| receipt.backend.starts_with("gpu"))
+                || point
+                    .route_timings
+                    .iter()
+                    .any(|timing| timing.backend.starts_with("gpu"))
+        })
+}
 
 pub(super) fn validate_cache_global_identity(
     cache: &AutorouteCache,
@@ -102,6 +126,16 @@ pub(super) fn validate_cache_structure_at(
             })?;
             validate_decision_route_evidence_at(decision, current_unix_ms, &expected_backends)?;
             validate_decision_workload_binding(key, decision)?;
+            if decision_requires_gpu_artifact_identity(decision)
+                && !gpu_artifact_identity_matches(cache)
+            {
+                return Err(format!(
+                    "autoroute cache config {:016x} decision for {} has invalid GPU artifact identity binding",
+                    config.config_digest,
+                    render_workload_key(key)
+                )
+                .into());
+            }
             if row.workload_digest != workload_evidence_digest(key) {
                 return Err(format!(
                     "autoroute cache config {:016x} contains workload evidence bound to a different workload key",
@@ -510,3 +544,6 @@ pub(super) fn current_unix_time_ms() -> Result<u128, Box<dyn std::error::Error +
                 .into()
         })
 }
+#[cfg(test)]
+#[path = "../../../../../tests/unit/backend_store_validation.rs"]
+mod tests;

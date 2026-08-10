@@ -28,7 +28,7 @@ impl CompiledScanner {
             confirmed_anchor_literal_matches,
             generic_keyword_positions,
             route,
-        );
+        )?;
         #[cfg(feature = "ml")]
         if !crate::deadline::expired(deadline) {
             let mut scan_state = scan_state;
@@ -51,9 +51,9 @@ impl CompiledScanner {
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
         route: crate::ScanExecutionRoute,
-    ) -> ScanState {
+    ) -> crate::error::Result<ScanState> {
         if crate::deadline::expired(deadline) {
-            return ScanState::with_static_intern(self.static_intern.clone());
+            return Ok(ScanState::with_static_intern(self.static_intern.clone()));
         }
         let line_index = prepared.line_index();
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
@@ -70,7 +70,7 @@ impl CompiledScanner {
             );
         }
         if crate::deadline::expired(deadline) {
-            return scan_state;
+            return Ok(scan_state);
         }
 
         let raw_text_unchanged = std::ptr::eq(
@@ -133,7 +133,7 @@ impl CompiledScanner {
         }
 
         if crate::deadline::expired(deadline) {
-            return scan_state;
+            return Ok(scan_state);
         }
 
         let focus = prepared.chunk.metadata.decoded_span.filter(|_| {
@@ -166,9 +166,9 @@ impl CompiledScanner {
                 phase2_always_active_gpu_evidence,
                 route,
             ),
-        }
+        }?;
         if crate::deadline::expired(deadline) {
-            return scan_state;
+            return Ok(scan_state);
         }
 
         {
@@ -183,7 +183,7 @@ impl CompiledScanner {
             );
         }
         if crate::deadline::expired(deadline) {
-            return scan_state;
+            return Ok(scan_state);
         }
 
         #[cfg(feature = "entropy")]
@@ -203,10 +203,10 @@ impl CompiledScanner {
             );
         }
         if crate::deadline::expired(deadline) {
-            return scan_state;
+            return Ok(scan_state);
         }
 
-        scan_state
+        Ok(scan_state)
     }
 
     #[doc(hidden)]
@@ -224,7 +224,8 @@ impl CompiledScanner {
             None,
             None,
             self.default_execution_route(),
-        );
+        )
+        .expect("phase-2 diagnostic scan");
         scan_state.into_matches()
     }
 

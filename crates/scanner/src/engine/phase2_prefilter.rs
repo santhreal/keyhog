@@ -257,7 +257,16 @@ impl Phase2AlwaysActivePrefilter {
                         None
                     }
                 },
-                None => Phase2HsEngine::build(phase2_patterns, self.indices_for(scope)),
+                None => match Phase2HsEngine::build(phase2_patterns, self.indices_for(scope)) {
+                    Ok(engine) => engine,
+                    Err(error) => {
+                        tracing::warn!(
+                            %error,
+                            "HS always-active prefilter exceeded its memory bound; using the bounded RegexSet path"
+                        );
+                        None
+                    }
+                },
             }
         })
         .as_ref()

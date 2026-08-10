@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use flate2::read::GzDecoder;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -9,11 +10,25 @@ const MAX_ARCHIVE_ENTRIES: usize = 64;
 const MAX_ARTIFACT_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_EXPANDED_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
+const INSTALLED_MANIFEST_NAME: &str = ".installed_manifest.json";
+const INSTALLED_MANIFEST_VERSION: u32 = 1;
 
 #[derive(Debug)]
 pub(crate) struct GpuLiteralFile {
     pub(crate) name: String,
     pub(crate) bytes: Vec<u8>,
+}
+
+#[derive(Serialize)]
+struct InstalledGpuArtifactManifest {
+    version: u32,
+    artifacts: Vec<InstalledGpuArtifactEntry>,
+}
+
+#[derive(Serialize)]
+struct InstalledGpuArtifactEntry {
+    file_name: String,
+    sha256: String,
 }
 
 #[derive(Deserialize)]
@@ -271,6 +286,12 @@ pub(crate) fn install_gpu_literal_files_in_dir(
     };
 
     for file in files {
+        let path = Path::new(&file.name);
+        if path.components().count() != 1 || !file.name.ends_with(".bin") {
+            anyhow::bail!("GPU literal artifact name `{}` is invalid", file.name);
+        }
+    }
+    for file in files {
         let target = transaction.cache_dir.join(&file.name);
         let backup = transaction.cache_dir.join(format!(
             ".{}.keyhog-artifact-bak-{}",
@@ -313,6 +334,61 @@ pub(crate) fn install_gpu_literal_files_in_dir(
             })?;
         transaction.installed.push(target);
     }
+
+    let mut artifacts = files
+        .iter()
+        .map(|file| InstalledGpuArtifactEntry {
+            file_name: file.name.clone(),
+            sha256: format!("{:x}", sha2::Sha256::digest(&file.bytes)),
+        })
+        .collect::<Vec<_>>();
+    artifacts.sort_by(|left, right| left.file_name.cmp(&right.file_name));
+    let manifest_bytes = serde_json::to_vec(&InstalledGpuArtifactManifest {
+        version: INSTALLED_MANIFEST_VERSION,
+        artifacts,
+    })
+    .context("serialize installed GPU artifact manifest")?;
+    let manifest_path = transaction.cache_dir.join(INSTALLED_MANIFEST_NAME);
+    let manifest_backup = transaction.cache_dir.join(format!(
+        "{INSTALLED_MANIFEST_NAME}.keyhog-artifact-bak-{}",
+        std::process::id()
+    ));
+    if manifest_backup.exists() {
+        anyhow::bail!(
+            "stale GPU literal artifact manifest backup exists at {}; inspect or remove it before retrying",
+            manifest_backup.display()
+        );
+    }
+    if manifest_path.exists() {
+        std::fs::rename(&manifest_path, &manifest_backup).with_context(|| {
+            format!(
+                "back up GPU literal artifact manifest {} before update",
+                manifest_path.display()
+            )
+        })?;
+        transaction
+            .backups
+            .push((manifest_path.clone(), manifest_backup));
+    }
+    let mut staged_manifest = tempfile::NamedTempFile::new_in(&transaction.cache_dir)
+        .context("stage installed GPU artifact manifest")?;
+    staged_manifest
+        .write_all(&manifest_bytes)
+        .context("write installed GPU artifact manifest")?;
+    staged_manifest
+        .as_file()
+        .sync_all()
+        .context("sync installed GPU artifact manifest")?;
+    staged_manifest
+        .persist(&manifest_path)
+        .map_err(|error| error.error)
+        .with_context(|| {
+            format!(
+                "atomically install GPU literal artifact manifest {}",
+                manifest_path.display()
+            )
+        })?;
+    transaction.installed.push(manifest_path);
 
     Ok(transaction)
 }

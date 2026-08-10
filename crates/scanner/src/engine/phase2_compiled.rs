@@ -23,9 +23,9 @@ impl CompiledScanner {
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
-    ) {
+    ) -> crate::error::Result<()> {
         if crate::deadline::expired(deadline) {
-            return;
+            return Ok(());
         }
 
         // Shared-anchor fast path: one Aho-Corasick pass over all eligible
@@ -37,7 +37,7 @@ impl CompiledScanner {
         // inside `scan_phase2_with_anchors`.
         if !self.phase2_patterns.is_empty() && self.tuning.phase2_anchor_enabled() {
             if let Some(anchor_idx) = &self.phase2_anchor_index {
-                self.scan_phase2_with_anchors(
+                return self.scan_phase2_with_anchors(
                     anchor_idx,
                     preprocessed,
                     line_index,
@@ -49,14 +49,13 @@ impl CompiledScanner {
                     phase2_always_active_gpu_evidence,
                     route,
                 );
-                return;
             }
         }
 
         if preprocessed.text.len() > LARGE_FALLBACK_SCAN_THRESHOLD
             && !self.phase2_patterns.is_empty()
         {
-            self.scan_large_phase2_patterns(
+            return self.scan_large_phase2_patterns(
                 preprocessed,
                 line_index,
                 chunk,
@@ -66,7 +65,6 @@ impl CompiledScanner {
                 phase2_always_active_gpu_evidence,
                 route,
             );
-            return;
         }
         let prof = phase2_pattern_prof_enabled();
         self.with_active_phase2_patterns(
@@ -89,7 +87,8 @@ impl CompiledScanner {
                     prof,
                 );
             },
-        );
+        )?;
+        Ok(())
     }
 
     /// Decode-recursion FOCUS variant of `scan_phase2_patterns`. A decode
@@ -120,12 +119,12 @@ impl CompiledScanner {
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
-    ) {
+    ) -> crate::error::Result<()> {
         if crate::deadline::expired(deadline) {
-            return;
+            return Ok(());
         }
         if self.phase2_patterns.is_empty() {
-            return;
+            return Ok(());
         }
         let text: &str = &preprocessed.text;
         // Expand the decoded span by the margin and snap to char boundaries.
@@ -135,13 +134,13 @@ impl CompiledScanner {
             focus.1.saturating_add(DECODE_FOCUS_MARGIN).min(text.len()),
         );
         if fs >= fe {
-            return;
+            return Ok(());
         }
         // If the focus window already covers (almost) the whole chunk, the
         // restriction buys nothing, run the normal path so we don't pay the
         // extra slice setup for no gain.
         if fe - fs >= text.len() {
-            self.scan_phase2_patterns(
+            return self.scan_phase2_patterns(
                 preprocessed,
                 line_index,
                 chunk,
@@ -151,7 +150,6 @@ impl CompiledScanner {
                 phase2_always_active_gpu_evidence,
                 route,
             );
-            return;
         }
         let focus = Some((fs, fe));
 
@@ -162,7 +160,7 @@ impl CompiledScanner {
         // the anchor path on full text.
         if self.tuning.phase2_anchor_enabled() {
             if let Some(anchor_idx) = &self.phase2_anchor_index {
-                self.scan_phase2_with_anchors(
+                return self.scan_phase2_with_anchors(
                     anchor_idx,
                     preprocessed,
                     line_index,
@@ -174,7 +172,6 @@ impl CompiledScanner {
                     phase2_always_active_gpu_evidence,
                     route,
                 );
-                return;
             }
         }
 
@@ -218,7 +215,8 @@ impl CompiledScanner {
                     }
                 }
             },
-        );
+        )?;
+        Ok(())
     }
 
     /// Compute the active phase-2 set into the thread-local pool, run the
@@ -239,10 +237,10 @@ impl CompiledScanner {
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
         f: impl FnOnce(&Self, &[usize]) -> R,
-    ) -> R {
+    ) -> crate::error::Result<R> {
         ACTIVE_PATTERNS_POOL.with(|cell| {
             let mut scratch = cell.borrow_mut();
-            scratch.begin(self.phase2_patterns.len());
+            scratch.begin(self.phase2_patterns.len())?;
             // anchor_mode = false: the legacy whole-chunk path has no AC gating,
             // so every always-active pattern must be marked for recall.
             self.populate_active_phase2(
@@ -257,7 +255,7 @@ impl CompiledScanner {
             if self.tuning.phase2_reverse_enabled() {
                 scratch.active.reverse();
             }
-            f(self, &scratch.active)
+            Ok(f(self, &scratch.active))
         })
     }
 
@@ -336,7 +334,9 @@ impl CompiledScanner {
             // admission; see `phase2_always_active_sparse`).
             None => ACTIVE_PATTERNS_POOL.with(|cell| {
                 let mut scratch = cell.borrow_mut();
-                scratch.begin(self.phase2_patterns.len());
+                if scratch.begin(self.phase2_patterns.len()).is_err() {
+                    return true;
+                }
                 self.populate_active_phase2(data, data, &mut scratch, false, None, None, route);
                 !scratch.active.is_empty()
             }),
@@ -622,7 +622,7 @@ impl CompiledScanner {
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
-    ) {
+    ) -> crate::error::Result<()> {
         let prof = phase2_pattern_prof_enabled();
         self.with_active_phase2_patterns(
             &preprocessed.text,
@@ -645,7 +645,8 @@ impl CompiledScanner {
                     prof,
                 );
             },
-        );
+        )?;
+        Ok(())
     }
 
     /// Print and reset the per-pattern phase-2 profile (top 30 by time). Call

@@ -315,7 +315,9 @@ impl CompiledScanner {
         let tuning = self.tuning().resolve();
         // Warm: one call to initialise any thread-local state before timing.
         let mut scratch = phase2::ActivePatternsScratch::new();
-        scratch.begin(self.phase2_patterns.len());
+        scratch
+            .begin(self.phase2_patterns.len())
+            .expect("scratch begin");
         prefilter.mark_matches(
             &self.phase2_patterns,
             text,
@@ -328,7 +330,9 @@ impl CompiledScanner {
         // Timed loop.
         let t0 = std::time::Instant::now();
         for _ in 0..n_calls {
-            scratch.begin(self.phase2_patterns.len());
+            scratch
+                .begin(self.phase2_patterns.len())
+                .expect("scratch begin");
             prefilter.mark_matches(
                 &self.phase2_patterns,
                 text,
@@ -370,16 +374,22 @@ impl CompiledScanner {
         // ONE engine, the production object, which now holds both the full DB and
         // the lean ASCII sub-DB. Time the two routes exactly as the hot path selects
         // them (`skip_homoglyph_ascii` false vs true).
-        let engine = Phase2HsEngine::build(&self.phase2_patterns, &all).expect("HS engine");
+        let engine = Phase2HsEngine::build(&self.phase2_patterns, &all)
+            .expect("HS engine build")
+            .expect("HS engine");
         let mut scratch = ActivePatternsScratch::new();
         let mut time_one = |skip_homoglyph_ascii: bool| -> f64 {
-            scratch.begin(self.phase2_patterns.len());
+            scratch
+                .begin(self.phase2_patterns.len())
+                .expect("scratch begin");
             if let Err(error) = engine.mark(haystack, &mut scratch, skip_homoglyph_ascii) {
                 panic!("HS benchmark warmup failed: {error}");
             }
             let t0 = std::time::Instant::now();
             for _ in 0..n_calls {
-                scratch.begin(self.phase2_patterns.len());
+                scratch
+                    .begin(self.phase2_patterns.len())
+                    .expect("scratch begin");
                 if let Err(error) = engine.mark(haystack, &mut scratch, skip_homoglyph_ascii) {
                     panic!("HS benchmark trial failed: {error}");
                 }
@@ -411,14 +421,20 @@ impl CompiledScanner {
         use super::Phase2HsEngine;
         use std::collections::HashSet;
         let all: Vec<usize> = self.phase2_always_active_indices.clone();
-        let engine = Phase2HsEngine::build(&self.phase2_patterns, &all).expect("HS engine");
+        let engine = Phase2HsEngine::build(&self.phase2_patterns, &all)
+            .expect("HS engine build")
+            .expect("HS engine");
         let mut scratch = ActivePatternsScratch::new();
-        scratch.begin(self.phase2_patterns.len());
+        scratch
+            .begin(self.phase2_patterns.len())
+            .expect("scratch begin");
         engine
             .mark(ascii_text, &mut scratch, false)
             .expect("full mark");
         let full: HashSet<usize> = scratch.active.iter().copied().collect();
-        scratch.begin(self.phase2_patterns.len());
+        scratch
+            .begin(self.phase2_patterns.len())
+            .expect("scratch begin");
         engine
             .mark(ascii_text, &mut scratch, true)
             .expect("lean mark");

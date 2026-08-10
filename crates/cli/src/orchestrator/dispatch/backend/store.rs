@@ -10,6 +10,7 @@ mod telemetry;
 mod validation;
 
 pub(super) use codec::autoroute_cache_file_presence;
+#[allow(unused_imports)]
 pub(crate) use inspection::{inspect_autoroute_cache, AutorouteReadiness};
 pub(super) use persistence::{
     load_autoroute_cache, save_autoroute_cache, AutorouteCacheSaveOutcome,
@@ -34,6 +35,8 @@ pub(super) fn current_executable_identity(
 }
 
 #[cfg(test)]
+pub(super) use artifact_identity::installed_gpu_sidecar_digest;
+#[cfg(test)]
 pub(super) use codec::AUTOROUTE_CACHE_FILE_BYTES;
 #[cfg(test)]
 pub(super) use schema::{AutorouteBuildFeatures, AutorouteCache};
@@ -42,6 +45,8 @@ pub(super) use schema::{AutorouteBuildFeatures, AutorouteCache};
 use keyhog_scanner::hw_probe::ScanBackend;
 #[cfg(test)]
 use std::collections::HashMap;
+#[cfg(test)]
+pub(super) use validation::decision_requires_gpu_artifact_identity;
 
 #[cfg(test)]
 use super::evidence::AutorouteDecision;

@@ -316,6 +316,13 @@ inspection use this same diagnostic. Re-run calibration after upgrading KeyHog
 or changing the cache format; a replacement save never merges rows from an
 incompatible schema.
 
+Any decision containing a GPU one-shot route, persistent route, parity receipt,
+or measured candidate also binds the installer-owned GPU matcher manifest.
+KeyHog verifies every named `.bin` member against its SHA-256 digest before
+accepting the cache. Missing, malformed, duplicate, symlinked, oversized, or
+changed members reject the cache. Unrelated lazy runtime-cache files do not
+change this identity.
+
 Each timing point stores a content-addressed measurement receipt: the canonical
 receipt generator, a digest of the complete payload multiset, and a digest of
 the exact source, offset, and decode shape. It stores no source text or paths.
@@ -424,6 +431,10 @@ Runtime lifetime changes accelerator cost, so it is part of routing semantics.
 Calibration records the scalar CPU distribution directly. For SIMD and each
 GPU peer it records the real first materialization/dispatch followed by warm
 trials:
+
+Every candidate contributes exactly seven positive trial durations. Route
+comparisons pair the same rounds. Missing, extra, zero, or unpaired trials
+invalidate the decision instead of being trimmed or substituted.
 
 - An in-process one-shot scan includes cold Hyperscan or GPU cost when choosing
   a backend.

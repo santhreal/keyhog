@@ -21,10 +21,10 @@ impl CompiledScanner {
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
         f: impl FnOnce(&Self, &ActivePatternsScratch) -> R,
-    ) -> R {
+    ) -> crate::error::Result<R> {
         ACTIVE_PATTERNS_POOL.with(|cell| {
             let mut scratch = cell.borrow_mut();
-            scratch.begin(self.phase2_patterns.len());
+            scratch.begin(self.phase2_patterns.len())?;
             // anchor_mode = true: this method only runs on the shared-anchor
             // path, where eligible always-active patterns are gated by the AC.
             self.populate_active_phase2(
@@ -39,7 +39,7 @@ impl CompiledScanner {
             if self.tuning.phase2_reverse_enabled() {
                 scratch.active.reverse();
             }
-            f(self, &scratch)
+            Ok(f(self, &scratch))
         })
     }
 
@@ -137,7 +137,7 @@ impl CompiledScanner {
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
-    ) {
+    ) -> crate::error::Result<()> {
         let prof = phase2_pattern_prof_enabled();
         // Text the AC candidate scan and the always-active prefilter run on.
         let scan_text: &str = match focus {
@@ -334,6 +334,7 @@ impl CompiledScanner {
                     }
                 }
             },
-        );
+        )?;
+        Ok(())
     }
 }

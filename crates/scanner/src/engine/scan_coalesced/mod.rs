@@ -885,7 +885,7 @@ impl CompiledScanner {
                                     confirmed_anchor_matches,
                                     generic_keyword_positions,
                                     route,
-                                );
+                                )?;
                                 return Ok(CoalescedChunkOutput {
                                     state: Some(state),
                                     matches: Vec::new(),
@@ -982,7 +982,7 @@ impl CompiledScanner {
                             confirmed_anchor_matches,
                             generic_keyword_positions,
                             route,
-                        );
+                        )?;
                         Ok(CoalescedChunkOutput {
                             state: Some(state),
                             matches: Vec::new(),

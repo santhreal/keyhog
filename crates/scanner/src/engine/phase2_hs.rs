@@ -41,7 +41,10 @@ impl HsSubEngine {
     fn build(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         indices: &[usize],
-    ) -> Option<Self> {
+    ) -> Result<Option<Self>, crate::error::ScanError> {
+        crate::enforce_simd_scratch_ceiling(
+            indices.len().saturating_mul(std::mem::size_of::<usize>()),
+        )?;
         let mut refs: Vec<(usize, usize, &str, bool)> = Vec::with_capacity(indices.len());
         let mut caseless: Vec<bool> = Vec::with_capacity(indices.len());
         let mut dropped = Vec::new();
@@ -56,7 +59,7 @@ impl HsSubEngine {
             caseless.push(pat.regex.is_case_insensitive());
         }
         if refs.is_empty() {
-            return None;
+            return Ok(None);
         }
         let opts = HsCompileOpts {
             singlematch: true,
@@ -83,7 +86,7 @@ impl HsSubEngine {
                     %error,
                     "HS always-active prefilter compile failed; using the regex::RegexSet path",
                 );
-                return None;
+                return Ok(None);
             }
         };
         let mut hs_to_phase2 = vec![0usize; scanner.pattern_count()];
@@ -118,11 +121,11 @@ impl HsSubEngine {
                 dropped.len(),
             );
         }
-        Some(Self {
+        Ok(Some(Self {
             scanner,
             hs_to_phase2,
             dropped,
-        })
+        }))
     }
 
     pub(crate) fn validate_program(
@@ -274,22 +277,22 @@ impl Phase2HsEngine {
     pub(crate) fn build(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         always_active: &[usize],
-    ) -> Option<Self> {
-        let full = HsSubEngine::build(phase2_patterns, always_active)?;
-        // Lean ASCII sub-DB: the non-homoglyph always-active patterns. Built ONLY
-        // when it is a strict subset (there are homoglyph variants to skip on
-        // ASCII); otherwise ASCII reuses `full` (no second DB, no extra memory).
+    ) -> Result<Option<Self>, crate::error::ScanError> {
+        let full = match HsSubEngine::build(phase2_patterns, always_active)? {
+            Some(engine) => engine,
+            None => return Ok(None),
+        };
         let non_homoglyph: Vec<usize> = always_active
             .iter()
             .copied()
             .filter(|&i| !phase2_patterns[i].0.homoglyph_variant)
             .collect();
         let ascii_lean = if non_homoglyph.len() < always_active.len() {
-            HsSubEngine::build(phase2_patterns, &non_homoglyph)
+            HsSubEngine::build(phase2_patterns, &non_homoglyph)?
         } else {
             None
         };
-        Some(Self { full, ascii_lean })
+        Ok(Some(Self { full, ascii_lean }))
     }
 
     /// Pick the sub-engine for this chunk: the lean ASCII DB when the caller has
