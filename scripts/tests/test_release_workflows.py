@@ -90,12 +90,16 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
             with self.subTest(obsolete=obsolete):
                 self.assertNotIn(obsolete, PUBLISH.casefold())
 
-    def test_publisher_uses_oidc_trusted_identity_without_long_lived_token(self) -> None:
-        """Publishing must exchange the exact workflow identity for an ephemeral crates.io token."""
+    def test_publisher_prefers_oidc_trusted_identity_with_token_fallback(self) -> None:
+        """Publishing must try OIDC first; repo token is only the fallback while TP is rebuilt."""
         self.assertIn("id-token: write", RELEASE)
         self.assertIn("rust-lang/crates-io-auth-action@", RELEASE)
         self.assertIn("steps.crates-io-auth.outputs.token", RELEASE)
-        self.assertNotIn("secrets.CARGO_REGISTRY_TOKEN", RELEASE)
+        self.assertIn("continue-on-error: true", RELEASE)
+        self.assertIn(
+            "steps.crates-io-auth.outputs.token || secrets.CARGO_REGISTRY_TOKEN",
+            RELEASE,
+        )
         self.assertRegex(
             RELEASE,
             r"rust-lang/crates-io-auth-action@[0-9a-f]{40}",
