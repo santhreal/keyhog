@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import pathlib
 import subprocess
 import tempfile
@@ -117,3 +118,76 @@ def capture_massif_baseline(
     temporary.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     temporary.replace(output)
     return artifact
+DEFAULT_MAX_RECONCILIATION_RATIO = 0.10
+
+
+@dataclass(frozen=True)
+class DeviceAllocationReconciliation:
+    """Device VRAM allocation high-water mark reconciliation between VYRE receipts and driver observation."""
+
+    workload_id: str
+    vyre_vram_bytes: int
+    driver_vram_bytes: int
+    difference_bytes: int
+    ratio_difference: float
+    reconciled: bool
+
+    def to_json(self) -> dict[str, object]:
+        """Return a JSON-serializable dictionary representation of reconciliation result."""
+        return {
+            "workload_id": self.workload_id,
+            "vyre_vram_bytes": self.vyre_vram_bytes,
+            "driver_vram_bytes": self.driver_vram_bytes,
+            "difference_bytes": self.difference_bytes,
+            "ratio_difference": self.ratio_difference,
+            "reconciled": self.reconciled,
+        }
+
+
+def reconcile_device_allocations(
+    *,
+    workload_id: str,
+    vyre_vram_bytes: int,
+    driver_vram_bytes: int,
+    max_ratio_difference: float = DEFAULT_MAX_RECONCILIATION_RATIO,
+) -> DeviceAllocationReconciliation:
+    """Reconcile VYRE receipt VRAM high-water marks against independent driver observations.
+
+    Raises BaselineCaptureError if either measurement is non-positive or if the two
+    measurements diverge beyond the declared bound.
+    """
+    if not isinstance(workload_id, str) or not workload_id.strip():
+        raise BaselineCaptureError("workload_id must be a non-empty string")
+    if (
+        isinstance(max_ratio_difference, bool)
+        or not isinstance(max_ratio_difference, (int, float))
+        or math.isnan(max_ratio_difference)
+        or math.isinf(max_ratio_difference)
+        or max_ratio_difference <= 0
+    ):
+        raise BaselineCaptureError(f"{workload_id}: max_ratio_difference must be a finite positive number, got {max_ratio_difference!r}")
+    if isinstance(vyre_vram_bytes, bool) or not isinstance(vyre_vram_bytes, int) or vyre_vram_bytes <= 0:
+        raise BaselineCaptureError(f"{workload_id}: VYRE VRAM measurement must be a positive integer, got {vyre_vram_bytes!r}")
+    if isinstance(driver_vram_bytes, bool) or not isinstance(driver_vram_bytes, int) or driver_vram_bytes <= 0:
+        raise BaselineCaptureError(f"{workload_id}: driver VRAM measurement must be a positive integer, got {driver_vram_bytes!r}")
+
+    diff = abs(vyre_vram_bytes - driver_vram_bytes)
+    baseline = max(vyre_vram_bytes, driver_vram_bytes)
+    ratio = diff / baseline
+
+    reconciled = ratio <= max_ratio_difference
+    if not reconciled:
+        raise BaselineCaptureError(
+            f"{workload_id}: device allocation high-water marks failed reconciliation: "
+            f"VYRE={vyre_vram_bytes} B, driver={driver_vram_bytes} B, "
+            f"difference ratio {ratio:.4f} exceeds max bound {max_ratio_difference:.4f}"
+        )
+
+    return DeviceAllocationReconciliation(
+        workload_id=workload_id,
+        vyre_vram_bytes=vyre_vram_bytes,
+        driver_vram_bytes=driver_vram_bytes,
+        difference_bytes=diff,
+        ratio_difference=ratio,
+        reconciled=reconciled,
+    )

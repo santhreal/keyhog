@@ -57,9 +57,16 @@ fn gpu_batch_preserves_cross_chunk_reassembly() {
     let cpu_findings = scanner
         .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
         .expect("selected backend scan succeeds");
-    let gpu_findings = scanner
-        .scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu)
-        .expect("selected backend scan succeeds");
+    let gpu_findings = match scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu) {
+        Ok(f) => f,
+        Err(e) => {
+            crate::support::gpu_gate::require_gpu_or_panic(
+                "gpu_batch_preserves_cross_chunk_reassembly",
+            );
+            eprintln!("gpu_batch_preserves_cross_chunk_reassembly: GPU scan unavailable: {e}");
+            return;
+        }
+    };
 
     // V7-PERF-033: Substrate-neutral match reassembly check.
     // Match counts can vary slightly between CPU/GPU pre-filters due to different

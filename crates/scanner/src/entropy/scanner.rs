@@ -475,6 +475,7 @@ pub(crate) fn find_classified_entropy_secrets_with_precomputed_keywords_and_poli
         .iter()
         .map(|(line_idx, _)| match u32::try_from(*line_idx) {
             Ok(line_id) => line_id,
+            // LAW10: fail-closed; line count exceeding u32::MAX is an invalid input boundary for u32 line indexing.
             Err(_) => panic!("entropy input exceeds the checked u32 line-index boundary"),
         })
         .collect();
@@ -616,6 +617,7 @@ fn scan_keyword_contexts(
         for line_idx in start..end {
             let line_id = match u32::try_from(line_idx) {
                 Ok(line_id) => line_id,
+                // LAW10: fail-closed; line count exceeding u32::MAX is an invalid input boundary for u32 line indexing.
                 Err(_) => panic!("entropy input exceeds the checked u32 line-index boundary"),
             };
             if line_idx != keyword_line_index && keyword_line_ids.binary_search(&line_id).is_ok() {
@@ -764,6 +766,7 @@ fn scan_keyword_free_candidates(
     for line_idx in 0..lines.len() {
         let line_id = match u32::try_from(line_idx) {
             Ok(line_id) => line_id,
+            // LAW10: fail-closed; line count exceeding u32::MAX is an invalid input boundary for u32 line indexing.
             Err(_) => panic!("entropy input exceeds the checked u32 line-index boundary"),
         };
         let Some(line) = lines.line(line_idx) else {

@@ -9,6 +9,7 @@ regression into a false green.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import pathlib
 import re
@@ -42,6 +43,7 @@ class KeyhogVersionError(Exception):
 
 
 def workspace_keyhog_version(repo_root: pathlib.Path = _REPO_ROOT) -> str:
+    """Read and return the workspace package version from root Cargo.toml."""
     cargo = repo_root / "Cargo.toml"
     try:
         data = tomllib.loads(cargo.read_text())
@@ -56,12 +58,19 @@ def workspace_keyhog_version(repo_root: pathlib.Path = _REPO_ROOT) -> str:
 
 
 def scanner_semver(raw: str) -> str | None:
+    """Extract semver string from scanner version or output string."""
     match = _SEMVER_RE.search(raw)
     return match.group(1) if match else None
 
 
-def assert_version_matches_workspace(raw_version: str, *, what: str) -> None:
-    expected = workspace_keyhog_version()
+def assert_version_matches_workspace(
+    raw_version: str,
+    *,
+    what: str,
+    repo_root: pathlib.Path = _REPO_ROOT,
+) -> None:
+    """Assert that raw_version matches the current workspace Cargo.toml version."""
+    expected = workspace_keyhog_version() if repo_root == _REPO_ROOT else workspace_keyhog_version(repo_root)
     observed = scanner_semver(raw_version)
     if observed is None:
         raise KeyhogVersionError(
@@ -76,6 +85,7 @@ def assert_version_matches_workspace(raw_version: str, *, what: str) -> None:
 
 
 def workspace_git_hash(repo_root: pathlib.Path = _REPO_ROOT) -> str:
+    """Resolve and return the current workspace git commit SHA."""
     proc = subprocess.run(
         ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
         capture_output=True,
@@ -111,6 +121,7 @@ def _tracked_status_paths(raw: bytes) -> set[pathlib.PurePosixPath]:
 
 
 def _is_generated_evidence_path(path: pathlib.PurePosixPath) -> bool:
+    """Return whether path matches a release-generated report or matrix output location."""
     return path in _GENERATED_EVIDENCE_EXACT_PATHS or (
         _GENERATED_EVIDENCE_DIRECTORY in path.parents
     )
@@ -327,6 +338,7 @@ def detector_corpus_sha256(detector_dir: pathlib.Path) -> str:
 
 
 def workspace_detector_corpus_sha256(repo_root: pathlib.Path = _REPO_ROOT) -> str:
+    """Return the SHA-256 digest of the workspace detectors directory."""
     return detector_corpus_sha256(repo_root / "detectors")
 
 
@@ -335,19 +347,31 @@ def assert_reported_identity_matches_workspace(
     *,
     what: str,
     allow_generated_evidence_ancestor: bool = False,
+    repo_root: pathlib.Path = _REPO_ROOT,
 ) -> bool:
     """Validate a reported identity and return whether its commit equals HEAD."""
-    assert_version_matches_workspace(raw, what=what)
+    if repo_root == _REPO_ROOT:
+        assert_version_matches_workspace(raw, what=what)
+        expected_commit = workspace_git_hash()
+        expected_detectors = workspace_detector_digest()
+    else:
+        assert_version_matches_workspace(raw, what=what, repo_root=repo_root)
+        expected_commit = workspace_git_hash(repo_root)
+        expected_detectors = workspace_detector_digest(repo_root)
+
     commit_match = _COMMIT_RE.search(raw)
     if commit_match is None:
         raise KeyhogVersionError(f"{what} does not report a Commit line; rebuild or rerun it")
     observed_commit = commit_match.group(1)
-    expected_commit = workspace_git_hash()
     exact_commit = observed_commit == expected_commit
     generated_evidence_ancestor = (
         allow_generated_evidence_ancestor
         and observed_commit != "unknown"
-        and _generated_evidence_only_since(observed_commit, expected_commit)
+        and (
+            _generated_evidence_only_since(observed_commit, expected_commit)
+            if repo_root == _REPO_ROOT
+            else _generated_evidence_only_since(observed_commit, expected_commit, repo_root=repo_root)
+        )
     )
     if not exact_commit and not generated_evidence_ancestor:
         raise KeyhogVersionError(
@@ -359,7 +383,6 @@ def assert_reported_identity_matches_workspace(
         raise KeyhogVersionError(
             f"{what} does not report a parseable Detector Set digest; rebuild or rerun it"
         )
-    expected_detectors = workspace_detector_digest()
     if detector_match.group(1) != expected_detectors:
         raise KeyhogVersionError(
             f"stale {what}: detector_set={detector_match.group(1)}, "
@@ -368,7 +391,13 @@ def assert_reported_identity_matches_workspace(
     return exact_commit
 
 
-def assert_keyhog_binary_current(binary: str, *, pass_fds: tuple[int, ...] = ()) -> str:
+def assert_keyhog_binary_current(
+    binary: str,
+    *,
+    pass_fds: tuple[int, ...] = (),
+    repo_root: pathlib.Path = _REPO_ROOT,
+) -> str:
+    """Verify that candidate binary --version matches current workspace version and commit."""
     popen_kwargs = {"pass_fds": pass_fds} if pass_fds else {}
     proc = subprocess.run(
         [binary, "--version"],
@@ -383,6 +412,178 @@ def assert_keyhog_binary_current(binary: str, *, pass_fds: tuple[int, ...] = ())
             f"keyhog binary {binary!r} --version failed with exit {proc.returncode}: "
             f"{output}"
         )
-    assert_reported_identity_matches_workspace(output, what=f"keyhog binary {binary!r}")
-    assert_workspace_tracked_tree_clean()
+    if repo_root == _REPO_ROOT:
+        assert_reported_identity_matches_workspace(
+            output,
+            what=f"keyhog binary {binary!r}",
+        )
+        assert_workspace_tracked_tree_clean()
+    else:
+        assert_reported_identity_matches_workspace(
+            output,
+            what=f"keyhog binary {binary!r}",
+            repo_root=repo_root,
+        )
+        assert_workspace_tracked_tree_clean(repo_root=repo_root)
     return output
+def build_evidence_inventory(
+    *,
+    catalog_path: str | pathlib.Path | None = None,
+    fixture_lock_path: str | pathlib.Path | None = None,
+    target_matrix_path: str | pathlib.Path | None = None,
+    binary: str | pathlib.Path | None = None,
+    repo_root: pathlib.Path = _REPO_ROOT,
+    execution_pack_manifest_path: str | pathlib.Path | None = None,
+) -> dict[str, object]:
+    """Prove catalog, fixture lock, target, binary, detector corpus, pack manifest, and route identities agree.
+
+    Emits one authoritative evidence inventory with exactly 59 workloads and no stale or ambiguous artifact references.
+    """
+    c_path = pathlib.Path(catalog_path) if catalog_path else repo_root / "benchmarks" / "workload-catalog.toml"
+    l_path = pathlib.Path(fixture_lock_path) if fixture_lock_path else repo_root / "benchmarks" / "workload-fixtures.lock.json"
+    t_path = pathlib.Path(target_matrix_path) if target_matrix_path else repo_root / "benchmarks" / "target-matrix.toml"
+
+    from .workload_catalog import load_workload_catalog
+    from .target_matrix import load_target_matrix, target_matrix_sha256
+    from .workload_fixtures import validate_fixture_lock
+
+    catalog = load_workload_catalog(c_path)
+    expected_workload_count = len(catalog.workloads)
+
+    lock = validate_fixture_lock(c_path, l_path)
+    lock_workloads = lock.get("workloads", [])
+    if len(lock_workloads) != expected_workload_count:
+        raise KeyhogVersionError(
+            f"fixture lock workload count ({len(lock_workloads)}) differs from catalog workload count ({expected_workload_count})"
+        )
+    cat_ids = [w.workload_id for w in catalog.workloads]
+    lock_ids = [row["workload_id"] for row in lock_workloads]
+    if set(cat_ids) != set(lock_ids):
+        raise KeyhogVersionError(
+            "workload catalog and fixture lock workload IDs differ"
+        )
+
+    matrix = load_target_matrix(t_path)
+    workspace_ver = workspace_keyhog_version(repo_root)
+    if matrix.software.workspace_version != workspace_ver:
+        raise KeyhogVersionError(
+            f"target matrix software version {matrix.software.workspace_version!r} "
+            f"does not match workspace version {workspace_ver!r}"
+        )
+
+    detector_sha256 = workspace_detector_corpus_sha256(repo_root)
+    detector_digest = workspace_detector_digest(repo_root)
+
+    binary_info = None
+    if binary is not None:
+        try:
+            bin_path = pathlib.Path(binary).resolve(strict=True)
+            assert_keyhog_binary_current(str(bin_path), repo_root=repo_root)
+            with bin_path.open("rb") as handle:
+                bin_sha256 = hashlib.sha256(handle.read()).hexdigest()
+        except (OSError, KeyhogVersionError) as exc:
+            if isinstance(exc, KeyhogVersionError):
+                raise
+            raise KeyhogVersionError(f"cannot inspect keyhog binary {binary!r}: {exc}") from exc
+        binary_info = {
+            "path": str(bin_path),
+            "sha256": bin_sha256,
+            "version": workspace_ver,
+        }
+
+    pack_info = None
+    if execution_pack_manifest_path is not None:
+        try:
+            p_path = pathlib.Path(execution_pack_manifest_path).resolve(strict=True)
+            pack_data = json.loads(p_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise KeyhogVersionError(f"cannot load execution pack manifest {execution_pack_manifest_path}: {exc}") from exc
+        if not isinstance(pack_data, dict):
+            raise KeyhogVersionError("execution pack manifest must be a JSON object")
+        
+        pack_ver = pack_data.get("version")
+        if not isinstance(pack_ver, int) or isinstance(pack_ver, bool) or pack_ver != 1:
+            raise KeyhogVersionError(
+                f"execution pack manifest schema version must be integer 1, got {pack_ver!r}"
+            )
+
+        digest_fields = {
+            "detector_digest": pack_data.get("detector_digest"),
+            "target_digest": pack_data.get("target_digest"),
+            "binary_digest": pack_data.get("binary_digest"),
+            "feature_digest": pack_data.get("feature_digest"),
+            "fixture_digest": pack_data.get("fixture_digest"),
+        }
+        for field_name, field_value in digest_fields.items():
+            if (
+                not isinstance(field_value, str)
+                or len(field_value) != 64
+                or any(char not in "0123456789abcdef" for char in field_value)
+            ):
+                raise KeyhogVersionError(
+                    f"execution pack manifest field {field_name!r} must be a 64-character lowercase hexadecimal digest"
+                )
+
+        packs = pack_data.get("packs")
+        if not isinstance(packs, list):
+            raise KeyhogVersionError(
+                "execution pack manifest field 'packs' must be a JSON array"
+            )
+
+        ws_ver = pack_data.get("workspace_version")
+        if ws_ver is not None and ws_ver != workspace_ver:
+            raise KeyhogVersionError(
+                f"execution pack manifest workspace_version {ws_ver!r} does not match workspace version {workspace_ver!r}"
+            )
+
+        pack_info = {
+            "path": str(p_path),
+            "version": pack_ver,
+            **digest_fields,
+            "pack_count": len(packs),
+        }
+        if ws_ver is not None:
+            pack_info["workspace_version"] = ws_ver
+    lock_by_id = {row["workload_id"]: row for row in lock_workloads}
+    workload_entries = []
+    for wl in catalog.workloads:
+        receipt = lock_by_id[wl.workload_id]
+        workload_entries.append(
+            {
+                "workload_id": wl.workload_id,
+                "family": wl.family,
+                "surface": wl.surface,
+                "owner": wl.owner,
+                "fixture": wl.fixture,
+                "execution_routes": list(wl.execution_routes),
+                "betterleaks_comparable": wl.betterleaks_comparable,
+                "gpu_eligible": wl.gpu_eligible,
+                "fixture_input_sha256": receipt["input_sha256"],
+                "fixture_answer_sha256": receipt["answer_sha256"],
+                "expected_findings": receipt["expected_findings"],
+                "expected_coverage_gap": receipt["expected_coverage_gap"],
+            }
+        )
+
+    try:
+        with c_path.open("rb") as f:
+            c_sha256 = hashlib.sha256(f.read()).hexdigest()
+        with l_path.open("rb") as f:
+            l_sha256 = hashlib.sha256(f.read()).hexdigest()
+    except OSError as exc:
+        raise KeyhogVersionError(f"cannot compute evidence inventory file digests: {exc}") from exc
+
+    return {
+        "schema_version": 1,
+        "workload_count": expected_workload_count,
+        "workspace_version": workspace_ver,
+        "git_commit": workspace_git_hash(repo_root),
+        "catalog_sha256": c_sha256,
+        "fixture_lock_sha256": l_sha256,
+        "target_matrix_sha256": target_matrix_sha256(t_path),
+        "detector_corpus_sha256": detector_sha256,
+        "detector_set_digest": detector_digest,
+        "binary": binary_info,
+        "execution_pack_manifest": pack_info,
+        "workloads": workload_entries,
+    }

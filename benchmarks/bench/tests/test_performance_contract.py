@@ -7,13 +7,13 @@ import pathlib
 
 import pytest
 
-from bench.performance_contract import PerformanceContractError, evaluate_betterleaks_memory_contract, evaluate_performance_contract
+from bench.performance_contract import PerformanceContractError, evaluate_betterleaks_memory_contract, evaluate_exhaustive_performance_gate, evaluate_performance_contract
 from bench.workload_catalog import load_workload_catalog
-
 CATALOG = load_workload_catalog(pathlib.Path(__file__).resolve().parents[2] / "workload-catalog.toml")
 
 
 def _row(workload_id: str, *, wall: float, rss: int, parity: bool = True) -> dict[str, object]:
+    """Test helper / contract verification."""
     return {
         "workload_id": workload_id,
         "fixture_input_sha256": "a" * 64,
@@ -31,24 +31,23 @@ def _row(workload_id: str, *, wall: float, rss: int, parity: bool = True) -> dic
 
 
 def _evidence(*, backend: str = "cpu", speedup: float = 2.0, rss_ratio: float = 0.25):
-    baseline = {
-        "backend": backend,
-        "workloads": [_row(workload.workload_id, wall=100.0, rss=400_000) for workload in CATALOG.workloads],
-    }
-    candidate = {
-        "backend": backend,
-        "workloads": [
-            _row(workload.workload_id, wall=100.0 / speedup, rss=round(400_000 * rss_ratio))
-            for workload in CATALOG.workloads
-        ],
-    }
-    if backend.startswith("gpu-"):
-        for workload,before,after in zip(CATALOG.workloads,baseline["workloads"],candidate["workloads"]):
-            if workload.gpu_eligible:
-                before["max_peak_vram_bytes"]=4_000_000_000
-                after["max_peak_vram_bytes"]=1_000_000_000
+    """Test helper / contract verification."""
+    baseline_rows = []
+    candidate_rows = []
+    for workload in CATALOG.workloads:
+        for route in workload.execution_routes:
+            b_row = _row(workload.workload_id, wall=100.0, rss=400_000)
+            b_row["execution_route"] = route
+            c_row = _row(workload.workload_id, wall=100.0 / speedup, rss=round(400_000 * rss_ratio))
+            c_row["execution_route"] = route
+            if backend.startswith("gpu-") and workload.gpu_eligible:
+                b_row["max_peak_vram_bytes"] = 4_000_000_000
+                c_row["max_peak_vram_bytes"] = 1_000_000_000
+            baseline_rows.append(b_row)
+            candidate_rows.append(c_row)
+    baseline = {"backend": backend, "workloads": baseline_rows}
+    candidate = {"backend": backend, "workloads": candidate_rows}
     return baseline, candidate
-
 
 def test_every_workload_meeting_exact_floors_passes() -> None:
     """WHY: the gate must accept equality at the stated 2x, quarter-memory, and 128 MiB boundaries rather than silently demanding an undocumented margin."""
@@ -64,12 +63,14 @@ def test_one_slow_workload_fails_even_when_all_others_are_fast() -> None:
     assert violations == [f"{candidate['workloads'][17]['workload_id']}: speedup 1.960784x is below 2.000000x"]
 
 
-def test_missing_workload_is_invalid_evidence_not_a_pass() -> None:
-    """WHY: a candidate could otherwise omit its slowest route and satisfy every ratio computed over the remaining subset."""
+def test_missing_route_is_invalid_evidence_not_a_pass() -> None:
+    """WHY: a candidate could otherwise omit its slowest route while retaining another row for the same workload and satisfy every computed ratio."""
     baseline, candidate = _evidence()
-    missing = candidate["workloads"].pop()["workload_id"]
-    with pytest.raises(PerformanceContractError, match=rf"missing=\['{missing}'\]"):
+    missing_row = candidate["workloads"].pop()
+    missing = (missing_row["workload_id"], missing_row["execution_route"])
+    with pytest.raises(PerformanceContractError) as error:
         evaluate_performance_contract(baseline, candidate, CATALOG)
+    assert f"missing=[{missing!r}]" in str(error.value)
 
 
 def test_single_trial_evidence_is_rejected() -> None:
@@ -144,13 +145,14 @@ def test_cold_warm_and_steady_evidence_cannot_be_blended() -> None:
 def test_gpu_host_rss_and_device_vram_are_independent_ceilings() -> None:
     """WHY: low host RSS cannot offset excess device allocations, and low VRAM cannot offset excess host materialization; both memory domains need their own high-water ratio."""
     baseline,candidate=_evidence(backend="gpu-cuda",speedup=10.0)
-    index=next(i for i,w in enumerate(CATALOG.workloads) if w.gpu_eligible)
-    candidate["workloads"][index]["max_peak_vram_bytes"]=1_000_000_001
-    violations=evaluate_performance_contract(baseline,candidate,CATALOG)
-    assert any("device VRAM ratio 0.250000 exceeds 0.250000" in item for item in violations)
-    candidate["workloads"][index]["max_peak_vram_bytes"]=1_000_000_000
-    candidate["workloads"][index]["max_peak_rss_kb"]=100_001
-    assert any("peak RSS ratio" in item for item in evaluate_performance_contract(baseline,candidate,CATALOG))
+    gpu_w = next(w for w in CATALOG.workloads if w.gpu_eligible)
+    c_row = next(r for r in candidate["workloads"] if r["workload_id"] == gpu_w.workload_id)
+    c_row["max_peak_vram_bytes"] = 1_000_000_001
+    violations = evaluate_performance_contract(baseline, candidate, CATALOG)
+    assert any("device VRAM ratio" in item for item in violations)
+    c_row["max_peak_vram_bytes"] = 1_000_000_000
+    c_row["max_peak_rss_kb"] = 100_001
+    assert any("peak RSS ratio" in item for item in evaluate_performance_contract(baseline, candidate, CATALOG))
 
 def test_betterleaks_memory_requires_strictly_lower_peak_for_every_shared_workload() -> None:
     """WHY: equality or one high-memory shared route disproves the release claim even when all timing and existing baseline-memory ceilings pass."""
@@ -245,6 +247,14 @@ def test_standalone_betterleaks_memory_gate_requires_exact_shared_provenance() -
     candidate_row = next(
         row for row in candidate["workloads"] if row["workload_id"] == first
     )
+    original_route = candidate_row["execution_route"]
+    candidate_row["execution_route"] = "unexpected-route"
+    with pytest.raises(
+        PerformanceContractError,
+        match="candidate shared route coverage differs",
+    ):
+        evaluate_betterleaks_memory_contract(candidate, better, CATALOG)
+    candidate_row["execution_route"] = original_route
     candidate_row["max_peak_rss_kb"] = 100_001
     violations = evaluate_betterleaks_memory_contract(candidate, better, CATALOG)
     assert any(
@@ -258,3 +268,31 @@ def test_standalone_betterleaks_memory_gate_requires_exact_shared_provenance() -
     better["target_id"] = "different-host"
     with pytest.raises(PerformanceContractError, match="target_id provenance differs"):
         evaluate_betterleaks_memory_contract(candidate, better, CATALOG)
+def test_evaluate_exhaustive_performance_gate_enforces_all_backends() -> None:
+    """WHY: KH-2007 requires a single gate to enumerate the catalog and fail on any backend/workload violation."""
+    cpu_base, cpu_cand = _evidence(backend="cpu", speedup=2.0)
+    simd_base, simd_cand = _evidence(backend="simd", speedup=2.0)
+    gpu_base, gpu_cand = _evidence(backend="gpu-cuda", speedup=10.0)
+
+    runs = {
+        "cpu": (cpu_base, cpu_cand),
+        "simd": (simd_base, simd_cand),
+        "gpu-cuda": (gpu_base, gpu_cand),
+    }
+
+    violations = evaluate_exhaustive_performance_gate(runs, CATALOG)
+    assert violations == []
+
+    # Inject a violation in simd
+    simd_cand["workloads"][0]["parity_ok"] = False
+    violations = evaluate_exhaustive_performance_gate(runs, CATALOG)
+    assert len(violations) >= 1
+    assert any("[simd]" in v for v in violations)
+def test_evaluate_exhaustive_performance_gate_rejects_invalid_inputs() -> None:
+    """WHY: non-mapping or invalid pair structures in runs_by_backend fail closed with PerformanceContractError."""
+    with pytest.raises(PerformanceContractError, match="at least one backend"):
+        evaluate_exhaustive_performance_gate({}, CATALOG)
+    with pytest.raises(PerformanceContractError, match=r"must be a \(baseline, candidate\) pair"):
+        evaluate_exhaustive_performance_gate({"cpu": (1, 2, 3)}, CATALOG, required_backends={"cpu"}) # type: ignore
+    with pytest.raises(PerformanceContractError, match="baseline and candidate must be mappings"):
+        evaluate_exhaustive_performance_gate({"cpu": ("invalid", "invalid")}, CATALOG, required_backends={"cpu"}) # type: ignore

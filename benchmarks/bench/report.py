@@ -74,6 +74,8 @@ class ResultSelectionError(ValueError):
 
 @dataclass(frozen=True)
 class RunDeclaration:
+    """Declaration of one committed run artifact binding scanner identity and host provenance."""
+
     scanner: str
     config_id: str
     path: str
@@ -87,6 +89,8 @@ class RunDeclaration:
 
 @dataclass(frozen=True)
 class RunSet:
+    """Set of declared run artifacts representing a canonical benchmark inventory."""
+
     corpus: str
     runs: tuple[RunDeclaration, ...]
 
@@ -101,6 +105,7 @@ def _cell(value: object) -> str:
 
 
 def _run_date_error(value: str) -> str | None:
+    """Validate ISO timestamp format and timezone specifier of a run date."""
     if not value:
         return "run date (`generated_at`) is missing"
     try:
@@ -160,6 +165,7 @@ def provenance_errors(rows: list[RunResult], corpus: str) -> list[str]:
 
 
 def _scanner_provenance(row: RunResult) -> str:
+    """Format scanner binary and configuration provenance for report tables."""
     parts = []
     version = row.scanner.version.strip()
     digest = row.scanner.executable_sha256
@@ -178,9 +184,11 @@ def _scanner_provenance(row: RunResult) -> str:
 
 
 def _corpus_provenance(row: RunResult) -> str:
+    """Format corpus and fixture count provenance for report tables."""
     corpus = _cell(row.corpus.name) if row.corpus.name else "_missing name_"
 
     def observed(value: int, label: str) -> str:
+        """Format integer count with label or missing fallback."""
         return f"{value:,} {label}" if value > 0 else f"_missing {label}_"
 
     return "; ".join((
@@ -192,6 +200,7 @@ def _corpus_provenance(row: RunResult) -> str:
 
 
 def _host_provenance(row: RunResult) -> str:
+    """Format execution host hardware and kernel provenance for report tables."""
     host_hash = row.host.hostname_hash
     parts = [
         f"hostname SHA-256/12: `{host_hash}`"
@@ -517,10 +526,22 @@ def select_declared_results(
         selected.append(result)
     if errors:
         raise ResultSelectionError("invalid report run set: " + "; ".join(errors))
+    hosts = {r.host.hostname_hash for r in selected}
+    if len(hosts) > 1:
+        raise ResultSelectionError(f"invalid report run set: mixed-host rows detected: {sorted(hosts)}")
+    detectors = {getattr(r.scanner, "detector_corpus_sha256", None) for r in selected}
+    if None in detectors:
+        raise ResultSelectionError("invalid report run set: detector corpus identity is missing")
+    valid_detectors = {d for d in detectors if isinstance(d, str) and is_sha256(d)}
+    if not valid_detectors:
+        raise ResultSelectionError("invalid report run set: detector corpus identity is missing")
+    if len(valid_detectors) > 1:
+        reprs = [repr(d) for d in sorted(valid_detectors)]
+        raise ResultSelectionError(f"invalid report run set: mixed-detector rows detected: {reprs}")
     return selected
 
-
 def _default_config_id(scanner_name: str) -> str | None:
+    """Return default configuration ID for registered scanner adapter."""
     from .scanners import resolve_scanner
 
     # Only an UNKNOWN scanner (a result file for an adapter no longer
@@ -580,15 +601,18 @@ def canonical_leaderboard(results: list[RunResult], corpus: str) -> list[RunResu
 
 
 def _fmt_secs(ms: float) -> str:
+    """Format millisecond wall time as seconds or minutes for display."""
     s = ms / 1000.0
     return f"{s:.2f}s" if s < 60 else f"{s/60:.1f}m"
 
 
 def _name(scanner: str) -> str:
+    """Return display name for scanner identifier."""
     return _DISPLAY.get(scanner, scanner)
 
 
 def render_leaderboard(results: list[RunResult], corpus: str) -> str:
+    """Render Markdown leaderboard table for corpus."""
     rows = canonical_leaderboard(results, corpus)
     if not rows:
         return f"_No results for corpus `{corpus}` yet - run `make leaderboard`._"
@@ -620,6 +644,7 @@ def render_leaderboard(results: list[RunResult], corpus: str) -> str:
 
 
 def render_perf(results: list[RunResult], corpus: str | None = None) -> str:
+    """Render Markdown throughput and latency performance table."""
     rows = [r for r in results if r.available and (corpus is None or r.corpus.name == corpus)]
     rows.sort(key=lambda r: r.speed.wall_ms)
     if not rows:
@@ -638,6 +663,7 @@ def render_perf(results: list[RunResult], corpus: str | None = None) -> str:
 
 
 def _outcome_metrics(outcome: Outcome) -> dict:
+    """Convert Outcome object to dictionary of raw metric fields."""
     return {
         "tp": outcome.tp,
         "fp": outcome.fp,
@@ -781,6 +807,7 @@ def render_recall_gap(results: list[RunResult], corpus: str) -> str:
 
 
 def render_gaps(results: list[RunResult], corpus: str) -> str:
+    """Render per-category recall comparison gaps table."""
     return render_recall_gap(results, corpus)
 
 
@@ -843,6 +870,7 @@ def render_category_recall(results: list[RunResult], corpus: str) -> str:
     }
 
     def best_competitor_recall(cat: str) -> tuple[str, float]:
+        """Find best competitor recall for a specific category."""
         best_name, best_rec = "", 0.0
         for name, cats in comp_cats.items():
             o = cats.get(cat)
@@ -958,6 +986,7 @@ def write_calibration_reports(detection: Detection, corpus: str,
 
 
 def _markers(section: str) -> tuple[str, str]:
+    """Return HTML start and end comments for README injection section."""
     return (f"<!-- BENCH:{section}:start -->", f"<!-- BENCH:{section}:end -->")
 
 
@@ -1109,6 +1138,7 @@ def render_bloom_evidence(results: list[RunResult], corpus: str) -> str:
 
 
 def build_sections(results: list[RunResult], corpus: str) -> dict[str, str]:
+    """Build all Markdown sections for README markers."""
     return {
         "leaderboard": render_leaderboard(results, corpus),
         "perf": render_perf(results, corpus),
@@ -1156,6 +1186,7 @@ def stale_report_paths(
     corpus: str,
     reports_dir: pathlib.Path,
 ) -> list[pathlib.Path]:
+    """Return list of report file paths that differ from current result outputs."""
     expected = report_files(results, corpus)
     stale = []
     for name, body in expected.items():
@@ -1171,6 +1202,7 @@ def stale_report_paths(
 
 
 def _main(argv: list[str] | None = None) -> int:
+    """Main CLI entry point for report rendering and injection."""
     ap = argparse.ArgumentParser(description="Render bench results to markdown / README.")
     ap.add_argument("--results", default=str(_BENCH_ROOT / "results"))
     ap.add_argument("--reports", default=str(_BENCH_ROOT / "reports"))

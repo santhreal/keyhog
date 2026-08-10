@@ -71,12 +71,14 @@ class TargetMatrix:
 
 
 def _text(value: object, field: str) -> str:
+    """Validate and return non-empty stripped string from target matrix."""
     if not isinstance(value, str) or not value.strip():
         raise TargetMatrixError(f"target matrix {field} must be a non-empty string")
     return value.strip()
 
 
 def _non_negative_int(value: object, field: str) -> int:
+    """Validate and return non-negative integer from target matrix."""
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise TargetMatrixError(
             f"target matrix {field} must be a non-negative integer, got {value!r}"
@@ -85,6 +87,7 @@ def _non_negative_int(value: object, field: str) -> int:
 
 
 def _positive_int(value: object, field: str) -> int:
+    """Validate and return strictly positive integer from target matrix."""
     value = _non_negative_int(value, field)
     if value == 0:
         raise TargetMatrixError(f"target matrix {field} must be positive")
@@ -92,6 +95,7 @@ def _positive_int(value: object, field: str) -> int:
 
 
 def _string_array(value: object, field: str) -> tuple[str, ...]:
+    """Validate and return unique tuple of non-empty strings from target matrix."""
     if not isinstance(value, list) or not value:
         raise TargetMatrixError(f"target matrix {field} must be a non-empty string array")
     rows = tuple(_text(item, f"{field}[{index}]") for index, item in enumerate(value))

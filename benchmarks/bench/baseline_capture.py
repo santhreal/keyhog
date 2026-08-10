@@ -67,6 +67,7 @@ class BaselineTrial:
     result_error: str
 
     def to_json(self) -> dict[str, object]:
+        """Serialize run metrics to a JSON-serializable dictionary."""
         return {
             "wall_ms": self.wall_ms,
             "peak_rss_kb": self.peak_rss_kb,
@@ -101,6 +102,7 @@ class BaselineSummary:
     parity_ok: bool
 
     def to_json(self) -> dict[str, object]:
+        """Serialize baseline summary statistics to a JSON-serializable dictionary."""
         return {
             "schema_version": BASELINE_SCHEMA_VERSION,
             "workload_id": self.workload_id,
@@ -200,16 +202,19 @@ def sha256_file(path: str | pathlib.Path) -> str:
             hasher.update(chunk)
     return hasher.hexdigest()
 def _detector_args(detectors: pathlib.Path | None) -> list[str]:
+    """Format CLI detector flags for executable invocation."""
     return [] if detectors is None else ["--detectors", str(detectors)]
 
 
 def _resolve_detectors(detectors: str | pathlib.Path | None) -> pathlib.Path | None:
+    """Resolve strict path for detector rules file if supplied."""
     return None if detectors is None else pathlib.Path(detectors).resolve(strict=True)
 
 
 def _load_execution_pack_manifest(
     path: str | pathlib.Path, binary: pathlib.Path,
 ) -> tuple[pathlib.Path, dict[str, object]]:
+    """Load and validate execution pack manifest JSON against expected path structure."""
     manifest_path = pathlib.Path(path).resolve(strict=True)
     if (
         manifest_path.name != "manifest.json"
@@ -291,6 +296,7 @@ def _load_execution_pack_manifest(
 
 @contextlib.contextmanager
 def _execution_pack_capture(manifest_path: pathlib.Path | None):
+    """Benchmark fixture component or validation handler."""
     global _active_pack_observations
     if manifest_path is None:
         yield None
@@ -316,6 +322,7 @@ def _execution_pack_capture(manifest_path: pathlib.Path | None):
 
 
 def _observe_execution_pack_metadata(envelope: dict[str, object]) -> None:
+    """Benchmark fixture component or validation handler."""
     if _active_pack_observations is None:
         return
     metadata = envelope.get("metadata")
@@ -337,6 +344,7 @@ def _observe_execution_pack_metadata(envelope: dict[str, object]) -> None:
 
 
 def _filesystem_scan_roots(workload: Workload, fixture_root: pathlib.Path) -> list[str]:
+    """Benchmark fixture component or validation handler."""
     input_root = fixture_root / "input"
     if workload.workload_id == "filesystem-multiple-roots":
         return [str(input_root / f"root-{index}") for index in range(3)]
@@ -420,6 +428,7 @@ def runtime_fixture_state(fixture_root: pathlib.Path):
         originals = {growing: growing.read_bytes(), shrinking: shrinking.read_bytes()}
 
         def mutate() -> None:
+            """Background thread worker to continuously mutate growing and shrinking files."""
             while not stop.is_set():
                 with growing.open("ab") as handle:
                     handle.write(b"runtime append\n")
@@ -441,6 +450,7 @@ def runtime_fixture_state(fixture_root: pathlib.Path):
             path.chmod(mode)
 
 def _parse_trial(output: pathlib.Path, stats: RunStats) -> BaselineTrial:
+    """Benchmark fixture component or validation handler."""
     if stats.timed_out or stats.exit_code not in SUCCESS_EXIT_CODES:
         raise BaselineCaptureError(
             f"baseline command exited {stats.exit_code}, timed_out={stats.timed_out}"
@@ -486,6 +496,7 @@ def _parse_trial(output: pathlib.Path, stats: RunStats) -> BaselineTrial:
 
 
 def _fixture_expectation(fixture_root: pathlib.Path) -> tuple[tuple[str, ...], bool]:
+    """Benchmark fixture component or validation handler."""
     receipt = json.loads((fixture_root / "fixture.json").read_text(encoding="utf-8"))
     answers = json.loads((fixture_root / "answers.json").read_text(encoding="utf-8"))
     expected_hashes = tuple(sorted(answer["credential_sha256"] for answer in answers))
@@ -598,6 +609,7 @@ def capture_stdin_baseline(
 
 
 def _git_run(repository: pathlib.Path, *args: str) -> None:
+    """Benchmark fixture component or validation handler."""
     env = dict(os.environ)
     env.update({
         "GIT_AUTHOR_NAME": "KeyHog Benchmark", "GIT_AUTHOR_EMAIL": "benchmark@invalid",
@@ -787,9 +799,11 @@ def fixture_http_server(fixture_root: pathlib.Path):
 
     class QuietHandler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
+            """Initialize the QuietHandler with directory pointing to fixture responses."""
             super().__init__(*args, directory=str(responses), **kwargs)
 
         def log_message(self, _format, *_args):
+            """Suppress HTTP server log messages during fixture execution."""
             return
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), QuietHandler)
@@ -942,12 +956,15 @@ def fixture_daemon_remote_server(fixture_root: pathlib.Path):
     text=(fixture_root/"input/responses/secret.env").read_text().strip()
     class RemoteHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
+            """Handle GET requests for Slack remote daemon endpoints."""
             path=urllib.parse.urlparse(self.path).path
             if path=="/conversations.list": payload={"ok":True,"channels":[{"id":"C1","name":"general"}],"response_metadata":{"next_cursor":""}}
             elif path=="/conversations.history": payload={"ok":True,"messages":[{"user":"U1","text":text,"ts":"1700000000.000001"}],"has_more":False,"response_metadata":{"next_cursor":""}}
             else: self.send_error(404); return
             body=json.dumps(payload).encode(); self.send_response(200); self.send_header("content-type","application/json"); self.send_header("content-length",str(len(body))); self.end_headers(); self.wfile.write(body)
-        def log_message(self,_format,*_args): return
+        def log_message(self,_format,*_args):
+            """Suppress HTTP server log messages during daemon fixture execution."""
+            return
     server=http.server.ThreadingHTTPServer(("127.0.0.1",0),RemoteHandler); worker=threading.Thread(target=server.serve_forever,daemon=True); worker.start()
     try: yield f"http://127.0.0.1:{server.server_port}"
     finally: server.shutdown(); server.server_close(); worker.join(timeout=5)
@@ -1030,6 +1047,7 @@ def container_command(
     workload: Workload, *, binary: pathlib.Path, detectors: pathlib.Path,
     image: str, output: pathlib.Path, backend: str,
 ) -> list[str]:
+    """Benchmark fixture component or validation handler."""
     if workload.family != "container":
         raise BaselineCaptureError(f"{workload.workload_id} is not container")
     return [
@@ -1076,6 +1094,7 @@ def capture_container_baseline(
     fixture_root: str | pathlib.Path, fixture_receipt: dict[str, object],
     backend: str, repetitions: int = MIN_TRIALS, runner: TrialRunner = lambda command: run_measured(list(command)),
 ) -> BaselineSummary:
+    """Benchmark fixture component or validation handler."""
     if repetitions < MIN_TRIALS:
         raise BaselineCaptureError(f"baseline repetitions must be at least {MIN_TRIALS}, got {repetitions}")
     binary_path = pathlib.Path(binary).resolve(strict=True)
@@ -1108,6 +1127,7 @@ def fixture_s3_server(fixture_root: pathlib.Path):
 
     class S3Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
+            """Handle GET requests for S3 bucket listing and object retrieval."""
             parsed = urllib.parse.urlparse(self.path)
             query = urllib.parse.parse_qs(parsed.query)
             if parsed.path == "/storage/v1/b/benchmark/o" and query.get("alt") == ["json"]:
@@ -1157,6 +1177,7 @@ def fixture_s3_server(fixture_root: pathlib.Path):
                 self.send_error(404)
 
         def log_message(self, _format, *_args):
+            """Suppress HTTP server log messages during S3 fixture execution."""
             return
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), S3Handler)
@@ -1172,6 +1193,7 @@ def cloud_command(
     workload: Workload, *, binary: pathlib.Path, detectors: pathlib.Path,
     endpoint: str, output: pathlib.Path, backend: str,
 ) -> list[str]:
+    """Benchmark fixture component or validation handler."""
     command = [
         str(binary), "scan", "--no-config", *_detector_args(detectors),
         "--backend", backend, "--no-gpu", "--daemon=off",
@@ -1195,6 +1217,7 @@ def capture_cloud_baseline(
     fixture_root: str | pathlib.Path, fixture_receipt: dict[str, object],
     backend: str, repetitions: int = MIN_TRIALS, runner: TrialRunner = lambda command: run_measured(list(command)),
 ) -> BaselineSummary:
+    """Benchmark fixture component or validation handler."""
     if workload.workload_id not in {
         "cloud-s3-bucket", "cloud-gcs-bucket", "cloud-azure-container",
     }:
@@ -1225,6 +1248,7 @@ def capture_cloud_baseline(
 
 
 def _proc_peak_rss_kb(pid: int) -> int:
+    """Benchmark fixture component or validation handler."""
     for line in pathlib.Path(f"/proc/{pid}/status").read_text().splitlines():
         if line.startswith("VmHWM:"):
             return int(line.split()[1])
@@ -1232,11 +1256,13 @@ def _proc_peak_rss_kb(pid: int) -> int:
 
 
 def _drain_text_pipe(pipe, sink: list[str]) -> None:
+    """Benchmark fixture component or validation handler."""
     for line in iter(pipe.readline, ""):
         sink.append(line)
 
 
 def _watch_finding_hashes(lines: Sequence[str], event_name: str) -> tuple[str, ...]:
+    """Benchmark fixture component or validation handler."""
     hashes: list[str] = []
     for line in lines:
         if event_name not in line:
@@ -1326,11 +1352,13 @@ def fixture_github_collaboration_server(fixture_root: pathlib.Path, workload_id:
 
     class GitHubHandler(http.server.BaseHTTPRequestHandler):
         def _send(self, payload):
+            """Send a JSON payload with standard HTTP 200 headers."""
             body = json.dumps(payload).encode(); self.send_response(200)
             self.send_header("content-type", "application/json"); self.send_header("content-length", str(len(body)))
             self.end_headers(); self.wfile.write(body)
 
         def do_GET(self):
+            """Handle GET requests for REST GitHub collaboration endpoints."""
             path = urllib.parse.urlparse(self.path).path
             if workload_id.endswith("issues") and path == "/repos/acme/rocket/issues":
                 return self._send([{"node_id":"I_fixture","number":7,"title":"fixture","body":secret,"user":{"login":"bench"},"updated_at":"2026-07-13T00:00:00Z"}])
@@ -1347,6 +1375,7 @@ def fixture_github_collaboration_server(fixture_root: pathlib.Path, workload_id:
             self.send_error(404)
 
         def do_POST(self):
+            """Handle POST requests for GraphQL GitHub discussion endpoints."""
             if urllib.parse.urlparse(self.path).path != "/graphql": self.send_error(404); return
             length = int(self.headers.get("content-length", "0")); body = self.rfile.read(length).decode()
             if workload_id.endswith("discussions") and "discussions(first:100" in body:
@@ -1355,7 +1384,9 @@ def fixture_github_collaboration_server(fixture_root: pathlib.Path, workload_id:
                 return self._send({"data":{"repository":{"discussion":{"comments":{"nodes":[],"pageInfo":{"hasNextPage":False,"endCursor":None}}}}}})
             self.send_error(404)
 
-        def log_message(self, _format, *_args): return
+        def log_message(self, _format, *_args):
+            """Suppress HTTP server log messages during GitHub fixture execution."""
+            return
 
     server=http.server.ThreadingHTTPServer(("127.0.0.1",0),GitHubHandler); worker=threading.Thread(target=server.serve_forever,daemon=True); worker.start()
     try: yield f"http://127.0.0.1:{server.server_port}"
@@ -1363,11 +1394,13 @@ def fixture_github_collaboration_server(fixture_root: pathlib.Path, workload_id:
 
 
 def system_command(workload:Workload,*,binary:pathlib.Path,detectors:pathlib.Path,fixture_root:pathlib.Path,output:pathlib.Path,backend:str)->list[str]:
+    """Benchmark fixture component or validation handler."""
     if workload.workload_id!="system-mounted-drives": raise BaselineCaptureError(f"unsupported system workload {workload.workload_id!r}")
     return [str(binary),"scan-system","--root",str(fixture_root/"input/mounts/home"),"--space","1M","--no-git-history",*_detector_args(detectors),"--backend",backend,"--output",str(output)]
 
 
 def _parse_system_trial(output:pathlib.Path,stats:RunStats)->BaselineTrial:
+    """Benchmark fixture component or validation handler."""
     if stats.timed_out or stats.exit_code not in SUCCESS_EXIT_CODES: raise BaselineCaptureError(f"scan-system exited {stats.exit_code}, timed_out={stats.timed_out}")
     findings=json.loads(output.read_text());
     if not isinstance(findings,list): raise BaselineCaptureError("scan-system report is not a finding array")
@@ -1380,6 +1413,7 @@ def _parse_system_trial(output:pathlib.Path,stats:RunStats)->BaselineTrial:
 
 
 def capture_system_baseline(workload:Workload,*,binary:str|pathlib.Path,detectors:str|pathlib.Path,fixture_root:str|pathlib.Path,fixture_receipt:dict[str,object],backend:str,repetitions:int=MIN_TRIALS,runner:TrialRunner=lambda command:run_measured(list(command))):
+    """Benchmark fixture component or validation handler."""
     if repetitions<MIN_TRIALS: raise BaselineCaptureError(f"baseline repetitions must be at least {MIN_TRIALS}")
     binary_path=pathlib.Path(binary).resolve(strict=True); detector_path = _resolve_detectors(detectors); fixture_path=pathlib.Path(fixture_root).resolve(strict=True); expected_hashes,expected_gap=_fixture_expectation(fixture_path); trials=[]
     with tempfile.TemporaryDirectory(prefix="keyhog-system-") as raw:
@@ -1398,6 +1432,7 @@ def verification_connect_proxy(destination: pathlib.Path):
     context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); context.load_cert_chain(cert,key); state={"requests":0}
     class ProxyHandler(socketserver.BaseRequestHandler):
         def handle(self):
+            """Handle CONNECT tunnel establishment and TLS verification requests."""
             incoming=b""
             while b"\r\n\r\n" not in incoming and len(incoming)<16384:
                 chunk=self.request.recv(4096)
@@ -1436,6 +1471,7 @@ def verification_oob_connect_proxy(destination: pathlib.Path):
     tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); tls.load_cert_chain(cert,key)
     state={"register":0,"poll":0,"deregister":0,"verify":0,"registration":None,"pending":[]}; lock=threading.Lock()
     def encrypted_poll():
+        """Poll pending out-of-band events and return AES-encrypted payloads."""
         with lock:
             registration=state["registration"]; pending=list(state["pending"]); state["pending"].clear()
         if not pending: return {"data":[],"extra":[]}
@@ -1448,6 +1484,7 @@ def verification_oob_connect_proxy(destination: pathlib.Path):
         return {"data":entries,"extra":[],"aes_key":base64.b64encode(wrapped).decode()}
     class ProxyHandler(socketserver.BaseRequestHandler):
         def handle(self):
+            """Handle OOB proxy requests, registration, polling, and verification."""
             incoming=b""
             while b"\r\n\r\n" not in incoming and len(incoming)<16384:
                 chunk=self.request.recv(4096)
@@ -1512,6 +1549,7 @@ def prepare_verification_detectors(destination:pathlib.Path)->pathlib.Path:
 
 
 def verification_command(workload:Workload,*,binary:pathlib.Path,detectors:pathlib.Path|None,fixture_root:pathlib.Path,proxy:str,output:pathlib.Path,backend:str)->list[str]:
+    """Benchmark fixture component or validation handler."""
     command=[str(binary),"scan","--no-config",*_detector_args(detectors),"--backend",backend,"--no-gpu","--daemon=off","--format","json-envelope","--show-secrets","--no-suppress-test-fixtures","--dedup","file","--quiet","--output",str(output),"--proxy",proxy,"--insecure","--verify"]
     if workload.workload_id=="verification-batched-service": command.append("--verify-batch")
     elif workload.workload_id=="verification-out-of-band": command.extend(["--verify-oob","--oob-server","oast.fun","--oob-timeout","3"])
@@ -1520,6 +1558,7 @@ def verification_command(workload:Workload,*,binary:pathlib.Path,detectors:pathl
 
 
 def capture_verification_baseline(workload:Workload,*,binary:str|pathlib.Path,detectors:str|pathlib.Path,fixture_root:str|pathlib.Path,fixture_receipt:dict[str,object],backend:str,repetitions:int=MIN_TRIALS,runner:TrialRunner=lambda command:run_measured(list(command))):
+    """Benchmark fixture component or validation handler."""
     if repetitions<MIN_TRIALS: raise BaselineCaptureError(f"baseline repetitions must be at least {MIN_TRIALS}")
     binary_path=pathlib.Path(binary).resolve(strict=True); fixture_path=pathlib.Path(fixture_root).resolve(strict=True); expected_hashes,expected_gap=_fixture_expectation(fixture_path); trials=[]
     with tempfile.TemporaryDirectory(prefix="keyhog-verify-") as raw:
@@ -1547,6 +1586,7 @@ def fixture_hosted_group_server(fixture_root: pathlib.Path, destination: pathlib
     if completed.returncode!=0: raise BaselineCaptureError(f"{platform} bare clone failed: {completed.stderr.strip()}")
     class HostedHandler(http.server.BaseHTTPRequestHandler):
         def _git_backend(self):
+            """Execute git http-backend CGI script for smart HTTP requests."""
             parsed=urllib.parse.urlparse(self.path); length=int(self.headers.get("content-length","0")); request=self.rfile.read(length) if length else b""
             env=dict(os.environ); env.update({"GIT_PROJECT_ROOT":str(destination),"GIT_HTTP_EXPORT_ALL":"1","PATH_INFO":parsed.path,"QUERY_STRING":parsed.query,"REQUEST_METHOD":self.command,"CONTENT_TYPE":self.headers.get("content-type",""),"CONTENT_LENGTH":str(length),"REMOTE_ADDR":"127.0.0.1"})
             completed=subprocess.run(["git","http-backend"],input=request,capture_output=True,check=False,env=env,timeout=30)
@@ -1562,6 +1602,7 @@ def fixture_hosted_group_server(fixture_root: pathlib.Path, destination: pathlib
             for name,value in headers: self.send_header(name,value)
             self.end_headers(); self.wfile.write(body)
         def do_GET(self):
+            """Handle GET requests for hosted group platform API or Git smart HTTP."""
             parsed=urllib.parse.urlparse(self.path); host,port=self.server.server_address; clone=f"http://{host}:{port}/repository.git"
             if platform=="gitlab" and parsed.path=="/api/v4/groups/acme/projects":
                 payload=[{"path_with_namespace":"acme/repository","http_url_to_repo":clone}]
@@ -1569,14 +1610,19 @@ def fixture_hosted_group_server(fixture_root: pathlib.Path, destination: pathlib
                 payload={"values":[{"slug":"repository","links":{"clone":[{"name":"https","href":clone}]}}],"next":None}
             else: self._git_backend(); return
             body=json.dumps(payload).encode(); self.send_response(200); self.send_header("content-type","application/json"); self.send_header("content-length",str(len(body))); self.end_headers(); self.wfile.write(body)
-        def do_POST(self): self._git_backend()
-        def log_message(self,_format,*_args): return
+        def do_POST(self):
+            """Handle POST requests for Git smart HTTP upload/receive service."""
+            self._git_backend()
+        def log_message(self,_format,*_args):
+            """Suppress HTTP server log messages during hosted group fixture execution."""
+            return
     server=http.server.ThreadingHTTPServer(("127.0.0.1",0),HostedHandler); worker=threading.Thread(target=server.serve_forever,daemon=True); worker.start()
     try: yield f"http://127.0.0.1:{server.server_port}"
     finally: server.shutdown(); server.server_close(); worker.join(timeout=5)
 
 
 def hosted_group_command(workload: Workload, *, binary:pathlib.Path, detectors:pathlib.Path|None, endpoint:str, output:pathlib.Path, backend:str)->list[str]:
+    """Benchmark fixture component or validation handler."""
     base=[str(binary),"scan","--no-config",*_detector_args(detectors),"--backend",backend,"--no-gpu","--daemon=off","--allow-private-cloud-endpoint","--format","json-envelope","--show-secrets","--no-suppress-test-fixtures","--dedup","file","--quiet","--output",str(output)]
     if workload.family=="gitlab": return base+["--gitlab-group","acme","--gitlab-token","benchmark-token","--gitlab-endpoint",endpoint]
     if workload.family=="bitbucket": return base+["--bitbucket-workspace","acme","--bitbucket-username","benchmark-user","--bitbucket-token","benchmark-token","--bitbucket-endpoint",endpoint+"/2.0"]
@@ -1584,6 +1630,7 @@ def hosted_group_command(workload: Workload, *, binary:pathlib.Path, detectors:p
 
 
 def capture_hosted_group_baseline(workload: Workload, *, binary:str|pathlib.Path, detectors:str|pathlib.Path, fixture_root:str|pathlib.Path, fixture_receipt:dict[str,object], backend:str, repetitions:int=MIN_TRIALS, runner:TrialRunner=lambda command:run_measured(list(command))):
+    """Benchmark fixture component or validation handler."""
     if repetitions<MIN_TRIALS: raise BaselineCaptureError(f"baseline repetitions must be at least {MIN_TRIALS}")
     binary_path=pathlib.Path(binary).resolve(strict=True); detector_path = _resolve_detectors(detectors); fixture_path=pathlib.Path(fixture_root).resolve(strict=True); expected_hashes,expected_gap=_fixture_expectation(fixture_path); trials=[]
     with tempfile.TemporaryDirectory(prefix=f"keyhog-{workload.family}-") as raw:
@@ -1607,6 +1654,7 @@ def fixture_github_org_server(fixture_root: pathlib.Path, destination: pathlib.P
     if completed.returncode != 0: raise BaselineCaptureError(f"organization server-info failed: {completed.stderr.strip()}")
     class OrgHandler(http.server.BaseHTTPRequestHandler):
         def _git_backend(self):
+            """Execute git http-backend CGI script for GitHub org requests."""
             parsed=urllib.parse.urlparse(self.path); length=int(self.headers.get("content-length","0")); request=self.rfile.read(length) if length else b""
             env=dict(os.environ); env.update({"GIT_PROJECT_ROOT":str(destination),"GIT_HTTP_EXPORT_ALL":"1","PATH_INFO":parsed.path,"QUERY_STRING":parsed.query,"REQUEST_METHOD":self.command,"CONTENT_TYPE":self.headers.get("content-type",""),"CONTENT_LENGTH":str(length),"REMOTE_ADDR":"127.0.0.1"})
             completed=subprocess.run(["git","http-backend"],input=request,capture_output=True,check=False,env=env,timeout=30)
@@ -1623,18 +1671,24 @@ def fixture_github_org_server(fixture_root: pathlib.Path, destination: pathlib.P
             for name,value in headers: self.send_header(name,value)
             self.end_headers(); self.wfile.write(body)
         def do_GET(self):
+            """Handle GET requests for GitHub org repos listing or Git smart HTTP."""
             if urllib.parse.urlparse(self.path).path == "/orgs/acme/repos":
                 host,port=self.server.server_address; payload=[{"name":"repository","clone_url":f"http://{host}:{port}/repository.git"}]
                 body=json.dumps(payload).encode(); self.send_response(200); self.send_header("content-type","application/json"); self.send_header("content-length",str(len(body))); self.end_headers(); self.wfile.write(body); return
             self._git_backend()
-        def do_POST(self): self._git_backend()
-        def log_message(self,_format,*_args): return
+        def do_POST(self):
+            """Handle POST requests for Git smart HTTP upload/receive service."""
+            self._git_backend()
+        def log_message(self,_format,*_args):
+            """Suppress HTTP server log messages during GitHub org fixture execution."""
+            return
     server=http.server.ThreadingHTTPServer(("127.0.0.1",0),OrgHandler); worker=threading.Thread(target=server.serve_forever,daemon=True); worker.start()
     try: yield f"http://127.0.0.1:{server.server_port}"
     finally: server.shutdown(); server.server_close(); worker.join(timeout=5)
 
 
 def github_org_command(*,binary:pathlib.Path,detectors:pathlib.Path|None,endpoint:str,output:pathlib.Path,backend:str)->list[str]:
+    """Benchmark fixture component or validation handler."""
     return [str(binary),"scan","--no-config",*_detector_args(detectors),"--backend",backend,"--no-gpu","--daemon=off","--allow-private-cloud-endpoint","--format","json-envelope","--show-secrets","--no-suppress-test-fixtures","--dedup","file","--quiet","--output",str(output),"--github-org","acme","--github-token","benchmark-token","--github-api-endpoint",endpoint]
 
 
@@ -1648,14 +1702,18 @@ def fixture_git_http_server(repository: pathlib.Path, destination: pathlib.Path)
     if completed.returncode != 0: raise BaselineCaptureError(f"wiki server-info failed: {completed.stderr.strip()}")
     class GitHandler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
+            """Initialize GitHandler with directory set to the target destination."""
             super().__init__(*args, directory=str(destination), **kwargs)
-        def log_message(self, _format, *_args): return
+        def log_message(self, _format, *_args):
+            """Suppress HTTP server log messages during dumb Git HTTP fixture execution."""
+            return
     server=http.server.ThreadingHTTPServer(("127.0.0.1",0),GitHandler); worker=threading.Thread(target=server.serve_forever,daemon=True); worker.start()
     try: yield f"http://127.0.0.1:{server.server_port}/wiki.git"
     finally: server.shutdown(); server.server_close(); worker.join(timeout=5)
 
 
 def github_collaboration_command(workload: Workload, *, binary: pathlib.Path, detectors: pathlib.Path, endpoint: str, output: pathlib.Path, backend: str, wiki_url: str | None = None) -> list[str]:
+    """Benchmark fixture component or validation handler."""
     surface={"github-collaboration-issues":"issues","github-collaboration-pull-requests":"pull-requests","github-collaboration-discussions":"discussions","github-collaboration-gists":"gists","github-collaboration-releases":"releases","github-collaboration-wiki":"wiki"}.get(workload.workload_id)
     if surface is None: raise BaselineCaptureError(f"GitHub collaboration workload {workload.workload_id!r} lacks an API driver")
     command=[str(binary),"scan","--no-config",*_detector_args(detectors),"--backend",backend,"--no-gpu","--daemon=off","--allow-private-cloud-endpoint","--format","json-envelope","--show-secrets","--no-suppress-test-fixtures","--dedup","file","--quiet","--output",str(output),"--github-collaboration","acme/rocket","--github-token","benchmark-token","--github-api-endpoint",endpoint,f"--github-{surface}"]
@@ -1666,6 +1724,7 @@ def github_collaboration_command(workload: Workload, *, binary: pathlib.Path, de
 
 
 def capture_github_baseline(workload: Workload, *, binary: str | pathlib.Path, detectors: str | pathlib.Path, fixture_root: str | pathlib.Path, fixture_receipt: dict[str, object], backend: str, repetitions: int = MIN_TRIALS, runner: TrialRunner = lambda command: run_measured(list(command))):
+    """Benchmark fixture component or validation handler."""
     if repetitions < MIN_TRIALS: raise BaselineCaptureError(f"baseline repetitions must be at least {MIN_TRIALS}")
     binary_path=pathlib.Path(binary).resolve(strict=True); detector_path = _resolve_detectors(detectors); fixture_path=pathlib.Path(fixture_root).resolve(strict=True)
     expected_hashes,expected_gap=_fixture_expectation(fixture_path); trials=[]
@@ -1704,6 +1763,7 @@ def fixture_slack_server(fixture_root: pathlib.Path):
 
     class SlackHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
+            """Handle GET requests for Slack API conversations listing and history."""
             parsed = urllib.parse.urlparse(self.path)
             if parsed.path == "/conversations.list":
                 body = json.dumps({"ok": True, "channels": [{"id": "C1", "name": "general"}], "response_metadata": {"next_cursor": ""}}).encode()
@@ -1714,7 +1774,9 @@ def fixture_slack_server(fixture_root: pathlib.Path):
             self.send_response(200); self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
-        def log_message(self, _format, *_args): return
+        def log_message(self, _format, *_args):
+            """Suppress HTTP server log messages during Slack fixture execution."""
+            return
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), SlackHandler)
     worker = threading.Thread(target=server.serve_forever, name="fixture-slack", daemon=True); worker.start()
@@ -1727,6 +1789,7 @@ def capture_slack_baseline(
     fixture_root: str | pathlib.Path, fixture_receipt: dict[str, object],
     backend: str, repetitions: int = MIN_TRIALS, runner: TrialRunner = lambda command: run_measured(list(command)),
 ) -> BaselineSummary:
+    """Benchmark fixture component or validation handler."""
     if repetitions < MIN_TRIALS:
         raise BaselineCaptureError(f"baseline repetitions must be at least {MIN_TRIALS}, got {repetitions}")
     binary_path = pathlib.Path(binary).resolve(strict=True); detector_path = _resolve_detectors(detectors)
@@ -1844,20 +1907,34 @@ def capture_startup_baseline(workload:Workload,*,binary:str|pathlib.Path,detecto
 
 def workload_measurement_axes(workload: Workload) -> dict[str, str]:
     """Describe the route actually measured for one workload row."""
-    workload_id=workload.workload_id
+    workload_id = workload.workload_id
     if workload_id.startswith("daemon-warm-"):
-        process_state="warm"; page_cache_state="warm"; execution_route="warm-daemon"
+        process_state = "warm"
+        page_cache_state = "warm"
+        execution_route = "warm-daemon"
     elif workload_id.startswith("daemon-mass-"):
-        process_state="steady"; page_cache_state="steady"; execution_route="mass-daemon"
-    elif workload.family=="incremental":
-        process_state="cold"; page_cache_state="incremental-warm"; execution_route="in-process"
+        process_state = "steady"
+        page_cache_state = "steady"
+        execution_route = "mass-daemon"
+    elif workload.family == "incremental":
+        process_state = "cold"
+        page_cache_state = "incremental-warm"
+        execution_route = "in-process"
     else:
-        process_state="cold"; page_cache_state="uncontrolled"; execution_route="in-process"
+        process_state = "cold"
+        page_cache_state = "uncontrolled"
+        execution_route = "in-process"
+    if workload.execution_routes != (execution_route,):
+        raise BaselineCaptureError(
+            f"{workload_id} declares execution routes {list(workload.execution_routes)!r}, "
+            f"but its production capture measures only {execution_route!r}"
+        )
     return {
-        "policy":"default", "process_state":process_state,
-        "page_cache_state":page_cache_state,
-        "output_format":"text" if workload.family=="watch" else "json-envelope",
-        "execution_route":execution_route,
+        "policy": "default",
+        "process_state": process_state,
+        "page_cache_state": page_cache_state,
+        "output_format": "text" if workload.family == "watch" else "json-envelope",
+        "execution_route": execution_route,
     }
 
 
@@ -2180,12 +2257,42 @@ def validate_baseline_payload(
             raise BaselineCaptureError(f"baseline {workload_id} trial count differs")
         walls = [trial["wall_ms"] for trial in trials]
         rss = [trial["peak_rss_kb"] for trial in trials]
+        minor_faults = [trial.get("minor_page_faults") for trial in trials]
+        major_faults = [trial.get("major_page_faults") for trial in trials]
+        for v in minor_faults:
+            if v is not None and (isinstance(v, bool) or not isinstance(v, int) or v < 0):
+                raise BaselineCaptureError(f"baseline {workload_id} minor page fault value is invalid: {v!r}")
+        for v in major_faults:
+            if v is not None and (isinstance(v, bool) or not isinstance(v, int) or v < 0):
+                raise BaselineCaptureError(f"baseline {workload_id} major page fault value is invalid: {v!r}")
+        measured_minor = [v for v in minor_faults if v is not None]
+        measured_major = [v for v in major_faults if v is not None]
+        if 0 < len(measured_minor) < len(trials):
+            raise BaselineCaptureError(f"baseline {workload_id} minor page faults are partially measured across trials")
+        if 0 < len(measured_major) < len(trials):
+            raise BaselineCaptureError(f"baseline {workload_id} major page faults are partially measured across trials")
+        if len(measured_minor) == 0 and any(
+            row.get(field) is not None
+            for field in ("p50_minor_page_faults", "p95_minor_page_faults")
+        ):
+            raise BaselineCaptureError(f"baseline {workload_id} contains minor page fault summary metrics but trials have no minor page fault measurements")
+        if len(measured_major) == 0 and any(
+            row.get(field) is not None
+            for field in ("p50_major_page_faults", "p95_major_page_faults")
+        ):
+            raise BaselineCaptureError(f"baseline {workload_id} contains major page fault summary metrics but trials have no major page fault measurements")
         expected_stats = {
             "p50_wall_ms": statistics.median(walls),
             "p95_wall_ms": percentile_nearest_rank(walls, 0.95),
             "median_peak_rss_kb": statistics.median(rss),
             "max_peak_rss_kb": max(rss),
         }
+        if len(measured_minor) == len(trials):
+            expected_stats["p50_minor_page_faults"] = statistics.median(measured_minor)
+            expected_stats["p95_minor_page_faults"] = percentile_nearest_rank(measured_minor, 0.95)
+        if len(measured_major) == len(trials):
+            expected_stats["p50_major_page_faults"] = statistics.median(measured_major)
+            expected_stats["p95_major_page_faults"] = percentile_nearest_rank(measured_major, 0.95)
         for field, expected in expected_stats.items():
             if row.get(field) != expected:
                 raise BaselineCaptureError(
@@ -2298,6 +2405,7 @@ def exclusive_capture_lock(target_id: str):
 
 
 def _main() -> int:
+    """Benchmark fixture component or validation handler."""
     parser = argparse.ArgumentParser(description="Capture canonical KeyHog baselines")
     parser.add_argument("--catalog", default="workload-catalog.toml")
     parser.add_argument("--fixture-lock", default="workload-fixtures.lock.json")

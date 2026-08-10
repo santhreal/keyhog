@@ -34,6 +34,7 @@ NSF = GATES / "no_silent_fallbacks.py"
 
 
 def _run_all_text() -> str:
+    """Test helper / contract verification."""
     return RUN_ALL.read_text()
 
 
@@ -42,6 +43,7 @@ def _run_all_text() -> str:
 # ---------------------------------------------------------------------------
 
 def test_run_all_exists_and_is_executable():
+    """Test helper / contract verification."""
     assert RUN_ALL.is_file(), f"missing entrypoint: {RUN_ALL}"
     # rwx for owner at minimum; CI invokes it via `bash` so the bit is belt-and-
     # suspenders, but a non-executable canonical entrypoint is a smell.
@@ -63,7 +65,7 @@ def test_run_all_source_only_exits_zero_on_clean_tree():
     proc = subprocess.run(
         ["bash", str(RUN_ALL)],
         cwd=REPO,
-        env={"GATES_SOURCE_ONLY": "1", "PATH": _path()},
+        env={"GATES_SOURCE_ONLY": "1", "PATH": _path(), "PYTHONDONTWRITEBYTECODE": "1"},
         capture_output=True,
         text=True,
         timeout=300,
@@ -144,6 +146,7 @@ def test_run_all_rejects_mutually_exclusive_modes():
 
 
 def _path() -> str:
+    """Test helper / contract verification."""
     import os
     return os.environ.get("PATH", "/usr/bin:/bin")
 
@@ -173,6 +176,7 @@ REQUIRED_REFERENCES = [
 
 @pytest.mark.parametrize("ref", REQUIRED_REFERENCES)
 def test_required_audit_is_referenced_by_run_all(ref: str):
+    """Test helper / contract verification."""
     assert ref in _run_all_text(), (
         f"run_all.sh does not reference required audit {ref!r}; the one "
         f"entrypoint must invoke every audit."
@@ -211,6 +215,7 @@ EXPECTED_BASELINE_TOTAL = 0
 
 
 def _baseline_by_crate() -> dict[str, int]:
+    """Test helper / contract verification."""
     counts: dict[str, int] = {}
     for ln in BASELINE.read_text().splitlines():
         ln = ln.strip()

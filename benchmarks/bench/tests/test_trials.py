@@ -4,6 +4,7 @@ import pytest
 
 from bench.trials import (
     CacheState,
+    ExecutionRoute,
     NoiseProber,
     NoiseReceipt,
     TrialOutcome,
@@ -11,8 +12,8 @@ from bench.trials import (
     run_trials,
 )
 
-
 def _prober(*, governor="performance", freq=4200.0, load=0.5):
+    """Test helper / contract verification."""
     return NoiseProber(
         affinity=lambda: (True, 16),
         governor=lambda: (governor, freq),
@@ -26,6 +27,7 @@ def _executor(walls):
     walls_iter = iter(walls)
 
     def run(state, index):
+        """Test helper / contract verification."""
         calls.append((state, index))
         return TrialOutcome(wall_ms=next(walls_iter))
 
@@ -190,6 +192,7 @@ def test_trial_set_digest_binds_content(monkeypatch):
     monkeypatch.setattr("bench.trials.apply_affinity", lambda: (True, 16))
 
     def build():
+        """Test helper / contract verification."""
         return run_trials(
             workload="mirror", role="control",
             executor=_executor([10.0, 11.0]),
@@ -270,3 +273,18 @@ def test_noise_receipt_from_json_strict():
     payload["load_avg_before"] = [0.1]
     with pytest.raises(ValueError, match="load_avg_before"):
         NoiseReceipt.from_json(payload)
+def test_cache_state_and_execution_route_identities():
+    """WHY: KH-2006 requires distinct schema identities for all cache states and execution routes."""
+    assert set(CacheState) == {
+        CacheState.COLD,
+        CacheState.WARM,
+        CacheState.STEADY,
+        CacheState.INCREMENTAL_WARM,
+    }
+    assert set(ExecutionRoute) == {
+        ExecutionRoute.IN_PROCESS,
+        ExecutionRoute.WARM_DAEMON,
+        ExecutionRoute.MASS_DAEMON,
+    }
+    assert CacheState.INCREMENTAL_WARM.value == "incremental-warm"
+    assert ExecutionRoute.WARM_DAEMON.value == "warm-daemon"

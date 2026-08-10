@@ -23,6 +23,7 @@ class BaselineInventoryError(RuntimeError):
 
 
 def _baselines_dir(baselines_dir: pathlib.Path | None = None) -> pathlib.Path:
+    """Return the resolved baselines directory path."""
     return baselines_dir or BASELINES_DIR
 
 
@@ -30,10 +31,12 @@ def _canonical_path(
     canonical_path: pathlib.Path | None = None,
     baselines_dir: pathlib.Path | None = None,
 ) -> pathlib.Path:
+    """Return the resolved canonical baselines manifest path."""
     return canonical_path or (_baselines_dir(baselines_dir) / "canonical.toml")
 
 
 def _archive_dir(baselines_dir: pathlib.Path | None = None) -> pathlib.Path:
+    """Return the resolved archive directory path under baselines."""
     return _baselines_dir(baselines_dir) / "archive"
 
 
@@ -265,6 +268,7 @@ def inventory_baselines(
 
 
 def _main() -> int:
+    """Execute CLI entry point for baseline inventory validation."""
     parser = argparse.ArgumentParser(description="Validate current baseline inventory")
     parser.add_argument("--baselines", default="baselines")
     parser.add_argument("--catalog", default="workload-catalog.toml")

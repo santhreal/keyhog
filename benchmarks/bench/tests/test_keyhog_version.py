@@ -22,6 +22,7 @@ def _isolate_dirty_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _version_output(*, commit: str, detector_digest: str) -> str:
+    """Test helper / contract verification."""
     return (
         f"KeyHog v{keyhog_version.workspace_keyhog_version()}\n"
         f"Commit: {commit}\n"
@@ -139,6 +140,7 @@ def test_source_rename_into_report_directory_cannot_evade_freshness_gate(tmp_pat
 
 
 def test_workspace_detector_digest_matches_build_rs_on_current_tree():
+    """Test helper / contract verification."""
     repo_root = pathlib.Path(__file__).resolve().parents[3]
     detector_dir = repo_root / "detectors"
 
@@ -156,6 +158,7 @@ def test_workspace_detector_digest_matches_build_rs_on_current_tree():
 
 
 def test_report_identity_rejects_pre_manifest_fix_digest():
+    """Test helper / contract verification."""
     repo_root = pathlib.Path(__file__).resolve().parents[3]
     commit = keyhog_version.workspace_git_hash()
     authoritative = _build_rs_detector_digest(repo_root / "detectors")
@@ -178,6 +181,7 @@ def test_report_identity_rejects_pre_manifest_fix_digest():
 
 
 def test_workspace_detector_digest_requires_corpus_manifest(tmp_path):
+    """Test helper / contract verification."""
     detector_dir = tmp_path / "detectors"
     detector_dir.mkdir()
     (detector_dir / "a.toml").write_text("id = 'a'\n", encoding="utf-8")
@@ -192,6 +196,7 @@ def test_workspace_detector_digest_requires_corpus_manifest(tmp_path):
 
 
 def test_workspace_detector_digest_binds_manifest_content_after_detectors(tmp_path):
+    """Test helper / contract verification."""
     detector_dir = tmp_path / "detectors"
     detector_dir.mkdir()
     (detector_dir / "z.toml").write_text(
@@ -217,6 +222,7 @@ def test_workspace_detector_digest_binds_manifest_content_after_detectors(tmp_pa
 
 
 def test_detector_corpus_sha256_binds_filenames_and_bytes(tmp_path):
+    """Test helper / contract verification."""
     first = tmp_path / "a.toml"
     second = tmp_path / "b.toml"
     first.write_text("[detector]\nid = 'a'\n", encoding="utf-8")
@@ -235,6 +241,7 @@ def test_detector_corpus_sha256_binds_filenames_and_bytes(tmp_path):
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permits non-UTF-8 filenames")
 def test_detector_corpus_sha256_accepts_non_utf8_filenames(tmp_path):
+    """Test helper / contract verification."""
     name = os.fsdecode(b"detector-\xff.toml")
     (tmp_path / name).write_bytes(b"[detector]\nid = 'raw-name'\n")
 
@@ -244,6 +251,7 @@ def test_detector_corpus_sha256_accepts_non_utf8_filenames(tmp_path):
 
 
 def test_binary_freshness_rejects_same_version_from_an_older_commit(monkeypatch):
+    """Test helper / contract verification."""
     current = "a" * 40
     output = _version_output(commit="b" * 40, detector_digest="1-0000000000000001")
     monkeypatch.setattr(
@@ -261,6 +269,7 @@ def test_binary_freshness_rejects_same_version_from_an_older_commit(monkeypatch)
 
 
 def test_binary_freshness_rejects_stale_embedded_detector_set(monkeypatch):
+    """Test helper / contract verification."""
     current = "a" * 40
     output = _version_output(commit=current, detector_digest="1-0000000000000001")
     monkeypatch.setattr(
@@ -278,6 +287,7 @@ def test_binary_freshness_rejects_stale_embedded_detector_set(monkeypatch):
 
 
 def test_binary_freshness_accepts_exact_commit_and_detector_set(monkeypatch):
+    """Test helper / contract verification."""
     current = "a" * 40
     digest = "1-0000000000000001"
     output = _version_output(commit=current, detector_digest=digest)
@@ -294,6 +304,7 @@ def test_binary_freshness_accepts_exact_commit_and_detector_set(monkeypatch):
 
 
 def test_workspace_cleanliness_rejects_unstaged_and_staged_tracked_edits(tmp_path):
+    """Test helper / contract verification."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     scanner = tmp_path / "crates/scanner/src/lib.rs"
     scanner.parent.mkdir(parents=True)
@@ -443,6 +454,7 @@ def test_generated_evidence_scope_rejects_renamed_report(
 
 @pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
 def test_workspace_cleanliness_rejects_hidden_index_flags(tmp_path, flag):
+    """Test helper / contract verification."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     scanner = tmp_path / "crates/scanner/src/lib.rs"
     scanner.parent.mkdir(parents=True)
@@ -467,6 +479,7 @@ def test_workspace_cleanliness_rejects_hidden_index_flags(tmp_path, flag):
 
 
 def test_binary_freshness_rejects_dirty_tracked_workspace(monkeypatch):
+    """Test helper / contract verification."""
     current = "a" * 40
     digest = "1-0000000000000001"
     output = _version_output(commit=current, detector_digest=digest)
@@ -490,6 +503,7 @@ def test_binary_freshness_rejects_dirty_tracked_workspace(monkeypatch):
 
 
 def test_binary_freshness_accepts_matching_sha256_commit_identity(monkeypatch):
+    """Test helper / contract verification."""
     current = "a" * 64
     digest = "1-0000000000000001"
     output = _version_output(commit=current, detector_digest=digest)
@@ -506,6 +520,7 @@ def test_binary_freshness_accepts_matching_sha256_commit_identity(monkeypatch):
 
 
 def test_workspace_git_hash_accepts_sha256_repository(tmp_path):
+    """Test helper / contract verification."""
     initialized = subprocess.run(
         ["git", "init", "-q", "--object-format=sha256", str(tmp_path)],
         capture_output=True,
@@ -541,3 +556,56 @@ def test_workspace_cleanliness_honors_allow_dirty_env(tmp_path, monkeypatch):
     monkeypatch.setenv("KEYHOG_BENCH_ALLOW_DIRTY", "1")
     # With the env, the check passes despite the uncommitted edit.
     keyhog_version.assert_workspace_tracked_tree_clean(tmp_path)
+def test_build_evidence_inventory_produces_catalog_workloads():
+    """WHY: KH-2000 requires proving catalog, fixture lock, target, binary, detector corpus, and route identities agree."""
+    from bench.workload_catalog import load_workload_catalog
+    from bench.readme_matrix import BENCH_ROOT
+    import pathlib
+
+    catalog = load_workload_catalog(pathlib.Path(BENCH_ROOT) / "workload-catalog.toml")
+    expected_count = len(catalog.workloads)
+    expected_ids = [w.workload_id for w in catalog.workloads]
+
+    inventory = keyhog_version.build_evidence_inventory()
+    assert inventory["schema_version"] == 1
+    assert inventory["workload_count"] == expected_count
+    assert len(inventory["workloads"]) == expected_count
+    assert [w["workload_id"] for w in inventory["workloads"]] == expected_ids
+    assert isinstance(inventory["catalog_sha256"], str)
+    assert isinstance(inventory["fixture_lock_sha256"], str)
+    assert isinstance(inventory["target_matrix_sha256"], str)
+    assert isinstance(inventory["detector_corpus_sha256"], str)
+
+
+def test_execution_pack_manifest_records_native_digest_identities(tmp_path):
+    """WHY: evidence inventory must accept the native BLAKE3 and generation identities emitted by a real execution-pack manifest without comparing them to unrelated SHA-256 files."""
+    from bench.keyhog_version import build_evidence_inventory
+    import json
+
+    manifest_path = tmp_path / "manifest.json"
+    manifest_data = {
+        "version": 1,
+        "detector_digest": "1" * 64,
+        "target_digest": "2" * 64,
+        "binary_digest": "3" * 64,
+        "feature_digest": "4" * 64,
+        "fixture_digest": "5" * 64,
+        "packs": [],
+    }
+    manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+    inventory = build_evidence_inventory(execution_pack_manifest_path=manifest_path)
+    manifest = inventory["execution_pack_manifest"]
+    assert manifest["version"] == 1
+    assert manifest["detector_digest"] == manifest_data["detector_digest"]
+    assert manifest["target_digest"] == manifest_data["target_digest"]
+    assert manifest["binary_digest"] == manifest_data["binary_digest"]
+    assert manifest["feature_digest"] == manifest_data["feature_digest"]
+    assert manifest["fixture_digest"] == manifest_data["fixture_digest"]
+    assert manifest["pack_count"] == 0
+
+def test_build_evidence_inventory_handles_nonexistent_binary(tmp_path):
+    """WHY: non-existent binary path raises KeyhogVersionError instead of raw OSError/FileNotFoundError."""
+    fake_binary = tmp_path / "nonexistent_keyhog"
+    with pytest.raises(keyhog_version.KeyhogVersionError, match="cannot inspect keyhog binary"):
+        keyhog_version.build_evidence_inventory(binary=fake_binary)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import pathlib
 import sys
@@ -69,6 +70,7 @@ TARGET_PATH = pathlib.Path(__file__).resolve().parents[2] / "target-matrix.toml"
 
 
 def _test_host_evidence(_target) -> dict[str, object]:
+    """Test helper / contract verification."""
     return {
         "os": "linux", "arch": "x86_64",
         "cpu": "AMD Ryzen 9 9950X 16-Core Processor", "logical_cores": 32,
@@ -78,11 +80,13 @@ def _test_host_evidence(_target) -> dict[str, object]:
     }
 
 def _workload(workload_id: str):
+    """Test helper / contract verification."""
     catalog = load_workload_catalog(CATALOG_PATH)
     return next(item for item in catalog.workloads if item.workload_id == workload_id)
 
 
 def _trial(wall: float, rss: int, hashes: tuple[str, ...], gaps: int = 0) -> BaselineTrial:
+    """Test helper / contract verification."""
     return BaselineTrial(
         wall_ms=wall,
         peak_rss_kb=rss,
@@ -206,6 +210,7 @@ def test_capture_runs_five_complete_process_trials_and_binds_binary(
     commands: list[list[str]] = []
 
     def fake_runner(command):
+        """Test helper / contract verification."""
         command = list(command)
         commands.append(command)
         output = pathlib.Path(command[command.index("--output") + 1])
@@ -298,6 +303,7 @@ def test_missing_envelope_remains_a_timed_broken_baseline(tmp_path: pathlib.Path
     detectors.mkdir()
 
     def missing_report_runner(_command):
+        """Test helper / contract verification."""
         return "", "", RunStats(wall_ms=12.5, peak_rss_kb=4321, exit_code=13, timed_out=False)
 
     receipt = json.loads((fixture.root / "fixture.json").read_text(encoding="utf-8"))
@@ -342,6 +348,7 @@ def test_stdin_capture_feeds_exact_canonical_bytes_for_all_trials(
     observed_sizes: list[int] = []
 
     def fake_runner(command, source):
+        """Test helper / contract verification."""
         observed_sizes.append(source.stat().st_size)
         output = pathlib.Path(command[command.index("--output") + 1])
         output.write_text(json.dumps({
@@ -772,6 +779,16 @@ def test_workload_measurement_axes_preserve_resident_and_cache_routes() -> None:
     assert workload_measurement_axes(_workload("watch-filesystem-events"))["output_format"]=="text"
 
 
+def test_workload_measurement_axes_reject_unmeasured_declared_routes() -> None:
+    """WHY: adding a catalog route without a production capture would let release evidence claim coverage that was never measured."""
+    workload = replace(
+        _workload("filesystem-single-tiny-file"),
+        execution_routes=("in-process", "mass-daemon"),
+    )
+    with pytest.raises(BaselineCaptureError, match="production capture measures only"):
+        workload_measurement_axes(workload)
+
+
 def test_oob_detector_and_command_require_the_real_collector_protocol(tmp_path:pathlib.Path) -> None:
     """WHY: an HTTP-only verification trial can still return live while never registering or polling Interactsh; the generated detector and command must require the callback path explicitly."""
     detector=(prepare_oob_verification_detectors(tmp_path/"detectors")/"github-classic-pat.toml").read_text()
@@ -787,6 +804,7 @@ def test_default_capture_scope_includes_non_filesystem_families(monkeypatch,tmp_
     """WHY: omitting --family previously captured only filesystem while producing a valid-looking artifact; the safe default must include every catalog family."""
     binary=tmp_path/"keyhog"; binary.write_bytes(b"candidate"); calls=[]
     def fake_capture(workload,**kwargs):
+        """Test helper / contract verification."""
         calls.append(workload.workload_id); receipt=kwargs["fixture_receipt"]; trials=[_trial(wall,1000+wall,tuple()) for wall in (10,20,30,40,50)]
         return summarize_trials(workload.workload_id,kwargs["backend"],receipt["input_sha256"],receipt["answer_sha256"],sha256_file(binary),trials,tuple(),False)
     monkeypatch.setattr(baseline_capture_module,"capture_slack_baseline",fake_capture)
@@ -889,6 +907,7 @@ def test_execution_pack_capture_binds_manifest_and_scan_metadata(
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     def fake_capture(workload, **kwargs):
+        """Test helper / contract verification."""
         assert kwargs["detectors"] is None
         assert baseline_capture_module.os.environ["KEYHOG_REQUIRE_EXECUTION_PACKS"] == "1"
         assert baseline_capture_module.os.environ["XDG_CACHE_HOME"] == str(tmp_path / "cache")
@@ -1012,6 +1031,7 @@ def test_execution_pack_capture_rejects_generation_drift(tmp_path: pathlib.Path)
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     def drift_manifest(_target):
+        """Test helper / contract verification."""
         manifest["fixture_digest"] = "2" * 64
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         return _test_host_evidence(_target)
@@ -1053,3 +1073,63 @@ def test_capture_requires_one_explicit_detector_mode(tmp_path: pathlib.Path) -> 
             **common, detectors=tmp_path,
             execution_pack_manifest=tmp_path / "manifest.json",
         )
+def test_validate_baseline_payload_rejects_partial_and_invalid_page_faults(tmp_path: pathlib.Path) -> None:
+    """WHY: partial measurements, invalid types, or dangling summary stats fail closed."""
+    from bench.baseline_capture import validate_baseline_payload, BaselineCaptureError
+    from bench.workload_catalog import load_workload_catalog
+    from bench.workload_fixtures import validate_fixture_lock
+    catalog = load_workload_catalog(CATALOG_PATH)
+    lock = validate_fixture_lock(CATALOG_PATH, LOCK_PATH)
+    receipt = lock["workloads"][0]
+    wl_id = receipt["workload_id"]
+
+    trials_partial = [
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": 5},
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": 5},
+        {"wall_ms": 10, "peak_rss_kb": 100},
+        {"wall_ms": 10, "peak_rss_kb": 100},
+        {"wall_ms": 10, "peak_rss_kb": 100},
+    ]
+    from bench.baseline_capture import BASELINE_SCHEMA_VERSION, sha256_file
+    payload = {
+        "schema_version": BASELINE_SCHEMA_VERSION,
+        "catalog_sha256": sha256_file(CATALOG_PATH),
+        "fixture_lock_sha256": sha256_file(LOCK_PATH),
+        "target_matrix_sha256": sha256_file(TARGET_PATH),
+        "target_id": "linux-x86_64-rtx5090",
+        "host_evidence": _test_host_evidence(None),
+        "binary_sha256": "a" * 64,
+        "backend": "cpu",
+        "repetitions": 5,
+        "workloads": [
+            {
+                "workload_id": wl_id,
+                "policy": "default",
+                "process_state": "cold",
+                "page_cache_state": "uncontrolled",
+                "output_format": "json-envelope",
+                "execution_route": "in-process",
+                "fixture_input_sha256": receipt["input_sha256"],
+                "fixture_answer_sha256": receipt["answer_sha256"],
+                "binary_sha256": "a" * 64,
+                "backend": "cpu",
+                "p50_wall_ms": 10.0,
+                "p95_wall_ms": 10.0,
+                "median_peak_rss_kb": 100.0,
+                "max_peak_rss_kb": 100,
+                "trials": trials_partial,
+            }
+        ],
+    }
+    with pytest.raises(BaselineCaptureError, match="partially measured"):
+        validate_baseline_payload(payload, catalog_path=CATALOG_PATH, fixture_lock_path=LOCK_PATH, target_matrix_path=TARGET_PATH)
+    trials_invalid = [
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": -1},
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": -1},
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": -1},
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": -1},
+        {"wall_ms": 10, "peak_rss_kb": 100, "minor_page_faults": -1},
+    ]
+    payload["workloads"][0]["trials"] = trials_invalid
+    with pytest.raises(BaselineCaptureError, match="invalid"):
+        validate_baseline_payload(payload, catalog_path=CATALOG_PATH, fixture_lock_path=LOCK_PATH, target_matrix_path=TARGET_PATH)

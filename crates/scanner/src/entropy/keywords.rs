@@ -63,6 +63,7 @@ pub(crate) fn find_keyword_assignment_line_ids_with_matcher(
             }
             Some(match u32::try_from(line_idx) {
                 Ok(line_id) => line_id,
+                // LAW10: fail-closed; line count exceeding u32::MAX is an invalid input boundary for u32 line indexing.
                 Err(_) => panic!("LineContextIndex admitted more than u32::MAX lines"),
             })
         })

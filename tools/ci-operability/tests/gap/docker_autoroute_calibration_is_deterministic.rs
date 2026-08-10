@@ -37,9 +37,27 @@ fn glibc_autoroute_calibration_uses_the_authorized_ci_timing_fixture() {
 #[test]
 fn glibc_autoroute_calibration_still_fails_on_nonzero_probe_status() {
     let dockerfile = glibc_dockerfile();
-    assert!(dockerfile.contains("if [ \"$rc\" != 0 ]; then"));
-    assert!(dockerfile.contains("autoroute calibration failed (exit $rc)"));
-    assert!(dockerfile.contains("exit 1;"));
+    let failure_branch = if let Some(pos) = dockerfile.find("case \"$rc\" in") {
+        let tail = &dockerfile[pos..];
+        let arm_start = tail.find("*)").expect("case statement must have default failure arm");
+        let arm_end = tail.find("esac").expect("case statement must terminate with esac");
+        &tail[arm_start..arm_end]
+    } else if let Some(pos) = dockerfile.find("if [ \"$rc\" != 0 ]; then") {
+        let tail = &dockerfile[pos..];
+        let end = tail.find("fi").expect("if statement must terminate with fi");
+        &tail[..end]
+    } else {
+        panic!("Dockerfile must contain case \"$rc\" in or if [ \"$rc\" != 0 ]; then");
+    };
+
+    assert!(
+        failure_branch.contains("autoroute calibration failed (exit $rc)"),
+        "failure branch must print calibration error message"
+    );
+    assert!(
+        failure_branch.contains("exit 1"),
+        "failure branch must exit 1"
+    );
     assert!(
         !dockerfile.contains(
             "--autoroute-calibrate --autoroute-gpu \"$@\" --format json >/dev/null || true"

@@ -412,7 +412,6 @@ One deterministic 8 MiB regular file (`sha256:afafbe7b6487fd62866f510e7c281a9e7b
 
 The daemon is not a general directory or CI accelerator. It accepts only eligible single-file and bounded-stdin requests on Unix, and it serializes execution.
 <!-- BENCH:daemon:end -->
-
 <!-- BENCH:scaling:BEGIN -->
 ### CPU, reader, storage, size, and partition scaling
 
