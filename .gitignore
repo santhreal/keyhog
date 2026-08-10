@@ -126,3 +126,21 @@ benchmarks/results-cross-device/
 
 # Unified backlog (STANDARD.md)
 IMPROVEMENT_PLAN.md
+
+# Local axiomexec / self-hosted runner ops. Registration tokens, runner
+# identity files, and host-local service config must never enter the
+# public tree (credential exfiltration / runner hijack surface).
+.axiomexec/
+axiomexec/
+**/actions-runner*/
+**/.credentials
+**/.credentials_rsaparams
+**/.runner
+**/.runner_file
+**/runsvc.sh
+**/svc.sh
+.github/runner-tokens/
+.github/self-hosted/
+*.runner.json
+runner-*.token
+APLXTN*

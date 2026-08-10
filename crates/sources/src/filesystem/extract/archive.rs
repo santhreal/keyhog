@@ -60,7 +60,7 @@ static OPENPACK_EXTS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::ne
     }
 });
 
-pub(super) fn is_openpack_archive_ext(ext: &str) -> bool {
+pub(crate) fn is_openpack_archive_ext(ext: &str) -> bool {
     (&*OPENPACK_EXTS)
         .iter()
         .any(|candidate| ext.eq_ignore_ascii_case(candidate))

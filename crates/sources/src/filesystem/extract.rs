@@ -29,7 +29,9 @@ pub(crate) use archive::validate_scan_archive_entry_name;
 /// per-file cap. Extraction/decoding still needs a hard bomb guard so an archive,
 /// compressed stream, or PDF cannot expand without bound.
 pub(super) const UNCAPPED_ARCHIVE_BUDGET: u64 = 1024 * 1024 * 1024;
-const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
+// 512 covers zip/ELF/PE magic and tar's ustar marker at offset 257 without
+// reading a full KiB on every unclassifiable name.
+const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 512;
 
 /// Upper bound on a Git-LFS pointer file's size. A canonical pointer is the
 /// three short lines `version …` / `oid sha256:…` / `size …` (~130 bytes; a few
@@ -281,6 +283,81 @@ fn emit_archive_leaf_member(
         Some(tex_package::TexMemberRole::Orphaned) => "filesystem/archive-binary/tex-orphaned",
         None => "filesystem/archive-binary",
     };
+
+    // Mirror FilesystemSource's large-file policy:
+    //   * binary members (magic/NUL prefix OR C0-density header) take the
+    //     archive-binary / printable-strings gate - never lossy text windows
+    //     (that was junk matches + 2x RAM);
+    //   * already-UTF-8 text windows on the RAW bytes (offsets == member bytes
+    //     == size_bytes), matching the mmap window path;
+    //   * UTF-16 / other encodings take the whole-member decode path (one chunk
+    //     at base_offset 0), matching large_file_requires_whole_file_decode.
+    // Windowing decoded UTF-16 would mix decoded offsets with raw size_bytes and
+    // mis-locate findings. Keep archive text_source_type on each window.
+    let window_size = super::reader::DEFAULT_WINDOW_SIZE;
+    let window_overlap = super::reader::DEFAULT_WINDOW_OVERLAP;
+    if content.len() > window_size && provenance.is_none() {
+        let raw_member_len = content.len() as u64;
+        // Same 4 KiB header sample decode_text_file_owned_or_bytes uses for the
+        // C0-density gate, so control-heavy "valid UTF-8" blobs cannot enter the
+        // ordinary text window path.
+        let prefix = &content[..content.len().min(4096)];
+        let utf16 = read::has_utf16_bom_prefix(prefix);
+        // looks_binary treats UTF-16 NUL patterns as binary; check BOM first so
+        // UTF-16 members still reach the whole-member decoder.
+        let binary = matches!(utf16, false)
+            && (read::looks_binary_prefix(prefix) || read::looks_binary(prefix));
+        if utf16 || binary {
+            match chunk_from_extracted_entry(
+                content,
+                member_display.to_string(),
+                text_source_type,
+                binary_source_type,
+            ) {
+                Some(chunk) => return emit(chunk),
+                None => return true,
+            }
+        }
+        // Consume the Vec into a String before windowing so the raw buffer is not
+        // kept alive alongside each emitted window allocation (the prior 2x peak
+        // from holding content while materializing window text).
+        match String::from_utf8(content) {
+            Ok(text) => {
+                return read::for_each_slice_window(
+                    text.as_bytes(),
+                    window_size,
+                    window_overlap,
+                    |window| {
+                        if window.text.is_empty() {
+                            return true;
+                        }
+                        emit(Ok(Chunk {
+                            data: window.text,
+                            metadata: ChunkMetadata {
+                                source_type: text_source_type.into(),
+                                path: Some(member_display.to_owned().into()),
+                                base_offset: window.offset,
+                                base_line: window.base_line,
+                                size_bytes: Some(raw_member_len),
+                                decoded_span: None,
+                                ..Default::default()
+                            },
+                        }))
+                    },
+                );
+            }
+            Err(err) => match chunk_from_extracted_entry(
+                err.into_bytes(),
+                member_display.to_string(),
+                text_source_type,
+                binary_source_type,
+            ) {
+                Some(chunk) => return emit(chunk),
+                None => return true,
+            },
+        }
+    }
+
     match chunk_from_extracted_entry(
         content,
         member_display.to_string(),
@@ -302,7 +379,7 @@ fn emit_archive_leaf_member(
 /// extractor speculatively, and every returned extension routes to a branch that
 /// already enforces the per-entry size cap, the total-uncompressed bomb budget,
 /// and [`MAX_NESTED_ARCHIVE_DEPTH`].
-fn container_extension_from_prefix(head: &[u8]) -> Option<&'static str> {
+pub(crate) fn container_extension_from_prefix(head: &[u8]) -> Option<&'static str> {
     if crate::magic::starts_with_gzip(head) {
         Some("gz")
     } else if crate::magic::starts_with_zstd_frame(head) {
@@ -438,6 +515,202 @@ fn emit_archive_member_with_tex_provenance(
     }
 
     emit_archive_leaf_member(content, member_display, provenance, emit)
+}
+
+pub(crate) fn try_emit_image_metadata_member(
+    entry_name: &str,
+    bytes: &[u8],
+    ext: &str,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> Result<Option<bool>, SourceError> {
+    let Some(kind) = image_metadata::probe_kind_from_bytes(ext, bytes) else {
+        return Ok(None);
+    };
+    // Match process_entry Decode accounting so Docker layer streaming profiles
+    // stay comparable for image-metadata members.
+    let extraction = image_metadata::extract_from_bytes(
+        entry_name,
+        bytes,
+        kind,
+        keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
+    )?;
+    let mut keep_going = true;
+    run_derived_extractor(
+        |counted| {
+            for chunk in extraction.chunks {
+                if counted(Ok(chunk)) {
+                    continue;
+                }
+                return;
+            }
+            if let Some(error) = extraction.coverage_error {
+                let _event =
+                    crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
+                let _stopped = counted(Err(error));
+            }
+        },
+        &mut |chunk| {
+            keep_going = emit(chunk);
+            keep_going
+        },
+    );
+    Ok(Some(keep_going))
+}
+
+pub(crate) fn is_openpack_archive_ext(ext: &str) -> bool {
+    archive::is_openpack_archive_ext(ext)
+}
+
+pub(crate) fn emit_top_level_seven_zip_or_rar_member(
+    ext: &str,
+    content: Vec<u8>,
+    member_display: &str,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let mut keep_going = true;
+    run_derived_extractor(
+        |counted| {
+            if ext.eq_ignore_ascii_case("7z") {
+                seven_zip::extract_seven_zip_chunks_from_bytes(
+                    &content,
+                    member_display,
+                    max_size,
+                    respect_default_excludes,
+                    counted,
+                );
+            } else {
+                rar::extract_rar_chunks_from_bytes(
+                    &content,
+                    member_display.to_owned(),
+                    max_size,
+                    respect_default_excludes,
+                    counted,
+                );
+            }
+        },
+        &mut |chunk| {
+            keep_going = emit(chunk);
+            keep_going
+        },
+    );
+    keep_going
+}
+
+pub(crate) fn try_emit_pdf_member(
+    entry_name: &str,
+    bytes: Vec<u8>,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let file_size = bytes.len() as u64;
+    // Same Decode + derived-byte wrap process_entry uses for on-disk PDFs.
+    let mut keep_going = true;
+    run_derived_extractor(
+        |counted| {
+            let _stopped = pdf::extract_pdf_chunks_from_bytes(
+                entry_name,
+                bytes,
+                None,
+                file_size,
+                keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
+                counted,
+            );
+        },
+        &mut |chunk| {
+            keep_going = emit(chunk);
+            keep_going
+        },
+    );
+    keep_going
+}
+
+/// In-memory dispatcher used by Docker layer streaming. Archive/compressed
+/// payloads take the shared Decode + derived-byte wrap that `process_entry`
+/// applies to top-level tar/zip/compressed files; plain leaf members stay
+/// outside Decode so profiles stay comparable with a filesystem walk.
+/// Scan a zip-family openpack member from buffered bytes using the EOCD-capable
+/// `ZipArchive` reader. Handles launcher-prefixed Spring Boot jars and
+/// self-extracting zips that do not begin with `PK\x03\x04`. CRX/Cr24 payloads
+/// that `ZipArchive` cannot open still surface as Unreadable coverage gaps.
+pub(crate) fn emit_in_memory_zip_member(
+    member_display: &str,
+    content: Vec<u8>,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let mut total_uncompressed = 0_u64;
+    let mut keep_going = true;
+    run_derived_extractor(
+        |counted| {
+            let _stopped = archive::emit_embedded_zip_member(
+                content,
+                member_display,
+                max_size,
+                &mut total_uncompressed,
+                0,
+                respect_default_excludes,
+                counted,
+            );
+        },
+        &mut |chunk| {
+            keep_going = emit(chunk);
+            keep_going
+        },
+    );
+    keep_going
+}
+
+pub(crate) fn emit_in_memory_member(
+    entry_name: &str,
+    content: Vec<u8>,
+    member_display: &str,
+    max_size: u64,
+    respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    let is_tar = compressed::entry_is_embedded_tar(&content);
+    let is_zip = matches!(is_tar, false) && archive::member_is_embedded_zip(&content);
+    let compressed_format = if is_tar || is_zip {
+        None
+    } else {
+        compressed::compressed_member_format(entry_name, &content)
+    };
+    let mut total_uncompressed = 0_u64;
+    if is_tar || is_zip || compressed_format.is_some() {
+        let mut keep_going = true;
+        run_derived_extractor(
+            |counted| {
+                let _stopped = emit_archive_member(
+                    entry_name,
+                    content,
+                    member_display,
+                    max_size,
+                    &mut total_uncompressed,
+                    0,
+                    respect_default_excludes,
+                    counted,
+                );
+            },
+            &mut |chunk| {
+                keep_going = emit(chunk);
+                keep_going
+            },
+        );
+        keep_going
+    } else {
+        emit_archive_member(
+            entry_name,
+            content,
+            member_display,
+            max_size,
+            &mut total_uncompressed,
+            0,
+            respect_default_excludes,
+            emit,
+        )
+    }
 }
 
 pub(super) fn report_archive_truncation(
@@ -589,6 +862,48 @@ pub(super) fn process_entry(
         }
     }
 
+    if ext.is_empty() {
+        // Cheap content sniff for unclassifiable names after the incremental
+        // unchanged-file gate and before full reads (KH-50 / KH-213x).
+        let mut buf = [0u8; EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES];
+        if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
+            // LAW10: failed prefix probe leaves binary hint false; the full safe read path below is the loud, recall-preserving path that still surfaces unreadable files.
+            let head = &buf[..n];
+            match container_extension_from_prefix(head) {
+                // The file has NO extension but its own bytes ARE a container, so
+                // adopt the extension the dispatcher below already routes, and the
+                // container reaches the same extractor under the same per-entry,
+                // bomb-ratio and depth caps as its named twin. Without this the
+                // `looks_binary_prefix` arm ended the scan right here and the
+                // container's entire contents went unread, recorded only as a
+                // generic binary skip with no sign a container was there. That
+                // naming is the normal case for the highest-value target: an
+                // OCI/Docker layer blob is `blobs/sha256/<hex>` on disk, in a
+                // registry cache, or in an extracted `docker save` (Law 10).
+                Some(sniffed) => ext = sniffed,
+                // UTF-16 BOM text must reach the decoder even when the body has
+                // embedded NULs; reject only confident binary prefixes.
+                None if read::has_utf16_bom_prefix(head) => {
+                    if n < buf.len() && n as u64 == file_size {
+                        prefetched_extensionless_bytes = Some(head.to_vec());
+                    }
+                }
+                None if read::looks_binary_prefix(head) => {
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                    return;
+                }
+                None => {
+                    // The safe prefix read reached EOF for this stable tiny-file
+                    // snapshot. Reuse those owned bytes below instead of opening,
+                    // fstat'ing, and reading the same file a second time.
+                    if n < buf.len() && n as u64 == file_size {
+                        prefetched_extensionless_bytes = Some(head.to_vec());
+                    }
+                }
+            }
+        }
+    }
+
     if let Some(kind) = image_kind {
         match image_metadata::extract(&path, kind, file_size, live_mtime_ns, max_size) {
             Ok(extraction) => {
@@ -611,44 +926,6 @@ pub(super) fn process_entry(
             }
         }
         return;
-    }
-
-    if ext.is_empty() {
-        // Sniff a small structural prefix of files without extensions to quickly
-        // skip binary structures without full content reads (KH-50). Use the same
-        // no-follow safe open as the real file reader: an extensionless symlink
-        // must not get a pre-guard `File::open` of its target just because this
-        // is only a header sniff.
-        let mut buf = [0u8; EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES];
-        if let Ok(n) = read::read_file_prefix_safe(&path, &mut buf) {
-            // LAW10: failed prefix probe leaves binary hint false; the full safe read path below is the loud, recall-preserving path that still surfaces unreadable files.
-            let head = &buf[..n];
-            match container_extension_from_prefix(head) {
-                // The file has NO extension but its own bytes ARE a container, so
-                // adopt the extension the dispatcher below already routes, and the
-                // container reaches the same extractor under the same per-entry,
-                // bomb-ratio and depth caps as its named twin. Without this the
-                // `looks_binary_prefix` arm ended the scan right here and the
-                // container's entire contents went unread, recorded only as a
-                // generic binary skip with no sign a container was there. That
-                // naming is the normal case for the highest-value target: an
-                // OCI/Docker layer blob is `blobs/sha256/<hex>` on disk, in a
-                // registry cache, or in an extracted `docker save` (Law 10).
-                Some(sniffed) => ext = sniffed,
-                None if read::looks_binary_prefix(head) => {
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                    return;
-                }
-                None => {
-                    // The safe prefix read reached EOF for this stable tiny-file
-                    // snapshot. Reuse those owned bytes below instead of opening,
-                    // fstat'ing, and reading the same file a second time.
-                    if n < buf.len() && n as u64 == file_size {
-                        prefetched_extensionless_bytes = Some(head.to_vec());
-                    }
-                }
-            }
-        }
     }
 
     if ext.eq_ignore_ascii_case("pdf") {
