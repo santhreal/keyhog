@@ -4,4 +4,4 @@ _Diagnostic recall slice only. Overall precision and F1 remain the comparison co
 
 | Category | KeyHog P/R/F1 | KeyHog TP/FN | Best competitor P/R/F1 | Recall gap |
 |---|---|---|---|---|
-| `generic-high-entropy-string` | 1.000 / 0.547 / 0.707 | 99/82 | Betterleaks 1.000 / 0.807 / 0.893 | +0.260 |
+| `generic-high-entropy-string` | 1.000 / 0.434 / 0.606 | 73/95 | Betterleaks 1.000 / 0.798 / 0.887 | +0.363 |
