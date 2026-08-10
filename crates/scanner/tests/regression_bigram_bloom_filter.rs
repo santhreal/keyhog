@@ -347,7 +347,7 @@ fn repeated_payloads_share_generic_keyword_positions() {
     let mut scanner =
         CompiledScanner::compile(detectors.clone()).expect("compile production scanner");
     #[cfg(feature = "simd")]
-    let mut simd_scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::SimdCpu)
+    let simd_scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::SimdCpu)
         .expect("compile production SIMD scanner");
     let payload = "secret = Ab3dEf5hJk7mNp9qRs2uVw4yXz6Bcd8F\n".repeat(128);
     let chunks = vec![

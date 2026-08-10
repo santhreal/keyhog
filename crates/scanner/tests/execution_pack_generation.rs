@@ -3,10 +3,14 @@ use keyhog_scanner::execution_pack::{
     compile_deep_policy_execution_packs, compile_default_policy_execution_packs,
     compile_fast_policy_execution_packs, compile_precision_policy_execution_packs,
     BackendExecutionArtifact, BackendProgramArtifact, CanonicalDetectorExecutionIr,
-    CompiledNativeBackendPrograms, CompiledVyreBackendProgram, ExecutionPack, ExecutionPackBackend,
-    ExecutionPackPolicy, ExecutionPackSectionKind, ExecutionPackSignature, ExecutionPackSigningKey,
+    CompiledNativeBackendPrograms, ExecutionPack, ExecutionPackBackend, ExecutionPackPolicy,
+    ExecutionPackSectionKind, ExecutionPackSignature, ExecutionPackSigningKey,
     HyperscanSimdExecutionProgram, PackFindingParityEvidence, PackGenerationIdentity,
-    ScalarCpuExecutionProgram, VyreExecutionIdentity, VyreOrchestrationProgram,
+    ScalarCpuExecutionProgram,
+};
+#[cfg(feature = "gpu")]
+use keyhog_scanner::execution_pack::{
+    CompiledVyreBackendProgram, VyreExecutionIdentity, VyreOrchestrationProgram,
 };
 use std::fs;
 

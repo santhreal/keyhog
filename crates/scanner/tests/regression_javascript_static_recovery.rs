@@ -121,6 +121,12 @@ fn scan_at_base_offset(
     backend: ScanBackend,
     base_offset: usize,
 ) -> Vec<RawMatch> {
+    let backend_scanner = CompiledScanner::compile_for_backend(
+        keyhog_core::embedded_detector_specs().to_vec(),
+        backend,
+    )
+    .expect("compile backend scanner")
+    .with_config(scanner.config.clone());
     let chunk = Chunk {
         data: source.into(),
         metadata: ChunkMetadata {
@@ -130,7 +136,7 @@ fn scan_at_base_offset(
             ..Default::default()
         },
     };
-    scanner
+    backend_scanner
         .scan_chunks_with_backend(&[chunk], backend)
         .expect("selected backend scan succeeds")
         .into_iter()
@@ -444,6 +450,48 @@ fn fast_scan_does_not_run_static_program_recovery() {
         assert!(
             !exact_target_found(&matches),
             "decode-disabled fast mode must not claim static recovery; got {matches:?}"
+        );
+    }
+}
+
+#[test]
+fn ast_holdout_recovery_grammars_must_pass_every_supported_mechanism() {
+    let scanner = scanner(ScannerConfig::thorough(), ScanBackend::CpuFallback);
+
+    let xor_arrow_holdout = concat!(
+        "const data = [177,109,7,171,232,62,227,128,231,103,67,151,186,98,183,212,",
+        "176,52,69,197,189,63,234,214,176,99,22,151,239,97,235,214,180,102,69,147,",
+        "183,78,184,247]; var key = [214,5,119,244,222,7,210,178]; ",
+        "return String.fromCharCode(...data.map((b, i) => b ^ key[i % key.length]));",
+    );
+
+    let aes_arrow_holdout = concat!(
+        "var k = Buffer.from(\"75aa41b547fb2b20b1c35bf524115e077c7d5dd5c173271fe67c03c2d781192d\", 'hex'); ",
+        "var iv = Buffer.from(\"667daed70df5f3b0c37d48833c330c1c\", 'hex'); ",
+        "var p = Buffer.from(\"X1VL9YbGVjOgjoQWE2fjtUL63C7dbUU9DXwze8i9Ejb9yqL5UEABmPYwofE18q5J\", 'base64'); ",
+        "const stream = crypto.createDecipheriv('aes-256-cbc', k, iv); ",
+        "return Buffer.concat([stream.update(p), stream.final()]).toString('utf8');"
+    );
+    let cryptojs_holdout = concat!(
+        "var cj = require(\"crypto-js\"); ",
+        "function decryptAES(encryptedData, keyMaterial) { ",
+        "var bytes = cj.AES.decrypt(encryptedData, keyMaterial); ",
+        "return bytes.toString(cj.enc.Utf8); } ",
+        "var secretKey = \"mySecretKey123\"; ",
+        "var encryptedMessage = \"U2FsdGVkX18AESIzRFVmd4gAG90IBfANYeQRW2joYGicJIAQKVwf/Qhcc0SZhoi6oSIms0UnVPuMaiFkNHu2pw==\"; ",
+        "var decryptedMessage = decryptAES(encryptedMessage, secretKey); ",
+        "console.log(decryptedMessage);",
+    );
+
+    for (name, source) in [
+        ("xor_arrow_holdout", xor_arrow_holdout),
+        ("aes_arrow_holdout", aes_arrow_holdout),
+        ("cryptojs_holdout", cryptojs_holdout),
+    ] {
+        let matches = scan(&scanner, source, ScanBackend::CpuFallback);
+        assert!(
+            exact_target_found(&matches) || credential_found(&matches, ANCHORED_SECRET),
+            "AST holdout grammar variant '{name}' must recover the expected target plaintext; got {matches:?}"
         );
     }
 }

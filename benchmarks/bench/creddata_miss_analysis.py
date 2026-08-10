@@ -486,12 +486,193 @@ def cmd_decompose(root: pathlib.Path, scanner_bin: str, backend: str = "simd") -
     for r, c in reason.most_common():
         print(f"  {c:5}  {r}")
     return 0
+def cluster_fn_misses(
+    fn_items: list[dict[str, str]],
+    tp_count: int,
+    total_positives: int,
+    fp_count: int,
+) -> list[dict[str, object]]:
+    """Cluster every FN by owning detector and failed gate, ranked by recoverable F1 gain."""
+    if total_positives <= 0:
+        return []
+
+    base_p = tp_count / (tp_count + fp_count) if (tp_count + fp_count) > 0 else 0.0
+    base_r = tp_count / total_positives
+    base_f1 = (2 * base_p * base_r / (base_p + base_r)) if (base_p + base_r) > 0 else 0.0
+
+    grouped: dict[tuple[str, str], int] = collections.Counter()
+    for item in fn_items:
+        detector = item.get("detector") or "unmapped_detector"
+        gate = item.get("failed_gate") or "un-generated_candidate"
+        grouped[(detector, gate)] += 1
+
+    ranked: list[dict[str, object]] = []
+    for (detector, gate), count in grouped.items():
+        new_tp = tp_count + count
+        new_p = new_tp / (new_tp + fp_count) if (new_tp + fp_count) > 0 else 0.0
+        new_r = new_tp / total_positives
+        new_f1 = (2 * new_p * new_r / (new_p + new_r)) if (new_p + new_r) > 0 else 0.0
+        f1_gain = round(new_f1 - base_f1, 4)
+        ranked.append(
+            {
+                "detector": detector,
+                "failed_gate": gate,
+                "fn_count": count,
+                "recoverable_f1_gain": f1_gain,
+            }
+        )
+
+    ranked.sort(key=lambda r: (-r["recoverable_f1_gain"], -r["fn_count"], r["detector"], r["failed_gate"]))
+    return ranked
+
+def _finding_matches_positive(finding: str, positive: str) -> bool:
+    """Use the containment relation shared with CredData decomposition."""
+    return finding == positive or finding in positive or positive in finding
+
+
+def attribute_miss(
+    val: str,
+    rel: str,
+    finds: dict[str, list[tuple[str, str]]],
+    supp: dict[str, set[tuple[str, str, str]]],
+) -> tuple[bool, dict[str, str] | None]:
+    """Attribute a ground-truth positive to TP (True) or a FN miss dict (False)."""
+    rel_finds = finds.get(rel, [])
+    if any(_finding_matches_positive(credential, val) for credential, _ in rel_finds):
+        return True, None
+
+    rv = _redact(val)
+    matched_supp = [(r, d) for (cr, r, d) in supp.get(rel, set()) if cr == rv]
+    if matched_supp:
+        dets = sorted({d for (r, d) in matched_supp if d})
+        det = f"ambiguous:{','.join(dets)}" if len(dets) > 1 else (dets[0] if dets else "unmapped_detector")
+        gates = sorted({r for (r, d) in matched_supp if r})
+        gate = ",".join(gates) if gates else "un-generated_candidate"
+    else:
+        det = "unmapped_detector"
+        gate = "un-generated_candidate"
+
+    return False, {"detector": det, "failed_gate": gate}
+
+
+def count_false_positives(
+    finds: dict[str, list[tuple[str, str]]],
+    positives: list[tuple[str, str]],
+) -> int:
+    """Count findings that do not match any positive in the same file."""
+    return sum(
+        1
+        for rel, find_list in finds.items()
+        for credential, _detector in find_list
+        if not any(
+            rel == positive_rel
+            and _finding_matches_positive(credential, positive)
+            for positive_rel, positive in positives
+        )
+    )
+
+
+def cmd_cluster(root: pathlib.Path, scanner_bin: str, backend: str = "simd") -> int:
+    cache = _LineCache(root)
+    pos: list[tuple[str, str]] = []
+    for row in _iter_meta(root):
+        if (row.get("GroundTruth") or "").strip().upper() != "T":
+            continue
+        rel = (row.get("FilePath") or "").strip()
+        try:
+            ls = int(row.get("LineStart") or 0)
+            le = int(row.get("LineEnd") or 0)
+            vs = int(row.get("ValueStart") or -1)
+            ve = int(row.get("ValueEnd") or -1)
+        except ValueError:
+            continue
+        lines = cache.lines(rel)
+        if not lines or ls < 1 or ls > len(lines) or vs < 0:
+            continue
+        val = _slice_value_from_lines(lines, ls, le, vs, ve)
+        if val:
+            pos.append((rel, val))
+
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="creddata-cluster-"))
+    try:
+        for rel in sorted({r for r, _ in pos}):
+            dst = tmp / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(root / rel, dst)
+        try:
+            proc = subprocess.run(
+                [scanner_bin, "scan", "--path", str(tmp), "--backend", backend,
+                 "--dogfood", "--show-secrets", "--format", "jsonl"],
+                capture_output=True, text=True, timeout=3600,
+            )
+        except subprocess.TimeoutExpired:
+            print("scan timed out after 3600s", file=sys.stderr)
+            return 1
+        if proc.returncode not in (0, 1):
+            print(f"scan failed rc={proc.returncode}: {proc.stderr[:500]}", file=sys.stderr)
+            return 1
+
+        def to_rel(p: str) -> str:
+            ap = os.path.abspath(p)
+            pre = str(tmp) + os.sep
+            return ap[len(pre):] if ap.startswith(pre) else ap
+
+        finds: dict[str, list[tuple[str, str]]] = collections.defaultdict(list)
+        for line in proc.stdout.splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                d = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            loc = d.get("location") or {}
+            fp = loc.get("file_path") or loc.get("file") or ""
+            cred = d.get("credential") or d.get("credential_redacted") or ""
+            det = d.get("detector_id") or "generic"
+            if fp and cred:
+                finds[to_rel(fp)].append((cred, det))
+
+        supp: dict[str, set[tuple[str, str, str]]] = collections.defaultdict(set)
+        for line in proc.stderr.splitlines():
+            line = line.strip()
+            if not line.startswith("{") or "dogfood" not in line:
+                continue
+            try:
+                d = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            for ev in (d.get("dogfood") or {}).get("events", []):
+                supp[to_rel(ev.get("path") or "")].add(
+                    (ev.get("credential_redacted", ""), ev.get("reason", ""), ev.get("detector_id", "generic"))
+                )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    tp_count = 0
+    fn_items: list[dict[str, str]] = []
+    fp_count = count_false_positives(finds, pos)
+
+    for rel, val in pos:
+        is_tp, item = attribute_miss(val, rel, finds, supp)
+        if is_tp:
+            tp_count += 1
+        elif item is not None:
+            fn_items.append(item)
+
+    clusters = cluster_fn_misses(fn_items, tp_count, len(pos), fp_count)
+    print("\n=== CredData Miss Clusters (Ranked by Recoverable F1 Gain) ===")
+    print(f"{'Detector':30} {'Failed Gate':35} {'FNs':>5} {'Recov F1 Gain':>14}")
+    print("-" * 88)
+    for c in clusters:
+        print(f"{c['detector']:30} {c['failed_gate']:35} {c['fn_count']:5d} {c['recoverable_f1_gain']:14.4f}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="CredData miss analysis")
     ap.add_argument("command",
-                    choices=("shapes", "simulate", "keywords", "decompose"))
+                    choices=("shapes", "simulate", "keywords", "decompose", "cluster"))
     ap.add_argument("--root", default=str(_DEFAULT_CREDDATA))
     ap.add_argument("--candidate", choices=tuple(CANDIDATES),
                     default="crypto_key_hex")
@@ -511,6 +692,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_keywords(root)
     if args.command == "decompose":
         return cmd_decompose(root, args.scanner_bin, args.backend)
+    if args.command == "cluster":
+        return cmd_cluster(root, args.scanner_bin, args.backend)
     return cmd_simulate(root, args.candidate)
 
 

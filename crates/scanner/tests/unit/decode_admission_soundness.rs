@@ -295,3 +295,34 @@ fn public_sketch_is_zero_when_decode_is_disabled() {
         DecodeAdmissionSketch::NONE
     );
 }
+
+#[test]
+fn decoder_registry_enumeration_requires_explicit_metadata_decision() {
+    let plan = super::CompiledDecoderPlan::snapshot().expect("compiled decoder plan snapshots");
+    let test_chunk = chunk(0, b"test_payload");
+
+    for decoder in plan.decoders() {
+        assert!(
+            decoder.admission_context_key(&test_chunk).is_some(),
+            "decoder {} requires an explicit metadata-dependency decision",
+            decoder.name()
+        );
+    }
+
+    struct CustomUnreviewedDecoder;
+    impl Decoder for CustomUnreviewedDecoder {
+        fn name(&self) -> &'static str {
+            "custom-unreviewed-decoder"
+        }
+        fn version(&self) -> &'static str {
+            "1.0"
+        }
+        fn decode_chunk_into(&self, _chunk: &Chunk, _sink: &mut dyn DecodeOutputSink) {}
+    }
+
+    let custom = super::RegisteredDecoder::Shared(std::sync::Arc::new(CustomUnreviewedDecoder));
+    assert!(
+        custom.admission_context_key(&test_chunk).is_none(),
+        "unknown/unreviewed decoder must return None for admission_context_key to disable absence reuse"
+    );
+}

@@ -20,7 +20,7 @@ mod support;
 use support::contracts::test_chunk as make_chunk;
 use support::paths::detector_dir;
 
-use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScanExecutionRoute, ScannerConfig};
 use std::collections::BTreeSet;
 
@@ -261,28 +261,30 @@ class BitlyTests(OAuth2TestsMixin, TestCase):
 
 /// Run one backend x fixture cell with backend-local scanner state.
 fn run_cell(
-    scanner: &CompiledScanner,
+    detectors: &[DetectorSpec],
+    config: &ScannerConfig,
     backend: ScanBackend,
     fixture: &Fixture,
 ) -> BTreeSet<FindingKey> {
+    let scanner = CompiledScanner::compile_for_backend(detectors.to_vec(), backend)
+        .expect("backend parity cell scanner should compile")
+        .with_config(config.clone());
     scanner.clear_fragment_cache();
     let results = scanner
         .scan_coalesced_with_backend(&fixture.chunks, backend)
         .expect("backend parity cell scan should succeed");
     collect_keys(&results)
 }
-
 #[test]
 fn backend_parity_matrix_all_fixtures_all_backends() {
-    // The on-disk detector directory is a required test asset: fail closed
-    // rather than let this backend-parity gate pass vacuously.
     let detectors = keyhog_core::load_detectors(&detector_dir())
         .expect("load detectors from the required on-disk detector directory");
     let mut config = ScannerConfig::default();
     config.penalize_test_paths = false;
-    let scanner = CompiledScanner::compile(detectors)
-        .expect("scanner compile")
-        .with_config(config);
+    let reference_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::SimdCpu)
+            .expect("scanner compile")
+            .with_config(config.clone());
     let fixtures = build_fixtures();
 
     let backends = [
@@ -295,9 +297,8 @@ fn backend_parity_matrix_all_fixtures_all_backends() {
     let mut failures: Vec<String> = Vec::new();
 
     for fixture in &fixtures {
-        // SimdCpu is the reference for this fixture.
-        scanner.clear_fragment_cache();
-        let reference_results = scanner
+        reference_scanner.clear_fragment_cache();
+        let reference_results = reference_scanner
             .scan_coalesced_with_backend(&fixture.chunks, ScanBackend::SimdCpu)
             .expect("reference backend parity scan should succeed");
         let reference_keys = collect_keys(&reference_results);
@@ -320,7 +321,7 @@ fn backend_parity_matrix_all_fixtures_all_backends() {
 
         for backend in backends {
             total_cells += 1;
-            let keys = run_cell(&scanner, backend, fixture);
+            let keys = run_cell(&detectors, &config, backend, fixture);
 
             if keys != reference_keys {
                 let only_ref: Vec<_> = reference_keys.difference(&keys).take(3).collect();
@@ -358,8 +359,12 @@ fn gpu_fused_always_anchor_positions_match_cpu_when_keyword_localization_is_disa
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
     let mut config = ScannerConfig::default();
     config.penalize_test_paths = false;
-    let scanner = CompiledScanner::compile(detectors)
-        .expect("compile scanner")
+    let cpu_scanner =
+        CompiledScanner::compile_for_backend(detectors.clone(), ScanBackend::CpuFallback)
+            .expect("compile cpu scanner")
+            .with_config(config.clone());
+    let gpu_scanner = CompiledScanner::compile_for_backend(detectors, ScanBackend::GpuWgpu)
+        .expect("compile gpu scanner")
         .with_config(config);
     let chunks = [make_chunk(
         "password=Hunter2Hunter2Hunter2xx\n",
@@ -370,7 +375,7 @@ fn gpu_fused_always_anchor_positions_match_cpu_when_keyword_localization_is_disa
         phase2_plain_localizer: false,
         phase2_keyword_localizer: false,
     };
-    let cpu_rows = scanner
+    let cpu_rows = cpu_scanner
         .scan_coalesced_with_backend_admission_and_route(
             &chunks,
             ScanBackend::CpuFallback,
@@ -385,7 +390,7 @@ fn gpu_fused_always_anchor_positions_match_cpu_when_keyword_localization_is_disa
         }),
         "the CPU oracle must emit the exact always-anchor finding: {cpu:?}"
     );
-    let gpu_rows = scanner
+    let gpu_rows = gpu_scanner
         .scan_coalesced_with_backend_admission_and_route(&chunks, ScanBackend::GpuWgpu, None, route)
         .expect("GPU routed parity scan should succeed");
     let gpu = collect_keys(&gpu_rows);
@@ -398,15 +403,10 @@ fn gpu_fused_always_anchor_positions_match_cpu_when_keyword_localization_is_disa
 /// hash-iteration-order leaks.
 #[test]
 fn determinism_each_backend_each_fixture_runs_twice_matches() {
-    // The on-disk detector directory is a required test asset: fail closed
-    // rather than let this backend-parity gate pass vacuously.
     let detectors = keyhog_core::load_detectors(&detector_dir())
         .expect("load detectors from the required on-disk detector directory");
     let mut config = ScannerConfig::default();
     config.penalize_test_paths = false;
-    let scanner = CompiledScanner::compile(detectors)
-        .expect("scanner compile")
-        .with_config(config);
     let fixtures = build_fixtures();
     let backends = [
         ScanBackend::SimdCpu,
@@ -417,6 +417,9 @@ fn determinism_each_backend_each_fixture_runs_twice_matches() {
     let mut failures = Vec::new();
     for fixture in &fixtures {
         for backend in backends {
+            let scanner = CompiledScanner::compile_for_backend(detectors.clone(), backend)
+                .expect("scanner compile")
+                .with_config(config.clone());
             scanner.clear_fragment_cache();
             let a = collect_keys(
                 &scanner

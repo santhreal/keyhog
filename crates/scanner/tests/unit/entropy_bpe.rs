@@ -302,3 +302,42 @@ fn config_override_threshold_shifts_the_suppression_boundary() {
         "secret {secret:?} (cpt {secret_cpt:.3}) must survive a bound just above its own cpt"
     );
 }
+
+#[test]
+fn sweep_eligible_detector_families_with_recall_boundary_evidence() {
+    let specs = keyhog_core::load_embedded_detectors_or_fail().expect("embedded corpus loads");
+
+    for spec in specs.iter() {
+        if let Some(bpe_enabled) = spec.bpe_enabled {
+            if bpe_enabled {
+                let bound = spec
+                    .bpe_max_bytes_per_token
+                    .unwrap_or(keyhog_core::DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN);
+
+                for &secret in REAL_SECRETS {
+                    let cpt = bytes_per_token(secret);
+                    assert!(
+                        cpt <= bound,
+                        "Detector {} BPE bound {} must admit real secret {} (cpt {:.3})",
+                        spec.id,
+                        bound,
+                        secret,
+                        cpt
+                    );
+                }
+
+                for &fp in WORD_LIKE_FP {
+                    let cpt = bytes_per_token(fp);
+                    assert!(
+                        cpt > bound,
+                        "Detector {} BPE bound {} must suppress word-like FP {} (cpt {:.3})",
+                        spec.id,
+                        bound,
+                        fp,
+                        cpt
+                    );
+                }
+            }
+        }
+    }
+}

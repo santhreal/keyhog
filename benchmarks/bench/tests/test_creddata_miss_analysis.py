@@ -153,3 +153,63 @@ def test_decompose_is_a_registered_command():
     rc = cma.main(["decompose", "--root", "/nonexistent-corpus-xyz",
                    "--scanner-bin", "keyhog"])
     assert rc == 2
+
+def test_cluster_fn_misses_ranks_by_recoverable_f1_gain():
+    fn_items = [
+        {"detector": "github-classic-pat", "failed_gate": "un-generated_candidate"},
+        {"detector": "github-classic-pat", "failed_gate": "un-generated_candidate"},
+        {"detector": "aws-secret-access-key", "failed_gate": "suppressed_by_entropy_floor"},
+    ]
+    ranked = cma.cluster_fn_misses(fn_items, tp_count=10, total_positives=20, fp_count=2)
+    assert len(ranked) == 2
+    assert ranked[0]["detector"] == "github-classic-pat"
+    assert ranked[0]["fn_count"] == 2
+    assert ranked[0]["recoverable_f1_gain"] > ranked[1]["recoverable_f1_gain"]
+
+def test_cluster_fn_misses_handles_ambiguous_detectors_and_multiple_reasons():
+    fn_items = [
+        {"detector": "ambiguous:aws-key,generic-secret", "failed_gate": "entropy_floor,shape_gate"},
+        {"detector": "github-pat", "failed_gate": "un-generated_candidate"},
+    ]
+    ranked = cma.cluster_fn_misses(fn_items, tp_count=5, total_positives=10, fp_count=1)
+    assert len(ranked) == 2
+    dets = {r["detector"] for r in ranked}
+    assert "ambiguous:aws-key,generic-secret" in dets
+
+def test_cluster_fn_misses_recomputes_precision_with_fp_count():
+    fn_items = [
+        {"detector": "det_a", "failed_gate": "gate_1"},
+        {"detector": "det_a", "failed_gate": "gate_1"},
+    ]
+    # tp=10, fp=10, total_pos=20 => base_p = 10/20 = 0.5, base_r = 10/20 = 0.5, base_f1 = 0.5
+    # new_tp=12, fp=10 => new_p = 12/22 = 0.5455, new_r = 12/20 = 0.6, new_f1 = 0.5714
+    ranked = cma.cluster_fn_misses(fn_items, tp_count=10, total_positives=20, fp_count=10)
+    assert len(ranked) == 1
+    assert ranked[0]["recoverable_f1_gain"] == 0.0714
+
+def test_cluster_is_a_registered_command():
+    rc = cma.main(["cluster", "--root", "/nonexistent-corpus-xyz", "--scanner-bin", "keyhog"])
+    assert rc == 2
+def test_cmd_cluster_uses_one_matching_relation_for_near_hits():
+    """Containment matches are TPs in both miss attribution and FP accounting."""
+    positive = "secret_value_12345"
+    rel = "src/config.py"
+    supp: dict[str, set[tuple[str, str, str]]] = {}
+
+    for finding in [positive, "secret_value", f'"{positive}"']:
+        is_tp, fn_item = cma.attribute_miss(
+            positive,
+            rel,
+            {rel: [(finding, "my-custom-detector")]},
+            supp,
+        )
+        assert is_tp
+        assert fn_item is None
+    finds = {
+        rel: [
+            ("secret_value", "narrow-span"),
+            (f'"{positive}"', "wide-span"),
+            ("unrelated_finding", "false-positive"),
+        ]
+    }
+    assert cma.count_false_positives(finds, [(rel, positive)]) == 1

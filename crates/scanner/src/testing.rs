@@ -5716,6 +5716,10 @@ pub fn parse_tfstate_tuples(text: &str) -> Vec<(String, String, usize)> {
 pub fn structured_detects_k8s_secret(text: &str, path: Option<&str>) -> bool {
     crate::structured::detects_k8s_secret_document(text, path)
 }
+/// Return whether structured preprocessing is impossible for `path`.
+pub fn structured_preprocessing_is_impossible_for_path(path: Option<&str>) -> bool {
+    crate::structured::preprocessing_is_impossible_for_path(path)
+}
 
 /// Integration-test facade: the structured-oversize coverage-gap partition
 /// (task #52). Returns whether an oversize skip of `(text, path)` would be
