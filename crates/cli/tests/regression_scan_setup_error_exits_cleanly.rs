@@ -186,16 +186,21 @@ fn lockdown_required_without_flag_exits_by_code_not_signal() {
 }
 
 #[test]
-fn empty_dir_scan_is_clean_success_baseline() {
-    // Control: a well-formed CPU scan with no setup error must succeed cleanly
-    // (exit 0), proving the Disabled-policy path did not break the happy path.
+fn empty_dir_scan_is_incomplete_coverage_exit_13() {
+    // Zero-byte targets are coverage failures, not clean scans. An empty
+    // directory contributes nothing to the scanner, so exit 13
+    // (EXIT_SOURCE_FAILED / incomplete coverage) is required.
     let dir = TempDir::new().expect("tempdir");
     let output = scan_cpu(dir.path());
+    let combined_output = combined(&output);
     assert_eq!(
         output.status.code(),
-        Some(0),
-        "an empty clean scan exits 0; output:\n{}",
-        combined(&output)
+        Some(13),
+        "an empty directory scan exits 13 (incomplete coverage), not clean; output:\n{combined_output}"
+    );
+    assert!(
+        combined_output.contains("ZERO bytes") || combined_output.contains("covered nothing"),
+        "empty-directory incomplete coverage must be operator-visible; output:\n{combined_output}"
     );
 }
 

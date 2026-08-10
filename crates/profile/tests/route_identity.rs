@@ -1,6 +1,6 @@
 use keyhog_profile::{
     record_batch_route, BatchRouteV2, Evidence, EvidenceGap, RouteIdentityV2, RunIdentity,
-    RunState, Session,
+    RunState, Session, MAX_BATCH_ROUTES,
 };
 
 fn batch(
@@ -117,4 +117,32 @@ fn empty_route_set_keeps_selected_and_completed_evidence_unavailable() {
             reason: EvidenceGap::Unavailable
         }
     ));
+}
+
+#[test]
+fn batch_route_cap_counts_drops_instead_of_growing_unbounded() {
+    let session = Session::start(RunIdentity::new(
+        "0.5.49",
+        "detectors",
+        "config",
+        "batch-route-cap",
+        "test",
+        "auto",
+    ))
+    .expect("start");
+    let runtime = session.runtime();
+
+    for i in 0..(MAX_BATCH_ROUTES + 3) {
+        record_batch_route(&format!("workload-{i}"), "auto", "simd", "simd", None);
+    }
+
+    let routes = runtime.take_session_batch_routes();
+    let dropped = runtime.take_session_dropped_batch_routes();
+    assert_eq!(routes.len(), MAX_BATCH_ROUTES);
+    assert_eq!(dropped, 3);
+
+    let identity =
+        RouteIdentityV2::from_recorded_batches_with_drops("auto".into(), routes, dropped);
+    assert_eq!(identity.dropped_batches, 3);
+    assert_eq!(identity.batches.len(), MAX_BATCH_ROUTES);
 }

@@ -1,0 +1,3 @@
+category = "Fixed"
+crates = ["sources"]
+summary = "Default GitHub wiki clone URLs now follow the configured API endpoint host (GHES-safe)."

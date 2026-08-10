@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "Directory enumeration now walks in parallel, cutting the serial prefix before the first byte is scanned (mirror source-walk 392-419ms to 155-171ms, wall -14.1% on a 15,000-file tree). Findings are byte-identical: entries are still sorted by path before batching, so batch composition and autoroute workload identity are unchanged. Discovery-budget walks (--limit-discovery-bytes, scan-system) deliberately stay serial, because the budget is charged in arrival order and stops at the first over-budget entry, so a parallel walk would admit a different subset on every run."
+crates = ["sources"]

@@ -185,11 +185,23 @@ pub struct RouteIdentityV2 {
     pub completed_backend: Evidence<String>,
     pub autoroute_decision_digest: Evidence<String>,
     pub batches: Vec<BatchRouteV2>,
+    /// Routes omitted after the retained-batch cap; defaults to 0 for older profiles.
+    #[serde(default)]
+    pub dropped_batches: u64,
 }
 
 impl RouteIdentityV2 {
     /// Build aggregate route identity from the exact completed batch records.
     pub fn from_recorded_batches(requested_backend: String, batches: Vec<BatchRouteV2>) -> Self {
+        Self::from_recorded_batches_with_drops(requested_backend, batches, 0)
+    }
+
+    /// Build aggregate route identity, including explicit drop accounting.
+    pub fn from_recorded_batches_with_drops(
+        requested_backend: String,
+        batches: Vec<BatchRouteV2>,
+        dropped_batches: u64,
+    ) -> Self {
         let request_mode = if requested_backend == "auto" {
             "autoroute"
         } else {
@@ -203,6 +215,7 @@ impl RouteIdentityV2 {
             requested_backend,
             autoroute_decision_digest: Evidence::unavailable(EvidenceGap::Unavailable),
             batches,
+            dropped_batches,
         }
     }
 }
@@ -763,6 +776,7 @@ impl CausalProfileV2 {
                 completed_backend: legacy_gap(),
                 autoroute_decision_digest: legacy_gap(),
                 batches: Vec::new(),
+                dropped_batches: 0,
             },
             caches: vec![CacheLayerV2 {
                 version: 1,

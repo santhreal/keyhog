@@ -1,0 +1,4996 @@
+{
+  "version": 8,
+  "envelope": {
+    "version": 1,
+    "schema": "keyhog-profile",
+    "schema_version": {
+      "version": 1,
+      "major": 2,
+      "minor": 8
+    },
+    "event_schema_version": 7,
+    "metric_registry_version": 6,
+    "producer": {
+      "version": 1,
+      "profile_crate_version": "0.5.68",
+      "exporter_version": 1
+    },
+    "integrity": {
+      "status": "unavailable",
+      "reason": "legacy-v1-not-recorded"
+    }
+  },
+  "identity": {
+    "version": 1,
+    "run_id": "684443-1785932593476307571-1",
+    "parent_run_id": {
+      "status": "unavailable",
+      "reason": "legacy-v1-not-recorded"
+    },
+    "benchmark_pair_id": {
+      "status": "unavailable",
+      "reason": "legacy-v1-not-recorded"
+    },
+    "repeat_group_id": {
+      "status": "unavailable",
+      "reason": "legacy-v1-not-recorded"
+    },
+    "host": {
+      "version": 1,
+      "operating_system": {
+        "status": "recorded",
+        "value": "linux"
+      },
+      "kernel_version": {
+        "status": "recorded",
+        "value": "6.17.0-19-generic"
+      },
+      "architecture": {
+        "status": "recorded",
+        "value": "x86_64"
+      },
+      "cpu_model": {
+        "status": "recorded",
+        "value": "AMD Ryzen 9 9950X 16-Core Processor"
+      },
+      "logical_cpus": 32,
+      "physical_cores": {
+        "status": "recorded",
+        "value": 16
+      },
+      "cpu_features_digest": {
+        "status": "recorded",
+        "value": "3e1ebcf8c51a5b715fe19b1a2ff9c127a0184c5ca078202896ee031759703c44"
+      },
+      "affinity_digest": {
+        "status": "recorded",
+        "value": "77d886849185e92058e8ac5d21c05156536a52e38e20de5bf0b145da5900415f"
+      },
+      "numa_digest": {
+        "status": "recorded",
+        "value": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+      }
+    },
+    "build": {
+      "version": 1,
+      "binary_version": "0.5.68",
+      "binary_digest": {
+        "status": "recorded",
+        "value": "3525cc0efaeacdcdf7906e7e003668e2d6f1886c29d80e402d9b902b90fef998"
+      },
+      "source_revision": {
+        "status": "unavailable",
+        "reason": "unavailable"
+      },
+      "build_profile": {
+        "status": "recorded",
+        "value": "debug"
+      },
+      "target_triple": {
+        "status": "recorded",
+        "value": "x86_64-unknown-linux-gnu"
+      },
+      "feature_digest": {
+        "status": "recorded",
+        "value": "1cdb3a18ecbd4691abaf6a65120c647bc58f1381cc642704bc674a6222b4f19b"
+      },
+      "compiler_identity": {
+        "status": "recorded",
+        "value": "rustc 1.89.0 (29483883e 2025-08-04); binary: rustc; commit-hash: 29483883eed69d5fb4db01964cdf2af4d86e9cb2; commit-date: 2025-08-04; host: x86_64-unknown-linux-gnu; release: 1.89.0; LLVM version: 20.1.7"
+      },
+      "allocator_identity": {
+        "status": "recorded",
+        "value": "system"
+      },
+      "linked_backend_digest": {
+        "status": "recorded",
+        "value": "d21df746c5ab8d8b1a50f7387fa9e8d111385a0b6c2a502556f456722b383027"
+      }
+    },
+    "detectors": {
+      "version": 1,
+      "corpus_digest": "94c4f3e06423e5dd3790161b7ef786da6e968db3bf2e2e21271309170ec3e813",
+      "compiled_plan_digest": {
+        "status": "recorded",
+        "value": "fd19945dfb26d42cd529cf52bc1088f3da53ad84684ba6e09abfbd2920672b8d"
+      },
+      "enabled_detector_digest": {
+        "status": "recorded",
+        "value": "49206f4dfbf36c563eb47aef650929c867fd1fa24b6c2c3d59b71e0995a4febd"
+      },
+      "backend_database_digest": {
+        "status": "unavailable",
+        "reason": "unavailable"
+      },
+      "external_provenance_digest": {
+        "status": "recorded",
+        "value": "a9825c07580ff7709a370bdd089766a4b0749d57e070b89671f3018b80c8761e"
+      }
+    },
+    "config": {
+      "version": 1,
+      "resolved_config_digest": "a0cefb5a5e15dc32305f44c3a385f69ff39315e3c0620c55321d33256a0ee763",
+      "policy_digest": {
+        "status": "recorded",
+        "value": "063f7e9043ddc16c46f1b059d7448eea27974880c28059618f24e33c3b7e61a9"
+      },
+      "preset": {
+        "status": "recorded",
+        "value": "default"
+      },
+      "protection_state": {
+        "status": "recorded",
+        "value": "default-applied"
+      }
+    },
+    "source": {
+      "version": 1,
+      "adapters": [
+        "filesystem"
+      ],
+      "target_digest": {
+        "status": "recorded",
+        "value": "33a55f225d2dca03e28f8cf2f3df09ad9b77574a982f848358cabb0a37002475"
+      },
+      "partition_digest": {
+        "status": "recorded",
+        "value": "b2cc2b1633c97a3495a6a451abc3c3ea013d4ae3cc0399ca8d6fe8f5ccd7570b"
+      }
+    },
+    "workload": {
+      "version": 1,
+      "class": "filesystem",
+      "raw_source_bytes": 54,
+      "source_units": 1,
+      "container_bytes": {
+        "status": "unavailable",
+        "reason": "unavailable"
+      },
+      "expanded_payload_bytes": {
+        "status": "unavailable",
+        "reason": "unavailable"
+      },
+      "derived_decoder_bytes": {
+        "status": "recorded",
+        "value": 0
+      },
+      "backend_dispatched_bytes": {
+        "status": "recorded",
+        "value": 54
+      },
+      "size_bucket": {
+        "status": "recorded",
+        "value": "tiny"
+      },
+      "fanout_bucket": {
+        "status": "recorded",
+        "value": "single"
+      }
+    },
+    "route": {
+      "version": 1,
+      "request_mode": "explicit",
+      "requested_backend": "cpu-fallback",
+      "selected_backend": {
+        "status": "recorded",
+        "value": "cpu-fallback"
+      },
+      "completed_backend": {
+        "status": "recorded",
+        "value": "cpu-fallback"
+      },
+      "autoroute_decision_digest": {
+        "status": "unavailable",
+        "reason": "unavailable"
+      },
+      "batches": [
+        {
+          "version": 1,
+          "batch_sequence": 0,
+          "workload_key_digest": "f03883473e7eb5fb969d9aca4aea41c14e92bb59700afda3b861ec4ac743ca96",
+          "requested_backend": "cpu-fallback",
+          "selected_backend": "cpu-fallback",
+          "completed_backend": "cpu-fallback",
+          "recovered_from_backend": {
+            "status": "unavailable",
+            "reason": "unavailable"
+          }
+        }
+      ]
+    },
+    "caches": [
+      {
+        "version": 1,
+        "layer": "detector",
+        "state": "warm",
+        "generation": {
+          "status": "recorded",
+          "value": "fd19945dfb26d42cd529cf52bc1088f3da53ad84684ba6e09abfbd2920672b8d"
+        },
+        "digest": {
+          "status": "recorded",
+          "value": "94c4f3e06423e5dd3790161b7ef786da6e968db3bf2e2e21271309170ec3e813"
+        }
+      },
+      {
+        "version": 1,
+        "layer": "merkle",
+        "state": "disabled",
+        "generation": {
+          "status": "unavailable",
+          "reason": "collector-disabled"
+        },
+        "digest": {
+          "status": "unavailable",
+          "reason": "collector-disabled"
+        }
+      },
+      {
+        "version": 1,
+        "layer": "autoroute",
+        "state": "cold",
+        "generation": {
+          "status": "recorded",
+          "value": "cli=[none] scanner=[none] sources=[none] verifier=[none]"
+        },
+        "digest": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 1,
+        "layer": "verifier",
+        "state": "disabled",
+        "generation": {
+          "status": "unavailable",
+          "reason": "collector-disabled"
+        },
+        "digest": {
+          "status": "unavailable",
+          "reason": "collector-disabled"
+        }
+      },
+      {
+        "version": 1,
+        "layer": "daemon",
+        "state": "disabled",
+        "generation": {
+          "status": "unavailable",
+          "reason": "collector-disabled"
+        },
+        "digest": {
+          "status": "unavailable",
+          "reason": "collector-disabled"
+        }
+      },
+      {
+        "version": 1,
+        "layer": "page-cache",
+        "state": "unknown",
+        "generation": {
+          "status": "unavailable",
+          "reason": "unsupported"
+        },
+        "digest": {
+          "status": "unavailable",
+          "reason": "unsupported"
+        }
+      }
+    ],
+    "daemon": {
+      "version": 1,
+      "state": "off",
+      "generation": {
+        "status": "unavailable",
+        "reason": "collector-disabled"
+      },
+      "request_id": {
+        "status": "unavailable",
+        "reason": "collector-disabled"
+      },
+      "parent_request_id": {
+        "status": "unavailable",
+        "reason": "collector-disabled"
+      },
+      "ready_age_ns": {
+        "status": "unavailable",
+        "reason": "collector-disabled"
+      }
+    },
+    "outcome": {
+      "version": 1,
+      "status": "completed",
+      "coverage": "complete",
+      "error_count": {
+        "status": "recorded",
+        "value": 0
+      },
+      "exit_code": {
+        "status": "recorded",
+        "value": 1
+      },
+      "findings_digest": {
+        "status": "recorded",
+        "value": "acf1c81237a4a2b4bf2c3c0f60dbea154999a4429522f7a309a191d66be0a2b8"
+      },
+      "report_digest": {
+        "status": "recorded",
+        "value": "2f158b2026df8283c62740bf90be457da0ed6fecafcd088ae0a4ba85ff33c5bc"
+      }
+    },
+    "scanner_threads_requested": 16,
+    "reader_threads_requested": {
+      "status": "unavailable",
+      "reason": "legacy-v1-not-recorded"
+    },
+    "reader_threads_resolved": {
+      "status": "unavailable",
+      "reason": "legacy-v1-not-recorded"
+    }
+  },
+  "status": "completed",
+  "wall_time_ns": 9342886774,
+  "stages": [
+    {
+      "version": 1,
+      "stage": "source-acquire",
+      "elapsed_ns": 4544774,
+      "calls": 2,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "source-walk",
+      "elapsed_ns": 8075138,
+      "calls": 2,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "source-read",
+      "elapsed_ns": 548883,
+      "calls": 3,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "preprocess",
+      "elapsed_ns": 74050,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "phase1-triggers",
+      "elapsed_ns": 36319,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "backend-dispatch",
+      "elapsed_ns": 1036342568,
+      "calls": 2,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "hot-patterns",
+      "elapsed_ns": 2315,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "confirmed-patterns",
+      "elapsed_ns": 439253942,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "phase2-prefilter",
+      "elapsed_ns": 336119294,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "phase2-keyword-ac",
+      "elapsed_ns": 27462,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "phase2-shared-ac",
+      "elapsed_ns": 29235,
+      "calls": 2,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "phase2-anchored-verify",
+      "elapsed_ns": 3356,
+      "calls": 2,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "phase2-whole-chunk",
+      "elapsed_ns": 33102,
+      "calls": 2,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "generic-detection",
+      "elapsed_ns": 250601153,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "entropy",
+      "elapsed_ns": 3374900,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "machine-learning",
+      "elapsed_ns": 853989,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "decode",
+      "elapsed_ns": 153630,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "suppression",
+      "elapsed_ns": 995556,
+      "calls": 5,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "live-verification",
+      "elapsed_ns": 71876,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "reporting",
+      "elapsed_ns": 622223163,
+      "calls": 3,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "source-queue-wait",
+      "elapsed_ns": 29595,
+      "calls": 3,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "incremental-lookup",
+      "elapsed_ns": 12904,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "backend-select",
+      "elapsed_ns": 59121,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "result-merge",
+      "elapsed_ns": 84259,
+      "calls": 2,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "detector-load",
+      "elapsed_ns": 242090554,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "detector-validate",
+      "elapsed_ns": 258944115,
+      "calls": 2,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "execution-pack-select",
+      "elapsed_ns": 31610,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "execution-pack-map",
+      "elapsed_ns": 2613651914,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "backend-acquire",
+      "elapsed_ns": 451691,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "backend-init",
+      "elapsed_ns": 2613637767,
+      "calls": 1,
+      "attributed_ns": 0
+    },
+    {
+      "version": 1,
+      "stage": "teardown",
+      "elapsed_ns": 12955876,
+      "calls": 1,
+      "attributed_ns": 0
+    }
+  ],
+  "transitions": [
+    {
+      "version": 1,
+      "state": "created",
+      "elapsed_ns": 0
+    },
+    {
+      "version": 1,
+      "state": "acquiring",
+      "elapsed_ns": 7978505742
+    },
+    {
+      "version": 1,
+      "state": "scanning",
+      "elapsed_ns": 7979077129
+    },
+    {
+      "version": 1,
+      "state": "resolving",
+      "elapsed_ns": 9015499637
+    },
+    {
+      "version": 1,
+      "state": "verifying",
+      "elapsed_ns": 9016036759
+    },
+    {
+      "version": 1,
+      "state": "reporting",
+      "elapsed_ns": 9016156294
+    },
+    {
+      "version": 1,
+      "state": "completed",
+      "elapsed_ns": 9342799630
+    }
+  ],
+  "states": [
+    {
+      "version": 1,
+      "state": "created",
+      "elapsed_ns": 7978505742,
+      "cpu_time_ms": 27070,
+      "aggregate_cpu_milli_percent": 339286,
+      "resident_start_bytes": 33566720,
+      "resident_end_bytes": 134193152,
+      "threads_start": 1,
+      "threads_end": 17
+    },
+    {
+      "version": 1,
+      "state": "acquiring",
+      "elapsed_ns": 571387,
+      "cpu_time_ms": 0,
+      "aggregate_cpu_milli_percent": 0,
+      "resident_start_bytes": 134193152,
+      "resident_end_bytes": 134717440,
+      "threads_start": 17,
+      "threads_end": 17
+    },
+    {
+      "version": 1,
+      "state": "scanning",
+      "elapsed_ns": 1036422508,
+      "cpu_time_ms": 1040,
+      "aggregate_cpu_milli_percent": 100345,
+      "resident_start_bytes": 134717440,
+      "resident_end_bytes": 179650560,
+      "threads_start": 17,
+      "threads_end": 17
+    },
+    {
+      "version": 1,
+      "state": "resolving",
+      "elapsed_ns": 537122,
+      "cpu_time_ms": 0,
+      "aggregate_cpu_milli_percent": 0,
+      "resident_start_bytes": 179650560,
+      "resident_end_bytes": 179912704,
+      "threads_start": 17,
+      "threads_end": 17
+    },
+    {
+      "version": 1,
+      "state": "verifying",
+      "elapsed_ns": 119535,
+      "cpu_time_ms": 0,
+      "aggregate_cpu_milli_percent": 0,
+      "resident_start_bytes": 179912704,
+      "resident_end_bytes": 179912704,
+      "threads_start": 17,
+      "threads_end": 17
+    },
+    {
+      "version": 1,
+      "state": "reporting",
+      "elapsed_ns": 326643336,
+      "cpu_time_ms": 330,
+      "aggregate_cpu_milli_percent": 101027,
+      "resident_start_bytes": 179912704,
+      "resident_end_bytes": 174522368,
+      "threads_start": 17,
+      "threads_end": 17
+    }
+  ],
+  "collectors": [
+    {
+      "version": 1,
+      "collector": "process-resources",
+      "availability": "available"
+    },
+    {
+      "version": 1,
+      "collector": "hardware-counters",
+      "availability": "disabled",
+      "detail": "enable the keyhog-profile hardware-counters feature"
+    },
+    {
+      "version": 1,
+      "collector": "scheduler-activity",
+      "availability": "disabled",
+      "detail": "enable the keyhog-profile hardware-counters feature"
+    },
+    {
+      "version": 1,
+      "collector": "thread-utilization",
+      "availability": "disabled",
+      "detail": "enable the keyhog-profile hardware-counters feature"
+    },
+    {
+      "version": 1,
+      "collector": "cpu-topology",
+      "availability": "disabled",
+      "detail": "enable the keyhog-profile hardware-counters feature"
+    },
+    {
+      "version": 1,
+      "collector": "allocation-tracking",
+      "availability": "available"
+    },
+    {
+      "version": 1,
+      "collector": "system-io",
+      "availability": "available"
+    },
+    {
+      "version": 1,
+      "collector": "pressure-thermal",
+      "availability": "available"
+    }
+  ],
+  "resource_samples": [
+    {
+      "version": 1,
+      "state": "created",
+      "elapsed_ns": 0,
+      "snapshot": {
+        "version": 2,
+        "cpu_time_ms": 0,
+        "resident_bytes": 33566720,
+        "virtual_bytes": 90009600,
+        "thread_count": 1,
+        "resident_high_water_bytes": 33566720,
+        "swap_bytes": 0
+      }
+    },
+    {
+      "version": 1,
+      "state": "acquiring",
+      "elapsed_ns": 7978505742,
+      "snapshot": {
+        "version": 2,
+        "cpu_time_ms": 27070,
+        "resident_bytes": 134193152,
+        "virtual_bytes": 1332785152,
+        "thread_count": 17,
+        "resident_high_water_bytes": 134193152,
+        "swap_bytes": 0
+      }
+    },
+    {
+      "version": 1,
+      "state": "scanning",
+      "elapsed_ns": 7979077129,
+      "snapshot": {
+        "version": 2,
+        "cpu_time_ms": 27070,
+        "resident_bytes": 134717440,
+        "virtual_bytes": 1332785152,
+        "thread_count": 17,
+        "resident_high_water_bytes": 134717440,
+        "swap_bytes": 0
+      }
+    },
+    {
+      "version": 1,
+      "state": "resolving",
+      "elapsed_ns": 9015499637,
+      "snapshot": {
+        "version": 2,
+        "cpu_time_ms": 28110,
+        "resident_bytes": 179650560,
+        "virtual_bytes": 2033545216,
+        "thread_count": 17,
+        "resident_high_water_bytes": 179650560,
+        "swap_bytes": 0
+      }
+    },
+    {
+      "version": 1,
+      "state": "verifying",
+      "elapsed_ns": 9016036759,
+      "snapshot": {
+        "version": 2,
+        "cpu_time_ms": 28110,
+        "resident_bytes": 179912704,
+        "virtual_bytes": 2033545216,
+        "thread_count": 17,
+        "resident_high_water_bytes": 179912704,
+        "swap_bytes": 0
+      }
+    },
+    {
+      "version": 1,
+      "state": "reporting",
+      "elapsed_ns": 9016156294,
+      "snapshot": {
+        "version": 2,
+        "cpu_time_ms": 28110,
+        "resident_bytes": 179912704,
+        "virtual_bytes": 2033545216,
+        "thread_count": 17,
+        "resident_high_water_bytes": 179912704,
+        "swap_bytes": 0
+      }
+    },
+    {
+      "version": 1,
+      "state": "completed",
+      "elapsed_ns": 9342799630,
+      "snapshot": {
+        "version": 2,
+        "cpu_time_ms": 28440,
+        "resident_bytes": 174522368,
+        "virtual_bytes": 2020360192,
+        "thread_count": 17,
+        "resident_high_water_bytes": 174862336,
+        "swap_bytes": 0
+      }
+    }
+  ],
+  "resources": {
+    "version": 1,
+    "start": {
+      "version": 2,
+      "cpu_time_ms": 0,
+      "resident_bytes": 33566720,
+      "virtual_bytes": 90009600,
+      "thread_count": 1,
+      "resident_high_water_bytes": 33566720,
+      "swap_bytes": 0
+    },
+    "finish": {
+      "version": 2,
+      "cpu_time_ms": 28440,
+      "resident_bytes": 174522368,
+      "virtual_bytes": 2020360192,
+      "thread_count": 17,
+      "resident_high_water_bytes": 174862336,
+      "swap_bytes": 0
+    },
+    "max_observed_resident_bytes": 179912704,
+    "max_observed_threads": 17,
+    "aggregate_cpu_percent": 304.4027043027504
+  },
+  "typed_metrics": [
+    {
+      "version": 1,
+      "metric_id": "input-bytes",
+      "kind": "Counter",
+      "value": 54
+    },
+    {
+      "version": 1,
+      "metric_id": "input-units",
+      "kind": "Counter",
+      "value": 1
+    },
+    {
+      "version": 1,
+      "metric_id": "process-cpu-time",
+      "kind": "Counter",
+      "value": 28440
+    },
+    {
+      "version": 1,
+      "metric_id": "resident-memory",
+      "kind": "Gauge",
+      "value": 174522368
+    },
+    {
+      "version": 1,
+      "metric_id": "virtual-memory",
+      "kind": "Gauge",
+      "value": 2020360192
+    },
+    {
+      "version": 1,
+      "metric_id": "process-threads",
+      "kind": "Gauge",
+      "value": 17
+    },
+    {
+      "version": 1,
+      "metric_id": "phase2-prefilter-mark-calls",
+      "kind": "Counter",
+      "value": 1
+    },
+    {
+      "version": 1,
+      "metric_id": "phase2-prefilter-per-pattern-work",
+      "kind": "Counter",
+      "value": 1
+    },
+    {
+      "version": 1,
+      "metric_id": "phase2-prefilter-regexset-served",
+      "kind": "Counter",
+      "value": 1
+    },
+    {
+      "version": 1,
+      "metric_id": "decode-extract-calls",
+      "kind": "Counter",
+      "value": 1
+    },
+    {
+      "version": 1,
+      "metric_id": "decode-extract-bytes",
+      "kind": "Counter",
+      "value": 54
+    },
+    {
+      "version": 1,
+      "metric_id": "generic-prefilter-calls",
+      "kind": "Counter",
+      "value": 1
+    },
+    {
+      "version": 1,
+      "metric_id": "generic-keyword-lines",
+      "kind": "Counter",
+      "value": 2
+    },
+    {
+      "version": 1,
+      "metric_id": "generic-regex-captures",
+      "kind": "Counter",
+      "value": 2
+    },
+    {
+      "version": 1,
+      "metric_id": "generic-emits",
+      "kind": "Counter",
+      "value": 1
+    },
+    {
+      "version": 1,
+      "metric_id": "ml-batch-calls",
+      "kind": "Counter",
+      "value": 1
+    },
+    {
+      "version": 1,
+      "metric_id": "ml-batch-candidates",
+      "kind": "Counter",
+      "value": 2
+    },
+    {
+      "version": 1,
+      "metric_id": "decode-extract-ns",
+      "kind": "Counter",
+      "value": 9178
+    },
+    {
+      "version": 1,
+      "metric_id": "generic-prefilter-ns",
+      "kind": "Counter",
+      "value": 10961
+    },
+    {
+      "version": 1,
+      "metric_id": "generic-extract-ns",
+      "kind": "Counter",
+      "value": 250555818
+    },
+    {
+      "version": 1,
+      "metric_id": "ml-score-ns",
+      "kind": "Counter",
+      "value": 683358
+    },
+    {
+      "version": 1,
+      "metric_id": "allocation-count",
+      "kind": "Counter",
+      "value": 16701011
+    },
+    {
+      "version": 1,
+      "metric_id": "deallocation-count",
+      "kind": "Counter",
+      "value": 16346122
+    },
+    {
+      "version": 1,
+      "metric_id": "allocation-bytes",
+      "kind": "Counter",
+      "value": 5256314439
+    },
+    {
+      "version": 1,
+      "metric_id": "deallocation-bytes",
+      "kind": "Counter",
+      "value": 5226152472
+    },
+    {
+      "version": 1,
+      "metric_id": "allocation-live-bytes",
+      "kind": "Gauge",
+      "value": 40058860
+    },
+    {
+      "version": 1,
+      "metric_id": "allocation-peak-live-bytes",
+      "kind": "Gauge",
+      "value": 79289719
+    },
+    {
+      "version": 1,
+      "metric_id": "minor-faults",
+      "kind": "Counter",
+      "value": 32431
+    },
+    {
+      "version": 1,
+      "metric_id": "resident-high-water-bytes",
+      "kind": "Gauge",
+      "value": 174862336
+    }
+  ],
+  "latency_distributions": [
+    {
+      "version": 2,
+      "metric_id": "source-acquire",
+      "macro_stage_id": "acquire",
+      "call_count": 2,
+      "minimum_ns": 179899,
+      "maximum_ns": 4364875,
+      "p50_ns": 262143,
+      "p90_ns": 4364875,
+      "p95_ns": 4364875,
+      "p99_ns": 4364875,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 131072,
+          "upper_bound_ns": 262143,
+          "count": 1
+        },
+        {
+          "version": 1,
+          "lower_bound_ns": 4194304,
+          "upper_bound_ns": 8388607,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "source-walk",
+      "macro_stage_id": "acquire",
+      "call_count": 2,
+      "minimum_ns": 3686297,
+      "maximum_ns": 4388841,
+      "p50_ns": 4194303,
+      "p90_ns": 4388841,
+      "p95_ns": 4388841,
+      "p99_ns": 4388841,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 2097152,
+          "upper_bound_ns": 4194303,
+          "count": 1
+        },
+        {
+          "version": 1,
+          "lower_bound_ns": 4194304,
+          "upper_bound_ns": 8388607,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "source-read",
+      "macro_stage_id": "acquire",
+      "call_count": 3,
+      "minimum_ns": 3055,
+      "maximum_ns": 314272,
+      "p50_ns": 262143,
+      "p90_ns": 314272,
+      "p95_ns": 314272,
+      "p99_ns": 314272,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 2048,
+          "upper_bound_ns": 4095,
+          "count": 1
+        },
+        {
+          "version": 1,
+          "lower_bound_ns": 131072,
+          "upper_bound_ns": 262143,
+          "count": 1
+        },
+        {
+          "version": 1,
+          "lower_bound_ns": 262144,
+          "upper_bound_ns": 524287,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "preprocess",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 74050,
+      "maximum_ns": 74050,
+      "p50_ns": 74050,
+      "p90_ns": 74050,
+      "p95_ns": 74050,
+      "p99_ns": 74050,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 65536,
+          "upper_bound_ns": 131071,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "phase1-triggers",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 36319,
+      "maximum_ns": 36319,
+      "p50_ns": 36319,
+      "p90_ns": 36319,
+      "p95_ns": 36319,
+      "p99_ns": 36319,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 32768,
+          "upper_bound_ns": 65535,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "backend-dispatch",
+      "macro_stage_id": "scan",
+      "call_count": 2,
+      "minimum_ns": 18034,
+      "maximum_ns": 1036324534,
+      "p50_ns": 32767,
+      "p90_ns": 1036324534,
+      "p95_ns": 1036324534,
+      "p99_ns": 1036324534,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 16384,
+          "upper_bound_ns": 32767,
+          "count": 1
+        },
+        {
+          "version": 1,
+          "lower_bound_ns": 536870912,
+          "upper_bound_ns": 1073741823,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "hot-patterns",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 2315,
+      "maximum_ns": 2315,
+      "p50_ns": 2315,
+      "p90_ns": 2315,
+      "p95_ns": 2315,
+      "p99_ns": 2315,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 2048,
+          "upper_bound_ns": 4095,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "confirmed-patterns",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 439253942,
+      "maximum_ns": 439253942,
+      "p50_ns": 439253942,
+      "p90_ns": 439253942,
+      "p95_ns": 439253942,
+      "p99_ns": 439253942,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 268435456,
+          "upper_bound_ns": 536870911,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "phase2-prefilter",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 336119294,
+      "maximum_ns": 336119294,
+      "p50_ns": 336119294,
+      "p90_ns": 336119294,
+      "p95_ns": 336119294,
+      "p99_ns": 336119294,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 268435456,
+          "upper_bound_ns": 536870911,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "phase2-keyword-ac",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 27462,
+      "maximum_ns": 27462,
+      "p50_ns": 27462,
+      "p90_ns": 27462,
+      "p95_ns": 27462,
+      "p99_ns": 27462,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 16384,
+          "upper_bound_ns": 32767,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "phase2-shared-ac",
+      "macro_stage_id": "scan",
+      "call_count": 2,
+      "minimum_ns": 3256,
+      "maximum_ns": 25979,
+      "p50_ns": 4095,
+      "p90_ns": 25979,
+      "p95_ns": 25979,
+      "p99_ns": 25979,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 2048,
+          "upper_bound_ns": 4095,
+          "count": 1
+        },
+        {
+          "version": 1,
+          "lower_bound_ns": 16384,
+          "upper_bound_ns": 32767,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "phase2-anchored-verify",
+      "macro_stage_id": "scan",
+      "call_count": 2,
+      "minimum_ns": 1292,
+      "maximum_ns": 2064,
+      "p50_ns": 2047,
+      "p90_ns": 2064,
+      "p95_ns": 2064,
+      "p99_ns": 2064,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 1024,
+          "upper_bound_ns": 2047,
+          "count": 1
+        },
+        {
+          "version": 1,
+          "lower_bound_ns": 2048,
+          "upper_bound_ns": 4095,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "phase2-whole-chunk",
+      "macro_stage_id": "scan",
+      "call_count": 2,
+      "minimum_ns": 2865,
+      "maximum_ns": 30237,
+      "p50_ns": 4095,
+      "p90_ns": 30237,
+      "p95_ns": 30237,
+      "p99_ns": 30237,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 2048,
+          "upper_bound_ns": 4095,
+          "count": 1
+        },
+        {
+          "version": 1,
+          "lower_bound_ns": 16384,
+          "upper_bound_ns": 32767,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "generic-detection",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 250601153,
+      "maximum_ns": 250601153,
+      "p50_ns": 250601153,
+      "p90_ns": 250601153,
+      "p95_ns": 250601153,
+      "p99_ns": 250601153,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 134217728,
+          "upper_bound_ns": 268435455,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "entropy",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 3374900,
+      "maximum_ns": 3374900,
+      "p50_ns": 3374900,
+      "p90_ns": 3374900,
+      "p95_ns": 3374900,
+      "p99_ns": 3374900,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 2097152,
+          "upper_bound_ns": 4194303,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "machine-learning",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 853989,
+      "maximum_ns": 853989,
+      "p50_ns": 853989,
+      "p90_ns": 853989,
+      "p95_ns": 853989,
+      "p99_ns": 853989,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 524288,
+          "upper_bound_ns": 1048575,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "decode",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 153630,
+      "maximum_ns": 153630,
+      "p50_ns": 153630,
+      "p90_ns": 153630,
+      "p95_ns": 153630,
+      "p99_ns": 153630,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 131072,
+          "upper_bound_ns": 262143,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "suppression",
+      "macro_stage_id": "resolve",
+      "call_count": 5,
+      "minimum_ns": 18124,
+      "maximum_ns": 443686,
+      "p50_ns": 131071,
+      "p90_ns": 443686,
+      "p95_ns": 443686,
+      "p99_ns": 443686,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 16384,
+          "upper_bound_ns": 32767,
+          "count": 2
+        },
+        {
+          "version": 1,
+          "lower_bound_ns": 65536,
+          "upper_bound_ns": 131071,
+          "count": 1
+        },
+        {
+          "version": 1,
+          "lower_bound_ns": 262144,
+          "upper_bound_ns": 524287,
+          "count": 2
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "live-verification",
+      "macro_stage_id": "verify",
+      "call_count": 1,
+      "minimum_ns": 71876,
+      "maximum_ns": 71876,
+      "p50_ns": 71876,
+      "p90_ns": 71876,
+      "p95_ns": 71876,
+      "p99_ns": 71876,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 65536,
+          "upper_bound_ns": 131071,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "reporting",
+      "macro_stage_id": "report",
+      "call_count": 3,
+      "minimum_ns": 1593,
+      "maximum_ns": 311562817,
+      "p50_ns": 311562817,
+      "p90_ns": 311562817,
+      "p95_ns": 311562817,
+      "p99_ns": 311562817,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 1024,
+          "upper_bound_ns": 2047,
+          "count": 1
+        },
+        {
+          "version": 1,
+          "lower_bound_ns": 268435456,
+          "upper_bound_ns": 536870911,
+          "count": 2
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "source-queue-wait",
+      "macro_stage_id": "acquire",
+      "call_count": 3,
+      "minimum_ns": 7514,
+      "maximum_ns": 11792,
+      "p50_ns": 11792,
+      "p90_ns": 11792,
+      "p95_ns": 11792,
+      "p99_ns": 11792,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 4096,
+          "upper_bound_ns": 8191,
+          "count": 1
+        },
+        {
+          "version": 1,
+          "lower_bound_ns": 8192,
+          "upper_bound_ns": 16383,
+          "count": 2
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "incremental-lookup",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 12904,
+      "maximum_ns": 12904,
+      "p50_ns": 12904,
+      "p90_ns": 12904,
+      "p95_ns": 12904,
+      "p99_ns": 12904,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 8192,
+          "upper_bound_ns": 16383,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "backend-select",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 59121,
+      "maximum_ns": 59121,
+      "p50_ns": 59121,
+      "p90_ns": 59121,
+      "p95_ns": 59121,
+      "p99_ns": 59121,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 32768,
+          "upper_bound_ns": 65535,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "result-merge",
+      "macro_stage_id": "resolve",
+      "call_count": 2,
+      "minimum_ns": 36990,
+      "maximum_ns": 47269,
+      "p50_ns": 47269,
+      "p90_ns": 47269,
+      "p95_ns": 47269,
+      "p99_ns": 47269,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 32768,
+          "upper_bound_ns": 65535,
+          "count": 2
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "detector-load",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 242090554,
+      "maximum_ns": 242090554,
+      "p50_ns": 242090554,
+      "p90_ns": 242090554,
+      "p95_ns": 242090554,
+      "p99_ns": 242090554,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 134217728,
+          "upper_bound_ns": 268435455,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "detector-validate",
+      "macro_stage_id": "scan",
+      "call_count": 2,
+      "minimum_ns": 22302,
+      "maximum_ns": 258921813,
+      "p50_ns": 32767,
+      "p90_ns": 258921813,
+      "p95_ns": 258921813,
+      "p99_ns": 258921813,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 16384,
+          "upper_bound_ns": 32767,
+          "count": 1
+        },
+        {
+          "version": 1,
+          "lower_bound_ns": 134217728,
+          "upper_bound_ns": 268435455,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "execution-pack-select",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 31610,
+      "maximum_ns": 31610,
+      "p50_ns": 31610,
+      "p90_ns": 31610,
+      "p95_ns": 31610,
+      "p99_ns": 31610,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 16384,
+          "upper_bound_ns": 32767,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "execution-pack-map",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 2613651914,
+      "maximum_ns": 2613651914,
+      "p50_ns": 2613651914,
+      "p90_ns": 2613651914,
+      "p95_ns": 2613651914,
+      "p99_ns": 2613651914,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 2147483648,
+          "upper_bound_ns": 4294967295,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "backend-acquire",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 451691,
+      "maximum_ns": 451691,
+      "p50_ns": 451691,
+      "p90_ns": 451691,
+      "p95_ns": 451691,
+      "p99_ns": 451691,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 262144,
+          "upper_bound_ns": 524287,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "backend-init",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 2613637767,
+      "maximum_ns": 2613637767,
+      "p50_ns": 2613637767,
+      "p90_ns": 2613637767,
+      "p95_ns": 2613637767,
+      "p99_ns": 2613637767,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 2147483648,
+          "upper_bound_ns": 4294967295,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "metric_id": "teardown",
+      "macro_stage_id": "scan",
+      "call_count": 1,
+      "minimum_ns": 12955876,
+      "maximum_ns": 12955876,
+      "p50_ns": 12955876,
+      "p90_ns": 12955876,
+      "p95_ns": 12955876,
+      "p99_ns": 12955876,
+      "buckets": [
+        {
+          "version": 1,
+          "lower_bound_ns": 8388608,
+          "upper_bound_ns": 16777215,
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "stage_concurrency": [
+    {
+      "version": 1,
+      "metric_id": "source-acquire",
+      "macro_stage_id": "acquire",
+      "calls": 2,
+      "elapsed_ns": 4544774,
+      "window_ns": 5142300,
+      "first_start_ns": 7978679099,
+      "last_end_ns": 7983821399,
+      "worker_count": 2,
+      "max_worker_elapsed_ns": 4364875,
+      "concurrency_milli": 883,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "source-walk",
+      "macro_stage_id": "acquire",
+      "calls": 2,
+      "elapsed_ns": 8075138,
+      "window_ns": 4388841,
+      "first_start_ns": 7979433190,
+      "last_end_ns": 7983822031,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 8075138,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "source-read",
+      "macro_stage_id": "acquire",
+      "calls": 3,
+      "elapsed_ns": 548883,
+      "window_ns": 375938,
+      "first_start_ns": 7983823283,
+      "last_end_ns": 7984199221,
+      "worker_count": 2,
+      "max_worker_elapsed_ns": 317327,
+      "concurrency_milli": 1460,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "preprocess",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 74050,
+      "window_ns": 74050,
+      "first_start_ns": 7984423664,
+      "last_end_ns": 7984497714,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 74050,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "phase1-triggers",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 36319,
+      "window_ns": 36319,
+      "first_start_ns": 7984499517,
+      "last_end_ns": 7984535836,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 36319,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "backend-dispatch",
+      "macro_stage_id": "scan",
+      "calls": 2,
+      "elapsed_ns": 1036342568,
+      "window_ns": 5890774326,
+      "first_start_ns": 3124720462,
+      "last_end_ns": 9015494788,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 1036342568,
+      "concurrency_milli": 175,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "hot-patterns",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 2315,
+      "window_ns": 2315,
+      "first_start_ns": 7984568397,
+      "last_end_ns": 7984570712,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 2315,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "confirmed-patterns",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 439253942,
+      "window_ns": 439253942,
+      "first_start_ns": 7984600227,
+      "last_end_ns": 8423854169,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 439253942,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "phase2-prefilter",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 336119294,
+      "window_ns": 336119294,
+      "first_start_ns": 8423915274,
+      "last_end_ns": 8760034568,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 336119294,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "phase2-keyword-ac",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 27462,
+      "window_ns": 27462,
+      "first_start_ns": 8760047602,
+      "last_end_ns": 8760075064,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 27462,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "phase2-shared-ac",
+      "macro_stage_id": "scan",
+      "calls": 2,
+      "elapsed_ns": 29235,
+      "window_ns": 34575,
+      "first_start_ns": 8760082528,
+      "last_end_ns": 8760117103,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 29235,
+      "concurrency_milli": 845,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "phase2-anchored-verify",
+      "macro_stage_id": "scan",
+      "calls": 2,
+      "elapsed_ns": 3356,
+      "window_ns": 32401,
+      "first_start_ns": 8760086275,
+      "last_end_ns": 8760118676,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 3356,
+      "concurrency_milli": 103,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "phase2-whole-chunk",
+      "macro_stage_id": "scan",
+      "calls": 2,
+      "elapsed_ns": 33102,
+      "window_ns": 33573,
+      "first_start_ns": 8760119107,
+      "last_end_ns": 8760152680,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 33102,
+      "concurrency_milli": 985,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "generic-detection",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 250601153,
+      "window_ns": 250601153,
+      "first_start_ns": 8760155255,
+      "last_end_ns": 9010756408,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 250601153,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "entropy",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 3374900,
+      "window_ns": 3374900,
+      "first_start_ns": 9010781626,
+      "last_end_ns": 9014156526,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 3374900,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "machine-learning",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 853989,
+      "window_ns": 853989,
+      "first_start_ns": 9014178978,
+      "last_end_ns": 9015032967,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 853989,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "decode",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 153630,
+      "window_ns": 153630,
+      "first_start_ns": 9015064657,
+      "last_end_ns": 9015218287,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 153630,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "suppression",
+      "macro_stage_id": "resolve",
+      "calls": 5,
+      "elapsed_ns": 995556,
+      "window_ns": 861062,
+      "first_start_ns": 9015334616,
+      "last_end_ns": 9016195678,
+      "worker_count": 2,
+      "max_worker_elapsed_ns": 967433,
+      "concurrency_milli": 1156,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "live-verification",
+      "macro_stage_id": "verify",
+      "calls": 1,
+      "elapsed_ns": 71876,
+      "window_ns": 71876,
+      "first_start_ns": 9016084098,
+      "last_end_ns": 9016155974,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 71876,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "reporting",
+      "macro_stage_id": "report",
+      "calls": 3,
+      "elapsed_ns": 622223163,
+      "window_ns": 311562817,
+      "first_start_ns": 9017478716,
+      "last_end_ns": 9329041533,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 622223163,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "source-queue-wait",
+      "macro_stage_id": "acquire",
+      "calls": 3,
+      "elapsed_ns": 29595,
+      "window_ns": 135856,
+      "first_start_ns": 7984094434,
+      "last_end_ns": 7984230290,
+      "worker_count": 3,
+      "max_worker_elapsed_ns": 11792,
+      "concurrency_milli": 217,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "incremental-lookup",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 12904,
+      "window_ns": 12904,
+      "first_start_ns": 261123,
+      "last_end_ns": 274027,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 12904,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "backend-select",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 59121,
+      "window_ns": 59121,
+      "first_start_ns": 7984313637,
+      "last_end_ns": 7984372758,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 59121,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "result-merge",
+      "macro_stage_id": "resolve",
+      "calls": 2,
+      "elapsed_ns": 84259,
+      "window_ns": 804176,
+      "first_start_ns": 9015330107,
+      "last_end_ns": 9016134283,
+      "worker_count": 2,
+      "max_worker_elapsed_ns": 47269,
+      "concurrency_milli": 104,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "detector-load",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 242090554,
+      "window_ns": 242090554,
+      "first_start_ns": 1304258,
+      "last_end_ns": 243394812,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 242090554,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "detector-validate",
+      "macro_stage_id": "scan",
+      "calls": 2,
+      "elapsed_ns": 258944115,
+      "window_ns": 501059997,
+      "first_start_ns": 1280503,
+      "last_end_ns": 502340500,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 258944115,
+      "concurrency_milli": 516,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "execution-pack-select",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 31610,
+      "window_ns": 31610,
+      "first_start_ns": 502367070,
+      "last_end_ns": 502398680,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 31610,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "execution-pack-map",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 2613651914,
+      "window_ns": 2613651914,
+      "first_start_ns": 502399150,
+      "last_end_ns": 3116051064,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 2613651914,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "backend-acquire",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 451691,
+      "window_ns": 451691,
+      "first_start_ns": 300557,
+      "last_end_ns": 752248,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 451691,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "backend-init",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 2613637767,
+      "window_ns": 2613637767,
+      "first_start_ns": 502400673,
+      "last_end_ns": 3116038440,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 2613637767,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    },
+    {
+      "version": 1,
+      "metric_id": "teardown",
+      "macro_stage_id": "scan",
+      "calls": 1,
+      "elapsed_ns": 12955876,
+      "window_ns": 12955876,
+      "first_start_ns": 9329405318,
+      "last_end_ns": 9342361194,
+      "worker_count": 1,
+      "max_worker_elapsed_ns": 12955876,
+      "concurrency_milli": 1000,
+      "declared_serial_ns": 0,
+      "declared_serial_calls": 0,
+      "bytes": 0
+    }
+  ],
+  "worker_occupancy": {
+    "version": 1,
+    "worker_count": 8,
+    "active_worker_count": 5,
+    "busy_ns": 5512383811,
+    "blocked_ns": 0,
+    "calls": 40,
+    "busiest_busy_ns": 4476757634,
+    "median_busy_ns": 243348,
+    "workers": [
+      {
+        "version": 1,
+        "worker_id": 1,
+        "busy_ns": 4476757634,
+        "blocked_ns": 0,
+        "calls": 15
+      },
+      {
+        "version": 1,
+        "worker_id": 2,
+        "busy_ns": 4713682,
+        "blocked_ns": 0,
+        "calls": 4
+      },
+      {
+        "version": 1,
+        "worker_id": 3,
+        "busy_ns": 10289,
+        "blocked_ns": 0,
+        "calls": 1
+      },
+      {
+        "version": 1,
+        "worker_id": 4,
+        "busy_ns": 243348,
+        "blocked_ns": 0,
+        "calls": 2
+      },
+      {
+        "version": 1,
+        "worker_id": 5,
+        "busy_ns": 0,
+        "blocked_ns": 0,
+        "calls": 0
+      },
+      {
+        "version": 1,
+        "worker_id": 6,
+        "busy_ns": 0,
+        "blocked_ns": 0,
+        "calls": 0
+      },
+      {
+        "version": 1,
+        "worker_id": 7,
+        "busy_ns": 0,
+        "blocked_ns": 0,
+        "calls": 0
+      },
+      {
+        "version": 1,
+        "worker_id": 8,
+        "busy_ns": 1030658858,
+        "blocked_ns": 0,
+        "calls": 18
+      }
+    ]
+  },
+  "queue_depths": [],
+  "blocked_waits": [],
+  "caches": [],
+  "indexed_counters": [],
+  "retries": [],
+  "insight": {
+    "version": 1,
+    "findings": [
+      {
+        "version": 1,
+        "kind": "parallel-starvation",
+        "severity": 3,
+        "impact_ns": 8454136774,
+        "impact_share_ppm": 904874,
+        "subject": "worker-pool",
+        "statement": "the run reached 3.04x of 32 logical CPUs (9.5% efficiency); 28440.000 ms of CPU time ran in 9342.887 ms of wall, and the Amdahl ceiling from measured serial work is 9.01x"
+      },
+      {
+        "version": 1,
+        "kind": "memory-floor",
+        "severity": 3,
+        "impact_ns": 0,
+        "impact_share_ppm": 0,
+        "subject": "engine-init",
+        "statement": "128.5 MiB of the 171.6 MiB peak (74.9%) is standing the engine up, not the input: 54.0 B of input produced only 43.1 MiB of extra resident memory"
+      },
+      {
+        "version": 1,
+        "kind": "fixed-overhead",
+        "severity": 2,
+        "impact_ns": 8306464266,
+        "impact_share_ppm": 889068,
+        "subject": "outside-scanning",
+        "statement": "8306.464 ms of 9342.887 ms wall ran outside scanning; scanning itself took 1036.423 ms"
+      },
+      {
+        "version": 1,
+        "kind": "serial-phase",
+        "severity": 2,
+        "impact_ns": 1036422508,
+        "impact_share_ppm": 110931,
+        "subject": "scanning",
+        "statement": "scanning is a serial barrier: 1036.423 ms of wall (11.1%) at 1.00x workers, and no extra thread removes it"
+      }
+    ],
+    "throughput": {
+      "version": 1,
+      "wall_ns": 9342886774,
+      "input_bytes": 54,
+      "input_units": 1,
+      "mib_per_second_milli": 0,
+      "units_per_second_milli": 107,
+      "ns_per_unit": 9342886774,
+      "ns_per_byte_milli": 173016421740,
+      "cpu_ns_per_byte_milli": 526666666666,
+      "phases": [
+        {
+          "version": 1,
+          "state": "created",
+          "wall_ns": 7978505742,
+          "share_ppm": 853965,
+          "cpu_ns": 27070000000,
+          "speedup_milli": 3392,
+          "serial": false,
+          "mib_per_second_milli": 0,
+          "units_per_second_milli": 125,
+          "resident_start_bytes": 33566720,
+          "resident_end_bytes": 134193152,
+          "threads_start": 1,
+          "threads_end": 17
+        },
+        {
+          "version": 1,
+          "state": "acquiring",
+          "wall_ns": 571387,
+          "share_ppm": 61,
+          "cpu_ns": 0,
+          "speedup_milli": 0,
+          "serial": false,
+          "mib_per_second_milli": 90,
+          "units_per_second_milli": 1750127,
+          "resident_start_bytes": 134193152,
+          "resident_end_bytes": 134717440,
+          "threads_start": 17,
+          "threads_end": 17
+        },
+        {
+          "version": 1,
+          "state": "scanning",
+          "wall_ns": 1036422508,
+          "share_ppm": 110931,
+          "cpu_ns": 1040000000,
+          "speedup_milli": 1003,
+          "serial": true,
+          "mib_per_second_milli": 0,
+          "units_per_second_milli": 964,
+          "resident_start_bytes": 134717440,
+          "resident_end_bytes": 179650560,
+          "threads_start": 17,
+          "threads_end": 17
+        },
+        {
+          "version": 1,
+          "state": "resolving",
+          "wall_ns": 537122,
+          "share_ppm": 57,
+          "cpu_ns": 0,
+          "speedup_milli": 0,
+          "serial": false,
+          "mib_per_second_milli": 95,
+          "units_per_second_milli": 1861774,
+          "resident_start_bytes": 179650560,
+          "resident_end_bytes": 179912704,
+          "threads_start": 17,
+          "threads_end": 17
+        },
+        {
+          "version": 1,
+          "state": "verifying",
+          "wall_ns": 119535,
+          "share_ppm": 12,
+          "cpu_ns": 0,
+          "speedup_milli": 0,
+          "serial": false,
+          "mib_per_second_milli": 430,
+          "units_per_second_milli": 8365750,
+          "resident_start_bytes": 179912704,
+          "resident_end_bytes": 179912704,
+          "threads_start": 17,
+          "threads_end": 17
+        },
+        {
+          "version": 1,
+          "state": "reporting",
+          "wall_ns": 326643336,
+          "share_ppm": 34961,
+          "cpu_ns": 330000000,
+          "speedup_milli": 1010,
+          "serial": false,
+          "mib_per_second_milli": 0,
+          "units_per_second_milli": 3061,
+          "resident_start_bytes": 179912704,
+          "resident_end_bytes": 174522368,
+          "threads_start": 17,
+          "threads_end": 17
+        }
+      ]
+    },
+    "memory": {
+      "version": 1,
+      "peak_resident_bytes": 179912704,
+      "peak_source": "kernel-vmhwm",
+      "baseline_resident_bytes": 33566720,
+      "engine_init_resident_bytes": 134717440,
+      "input_driven_resident_bytes": 45195264,
+      "input_bytes": 54,
+      "amplification_milli": 3331716740,
+      "scanner_threads": 16,
+      "resident_per_scanner_thread_bytes": 11244544,
+      "input_driven_per_scanner_thread_bytes": 2824704,
+      "allocations": 16701011,
+      "allocated_bytes": 5256314439,
+      "deallocated_bytes": 5226152472,
+      "allocation_peak_live_bytes": 79289719,
+      "allocated_per_input_byte_milli": 97339156277,
+      "stages": [
+        {
+          "version": 1,
+          "metric_id": null,
+          "allocations": 13227628,
+          "allocated_bytes": 4506640556,
+          "live_bytes": 13201023,
+          "peak_live_bytes": 44161444
+        },
+        {
+          "version": 1,
+          "metric_id": "backend-init",
+          "allocations": 1097162,
+          "allocated_bytes": 235322715,
+          "live_bytes": 1684,
+          "peak_live_bytes": 13703683
+        },
+        {
+          "version": 1,
+          "metric_id": "confirmed-patterns",
+          "allocations": 443833,
+          "allocated_bytes": 162497239,
+          "live_bytes": 5131376,
+          "peak_live_bytes": 7473421
+        },
+        {
+          "version": 1,
+          "metric_id": "reporting",
+          "allocations": 322117,
+          "allocated_bytes": 129162068,
+          "live_bytes": 8256,
+          "peak_live_bytes": 3404841
+        },
+        {
+          "version": 1,
+          "metric_id": "phase2-prefilter",
+          "allocations": 795798,
+          "allocated_bytes": 112872711,
+          "live_bytes": 0,
+          "peak_live_bytes": 6009613
+        },
+        {
+          "version": 1,
+          "metric_id": "detector-load",
+          "allocations": 303828,
+          "allocated_bytes": 58776856,
+          "live_bytes": 3254077,
+          "peak_live_bytes": 8507834
+        },
+        {
+          "version": 1,
+          "metric_id": "generic-detection",
+          "allocations": 421627,
+          "allocated_bytes": 31153915,
+          "live_bytes": 18312935,
+          "peak_live_bytes": 18734774
+        },
+        {
+          "version": 1,
+          "metric_id": "detector-validate",
+          "allocations": 85763,
+          "allocated_bytes": 18283814,
+          "live_bytes": 5460,
+          "peak_live_bytes": 6298932
+        },
+        {
+          "version": 1,
+          "metric_id": "source-walk",
+          "allocations": 2049,
+          "allocated_bytes": 877683,
+          "live_bytes": 25152,
+          "peak_live_bytes": 573060
+        },
+        {
+          "version": 1,
+          "metric_id": "entropy",
+          "allocations": 454,
+          "allocated_bytes": 292492,
+          "live_bytes": 1383,
+          "peak_live_bytes": 114602
+        },
+        {
+          "version": 1,
+          "metric_id": "backend-acquire",
+          "allocations": 32,
+          "allocated_bytes": 137244,
+          "live_bytes": 0,
+          "peak_live_bytes": 98304
+        },
+        {
+          "version": 1,
+          "metric_id": "source-acquire",
+          "allocations": 508,
+          "allocated_bytes": 121477,
+          "live_bytes": 2600,
+          "peak_live_bytes": 84548
+        },
+        {
+          "version": 1,
+          "metric_id": "machine-learning",
+          "allocations": 31,
+          "allocated_bytes": 119120,
+          "live_bytes": 112204,
+          "peak_live_bytes": 117288
+        },
+        {
+          "version": 1,
+          "metric_id": "suppression",
+          "allocations": 95,
+          "allocated_bytes": 34439,
+          "live_bytes": 366,
+          "peak_live_bytes": 18730
+        },
+        {
+          "version": 1,
+          "metric_id": "source-read",
+          "allocations": 39,
+          "allocated_bytes": 15159,
+          "live_bytes": 1941,
+          "peak_live_bytes": 11144
+        },
+        {
+          "version": 1,
+          "metric_id": "result-merge",
+          "allocations": 8,
+          "allocated_bytes": 2432,
+          "live_bytes": 0,
+          "peak_live_bytes": 1120
+        },
+        {
+          "version": 1,
+          "metric_id": "backend-dispatch",
+          "allocations": 11,
+          "allocated_bytes": 2248,
+          "live_bytes": 0,
+          "peak_live_bytes": 1320
+        },
+        {
+          "version": 1,
+          "metric_id": "decode",
+          "allocations": 12,
+          "allocated_bytes": 755,
+          "live_bytes": 0,
+          "peak_live_bytes": 636
+        },
+        {
+          "version": 1,
+          "metric_id": "preprocess",
+          "allocations": 8,
+          "allocated_bytes": 658,
+          "live_bytes": 0,
+          "peak_live_bytes": 554
+        },
+        {
+          "version": 1,
+          "metric_id": "live-verification",
+          "allocations": 3,
+          "allocated_bytes": 414,
+          "live_bytes": 403,
+          "peak_live_bytes": 414
+        },
+        {
+          "version": 1,
+          "metric_id": "phase1-triggers",
+          "allocations": 1,
+          "allocated_bytes": 392,
+          "live_bytes": 0,
+          "peak_live_bytes": 392
+        },
+        {
+          "version": 1,
+          "metric_id": "backend-select",
+          "allocations": 3,
+          "allocated_bytes": 49,
+          "live_bytes": 0,
+          "peak_live_bytes": 49
+        },
+        {
+          "version": 1,
+          "metric_id": "execution-pack-select",
+          "allocations": 1,
+          "allocated_bytes": 3,
+          "live_bytes": 0,
+          "peak_live_bytes": 3
+        }
+      ]
+    },
+    "parallelism": {
+      "version": 1,
+      "logical_cpus": 32,
+      "scanner_threads": 16,
+      "wall_ns": 9342886774,
+      "process_cpu_ns": 28440000000,
+      "achieved_speedup_milli": 3044,
+      "parallel_efficiency_ppm": 95125,
+      "speedup_ceiling_milli": 9014,
+      "worker_count": 8,
+      "active_worker_count": 5,
+      "instrumented_busy_ns": 5512383811,
+      "instrumented_blocked_ns": 0,
+      "worker_capacity_ns": 74743094192,
+      "idle_ns": 69230710381,
+      "idle_share_ppm": 926248,
+      "busiest_busy_ns": 4476757634,
+      "median_busy_ns": 243348,
+      "imbalance_ppm": 999945,
+      "busy_off_cpu_ns": 0,
+      "source_blocked_ns": 0,
+      "scanner_blocked_ns": 0,
+      "queues": []
+    },
+    "serial_regions": [
+      {
+        "version": 1,
+        "scope": "phase",
+        "subject": "scanning",
+        "wall_ns": 1036422508,
+        "share_ppm": 110931,
+        "concurrency_milli": 1003,
+        "worker_count": 1,
+        "exclusivity_ppm": 1000000,
+        "declared": false
+      },
+      {
+        "version": 1,
+        "scope": "stage",
+        "subject": "confirmed-patterns",
+        "wall_ns": 439253942,
+        "share_ppm": 47014,
+        "concurrency_milli": 1000,
+        "worker_count": 1,
+        "exclusivity_ppm": 851063,
+        "declared": false
+      },
+      {
+        "version": 1,
+        "scope": "stage",
+        "subject": "phase2-prefilter",
+        "wall_ns": 336119294,
+        "share_ppm": 35975,
+        "concurrency_milli": 1000,
+        "worker_count": 1,
+        "exclusivity_ppm": 851063,
+        "declared": false
+      },
+      {
+        "version": 1,
+        "scope": "stage",
+        "subject": "reporting",
+        "wall_ns": 311562817,
+        "share_ppm": 33347,
+        "concurrency_milli": 1000,
+        "worker_count": 1,
+        "exclusivity_ppm": 1000000,
+        "declared": false
+      },
+      {
+        "version": 1,
+        "scope": "stage",
+        "subject": "generic-detection",
+        "wall_ns": 250601153,
+        "share_ppm": 26822,
+        "concurrency_milli": 1000,
+        "worker_count": 1,
+        "exclusivity_ppm": 851063,
+        "declared": false
+      },
+      {
+        "version": 1,
+        "scope": "stage",
+        "subject": "detector-load",
+        "wall_ns": 242090554,
+        "share_ppm": 25911,
+        "concurrency_milli": 1000,
+        "worker_count": 1,
+        "exclusivity_ppm": 659630,
+        "declared": false
+      }
+    ],
+    "stages": [
+      {
+        "version": 1,
+        "metric_id": "execution-pack-map",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 2613651914,
+        "share_of_recorded_ppm": 309479,
+        "ns_per_call": 2613651914,
+        "ns_per_input_unit": 2613651914,
+        "ns_per_input_byte_milli": 48400961370,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "backend-init",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 2613637767,
+        "share_of_recorded_ppm": 309477,
+        "ns_per_call": 2613637767,
+        "ns_per_input_unit": 2613637767,
+        "ns_per_input_byte_milli": 48400699388,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "backend-dispatch",
+        "macro_stage_id": "scan",
+        "calls": 2,
+        "elapsed_ns": 1036342568,
+        "share_of_recorded_ppm": 122712,
+        "ns_per_call": 518171284,
+        "ns_per_input_unit": 1036342568,
+        "ns_per_input_byte_milli": 19191529037,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 175,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "reporting",
+        "macro_stage_id": "report",
+        "calls": 3,
+        "elapsed_ns": 622223163,
+        "share_of_recorded_ppm": 73676,
+        "ns_per_call": 207407721,
+        "ns_per_input_unit": 622223163,
+        "ns_per_input_byte_milli": 11522651166,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "confirmed-patterns",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 439253942,
+        "share_of_recorded_ppm": 52011,
+        "ns_per_call": 439253942,
+        "ns_per_input_unit": 439253942,
+        "ns_per_input_byte_milli": 8134332259,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "phase2-prefilter",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 336119294,
+        "share_of_recorded_ppm": 39799,
+        "ns_per_call": 336119294,
+        "ns_per_input_unit": 336119294,
+        "ns_per_input_byte_milli": 6224431370,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "detector-validate",
+        "macro_stage_id": "scan",
+        "calls": 2,
+        "elapsed_ns": 258944115,
+        "share_of_recorded_ppm": 30661,
+        "ns_per_call": 129472057,
+        "ns_per_input_unit": 258944115,
+        "ns_per_input_byte_milli": 4795261388,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 516,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "generic-detection",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 250601153,
+        "share_of_recorded_ppm": 29673,
+        "ns_per_call": 250601153,
+        "ns_per_input_unit": 250601153,
+        "ns_per_input_byte_milli": 4640762092,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "detector-load",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 242090554,
+        "share_of_recorded_ppm": 28665,
+        "ns_per_call": 242090554,
+        "ns_per_input_unit": 242090554,
+        "ns_per_input_byte_milli": 4483158407,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "teardown",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 12955876,
+        "share_of_recorded_ppm": 1534,
+        "ns_per_call": 12955876,
+        "ns_per_input_unit": 12955876,
+        "ns_per_input_byte_milli": 239923629,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "source-walk",
+        "macro_stage_id": "acquire",
+        "calls": 2,
+        "elapsed_ns": 8075138,
+        "share_of_recorded_ppm": 956,
+        "ns_per_call": 4037569,
+        "ns_per_input_unit": 8075138,
+        "ns_per_input_byte_milli": 149539592,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "source-acquire",
+        "macro_stage_id": "acquire",
+        "calls": 2,
+        "elapsed_ns": 4544774,
+        "share_of_recorded_ppm": 538,
+        "ns_per_call": 2272387,
+        "ns_per_input_unit": 4544774,
+        "ns_per_input_byte_milli": 84162481,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 883,
+        "worker_count": 2
+      },
+      {
+        "version": 1,
+        "metric_id": "entropy",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 3374900,
+        "share_of_recorded_ppm": 399,
+        "ns_per_call": 3374900,
+        "ns_per_input_unit": 3374900,
+        "ns_per_input_byte_milli": 62498148,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "suppression",
+        "macro_stage_id": "resolve",
+        "calls": 5,
+        "elapsed_ns": 995556,
+        "share_of_recorded_ppm": 117,
+        "ns_per_call": 199111,
+        "ns_per_input_unit": 995556,
+        "ns_per_input_byte_milli": 18436222,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1156,
+        "worker_count": 2
+      },
+      {
+        "version": 1,
+        "metric_id": "machine-learning",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 853989,
+        "share_of_recorded_ppm": 101,
+        "ns_per_call": 853989,
+        "ns_per_input_unit": 853989,
+        "ns_per_input_byte_milli": 15814611,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "source-read",
+        "macro_stage_id": "acquire",
+        "calls": 3,
+        "elapsed_ns": 548883,
+        "share_of_recorded_ppm": 64,
+        "ns_per_call": 182961,
+        "ns_per_input_unit": 548883,
+        "ns_per_input_byte_milli": 10164500,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1460,
+        "worker_count": 2
+      },
+      {
+        "version": 1,
+        "metric_id": "backend-acquire",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 451691,
+        "share_of_recorded_ppm": 53,
+        "ns_per_call": 451691,
+        "ns_per_input_unit": 451691,
+        "ns_per_input_byte_milli": 8364648,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "decode",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 153630,
+        "share_of_recorded_ppm": 18,
+        "ns_per_call": 153630,
+        "ns_per_input_unit": 153630,
+        "ns_per_input_byte_milli": 2845000,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "result-merge",
+        "macro_stage_id": "resolve",
+        "calls": 2,
+        "elapsed_ns": 84259,
+        "share_of_recorded_ppm": 9,
+        "ns_per_call": 42129,
+        "ns_per_input_unit": 84259,
+        "ns_per_input_byte_milli": 1560351,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 104,
+        "worker_count": 2
+      },
+      {
+        "version": 1,
+        "metric_id": "preprocess",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 74050,
+        "share_of_recorded_ppm": 8,
+        "ns_per_call": 74050,
+        "ns_per_input_unit": 74050,
+        "ns_per_input_byte_milli": 1371296,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "live-verification",
+        "macro_stage_id": "verify",
+        "calls": 1,
+        "elapsed_ns": 71876,
+        "share_of_recorded_ppm": 8,
+        "ns_per_call": 71876,
+        "ns_per_input_unit": 71876,
+        "ns_per_input_byte_milli": 1331037,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "backend-select",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 59121,
+        "share_of_recorded_ppm": 7,
+        "ns_per_call": 59121,
+        "ns_per_input_unit": 59121,
+        "ns_per_input_byte_milli": 1094833,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "phase1-triggers",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 36319,
+        "share_of_recorded_ppm": 4,
+        "ns_per_call": 36319,
+        "ns_per_input_unit": 36319,
+        "ns_per_input_byte_milli": 672574,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "phase2-whole-chunk",
+        "macro_stage_id": "scan",
+        "calls": 2,
+        "elapsed_ns": 33102,
+        "share_of_recorded_ppm": 3,
+        "ns_per_call": 16551,
+        "ns_per_input_unit": 33102,
+        "ns_per_input_byte_milli": 613000,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 985,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "execution-pack-select",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 31610,
+        "share_of_recorded_ppm": 3,
+        "ns_per_call": 31610,
+        "ns_per_input_unit": 31610,
+        "ns_per_input_byte_milli": 585370,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "source-queue-wait",
+        "macro_stage_id": "acquire",
+        "calls": 3,
+        "elapsed_ns": 29595,
+        "share_of_recorded_ppm": 3,
+        "ns_per_call": 9865,
+        "ns_per_input_unit": 29595,
+        "ns_per_input_byte_milli": 548055,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 217,
+        "worker_count": 3
+      },
+      {
+        "version": 1,
+        "metric_id": "phase2-shared-ac",
+        "macro_stage_id": "scan",
+        "calls": 2,
+        "elapsed_ns": 29235,
+        "share_of_recorded_ppm": 3,
+        "ns_per_call": 14617,
+        "ns_per_input_unit": 29235,
+        "ns_per_input_byte_milli": 541388,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 845,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "phase2-keyword-ac",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 27462,
+        "share_of_recorded_ppm": 3,
+        "ns_per_call": 27462,
+        "ns_per_input_unit": 27462,
+        "ns_per_input_byte_milli": 508555,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "incremental-lookup",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 12904,
+        "share_of_recorded_ppm": 1,
+        "ns_per_call": 12904,
+        "ns_per_input_unit": 12904,
+        "ns_per_input_byte_milli": 238962,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "phase2-anchored-verify",
+        "macro_stage_id": "scan",
+        "calls": 2,
+        "elapsed_ns": 3356,
+        "share_of_recorded_ppm": 0,
+        "ns_per_call": 1678,
+        "ns_per_input_unit": 3356,
+        "ns_per_input_byte_milli": 62148,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 103,
+        "worker_count": 1
+      },
+      {
+        "version": 1,
+        "metric_id": "hot-patterns",
+        "macro_stage_id": "scan",
+        "calls": 1,
+        "elapsed_ns": 2315,
+        "share_of_recorded_ppm": 0,
+        "ns_per_call": 2315,
+        "ns_per_input_unit": 2315,
+        "ns_per_input_byte_milli": 42870,
+        "bytes": 0,
+        "mib_per_second_milli": 0,
+        "concurrency_milli": 1000,
+        "worker_count": 1
+      }
+    ],
+    "backends": [
+      {
+        "version": 1,
+        "backend": "cpu-fallback",
+        "batches": 1,
+        "recovered_batches": 0,
+        "share_ppm": 1000000
+      }
+    ],
+    "caches": [],
+    "retries": [],
+    "coverage": {
+      "version": 1,
+      "process_metrics": true,
+      "allocation_tracking": true,
+      "stage_concurrency": true,
+      "worker_occupancy": true,
+      "dropped_span_events": 0,
+      "notes": []
+    }
+  },
+  "events": {
+    "version": 7,
+    "availability": {
+      "status": "recorded",
+      "value": true
+    },
+    "dropped_events": 0,
+    "dropped_span_events": 0,
+    "dropped_point_events": 0,
+    "dropped_annotations": 0,
+    "sampled_out_events": 0,
+    "spans": [
+      {
+        "version": 3,
+        "span_id": 1,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "incremental-lookup",
+        "start_ns": 261123,
+        "inclusive_ns": 12904,
+        "exclusive_ns": 12904,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 2,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "backend-acquire",
+        "start_ns": 300557,
+        "inclusive_ns": 451691,
+        "exclusive_ns": 451691,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 3,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "detector-validate",
+        "start_ns": 1280503,
+        "inclusive_ns": 22302,
+        "exclusive_ns": 22302,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 4,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "detector-load",
+        "start_ns": 1304258,
+        "inclusive_ns": 242090554,
+        "exclusive_ns": 242090554,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 5,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "detector-validate",
+        "start_ns": 243418687,
+        "inclusive_ns": 258921813,
+        "exclusive_ns": 258921813,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 6,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "execution-pack-select",
+        "start_ns": 502367070,
+        "inclusive_ns": 31610,
+        "exclusive_ns": 31610,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 7,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "execution-pack-map",
+        "start_ns": 502399150,
+        "inclusive_ns": 2613651914,
+        "exclusive_ns": 14147,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 8,
+        "parent_span_id": {
+          "status": "recorded",
+          "value": 7
+        },
+        "metric_id": "backend-init",
+        "start_ns": 502400673,
+        "inclusive_ns": 2613637767,
+        "exclusive_ns": 2613637767,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 9,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "backend-dispatch",
+        "start_ns": 3124720462,
+        "inclusive_ns": 18034,
+        "exclusive_ns": 18034,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 10,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "source-acquire",
+        "start_ns": 7978679099,
+        "inclusive_ns": 179899,
+        "exclusive_ns": 179899,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 11,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "backend-dispatch",
+        "start_ns": 7979170254,
+        "inclusive_ns": 1036324534,
+        "exclusive_ns": 1036324534,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 12,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "source-walk",
+        "start_ns": 7979433190,
+        "inclusive_ns": 4388841,
+        "exclusive_ns": 23966,
+        "thread_id": 2,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 2
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 13,
+        "parent_span_id": {
+          "status": "recorded",
+          "value": 12
+        },
+        "metric_id": "source-acquire",
+        "start_ns": 7979456524,
+        "inclusive_ns": 4364875,
+        "exclusive_ns": 678578,
+        "thread_id": 2,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 2
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 14,
+        "parent_span_id": {
+          "status": "recorded",
+          "value": 13
+        },
+        "metric_id": "source-walk",
+        "start_ns": 7979992464,
+        "inclusive_ns": 3686297,
+        "exclusive_ns": 3686297,
+        "thread_id": 2,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 2
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 15,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "source-read",
+        "start_ns": 7983823283,
+        "inclusive_ns": 314272,
+        "exclusive_ns": 314272,
+        "thread_id": 2,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 2
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 16,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "source-read",
+        "start_ns": 7983859221,
+        "inclusive_ns": 231556,
+        "exclusive_ns": 231556,
+        "thread_id": 3,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 4
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 17,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "source-queue-wait",
+        "start_ns": 7984094434,
+        "inclusive_ns": 11792,
+        "exclusive_ns": 11792,
+        "thread_id": 3,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 4
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 18,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "source-queue-wait",
+        "start_ns": 7984125202,
+        "inclusive_ns": 10289,
+        "exclusive_ns": 10289,
+        "thread_id": 4,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 3
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 19,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "source-read",
+        "start_ns": 7984196166,
+        "inclusive_ns": 3055,
+        "exclusive_ns": 3055,
+        "thread_id": 2,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 2
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 20,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "source-queue-wait",
+        "start_ns": 7984222776,
+        "inclusive_ns": 7514,
+        "exclusive_ns": 7514,
+        "thread_id": 2,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 2
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 21,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "backend-select",
+        "start_ns": 7984313637,
+        "inclusive_ns": 59121,
+        "exclusive_ns": 59121,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 22,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "preprocess",
+        "start_ns": 7984423664,
+        "inclusive_ns": 74050,
+        "exclusive_ns": 74050,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 23,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "phase1-triggers",
+        "start_ns": 7984499517,
+        "inclusive_ns": 36319,
+        "exclusive_ns": 36319,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 24,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "hot-patterns",
+        "start_ns": 7984568397,
+        "inclusive_ns": 2315,
+        "exclusive_ns": 2315,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 25,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "confirmed-patterns",
+        "start_ns": 7984600227,
+        "inclusive_ns": 439253942,
+        "exclusive_ns": 439253942,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 26,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "phase2-prefilter",
+        "start_ns": 8423915274,
+        "inclusive_ns": 336119294,
+        "exclusive_ns": 336119294,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 27,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "phase2-keyword-ac",
+        "start_ns": 8760047602,
+        "inclusive_ns": 27462,
+        "exclusive_ns": 27462,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 28,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "phase2-shared-ac",
+        "start_ns": 8760082528,
+        "inclusive_ns": 3256,
+        "exclusive_ns": 3256,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 29,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "phase2-anchored-verify",
+        "start_ns": 8760086275,
+        "inclusive_ns": 2064,
+        "exclusive_ns": 2064,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 30,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "phase2-shared-ac",
+        "start_ns": 8760091124,
+        "inclusive_ns": 25979,
+        "exclusive_ns": 25979,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 31,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "phase2-anchored-verify",
+        "start_ns": 8760117384,
+        "inclusive_ns": 1292,
+        "exclusive_ns": 1292,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 32,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "phase2-whole-chunk",
+        "start_ns": 8760119107,
+        "inclusive_ns": 30237,
+        "exclusive_ns": 30237,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 33,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "phase2-whole-chunk",
+        "start_ns": 8760149815,
+        "inclusive_ns": 2865,
+        "exclusive_ns": 2865,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 34,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "generic-detection",
+        "start_ns": 8760155255,
+        "inclusive_ns": 250601153,
+        "exclusive_ns": 250601153,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 35,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "entropy",
+        "start_ns": 9010781626,
+        "inclusive_ns": 3374900,
+        "exclusive_ns": 3374900,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 36,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "machine-learning",
+        "start_ns": 9014178978,
+        "inclusive_ns": 853989,
+        "exclusive_ns": 853989,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 37,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "decode",
+        "start_ns": 9015064657,
+        "inclusive_ns": 153630,
+        "exclusive_ns": 153630,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 38,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "result-merge",
+        "start_ns": 9015330107,
+        "inclusive_ns": 36990,
+        "exclusive_ns": 8867,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 39,
+        "parent_span_id": {
+          "status": "recorded",
+          "value": 38
+        },
+        "metric_id": "suppression",
+        "start_ns": 9015334616,
+        "inclusive_ns": 28123,
+        "exclusive_ns": 28123,
+        "thread_id": 5,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 40,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "suppression",
+        "start_ns": 9015592672,
+        "inclusive_ns": 443686,
+        "exclusive_ns": 7765,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 41,
+        "parent_span_id": {
+          "status": "recorded",
+          "value": 40
+        },
+        "metric_id": "suppression",
+        "start_ns": 9015599906,
+        "inclusive_ns": 435921,
+        "exclusive_ns": 366219,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 42,
+        "parent_span_id": {
+          "status": "recorded",
+          "value": 41
+        },
+        "metric_id": "suppression",
+        "start_ns": 9015962078,
+        "inclusive_ns": 69702,
+        "exclusive_ns": 69702,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 43,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "live-verification",
+        "start_ns": 9016084098,
+        "inclusive_ns": 71876,
+        "exclusive_ns": 24607,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 44,
+        "parent_span_id": {
+          "status": "recorded",
+          "value": 43
+        },
+        "metric_id": "result-merge",
+        "start_ns": 9016087014,
+        "inclusive_ns": 47269,
+        "exclusive_ns": 47269,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 45,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "suppression",
+        "start_ns": 9016177554,
+        "inclusive_ns": 18124,
+        "exclusive_ns": 18124,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 46,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "reporting",
+        "start_ns": 9017478716,
+        "inclusive_ns": 311562817,
+        "exclusive_ns": 902471,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 47,
+        "parent_span_id": {
+          "status": "recorded",
+          "value": 46
+        },
+        "metric_id": "reporting",
+        "start_ns": 9017611146,
+        "inclusive_ns": 1593,
+        "exclusive_ns": 1593,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 48,
+        "parent_span_id": {
+          "status": "recorded",
+          "value": 46
+        },
+        "metric_id": "reporting",
+        "start_ns": 9017613841,
+        "inclusive_ns": 310658753,
+        "exclusive_ns": 310658753,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      },
+      {
+        "version": 3,
+        "span_id": 49,
+        "parent_span_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "metric_id": "teardown",
+        "start_ns": 9329405318,
+        "inclusive_ns": 12955876,
+        "exclusive_ns": 12955876,
+        "thread_id": 1,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 1
+        },
+        "work_origin": "root",
+        "hardware": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      }
+    ],
+    "point_events": [
+      {
+        "version": 2,
+        "sequence": 0,
+        "event_id": "backend-batch-completed",
+        "elapsed_ns": 9015315670,
+        "thread_id": 5,
+        "value": 0,
+        "task_id": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "worker_id": {
+          "status": "recorded",
+          "value": 8
+        }
+      }
+    ],
+    "annotations": []
+  },
+  "hardware": {
+    "status": "unavailable",
+    "reason": "collector-disabled"
+  },
+  "system": {
+    "status": "recorded",
+    "value": {
+      "version": 1,
+      "allocation": {
+        "version": 1,
+        "totals": {
+          "status": "recorded",
+          "value": {
+            "version": 1,
+            "allocations": 16701011,
+            "deallocations": 16346122,
+            "allocated_bytes": 5256314439,
+            "deallocated_bytes": 5226152472,
+            "live_bytes": 40058860,
+            "peak_live_bytes": 79289719
+          }
+        },
+        "stages": [
+          {
+            "version": 1,
+            "metric_id": "source-acquire",
+            "allocations": 508,
+            "allocated_bytes": 121477,
+            "live_bytes": 2600,
+            "peak_live_bytes": 84548
+          },
+          {
+            "version": 1,
+            "metric_id": "source-walk",
+            "allocations": 2049,
+            "allocated_bytes": 877683,
+            "live_bytes": 25152,
+            "peak_live_bytes": 573060
+          },
+          {
+            "version": 1,
+            "metric_id": "source-read",
+            "allocations": 39,
+            "allocated_bytes": 15159,
+            "live_bytes": 1941,
+            "peak_live_bytes": 11144
+          },
+          {
+            "version": 1,
+            "metric_id": "preprocess",
+            "allocations": 8,
+            "allocated_bytes": 658,
+            "live_bytes": 0,
+            "peak_live_bytes": 554
+          },
+          {
+            "version": 1,
+            "metric_id": "phase1-triggers",
+            "allocations": 1,
+            "allocated_bytes": 392,
+            "live_bytes": 0,
+            "peak_live_bytes": 392
+          },
+          {
+            "version": 1,
+            "metric_id": "backend-dispatch",
+            "allocations": 11,
+            "allocated_bytes": 2248,
+            "live_bytes": 0,
+            "peak_live_bytes": 1320
+          },
+          {
+            "version": 1,
+            "metric_id": "hot-patterns",
+            "allocations": 0,
+            "allocated_bytes": 0,
+            "live_bytes": 0,
+            "peak_live_bytes": 0
+          },
+          {
+            "version": 1,
+            "metric_id": "confirmed-patterns",
+            "allocations": 443833,
+            "allocated_bytes": 162497239,
+            "live_bytes": 5131376,
+            "peak_live_bytes": 7473421
+          },
+          {
+            "version": 1,
+            "metric_id": "phase2-prefilter",
+            "allocations": 795798,
+            "allocated_bytes": 112872711,
+            "live_bytes": 0,
+            "peak_live_bytes": 6009613
+          },
+          {
+            "version": 1,
+            "metric_id": "phase2-keyword-ac",
+            "allocations": 0,
+            "allocated_bytes": 0,
+            "live_bytes": 0,
+            "peak_live_bytes": 0
+          },
+          {
+            "version": 1,
+            "metric_id": "phase2-shared-ac",
+            "allocations": 0,
+            "allocated_bytes": 0,
+            "live_bytes": 0,
+            "peak_live_bytes": 0
+          },
+          {
+            "version": 1,
+            "metric_id": "phase2-anchored-verify",
+            "allocations": 0,
+            "allocated_bytes": 0,
+            "live_bytes": 0,
+            "peak_live_bytes": 0
+          },
+          {
+            "version": 1,
+            "metric_id": "phase2-whole-chunk",
+            "allocations": 0,
+            "allocated_bytes": 0,
+            "live_bytes": 0,
+            "peak_live_bytes": 0
+          },
+          {
+            "version": 1,
+            "metric_id": "generic-detection",
+            "allocations": 421627,
+            "allocated_bytes": 31153915,
+            "live_bytes": 18312935,
+            "peak_live_bytes": 18734774
+          },
+          {
+            "version": 1,
+            "metric_id": "entropy",
+            "allocations": 454,
+            "allocated_bytes": 292492,
+            "live_bytes": 1383,
+            "peak_live_bytes": 114602
+          },
+          {
+            "version": 1,
+            "metric_id": "machine-learning",
+            "allocations": 31,
+            "allocated_bytes": 119120,
+            "live_bytes": 112204,
+            "peak_live_bytes": 117288
+          },
+          {
+            "version": 1,
+            "metric_id": "decode",
+            "allocations": 12,
+            "allocated_bytes": 755,
+            "live_bytes": 0,
+            "peak_live_bytes": 636
+          },
+          {
+            "version": 1,
+            "metric_id": "suppression",
+            "allocations": 95,
+            "allocated_bytes": 34439,
+            "live_bytes": 366,
+            "peak_live_bytes": 18730
+          },
+          {
+            "version": 1,
+            "metric_id": "live-verification",
+            "allocations": 3,
+            "allocated_bytes": 414,
+            "live_bytes": 403,
+            "peak_live_bytes": 414
+          },
+          {
+            "version": 1,
+            "metric_id": "reporting",
+            "allocations": 322117,
+            "allocated_bytes": 129162068,
+            "live_bytes": 8256,
+            "peak_live_bytes": 3404841
+          },
+          {
+            "version": 1,
+            "metric_id": "source-queue-wait",
+            "allocations": 0,
+            "allocated_bytes": 0,
+            "live_bytes": 0,
+            "peak_live_bytes": 0
+          },
+          {
+            "version": 1,
+            "metric_id": "incremental-lookup",
+            "allocations": 0,
+            "allocated_bytes": 0,
+            "live_bytes": 0,
+            "peak_live_bytes": 0
+          },
+          {
+            "version": 1,
+            "metric_id": "backend-select",
+            "allocations": 3,
+            "allocated_bytes": 49,
+            "live_bytes": 0,
+            "peak_live_bytes": 49
+          },
+          {
+            "version": 1,
+            "metric_id": "result-merge",
+            "allocations": 8,
+            "allocated_bytes": 2432,
+            "live_bytes": 0,
+            "peak_live_bytes": 1120
+          },
+          {
+            "version": 1,
+            "metric_id": "scanner-queue-wait",
+            "allocations": 0,
+            "allocated_bytes": 0,
+            "live_bytes": 0,
+            "peak_live_bytes": 0
+          },
+          {
+            "version": 1,
+            "metric_id": "autoroute-calibration",
+            "allocations": 0,
+            "allocated_bytes": 0,
+            "live_bytes": 0,
+            "peak_live_bytes": 0
+          },
+          {
+            "version": 1,
+            "metric_id": "boundary-scan",
+            "allocations": 0,
+            "allocated_bytes": 0,
+            "live_bytes": 0,
+            "peak_live_bytes": 0
+          },
+          {
+            "version": 1,
+            "metric_id": "detector-load",
+            "allocations": 303828,
+            "allocated_bytes": 58776856,
+            "live_bytes": 3254077,
+            "peak_live_bytes": 8507834
+          },
+          {
+            "version": 1,
+            "metric_id": "detector-validate",
+            "allocations": 85763,
+            "allocated_bytes": 18283814,
+            "live_bytes": 5460,
+            "peak_live_bytes": 6298932
+          },
+          {
+            "version": 1,
+            "metric_id": "execution-pack-select",
+            "allocations": 1,
+            "allocated_bytes": 3,
+            "live_bytes": 0,
+            "peak_live_bytes": 3
+          },
+          {
+            "version": 1,
+            "metric_id": "execution-pack-map",
+            "allocations": 0,
+            "allocated_bytes": 0,
+            "live_bytes": 0,
+            "peak_live_bytes": 0
+          },
+          {
+            "version": 1,
+            "metric_id": "backend-acquire",
+            "allocations": 32,
+            "allocated_bytes": 137244,
+            "live_bytes": 0,
+            "peak_live_bytes": 98304
+          },
+          {
+            "version": 1,
+            "metric_id": "backend-init",
+            "allocations": 1097162,
+            "allocated_bytes": 235322715,
+            "live_bytes": 1684,
+            "peak_live_bytes": 13703683
+          },
+          {
+            "version": 1,
+            "metric_id": "teardown",
+            "allocations": 0,
+            "allocated_bytes": 0,
+            "live_bytes": 0,
+            "peak_live_bytes": 0
+          },
+          {
+            "version": 1,
+            "metric_id": null,
+            "allocations": 13227628,
+            "allocated_bytes": 4506640556,
+            "live_bytes": 13201023,
+            "peak_live_bytes": 44161444
+          }
+        ]
+      },
+      "faults": {
+        "version": 1,
+        "minor_faults": {
+          "value": {
+            "status": "recorded",
+            "value": 32431
+          },
+          "source": "proc-self-stat"
+        },
+        "major_faults": {
+          "value": {
+            "status": "recorded",
+            "value": 0
+          },
+          "source": "proc-self-stat"
+        }
+      },
+      "io": {
+        "version": 1,
+        "read_bytes": {
+          "value": {
+            "status": "unavailable",
+            "reason": "unavailable"
+          },
+          "source": "proc-self-io"
+        },
+        "write_bytes": {
+          "value": {
+            "status": "unavailable",
+            "reason": "unavailable"
+          },
+          "source": "proc-self-io"
+        },
+        "read_syscalls": {
+          "value": {
+            "status": "unavailable",
+            "reason": "unavailable"
+          },
+          "source": "proc-self-io"
+        },
+        "write_syscalls": {
+          "value": {
+            "status": "unavailable",
+            "reason": "unavailable"
+          },
+          "source": "proc-self-io"
+        },
+        "cancelled_write_bytes": {
+          "value": {
+            "status": "unavailable",
+            "reason": "unavailable"
+          },
+          "source": "proc-self-io"
+        }
+      },
+      "memory": {
+        "version": 1,
+        "resident_bytes": {
+          "value": {
+            "status": "recorded",
+            "value": 174522368
+          },
+          "source": "proc-self-status"
+        },
+        "virtual_bytes": {
+          "value": {
+            "status": "recorded",
+            "value": 2020360192
+          },
+          "source": "proc-self-status"
+        },
+        "resident_high_water_bytes": {
+          "value": {
+            "status": "recorded",
+            "value": 174862336
+          },
+          "source": "proc-self-status"
+        },
+        "swap_bytes": {
+          "value": {
+            "status": "recorded",
+            "value": 0
+          },
+          "source": "proc-self-status"
+        }
+      },
+      "pressure": {
+        "version": 1,
+        "cpu_some_avg10_milli": {
+          "value": {
+            "status": "recorded",
+            "value": 0
+          },
+          "source": "proc-pressure"
+        },
+        "cpu_full_avg10_milli": {
+          "value": {
+            "status": "recorded",
+            "value": 0
+          },
+          "source": "proc-pressure"
+        },
+        "memory_some_avg10_milli": {
+          "value": {
+            "status": "recorded",
+            "value": 0
+          },
+          "source": "proc-pressure"
+        },
+        "io_some_avg10_milli": {
+          "value": {
+            "status": "recorded",
+            "value": 0
+          },
+          "source": "proc-pressure"
+        }
+      },
+      "thermal": {
+        "version": 1,
+        "max_zone_millicelsius": {
+          "value": {
+            "status": "unavailable",
+            "reason": "unavailable"
+          },
+          "source": "sysfs-thermal"
+        },
+        "throttle_events": {
+          "value": {
+            "status": "unavailable",
+            "reason": "unsupported"
+          },
+          "source": "sysfs-thermal"
+        }
+      },
+      "network": {
+        "version": 1,
+        "process_counters": {
+          "value": {
+            "status": "unavailable",
+            "reason": "unsupported"
+          },
+          "source": "proc-self-io"
+        },
+        "retry_annotations": 0
+      },
+      "decode": {
+        "version": 1,
+        "expansion_ratio_milli": {
+          "status": "recorded",
+          "value": 0
+        },
+        "retained_bytes": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        },
+        "retained_peak_bytes": {
+          "status": "unavailable",
+          "reason": "unavailable"
+        }
+      }
+    }
+  }
+}

@@ -313,3 +313,42 @@ mod tracked {
         assert_eq!(live_record.kind, MetricKind::Gauge);
     }
 }
+
+#[test]
+fn corrupt_header_stage_does_not_panic_on_dealloc() {
+    let _guard = lock();
+    use std::alloc::{GlobalAlloc, Layout};
+
+    let layout = Layout::from_size_align(64, 8).expect("layout");
+    let ptr = unsafe { ALLOCATOR.alloc(layout) };
+    assert!(!ptr.is_null(), "alloc must succeed");
+
+    // AllocationHeader is #[repr(C)] { stage: u8, magic: u8, ... }. Overwrite
+    // stage with an out-of-range slot; release builds previously indexed SLOT_*
+    // with that value and panicked inside the global allocator.
+    let offset = layout.align().max(16);
+    unsafe {
+        let header = ptr.sub(offset);
+        header.write(0xFF);
+    }
+
+    unsafe { ALLOCATOR.dealloc(ptr, layout) };
+}
+
+#[test]
+fn corrupt_header_magic_does_not_panic_on_dealloc() {
+    let _guard = lock();
+    use std::alloc::{GlobalAlloc, Layout};
+
+    let layout = Layout::from_size_align(32, 8).expect("layout");
+    let ptr = unsafe { ALLOCATOR.alloc(layout) };
+    assert!(!ptr.is_null(), "alloc must succeed");
+
+    let offset = layout.align().max(16);
+    unsafe {
+        // stage stays plausible; magic is second byte.
+        ptr.sub(offset).add(1).write(0x00);
+    }
+
+    unsafe { ALLOCATOR.dealloc(ptr, layout) };
+}

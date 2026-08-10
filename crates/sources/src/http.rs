@@ -129,11 +129,21 @@ impl HttpClientConfig {
 
     /// HTTP config identical to the default EXCEPT it permits private / loopback
     /// endpoints. The config-flag replacement for the retired
-    /// `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` env opt-in, used by the source-test
-    /// facade so httpmock (`127.0.0.1`) endpoints pass the cloud SSRF screen
-    /// without any process-global env state.
-    #[cfg(any(feature = "s3", feature = "gcs", feature = "azure"))]
-    pub(crate) fn allowing_private_endpoint() -> Self {
+    /// `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` env opt-in. Used by the source-test
+    /// facade and hosted-git / cloud / web loopback mocks so httpmock
+    /// (`127.0.0.1`) endpoints pass the shared SSRF screen without any
+    /// process-global env state.
+    #[cfg(any(
+        feature = "azure",
+        feature = "web",
+        feature = "github",
+        feature = "gitlab",
+        feature = "bitbucket",
+        feature = "slack",
+        feature = "s3",
+        feature = "gcs"
+    ))]
+    pub fn allowing_private_endpoint() -> Self {
         Self {
             allow_private_endpoint: true,
             ..Self::default()

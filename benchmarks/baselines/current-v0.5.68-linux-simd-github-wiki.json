@@ -1,0 +1,112 @@
+{
+  "backend": "simd",
+  "binary_sha256": "4197c8b75bad1947856cc3243e1cdc358b49b1c2458901c3ecf057b598a5caf4",
+  "catalog_sha256": "e6dd36fc15cc15778516cea3b0dc57eae873065599fe5d5c1bd5f1941e5aa9b0",
+  "fixture_lock_sha256": "d0adf36e152eb32282b4f69f74431f3f12ccc8ac4b6e37dffb740e275a7e49a9",
+  "host_evidence": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_driver": "580.178.04",
+    "gpu_vram_mb": 32607,
+    "kernel": "6.17.0-19-generic",
+    "logical_cores": 32,
+    "os": "linux",
+    "ram_mb": 94140
+  },
+  "repetitions": 5,
+  "schema_version": 2,
+  "target_id": "linux-x86_64-rtx5090",
+  "target_matrix_sha256": "f2ff8e62b861a0ae74b6a07deac3e53b5d3d11d83c03b21de895be3d3dd30fa6",
+  "workloads": [
+    {
+      "backend": "simd",
+      "binary_sha256": "4197c8b75bad1947856cc3243e1cdc358b49b1c2458901c3ecf057b598a5caf4",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "09cd9cd37740a26da06cafd2e736c3ec19cd6cfde5606b5e34153651d97ba37e",
+      "max_peak_rss_kb": 178616,
+      "median_peak_rss_kb": 172432,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 38325,
+      "p50_wall_ms": 513.5264169948641,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 40175.0,
+      "p95_wall_ms": 518.2516940112691,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38301,
+          "peak_rss_kb": 171912,
+          "result_error": "",
+          "wall_ms": 508.7632540089544
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 40175,
+          "peak_rss_kb": 178616,
+          "result_error": "",
+          "wall_ms": 518.2516940112691
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37064,
+          "peak_rss_kb": 166800,
+          "result_error": "",
+          "wall_ms": 504.64430000283755
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38945,
+          "peak_rss_kb": 175368,
+          "result_error": "",
+          "wall_ms": 513.5264169948641
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38325,
+          "peak_rss_kb": 172432,
+          "result_error": "",
+          "wall_ms": 513.9148399903206
+        }
+      ],
+      "workload_id": "github-collaboration-wiki"
+    }
+  ]
+}

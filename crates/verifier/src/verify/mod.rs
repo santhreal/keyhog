@@ -8,7 +8,7 @@
 //! - Redirects are not followed.
 //! - Response bodies are capped at 1 MB.
 
-mod auth;
+pub(crate) mod auth;
 pub(crate) mod aws;
 pub(crate) mod credential;
 mod multi_step;
@@ -32,9 +32,10 @@ use tokio::task::{Id as TaskId, JoinError, JoinSet};
 use crate::cache;
 use crate::{into_finding, DedupedMatch, VerificationEngine, VerifyConfig, VerifyError};
 
+pub(crate) use auth::script_auth_result;
 pub(crate) use aws::{
-    build_aws_probe, classify_aws_sts_failure, parse_aws_sts_success_metadata, valid_aws_format,
-    validate_aws_region,
+    build_aws_probe, classify_aws_sts_failure, classify_aws_sts_http_200,
+    parse_aws_sts_success_metadata, valid_aws_format, validate_aws_region,
 };
 pub(crate) use credential::{
     rate_limit_feedback_sequence_for_test, retry_delay_bounds_for_attempt,

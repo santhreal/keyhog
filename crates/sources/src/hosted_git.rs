@@ -63,6 +63,28 @@ impl ExpectedCloneOrigin {
         })
     }
 
+    /// GitHub.com's REST API lives on `api.github.com` while HTTPS clones use
+    /// `github.com`. Map the public API host to the public clone host the same
+    /// way Bitbucket maps `api.bitbucket.org` → `bitbucket.org`. Self-hosted
+    /// GHES keeps the API host as the clone origin.
+    #[cfg(feature = "github")]
+    pub(crate) fn github_from_api_endpoint(endpoint: &str) -> Result<Self, SourceError> {
+        let origin = Self::from_endpoint("github", endpoint)?;
+        if origin.host.eq_ignore_ascii_case("api.github.com") {
+            return Ok(Self::host("github.com"));
+        }
+        Ok(origin)
+    }
+
+    /// Host[:port] suitable for an `https://` clone URL authority.
+    pub(crate) fn https_authority(&self) -> String {
+        if self.port == 443 {
+            self.host.clone()
+        } else {
+            format!("{}:{}", self.host, self.port)
+        }
+    }
+
     #[cfg(feature = "gitlab")]
     pub(crate) fn from_api_root(api_root: &reqwest::Url) -> Result<Self, SourceError> {
         let host = api_root.host_str().ok_or_else(|| {
@@ -456,8 +478,8 @@ pub(crate) fn read_api_json<T: DeserializeOwned>(
         .map_err(|error| api_unreadable_error(format!("failed to parse {context}: {error}")))
 }
 
-/// Validate an operator-supplied hosted-git API endpoint (`--gitlab-endpoint`,
-/// `--bitbucket-endpoint`) before any socket opens.
+/// Validate an operator-supplied hosted-git API endpoint (`--github-api-endpoint`,
+/// `--gitlab-endpoint`, `--bitbucket-endpoint`) before any socket opens.
 ///
 /// Shape rules: https only, or plain http to a loopback host for local testing;
 /// never embedded credentials, a query, or a fragment.
@@ -468,8 +490,8 @@ pub(crate) fn read_api_json<T: DeserializeOwned>(
 /// `crate::endpoint_screen` SSRF gate the cloud object stores and WebSource use.
 /// Without it a self-hosted endpoint aimed at `127.0.0.1`, `10.0.0.5`,
 /// `169.254.169.254`, or a public name that *resolves* to one of those was
-/// accepted, and the operator's GitLab/Bitbucket credential was carried to it.
-#[cfg(any(feature = "gitlab", feature = "bitbucket"))]
+/// accepted, and the operator's GitHub/GitLab/Bitbucket credential was carried to it.
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
 pub(crate) fn validated_api_endpoint(
     platform: &str,
     endpoint: &str,
@@ -514,7 +536,7 @@ pub(crate) fn validated_api_endpoint(
     Ok((url, screened))
 }
 
-#[cfg(any(feature = "gitlab", feature = "bitbucket"))]
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
 fn api_endpoint_for_error(endpoint: &str) -> String {
     let redacted = crate::url_redaction::redact_url(endpoint);
     if let Ok(mut url) = reqwest::Url::parse(redacted.as_ref()) {
@@ -873,7 +895,7 @@ fn make_relative_path(
     Ok(relative.to_string_lossy().into_owned())
 }
 
-#[cfg(any(feature = "gitlab", feature = "bitbucket"))]
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
 fn is_loopback_host(host: &str) -> bool {
     if host.eq_ignore_ascii_case("localhost") {
         return true;

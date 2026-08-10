@@ -76,6 +76,13 @@ fn ci_workflow() -> PathBuf {
         .expect("ci.yml exists")
 }
 
+fn ci_nightly_workflow() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../.github/workflows/ci-nightly.yml")
+        .canonicalize()
+        .expect("ci-nightly.yml exists")
+}
+
 fn differential_bench_workflow() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../.github/workflows/differential-bench.yml")
@@ -676,19 +683,19 @@ fn github_workflows_keep_triggered_executable_job_shape() {
 }
 
 #[test]
-fn ci_workflow_runs_standalone_cli_suites() {
-    let workflow = fs::read_to_string(ci_workflow()).expect("read ci.yml");
+fn overnight_ci_runs_standalone_cli_suites() {
+    let workflow = fs::read_to_string(ci_nightly_workflow()).expect("read ci-nightly.yml");
     assert!(
         workflow.contains("cargo test -p keyhog --test property"),
-        "CI must run the standalone CLI property suite instead of relying on all_tests"
+        "overnight CI must run the standalone CLI property suite instead of relying on all_tests"
     );
     assert!(
         workflow.contains("cargo test -p keyhog --test adversarial"),
-        "CI must run the standalone CLI adversarial suite instead of relying on all_tests"
+        "overnight CI must run the standalone CLI adversarial suite instead of relying on all_tests"
     );
     assert!(
         workflow.contains("--test-threads=4"),
-        "adversarial CI must bound test parallelism because each test spawns keyhog"
+        "adversarial overnight CI must bound test parallelism because each test spawns keyhog"
     );
 }
 

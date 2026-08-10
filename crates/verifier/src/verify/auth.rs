@@ -193,16 +193,21 @@ fn missing_auth_companion(context: &str, missing: Vec<String>) -> RequestBuildRe
     }
 }
 
-fn script_auth_result(output: &str) -> VerificationResult {
-    if output.contains("STATUS: LIVE") {
-        VerificationResult::Live
-    } else if output.contains("STATUS: DEAD") {
-        VerificationResult::Dead
-    } else {
-        VerificationResult::Error(
-            "AuthSpec::Script verification returned no explicit status; expected \
-             STATUS: LIVE or STATUS: DEAD"
+pub(crate) fn script_auth_result(output: &str) -> VerificationResult {
+    // Exact status lines only. Substring `contains` was fail-open: banners,
+    // "NOT STATUS: LIVE", or mixed LIVE+DEAD blobs could mark credentials live.
+    let live = output.lines().any(|line| line.trim() == "STATUS: LIVE");
+    let dead = output.lines().any(|line| line.trim() == "STATUS: DEAD");
+    match (live, dead) {
+        (true, false) => VerificationResult::Live,
+        (false, true) => VerificationResult::Dead,
+        (true, true) => VerificationResult::Error(
+            "AuthSpec::Script verification returned ambiguous status lines; expected exactly one of STATUS: LIVE or STATUS: DEAD"
                 .to_string(),
-        )
+        ),
+        (false, false) => VerificationResult::Error(
+            "AuthSpec::Script verification returned no explicit status; expected STATUS: LIVE or STATUS: DEAD"
+                .to_string(),
+        ),
     }
 }

@@ -1,0 +1,3 @@
+category = "Fixed"
+crates = ["sources"]
+summary = "`--github-api-endpoint` is now applied to `--github-org` scans (factory previously ignored it)."

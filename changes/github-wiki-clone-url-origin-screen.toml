@@ -1,0 +1,3 @@
+category = "Security"
+summary = "GitHub wiki clone URLs now pass the shared clone-origin screen, and api.github.com maps to github.com for HTTPS clones."
+crates = ["sources"]

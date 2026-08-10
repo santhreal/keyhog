@@ -1,0 +1,102 @@
+{
+  "backend": "simd",
+  "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+  "catalog_sha256": "e6dd36fc15cc15778516cea3b0dc57eae873065599fe5d5c1bd5f1941e5aa9b0",
+  "fixture_lock_sha256": "d0adf36e152eb32282b4f69f74431f3f12ccc8ac4b6e37dffb740e275a7e49a9",
+  "host_evidence": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_driver": "580.178.04",
+    "gpu_vram_mb": 32607,
+    "kernel": "6.17.0-19-generic",
+    "logical_cores": 32,
+    "os": "linux",
+    "ram_mb": 94140
+  },
+  "repetitions": 5,
+  "schema_version": 2,
+  "target_id": "linux-x86_64-rtx5090",
+  "target_matrix_sha256": "f2ff8e62b861a0ae74b6a07deac3e53b5d3d11d83c03b21de895be3d3dd30fa6",
+  "workloads": [
+    {
+      "backend": "simd",
+      "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "fe02e1b4c3a06376f056f873f59e9f2bfd26b1bcc6a12dc5cb5ecf66a53f2df1",
+      "fixture_input_sha256": "5c2a2d445ea3a68082cb8dd6d7f5c9fe326026d73004c5d826362472ec06d135",
+      "max_peak_rss_kb": 171408,
+      "median_peak_rss_kb": 163244,
+      "output_format": "text",
+      "p50_major_page_faults": null,
+      "p50_minor_page_faults": null,
+      "p50_wall_ms": 106.3995540025644,
+      "p95_major_page_faults": null,
+      "p95_minor_page_faults": null,
+      "p95_wall_ms": 112.28146399662364,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [],
+          "major_page_faults": null,
+          "minor_page_faults": null,
+          "peak_rss_kb": 163244,
+          "result_error": "watch text output does not expose credential hashes",
+          "wall_ms": 101.55323799699545
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [],
+          "major_page_faults": null,
+          "minor_page_faults": null,
+          "peak_rss_kb": 171408,
+          "result_error": "watch text output does not expose credential hashes",
+          "wall_ms": 101.36632500507403
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [],
+          "major_page_faults": null,
+          "minor_page_faults": null,
+          "peak_rss_kb": 171292,
+          "result_error": "watch text output does not expose credential hashes",
+          "wall_ms": 106.80382698774338
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [],
+          "major_page_faults": null,
+          "minor_page_faults": null,
+          "peak_rss_kb": 157648,
+          "result_error": "watch text output does not expose credential hashes",
+          "wall_ms": 112.28146399662364
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [],
+          "major_page_faults": null,
+          "minor_page_faults": null,
+          "peak_rss_kb": 163096,
+          "result_error": "watch text output does not expose credential hashes",
+          "wall_ms": 106.3995540025644
+        }
+      ],
+      "workload_id": "watch-filesystem-events"
+    }
+  ]
+}

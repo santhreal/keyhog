@@ -1,0 +1,112 @@
+{
+  "backend": "cpu",
+  "binary_sha256": "e7eb499b9c33b81f169ae1d3b0076d2afb39155cc2807ddd1e1555ac756db78b",
+  "catalog_sha256": "e6dd36fc15cc15778516cea3b0dc57eae873065599fe5d5c1bd5f1941e5aa9b0",
+  "fixture_lock_sha256": "d0adf36e152eb32282b4f69f74431f3f12ccc8ac4b6e37dffb740e275a7e49a9",
+  "host_evidence": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_driver": "580.178.04",
+    "gpu_vram_mb": 32607,
+    "kernel": "6.17.0-19-generic",
+    "logical_cores": 32,
+    "os": "linux",
+    "ram_mb": 94140
+  },
+  "repetitions": 5,
+  "schema_version": 2,
+  "target_id": "linux-x86_64-rtx5090",
+  "target_matrix_sha256": "f2ff8e62b861a0ae74b6a07deac3e53b5d3d11d83c03b21de895be3d3dd30fa6",
+  "workloads": [
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7eb499b9c33b81f169ae1d3b0076d2afb39155cc2807ddd1e1555ac756db78b",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "5bf68eeebe0cb89e44d21c87bdcfcbd3425c61c6f54cc7cb9369c938c7efb516",
+      "fixture_input_sha256": "0a011729897edda97467b4b06d03e4b8dedd110bd6b6cd53a8a6aeb6ab510331",
+      "max_peak_rss_kb": 174344,
+      "median_peak_rss_kb": 173312,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 36377,
+      "p50_wall_ms": 445.3850540012354,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 36602.0,
+      "p95_wall_ms": 468.4669559937902,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36111,
+          "peak_rss_kb": 170992,
+          "result_error": "",
+          "wall_ms": 445.3850540012354
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36537,
+          "peak_rss_kb": 173312,
+          "result_error": "",
+          "wall_ms": 447.1304430044256
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36602,
+          "peak_rss_kb": 174344,
+          "result_error": "",
+          "wall_ms": 435.77863900281955
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 33623,
+          "peak_rss_kb": 162724,
+          "result_error": "",
+          "wall_ms": 468.4669559937902
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36377,
+          "peak_rss_kb": 173688,
+          "result_error": "",
+          "wall_ms": 421.75327498989645
+        }
+      ],
+      "workload_id": "slack-workspace-messages"
+    }
+  ]
+}

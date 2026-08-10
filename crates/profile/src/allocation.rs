@@ -101,11 +101,28 @@ mod tracked {
 
     #[inline]
     fn record_dealloc(slot: usize, bytes: u64) {
+        if slot >= STAGE_SLOTS {
+            // Fail closed: a corrupt header must not index SLOT_* or wrap live
+            // counters. Callers that already validated the header never hit this.
+            return;
+        }
         DEALLOCATIONS.fetch_add(1, Ordering::Relaxed);
         DEALLOCATION_BYTES.fetch_add(bytes, Ordering::Relaxed);
-        LIVE_BYTES.fetch_sub(bytes, Ordering::Relaxed);
+        saturating_fetch_sub(&LIVE_BYTES, bytes);
         SLOT_DEALLOCATION_BYTES[slot].fetch_add(bytes, Ordering::Relaxed);
-        SLOT_LIVE_BYTES[slot].fetch_sub(bytes, Ordering::Relaxed);
+        saturating_fetch_sub(&SLOT_LIVE_BYTES[slot], bytes);
+    }
+
+    #[inline]
+    fn saturating_fetch_sub(cell: &AtomicU64, bytes: u64) {
+        let mut current = cell.load(Ordering::Relaxed);
+        loop {
+            let next = current.saturating_sub(bytes);
+            match cell.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => break,
+                Err(observed) => current = observed,
+            }
+        }
     }
 
     pub(super) fn snapshot_totals() -> (u64, u64, u64, u64, u64, u64) {
@@ -180,21 +197,41 @@ mod tracked {
     }
 
     /// Tracked deallocation: ownership returns to the allocating stage slot.
+    ///
+    /// Release builds previously trusted `AllocationHeader` with only
+    /// `debug_assert`s. A corrupt `stage` indexed `SLOT_*` out of bounds
+    /// (panic in the global allocator); a corrupt `bytes` fed
+    /// `from_size_align_unchecked` and wrapping `fetch_sub`. Validate the
+    /// header; on failure, free with the caller layout and skip counters.
     pub(super) unsafe fn tracked_dealloc(ptr: *mut u8, layout: Layout) {
         let offset = layout.align().max(HEADER_BYTES);
         // SAFETY: ptr came from tracked_alloc with the same layout, so the
         // header sits exactly offset bytes before it.
         let base = unsafe { ptr.sub(offset) };
-        // SAFETY: base points at the header written by tracked_alloc.
+        // SAFETY: base points at the header written by tracked_alloc (or at
+        // whatever bytes sit there if the block was corrupted).
         let header = unsafe { base.cast::<AllocationHeader>().read() };
-        debug_assert_eq!(header.magic, HEADER_MAGIC);
-        debug_assert_eq!(header.bytes, layout.size() as u64);
-        record_dealloc(usize::from(header.stage), header.bytes);
-        // SAFETY: header.bytes came from a valid layout at allocation and
-        // offset is a nonzero power of two.
-        let real =
-            unsafe { Layout::from_size_align_unchecked(header.bytes as usize + offset, offset) };
-        // SAFETY: base/real match the allocation that produced ptr.
+        let stage = usize::from(header.stage);
+        let header_ok = header.magic == HEADER_MAGIC
+            && header.bytes == layout.size() as u64
+            && stage < STAGE_SLOTS;
+        let user_bytes = if header_ok {
+            record_dealloc(stage, header.bytes);
+            header.bytes as usize
+        } else {
+            // Skip counter updates; free with the caller-provided layout size.
+            layout.size()
+        };
+        let real = Layout::from_size_align(user_bytes.saturating_add(offset), offset)
+            .unwrap_or_else(|_| {
+                // offset is align.max(16) so power-of-two and nonzero; size was
+                // accepted at alloc time. Fall back only if saturating wrap
+                // produced an impossible pair.
+                unsafe { Layout::from_size_align_unchecked(layout.size() + offset, offset) }
+            });
+        // SAFETY: base/real match the allocation that produced ptr when the
+        // header is valid; on corruption we free using the caller layout that
+        // GlobalAlloc requires the client to pass.
         unsafe { System.dealloc(base, real) };
     }
 }

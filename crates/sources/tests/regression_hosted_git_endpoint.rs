@@ -1,9 +1,9 @@
-//! Regression: hosted-Git (GitHub org / GitLab group) endpoint & clone-URL
-//! validation.
+//! Regression: hosted-Git (GitHub org / collaboration / GitLab group) endpoint
+//! & clone-URL validation.
 //!
-//! Two production surfaces are exercised end to end through the crate's public
-//! API and its `#[doc(hidden)]` testing facade, no production visibility is
-//! weakened for these tests:
+//! Production surfaces exercised end to end through the crate's public API and
+//! its `#[doc(hidden)]` testing facade; no production visibility is weakened
+//! for these tests:
 //!
 //!   * GitHub clone-URL / org / repo-name validation via
 //!     `keyhog_sources::testing::TestApi` (`github_org::validate_*`,
@@ -20,6 +20,12 @@
 //!     `build_client`, then the first network call), so a rejected endpoint
 //!     surfaces as exactly one `Err` chunk with no network I/O.
 //!
+//!   * GitHub collaboration / org API-endpoint SSRF screening via
+//!     `validated_api_endpoint` inside `stream_chunks` / `stream_org_chunks`
+//!     before the bearer token leaves the process. Collaboration is especially
+//!     important: the CLI calls `with_endpoint` directly (no factory), so the
+//!     stream path is the only screen.
+//!
 //! Every assertion checks a concrete value: exact `Ok(())`, the exact refusal
 //! phrase, the normalized `/api/v4` request path, or the absence of a leaked
 //! secret in a redacted diagnostic.
@@ -27,6 +33,7 @@
 
 use std::time::Duration;
 
+use keyhog_core::Source;
 use keyhog_sources::testing::TestApi;
 
 // ---------------------------------------------------------------------------
@@ -99,7 +106,7 @@ fn github_non_https_clone_url_rejected_with_exact_reason() {
         .expect_err("ssh:// clone URL must be refused");
     let msg = err.to_string();
     assert!(
-        msg.contains("refusing non-https clone URL"),
+        msg.contains("refusing clone URL that is neither https nor literal loopback http"),
         "expected non-https refusal, got: {msg}"
     );
 }
@@ -440,5 +447,229 @@ fn gitlab_private_ip_https_endpoint_refused_before_network() {
     assert!(
         !msg.contains("GitLab API request failed") && !msg.contains("GitLab API returned"),
         "a refused endpoint must never reach the transport, got: {msg}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// GitHub collaboration / org API-endpoint SSRF (fail-closed, no network)
+// ---------------------------------------------------------------------------
+
+fn issues_only() -> keyhog_sources::GitHubCollaborationSelection {
+    keyhog_sources::GitHubCollaborationSelection {
+        issues: true,
+        pull_requests: false,
+        discussions: false,
+        wiki: false,
+        gists: false,
+        releases: false,
+    }
+}
+
+#[test]
+fn github_collaboration_private_ip_https_endpoint_refused_before_network() {
+    // CLI path: `GitHubCollaborationSource::with_endpoint` is public and used
+    // directly for `--github-api-endpoint`. Without stream-time validation the
+    // bearer token was carried to private / metadata destinations. Refusal must
+    // happen pre-connect, matching gitlab-group.
+    let http = keyhog_sources::http::HttpClientConfig {
+        timeout: Some(Duration::from_millis(800)),
+        ..Default::default()
+    };
+    let source =
+        keyhog_sources::GitHubCollaborationSource::new("acme/repo", "ghp_testtoken", issues_only())
+            .expect("collaboration source constructs")
+            .with_endpoint("https://192.0.2.1")
+            .with_http_config(http);
+    let rows: Vec<_> = source.chunks().collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "the private-IP endpoint must yield exactly one source error, got {} rows",
+        rows.len()
+    );
+    let msg = rows[0]
+        .as_ref()
+        .expect_err("private-IP collaboration endpoint must be an Err chunk")
+        .to_string();
+    assert!(
+        msg.contains(
+            "refusing github endpoint: host is a private, loopback, link-local, or cloud-metadata address (SSRF)"
+        ),
+        "private-IP https collaboration endpoint must be refused by the host SSRF screen, got: {msg}"
+    );
+    assert!(
+        !msg.contains("GitHub API") && !msg.contains("request failed"),
+        "a refused collaboration endpoint must never reach the transport, got: {msg}"
+    );
+}
+
+#[test]
+fn github_collaboration_loopback_http_endpoint_refused_without_private_optin() {
+    let server = httpmock::MockServer::start();
+    let list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/repos/acme/repo/issues");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body("[]");
+    });
+
+    let source =
+        keyhog_sources::GitHubCollaborationSource::new("acme/repo", "ghp_testtoken", issues_only())
+            .expect("collaboration source constructs")
+            .with_endpoint(server.url(""))
+            .with_http_config(keyhog_sources::http::HttpClientConfig::default());
+    let rows: Vec<_> = source.chunks().collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "expected one refusal chunk, got {}",
+        rows.len()
+    );
+    let msg = rows[0]
+        .as_ref()
+        .expect_err("loopback collaboration endpoint without opt-in must Err")
+        .to_string();
+    assert!(
+        msg.contains(
+            "refusing github endpoint: host is a private, loopback, link-local, or cloud-metadata address (SSRF)"
+        ),
+        "loopback collaboration endpoint without private opt-in must be refused as SSRF, got: {msg}"
+    );
+    assert_eq!(
+        list.calls(),
+        0,
+        "a refused collaboration endpoint must open no socket, got {} calls",
+        list.calls()
+    );
+}
+
+#[test]
+fn github_org_private_ip_https_endpoint_refused_at_factory() {
+    // Factory validates before `with_endpoint`; stream_org_chunks re-validates
+    // as defense in depth. Either layer must refuse a private API root.
+    let http = keyhog_sources::http::HttpClientConfig {
+        timeout: Some(Duration::from_millis(800)),
+        ..Default::default()
+    };
+    let err = match keyhog_sources::create_source_with_http_config(
+        "github-org",
+        Some("acme\nghp_testtoken\nhttps://192.0.2.1"),
+        http,
+    ) {
+        Ok(_) => panic!("github-org factory must refuse a private-IP endpoint"),
+        Err(error) => error,
+    };
+    let msg = err.to_string();
+    assert!(
+        msg.contains(
+            "refusing github endpoint: host is a private, loopback, link-local, or cloud-metadata address (SSRF)"
+        ),
+        "private-IP https org endpoint must be refused by the host SSRF screen, got: {msg}"
+    );
+}
+
+#[test]
+fn github_collaboration_wiki_ssh_url_refused_before_clone() {
+    let source = keyhog_sources::GitHubCollaborationSource::new(
+        "acme/repo",
+        "ghp_testtoken",
+        keyhog_sources::GitHubCollaborationSelection {
+            issues: false,
+            pull_requests: false,
+            discussions: false,
+            wiki: true,
+            gists: false,
+            releases: false,
+        },
+    )
+    .expect("collaboration source constructs")
+    .with_wiki_clone_url("ssh://github.com/acme/repo.wiki.git");
+    let rows: Vec<_> = source.chunks().collect();
+    assert!(
+        !rows.is_empty(),
+        "refused wiki clone must surface at least one row"
+    );
+    let joined = rows
+        .iter()
+        .filter_map(|row| row.as_ref().err().map(|error| error.to_string()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        joined.contains("neither https nor literal loopback http")
+            || joined.contains("outside expected clone origin")
+            || joined.contains("wiki"),
+        "ssh wiki URL must be refused before clone, got: {joined}"
+    );
+}
+
+#[test]
+fn github_collaboration_wiki_cross_host_url_refused_before_clone() {
+    let source = keyhog_sources::GitHubCollaborationSource::new(
+        "acme/repo",
+        "ghp_testtoken",
+        keyhog_sources::GitHubCollaborationSelection {
+            issues: false,
+            pull_requests: false,
+            discussions: false,
+            wiki: true,
+            gists: false,
+            releases: false,
+        },
+    )
+    .expect("collaboration source constructs")
+    .with_wiki_clone_url("https://attacker.example/acme/repo.wiki.git");
+    let rows: Vec<_> = source.chunks().collect();
+    let joined = rows
+        .iter()
+        .filter_map(|row| row.as_ref().err().map(|error| error.to_string()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        joined.contains("outside expected clone origin") && joined.contains("attacker.example"),
+        "cross-host wiki URL must be refused before askpass, got: {joined}"
+    );
+}
+
+#[test]
+fn github_collaboration_default_wiki_follows_ghe_api_endpoint_host() {
+    // Before: default wiki always targeted github.com, so a GHES/custom API
+    // endpoint failed the origin screen even when the operator never passed
+    // `--github-wiki-url`. After: default wiki authority tracks the API clone
+    // origin (loopback mock here stands in for GHES).
+    let server = httpmock::MockServer::start();
+    let http = keyhog_sources::http::HttpClientConfig {
+        allow_private_endpoint: true,
+        timeout: Some(Duration::from_millis(800)),
+        ..Default::default()
+    };
+    let source = keyhog_sources::GitHubCollaborationSource::new(
+        "acme/repo",
+        "ghp_testtoken",
+        keyhog_sources::GitHubCollaborationSelection {
+            issues: false,
+            pull_requests: false,
+            discussions: false,
+            wiki: true,
+            gists: false,
+            releases: false,
+        },
+    )
+    .expect("collaboration source constructs")
+    .with_endpoint(server.url(""))
+    .with_http_config(http);
+    let rows: Vec<_> = source.chunks().collect();
+    let joined = rows
+        .iter()
+        .filter_map(|row| row.as_ref().err().map(|error| error.to_string()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !joined.contains("outside expected clone origin"),
+        "default wiki clone must target the API endpoint host, not hardcoded github.com; got: {joined}"
+    );
+    assert!(
+        !joined.is_empty(),
+        "wiki clone against a non-git mock endpoint must still surface a coverage/inaccessible gap"
     );
 }

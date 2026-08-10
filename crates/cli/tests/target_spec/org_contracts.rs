@@ -582,16 +582,22 @@ fn org_install_scenarios_are_os_addressable() {
     }
 
     let ci = read(&root.join(".github/workflows/ci.yml"));
+    let overnight = read(&root.join(".github/workflows/ci-nightly.yml"));
+    // Required CI keeps the linux local-build smoke; overnight owns the
+    // broader install battery plus the macOS local-build proof.
+    assert!(
+        ci.contains("tests/install/linux/install_from_local_build.sh"),
+        "ORG GAP [install]: required CI must keep linux install_from_local_build smoke"
+    );
     for path in [
         "tests/install/linux/scenarios.sh",
         "tests/install/linux/edge_cases.sh",
         "tests/install/linux/calibration_probe_flag_compat.sh",
-        "tests/install/linux/install_from_local_build.sh",
         "tests/install/macos/install_from_local_build.sh",
     ] {
         assert!(
-            ci.contains(path),
-            "ORG GAP [install]: CI must call OS-specific install scenario path {path}"
+            overnight.contains(path),
+            "ORG GAP [install]: overnight CI must call OS-specific install scenario path {path}"
         );
     }
     for retired in [
@@ -601,7 +607,7 @@ fn org_install_scenarios_are_os_addressable() {
         "tests/install/install_from_local_build.sh",
     ] {
         assert!(
-            !ci.contains(retired),
+            !ci.contains(retired) && !overnight.contains(retired),
             "ORG GAP [install]: CI still references retired flat install path {retired}"
         );
     }

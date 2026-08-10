@@ -1,0 +1,5199 @@
+{
+  "backend": "cpu",
+  "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+  "catalog_sha256": "e6dd36fc15cc15778516cea3b0dc57eae873065599fe5d5c1bd5f1941e5aa9b0",
+  "fixture_lock_sha256": "d0adf36e152eb32282b4f69f74431f3f12ccc8ac4b6e37dffb740e275a7e49a9",
+  "host_evidence": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_driver": "580.178.04",
+    "gpu_vram_mb": 32607,
+    "kernel": "6.17.0-19-generic",
+    "logical_cores": 32,
+    "os": "linux",
+    "ram_mb": 94140
+  },
+  "repetitions": 5,
+  "schema_version": 2,
+  "target_id": "linux-x86_64-rtx5090",
+  "target_matrix_sha256": "f2ff8e62b861a0ae74b6a07deac3e53b5d3d11d83c03b21de895be3d3dd30fa6",
+  "workloads": [
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "bc7d3333ed8f34c4adac5a02cd6cf3a15a76368bf72d790ab5fc944f03793e2b",
+      "max_peak_rss_kb": 180972,
+      "median_peak_rss_kb": 177496,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 38903,
+      "p50_wall_ms": 499.1547969984822,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 39719.0,
+      "p95_wall_ms": 516.1908599984599,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38943,
+          "peak_rss_kb": 178392,
+          "result_error": "",
+          "wall_ms": 497.438531005173
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38336,
+          "peak_rss_kb": 175008,
+          "result_error": "",
+          "wall_ms": 505.8120399917243
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38352,
+          "peak_rss_kb": 174768,
+          "result_error": "",
+          "wall_ms": 499.1547969984822
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38903,
+          "peak_rss_kb": 177496,
+          "result_error": "",
+          "wall_ms": 489.64027599140536
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39719,
+          "peak_rss_kb": 180972,
+          "result_error": "",
+          "wall_ms": 516.1908599984599
+        }
+      ],
+      "workload_id": "bitbucket-workspace-repositories"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "92116f7a2a4bcf8e25eada375425d41097e5931826ba20e42c18820720de35f3",
+      "fixture_input_sha256": "81e32edf6411124483f3bd10a2f24ee35c9d6939bdf6e60aa40704bf0e3aef29",
+      "max_peak_rss_kb": 184344,
+      "median_peak_rss_kb": 178044,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 37755,
+      "p50_wall_ms": 403.6412159912288,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 38972.0,
+      "p95_wall_ms": 421.03303999465425,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37755,
+          "peak_rss_kb": 178044,
+          "result_error": "",
+          "wall_ms": 421.03303999465425
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36262,
+          "peak_rss_kb": 174232,
+          "result_error": "",
+          "wall_ms": 403.6412159912288
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35487,
+          "peak_rss_kb": 169812,
+          "result_error": "",
+          "wall_ms": 392.6852580043487
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38972,
+          "peak_rss_kb": 183804,
+          "result_error": "",
+          "wall_ms": 406.95830099866726
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38943,
+          "peak_rss_kb": 184344,
+          "result_error": "",
+          "wall_ms": 383.97845000145026
+        }
+      ],
+      "workload_id": "cloud-azure-container"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "92116f7a2a4bcf8e25eada375425d41097e5931826ba20e42c18820720de35f3",
+      "fixture_input_sha256": "21081082720d37064adcb291a77153ee02e60255ccaf64f3ede5e93ef89d983c",
+      "max_peak_rss_kb": 177684,
+      "median_peak_rss_kb": 169500,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 35146,
+      "p50_wall_ms": 398.857895997935,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37415.0,
+      "p95_wall_ms": 406.45709600357804,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36494,
+          "peak_rss_kb": 174188,
+          "result_error": "",
+          "wall_ms": 394.32832499733195
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37415,
+          "peak_rss_kb": 177684,
+          "result_error": "",
+          "wall_ms": 384.81295299425256
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35071,
+          "peak_rss_kb": 166968,
+          "result_error": "",
+          "wall_ms": 406.45709600357804
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35146,
+          "peak_rss_kb": 169500,
+          "result_error": "",
+          "wall_ms": 398.857895997935
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34677,
+          "peak_rss_kb": 167124,
+          "result_error": "",
+          "wall_ms": 403.33997800189536
+        }
+      ],
+      "workload_id": "cloud-gcs-bucket"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "92116f7a2a4bcf8e25eada375425d41097e5931826ba20e42c18820720de35f3",
+      "fixture_input_sha256": "1bbd978c72c553bbc966da2ddb04266b9c3a4acd352bb513e0ac5ce05c843084",
+      "max_peak_rss_kb": 181256,
+      "median_peak_rss_kb": 177952,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 37383,
+      "p50_wall_ms": 397.3984850017587,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 38008.0,
+      "p95_wall_ms": 403.817718004575,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38008,
+          "peak_rss_kb": 181256,
+          "result_error": "",
+          "wall_ms": 384.4921179988887
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34746,
+          "peak_rss_kb": 168096,
+          "result_error": "",
+          "wall_ms": 397.3984850017587
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37564,
+          "peak_rss_kb": 178916,
+          "result_error": "",
+          "wall_ms": 403.817718004575
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37383,
+          "peak_rss_kb": 177952,
+          "result_error": "",
+          "wall_ms": 391.92626599106006
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35042,
+          "peak_rss_kb": 168284,
+          "result_error": "",
+          "wall_ms": 401.5940050012432
+        }
+      ],
+      "workload_id": "cloud-s3-bucket"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "adbec292643375c1d90819110094bbe260b94e4ae315e53603a7943c8ebe70b6",
+      "fixture_input_sha256": "064a0bc676b3f8fae7d8ec299b272b4cd251cadb92ca97bfa6bac3f41ae37061",
+      "max_peak_rss_kb": 682112,
+      "median_peak_rss_kb": 665092,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 114,
+      "p50_minor_page_faults": 141872,
+      "p50_wall_ms": 518.598208000185,
+      "p95_major_page_faults": 155.0,
+      "p95_minor_page_faults": 146686.0,
+      "p95_wall_ms": 538.5935619997326,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 4,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 114,
+          "minor_page_faults": 141872,
+          "peak_rss_kb": 665092,
+          "result_error": "",
+          "wall_ms": 538.5935619997326
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 4,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 119,
+          "minor_page_faults": 142507,
+          "peak_rss_kb": 666068,
+          "result_error": "",
+          "wall_ms": 509.4465520087397
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 4,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 112,
+          "minor_page_faults": 139867,
+          "peak_rss_kb": 655992,
+          "result_error": "",
+          "wall_ms": 518.7677380017703
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 4,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 73,
+          "minor_page_faults": 141011,
+          "peak_rss_kb": 660872,
+          "result_error": "",
+          "wall_ms": 508.74504999956116
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 4,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 155,
+          "minor_page_faults": 146686,
+          "peak_rss_kb": 682112,
+          "result_error": "",
+          "wall_ms": 518.598208000185
+        }
+      ],
+      "workload_id": "concurrency-independent-partitions"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "b30c6d1bdda6538b2fb30c23bd7000fe4e8a12c13682f4bbdd04dd7121973167",
+      "fixture_input_sha256": "641c6574198a6c59a7c3c3c3c3192e004e225b6e9daf1dbafbf3e030286cb9a0",
+      "max_peak_rss_kb": 203616,
+      "median_peak_rss_kb": 197184,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 45900,
+      "p50_wall_ms": 381.01406999339815,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 47273.0,
+      "p95_wall_ms": 393.76869999978226,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 45281,
+          "peak_rss_kb": 194636,
+          "result_error": "",
+          "wall_ms": 372.28518100164365
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 45900,
+          "peak_rss_kb": 198276,
+          "result_error": "",
+          "wall_ms": 393.76869999978226
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 41911,
+          "peak_rss_kb": 182584,
+          "result_error": "",
+          "wall_ms": 372.9860820021713
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 47273,
+          "peak_rss_kb": 203616,
+          "result_error": "",
+          "wall_ms": 381.01406999339815
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 46191,
+          "peak_rss_kb": 197184,
+          "result_error": "",
+          "wall_ms": 383.3746009913739
+        }
+      ],
+      "workload_id": "container-docker-image"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "mass-daemon",
+      "fixture_answer_sha256": "e1f94e2b36aff19070cc6c354729972da8c14b3df8cfe8f6a347a6acc4456b44",
+      "fixture_input_sha256": "686a22bd6f1dc5cf7e04c0fc1397495509a40e137f0588c73aaf1c6d9ac46034",
+      "max_peak_rss_kb": 205872,
+      "median_peak_rss_kb": 199520,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 5852,
+      "p50_wall_ms": 149.25701900210697,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 5963.0,
+      "p95_wall_ms": 149.88730700861197,
+      "page_cache_state": "steady",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "steady",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5711,
+          "peak_rss_kb": 205840,
+          "result_error": "",
+          "wall_ms": 149.88730700861197
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5852,
+          "peak_rss_kb": 205872,
+          "result_error": "",
+          "wall_ms": 147.79267799167428
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5790,
+          "peak_rss_kb": 199520,
+          "result_error": "",
+          "wall_ms": 149.25701900210697
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5892,
+          "peak_rss_kb": 199520,
+          "result_error": "",
+          "wall_ms": 139.087652991293
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5963,
+          "peak_rss_kb": 199520,
+          "result_error": "",
+          "wall_ms": 149.8300789971836
+        }
+      ],
+      "workload_id": "daemon-mass-filesystem"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "mass-daemon",
+      "fixture_answer_sha256": "b94af722e5e0c6a2f7311adbd501c95090d17240076c8595236f89d4d99974a8",
+      "fixture_input_sha256": "6e3acbe3dcc03c1bb987db01cb1df9f5d88b796d08277613ca242d64228f1ae4",
+      "max_peak_rss_kb": 201636,
+      "median_peak_rss_kb": 201636,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 6942,
+      "p50_wall_ms": 170.40298199572135,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 7188.0,
+      "p95_wall_ms": 171.83091399783734,
+      "page_cache_state": "steady",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "steady",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 6413,
+          "peak_rss_kb": 201636,
+          "result_error": "",
+          "wall_ms": 170.76193900720682
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 6854,
+          "peak_rss_kb": 201636,
+          "result_error": "",
+          "wall_ms": 171.83091399783734
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 6952,
+          "peak_rss_kb": 201636,
+          "result_error": "",
+          "wall_ms": 170.40298199572135
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 6942,
+          "peak_rss_kb": 201636,
+          "result_error": "",
+          "wall_ms": 168.7548740010243
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 7188,
+          "peak_rss_kb": 201636,
+          "result_error": "",
+          "wall_ms": 169.0257440059213
+        }
+      ],
+      "workload_id": "daemon-mass-remote"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "warm-daemon",
+      "fixture_answer_sha256": "020cb4d5f7e7791b9215ff76fdda989a2ec14a430347b499ff5e201b575fdb04",
+      "fixture_input_sha256": "22677652a2a646cc4a65418e324506a294015686175b4dcdc34dff1b717ed181",
+      "max_peak_rss_kb": 200780,
+      "median_peak_rss_kb": 194364,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 5205,
+      "p50_wall_ms": 147.12420699652284,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 5213.0,
+      "p95_wall_ms": 148.9256639906671,
+      "page_cache_state": "warm",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "warm",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 4752,
+          "peak_rss_kb": 200760,
+          "result_error": "",
+          "wall_ms": 146.10015599464532
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5205,
+          "peak_rss_kb": 200780,
+          "result_error": "",
+          "wall_ms": 145.33002401003614
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5213,
+          "peak_rss_kb": 194364,
+          "result_error": "",
+          "wall_ms": 148.9256639906671
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5210,
+          "peak_rss_kb": 194364,
+          "result_error": "",
+          "wall_ms": 148.1769819947658
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5194,
+          "peak_rss_kb": 194364,
+          "result_error": "",
+          "wall_ms": 147.12420699652284
+        }
+      ],
+      "workload_id": "daemon-warm-single-file"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "warm-daemon",
+      "fixture_answer_sha256": "427a3af5ce6db994094bd6b99a4f4d3dacf96354acc3373e08de7755156fd715",
+      "fixture_input_sha256": "235f18c3909585a60b47c9d610eb2f5926b85361a126afbc657bc8d36038e452",
+      "max_peak_rss_kb": 200592,
+      "median_peak_rss_kb": 200592,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 5209,
+      "p50_wall_ms": 148.11190900218207,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 5225.0,
+      "p95_wall_ms": 152.9985039960593,
+      "page_cache_state": "warm",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "warm",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5202,
+          "peak_rss_kb": 200592,
+          "result_error": "",
+          "wall_ms": 141.00361600867473
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5209,
+          "peak_rss_kb": 200592,
+          "result_error": "",
+          "wall_ms": 145.68857999984175
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5178,
+          "peak_rss_kb": 200592,
+          "result_error": "",
+          "wall_ms": 150.40006399794947
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5225,
+          "peak_rss_kb": 200592,
+          "result_error": "",
+          "wall_ms": 148.11190900218207
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5225,
+          "peak_rss_kb": 200592,
+          "result_error": "",
+          "wall_ms": 152.9985039960593
+        }
+      ],
+      "workload_id": "daemon-warm-stdin"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "bf61882306ae639b1d82bfefa7c2db7ed0b0064179087110adcb99fcf23e3d2b",
+      "fixture_input_sha256": "925e6818ab3e3153a2acf4e168c9987cb793a2c9776e8ea2b8fa8b82b47375c8",
+      "max_peak_rss_kb": 140612,
+      "median_peak_rss_kb": 135020,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 28673,
+      "p50_wall_ms": 254.0242569957627,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 30040.0,
+      "p95_wall_ms": 256.3871729944367,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 4,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27535,
+          "peak_rss_kb": 131148,
+          "result_error": "",
+          "wall_ms": 250.11339300544932
+        },
+        {
+          "coverage_gap_count": 4,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 30040,
+          "peak_rss_kb": 140612,
+          "result_error": "",
+          "wall_ms": 241.31455199676566
+        },
+        {
+          "coverage_gap_count": 4,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28183,
+          "peak_rss_kb": 132672,
+          "result_error": "",
+          "wall_ms": 254.0242569957627
+        },
+        {
+          "coverage_gap_count": 4,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28673,
+          "peak_rss_kb": 135656,
+          "result_error": "",
+          "wall_ms": 255.9929590061074
+        },
+        {
+          "coverage_gap_count": 4,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28880,
+          "peak_rss_kb": 135020,
+          "result_error": "",
+          "wall_ms": 256.3871729944367
+        }
+      ],
+      "workload_id": "filesystem-binary-decompiler"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "fixture_input_sha256": "e8bd0164eb4db58fb6d996dc6f406c3a41e24132ce4b20a38686b4415f3576ec",
+      "max_peak_rss_kb": 152008,
+      "median_peak_rss_kb": 144960,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 30595,
+      "p50_wall_ms": 359.9854670028435,
+      "p95_major_page_faults": 1.0,
+      "p95_minor_page_faults": 32229.0,
+      "p95_wall_ms": 376.5227100084303,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 32229,
+          "peak_rss_kb": 152008,
+          "result_error": "",
+          "wall_ms": 376.5227100084303
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 30595,
+          "peak_rss_kb": 144300,
+          "result_error": "",
+          "wall_ms": 370.27992799994536
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 30363,
+          "peak_rss_kb": 144960,
+          "result_error": "",
+          "wall_ms": 359.12028601160273
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 1,
+          "minor_page_faults": 30195,
+          "peak_rss_kb": 143740,
+          "result_error": "",
+          "wall_ms": 356.6715279885102
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 30607,
+          "peak_rss_kb": 145012,
+          "result_error": "",
+          "wall_ms": 359.9854670028435
+        }
+      ],
+      "workload_id": "filesystem-binary-rejection"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "bf61882306ae639b1d82bfefa7c2db7ed0b0064179087110adcb99fcf23e3d2b",
+      "fixture_input_sha256": "925e6818ab3e3153a2acf4e168c9987cb793a2c9776e8ea2b8fa8b82b47375c8",
+      "max_peak_rss_kb": 139104,
+      "median_peak_rss_kb": 133936,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 28579,
+      "p50_wall_ms": 251.43232999835163,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 29622.0,
+      "p95_wall_ms": 269.25026800017804,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 4,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29622,
+          "peak_rss_kb": 139104,
+          "result_error": "",
+          "wall_ms": 251.43232999835163
+        },
+        {
+          "coverage_gap_count": 4,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29044,
+          "peak_rss_kb": 136052,
+          "result_error": "",
+          "wall_ms": 251.5337009972427
+        },
+        {
+          "coverage_gap_count": 4,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28360,
+          "peak_rss_kb": 132940,
+          "result_error": "",
+          "wall_ms": 269.25026800017804
+        },
+        {
+          "coverage_gap_count": 4,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27963,
+          "peak_rss_kb": 131088,
+          "result_error": "",
+          "wall_ms": 246.75142399792094
+        },
+        {
+          "coverage_gap_count": 4,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28579,
+          "peak_rss_kb": 133936,
+          "result_error": "",
+          "wall_ms": 248.47727800079156
+        }
+      ],
+      "workload_id": "filesystem-binary-strings"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "f5bc4b8733f7a77a7c9105223d4c10e04b7d0493c179ef72bbb2d336153d98b4",
+      "fixture_input_sha256": "da90d48d1108b7891b829c0dcb644636eaa9e422648c8d3cae861754f7b7086c",
+      "max_peak_rss_kb": 182844,
+      "median_peak_rss_kb": 175544,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 37795,
+      "p50_wall_ms": 379.3157159961993,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 39648.0,
+      "p95_wall_ms": 393.25039100367576,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39648,
+          "peak_rss_kb": 182844,
+          "result_error": "",
+          "wall_ms": 372.20891600009054
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37489,
+          "peak_rss_kb": 173480,
+          "result_error": "",
+          "wall_ms": 379.6866760094417
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38088,
+          "peak_rss_kb": 176804,
+          "result_error": "",
+          "wall_ms": 358.1633319990942
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37795,
+          "peak_rss_kb": 175544,
+          "result_error": "",
+          "wall_ms": 393.25039100367576
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36650,
+          "peak_rss_kb": 170196,
+          "result_error": "",
+          "wall_ms": 379.3157159961993
+        }
+      ],
+      "workload_id": "filesystem-changing-size"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "7e487709b740e4d43279bba53cb2cef4ced5d85ff901116d6d06c27bb9385052",
+      "fixture_input_sha256": "6979e4ee436e6148ee46b8afbc1be1f321ed8381d304b55f5aa3a2ca3562be02",
+      "max_peak_rss_kb": 173124,
+      "median_peak_rss_kb": 167772,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 35848,
+      "p50_wall_ms": 382.86393698945176,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37145.0,
+      "p95_wall_ms": 394.1196410014527,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36618,
+          "peak_rss_kb": 171624,
+          "result_error": "",
+          "wall_ms": 394.1196410014527
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34913,
+          "peak_rss_kb": 164968,
+          "result_error": "",
+          "wall_ms": 384.45092900656164
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37145,
+          "peak_rss_kb": 173124,
+          "result_error": "",
+          "wall_ms": 377.4430449993815
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35848,
+          "peak_rss_kb": 167016,
+          "result_error": "",
+          "wall_ms": 382.86393698945176
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35825,
+          "peak_rss_kb": 167772,
+          "result_error": "",
+          "wall_ms": 380.8858569973381
+        }
+      ],
+      "workload_id": "filesystem-compressed-archive"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "cfdd710675152406b118129bfaa9290474cca8c24b4a9203208decd24549fb9a",
+      "fixture_input_sha256": "41e513c6a200d3464c6edab99f9ecc32b08f66ef49343f2d0d0ff7a27dfdebbb",
+      "max_peak_rss_kb": 143392,
+      "median_peak_rss_kb": 138616,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 32163,
+      "p50_wall_ms": 31453.85710800474,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 32818.0,
+      "p95_wall_ms": 32102.474569008336,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 2,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 31514,
+          "peak_rss_kb": 141240,
+          "result_error": "",
+          "wall_ms": 31453.85710800474
+        },
+        {
+          "coverage_gap_count": 2,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 32818,
+          "peak_rss_kb": 143392,
+          "result_error": "",
+          "wall_ms": 31314.029034998384
+        },
+        {
+          "coverage_gap_count": 2,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 32528,
+          "peak_rss_kb": 138244,
+          "result_error": "",
+          "wall_ms": 32102.474569008336
+        },
+        {
+          "coverage_gap_count": 2,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 32163,
+          "peak_rss_kb": 138616,
+          "result_error": "",
+          "wall_ms": 31293.662633004715
+        },
+        {
+          "coverage_gap_count": 2,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 31842,
+          "peak_rss_kb": 134736,
+          "result_error": "",
+          "wall_ms": 31836.202245991444
+        }
+      ],
+      "workload_id": "filesystem-deep-directory-tree"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "fixture_input_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "max_peak_rss_kb": 138044,
+      "median_peak_rss_kb": 135756,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 29124,
+      "p50_wall_ms": 276.1927240062505,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 29530.0,
+      "p95_wall_ms": 286.7208829993615,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27961,
+          "peak_rss_kb": 131676,
+          "result_error": "",
+          "wall_ms": 284.43446299934294
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29530,
+          "peak_rss_kb": 138044,
+          "result_error": "",
+          "wall_ms": 286.7208829993615
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28317,
+          "peak_rss_kb": 132160,
+          "result_error": "",
+          "wall_ms": 274.98532400932163
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29275,
+          "peak_rss_kb": 137200,
+          "result_error": "",
+          "wall_ms": 276.1927240062505
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29124,
+          "peak_rss_kb": 135756,
+          "result_error": "",
+          "wall_ms": 268.05968600092456
+        }
+      ],
+      "workload_id": "filesystem-empty-directory"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "af29942dfe16d6e865b29f533de7cccba00d11eafeef7317e3b2f72f0b9a188e",
+      "fixture_input_sha256": "99403d1ebc0328c918792615a5b1a5976272d2d7503871f6c87cc0f0bc2c937c",
+      "max_peak_rss_kb": 169104,
+      "median_peak_rss_kb": 163964,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 36013,
+      "p50_wall_ms": 375.5337670008885,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37313.0,
+      "p95_wall_ms": 388.15269598853774,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 37313,
+          "peak_rss_kb": 169104,
+          "result_error": "",
+          "wall_ms": 379.91095100005623
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 35865,
+          "peak_rss_kb": 163688,
+          "result_error": "",
+          "wall_ms": 374.140523999813
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 36013,
+          "peak_rss_kb": 163440,
+          "result_error": "",
+          "wall_ms": 388.15269598853774
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 35934,
+          "peak_rss_kb": 163964,
+          "result_error": "",
+          "wall_ms": 375.5337670008885
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 36912,
+          "peak_rss_kb": 167592,
+          "result_error": "",
+          "wall_ms": 372.33082599414047
+        }
+      ],
+      "workload_id": "filesystem-encoded-midfile"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "218937ab91a29b9d2c8e354c24f7c7345baf592cb43b7e4c9841c3b3a84f5eec",
+      "fixture_input_sha256": "6de1e19239ce1d6fb89608e298600f6ab12a661d8c3949c8baf2f1c8a1e01300",
+      "max_peak_rss_kb": 192720,
+      "median_peak_rss_kb": 180240,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 51475,
+      "p50_wall_ms": 2593.988125998294,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 52737.0,
+      "p95_wall_ms": 2730.971140001202,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 51475,
+          "peak_rss_kb": 177980,
+          "result_error": "",
+          "wall_ms": 2370.877555003972
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 51228,
+          "peak_rss_kb": 178132,
+          "result_error": "",
+          "wall_ms": 2505.4956469975878
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 52737,
+          "peak_rss_kb": 192720,
+          "result_error": "",
+          "wall_ms": 2725.7848879962694
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 52485,
+          "peak_rss_kb": 180240,
+          "result_error": "",
+          "wall_ms": 2730.971140001202
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 51131,
+          "peak_rss_kb": 189124,
+          "result_error": "",
+          "wall_ms": 2593.988125998294
+        }
+      ],
+      "workload_id": "filesystem-flat-many-files"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "17fd876b5938381f7fd39d612b35d0ccae8fcbd49a05e836be633fb83289f45a",
+      "fixture_input_sha256": "138221eb1b8a0dd9cd2bab532669cf35162e525d6762b1d42b533cf7a6fcd301",
+      "max_peak_rss_kb": 292204,
+      "median_peak_rss_kb": 271832,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 61689,
+      "p50_wall_ms": 968.6007159907604,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 67021.0,
+      "p95_wall_ms": 1066.055162998964,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 65391,
+          "peak_rss_kb": 281964,
+          "result_error": "",
+          "wall_ms": 1066.055162998964
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 61612,
+          "peak_rss_kb": 271212,
+          "result_error": "",
+          "wall_ms": 984.2998499952955
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 61689,
+          "peak_rss_kb": 271832,
+          "result_error": "",
+          "wall_ms": 968.6007159907604
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 67021,
+          "peak_rss_kb": 292204,
+          "result_error": "",
+          "wall_ms": 962.8743299981579
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 59936,
+          "peak_rss_kb": 265584,
+          "result_error": "",
+          "wall_ms": 954.5377969916444
+        }
+      ],
+      "workload_id": "filesystem-many-small-files"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "15daff0e7cbc24cc804105f9d6f3f87886858c0648c0fa7331f557417f6e7d81",
+      "fixture_input_sha256": "49862ae12b234b05bce6615bdffa438cad982df28fe325b89134cb3da735caaf",
+      "max_peak_rss_kb": 251440,
+      "median_peak_rss_kb": 242996,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 54707,
+      "p50_wall_ms": 907.3848879925208,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 56774.0,
+      "p95_wall_ms": 922.9111989989178,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 8,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 52944,
+          "peak_rss_kb": 235068,
+          "result_error": "",
+          "wall_ms": 922.9111989989178
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 8,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 56396,
+          "peak_rss_kb": 250468,
+          "result_error": "",
+          "wall_ms": 907.3848879925208
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 8,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 56774,
+          "peak_rss_kb": 251440,
+          "result_error": "",
+          "wall_ms": 899.6246059978148
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 8,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 53141,
+          "peak_rss_kb": 236100,
+          "result_error": "",
+          "wall_ms": 906.2402010022197
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 8,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 54707,
+          "peak_rss_kb": 242996,
+          "result_error": "",
+          "wall_ms": 907.5126509997062
+        }
+      ],
+      "workload_id": "filesystem-mixed-encodings"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "f6b655845e8842daf83643d4aa420831d250c3f16039d80d81f6023c67881dcf",
+      "fixture_input_sha256": "6d39eae29381928302f80e63eef43d6bfc1ced4c9aede1920b2d12950e7c6d27",
+      "max_peak_rss_kb": 175708,
+      "median_peak_rss_kb": 174136,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 37492,
+      "p50_wall_ms": 383.3208729920443,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37641.0,
+      "p95_wall_ms": 386.02619800076354,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 3,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37556,
+          "peak_rss_kb": 175708,
+          "result_error": "",
+          "wall_ms": 378.69423200027086
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 3,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37641,
+          "peak_rss_kb": 174400,
+          "result_error": "",
+          "wall_ms": 386.02619800076354
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 3,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36859,
+          "peak_rss_kb": 173380,
+          "result_error": "",
+          "wall_ms": 376.30827000248246
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 3,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37492,
+          "peak_rss_kb": 174136,
+          "result_error": "",
+          "wall_ms": 383.3208729920443
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 3,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36757,
+          "peak_rss_kb": 171372,
+          "result_error": "",
+          "wall_ms": 385.97949499671813
+        }
+      ],
+      "workload_id": "filesystem-multiple-roots"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "3955269643d50099954763235a630a73d41637701c7175c641b585e9f97563c5",
+      "fixture_input_sha256": "0aedd17e61f91373db14563dbe0eacf0b1fb8b146f22452d3828b23d6b195eae",
+      "max_peak_rss_kb": 174316,
+      "median_peak_rss_kb": 165436,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 35137,
+      "p50_wall_ms": 381.1394799995469,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37472.0,
+      "p95_wall_ms": 392.0704629999818,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34888,
+          "peak_rss_kb": 164152,
+          "result_error": "",
+          "wall_ms": 378.83766800223384
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35137,
+          "peak_rss_kb": 165436,
+          "result_error": "",
+          "wall_ms": 385.7483619940467
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 33997,
+          "peak_rss_kb": 160092,
+          "result_error": "",
+          "wall_ms": 381.09391400939785
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36401,
+          "peak_rss_kb": 169796,
+          "result_error": "",
+          "wall_ms": 381.1394799995469
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37472,
+          "peak_rss_kb": 174316,
+          "result_error": "",
+          "wall_ms": 392.0704629999818
+        }
+      ],
+      "workload_id": "filesystem-no-extension"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "7bea8767ec901d5be3b7bcda1a269d7faea1082eb0efd8ec8a3d6b723974684a",
+      "fixture_input_sha256": "b8d54a0af09343532f3feed219c8e7177802fac5d9b828f754cb9872aa30c86e",
+      "max_peak_rss_kb": 293832,
+      "median_peak_rss_kb": 285516,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 66693,
+      "p50_wall_ms": 402.1362570056226,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 68879.0,
+      "p95_wall_ms": 416.8194130033953,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 67399,
+          "peak_rss_kb": 288584,
+          "result_error": "",
+          "wall_ms": 402.1362570056226
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 68879,
+          "peak_rss_kb": 293832,
+          "result_error": "",
+          "wall_ms": 416.8194130033953
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 64871,
+          "peak_rss_kb": 277832,
+          "result_error": "",
+          "wall_ms": 400.2638910023961
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 66693,
+          "peak_rss_kb": 285516,
+          "result_error": "",
+          "wall_ms": 391.7153789952863
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 0,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 66243,
+          "peak_rss_kb": 283200,
+          "result_error": "",
+          "wall_ms": 408.13273799722083
+        }
+      ],
+      "workload_id": "filesystem-one-long-line"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "fixture_input_sha256": "902d576a150d46420457f73405254f8d3cbb7dbe76aa74fe39a298ea2c7e7266",
+      "max_peak_rss_kb": 139388,
+      "median_peak_rss_kb": 136852,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 28852,
+      "p50_wall_ms": 254.5554560056189,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 29884.0,
+      "p95_wall_ms": 261.79141299508046,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29884,
+          "peak_rss_kb": 139388,
+          "result_error": "",
+          "wall_ms": 254.5554560056189
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29445,
+          "peak_rss_kb": 138100,
+          "result_error": "",
+          "wall_ms": 257.95635000395123
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28852,
+          "peak_rss_kb": 136852,
+          "result_error": "",
+          "wall_ms": 251.4202630118234
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27442,
+          "peak_rss_kb": 130380,
+          "result_error": "",
+          "wall_ms": 261.79141299508046
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28748,
+          "peak_rss_kb": 135500,
+          "result_error": "",
+          "wall_ms": 247.11317599576432
+        }
+      ],
+      "workload_id": "filesystem-over-size-limit"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "2972b7a1281f6d01f59088ce825373d5a106ad5fee35427cd39710ef066d1b05",
+      "fixture_input_sha256": "7cd741484b9108ae8e36ebe997f0b394dc2987b807eb29a5644375476209a8b9",
+      "max_peak_rss_kb": 546440,
+      "median_peak_rss_kb": 530916,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 131733,
+      "p50_wall_ms": 915.3805950045353,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 135653.0,
+      "p95_wall_ms": 923.9432699978352,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 130487,
+          "peak_rss_kb": 524984,
+          "result_error": "",
+          "wall_ms": 923.9432699978352
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 130766,
+          "peak_rss_kb": 527488,
+          "result_error": "",
+          "wall_ms": 907.9059869982302
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 132832,
+          "peak_rss_kb": 535548,
+          "result_error": "",
+          "wall_ms": 906.9498169992585
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 135653,
+          "peak_rss_kb": 546440,
+          "result_error": "",
+          "wall_ms": 915.3805950045353
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 131733,
+          "peak_rss_kb": 530916,
+          "result_error": "",
+          "wall_ms": 923.6938120011473
+        }
+      ],
+      "workload_id": "filesystem-single-large-file"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "76446eb8d6c9fae61bdbcc1ff3ce99d98f4adbc14dd983662d4c320be0eabe13",
+      "fixture_input_sha256": "44ec73f54ded6cd62a676522226f9a0f2dac012615fc4e220db21cac97628d18",
+      "max_peak_rss_kb": 171820,
+      "median_peak_rss_kb": 168560,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 35998,
+      "p50_wall_ms": 386.37355699029285,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 36655.0,
+      "p95_wall_ms": 397.44420899660327,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34444,
+          "peak_rss_kb": 162168,
+          "result_error": "",
+          "wall_ms": 377.69806099822745
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36655,
+          "peak_rss_kb": 171820,
+          "result_error": "",
+          "wall_ms": 395.0294660025975
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35998,
+          "peak_rss_kb": 168560,
+          "result_error": "",
+          "wall_ms": 397.44420899660327
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36147,
+          "peak_rss_kb": 170592,
+          "result_error": "",
+          "wall_ms": 382.19297499745153
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34105,
+          "peak_rss_kb": 159856,
+          "result_error": "",
+          "wall_ms": 386.37355699029285
+        }
+      ],
+      "workload_id": "filesystem-single-tiny-file"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1ea0d1b96c40418cd1e792cf244ee4cb851341ed7396b7cb426599ca8c96e65c",
+      "fixture_input_sha256": "ac72206d916ccbc29f83ff84889d665d33730228a7cb0a2345fa840c54bda9ce",
+      "max_peak_rss_kb": 352052,
+      "median_peak_rss_kb": 338032,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 78797,
+      "p50_wall_ms": 514.0516929968726,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 82319.0,
+      "p95_wall_ms": 524.1556679975474,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 78410,
+          "peak_rss_kb": 336224,
+          "result_error": "",
+          "wall_ms": 507.87846199818887
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 82319,
+          "peak_rss_kb": 352052,
+          "result_error": "",
+          "wall_ms": 524.1556679975474
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 78201,
+          "peak_rss_kb": 335728,
+          "result_error": "",
+          "wall_ms": 514.0516929968726
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 78797,
+          "peak_rss_kb": 338032,
+          "result_error": "",
+          "wall_ms": 511.76443599979393
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 2,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71",
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 81801,
+          "peak_rss_kb": 348984,
+          "result_error": "",
+          "wall_ms": 515.5099100084044
+        }
+      ],
+      "workload_id": "filesystem-sparse-files"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "ea79f414df966b4269b71d8e19a7273656c9ec0fcbfce113fb2ae3a9d49155f9",
+      "fixture_input_sha256": "fccdf0daef7d88ec42927577e61ed687f38155b6b2a48e2877a3952898b6f102",
+      "max_peak_rss_kb": 175008,
+      "median_peak_rss_kb": 171596,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 36909,
+      "p50_wall_ms": 399.4728419929743,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37601.0,
+      "p95_wall_ms": 409.2003160039894,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36909,
+          "peak_rss_kb": 171596,
+          "result_error": "",
+          "wall_ms": 409.2003160039894
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37601,
+          "peak_rss_kb": 173928,
+          "result_error": "",
+          "wall_ms": 381.3051000033738
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37371,
+          "peak_rss_kb": 175008,
+          "result_error": "",
+          "wall_ms": 400.1294530025916
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36049,
+          "peak_rss_kb": 168524,
+          "result_error": "",
+          "wall_ms": 381.476805996499
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35650,
+          "peak_rss_kb": 168032,
+          "result_error": "",
+          "wall_ms": 399.4728419929743
+        }
+      ],
+      "workload_id": "filesystem-symlink-cycle"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "fixture_input_sha256": "4f8bd988e5367f2f75167c89e314975b28dd5e4b09a4308e17e5772f16cf4597",
+      "max_peak_rss_kb": 148640,
+      "median_peak_rss_kb": 143216,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 30749,
+      "p50_wall_ms": 303.7846040097065,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 31829.0,
+      "p95_wall_ms": 316.33698599762283,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 2,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29238,
+          "peak_rss_kb": 137512,
+          "result_error": "",
+          "wall_ms": 303.7846040097065
+        },
+        {
+          "coverage_gap_count": 2,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29732,
+          "peak_rss_kb": 140356,
+          "result_error": "",
+          "wall_ms": 288.0260170059046
+        },
+        {
+          "coverage_gap_count": 2,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 30848,
+          "peak_rss_kb": 144752,
+          "result_error": "",
+          "wall_ms": 303.2737439934863
+        },
+        {
+          "coverage_gap_count": 2,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 31829,
+          "peak_rss_kb": 148640,
+          "result_error": "",
+          "wall_ms": 316.33698599762283
+        },
+        {
+          "coverage_gap_count": 2,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 30749,
+          "peak_rss_kb": 143216,
+          "result_error": "",
+          "wall_ms": 304.884826997295
+        }
+      ],
+      "workload_id": "filesystem-unreadable-tree"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "81b1386f9378da6cf9b089d9f0cc022f68d3613f63d1ad7a761c69bf2c15e539",
+      "fixture_input_sha256": "5aebe013c6bc0b0c14506e82fab9e3c59da8beed4f8cf7629b3fbd3920a1b750",
+      "max_peak_rss_kb": 176508,
+      "median_peak_rss_kb": 173920,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 37470,
+      "p50_wall_ms": 351.6147599875694,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37788.0,
+      "p95_wall_ms": 354.6535329951439,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37788,
+          "peak_rss_kb": 176248,
+          "result_error": "",
+          "wall_ms": 339.7660690097837
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37331,
+          "peak_rss_kb": 173704,
+          "result_error": "",
+          "wall_ms": 347.9149420018075
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36363,
+          "peak_rss_kb": 170340,
+          "result_error": "",
+          "wall_ms": 351.6147599875694
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37757,
+          "peak_rss_kb": 176508,
+          "result_error": "",
+          "wall_ms": 354.6535329951439
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37470,
+          "peak_rss_kb": 173920,
+          "result_error": "",
+          "wall_ms": 353.51754899602383
+        }
+      ],
+      "workload_id": "git-commit-history"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "81b1386f9378da6cf9b089d9f0cc022f68d3613f63d1ad7a761c69bf2c15e539",
+      "fixture_input_sha256": "7d8466fca2bb300b0a39e55aeed295f6154b4dca70e2d4f890b51cbdc40eb541",
+      "max_peak_rss_kb": 178772,
+      "median_peak_rss_kb": 169836,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 36973,
+      "p50_wall_ms": 394.6813569928054,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 39266.0,
+      "p95_wall_ms": 409.9945019988809,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37073,
+          "peak_rss_kb": 169836,
+          "result_error": "",
+          "wall_ms": 389.2240659915842
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35308,
+          "peak_rss_kb": 162124,
+          "result_error": "",
+          "wall_ms": 394.6813569928054
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35859,
+          "peak_rss_kb": 163832,
+          "result_error": "",
+          "wall_ms": 409.9945019988809
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36973,
+          "peak_rss_kb": 170080,
+          "result_error": "",
+          "wall_ms": 381.91729100071825
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39266,
+          "peak_rss_kb": 178772,
+          "result_error": "",
+          "wall_ms": 397.5196079991292
+        }
+      ],
+      "workload_id": "git-diff-lines"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "81b1386f9378da6cf9b089d9f0cc022f68d3613f63d1ad7a761c69bf2c15e539",
+      "fixture_input_sha256": "d6a5331443dbbc3fab8c51613b09188122d0e8e001dc0c0af294b8b05990e3d7",
+      "max_peak_rss_kb": 177248,
+      "median_peak_rss_kb": 169584,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 36957,
+      "p50_wall_ms": 375.91424099809956,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 38816.0,
+      "p95_wall_ms": 382.4142220109934,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38816,
+          "peak_rss_kb": 177248,
+          "result_error": "",
+          "wall_ms": 367.43516600108705
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36957,
+          "peak_rss_kb": 169584,
+          "result_error": "",
+          "wall_ms": 381.7009379999945
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38540,
+          "peak_rss_kb": 174144,
+          "result_error": "",
+          "wall_ms": 375.91424099809956
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36240,
+          "peak_rss_kb": 166516,
+          "result_error": "",
+          "wall_ms": 382.4142220109934
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36119,
+          "peak_rss_kb": 165264,
+          "result_error": "",
+          "wall_ms": 371.7226919980021
+        }
+      ],
+      "workload_id": "git-reachable-blobs"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "81b1386f9378da6cf9b089d9f0cc022f68d3613f63d1ad7a761c69bf2c15e539",
+      "fixture_input_sha256": "5aebe013c6bc0b0c14506e82fab9e3c59da8beed4f8cf7629b3fbd3920a1b750",
+      "max_peak_rss_kb": 174500,
+      "median_peak_rss_kb": 171944,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 37009,
+      "p50_wall_ms": 359.3221979972441,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37653.0,
+      "p95_wall_ms": 377.9350349941524,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37136,
+          "peak_rss_kb": 173948,
+          "result_error": "",
+          "wall_ms": 377.9350349941524
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37009,
+          "peak_rss_kb": 171944,
+          "result_error": "",
+          "wall_ms": 359.3221979972441
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37653,
+          "peak_rss_kb": 174500,
+          "result_error": "",
+          "wall_ms": 365.30921699886676
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35030,
+          "peak_rss_kb": 164448,
+          "result_error": "",
+          "wall_ms": 343.6679769947659
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36758,
+          "peak_rss_kb": 170688,
+          "result_error": "",
+          "wall_ms": 355.4573739966145
+        }
+      ],
+      "workload_id": "git-shallow-clone"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "81b1386f9378da6cf9b089d9f0cc022f68d3613f63d1ad7a761c69bf2c15e539",
+      "fixture_input_sha256": "e89832fa549045a4db9ad8c7724d3bc62e494df2da65376016e02827f6c21960",
+      "max_peak_rss_kb": 170076,
+      "median_peak_rss_kb": 166972,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 35626,
+      "p50_wall_ms": 386.8895310006337,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 36377.0,
+      "p95_wall_ms": 397.30567300284747,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35626,
+          "peak_rss_kb": 166972,
+          "result_error": "",
+          "wall_ms": 384.9675829987973
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36261,
+          "peak_rss_kb": 169820,
+          "result_error": "",
+          "wall_ms": 366.4133080019383
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35246,
+          "peak_rss_kb": 164420,
+          "result_error": "",
+          "wall_ms": 397.30567300284747
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36377,
+          "peak_rss_kb": 170076,
+          "result_error": "",
+          "wall_ms": 389.5709420030471
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35618,
+          "peak_rss_kb": 166132,
+          "result_error": "",
+          "wall_ms": 386.8895310006337
+        }
+      ],
+      "workload_id": "git-staged-index"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "53c15de12425ea2be72691352c60d273a417a0ad418686201fe0cac4fe19f7f6",
+      "max_peak_rss_kb": 176140,
+      "median_peak_rss_kb": 170244,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 35604,
+      "p50_wall_ms": 406.6540600033477,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 36974.0,
+      "p95_wall_ms": 418.29689899168443,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35604,
+          "peak_rss_kb": 170244,
+          "result_error": "",
+          "wall_ms": 405.2864440018311
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36974,
+          "peak_rss_kb": 176140,
+          "result_error": "",
+          "wall_ms": 403.43598600884434
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35373,
+          "peak_rss_kb": 169072,
+          "result_error": "",
+          "wall_ms": 418.29689899168443
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35763,
+          "peak_rss_kb": 171472,
+          "result_error": "",
+          "wall_ms": 406.6540600033477
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34990,
+          "peak_rss_kb": 167540,
+          "result_error": "",
+          "wall_ms": 412.5709259969881
+        }
+      ],
+      "workload_id": "github-collaboration-discussions"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "b5fc538ec8fb794ea7063af3f7d8d2b79aba5edb499c1cd0058f1381cc531299",
+      "max_peak_rss_kb": 173684,
+      "median_peak_rss_kb": 170768,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 35621,
+      "p50_wall_ms": 428.8691160036251,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 36616.0,
+      "p95_wall_ms": 440.2529670041986,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35924,
+          "peak_rss_kb": 171312,
+          "result_error": "",
+          "wall_ms": 433.449396994547
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34126,
+          "peak_rss_kb": 163140,
+          "result_error": "",
+          "wall_ms": 428.8691160036251
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35621,
+          "peak_rss_kb": 170768,
+          "result_error": "",
+          "wall_ms": 403.82275400043
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36616,
+          "peak_rss_kb": 173684,
+          "result_error": "",
+          "wall_ms": 415.54884301149286
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34529,
+          "peak_rss_kb": 165308,
+          "result_error": "",
+          "wall_ms": 440.2529670041986
+        }
+      ],
+      "workload_id": "github-collaboration-gists"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "045e873c9e647c5e369b59726ce5b6545fe7e74b5f6644d99aaca98d48e4d4f1",
+      "max_peak_rss_kb": 176820,
+      "median_peak_rss_kb": 175224,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 37032,
+      "p50_wall_ms": 417.3740749974968,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37449.0,
+      "p95_wall_ms": 435.56019599782303,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36901,
+          "peak_rss_kb": 175224,
+          "result_error": "",
+          "wall_ms": 435.56019599782303
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37449,
+          "peak_rss_kb": 176820,
+          "result_error": "",
+          "wall_ms": 399.0946099947905
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36509,
+          "peak_rss_kb": 172864,
+          "result_error": "",
+          "wall_ms": 416.8408300029114
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37135,
+          "peak_rss_kb": 175500,
+          "result_error": "",
+          "wall_ms": 417.3740749974968
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37032,
+          "peak_rss_kb": 175052,
+          "result_error": "",
+          "wall_ms": 420.619558004546
+        }
+      ],
+      "workload_id": "github-collaboration-issues"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "a87bfd7f27db9b054d1888fc5b7abfc548b095c03b4caf708cfafccfc5c47354",
+      "max_peak_rss_kb": 175924,
+      "median_peak_rss_kb": 171216,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 35767,
+      "p50_wall_ms": 411.64421899884474,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37431.0,
+      "p95_wall_ms": 420.78772801323794,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35633,
+          "peak_rss_kb": 171216,
+          "result_error": "",
+          "wall_ms": 420.78772801323794
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35767,
+          "peak_rss_kb": 170292,
+          "result_error": "",
+          "wall_ms": 411.8034259881824
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37431,
+          "peak_rss_kb": 175924,
+          "result_error": "",
+          "wall_ms": 409.42605800228193
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36207,
+          "peak_rss_kb": 173412,
+          "result_error": "",
+          "wall_ms": 411.64421899884474
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35346,
+          "peak_rss_kb": 169072,
+          "result_error": "",
+          "wall_ms": 409.1561429959256
+        }
+      ],
+      "workload_id": "github-collaboration-pull-requests"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "9ef84a2ace87640affb136398db69c67bf74ca81ac7822799ee49f9cc00fb331",
+      "max_peak_rss_kb": 185484,
+      "median_peak_rss_kb": 172484,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 36411,
+      "p50_wall_ms": 417.5375399936456,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 39569.0,
+      "p95_wall_ms": 434.3009459989844,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39569,
+          "peak_rss_kb": 185484,
+          "result_error": "",
+          "wall_ms": 434.3009459989844
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36272,
+          "peak_rss_kb": 172164,
+          "result_error": "",
+          "wall_ms": 411.54615199775435
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37152,
+          "peak_rss_kb": 176328,
+          "result_error": "",
+          "wall_ms": 411.9963980047032
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36411,
+          "peak_rss_kb": 172484,
+          "result_error": "",
+          "wall_ms": 429.97844399360474
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34596,
+          "peak_rss_kb": 165568,
+          "result_error": "",
+          "wall_ms": 417.5375399936456
+        }
+      ],
+      "workload_id": "github-collaboration-releases"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "09cd9cd37740a26da06cafd2e736c3ec19cd6cfde5606b5e34153651d97ba37e",
+      "max_peak_rss_kb": 183104,
+      "median_peak_rss_kb": 172668,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 38333,
+      "p50_wall_ms": 533.5913430026267,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 40733.0,
+      "p95_wall_ms": 552.7063839981565,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37373,
+          "peak_rss_kb": 168612,
+          "result_error": "",
+          "wall_ms": 530.7962319930084
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38333,
+          "peak_rss_kb": 172668,
+          "result_error": "",
+          "wall_ms": 552.7063839981565
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 40733,
+          "peak_rss_kb": 183104,
+          "result_error": "",
+          "wall_ms": 533.5913430026267
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38023,
+          "peak_rss_kb": 171064,
+          "result_error": "",
+          "wall_ms": 552.6428599987412
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38479,
+          "peak_rss_kb": 172856,
+          "result_error": "",
+          "wall_ms": 522.3580239980947
+        }
+      ],
+      "workload_id": "github-collaboration-wiki"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "78ab43b70882800ab07415b273e27d08eb03f3a8c7b211b63788d221dd43b4c1",
+      "max_peak_rss_kb": 177684,
+      "median_peak_rss_kb": 173828,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 38168,
+      "p50_wall_ms": 532.7908710023621,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 39174.0,
+      "p95_wall_ms": 557.2604869958013,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38402,
+          "peak_rss_kb": 173828,
+          "result_error": "",
+          "wall_ms": 526.0791759938002
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37765,
+          "peak_rss_kb": 171688,
+          "result_error": "",
+          "wall_ms": 542.9171599971596
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39174,
+          "peak_rss_kb": 177684,
+          "result_error": "",
+          "wall_ms": 532.7908710023621
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37837,
+          "peak_rss_kb": 172100,
+          "result_error": "",
+          "wall_ms": 557.2604869958013
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38168,
+          "peak_rss_kb": 174152,
+          "result_error": "",
+          "wall_ms": 527.8626890067244
+        }
+      ],
+      "workload_id": "github-organization-repositories"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "139233cd658a5d6b4bfe82912b6d17b423a99a455f06dc2263555ff97c5ac35d",
+      "fixture_input_sha256": "bc1882e002de8b8b571fa816a8f3cb15d9b8397164d031fd6d65b23e49b2cbb0",
+      "max_peak_rss_kb": 192920,
+      "median_peak_rss_kb": 173276,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 38054,
+      "p50_wall_ms": 529.5022070058621,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 42885.0,
+      "p95_wall_ms": 551.0918039944954,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 42885,
+          "peak_rss_kb": 192920,
+          "result_error": "",
+          "wall_ms": 529.5022070058621
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36927,
+          "peak_rss_kb": 169284,
+          "result_error": "",
+          "wall_ms": 517.7387690055184
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38535,
+          "peak_rss_kb": 174952,
+          "result_error": "",
+          "wall_ms": 527.7655460085953
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38054,
+          "peak_rss_kb": 173276,
+          "result_error": "",
+          "wall_ms": 544.7458979906514
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37903,
+          "peak_rss_kb": 172148,
+          "result_error": "",
+          "wall_ms": 551.0918039944954
+        }
+      ],
+      "workload_id": "gitlab-group-projects"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "84a2888294fc40db8938467a84a789ffaa1a9b00d2c546269b8efd7ce2dab72a",
+      "fixture_input_sha256": "f77125ee1917070c01a9947bcd3411d64697f8a049018ce58c73057a2dbbaab1",
+      "max_peak_rss_kb": 185920,
+      "median_peak_rss_kb": 185388,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 40325,
+      "p50_wall_ms": 418.2041360036237,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 40391.0,
+      "p95_wall_ms": 434.92588799563237,
+      "page_cache_state": "incremental-warm",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39379,
+          "peak_rss_kb": 181848,
+          "result_error": "",
+          "wall_ms": 413.90421500545926
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39578,
+          "peak_rss_kb": 182520,
+          "result_error": "",
+          "wall_ms": 403.1222499907017
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 40325,
+          "peak_rss_kb": 185920,
+          "result_error": "",
+          "wall_ms": 434.92588799563237
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 40377,
+          "peak_rss_kb": 185712,
+          "result_error": "",
+          "wall_ms": 424.08884900214616
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 40391,
+          "peak_rss_kb": 185388,
+          "result_error": "",
+          "wall_ms": 418.2041360036237
+        }
+      ],
+      "workload_id": "incremental-cold-index"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "84a2888294fc40db8938467a84a789ffaa1a9b00d2c546269b8efd7ce2dab72a",
+      "fixture_input_sha256": "f77125ee1917070c01a9947bcd3411d64697f8a049018ce58c73057a2dbbaab1",
+      "max_peak_rss_kb": 192596,
+      "median_peak_rss_kb": 184440,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 40120,
+      "p50_wall_ms": 403.85999699356034,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 41988.0,
+      "p95_wall_ms": 425.1764389919117,
+      "page_cache_state": "incremental-warm",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 41988,
+          "peak_rss_kb": 192596,
+          "result_error": "",
+          "wall_ms": 425.1764389919117
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 40981,
+          "peak_rss_kb": 187476,
+          "result_error": "",
+          "wall_ms": 403.85999699356034
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 40120,
+          "peak_rss_kb": 184440,
+          "result_error": "",
+          "wall_ms": 394.8721759952605
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38848,
+          "peak_rss_kb": 179436,
+          "result_error": "",
+          "wall_ms": 403.3328990044538
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39561,
+          "peak_rss_kb": 182972,
+          "result_error": "",
+          "wall_ms": 424.58755800907966
+        }
+      ],
+      "workload_id": "incremental-warm-index"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "5bf68eeebe0cb89e44d21c87bdcfcbd3425c61c6f54cc7cb9369c938c7efb516",
+      "fixture_input_sha256": "0a011729897edda97467b4b06d03e4b8dedd110bd6b6cd53a8a6aeb6ab510331",
+      "max_peak_rss_kb": 175912,
+      "median_peak_rss_kb": 173468,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 36426,
+      "p50_wall_ms": 431.01006899087224,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37291.0,
+      "p95_wall_ms": 436.31792900850996,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37291,
+          "peak_rss_kb": 175912,
+          "result_error": "",
+          "wall_ms": 436.31792900850996
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36426,
+          "peak_rss_kb": 173468,
+          "result_error": "",
+          "wall_ms": 431.01006899087224
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35778,
+          "peak_rss_kb": 170460,
+          "result_error": "",
+          "wall_ms": 429.2811480117962
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36466,
+          "peak_rss_kb": 173656,
+          "result_error": "",
+          "wall_ms": 432.8809200087562
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35322,
+          "peak_rss_kb": 169140,
+          "result_error": "",
+          "wall_ms": 426.24601400166284
+        }
+      ],
+      "workload_id": "slack-workspace-messages"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "fixture_input_sha256": "b62b855d5f1cfd2e1f25932fc4e024a5cef5406a847bb2192ee3d37f196aa102",
+      "max_peak_rss_kb": 143416,
+      "median_peak_rss_kb": 133964,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 29009,
+      "p50_wall_ms": 249.56265398941468,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 31142.0,
+      "p95_wall_ms": 253.02837300114334,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29204,
+          "peak_rss_kb": 136044,
+          "result_error": "",
+          "wall_ms": 250.87095401249826
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27120,
+          "peak_rss_kb": 126508,
+          "result_error": "",
+          "wall_ms": 239.77085000660736
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27717,
+          "peak_rss_kb": 129792,
+          "result_error": "",
+          "wall_ms": 249.56265398941468
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29009,
+          "peak_rss_kb": 133964,
+          "result_error": "",
+          "wall_ms": 253.02837300114334
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 31142,
+          "peak_rss_kb": 143416,
+          "result_error": "",
+          "wall_ms": 244.934001006186
+        }
+      ],
+      "workload_id": "stdin-empty"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "e55af0d0dccbc4fdf7493fb757e873e074b911f95cb569c5a019120949a74ec1",
+      "fixture_input_sha256": "a19c75000a0e33598325d34d172d7dbc98cdfa22974aa4cb39b014d935e6952f",
+      "max_peak_rss_kb": 216924,
+      "median_peak_rss_kb": 213780,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 47852,
+      "p50_wall_ms": 398.48756800347473,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 48675.0,
+      "p95_wall_ms": 401.16000999114476,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 48675,
+          "peak_rss_kb": 216144,
+          "result_error": "",
+          "wall_ms": 398.1959730008384
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 48229,
+          "peak_rss_kb": 216924,
+          "result_error": "",
+          "wall_ms": 399.320169002749
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 47852,
+          "peak_rss_kb": 213780,
+          "result_error": "",
+          "wall_ms": 401.16000999114476
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 46829,
+          "peak_rss_kb": 210692,
+          "result_error": "",
+          "wall_ms": 394.48439799889456
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 46684,
+          "peak_rss_kb": 208684,
+          "result_error": "",
+          "wall_ms": 398.48756800347473
+        }
+      ],
+      "workload_id": "stdin-large-bounded"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "e55af0d0dccbc4fdf7493fb757e873e074b911f95cb569c5a019120949a74ec1",
+      "fixture_input_sha256": "cb8124d3bc3997d448cbdbb88f4dbab8328e8a8f5a37015147d4189c5dcf7587",
+      "max_peak_rss_kb": 171664,
+      "median_peak_rss_kb": 166204,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 35920,
+      "p50_wall_ms": 395.71187100955285,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37041.0,
+      "p95_wall_ms": 404.45321101287846,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37018,
+          "peak_rss_kb": 170304,
+          "result_error": "",
+          "wall_ms": 386.90878299530596
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34871,
+          "peak_rss_kb": 163684,
+          "result_error": "",
+          "wall_ms": 395.71187100955285
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35920,
+          "peak_rss_kb": 166204,
+          "result_error": "",
+          "wall_ms": 401.65193199936766
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35515,
+          "peak_rss_kb": 164724,
+          "result_error": "",
+          "wall_ms": 404.45321101287846
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37041,
+          "peak_rss_kb": 171664,
+          "result_error": "",
+          "wall_ms": 390.8827929990366
+        }
+      ],
+      "workload_id": "stdin-medium"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "e55af0d0dccbc4fdf7493fb757e873e074b911f95cb569c5a019120949a74ec1",
+      "fixture_input_sha256": "5ea72fb28a4a32f2724f50f4a4135ba7371e46239d3f201586d564a2912e6eb1",
+      "max_peak_rss_kb": 172404,
+      "median_peak_rss_kb": 167772,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 36056,
+      "p50_wall_ms": 393.8280250004027,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37373.0,
+      "p95_wall_ms": 398.89149999362417,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35674,
+          "peak_rss_kb": 164724,
+          "result_error": "",
+          "wall_ms": 388.27689200115856
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36757,
+          "peak_rss_kb": 169824,
+          "result_error": "",
+          "wall_ms": 393.8280250004027
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35844,
+          "peak_rss_kb": 166432,
+          "result_error": "",
+          "wall_ms": 371.66068798978813
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37373,
+          "peak_rss_kb": 172404,
+          "result_error": "",
+          "wall_ms": 395.9111029980704
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36056,
+          "peak_rss_kb": 167772,
+          "result_error": "",
+          "wall_ms": 398.89149999362417
+        }
+      ],
+      "workload_id": "stdin-tiny"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "44272531cb55d99d245d9227431a2fd46afbc41a4cc174f31d898a887a86ad96",
+      "fixture_input_sha256": "46875155b75029d7174e0b3b9822f7a087bcdad907da5ff72133aa421cc0b9b4",
+      "max_peak_rss_kb": 163844,
+      "median_peak_rss_kb": 158344,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 33640,
+      "p50_wall_ms": 350.07621299882885,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 34858.0,
+      "p95_wall_ms": 355.7466560014291,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34858,
+          "peak_rss_kb": 163844,
+          "result_error": "",
+          "wall_ms": 353.8571800017962
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 33110,
+          "peak_rss_kb": 157556,
+          "result_error": "",
+          "wall_ms": 355.7466560014291
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 32518,
+          "peak_rss_kb": 153752,
+          "result_error": "",
+          "wall_ms": 344.0232100110734
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 33963,
+          "peak_rss_kb": 159460,
+          "result_error": "",
+          "wall_ms": 350.07621299882885
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 33640,
+          "peak_rss_kb": 158344,
+          "result_error": "",
+          "wall_ms": 341.6848550114082
+        }
+      ],
+      "workload_id": "system-mounted-drives"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "4886263f622f29ef51d133d74b3c36fc8774c6f6246f82eeaead4ee91fa170b2",
+      "fixture_input_sha256": "35175ab3c019996159f3667529f7f0420d18b4249c2ff2855007b19992fe2406",
+      "max_peak_rss_kb": 54904,
+      "median_peak_rss_kb": 54156,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 5960,
+      "p50_wall_ms": 121.70041700301226,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 5993.0,
+      "p95_wall_ms": 131.56825400074013,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5993,
+          "peak_rss_kb": 54576,
+          "result_error": "",
+          "wall_ms": 119.37390199454967
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5946,
+          "peak_rss_kb": 54072,
+          "result_error": "",
+          "wall_ms": 119.68948499998078
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5990,
+          "peak_rss_kb": 54904,
+          "result_error": "",
+          "wall_ms": 131.56825400074013
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5960,
+          "peak_rss_kb": 53820,
+          "result_error": "",
+          "wall_ms": 127.84632499096915
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5944,
+          "peak_rss_kb": 54156,
+          "result_error": "",
+          "wall_ms": 121.70041700301226
+        }
+      ],
+      "workload_id": "verification-batched-service"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "4886263f622f29ef51d133d74b3c36fc8774c6f6246f82eeaead4ee91fa170b2",
+      "fixture_input_sha256": "2d16f011edceac024471904b32b328f49e4bbec485b9a7bb6c252a740fc61667",
+      "max_peak_rss_kb": 54984,
+      "median_peak_rss_kb": 53900,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 5973,
+      "p50_wall_ms": 127.92667699977756,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 5987.0,
+      "p95_wall_ms": 132.4087259999942,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5987,
+          "peak_rss_kb": 53400,
+          "result_error": "",
+          "wall_ms": 127.92667699977756
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5966,
+          "peak_rss_kb": 53900,
+          "result_error": "",
+          "wall_ms": 132.4087259999942
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5973,
+          "peak_rss_kb": 53612,
+          "result_error": "",
+          "wall_ms": 125.20963800488971
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5967,
+          "peak_rss_kb": 54984,
+          "result_error": "",
+          "wall_ms": 120.13956399459857
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5979,
+          "peak_rss_kb": 54368,
+          "result_error": "",
+          "wall_ms": 129.45885000226554
+        }
+      ],
+      "workload_id": "verification-live-credentials"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "4886263f622f29ef51d133d74b3c36fc8774c6f6246f82eeaead4ee91fa170b2",
+      "fixture_input_sha256": "992be2d6260901e9f9c222681224db2538090cb262119ae80eab7ce4448ddda5",
+      "max_peak_rss_kb": 54976,
+      "median_peak_rss_kb": 54688,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 5976,
+      "p50_wall_ms": 754.610114992829,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 5991.0,
+      "p95_wall_ms": 1005.2200600039214,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5970,
+          "peak_rss_kb": 54308,
+          "result_error": "",
+          "wall_ms": 1005.2200600039214
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5976,
+          "peak_rss_kb": 54976,
+          "result_error": "",
+          "wall_ms": 606.1809700040612
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5991,
+          "peak_rss_kb": 54824,
+          "result_error": "",
+          "wall_ms": 581.1158040014561
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5972,
+          "peak_rss_kb": 54688,
+          "result_error": "",
+          "wall_ms": 754.610114992829
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 10,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 5988,
+          "peak_rss_kb": 54288,
+          "result_error": "",
+          "wall_ms": 808.8478099962231
+        }
+      ],
+      "workload_id": "verification-out-of-band"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "fe02e1b4c3a06376f056f873f59e9f2bfd26b1bcc6a12dc5cb5ecf66a53f2df1",
+      "fixture_input_sha256": "5c2a2d445ea3a68082cb8dd6d7f5c9fe326026d73004c5d826362472ec06d135",
+      "max_peak_rss_kb": 165260,
+      "median_peak_rss_kb": 162464,
+      "output_format": "text",
+      "p50_major_page_faults": null,
+      "p50_minor_page_faults": null,
+      "p50_wall_ms": 101.47194200544618,
+      "p95_major_page_faults": null,
+      "p95_minor_page_faults": null,
+      "p95_wall_ms": 106.70412299805321,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [],
+          "major_page_faults": null,
+          "minor_page_faults": null,
+          "peak_rss_kb": 162464,
+          "result_error": "watch text output does not expose credential hashes",
+          "wall_ms": 101.5506599942455
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [],
+          "major_page_faults": null,
+          "minor_page_faults": null,
+          "peak_rss_kb": 165072,
+          "result_error": "watch text output does not expose credential hashes",
+          "wall_ms": 101.41425298934337
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [],
+          "major_page_faults": null,
+          "minor_page_faults": null,
+          "peak_rss_kb": 159840,
+          "result_error": "watch text output does not expose credential hashes",
+          "wall_ms": 101.29501999472268
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [],
+          "major_page_faults": null,
+          "minor_page_faults": null,
+          "peak_rss_kb": 159832,
+          "result_error": "watch text output does not expose credential hashes",
+          "wall_ms": 101.47194200544618
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 0,
+          "finding_count": 1,
+          "finding_hashes": [],
+          "major_page_faults": null,
+          "minor_page_faults": null,
+          "peak_rss_kb": 165260,
+          "result_error": "watch text output does not expose credential hashes",
+          "wall_ms": 106.70412299805321
+        }
+      ],
+      "workload_id": "watch-filesystem-events"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "b02ca7e10b8571155aa286fae67cf6c8cddf60e8de3e624a28d99ce369cf03e5",
+      "fixture_input_sha256": "8707f4d711393dab599c2a38ccdd9100dce1c532a3c82a73ee62736e4dd23a3f",
+      "max_peak_rss_kb": 139364,
+      "median_peak_rss_kb": 132708,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 28463,
+      "p50_wall_ms": 247.39180800679605,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 29607.0,
+      "p95_wall_ms": 250.79015000665095,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28463,
+          "peak_rss_kb": 131916,
+          "result_error": "",
+          "wall_ms": 249.88861300516874
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28322,
+          "peak_rss_kb": 132708,
+          "result_error": "",
+          "wall_ms": 241.76078800519463
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28988,
+          "peak_rss_kb": 137056,
+          "result_error": "",
+          "wall_ms": 239.72786500235088
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29607,
+          "peak_rss_kb": 139364,
+          "result_error": "",
+          "wall_ms": 247.39180800679605
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28205,
+          "peak_rss_kb": 132188,
+          "result_error": "",
+          "wall_ms": 250.79015000665095
+        }
+      ],
+      "workload_id": "web-javascript"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "c661eececc0aa7f75d6711a151a95f761184ddc980db25e0989c8407ac8d4d9a",
+      "fixture_input_sha256": "b4257918568994fc1fe47d17430fba4eee518a63fda9b5d22c15e401f9c1f78e",
+      "max_peak_rss_kb": 132976,
+      "median_peak_rss_kb": 130892,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 27963,
+      "p50_wall_ms": 242.77584899391513,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 28438.0,
+      "p95_wall_ms": 247.24699699436314,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28073,
+          "peak_rss_kb": 130892,
+          "result_error": "",
+          "wall_ms": 242.77584899391513
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28438,
+          "peak_rss_kb": 132976,
+          "result_error": "",
+          "wall_ms": 247.24699699436314
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27963,
+          "peak_rss_kb": 131724,
+          "result_error": "",
+          "wall_ms": 244.69888699240983
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27323,
+          "peak_rss_kb": 130088,
+          "result_error": "",
+          "wall_ms": 238.1548510020366
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27121,
+          "peak_rss_kb": 128416,
+          "result_error": "",
+          "wall_ms": 241.40259801060893
+        }
+      ],
+      "workload_id": "web-multiple-urls"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "a713bed39019e758fcf867bb431c924023fbe8eb1ff2efdbfaa7c4fbd561b53f",
+      "fixture_input_sha256": "a16128bed488f5aa7d229403535f6cecc151b702fa45d4f10bd72d76c5299f29",
+      "max_peak_rss_kb": 131640,
+      "median_peak_rss_kb": 130832,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 27916,
+      "p50_wall_ms": 253.16786700568628,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 28106.0,
+      "p95_wall_ms": 259.8481220047688,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27767,
+          "peak_rss_kb": 129908,
+          "result_error": "",
+          "wall_ms": 251.91089199506678
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28072,
+          "peak_rss_kb": 130652,
+          "result_error": "",
+          "wall_ms": 253.16786700568628
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27916,
+          "peak_rss_kb": 131640,
+          "result_error": "",
+          "wall_ms": 243.2123939943267
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27524,
+          "peak_rss_kb": 130832,
+          "result_error": "",
+          "wall_ms": 256.85143399459776
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28106,
+          "peak_rss_kb": 131416,
+          "result_error": "",
+          "wall_ms": 259.8481220047688
+        }
+      ],
+      "workload_id": "web-source-map"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "e7674454bf0f6d059ae5d8f9a158804559fbcef7a1c56779a061b8af6d3e1376",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "2e4c4301f901118ada8c30e67aef11e0f8b1dfc517089dc61dc021c0129fc9b1",
+      "fixture_input_sha256": "def0c8948985302b9f4c0792b67665d6289dbfe1c9d4edf3ded65c9af8c96345",
+      "max_peak_rss_kb": 142660,
+      "median_peak_rss_kb": 132652,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 28168,
+      "p50_wall_ms": 253.12221300555393,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 30691.0,
+      "p95_wall_ms": 258.07874400925357,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": false,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 30691,
+          "peak_rss_kb": 142660,
+          "result_error": "",
+          "wall_ms": 258.07874400925357
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27699,
+          "peak_rss_kb": 130616,
+          "result_error": "",
+          "wall_ms": 253.12221300555393
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29486,
+          "peak_rss_kb": 136796,
+          "result_error": "",
+          "wall_ms": 248.42431899742223
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 27050,
+          "peak_rss_kb": 127288,
+          "result_error": "",
+          "wall_ms": 255.34832199628
+        },
+        {
+          "coverage_gap_count": 3,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28168,
+          "peak_rss_kb": 132652,
+          "result_error": "",
+          "wall_ms": 242.26767099753488
+        }
+      ],
+      "workload_id": "web-wasm-binary"
+    }
+  ]
+}

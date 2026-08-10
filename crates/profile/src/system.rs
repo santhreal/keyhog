@@ -385,7 +385,14 @@ impl SystemSession {
                 },
             ),
             None => {
+                // No start sample means we cannot form a session delta. Publishing
+                // absolute /proc lifetime counters here used to fail open and
+                // misattribute process-lifetime IO as run IO.
                 let reason = match io_end.minor_faults.value {
+                    Evidence::Unavailable { reason } => reason,
+                    Evidence::Recorded { .. } => EvidenceGap::Unavailable,
+                };
+                let io_reason = match io_end.read_bytes.value {
                     Evidence::Unavailable { reason } => reason,
                     Evidence::Recorded { .. } => EvidenceGap::Unavailable,
                 };
@@ -403,11 +410,26 @@ impl SystemSession {
                     },
                     IoEvidenceV2 {
                         version: SYSTEM_EVIDENCE_V2_VERSION,
-                        read_bytes: io_end.read_bytes.clone(),
-                        write_bytes: io_end.write_bytes.clone(),
-                        read_syscalls: io_end.read_syscalls.clone(),
-                        write_syscalls: io_end.write_syscalls.clone(),
-                        cancelled_write_bytes: io_end.cancelled_write_bytes.clone(),
+                        read_bytes: SourcedEvidenceV2::gapped(
+                            HardwareFieldSourceV2::ProcSelfIo,
+                            io_reason,
+                        ),
+                        write_bytes: SourcedEvidenceV2::gapped(
+                            HardwareFieldSourceV2::ProcSelfIo,
+                            io_reason,
+                        ),
+                        read_syscalls: SourcedEvidenceV2::gapped(
+                            HardwareFieldSourceV2::ProcSelfIo,
+                            io_reason,
+                        ),
+                        write_syscalls: SourcedEvidenceV2::gapped(
+                            HardwareFieldSourceV2::ProcSelfIo,
+                            io_reason,
+                        ),
+                        cancelled_write_bytes: SourcedEvidenceV2::gapped(
+                            HardwareFieldSourceV2::ProcSelfIo,
+                            io_reason,
+                        ),
                     },
                 )
             }

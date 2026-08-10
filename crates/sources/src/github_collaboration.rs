@@ -106,10 +106,20 @@ impl GitHubCollaborationSource {
         mut emit: impl FnMut(Result<Chunk, SourceError>) -> bool,
     ) -> Result<(), SourceError> {
         let _acquire = crate::profile::acquire_span();
-        let client = build_client(self.token.as_ref(), &self.http)?;
+        // Same pre-connect SSRF screen gitlab-group / bitbucket-workspace use.
+        // CLI wires `--github-api-endpoint` through `with_endpoint` without the
+        // factory path, so validation must happen here before the bearer token
+        // leaves the process.
+        let (api_root, screened) = crate::hosted_git::validated_api_endpoint(
+            "github",
+            &self.endpoint,
+            self.http.allow_private_endpoint,
+        )?;
+        let endpoint = api_root.as_str().trim_end_matches('/').to_string();
+        let client = build_client(self.token.as_ref(), &self.http, screened.as_ref())?;
         let mut api = GitHubApi::new(
             client,
-            &self.endpoint,
+            &endpoint,
             self.limits.hosted_git_pages,
             self.limits.web_response_bytes,
         );
@@ -460,13 +470,37 @@ impl GitHubCollaborationSource {
             )
         })?;
         let clone_path = temp.path().join("wiki");
+        // Derive clone origin from the API endpoint first so GHES defaults land on
+        // the enterprise host (not hardcoded github.com), then apply the same
+        // shape + origin screen org clones use.
+        let expected_clone_origin =
+            crate::hosted_git::ExpectedCloneOrigin::github_from_api_endpoint(&self.endpoint)
+                .map_err(|error| {
+                    GitHubGap::inaccessible("wiki", self.repository(), error.to_string())
+                })?;
         let default_clone_url;
         let clone_url = if let Some(url) = self.wiki_clone_url.as_deref() {
             url
         } else {
-            default_clone_url = format!("https://github.com/{}/{}.wiki.git", self.owner, self.repo);
+            default_clone_url = format!(
+                "https://{}/{}/{}.wiki.git",
+                expected_clone_origin.https_authority(),
+                self.owner,
+                self.repo
+            );
             &default_clone_url
         };
+        crate::hosted_git::validate_clone_url_for_origin(
+            "github",
+            clone_url,
+            &expected_clone_origin,
+        )
+        .map_err(|error| match error {
+            SourceError::Other(detail) => {
+                GitHubGap::inaccessible("wiki", self.repository(), detail)
+            }
+            other => GitHubGap::inaccessible("wiki", self.repository(), other.to_string()),
+        })?;
         crate::hosted_git::clone_authenticated_history(
             "github",
             &format!("{}/{}.wiki", self.owner, self.repo),
@@ -1090,7 +1124,11 @@ impl BoundedJsonError {
     }
 }
 
-fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Client, SourceError> {
+fn build_client(
+    token: &str,
+    http: &crate::http::HttpClientConfig,
+    screened: Option<&crate::endpoint_screen::ScreenedEndpoint>,
+) -> Result<Client, SourceError> {
     let mut headers = HeaderMap::new();
     headers.insert(
         ACCEPT,
@@ -1101,10 +1139,11 @@ fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Cli
         HeaderValue::from_str(&format!("Bearer {token}"))
             .map_err(|_| SourceError::Other("invalid GitHub authorization header".into()))?,
     );
-    crate::http::blocking_client_builder(http)
+    let builder = crate::http::blocking_client_builder(http)
         .map_err(SourceError::Other)?
         .default_headers(headers)
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::none());
+    crate::endpoint_screen::pin_screened_addrs(builder, screened, http.proxy.is_some())
         .build()
         .map_err(|_| SourceError::Other("failed to build GitHub collaboration client".into()))
 }

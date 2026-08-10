@@ -1,0 +1,112 @@
+{
+  "backend": "cpu",
+  "binary_sha256": "af0c44576576049956a6f4ab7ec94e92a7a142cdffd5fb4e02ebc34cdd733ac8",
+  "catalog_sha256": "e6dd36fc15cc15778516cea3b0dc57eae873065599fe5d5c1bd5f1941e5aa9b0",
+  "fixture_lock_sha256": "d0adf36e152eb32282b4f69f74431f3f12ccc8ac4b6e37dffb740e275a7e49a9",
+  "host_evidence": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_driver": "580.178.04",
+    "gpu_vram_mb": 32607,
+    "kernel": "6.17.0-19-generic",
+    "logical_cores": 32,
+    "os": "linux",
+    "ram_mb": 94140
+  },
+  "repetitions": 5,
+  "schema_version": 2,
+  "target_id": "linux-x86_64-rtx5090",
+  "target_matrix_sha256": "f2ff8e62b861a0ae74b6a07deac3e53b5d3d11d83c03b21de895be3d3dd30fa6",
+  "workloads": [
+    {
+      "backend": "cpu",
+      "binary_sha256": "af0c44576576049956a6f4ab7ec94e92a7a142cdffd5fb4e02ebc34cdd733ac8",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "78ab43b70882800ab07415b273e27d08eb03f3a8c7b211b63788d221dd43b4c1",
+      "max_peak_rss_kb": 183660,
+      "median_peak_rss_kb": 180300,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 39721,
+      "p50_wall_ms": 507.9023840080481,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 40728.0,
+      "p95_wall_ms": 511.1399190063821,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37379,
+          "peak_rss_kb": 171396,
+          "result_error": "",
+          "wall_ms": 509.99453000258654
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39357,
+          "peak_rss_kb": 179492,
+          "result_error": "",
+          "wall_ms": 500.494144987897
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39786,
+          "peak_rss_kb": 180412,
+          "result_error": "",
+          "wall_ms": 507.9023840080481
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39721,
+          "peak_rss_kb": 180300,
+          "result_error": "",
+          "wall_ms": 500.6588239921257
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 40728,
+          "peak_rss_kb": 183660,
+          "result_error": "",
+          "wall_ms": 511.1399190063821
+        }
+      ],
+      "workload_id": "github-organization-repositories"
+    }
+  ]
+}

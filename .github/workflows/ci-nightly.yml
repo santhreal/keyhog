@@ -1,0 +1,602 @@
+name: ci-nightly
+
+# One coherent heavy pass. Not a replay of every overlapping PR gate.
+# Required push/PR CI stays in ci.yml. This workflow runs once daily and on
+# manual dispatch: full crate aggregators, sources feature bag, detector recall,
+# install/fuzz/feature proofs, and platform release builds.
+on:
+  schedule:
+    - cron: "30 6 * * *"   # after runners-nightly (05:00)
+  workflow_dispatch:
+
+concurrency:
+  group: ci-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CC: ""
+  CARGO_NET_RETRY: "10"
+
+jobs:
+  library-surface:
+    name: Library surface
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # crates/scanner/tests/contracts/*.toml and
+          # crates/scanner/tests/readme_claims.rs are LFS-tracked (the
+          # fixtures look like real secrets to push-protection; storing
+          # them as LFS pointers is the only way to keep the contract
+          # corpus pushable). Without this checkout option the working
+          # tree has 3-line LFS pointer files instead of the actual
+          # fixture content and contracts_runner crashes parsing them
+          # as TOML.
+          lfs: true
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install Vectorscan
+        run: |
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+            sleep $((i * 2))
+            if [ "$i" -eq 5 ]; then exit 1; fi
+          done
+      - run: cargo test -p keyhog-core --lib
+      - run: cargo check -p keyhog-core --all-targets
+      # Hosted runners have no accelerator. Keep this broad library gate on the
+      # complete CPU/SIMD detection stack; real GPU execution and parity belong
+      # to the GPU-labelled fleet lane, where an unavailable adapter is a hard
+      # configuration failure instead of a false failure on GitHub hardware.
+      # Several library contracts compile the complete detector corpus. Bound
+      # test concurrency so high-core runners do not multiply that resident set.
+      # The public scanner crate promises a dependency-light build with every
+      # optional detector subsystem absent. Compile that exact feature boundary.
+      - run: cargo check -p keyhog-scanner --lib --no-default-features
+      - run: cargo test -p keyhog-scanner --lib --no-default-features --features ci-lean -- --test-threads=4
+      - run: cargo test -p keyhog --lib
+      # verifier + sources inline unit tests: previously only their `--test`
+      # aggregators ran in CI, so a lib-internal unit test (e.g. the
+      # verification-cache eviction contracts) was never executed on the
+      # default build.
+      - run: cargo test -p keyhog-verifier --lib
+      - run: cargo test -p keyhog-sources --lib
+      - name: Profiler runtime contracts
+        run: cargo test -p keyhog-profile
+
+      # Full strict runner multipliers (KEYHOG_*_STRICT=1) stay in
+      # runners-nightly.yml. This job owns the library surface plus the
+      # scanner property fuzz suite once overnight.
+
+      # Property tests (10 000+ cases per invariant). The proptest
+      # regression file (scanner_fuzz.proptest-regressions) re-runs
+      # every historical failure first, adding a new failure mode
+      # there permanently gates the suite.
+      - name: Property tests
+        run: cargo test -p keyhog-scanner --lib property::scanner_fuzz --profile release-fast
+
+  # Integration aggregators. Every crate ships a `tests/all_tests.rs` that
+  # pulls in its `unit/ adversarial/ contract/ gap/ gate/ integration/
+  # property/ regression/ concurrent/` modules - ~3900 tests total. Before
+  # these lanes CI ran only `--lib` plus a handful of named `--test` runners,
+  # so NOTHING built the `all_tests` targets: a unit test under tests/unit/
+  # that stopped compiling (e.g. the LazyRegex CompiledPattern field change)
+  # sailed through every gate. The five lanes and their fail-closed aggregate
+  # turn "the integration suite is green on my box" into "green in CI".
+  # lfs:true + Hyperscan mirror the `test` job: the contract corpus and several
+  # fixtures are LFS-tracked and the default build links Hyperscan.
+  # The integration surface used to be one 66-step serial job. Keep the exact
+  # commands and isolation flags, but split independent crate/lane work so one
+  # long scanner binary no longer strands every other integration verdict.
+
+  integration-sources:
+    name: Integration (sources)
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 120
+    steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install Vectorscan
+        run: |
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+            sleep $((i * 2))
+            if [ "$i" -eq 5 ]; then exit 1; fi
+          done
+      - name: sources all_tests
+        run: cargo test -p keyhog-sources --test all_tests --profile release-fast
+      - name: sources opt-in backends (all standalone targets, serial)
+        run: cargo test -p keyhog-sources --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast -- --test-threads=1
+
+  integration-cli:
+    name: Integration (CLI)
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 60
+    steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install Vectorscan
+        run: |
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+            sleep $((i * 2))
+            if [ "$i" -eq 5 ]; then exit 1; fi
+          done
+      - name: cli all_tests
+        run: cargo test -p keyhog --test all_tests --no-default-features --features ci-lean --profile release-fast
+      - name: cli Vyre pin coherence
+        run: cargo test -p keyhog --test vyre_pin_coherence_lane3 --no-default-features --features ci-lean --profile release-fast
+      - name: cli coherence binaries
+        run: cargo test -p keyhog --no-default-features --features ci-lean --profile release-fast --test coherence_wiring_lane7 --test lane10_verification_doc_coherence --test coherence_verify_count
+      - name: cli property
+        run: cargo test -p keyhog --test property --profile release-fast
+      - name: cli adversarial
+        run: cargo test -p keyhog --test adversarial --profile release-fast -- --test-threads=4
+      # 1,200 product-reliability cells (subcommand x hostile profile, format x
+      # hostile profile, exit-code and installer contracts) that no workflow ran
+      # until now, so the whole lane was free to rot. It drives the shipped
+      # binary on the scalar backend, so it needs no accelerator and no feature
+      # flags beyond the default build.
+      - name: cli product reliability matrix
+        run: cargo test -p keyhog --test reliability_all --profile release-fast
+
+  integration-detector-contracts:
+    name: Integration (detector + recall contracts)
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 60
+    steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install Vectorscan
+        run: |
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+            sleep $((i * 2))
+            if [ "$i" -eq 5 ]; then exit 1; fi
+          done
+      - name: detector self-validation
+        run: cargo test -p keyhog-scanner --test all_detectors_self_validate --profile release-fast
+      - name: homoglyph ASCII-skip parity + shadow gate
+        run: |
+          cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test homoglyph_ascii_skip_parity homoglyph_ascii_skip_parity_default
+          cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_ac_overlap_shadow shadowed_inner_literal_is_ac_confirmed_with_variant_skipped
+      - name: finding-set eviction order-independence
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test fallback_order_independence push_match_eviction_set_is_insertion_order_independent
+      - name: basic-auth detector recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test basic_auth_credentials_recall
+      - name: named-detector anchor-floor recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_named_detector_anchor_floor_recall
+      - name: named-detector canonical-hex-key recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_named_canonical_hex_key_recall
+      - name: per-pattern weak-anchor recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_per_pattern_weak_anchor_recall
+      - name: char-class prefix expansion recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_charclass_prefix_expansion_recall
+      - name: leading-construct prefix recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_leading_assertion_and_alternation_prefix_recall
+      - name: distinctive-infix anchor recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_distinctive_infix_anchor_recall
+      - name: checksum boundary no-downgrade recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_checksum_boundary_no_downgrade
+      - name: keyword-separator canonicalization recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_detector_owned_keyword_separators
+
+  # Preserve the established required-check name while making it an explicit
+  # fail-closed aggregate of the five independent integration lanes.
+
+  feature-matrix:
+    name: Feature matrix sanity check
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    # Cross-package feature combinations the release workflows and the
+    # composite Action depend on. Anything anyone might `cargo install`
+    # has to compile cleanly with the documented feature set.
+    steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install Vectorscan
+        run: |
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+            sleep $((i * 2))
+            if [ "$i" -eq 5 ]; then exit 1; fi
+          done
+      - name: portable (no Hyperscan or GPU build libraries)
+        run: cargo check -p keyhog --no-default-features --features portable
+      - name: portable coalesced windowing contract
+        run: cargo test -p keyhog-scanner --test portable_coalesced_windowing --no-default-features --features ml,entropy,decode,multiline
+      - name: portable runtime dogfood (scalar CPU, real exclusions)
+        run: |
+          cargo build --profile release-fast -p keyhog --no-default-features --features portable
+          tests/dogfood/repository_scan.sh ./target/release-fast/keyhog cpu json \
+            "$RUNNER_TEMP/keyhog-portable-dogfood.json"
+          tests/dogfood/product_matrix.sh ./target/release-fast/keyhog cpu
+      - name: CI profile runtime dogfood (documented feature profile build)
+        run: |
+          cargo build --profile release-fast -p keyhog --no-default-features --features ci
+          tests/dogfood/repository_scan.sh ./target/release-fast/keyhog cpu json \
+            "$RUNNER_TEMP/keyhog-ci-profile-dogfood.json"
+          tests/dogfood/product_matrix.sh ./target/release-fast/keyhog cpu
+      - name: default (full)
+        run: cargo check -p keyhog
+      - name: default plus full source/decompiler and accelerator features
+        run: cargo check -p keyhog --features full
+      - name: minimal (no defaults, no features)
+        run: cargo check -p keyhog --no-default-features
+      # EVERY feature of the two richest feature-gated crates, compiled IN
+      # ISOLATION. Checking features only in combination (the `default`/`full`
+      # steps above, or a hand-picked `entropy,ml,decode` set) MASKS the
+      # cross-feature coupling bug this job exists to catch: a helper / re-export
+      # hosted in, or gated to, one feature's module but CALLED by code active
+      # under another feature breaks a single-feature build while every combined
+      # build stays green. Three such bugs shipped precisely because this job
+      # only spot-checked a subset (sources `media_type` gated to cloud yet
+      # called by `web`; the scanner `entropy::scanner` re-export gated to
+      # simd/gpu/entropy yet used by the unconditional testing facade under
+      # ml/decode/multiline/simdsieve). Loop the FULL feature list per crate so a
+      # narrower-than-its-callers gate can never regress a single-feature
+      # consumer again. Keep these green.
+      - name: keyhog-sources, every feature compiles standalone
+        run: |
+          set -euo pipefail
+          # ZERO features: the always-on filesystem/PDF/HAR path must build with
+          # no source features enabled (the minimal-consumer contract).
+          echo "::group::keyhog-sources --no-default-features (zero features)"
+          cargo check -p keyhog-sources --no-default-features
+          echo "::endgroup::"
+          for f in git web github gitlab bitbucket slack azure gcs s3 docker binary; do
+            echo "::group::keyhog-sources --features $f"
+            cargo check -p keyhog-sources --no-default-features --features "$f"
+            echo "::endgroup::"
+          done
+      - name: keyhog-scanner, every CPU feature compiles standalone
+        run: |
+          set -euo pipefail
+          # ZERO features first: `entropy`/`decode`/… are declared OPTIONAL, so
+          # the lib MUST build with none of them, else the optional-feature
+          # claim is a lie (the entropy::scanner re-export was once gated
+          # narrower than the unconditional testing facade, breaking this).
+          echo "::group::keyhog-scanner --no-default-features (zero features)"
+          cargo check -p keyhog-scanner --no-default-features
+          echo "::endgroup::"
+          for f in ml entropy decode multiline simd simdsieve ci-lean; do
+            echo "::group::keyhog-scanner --features $f"
+            cargo check -p keyhog-scanner --no-default-features --features "$f"
+            echo "::endgroup::"
+          done
+      # The INSTALLABLE BINARY with each user-facing source feature alone, the
+      # surface a user actually gets from `cargo install keyhog
+      # --no-default-features --features github`. The lib loops above cover the
+      # library layer; this catches the CLI layer, where a shared clap
+      # value-parser / arg helper hosted behind one source feature is referenced
+      # by another's args (e.g. `parse_positive_limit_count` was gated to `git`
+      # yet used by the s3/gcs/azure and github/gitlab/bitbucket limit args, so
+      # `--features github` alone failed to compile).
+      - name: keyhog binary, every user-facing source feature compiles standalone
+        run: |
+          set -euo pipefail
+          for f in git web github gitlab bitbucket azure gcs s3 docker binary verify; do
+            echo "::group::keyhog --features $f"
+            cargo check -p keyhog --no-default-features --features "$f"
+            echo "::endgroup::"
+          done
+      - name: scanner artifact writer release command
+        run: cargo run -p keyhog-scanner --bin keyhog-scanner-artifacts --no-default-features --features ml,entropy,decode,multiline,simdsieve,simd -- --out-dir "$RUNNER_TEMP/keyhog-gpu-literals"
+
+  install-scripts:
+    name: Install scripts (install.sh edge cases)
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install install-script linters
+        run: |
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends shellcheck shfmt && break
+            sleep $((i * 2))
+            if [ "$i" -eq 5 ]; then exit 1; fi
+          done
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
+      - name: Static analysis (install scripts)
+        env:
+          REQUIRE_INSTALL_LINTERS: '1'
+        run: bash scripts/gates/install_static_analysis.sh
+      # No Rust build needed: both harnesses mock curl / uname / nvidia-smi /
+      # ldconfig / ldd and the downloaded binary, so install.sh runs fully
+      # offline. The hosted runner has no CUDA stack, so the CUDA-detection
+      # cases that get skipped on a developer's GPU box all execute here -
+      # full coverage of every mode, flag, detection branch, and failure path.
+      - name: install.sh syntax
+        run: sh -n install.sh
+      - name: install.ps1 parse check
+        shell: pwsh
+        # No Windows runner needed to catch a syntax error: parse the script
+        # with the PowerShell language parser on the (pwsh-equipped) Linux
+        # runner. Guards the install.ps1 recoverability edits from shipping
+        # un-parseable. Behaviour is smoke-tested on Windows in
+        # integration-smoke.yml.
+        run: |
+          $tokens = $null; $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./install.ps1), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host "ERROR: $($_.Message) @ line $($_.Extent.StartLineNumber)" }
+            exit 1
+          }
+          Write-Host "install.ps1 parsed cleanly ($($tokens.Count) tokens)."
+      - name: Detection-path scenarios
+        run: bash tests/install/linux/scenarios.sh
+      - name: Edge-case battery (incl. recoverability matrix)
+        run: bash tests/install/linux/edge_cases.sh
+      - name: Calibration probe flag-compat + error surfacing (Law 10)
+        run: bash tests/install/linux/calibration_probe_flag_compat.sh
+      - name: Docs CLI-claim gate (no hallucinated flags in docs/site)
+        run: bash tests/docs/cli_claims_check.sh
+      - name: Integration entry-point gate (pre-commit hook + Action)
+        run: bash tests/integration/entrypoints_check.sh
+
+  fuzz-smoke:
+    name: Fuzz target smoke
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install Vectorscan
+        run: |
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+            sleep $((i * 2))
+            if [ "$i" -eq 5 ]; then exit 1; fi
+          done
+      # Pin the fuzz compiler so toolchain changes cannot silently alter this
+      # sanitizer gate between otherwise identical commits.
+      - name: Install pinned nightly toolchain
+        run: rustup toolchain install nightly-2026-08-07 --profile minimal
+      - name: Install cargo-fuzz
+        run: cargo +nightly-2026-08-07 install cargo-fuzz --locked
+      - name: Run bounded fuzz smoke
+        run: |
+          cargo +nightly-2026-08-07 fuzz run decode_target -- -runs=64
+          cargo +nightly-2026-08-07 fuzz run scanner_target -- -runs=32
+
+  macos-build:
+    name: macOS Build
+    runs-on: macos-15
+    # macOS must exercise both the default Vectorscan/Hyperscan path and the
+    # native Metal release asset path without a Vectorscan dependency.
+    steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install Vectorscan
+        run: brew update && brew install vectorscan pkg-config
+      # Prove the documented Homebrew Vectorscan path builds the actual CLI,
+      # not only the scanner library. The portable release build remains below.
+      - run: cargo build -p keyhog
+      # Lock the exact invocation used by the macOS release matrix. Native
+      # Metal and WGPU are enabled without pulling in Hyperscan.
+      - run: cargo build --release -p keyhog --no-default-features --features portable,gpu
+      # Prove the freshly-built macOS binary actually INSTALLS and RUNS via
+      # install.sh's --from-file path: doctor self-test (exit 0), seeded scan
+      # (exit 1 + findings), SARIF, and the local-checksum gate. The mocked
+      # detection scenarios never touch a real binary, and integration-smoke is
+      # manual + installs a published release; this is the only gate that proves
+      # current-source -> install -> working binary on macOS, every push.
+      - name: install-from-build proof (macOS)
+        run: bash tests/install/macos/install_from_local_build.sh target/release/keyhog
+
+  windows-build:
+    name: Windows portable release build
+    runs-on: windows-2025
+    steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      # Keep both Windows feature closures used by the tag workflow green on
+      # every change instead of discovering platform failures after tagging.
+      - name: Build portable CLI
+        run: cargo build --locked --release -p keyhog --no-default-features --features portable
+      - name: Build GPU literal artifacts
+        run: cargo build --locked --release -p keyhog-scanner --bin keyhog-scanner-artifacts --no-default-features --features ml,entropy,decode,multiline
+
+  static-release-linkage:
+    name: Static Hyperscan release linkage
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'santhreal' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted","linux","x64","axiomexec","keyhog"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    steps:
+      - name: Repair self-hosted workspace ownership
+        if: runner.environment == 'self-hosted'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          if [ -f "$GITHUB_WORKSPACE/.git/config" ]; then
+            # Stale hooksPath=/dev/null breaks `git lfs install --local`
+            # (mkdir /dev/null). Clear it and drop leftover LFS hook scripts.
+            git config --file "$GITHUB_WORKSPACE/.git/config" --unset-all core.hooksPath || true
+            rm -f "$GITHUB_WORKSPACE/.git/hooks/post-checkout" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-commit" \
+                  "$GITHUB_WORKSPACE/.git/hooks/post-merge"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
+        with:
+          toolchain: '1.89'
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install exact static native build inputs
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libhyperscan-dev=5.4.2-2 \
+            pkg-config=1.8.1-2build1
+          root="$RUNNER_TEMP/keyhog-hyperscan-static"
+          mkdir -p "$root/include" "$root/lib/pkgconfig"
+          cp -a /usr/include/hs "$root/include/"
+          cp /usr/lib/x86_64-linux-gnu/libhs.a "$root/lib/libhs.a"
+          cp /usr/lib/x86_64-linux-gnu/pkgconfig/libhs.pc \
+            "$root/lib/pkgconfig/libhs.pc"
+          printf 'HYPERSCAN_ROOT=%s\n' "$root" >> "$GITHUB_ENV"
+      - name: Build and prove self-contained release binary
+        run: |
+          set -euo pipefail
+          cargo build --locked --release -p keyhog --features static-hyperscan
+          target/release/keyhog --version
+          linkage="$(ldd target/release/keyhog)"
+          printf '%s\n' "$linkage"
+          if grep -Eiq 'libhs|libhyperscan' <<<"$linkage"; then
+            echo "ERROR: release binary dynamically links Hyperscan" >&2
+            exit 1
+          fi
+
+  # This is the only release-consumable CI verdict. It runs after every
+  # blocking shard, fails closed on failed/skipped/cancelled dependencies, and
+  # intentionally excludes only the documented advisory clippy job.
+
+  nightly-verdict:
+    name: Nightly verdict
+    if: ${{ always() }}
+    needs:
+      - library-surface
+      - integration-sources
+      - integration-cli
+      - integration-detector-contracts
+      - feature-matrix
+      - install-scripts
+      - fuzz-smoke
+      - macos-build
+      - windows-build
+      - static-release-linkage
+    runs-on: ubuntu-24.04
+    permissions: {}
+    env:
+      KEYHOG_BLOCKING_RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - name: Require every nightly heavy job
+        run: |
+          jq -e '
+            length == 10 and
+            all(.[]; .result == "success")
+          ' <<<"$KEYHOG_BLOCKING_RESULTS" >/dev/null

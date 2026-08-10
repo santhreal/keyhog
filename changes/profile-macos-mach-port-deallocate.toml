@@ -1,0 +1,3 @@
+category = "Fixed"
+summary = "Deallocate Mach thread ports after task_threads sampling so utilization samples do not leak send rights"
+crates = ["profile"]

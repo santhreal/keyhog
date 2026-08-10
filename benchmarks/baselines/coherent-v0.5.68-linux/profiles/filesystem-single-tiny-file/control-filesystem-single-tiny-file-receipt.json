@@ -1,0 +1,85 @@
+{
+  "binary_sha256": "3525cc0efaeacdcdf7906e7e003668e2d6f1886c29d80e402d9b902b90fef998",
+  "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+  "git_hash": "cadeda40bbf0f5dd4b25e86043ed80630b44532c",
+  "hostname_hash": "82fcd9288623",
+  "os": "Linux 6.17.0-19-generic",
+  "profile_artifacts": [
+    {
+      "bytes": 125406,
+      "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/control/cold-0-profile.json",
+      "profile_schema": "keyhog-profile",
+      "profile_schema_major": 2,
+      "schema_version": "profile-artifact-v1",
+      "sha256": "f7c7d6dab1ad429a17b548e3566b729a0af499fa6e5cdb316eca5f05099bfc05"
+    },
+    {
+      "bytes": 125287,
+      "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/control/cold-1-profile.json",
+      "profile_schema": "keyhog-profile",
+      "profile_schema_major": 2,
+      "schema_version": "profile-artifact-v1",
+      "sha256": "398d95e5e315ab57c1aef0b2cf5dfc19bfac45581806ff499956d44006aa37b5"
+    },
+    {
+      "bytes": 125546,
+      "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/control/warm-2-profile.json",
+      "profile_schema": "keyhog-profile",
+      "profile_schema_major": 2,
+      "schema_version": "profile-artifact-v1",
+      "sha256": "78f6d2b07b8ce5f2df867255b44477853e4c8d8fa61cfe1be4d39c8dba68f2c4"
+    },
+    {
+      "bytes": 125285,
+      "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/control/warm-3-profile.json",
+      "profile_schema": "keyhog-profile",
+      "profile_schema_major": 2,
+      "schema_version": "profile-artifact-v1",
+      "sha256": "2102b9df2483b29feb7d942815e58fb82abd58a9e4da8f58e708810578cce3d7"
+    },
+    {
+      "bytes": 125554,
+      "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/control/steady-4-profile.json",
+      "profile_schema": "keyhog-profile",
+      "profile_schema_major": 2,
+      "schema_version": "profile-artifact-v1",
+      "sha256": "942dd83ca382cffcfa10299ab0a733269cd6aeece9cb6d20f0f0ace26cd8c2c0"
+    },
+    {
+      "bytes": 125419,
+      "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/control/steady-5-profile.json",
+      "profile_schema": "keyhog-profile",
+      "profile_schema_major": 2,
+      "schema_version": "profile-artifact-v1",
+      "sha256": "84fb96000fef92d642f668af90983a4d0bc92886ead44b61022231a9ea68869a"
+    },
+    {
+      "bytes": 125414,
+      "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/control/steady-6-profile.json",
+      "profile_schema": "keyhog-profile",
+      "profile_schema_major": 2,
+      "schema_version": "profile-artifact-v1",
+      "sha256": "e46a21d2d47e4774cad67b7e069661adedda8382047697f93dd33c65861d96a7"
+    },
+    {
+      "bytes": 125678,
+      "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/control/steady-7-profile.json",
+      "profile_schema": "keyhog-profile",
+      "profile_schema_major": 2,
+      "schema_version": "profile-artifact-v1",
+      "sha256": "aa18fc6505678b669c3cbe727d5058832286ebde8c2cf815987c888c133e783d"
+    },
+    {
+      "bytes": 125705,
+      "path": "baselines/coherent-v0.5.68-linux/profiles/filesystem-single-tiny-file/control/steady-8-profile.json",
+      "profile_schema": "keyhog-profile",
+      "profile_schema_major": 2,
+      "schema_version": "profile-artifact-v1",
+      "sha256": "7d0cd498c6d7c4fffe844d2911399d794dcf4c9e5448a70c270e82f30bbacfe4"
+    }
+  ],
+  "role": "control",
+  "schema_version": "perf-receipt-v1",
+  "trial_set_digest": "c5c7c896d005267705807f125d005701a3e93bb9102aa7c7be126cfcf96ccb57",
+  "workload": "filesystem-single-tiny-file"
+}

@@ -1,0 +1,468 @@
+{
+  "backend": "simd",
+  "binary_sha256": "fcef317f3e7c295e43f548aebc43e66556a3d6535f97d04d5fbc45631644e66f",
+  "catalog_sha256": "e6dd36fc15cc15778516cea3b0dc57eae873065599fe5d5c1bd5f1941e5aa9b0",
+  "fixture_lock_sha256": "d0adf36e152eb32282b4f69f74431f3f12ccc8ac4b6e37dffb740e275a7e49a9",
+  "host_evidence": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_driver": "580.178.04",
+    "gpu_vram_mb": 32607,
+    "kernel": "6.17.0-19-generic",
+    "logical_cores": 32,
+    "os": "linux",
+    "ram_mb": 94140
+  },
+  "repetitions": 5,
+  "schema_version": 2,
+  "target_id": "linux-x86_64-rtx5090",
+  "target_matrix_sha256": "f2ff8e62b861a0ae74b6a07deac3e53b5d3d11d83c03b21de895be3d3dd30fa6",
+  "workloads": [
+    {
+      "backend": "simd",
+      "binary_sha256": "fcef317f3e7c295e43f548aebc43e66556a3d6535f97d04d5fbc45631644e66f",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "53c15de12425ea2be72691352c60d273a417a0ad418686201fe0cac4fe19f7f6",
+      "max_peak_rss_kb": 183572,
+      "median_peak_rss_kb": 176812,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 37734,
+      "p50_wall_ms": 428.15698799677193,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 39213.0,
+      "p95_wall_ms": 435.2669079962652,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36412,
+          "peak_rss_kb": 173104,
+          "result_error": "",
+          "wall_ms": 415.4502519959351
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37734,
+          "peak_rss_kb": 176812,
+          "result_error": "",
+          "wall_ms": 428.15698799677193
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37092,
+          "peak_rss_kb": 175740,
+          "result_error": "",
+          "wall_ms": 428.27928900078405
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38991,
+          "peak_rss_kb": 183384,
+          "result_error": "",
+          "wall_ms": 422.06327500753105
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 39213,
+          "peak_rss_kb": 183572,
+          "result_error": "",
+          "wall_ms": 435.2669079962652
+        }
+      ],
+      "workload_id": "github-collaboration-discussions"
+    },
+    {
+      "backend": "simd",
+      "binary_sha256": "fcef317f3e7c295e43f548aebc43e66556a3d6535f97d04d5fbc45631644e66f",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "b5fc538ec8fb794ea7063af3f7d8d2b79aba5edb499c1cd0058f1381cc531299",
+      "max_peak_rss_kb": 188256,
+      "median_peak_rss_kb": 176336,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 37351,
+      "p50_wall_ms": 412.39376200246625,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 40030.0,
+      "p95_wall_ms": 418.57208499277476,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37351,
+          "peak_rss_kb": 176336,
+          "result_error": "",
+          "wall_ms": 418.57208499277476
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36611,
+          "peak_rss_kb": 174380,
+          "result_error": "",
+          "wall_ms": 412.39376200246625
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 40030,
+          "peak_rss_kb": 188256,
+          "result_error": "",
+          "wall_ms": 403.81765000347514
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37936,
+          "peak_rss_kb": 179968,
+          "result_error": "",
+          "wall_ms": 412.5083580001956
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34828,
+          "peak_rss_kb": 167692,
+          "result_error": "",
+          "wall_ms": 403.4645749925403
+        }
+      ],
+      "workload_id": "github-collaboration-gists"
+    },
+    {
+      "backend": "simd",
+      "binary_sha256": "fcef317f3e7c295e43f548aebc43e66556a3d6535f97d04d5fbc45631644e66f",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "045e873c9e647c5e369b59726ce5b6545fe7e74b5f6644d99aaca98d48e4d4f1",
+      "max_peak_rss_kb": 180340,
+      "median_peak_rss_kb": 176988,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 37043,
+      "p50_wall_ms": 416.91545299545396,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 38177.0,
+      "p95_wall_ms": 436.0625270055607,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38177,
+          "peak_rss_kb": 180340,
+          "result_error": "",
+          "wall_ms": 397.54480800183956
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36919,
+          "peak_rss_kb": 175248,
+          "result_error": "",
+          "wall_ms": 436.0625270055607
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38088,
+          "peak_rss_kb": 179760,
+          "result_error": "",
+          "wall_ms": 417.91258301236667
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35884,
+          "peak_rss_kb": 171024,
+          "result_error": "",
+          "wall_ms": 416.91545299545396
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37043,
+          "peak_rss_kb": 176988,
+          "result_error": "",
+          "wall_ms": 410.22098700341303
+        }
+      ],
+      "workload_id": "github-collaboration-issues"
+    },
+    {
+      "backend": "simd",
+      "binary_sha256": "fcef317f3e7c295e43f548aebc43e66556a3d6535f97d04d5fbc45631644e66f",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "a87bfd7f27db9b054d1888fc5b7abfc548b095c03b4caf708cfafccfc5c47354",
+      "max_peak_rss_kb": 177892,
+      "median_peak_rss_kb": 172704,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 36201,
+      "p50_wall_ms": 423.2452819996979,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37780.0,
+      "p95_wall_ms": 430.39728100120556,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36107,
+          "peak_rss_kb": 172704,
+          "result_error": "",
+          "wall_ms": 404.7448969940888
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36201,
+          "peak_rss_kb": 171980,
+          "result_error": "",
+          "wall_ms": 405.2297800080851
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35861,
+          "peak_rss_kb": 171028,
+          "result_error": "",
+          "wall_ms": 423.2452819996979
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36501,
+          "peak_rss_kb": 173572,
+          "result_error": "",
+          "wall_ms": 430.39728100120556
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37780,
+          "peak_rss_kb": 177892,
+          "result_error": "",
+          "wall_ms": 425.81203900044784
+        }
+      ],
+      "workload_id": "github-collaboration-pull-requests"
+    },
+    {
+      "backend": "simd",
+      "binary_sha256": "fcef317f3e7c295e43f548aebc43e66556a3d6535f97d04d5fbc45631644e66f",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "1a50d6fb823baaf0d5a2ce00dbdd6edc69dd385c3aa4ff168b6076c5622f1417",
+      "fixture_input_sha256": "9ef84a2ace87640affb136398db69c67bf74ca81ac7822799ee49f9cc00fb331",
+      "max_peak_rss_kb": 179716,
+      "median_peak_rss_kb": 172772,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 36361,
+      "p50_wall_ms": 417.34698599611875,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 38148.0,
+      "p95_wall_ms": 428.5165860055713,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35942,
+          "peak_rss_kb": 170632,
+          "result_error": "",
+          "wall_ms": 412.35958799370565
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37757,
+          "peak_rss_kb": 178056,
+          "result_error": "",
+          "wall_ms": 417.34698599611875
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35560,
+          "peak_rss_kb": 169700,
+          "result_error": "",
+          "wall_ms": 424.37109400634654
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 38148,
+          "peak_rss_kb": 179716,
+          "result_error": "",
+          "wall_ms": 417.34141600318253
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36361,
+          "peak_rss_kb": 172772,
+          "result_error": "",
+          "wall_ms": 428.5165860055713
+        }
+      ],
+      "workload_id": "github-collaboration-releases"
+    }
+  ]
+}

@@ -1,0 +1,369 @@
+{
+  "backend": "cpu",
+  "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+  "catalog_sha256": "e6dd36fc15cc15778516cea3b0dc57eae873065599fe5d5c1bd5f1941e5aa9b0",
+  "fixture_lock_sha256": "d0adf36e152eb32282b4f69f74431f3f12ccc8ac4b6e37dffb740e275a7e49a9",
+  "host_evidence": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_driver": "580.178.04",
+    "gpu_vram_mb": 32607,
+    "kernel": "6.17.0-19-generic",
+    "logical_cores": 32,
+    "os": "linux",
+    "ram_mb": 94140
+  },
+  "repetitions": 5,
+  "schema_version": 2,
+  "target_id": "linux-x86_64-rtx5090",
+  "target_matrix_sha256": "f2ff8e62b861a0ae74b6a07deac3e53b5d3d11d83c03b21de895be3d3dd30fa6",
+  "workloads": [
+    {
+      "backend": "cpu",
+      "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "fixture_input_sha256": "b62b855d5f1cfd2e1f25932fc4e024a5cef5406a847bb2192ee3d37f196aa102",
+      "max_peak_rss_kb": 135880,
+      "median_peak_rss_kb": 133304,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 28332,
+      "p50_wall_ms": 257.47779999801423,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 29195.0,
+      "p95_wall_ms": 260.16141900618095,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29195,
+          "peak_rss_kb": 135880,
+          "result_error": "",
+          "wall_ms": 260.16141900618095
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 29000,
+          "peak_rss_kb": 135428,
+          "result_error": "",
+          "wall_ms": 257.47779999801423
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28316,
+          "peak_rss_kb": 132160,
+          "result_error": "",
+          "wall_ms": 259.1958889970556
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 28332,
+          "peak_rss_kb": 133304,
+          "result_error": "",
+          "wall_ms": 243.26219600334298
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 13,
+          "finding_count": 0,
+          "finding_hashes": [],
+          "major_page_faults": 0,
+          "minor_page_faults": 26991,
+          "peak_rss_kb": 127268,
+          "result_error": "",
+          "wall_ms": 244.20498199469876
+        }
+      ],
+      "workload_id": "stdin-empty"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "e55af0d0dccbc4fdf7493fb757e873e074b911f95cb569c5a019120949a74ec1",
+      "fixture_input_sha256": "a19c75000a0e33598325d34d172d7dbc98cdfa22974aa4cb39b014d935e6952f",
+      "max_peak_rss_kb": 222276,
+      "median_peak_rss_kb": 214160,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 47753,
+      "p50_wall_ms": 640.2775989990914,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 49669.0,
+      "p95_wall_ms": 750.1722609886201,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 47753,
+          "peak_rss_kb": 214160,
+          "result_error": "",
+          "wall_ms": 406.51446000265423
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 49669,
+          "peak_rss_kb": 222276,
+          "result_error": "",
+          "wall_ms": 546.8921480060089
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 45830,
+          "peak_rss_kb": 206936,
+          "result_error": "",
+          "wall_ms": 640.2775989990914
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 46428,
+          "peak_rss_kb": 210528,
+          "result_error": "",
+          "wall_ms": 687.5598819897277
+        },
+        {
+          "coverage_gap_count": 1,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 48621,
+          "peak_rss_kb": 218472,
+          "result_error": "",
+          "wall_ms": 750.1722609886201
+        }
+      ],
+      "workload_id": "stdin-large-bounded"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "e55af0d0dccbc4fdf7493fb757e873e074b911f95cb569c5a019120949a74ec1",
+      "fixture_input_sha256": "cb8124d3bc3997d448cbdbb88f4dbab8328e8a8f5a37015147d4189c5dcf7587",
+      "max_peak_rss_kb": 173464,
+      "median_peak_rss_kb": 170580,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 36793,
+      "p50_wall_ms": 416.3526939955773,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 37621.0,
+      "p95_wall_ms": 445.65837099798955,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 32376,
+          "peak_rss_kb": 154212,
+          "result_error": "",
+          "wall_ms": 422.5978549948195
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37237,
+          "peak_rss_kb": 172668,
+          "result_error": "",
+          "wall_ms": 416.3526939955773
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34271,
+          "peak_rss_kb": 161640,
+          "result_error": "",
+          "wall_ms": 445.65837099798955
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 37621,
+          "peak_rss_kb": 173464,
+          "result_error": "",
+          "wall_ms": 409.71857799740974
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36793,
+          "peak_rss_kb": 170580,
+          "result_error": "",
+          "wall_ms": 415.9637699922314
+        }
+      ],
+      "workload_id": "stdin-medium"
+    },
+    {
+      "backend": "cpu",
+      "binary_sha256": "6db591d9f664a671e65efc01b7adbbf4e616cfe2cd3ad034d032bdff581d67e5",
+      "execution_route": "in-process",
+      "fixture_answer_sha256": "e55af0d0dccbc4fdf7493fb757e873e074b911f95cb569c5a019120949a74ec1",
+      "fixture_input_sha256": "5ea72fb28a4a32f2724f50f4a4135ba7371e46239d3f201586d564a2912e6eb1",
+      "max_peak_rss_kb": 168024,
+      "median_peak_rss_kb": 164948,
+      "output_format": "json-envelope",
+      "p50_major_page_faults": 0,
+      "p50_minor_page_faults": 35643,
+      "p50_wall_ms": 408.0859209934715,
+      "p95_major_page_faults": 0.0,
+      "p95_minor_page_faults": 36343.0,
+      "p95_wall_ms": 411.36513199307956,
+      "page_cache_state": "uncontrolled",
+      "parity_ok": true,
+      "policy": "default",
+      "process_state": "cold",
+      "schema_version": 2,
+      "trials": [
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 36343,
+          "peak_rss_kb": 168024,
+          "result_error": "",
+          "wall_ms": 408.0859209934715
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35642,
+          "peak_rss_kb": 164716,
+          "result_error": "",
+          "wall_ms": 408.44100899994373
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 34791,
+          "peak_rss_kb": 162620,
+          "result_error": "",
+          "wall_ms": 411.36513199307956
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35968,
+          "peak_rss_kb": 167436,
+          "result_error": "",
+          "wall_ms": 386.92136699683033
+        },
+        {
+          "coverage_gap_count": 0,
+          "exit_code": 1,
+          "finding_count": 1,
+          "finding_hashes": [
+            "d7d12ecfbe43df4deab9673e592a317d66e16f7bc337d8003da5da5a08decd71"
+          ],
+          "major_page_faults": 0,
+          "minor_page_faults": 35643,
+          "peak_rss_kb": 164948,
+          "result_error": "",
+          "wall_ms": 394.0335630031768
+        }
+      ],
+      "workload_id": "stdin-tiny"
+    }
+  ]
+}
