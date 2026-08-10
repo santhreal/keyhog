@@ -78,7 +78,15 @@ pub(crate) async fn run_guard_commit(
         }
     }
 
-    run_guard_commit_on_connection(&mut conn, repo_path).await
+    match run_guard_commit_on_connection(&mut conn, repo_path).await {
+        Ok(result) if result.fingerprint_changed => {
+            // Retry once: the index changed during the first transaction.
+            // The second pass re-acquires the manifest with the current state.
+            let retry = run_guard_commit_on_connection(&mut conn, repo_path).await?;
+            Ok(retry)
+        }
+        other => other,
+    }
 }
 
 /// Run the guard commit transaction on an existing connection.

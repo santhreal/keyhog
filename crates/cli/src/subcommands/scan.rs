@@ -112,7 +112,19 @@ pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
         }
         let mut policy = EffectivePolicy::resolve(&args);
         match daemon_route(&args, &policy) {
-            DaemonRoute::Required => run_via_daemon(&mut policy.effective_args).await,
+            DaemonRoute::Required => {
+                #[cfg(feature = "git")]
+                if policy.effective_args.git_staged {
+                    let socket_path = effective_daemon_socket(&policy.effective_args);
+                    let repo_path = policy.effective_args.path.as_deref().unwrap_or_else(|| std::path::Path::new("."));
+                    let digest = keyhog_core::detector_digest().to_string();
+                    let result = crate::daemon::guard_commit::run_guard_commit(&socket_path, repo_path, &digest)
+                        .await
+                        .context("--daemon=on guard commit transaction failed")?;
+                    return finish_guard_commit_scan(result, &policy.effective_args);
+                }
+                run_via_daemon(&mut policy.effective_args).await
+            }
             DaemonRoute::Opportunistic => {
                 // Guard commit transaction for --git-staged.
                 #[cfg(feature = "git")]
