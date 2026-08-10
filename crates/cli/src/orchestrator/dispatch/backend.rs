@@ -4,10 +4,9 @@
 //!
 //! Backend choice splits by *when* it runs, never by guessing:
 //!
-//! - [`CachedBackendRouter`] drives normal scans. It only reads install-time
-//!   calibration evidence, zero benchmarks, zero writes. Invalid evidence is
-//!   never called autoroute: the scan visibly replays through the scalar
-//!   correctness oracle and reports complete recovery with a repair command.
+//! - [`CachedBackendRouter`] drives normal scans. It reads install-time
+//!   calibration evidence without benchmarking or writing. Invalid evidence
+//!   returns an operator-visible routing error and leaves the batch unscanned.
 //! - [`MeasuredBackendRouter`] drives explicit calibration (installer / backend
 //!   maintenance). It probes candidate backends, proves output parity against a
 //!   reference, times the survivors, and persists the fastest correct choice.
@@ -25,7 +24,7 @@
 //!   │    ├─ timing ─────── measured trials and confidence intervals
 //!   │    └─ match_identity ─ secret-safe semantic parity proof
 //!   ├─ routing ─────── selection values, recovery planning, operator errors
-//!   ├─ store ──────── cache facade (schema v45)
+//!   ├─ store ──────── cache facade (schema v56)
 //!   │    ├─ schema / artifact_identity / build_identity
 //!   │    └─ codec / validation / persistence / inspection
 //!   ├─ runtime_health ─ durable route quarantine and transactional snapshots
@@ -49,14 +48,16 @@ use self::evidence::AutorouteDecision;
 use self::host::{host_identity_digest, AutorouteHostProfile};
 #[cfg(test)]
 use self::routing::sole_compiled_backend;
+#[cfg(feature = "gpu")]
+pub(crate) use self::routing::OrderedGpuSelection;
 use self::routing::{
-    automatic_recovery_plan, autoroute_required, autoroute_state_recovery_selection,
-    direct_backend_selection, phase1_plan_for_selected_backend, resolve_persisted_route,
-    AutorouteRuntimeClass, RuntimeRouteFault,
+    automatic_recovery_plan, autoroute_required, direct_backend_selection,
+    phase1_plan_for_selected_backend, resolve_persisted_route, AutorouteRuntimeClass,
+    RuntimeRouteFault,
 };
 pub(crate) use self::routing::{
-    AutorouteRoutingError, AutorouteRoutingErrorKind, AutorouteStateRecovery, BackendRecoveryPlan,
-    BackendSelection, RuntimeRouteIdentity,
+    AutorouteRoutingError, AutorouteRoutingErrorKind, BackendRecoveryPlan, BackendSelection,
+    RuntimeRouteIdentity,
 };
 use self::runtime_health::{
     clear_runtime_route_faults, load_runtime_route_faults, persist_runtime_route_fault,
@@ -80,7 +81,6 @@ use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Canonical persisted receipt for one exact calibration representative. The
@@ -116,6 +116,14 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
     hasher.finish_u64()
 }
 
+// v56: ordered device-set evidence authenticates the complete device identity,
+// including name and PCI vendor/device ids, and rejects orphaned, partial, or
+// mixed route bodies before selection.
+// v54: GPU timing rows bind bounded resident pipeline depth, capability, and
+// per-slot input/match capacities. Older rows cannot prove async slot parity.
+// v53: GPU timing rows can authenticate a calibrated ordered physical-device
+// set with exact topology, driver/runtime, capacity, workload weights, timing,
+// and bounded resident budgets. Older rows cannot prove multi-device replay.
 // v51: the resolved-config digest no longer hashes whether a calibration
 // excluded an eligible GPU. The persisted host generation already carries that
 // exactly, through `eligible_backends` and the full GPU device/runtime/driver
@@ -194,15 +202,16 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 54;
+// v56: authenticated ordered-device routes include adapter name and PCI
+// vendor/device identity. v55 routes lack those live-census bindings.
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 56;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
 /// Persistent calibrated backend router.
 ///
-/// Autoroute probes only in explicit calibration mode (installer / backend
-/// maintenance). Cache hits are zero-benchmark table lookups; invalid state in
-/// normal scans is reported as scalar correctness recovery, never autoroute.
+/// Autoroute probes only in explicit calibration mode (installer or backend
+/// maintenance). Cache hits are table lookups; invalid state fails closed.
 pub(super) struct MeasuredBackendRouter {
     pattern_count: usize,
     decode_workload_plan: keyhog_scanner::decode::DecodeWorkloadPlan,
@@ -219,16 +228,15 @@ pub(super) struct MeasuredBackendRouter {
     cache_path: Option<PathBuf>,
     cache_load_error: Option<String>,
     cache_dirty: bool,
+    #[cfg(feature = "gpu")]
+    ordered_device_sets: Mutex<HashMap<String, Arc<keyhog_scanner::gpu::AcquiredGpuDeviceSet>>>,
     runtime_health: Option<RuntimeHealthIdentity>,
-    recovery_announced: bool,
 }
 
 /// Cache-only backend router for fused filesystem scans.
 ///
 /// This never benchmarks or writes decisions; it only consumes install-time
-/// calibration evidence. Missing buckets use a visible scalar recovery, keeping
-/// normal scans free of runtime probes and backend guesses while preserving
-/// complete byte coverage.
+/// calibration evidence. Missing or invalid buckets return a routing error.
 pub(crate) struct CachedBackendRouter {
     pattern_count: usize,
     decode_workload_plan: keyhog_scanner::decode::DecodeWorkloadPlan,
@@ -238,7 +246,8 @@ pub(crate) struct CachedBackendRouter {
     runtime_class: AutorouteRuntimeClass,
     runtime_faults: Mutex<HashMap<WorkloadKey, RuntimeRouteFault>>,
     runtime_health: Option<RuntimeHealthIdentity>,
-    recovery_announced: AtomicBool,
+    #[cfg(feature = "gpu")]
+    ordered_device_sets: Mutex<HashMap<String, Arc<keyhog_scanner::gpu::AcquiredGpuDeviceSet>>>,
 }
 
 /// Name why a bucket lookup could not be answered, in the order an operator has
@@ -265,6 +274,54 @@ fn lookup_miss_cause(
         return AutorouteCacheMiss::RuntimeClassUnproved;
     }
     AutorouteCacheMiss::BucketAbsent
+}
+
+#[cfg(feature = "gpu")]
+fn materialize_ordered_gpu_selection(
+    cache: &Mutex<HashMap<String, Arc<keyhog_scanner::gpu::AcquiredGpuDeviceSet>>>,
+    decision: &AutorouteDecision,
+    measured_route: self::evidence::MeasuredRoute,
+) -> Result<Option<Arc<OrderedGpuSelection>>, String> {
+    let Some(route) = decision.ordered_device_route_for_route(measured_route) else {
+        return Ok(None);
+    };
+    route.validate()?;
+    if route
+        .devices
+        .iter()
+        .any(|device| device.api.scan_backend() != measured_route.backend)
+    {
+        return Err(format!(
+            "ordered GPU device set does not match selected {} route",
+            measured_route.backend.label()
+        ));
+    }
+    let identity = route.device_set_identity_digest();
+    let mut cache = cache
+        .lock()
+        .map_err(|_| "ordered GPU device-set cache is unavailable after an internal panic")?;
+    let acquired = if let Some(existing) = cache.get(&identity).cloned() {
+        existing
+    } else {
+        if !cache.is_empty() {
+            return Err(
+                "autoroute decision names more than one resident GPU device set".to_string(),
+            );
+        }
+        let acquired = Arc::new(keyhog_scanner::gpu::acquire_ordered_gpu_device_set(route)?);
+        if acquired.device_set_identity_digest() != identity {
+            return Err(
+                "acquired GPU device set does not match its stable cache identity".to_string(),
+            );
+        }
+        cache.insert(identity, acquired.clone());
+        acquired
+    };
+    drop(cache);
+    Ok(Some(Arc::new(OrderedGpuSelection {
+        route: Arc::new(route.clone()),
+        acquired,
+    })))
 }
 
 impl CachedBackendRouter {
@@ -323,7 +380,8 @@ impl CachedBackendRouter {
             runtime_class: AutorouteRuntimeClass::OneShot,
             runtime_faults: Mutex::new(runtime_faults),
             runtime_health,
-            recovery_announced: AtomicBool::new(false),
+            #[cfg(feature = "gpu")]
+            ordered_device_sets: Mutex::new(HashMap::new()),
         }
     }
 
@@ -345,11 +403,18 @@ impl CachedBackendRouter {
     }
 
     /// Exact peers selected by at least one validated persistent-runtime
-    /// decision. Invalid autoroute state initializes only scalar recovery so a
-    /// daemon or watcher can become ready and report degraded routing per request.
+    /// decision. Invalid autoroute state prevents daemon or watcher startup:
+    /// no backend may be initialized as a substitute for missing evidence.
     pub(crate) fn persistent_routes(&self) -> Result<Vec<ScanBackend>, AutorouteRoutingError> {
         if self.autoroute_state_is_invalid() {
-            return Ok(vec![ScanBackend::CpuFallback]);
+            let reason = self.cache_load_error.as_deref().unwrap_or_else(|| {
+                if self.runtime_faults.is_poisoned() {
+                    "autoroute runtime route-health state is unavailable after an internal panic"
+                } else {
+                    "no persisted autoroute decisions are available for persistent runtime startup"
+                }
+            });
+            return Err(AutorouteRoutingError::calibration_not_persisted(reason));
         }
         let mut routes = Vec::new();
         for decision in self.decisions.values() {
@@ -395,45 +460,25 @@ impl CachedBackendRouter {
             Ok(key) => key,
             Err(error) => {
                 record_miss(AutorouteCacheMiss::WorkloadUnclassified);
-                let reason = AutorouteRoutingError::incomplete_workload_evidence(error).to_string();
-                let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
-                return Ok(autoroute_state_recovery_selection(
-                    scanner,
-                    phase1_plan,
-                    batch,
-                    reason,
-                    announce,
-                ));
+                return Err(AutorouteRoutingError::incomplete_workload_evidence(error));
             }
         };
         let fault = match self.runtime_faults.lock() {
             Ok(faults) => faults.get(&key).cloned(),
-            // LAW10: loud operator error; poisoned route-health state enters explicit recovery and surfaces its repair message.
+            // LAW10: poisoned route-health state invalidates autoroute until restart and recalibration.
             Err(_) => {
                 record_miss(AutorouteCacheMiss::HealthUnavailable);
-                let reason = "autoroute runtime route-health state is unavailable after an internal panic; its persisted route cannot be trusted until KeyHog is restarted and `keyhog calibrate-autoroute` succeeds".to_string();
-                let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
-                return Ok(autoroute_state_recovery_selection(
-                    scanner,
-                    phase1_plan,
-                    batch,
-                    reason,
-                    announce,
+                return Err(AutorouteRoutingError::calibration_not_persisted(
+                    "autoroute runtime route-health state is unavailable after an internal panic; restart KeyHog and rerun `keyhog calibrate-autoroute`",
                 ));
             }
         };
         if let Some(fault) = fault {
             record_bucket_miss(AutorouteCacheMiss::RouteQuarantined, &key);
-            let reason =
-                AutorouteRoutingError::runtime_route_unhealthy(&key, self.runtime_class, &fault)
-                    .to_string();
-            let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
-            return Ok(autoroute_state_recovery_selection(
-                scanner,
-                phase1_plan,
-                batch,
-                reason,
-                announce,
+            return Err(AutorouteRoutingError::runtime_route_unhealthy(
+                &key,
+                self.runtime_class,
+                &fault,
             ));
         }
         let route = match resolve_persisted_route(
@@ -453,45 +498,59 @@ impl CachedBackendRouter {
                     ),
                     &key,
                 );
-                let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
-                return Ok(autoroute_state_recovery_selection(
-                    scanner,
-                    phase1_plan,
-                    batch,
-                    error.to_string(),
-                    announce,
-                ));
+                return Err(error);
+            }
+        };
+        #[cfg(feature = "gpu")]
+        let ordered_gpu = match self
+            .decisions
+            .get(&key)
+            .ok_or_else(|| "persisted autoroute decision disappeared".to_string())
+            .and_then(|decision| {
+                materialize_ordered_gpu_selection(&self.ordered_device_sets, decision, route)
+            }) {
+            Ok(selection) => selection,
+            Err(reason) => {
+                record_bucket_miss(AutorouteCacheMiss::PeerIdentityChanged, &key);
+                return Err(AutorouteRoutingError::calibration_not_persisted(reason));
             }
         };
         if route.backend.is_gpu() {
-            let identity_check = self
-                .decisions
-                .get(&key)
-                .and_then(|decision| decision.peer_identity_for_route(route))
-                .ok_or_else(|| {
-                    format!(
-                        "persisted {} route has no single acquired GPU peer identity",
-                        route.backend.label()
-                    )
-                })
-                .and_then(|expected| {
-                    scanner
-                        .acquired_gpu_peer_identity(route.backend)
-                        .map_err(|error| {
-                            format!(
-                                "could not acquire persisted {} route peer: {error}",
-                                route.backend.label()
-                            )
-                        })
-                        .and_then(|actual| {
-                            (actual == expected).then_some(()).ok_or_else(|| {
+            #[cfg(feature = "gpu")]
+            let identity_check = if ordered_gpu.is_some() {
+                Ok(())
+            } else {
+                self.decisions
+                    .get(&key)
+                    .and_then(|decision| decision.peer_identity_for_route(route))
+                    .ok_or_else(|| {
+                        format!(
+                            "persisted {} route has no single acquired GPU peer identity",
+                            route.backend.label()
+                        )
+                    })
+                    .and_then(|expected| {
+                        scanner
+                            .acquired_gpu_peer_identity(route.backend)
+                            .map_err(|error| {
                                 format!(
-                                    "persisted {} route peer identity changed; expected {expected:?}, acquired {actual:?}",
+                                    "could not acquire persisted {} route peer: {error}",
                                     route.backend.label()
                                 )
                             })
-                        })
-                });
+                            .and_then(|actual| {
+                                (actual == expected).then_some(()).ok_or_else(|| {
+                                    format!(
+                                        "persisted {} route peer identity changed; expected {expected:?}, acquired {actual:?}",
+                                        route.backend.label()
+                                    )
+                                })
+                            })
+                    })
+            };
+            #[cfg(not(feature = "gpu"))]
+            let identity_check: Result<(), String> =
+                Err("persisted GPU route cannot run without the CLI GPU feature".to_string());
             let pipeline_check: Result<(), String> = self
                 .decisions
                 .get(&key)
@@ -549,14 +608,7 @@ impl CachedBackendRouter {
             let identity_check = identity_check.and(pipeline_check);
             if let Err(reason) = identity_check {
                 record_bucket_miss(AutorouteCacheMiss::PeerIdentityChanged, &key);
-                let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
-                return Ok(autoroute_state_recovery_selection(
-                    scanner,
-                    phase1_plan,
-                    batch,
-                    reason,
-                    announce,
-                ));
+                return Err(AutorouteRoutingError::calibration_not_persisted(reason));
             }
         }
         record_hit();
@@ -575,7 +627,8 @@ impl CachedBackendRouter {
                 self.runtime_class,
             )?,
             runtime_route: Some(RuntimeRouteIdentity { key }),
-            autoroute_recovery: None,
+            #[cfg(feature = "gpu")]
+            ordered_gpu,
         })
     }
 
@@ -714,7 +767,8 @@ impl MeasuredBackendRouter {
             cache_load_error,
             cache_dirty: false,
             runtime_health,
-            recovery_announced: false,
+            #[cfg(feature = "gpu")]
+            ordered_device_sets: Mutex::new(HashMap::new()),
         }
     }
 
@@ -736,38 +790,21 @@ impl MeasuredBackendRouter {
             self.decode_workload_plan.clone(),
         ) {
             Ok(key) => key,
-            Err(error) if !self.calibration_mode => {
-                record_miss(AutorouteCacheMiss::WorkloadUnclassified);
-                let reason = AutorouteRoutingError::incomplete_workload_evidence(error).to_string();
-                let announce = !std::mem::replace(&mut self.recovery_announced, true);
-                return Ok(autoroute_state_recovery_selection(
-                    scanner,
-                    phase1_plan,
-                    batch,
-                    reason,
-                    announce,
-                ));
-            }
+
             Err(error) => {
+                if !self.calibration_mode {
+                    record_miss(AutorouteCacheMiss::WorkloadUnclassified);
+                }
                 return Err(AutorouteRoutingError::incomplete_workload_evidence(error));
             }
         };
         if !self.calibration_mode {
             if let Some(fault) = self.runtime_faults.get(&key) {
                 record_bucket_miss(AutorouteCacheMiss::RouteQuarantined, &key);
-                let reason = AutorouteRoutingError::runtime_route_unhealthy(
+                return Err(AutorouteRoutingError::runtime_route_unhealthy(
                     &key,
                     AutorouteRuntimeClass::OneShot,
                     fault,
-                )
-                .to_string();
-                let announce = !std::mem::replace(&mut self.recovery_announced, true);
-                return Ok(autoroute_state_recovery_selection(
-                    scanner,
-                    phase1_plan,
-                    batch,
-                    reason,
-                    announce,
                 ));
             }
         }
@@ -785,6 +822,17 @@ impl MeasuredBackendRouter {
             } else {
                 record_hit();
             }
+            #[cfg(feature = "gpu")]
+            let ordered_gpu = materialize_ordered_gpu_selection(
+                &self.ordered_device_sets,
+                self.decisions.get(&key).ok_or_else(|| {
+                    AutorouteRoutingError::calibration_not_persisted(
+                        "reusable autoroute decision disappeared",
+                    )
+                })?,
+                route,
+            )
+            .map_err(AutorouteRoutingError::calibration_not_persisted)?;
             return Ok(BackendSelection {
                 backend: route.backend,
                 phase1_plan: Some(phase1_plan_for_selected_backend(
@@ -804,15 +852,14 @@ impl MeasuredBackendRouter {
                     )?
                 },
                 runtime_route: Some(RuntimeRouteIdentity { key: key.clone() }),
-                autoroute_recovery: None,
+                #[cfg(feature = "gpu")]
+                ordered_gpu,
             });
         }
 
         if !self.calibration_mode {
-            // A miss remains an invalid autoroute state: neighbouring evidence
-            // is never reused. The caller receives an explicitly marked scalar
-            // recovery so every byte is scanned without disguising it as a
-            // fastest-route decision.
+            // A miss is invalid autoroute state. Neighbouring evidence and
+            // scalar execution are not substitutes for the missing decision.
             let route = match resolve_persisted_route(
                 &self.decisions,
                 key.clone(),
@@ -830,16 +877,20 @@ impl MeasuredBackendRouter {
                         ),
                         &key,
                     );
-                    let announce = !std::mem::replace(&mut self.recovery_announced, true);
-                    return Ok(autoroute_state_recovery_selection(
-                        scanner,
-                        phase1_plan,
-                        batch,
-                        error.to_string(),
-                        announce,
-                    ));
+                    return Err(error);
                 }
             };
+            #[cfg(feature = "gpu")]
+            let ordered_gpu = materialize_ordered_gpu_selection(
+                &self.ordered_device_sets,
+                self.decisions.get(&key).ok_or_else(|| {
+                    AutorouteRoutingError::calibration_not_persisted(
+                        "persisted autoroute decision disappeared",
+                    )
+                })?,
+                route,
+            )
+            .map_err(AutorouteRoutingError::calibration_not_persisted)?;
             record_hit();
             return Ok(BackendSelection {
                 backend: route.backend,
@@ -856,7 +907,8 @@ impl MeasuredBackendRouter {
                     AutorouteRuntimeClass::OneShot,
                 )?,
                 runtime_route: Some(RuntimeRouteIdentity { key }),
-                autoroute_recovery: None,
+                #[cfg(feature = "gpu")]
+                ordered_gpu,
             });
         }
         self.host_profile
@@ -870,11 +922,8 @@ impl MeasuredBackendRouter {
                 "eligible backend set changed after calibration started; rerun calibration so every candidate is measured under one stable peer census",
             ));
         }
-        // Keep the route-neutral plan for calibration timing. Prefilling CPU
-        // trigger hints here would remove the phase-1 AC pass from the CpuFallback
-        // clock while SIMD/GPU candidates still pay theirs inside timed scans,
-        // biasing the persisted winner toward scalar CPU. Production still fills
-        // via phase1_plan_for_selected_backend after selection below.
+        let workload_identity = render_workload_key(&key);
+        let config_digest = format!("{:016x}", self.config_digest);
         let decision = calibrate_fastest_correct_backend(
             scanner,
             self.pattern_count,
@@ -886,6 +935,9 @@ impl MeasuredBackendRouter {
             })?,
             &live_eligible_backends,
             Some(&phase1_plan),
+            &workload_identity,
+            &self.rules_digest,
+            &config_digest,
         )?;
         let route = match decision.measured_route() {
             Some(route) => route,
@@ -907,8 +959,19 @@ impl MeasuredBackendRouter {
                 .map_err(AutorouteRoutingError::calibration_not_persisted)?;
         } else {
             self.decisions.insert(key.clone(), decision);
-            self.measured_this_run.insert(key);
+            self.measured_this_run.insert(key.clone());
         }
+        #[cfg(feature = "gpu")]
+        let ordered_gpu = materialize_ordered_gpu_selection(
+            &self.ordered_device_sets,
+            self.decisions.get(&key).ok_or_else(|| {
+                AutorouteRoutingError::calibration_not_persisted(
+                    "newly calibrated autoroute decision disappeared",
+                )
+            })?,
+            route,
+        )
+        .map_err(AutorouteRoutingError::calibration_not_persisted)?;
         self.cache_dirty = true;
         Ok(BackendSelection {
             backend: route.backend,
@@ -921,7 +984,8 @@ impl MeasuredBackendRouter {
             execution_route: route.execution_route(),
             recovery_plan: None,
             runtime_route: None,
-            autoroute_recovery: None,
+            #[cfg(feature = "gpu")]
+            ordered_gpu,
         })
     }
 
@@ -1274,4 +1338,5 @@ pub(crate) fn backend_requires_coalesced_batch_pipeline_for_test(
 }
 
 #[cfg(test)]
+#[path = "../../../tests/unit/orchestrator_dispatch_backend/mod.rs"]
 mod tests;

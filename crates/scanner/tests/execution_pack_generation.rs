@@ -634,8 +634,28 @@ fn wgpu_program_rejects_stale_quantized_confidence_artifacts() {
     let program =
         CompiledVyreBackendProgram::compile(&ir, ExecutionPackBackend::GpuWgpu, identity.clone())
             .expect("compile WGPU VYRE program");
-    for offset in [112usize, 144, 176] {
-        let mut stale = program.bytes().to_vec();
+    let bytes = program.bytes();
+    let feature_schema = keyhog_scanner::confidence::quantized::feature_schema_digest();
+    let quantized_model = keyhog_scanner::confidence::quantized::model_artifact_digest();
+    let score_abi =
+        keyhog_scanner::confidence::quantized::QUANTIZED_SCORE_ABI_VERSION.to_le_bytes();
+    let feature_offset = bytes
+        .windows(feature_schema.len())
+        .position(|window| window == feature_schema)
+        .expect("serialized feature schema digest");
+    let model_offset = bytes
+        .windows(quantized_model.len())
+        .position(|window| window == quantized_model)
+        .expect("serialized quantized model digest");
+    assert_eq!(model_offset, feature_offset + feature_schema.len());
+    let abi_offset = model_offset + quantized_model.len();
+    assert_eq!(
+        bytes.get(abi_offset..abi_offset + score_abi.len()),
+        Some(score_abi.as_slice())
+    );
+
+    for offset in [feature_offset, model_offset, abi_offset] {
+        let mut stale = bytes.to_vec();
         stale[offset] ^= 1;
         let error = VyreOrchestrationProgram::decode(
             &stale,

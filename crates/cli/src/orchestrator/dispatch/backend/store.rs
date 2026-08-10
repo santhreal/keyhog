@@ -41,7 +41,10 @@ pub(super) use codec::AUTOROUTE_CACHE_FILE_BYTES;
 #[cfg(test)]
 pub(super) use schema::{AutorouteBuildFeatures, AutorouteCache};
 #[cfg(test)]
-pub(super) use validation::validate_decision_route_evidence;
+pub(super) use validation::{
+    validate_decision_route_evidence, validate_ordered_device_route_bindings,
+    validate_ordered_device_set_stability,
+};
 
 #[cfg(test)]
 use keyhog_scanner::hw_probe::ScanBackend;

@@ -87,7 +87,7 @@ pub(crate) fn run(args: BackendArgs) -> Result<ExitCode> {
     };
     keyhog_scanner::gpu::set_gpu_runtime_policy(gpu_policy);
     if args.self_test {
-        return run_self_test(args.json, args.require_gpu);
+        return run_self_test(args.json, args.require_gpu, args.no_gpu);
     }
     if args.autoroute {
         return run_autoroute_inspection(args.json, args.autoroute_cache.as_deref(), args.verbose);

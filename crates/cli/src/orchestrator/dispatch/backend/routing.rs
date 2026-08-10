@@ -37,6 +37,13 @@ pub(super) enum AutorouteRuntimeClass {
     Persistent,
 }
 
+#[cfg(feature = "gpu")]
+#[derive(Clone, Debug)]
+pub(crate) struct OrderedGpuSelection {
+    pub(crate) route: std::sync::Arc<keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute>,
+    pub(crate) acquired: std::sync::Arc<keyhog_scanner::gpu::AcquiredGpuDeviceSet>,
+}
+
 #[derive(Debug)]
 pub(crate) struct BackendSelection {
     pub(crate) backend: ScanBackend,
@@ -44,13 +51,8 @@ pub(crate) struct BackendSelection {
     pub(crate) execution_route: keyhog_scanner::ScanExecutionRoute,
     pub(crate) recovery_plan: Option<BackendRecoveryPlan>,
     pub(crate) runtime_route: Option<RuntimeRouteIdentity>,
-    pub(crate) autoroute_recovery: Option<AutorouteStateRecovery>,
-}
-
-#[derive(Debug)]
-pub(crate) struct AutorouteStateRecovery {
-    pub(crate) reason: String,
-    pub(crate) announce: bool,
+    #[cfg(feature = "gpu")]
+    pub(crate) ordered_gpu: Option<std::sync::Arc<OrderedGpuSelection>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -68,18 +70,14 @@ impl AutorouteRuntimeClass {
     }
 }
 
-/// Whether a routing failure casts doubt on the FINDINGS, or only on the route.
+/// Classify the operational consequence of a routing failure.
 ///
-/// This is the whole question, and it is why the discriminant is a field set at
-/// each construction site rather than something inferred from the message text.
-/// A message is a string somebody will edit; this is a decision.
+/// Invalid autoroute state never selects a substitute backend. The caller
+/// records the affected batch as unscanned and returns non-success status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AutorouteRoutingErrorKind {
-    /// No trustworthy route was available, so the batch was scanned by scalar
-    /// correctness recovery. Recovery is the REFERENCE implementation, not a
-    /// degraded mode: its output is byte-identical to an explicit backend run
-    /// of the same tree. The findings are therefore the most trustworthy ones
-    /// in the report and discarding them is indefensible.
+    /// No authenticated route exists for this workload and runtime class. The
+    /// affected batch was not scanned.
     RoutingUnavailable,
     /// The batch never reached a scanner: no worker could take it. This is a
     /// COVERAGE fact, not a trust fact, and it is enumerable (we know exactly
@@ -142,7 +140,8 @@ impl AutorouteRoutingError {
             }
         };
         Self {
-            // A cache miss. The batch still got scanned, by the reference.
+            // A cache miss means no authenticated backend was selected, so the
+            // affected batch was not scanned.
             kind: AutorouteRoutingErrorKind::RoutingUnavailable,
             message: format!(
                 "autoroute calibration required: this workload has no persisted \
@@ -153,11 +152,10 @@ impl AutorouteRoutingError {
                  workload bucket: [{}], runtime={}\n  \
                  coverage: {coverage}.\n  \
                  cache: {cache_state}.\n  \
-                 Decisions are scoped to this exact binary, host, detector corpus, resolved \
-                 scan config, and source class. Normal auto scans never benchmark or guess: \
-                 they report invalid autoroute state and complete through scalar correctness \
-                 recovery, which is not an autoroute decision. Pass an explicit \
-                 `--backend <{}>` for a one-off diagnostic scan.",
+                 No backend was selected and this batch was not scanned. Decisions are scoped \
+                 to this exact binary, host, detector corpus, resolved scan config, and source \
+                 class. Normal auto scans never benchmark, guess, or substitute scalar execution. \
+                 Pass an explicit `--backend <{}>` for a one-off diagnostic scan.",
                 render_workload_key(&key),
                 runtime_class.label(),
                 backend_override_hint(),
@@ -381,16 +379,16 @@ pub(super) fn direct_backend_selection(
         execution_route: scanner.execution_route_for_backend(backend),
         recovery_plan: None,
         runtime_route: None,
-        autoroute_recovery: None,
+        #[cfg(feature = "gpu")]
+        ordered_gpu: None,
     })
 }
 
 pub(super) fn autoroute_required() -> bool {
     keyhog_scanner::hw_probe::multiple_backends_compiled()
 }
-
-/// Attach a phase-1 plan for a known backend, filling deferred CPU trigger
-/// hints when the automatic route lands on CpuFallback.
+/// Attach a phase-one plan for a known backend, filling deferred CPU trigger
+/// hints when the automatic route lands on scalar execution.
 pub(super) fn phase1_plan_for_selected_backend(
     scanner: &CompiledScanner,
     backend: ScanBackend,
@@ -401,29 +399,6 @@ pub(super) fn phase1_plan_for_selected_backend(
         scanner.fill_cpu_trigger_hints_for_plan(&mut plan, batch);
     }
     plan
-}
-
-pub(super) fn autoroute_state_recovery_selection(
-    scanner: &CompiledScanner,
-    phase1_plan: Phase1AdmissionPlan,
-    batch: &[Chunk],
-    reason: String,
-    announce: bool,
-) -> BackendSelection {
-    let backend = ScanBackend::CpuFallback;
-    BackendSelection {
-        backend,
-        phase1_plan: Some(phase1_plan_for_selected_backend(
-            scanner,
-            backend,
-            phase1_plan,
-            batch,
-        )),
-        execution_route: scanner.execution_route_for_backend(backend),
-        recovery_plan: None,
-        runtime_route: None,
-        autoroute_recovery: Some(AutorouteStateRecovery { reason, announce }),
-    }
 }
 
 pub(super) fn resolve_persisted_route(

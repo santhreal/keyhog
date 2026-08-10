@@ -61,8 +61,14 @@ impl CompiledScanner {
         Vec<Vec<keyhog_core::RawMatch>>,
         super::gpu_forced::SelectedGpuDispatchError,
     > {
-        self.scan_coalesced_gpu_region_presence_recovering(chunks, route, execution_route, false)
-            .map(|outcome| outcome.matches)
+        self.scan_coalesced_gpu_region_presence_recovering(
+            chunks,
+            route,
+            execution_route,
+            false,
+            None,
+        )
+        .map(|outcome| outcome.matches)
     }
 
     pub(crate) fn scan_coalesced_gpu_region_presence_recovering(
@@ -71,6 +77,12 @@ impl CompiledScanner {
         route: crate::hw_probe::ScanBackend,
         execution_route: crate::ScanExecutionRoute,
         recover_dispatch_faults: bool,
+        device: Option<(
+            &std::sync::Arc<dyn vyre::VyreBackend>,
+            &std::sync::Mutex<crate::gpu::GpuResidentLiteralSlot>,
+            u64,
+            bool,
+        )>,
     ) -> std::result::Result<super::CoalescedScanOutcome, super::gpu_forced::SelectedGpuDispatchError>
     {
         if chunks.is_empty() {
@@ -95,16 +107,34 @@ impl CompiledScanner {
             );
         };
         let matcher_s = t_matcher.map_or(std::time::Duration::ZERO, |t| t.elapsed());
-        let Some(backend) = self.gpu_backend(route) else {
-            return dispatch_failure(self.gpu_backend_unavailable_reason(route));
+        let backend = match device {
+            Some((backend, _, _, _)) => backend,
+            None => {
+                let Some(backend) = self.gpu_backend(route) else {
+                    return dispatch_failure(self.gpu_backend_unavailable_reason(route));
+                };
+                backend
+            }
         };
-        let resident_timed_dispatch_supported = self
-            .backend_state
-            .gpu_resident_timed_dispatch_supported(route);
+        let device_resident_budget = device.map(|(_, _, budget, _)| budget);
+        let resident_timed_dispatch_supported = device.map_or_else(
+            || {
+                self.backend_state
+                    .gpu_resident_timed_dispatch_supported(route)
+            },
+            |(_, _, _, supported)| supported,
+        );
         let pipeline_depth = execution_route.gpu_pipeline_depth;
-        let dispatch_capability = self
-            .gpu_resident_dispatch_capability(route)
-            .map_err(super::gpu_forced::SelectedGpuDispatchError::new)?;
+        let dispatch_capability = if device.is_some() {
+            if backend.supports_async_compute() {
+                "async-submit-retire"
+            } else {
+                "synchronous"
+            }
+        } else {
+            self.gpu_resident_dispatch_capability(route)
+                .map_err(super::gpu_forced::SelectedGpuDispatchError::new)?
+        };
         if pipeline_depth > 1 && dispatch_capability != "async-submit-retire" {
             return dispatch_failure(format!(
                 "{} selected resident pipeline depth {pipeline_depth}, but its VYRE capability is {dispatch_capability}; recalibrate autoroute for this exact device/runtime",
@@ -136,11 +166,17 @@ impl CompiledScanner {
                 crate::gpu::evidence::capability::KERNEL_TIMESTAMPS,
             );
         }
-        let Some(resident_slot) = self.gpu_resident_literal_slot(route) else {
-            return dispatch_failure(format!(
-                "{} has no scanner-owned resident pipeline slot",
-                route.label()
-            ));
+        let resident_slot = match device {
+            Some((_, resident_slot, _, _)) => resident_slot,
+            None => {
+                let Some(resident_slot) = self.gpu_resident_literal_slot(route) else {
+                    return dispatch_failure(format!(
+                        "{} has no scanner-owned resident pipeline slot",
+                        route.label()
+                    ));
+                };
+                resident_slot
+            }
         };
 
         let words = self.ac_map.len().div_ceil(64).max(1);
@@ -263,6 +299,19 @@ impl CompiledScanner {
         )
             -> std::result::Result<(), String>| {
             let t_dis = kh.then(std::time::Instant::now);
+            if let Some(limit) = device_resident_budget {
+                let required = crate::gpu::gpu_resident_literal_required_device_bytes(
+                    haystack.len(),
+                    region_starts.len(),
+                    presence_words,
+                    pipeline_depth,
+                )?;
+                if required > limit {
+                    return Err(format!(
+                        "ordered GPU device requires {required} resident byte(s), above its authenticated {limit}-byte budget"
+                    ));
+                }
+            }
             let current_metadata = RegionDispatchMetadata {
                 region_starts: std::sync::Arc::from(region_starts),
                 haystack_len: haystack.len(),

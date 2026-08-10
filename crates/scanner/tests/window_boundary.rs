@@ -3,7 +3,7 @@
 //! Background: a single file too big for one scan window is split by
 //! `FilesystemSource` into adjacent chunks. A secret that physically
 //! straddles the boundary is invisible to in-chunk scanning. The
-//! boundary reassembly path (`crates/scanner/src/engine/boundary.rs`)
+//! boundary reassembly path (`crates/scanner/src/engine/boundary/mod.rs`)
 //! splices the tail of one chunk to the head of the next and rescans
 //! the seam.
 

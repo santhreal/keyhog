@@ -157,9 +157,8 @@ and run a full scan.
 
 The watcher warms its routes at startup and reuses that evidence for later file
 events, so it does not pay a cold backend start per change. Without valid
-autoroute calibration it warns on each change scan and completes through scalar
-correctness recovery, exactly as `keyhog scan` does. Run
-`keyhog calibrate-autoroute` once on the host to remove the warning.
+autoroute calibration the watcher fails startup without scanning changes. Run
+`keyhog calibrate-autoroute` once on the host before starting the watcher.
 
 ## A working loop
 

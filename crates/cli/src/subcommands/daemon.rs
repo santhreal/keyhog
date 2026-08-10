@@ -301,13 +301,9 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
             }
             if backend_policy == "autoroute" {
                 println!("backend policy: autoroute (persisted warm-route evidence)");
-            } else if backend_policy == "autoroute-recovery" {
-                println!(
-                    "backend policy: autoroute invalid (scalar correctness recovery; run `keyhog calibrate-autoroute`)"
-                );
             } else if backend_policy == "autoroute-degraded" {
                 println!(
-                    "backend policy: autoroute degraded (one or more workload routes quarantined; affected requests use scalar correctness recovery; run `keyhog calibrate-autoroute`)"
+                    "backend policy: autoroute degraded (one or more workload routes quarantined; affected requests fail closed without scanning; run `keyhog calibrate-autoroute`)"
                 );
             } else {
                 println!(
@@ -315,26 +311,16 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                 );
             }
             if let Some(fault) = last_backend_fault {
-                let state = if fault.failed_backend == "autoroute-invalid" {
-                    "Autoroute remains invalid until recalibration."
-                } else {
-                    "The affected route is quarantined until recalibration."
-                };
                 println!(
-                    "backend health: {} recovered request(s); last fault {} recovered {} byte(s) through {}. {}",
+                    "backend health: {} recovered request(s); last fault {} recovered {} byte(s) through {}. The affected route is quarantined until recalibration.",
                     backend_recoveries,
                     fault.failed_backend,
                     fault.recovered_bytes,
                     fault.recovery_backend,
-                    state,
-                );
-            } else if backend_policy == "autoroute-recovery" {
-                println!(
-                    "backend health: autoroute evidence invalid; requests will report complete scalar recovery"
                 );
             } else if backend_policy == "autoroute-degraded" {
                 println!(
-                    "backend health: persisted autoroute quarantine loaded; affected requests will report complete scalar recovery"
+                    "backend health: persisted autoroute quarantine loaded; affected requests fail closed without scanning"
                 );
             } else {
                 println!("backend health: no recovered runtime faults");

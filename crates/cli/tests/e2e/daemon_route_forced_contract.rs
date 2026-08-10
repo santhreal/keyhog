@@ -429,8 +429,8 @@ fn explicit_auto_stale_daemon_socket_surfaces_in_process_route() {
     let combined = combined_output(&out);
     assert_eq!(
         out.status.code(),
-        Some(1),
-        "explicit daemon auto should surface the daemon miss and retain the in-process finding through recovery; output={combined}"
+        Some(13),
+        "explicit daemon auto should surface the daemon miss and leave the in-process batch unscanned; output={combined}"
     );
     assert!(
         combined.contains("daemon auto route unavailable")
@@ -439,9 +439,10 @@ fn explicit_auto_stale_daemon_socket_surfaces_in_process_route() {
     );
     assert!(
         combined.contains("autoroute calibration required")
-            && combined.contains("scalar correctness recovery")
-            && combined.contains("scan coverage is complete"),
-        "the in-process route must report complete recovery from missing calibration; output={combined}"
+            && combined.contains("No backend was selected")
+            && combined.contains("batch was not scanned")
+            && !combined.contains("scalar correctness recovery"),
+        "the in-process route must fail closed for missing calibration; output={combined}"
     );
 }
 

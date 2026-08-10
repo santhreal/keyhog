@@ -932,5 +932,5 @@ fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
 // ── segment_attribution.rs ──────────────────────────────────────────
 // Covered in segment_attribution.rs unit module.
 
-// ── engine/boundary.rs ──────────────────────────────────────────────
-// Covered by inline #[cfg(test)] in boundary.rs (lib tests).
+// ── engine/boundary/mod.rs ──────────────────────────────────────────
+// Covered by the migrated boundary lib tests.

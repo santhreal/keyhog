@@ -1,6 +1,5 @@
 use super::super::*;
 use super::phase2::Phase2AlwaysActiveGpuEvidence;
-use crate::hw_probe::ScanBackend;
 use keyhog_core::RawMatch;
 
 impl CompiledScanner {

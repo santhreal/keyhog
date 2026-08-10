@@ -13,7 +13,7 @@
 //!     `scan_generic_assignments`) run in
 //!     `scan_prepared_with_triggered` REGARDLESS of backend, so its findings are
 //!     backend-invariant.
-//!   * Chunk-boundary splits (`engine/boundary.rs`) must not lose matches: a
+//!   * Chunk-boundary splits (`engine/boundary/mod.rs`) must not lose matches: a
 //!     credential straddling the seam of two gapless contiguous chunks is
 //!     recovered by `scan_chunk_boundaries`, attributed to the RIGHT-hand chunk,
 //!     and deduplicated against per-chunk results.
@@ -636,7 +636,7 @@ fn coalesced_result_vector_is_per_chunk_aligned() {
 }
 
 // ----------------------------------------------------------------------------
-// 5. Chunk-boundary reassembly (engine/boundary.rs)
+// 5. Chunk-boundary reassembly (engine/boundary/mod.rs)
 // ----------------------------------------------------------------------------
 
 /// Build two GAPLESS, contiguous chunks of the same file by splitting

@@ -12,6 +12,7 @@
 - Require exactly seven positive, round-paired timing trials for every autoroute candidate.
 - Keep autoroute cache validation regressions under the centralized CLI unit-test tree enforced by the source-layout gate.
 - Document the chunk-lane scheduling threshold and require every accepted tuning key to remain present in the configuration reference.
+- Version autoroute caches for authenticated ordered GPU device-set evidence. Calibration measures each required device and the complete route, while normal scans acquire that exact live set and dispatch its contiguous weighted shard ranges without runtime benchmarking.
 
 ## 0.5.67 - 2026-08-05
 
@@ -150,9 +151,9 @@
   removes it only after the listener terminates.
 - Bind every persisted GPU timing and parity receipt to the exact acquired
   execution peer. Route replay now rejects changed or missing adapter identity.
-- Make the final backend summary identify invalid-autoroute scalar recovery and
-  runtime-fault recovery directly. Recovered work is no longer
-  described as a calibrated non-GPU winner.
+- Fail closed when autoroute evidence is missing, stale, invalid, incomplete, or
+  quarantined. No scalar substitute is selected; affected batches remain
+  unscanned and force non-success status with recalibration guidance.
 - Let `calibrate-autoroute --policy` refresh one scan policy without rerunning
   every preset. The default remains the complete all-policy install sweep.
 - Reject autoroute cache and runtime-health workload identities with impossible

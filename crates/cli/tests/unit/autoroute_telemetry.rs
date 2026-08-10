@@ -28,6 +28,15 @@ fn hit_rate_counts_every_consultation_as_its_denominator() {
     let summary = render_summary(&mixed).expect("a consulted cache reports a rate");
     assert!(summary.contains("75.0% hit"), "{summary}");
     assert!(summary.contains("bucket-absent=1"), "{summary}");
+    assert!(
+        summary.contains("affected batches unscanned")
+            && summary.contains("coverage is incomplete"),
+        "{summary}",
+    );
+    assert!(
+        !summary.contains("every byte was still scanned"),
+        "{summary}",
+    );
 }
 
 #[test]
@@ -98,6 +107,17 @@ fn reset_probe_key() -> WorkloadKey {
         source_mixture: SourceMixtureKey {
             entries: Vec::new(),
         },
+    }
+}
+fn reset_for_test() {
+    HITS.store(0, Ordering::Relaxed);
+    CALIBRATION_REUSES.store(0, Ordering::Relaxed);
+    for cause in AutorouteCacheMiss::ALL {
+        cause.counter().store(0, Ordering::Relaxed);
+    }
+    MISSING_BUCKETS_ELIDED.store(0, Ordering::Relaxed);
+    if let Ok(mut buckets) = MISSING_BUCKETS.lock() {
+        buckets.clear();
     }
 }
 

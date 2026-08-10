@@ -25,8 +25,7 @@ pub struct WatchArgs {
     pub cache_dir: Option<PathBuf>,
     /// Select persisted autoroute or explicitly force one diagnostic backend.
     /// Accepted values are listed below. Without valid installer calibration,
-    /// each change scan warns and completes through scalar correctness recovery
-    /// exactly as `keyhog scan` does.
+    /// change scans fail closed without scanning.
     #[arg(
         long,
         value_name = "BACKEND",

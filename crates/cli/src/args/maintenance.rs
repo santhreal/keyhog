@@ -34,7 +34,7 @@ pub struct BackendArgs {
     /// the cold-aware one-shot and warm-daemon routes, confidence basis, and
     /// whether the cache is stale for this build. Read-only; pairs with
     /// `--json`. Use this to diagnose an "autoroute calibration required"
-    /// recovery receipt and identify the exact unproved workload bucket.
+    /// routing error and identify the exact unproved workload bucket.
     #[arg(long)]
     pub autoroute: bool,
 

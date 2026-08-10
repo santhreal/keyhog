@@ -1,6 +1,6 @@
 //! Chunk boundary straddle parity across all backends (module-pair test).
 //!
-//! The chunk-boundary reassembly path (`engine/boundary.rs`) synthesises a
+//! The chunk-boundary reassembly path (`engine/boundary/mod.rs`) synthesises a
 //! seam buffer from adjacent chunks, using a scanner-derived bounded width or
 //! the full adjacent pair for unbounded generators, then appends straddle
 //! findings to the results. This path is ONLY exercised when the backend is

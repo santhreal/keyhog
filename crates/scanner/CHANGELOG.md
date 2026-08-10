@@ -24,6 +24,8 @@
 - Add negative false-positive test cases covering content digests, checksums, object IDs, commit hashes, and hash-suffixed fields to `generic_api_key_64_hex`.
 - Cover credential-free PostgreSQL connection URLs as negative detector cases.
 - Add a versioned integer confidence ABI and a separate asynchronous quantized MoE VYRE score dispatch. Bounded IR loops keep the complete model below finite shader-size limits. Authenticated CPU and GPU routes use the same fixed-point model for accelerator-eligible candidates; selected GPU scoring fails closed while feature extraction, confidence floors, suppression, deduplication, and reporting remain in the shared CPU tail.
+- Add authenticated ordered GPU device sets with cross-API physical-adapter deduplication, explicit exclusion reasons, all-or-nothing per-ordinal acquisition, measured integer-weight contiguous shard assignment, bounded per-device resident slots, concurrent dispatch, and source-ordered fail-closed retirement.
+
 ## 0.5.68 - 2026-08-05
 
 - Add the immutable execution-pack boundary. Packs bind exact binary, feature, detector, config, target, compiler, policy, and backend identities; expose aligned zero-copy sections and exhaustive byte ownership; select before mapping; and carry VYRE receipts instead of KeyHog GPU programs.

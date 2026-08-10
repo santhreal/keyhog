@@ -6,7 +6,12 @@ use matcher_cache_path::resolve_matcher_cache_path_with_default;
 
 #[test]
 fn matcher_cache_path_config_overrides_and_disable() {
-    let home = dirs::home_dir().expect("home");
+    let actual_home = dirs::home_dir().expect("home");
+    let cache_home = tempfile::Builder::new()
+        .prefix(".keyhog-matcher-cache-test-")
+        .tempdir_in(actual_home)
+        .expect("secure cache home");
+    let home = cache_home.path().to_path_buf();
     let default = resolve_matcher_cache_path_with_default(None, Some(home.clone()))
         .expect("default matcher cache");
     assert_eq!(default, Some(home.join("keyhog-matcher-artifacts")));

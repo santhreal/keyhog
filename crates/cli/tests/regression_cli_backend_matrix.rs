@@ -33,9 +33,9 @@
 //!     host with the Hyperscan/SIMD prefilter, `--backend simd`/`simd-regex`
 //!     produce a byte-identical finding set to `cpu`; on a host WITHOUT it they
 //!     FAIL CLOSED at exit 3 ("silent cpu-fallback execution is forbidden")
-//!     rather than silently degrade. `--backend auto` with no calibration warns,
-//!     completes through reported scalar correctness recovery, and matches the
-//!     explicit CPU finding set without claiming an autoroute decision.
+//!     rather than silently degrade. `--backend auto` with no calibration
+//!     selects no backend, leaves input unscanned, and exits for incomplete
+//!     coverage.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -480,12 +480,10 @@ fn unknown_backend_value_is_rejected_by_the_cli_parser_exit_2() {
 }
 
 #[test]
-fn auto_backend_without_calibration_never_returns_a_silently_wrong_result() {
+fn auto_backend_without_calibration_leaves_input_unscanned() {
     // `--backend auto` routes through the persisted autoroute cache. With the
-    // cache disabled (`--autoroute-cache off`) there is no cached decision, so
-    // auto must NEVER return a silently-wrong answer (Law 10). The host-agnostic
-    // contract is visible complete scalar recovery with the SAME finding set
-    // as an explicit CPU run. The recovery is not reported as autoroute.
+    // cache disabled (`--autoroute-cache off`) there is no authenticated
+    // decision, so auto must select no backend and report incomplete coverage.
     let home = cache_home();
     let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
 
@@ -499,19 +497,23 @@ fn auto_backend_without_calibration_never_returns_a_silently_wrong_result() {
     let (_c, out_cpu, _) = scan(home.path(), &path, Some("cpu"), &[]);
     assert_eq!(
         code,
-        Some(1),
-        "uncalibrated auto must retain the finding through recovery; stdout={out} stderr={err}"
+        Some(13),
+        "uncalibrated auto must report incomplete coverage; stdout={out} stderr={err}"
     );
     assert!(
         err.contains("autoroute calibration required")
-            && err.contains("scalar correctness recovery")
-            && err.contains("scan coverage is complete"),
-        "recovery must be operator-visible with repair context; stderr={err}"
+            && err.contains("No backend was selected")
+            && err.contains("batch was not scanned")
+            && !err.contains("scalar correctness recovery"),
+        "failure must be operator-visible with repair context; stderr={err}"
     );
-    assert_eq!(
-        ordered_findings(&out),
-        ordered_findings(&out_cpu),
-        "recovered auto must match cpu's finding set exactly"
+    assert!(
+        ordered_findings(&out).is_empty(),
+        "unrouted input must not produce findings"
+    );
+    assert!(
+        !ordered_findings(&out_cpu).is_empty(),
+        "explicit CPU control must prove the secret-bearing fixture is detectable"
     );
 }
 

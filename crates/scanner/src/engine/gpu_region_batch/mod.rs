@@ -676,7 +676,7 @@ pub(super) fn with_region_presence_batch<R>(
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/gpu_region_batch_sharding.rs"]
+#[path = "../../../tests/unit/gpu_region_batch_sharding.rs"]
 mod sharding_tests;
 
 pub(super) fn trigger_bit_is_set(triggers: &[Option<Vec<u64>>], ci: usize, det: usize) -> bool {

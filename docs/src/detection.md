@@ -387,8 +387,8 @@ from the reference. It records the first real GPU dispatch plus warm trials: an
 ordinary process resolves against the cold-aware GPU cost, while a daemon that
 initialized its engines before readiness resolves against the warm GPU
 evidence. A missing or invalid decision is not autoroute evidence: KeyHog warns,
-uses the scalar correctness oracle to complete the scan, and records the exact
-recovered byte coverage and repair command.
+selects no backend for the affected batch, records incomplete coverage, and
+prints the exact repair command.
 
 When comparing settings, record the effective config, detector digest, input
 identity, backend, host/accelerator identity, and complete findings, not only

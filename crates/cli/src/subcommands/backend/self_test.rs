@@ -108,14 +108,42 @@ impl BackendSelfTestReport {
     }
 }
 
-pub(super) fn run_self_test(json: bool, require_gpu: bool) -> Result<ExitCode> {
-    let report = collect_self_test_report(require_gpu);
+pub(super) fn run_self_test(json: bool, require_gpu: bool, gpu_disabled: bool) -> Result<ExitCode> {
+    let report = if gpu_disabled {
+        disabled_gpu_self_test_report()
+    } else {
+        collect_self_test_report(require_gpu)
+    };
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
         print_self_test_report(&report);
     }
     Ok(report.exit_code())
+}
+
+fn disabled_gpu_self_test_report() -> BackendSelfTestReport {
+    BackendSelfTestReport {
+        ok: true,
+        status: BackendSelfTestStatus::Skip,
+        exit_code: EXIT_SUCCESS,
+        gpu_available: false,
+        gpu_is_software: false,
+        gpu_name: None,
+        gpu_max_buffer_mb: None,
+        healthy_gpu_backends: Vec::new(),
+        route_selection: BackendSelfTestRouteSelection::NotMeasured,
+        probes: vec![BackendSelfTestProbe {
+            name: "gpu_adapter",
+            status: BackendSelfTestStatus::Skip,
+            message: Some("GPU probing disabled by --no-gpu".to_string()),
+            direct_matches: None,
+            coalesced_matches: None,
+            matches: None,
+            backend_id: None,
+            backend_route: None,
+        }],
+    }
 }
 
 fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {

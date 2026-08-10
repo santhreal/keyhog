@@ -136,7 +136,7 @@ supported interface instead:
 | Dogfood capture | `--dogfood` |
 
 Normal scans do not benchmark on an autoroute cache miss. Invalid or missing
-normal-scan evidence produces visible scalar correctness recovery. Run
-`keyhog calibrate-autoroute` to restore healthy automatic routing. See
-[Configuration](./configuration.md) for the complete schema and
+normal-scan evidence leaves the affected batch unscanned and forces non-success
+status. Run `keyhog calibrate-autoroute` to restore healthy automatic routing.
+See [Configuration](./configuration.md) for the complete schema and
 [Autoroute calibration](./autoroute-calibration.md) for the evidence contract.

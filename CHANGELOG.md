@@ -4326,7 +4326,7 @@ workspace crate. The README's "Roadmap" section drops four items and
 a long-standing ignored regression test goes green.
 
 **Cross-chunk window-boundary reassembly (roadmap #3).** New
-`crates/scanner/src/engine/boundary.rs` splices the tail of each
+`crates/scanner/src/engine/boundary/mod.rs` splices the tail of each
 large-file scan window to the head of the next and rescans the seam,
 catching secrets that physically straddle the 64 MiB scan-window
 boundary. Wired into `scan_coalesced` after Phase 2 in both the SIMD

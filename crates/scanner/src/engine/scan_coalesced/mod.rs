@@ -204,6 +204,7 @@ impl CompiledScanner {
                         backend,
                         route,
                         recover_gpu_dispatch_faults,
+                        None,
                     )
                     .map_err(|error| {
                         self.record_gpu_runtime_fault(error.reason());
@@ -254,6 +255,307 @@ impl CompiledScanner {
             profile::add_bytes(chunks.iter().map(|chunk| chunk.data.len() as u64).sum());
         }
         result
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn scan_coalesced_on_ordered_gpu_device(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        backend: crate::hw_probe::ScanBackend,
+        route: &crate::gpu::device_set::OrderedGpuDeviceRoute,
+        acquired: &crate::gpu::AcquiredGpuDeviceSet,
+        device_index: usize,
+        execution_route: crate::ScanExecutionRoute,
+    ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
+        route.validate().map_err(crate::error::ScanError::Config)?;
+        let device = route.devices.get(device_index).ok_or_else(|| {
+            crate::error::ScanError::Config(format!(
+                "ordered GPU calibration names missing device {device_index}"
+            ))
+        })?;
+        if device.api.scan_backend() != backend {
+            return Err(crate::error::ScanError::Config(format!(
+                "ordered GPU calibration device {device_index} does not use {}",
+                backend.label()
+            )));
+        }
+        if acquired.device_set_identity_digest() != route.device_set_identity_digest()
+            || acquired.len() != route.devices.len()
+        {
+            return Err(crate::error::ScanError::Gpu(
+                "acquired GPU device set does not match the authenticated calibration route"
+                    .to_string(),
+            ));
+        }
+        let device_backend = acquired.backend(device_index).ok_or_else(|| {
+            crate::error::ScanError::Gpu(format!(
+                "ordered GPU acquisition is missing device {device_index}"
+            ))
+        })?;
+        let resident_slot = acquired.resident_literal(device_index).ok_or_else(|| {
+            crate::error::ScanError::Gpu(format!(
+                "ordered GPU acquisition is missing resident slot {device_index}"
+            ))
+        })?;
+        let resident_timed_dispatch_supported = acquired
+            .resident_timed_dispatch_supported(device_index)
+            .ok_or_else(|| {
+                crate::error::ScanError::Gpu(format!(
+                    "ordered GPU acquisition is missing capability evidence for device {device_index}"
+                ))
+            })?;
+        self.prepare_anchor_batch(execution_route);
+        let (outcome, recovery_receipts) = crate::gpu::with_recovery_receipt_scope(|| {
+            self.scan_coalesced_gpu_region_presence_recovering(
+                chunks,
+                backend,
+                execution_route,
+                false,
+                Some((
+                    device_backend,
+                    resident_slot,
+                    device.resident_budget_bytes,
+                    resident_timed_dispatch_supported,
+                )),
+            )
+        });
+        let outcome = outcome.map_err(|error| crate::error::ScanError::Gpu(error.to_string()))?;
+        if outcome.recovery.is_some()
+            || outcome.gpu_recovery_receipts != 0
+            || recovery_receipts != 0
+        {
+            return Err(crate::error::ScanError::Gpu(format!(
+                "ordered GPU calibration device {device_index} emitted a recovery receipt"
+            )));
+        }
+        if outcome.matches.len() != chunks.len() {
+            return Err(crate::error::ScanError::Gpu(format!(
+                "ordered GPU calibration device {device_index} returned {} chunk result(s), expected {}",
+                outcome.matches.len(),
+                chunks.len()
+            )));
+        }
+        Ok(outcome.matches)
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn scan_coalesced_with_ordered_gpu_device_route(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        backend: crate::hw_probe::ScanBackend,
+        route: &crate::gpu::device_set::OrderedGpuDeviceRoute,
+        acquired: &crate::gpu::AcquiredGpuDeviceSet,
+        execution_route: crate::ScanExecutionRoute,
+    ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
+        route.validate().map_err(crate::error::ScanError::Config)?;
+        if route.devices.len() < 2 {
+            return Err(crate::error::ScanError::Config(
+                "ordered multi-device scan requires at least two authenticated devices".to_string(),
+            ));
+        }
+        if route
+            .devices
+            .iter()
+            .any(|device| device.api.scan_backend() != backend)
+        {
+            return Err(crate::error::ScanError::Config(format!(
+                "ordered device set does not use {} on every device",
+                backend.label()
+            )));
+        }
+        if acquired.device_set_identity_digest() != route.device_set_identity_digest()
+            || acquired.len() != route.devices.len()
+        {
+            return Err(crate::error::ScanError::Gpu(
+                "acquired GPU device set does not match the authenticated route".to_string(),
+            ));
+        }
+        if !backend.is_gpu() || execution_route.decode_backend != crate::ScanBackend::CpuFallback {
+            return Err(crate::error::ScanError::Config(
+                "ordered GPU device-set scan requires a GPU route with scalar residual execution"
+                    .to_string(),
+            ));
+        }
+        if let Some(materialized) = self.selected_backend() {
+            if materialized != backend {
+                return Err(crate::error::ScanError::BackendPlanMismatch {
+                    materialized: materialized.label(),
+                    requested: backend.label(),
+                });
+            }
+        }
+        if chunks.is_empty() {
+            return Ok(Vec::new());
+        }
+        let _dispatch_guard = acquired
+            .lock_complete_dispatch()
+            .map_err(crate::error::ScanError::Gpu)?;
+        self.prepare_anchor_batch(execution_route);
+
+        let shards = chunks
+            .iter()
+            .enumerate()
+            .map(|(index, chunk)| crate::gpu::device_set::ExactShard {
+                index,
+                bytes: u64::try_from(chunk.data.len()).unwrap_or(u64::MAX),
+            })
+            .collect::<Vec<_>>();
+        let crate::gpu::device_set::WeightedShardPlan::MultiDevice(assignments) =
+            crate::gpu::device_set::partition_exact_shards(route, &shards)
+                .map_err(crate::error::ScanError::Config)?
+        else {
+            return Err(crate::error::ScanError::Config(
+                "ordered multi-device route produced a single-device plan".to_string(),
+            ));
+        };
+        if assignments.len() != chunks.len()
+            || assignments
+                .iter()
+                .enumerate()
+                .any(|(index, assignment)| assignment.shard_index != index)
+        {
+            return Err(crate::error::ScanError::Config(
+                "ordered GPU shard plan does not cover each input chunk exactly once".to_string(),
+            ));
+        }
+
+        let mut ranges = Vec::new();
+        ranges
+            .try_reserve_exact(route.devices.len())
+            .map_err(|error| {
+                crate::error::ScanError::Gpu(format!(
+                    "ordered GPU device-range allocation failed: {error}"
+                ))
+            })?;
+        let mut start = 0usize;
+        while start < assignments.len() {
+            let device_index = assignments[start].device_index;
+            let mut end = start + 1;
+            while end < assignments.len() && assignments[end].device_index == device_index {
+                end += 1;
+            }
+            if ranges
+                .last()
+                .is_some_and(|(prior_device, _, _)| *prior_device >= device_index)
+            {
+                return Err(crate::error::ScanError::Config(
+                    "ordered GPU shard plan assigned non-contiguous device ranges".to_string(),
+                ));
+            }
+            ranges.push((device_index, start, end));
+            start = end;
+        }
+
+        let telemetry = crate::telemetry::capture_scan_telemetry();
+        let matches = std::thread::scope(|scope| {
+            let mut handles = Vec::new();
+            handles.try_reserve_exact(ranges.len()).map_err(|error| {
+                crate::error::ScanError::Gpu(format!(
+                    "ordered GPU worker allocation failed: {error}"
+                ))
+            })?;
+            for &(device_index, start, end) in &ranges {
+                let device = route.devices.get(device_index).ok_or_else(|| {
+                    crate::error::ScanError::Config(format!(
+                        "ordered GPU shard plan names missing device {device_index}"
+                    ))
+                })?;
+                let device_backend = acquired.backend(device_index).ok_or_else(|| {
+                    crate::error::ScanError::Gpu(format!(
+                        "ordered GPU acquisition is missing device {device_index}"
+                    ))
+                })?;
+                let resident_slot = acquired.resident_literal(device_index).ok_or_else(|| {
+                    crate::error::ScanError::Gpu(format!(
+                        "ordered GPU acquisition is missing resident slot {device_index}"
+                    ))
+                })?;
+                let resident_timed_dispatch_supported = acquired
+                    .resident_timed_dispatch_supported(device_index)
+                    .ok_or_else(|| {
+                        crate::error::ScanError::Gpu(format!(
+                            "ordered GPU acquisition is missing capability evidence for device {device_index}"
+                        ))
+                    })?;
+                let chunk_range = &chunks[start..end];
+                let telemetry = telemetry.clone();
+                let handle = std::thread::Builder::new()
+                    .spawn_scoped(scope, move || {
+                        crate::telemetry::with_captured_scan_telemetry(
+                            telemetry.as_ref(),
+                            || {
+                                let (outcome, recovery_receipts) =
+                                    crate::gpu::with_recovery_receipt_scope(|| {
+                                        self.scan_coalesced_gpu_region_presence_recovering(
+                                            chunk_range,
+                                            backend,
+                                            execution_route,
+                                            false,
+                                            Some((
+                                                device_backend,
+                                                resident_slot,
+                                                device.resident_budget_bytes,
+                                                resident_timed_dispatch_supported,
+                                            )),
+                                        )
+                                    });
+                                outcome
+                                    .map_err(|error| error.to_string())
+                                    .and_then(|outcome| {
+                                        if outcome.recovery.is_some()
+                                            || outcome.gpu_recovery_receipts != 0
+                                            || recovery_receipts != 0
+                                        {
+                                            return Err(
+                                                "ordered GPU device emitted a recovery receipt"
+                                                    .to_string(),
+                                            );
+                                        }
+                                        if outcome.matches.len() != chunk_range.len() {
+                                            return Err(format!(
+                                                "ordered GPU device returned {} chunk result(s), expected {}",
+                                                outcome.matches.len(),
+                                                chunk_range.len()
+                                            ));
+                                        }
+                                        Ok(outcome.matches)
+                                    })
+                            },
+                        )
+                    })
+                    .map_err(|error| {
+                        crate::error::ScanError::Gpu(format!(
+                            "ordered GPU device {device_index} worker creation failed: {error}"
+                        ))
+                    })?;
+                handles.push((device_index, start, handle));
+            }
+
+            let mut retirement = crate::gpu::device_set::DeterministicRetirement::new(chunks.len())
+                .map_err(crate::error::ScanError::Gpu)?;
+            for (device_index, start, handle) in handles {
+                match handle.join() {
+                    Ok(Ok(device_matches)) => {
+                        for (offset, matches) in device_matches.into_iter().enumerate() {
+                            if let Err(error) = retirement.record_success(start + offset, matches) {
+                                retirement.record_failure(device_index, "retire", &error);
+                                break;
+                            }
+                        }
+                    }
+                    Ok(Err(error)) => {
+                        retirement.record_failure(device_index, "dispatch/retire", &error);
+                    }
+                    Err(panic) => {
+                        let detail = crate::error::panic_payload_detail(panic);
+                        retirement.record_failure(device_index, "worker", &detail);
+                    }
+                }
+            }
+            retirement.finish().map_err(crate::error::ScanError::Gpu)
+        })?;
+        profile::add_bytes(chunks.iter().map(|chunk| chunk.data.len() as u64).sum());
+        Ok(matches)
     }
 
     /// Deterministic portable reference scan over several chunks.

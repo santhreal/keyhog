@@ -12,7 +12,7 @@ use std::process::ExitCode;
 
 /// `keyhog backend --autoroute`: render the persisted autoroute calibration
 /// cache so an operator can see which resolved configs and workload buckets are
-/// calibrated (and to which backend), diagnosing visible scalar recovery. Read-only.
+/// calibrated and which invalid states block automatic scans. Read-only.
 pub(super) fn run_autoroute_inspection(
     json: bool,
     autoroute_cache: Option<&str>,
@@ -97,9 +97,9 @@ pub(super) fn run_autoroute_inspection(
         );
         println!();
         println!(
-            "No autoroute cache exists here yet, so automatic scans warn and complete through \
-             scalar correctness recovery rather than claim an unproved route. Repair: `{}`. \
-             An explicit `--backend` is a diagnostic override, not autoroute evidence.",
+            "No autoroute cache exists here yet, so automatic scans fail closed without \
+             selecting a backend or scanning input. Repair: `{}`. An explicit `--backend` is \
+             a diagnostic override, not autoroute evidence.",
             health
                 .required_repair_command()
                 .map_err(anyhow::Error::msg)?

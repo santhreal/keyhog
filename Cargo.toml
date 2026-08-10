@@ -142,6 +142,7 @@ vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.7.2", git = "ht
 vyre-driver-metal = { package = "vyre-driver-metal", version = "=0.7.2", git = "https://github.com/santhreal/vyre.git", rev = "8be30afe43fb54e38965dd9e9ae46a1b39b824a2" }
 vyre-runtime = { version = "=0.7.2", git = "https://github.com/santhreal/vyre.git", rev = "8be30afe43fb54e38965dd9e9ae46a1b39b824a2" }
 wgpu = "=25.0.2"
+ash = "=0.38.0"
 pollster = "=0.4.0"
 bytemuck = { version = "=1.25.2", features = ["derive"] }
 hyperscan = "=0.3.2"

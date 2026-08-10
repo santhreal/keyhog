@@ -15,7 +15,7 @@ use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::ScanBackend;
 use keyhog_scanner::telemetry::ScannerCoverageSnapshot;
 use keyhog_scanner::{CompiledScanner, Phase1AdmissionPlan};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
     canonical_match_differences, canonical_match_digest, canonical_matches,
@@ -140,6 +140,9 @@ pub(super) fn calibrate_fastest_correct_backend(
     measurement_shape: MeasurementShapeEvidence,
     eligible_backend_labels: &[String],
     admission_plan: Option<&Phase1AdmissionPlan>,
+    workload_identity: &str,
+    detector_digest: &str,
+    config_digest: &str,
 ) -> Result<AutorouteDecision, AutorouteRoutingError> {
     let sample_bytes = calibration_sample_bytes(sample)?;
 
@@ -229,7 +232,15 @@ pub(super) fn calibrate_fastest_correct_backend(
         admission_plan,
         reference_coverage,
     )?;
-    let route_timings = route_timings_with_cold_cost(scanner, measured_routes)?;
+    let route_timings = route_timings_with_cold_cost(
+        scanner,
+        measured_routes,
+        sample,
+        &reference_key,
+        workload_identity,
+        detector_digest,
+        config_digest,
+    )?;
     #[cfg(any(test, feature = "ci-lean"))]
     let route_timings = {
         let mut route_timings = route_timings;
@@ -302,10 +313,41 @@ pub(super) fn calibrate_fastest_correct_backend(
 fn route_timings_with_cold_cost(
     scanner: &CompiledScanner,
     measured_routes: Vec<(MeasuredRoute, BackendTimingEvidence)>,
+    sample: &[Chunk],
+    reference_key: &[CanonicalMatch<'_>],
+    workload_identity: &str,
+    detector_digest: &str,
+    config_digest: &str,
 ) -> Result<Vec<RouteTimingEvidence>, AutorouteRoutingError> {
+    #[cfg(not(feature = "gpu"))]
+    let _ = (
+        sample,
+        reference_key,
+        workload_identity,
+        detector_digest,
+        config_digest,
+    );
     let mut route_timings = Vec::with_capacity(measured_routes.len());
     for (route, mut measured) in measured_routes {
         let backend = route.backend;
+        #[cfg(feature = "gpu")]
+        let ordered_device_measurement = if backend.is_gpu() {
+            measure_ordered_gpu_device_route(
+                scanner,
+                sample,
+                route,
+                reference_key,
+                workload_identity,
+                detector_digest,
+                config_digest,
+            )?
+        } else {
+            None
+        };
+        #[cfg(feature = "gpu")]
+        if let Some((_, timing)) = &ordered_device_measurement {
+            measured = timing.clone();
+        }
         if backend == ScanBackend::SimdCpu {
             let initialization_ns = scanner.simd_initialization_ns().ok_or_else(|| {
                 AutorouteRoutingError::candidate_backend_rejected(
@@ -321,7 +363,16 @@ fn route_timings_with_cold_cost(
                 ));
             }
         }
-        if is_gpu_backend(backend) {
+        if is_gpu_backend(backend) && {
+            #[cfg(feature = "gpu")]
+            {
+                ordered_device_measurement.is_none()
+            }
+            #[cfg(not(feature = "gpu"))]
+            {
+                true
+            }
+        } {
             let backend_cold_ns = scanner
                 .autoroute_calibration_gpu_backend_cold_ns(backend)
                 .ok_or_else(|| {
@@ -342,13 +393,28 @@ fn route_timings_with_cold_cost(
             }
         }
         let peer_identity = if backend.is_gpu() {
-            Some(
-                scanner
-                    .acquired_gpu_peer_identity(backend)
-                    .map_err(|error| {
-                        AutorouteRoutingError::candidate_backend_rejected(backend, error)
-                    })?,
-            )
+            #[cfg(feature = "gpu")]
+            if let Some((device_route, _)) = &ordered_device_measurement {
+                Some(format!(
+                    "ordered-device-set:{}",
+                    device_route.authenticated_digest
+                ))
+            } else {
+                Some(
+                    scanner
+                        .acquired_gpu_peer_identity(backend)
+                        .map_err(|error| {
+                            AutorouteRoutingError::candidate_backend_rejected(backend, error)
+                        })?,
+                )
+            }
+            #[cfg(not(feature = "gpu"))]
+            {
+                return Err(AutorouteRoutingError::candidate_backend_rejected(
+                    backend,
+                    "GPU timing evidence cannot be built without the CLI GPU feature",
+                ));
+            }
         } else {
             None
         };
@@ -401,14 +467,281 @@ fn route_timings_with_cold_cost(
         } else {
             None
         };
-        route_timings.push(RouteTimingEvidence::new_with_peer_identity(
+        let timing = RouteTimingEvidence::new_with_peer_identity(
             route,
             measured,
             peer_identity,
             gpu_pipeline,
-        ));
+        );
+        #[cfg(feature = "gpu")]
+        let timing = match ordered_device_measurement {
+            Some((device_route, _)) => timing
+                .bind_ordered_device_route(device_route)
+                .map_err(AutorouteRoutingError::calibration_not_persisted)?,
+            None => timing,
+        };
+        route_timings.push(timing);
     }
     Ok(route_timings)
+}
+
+#[cfg(feature = "gpu")]
+fn measure_ordered_gpu_device_route(
+    scanner: &CompiledScanner,
+    sample: &[Chunk],
+    measured_route: MeasuredRoute,
+    reference_key: &[CanonicalMatch<'_>],
+    workload_identity: &str,
+    detector_digest: &str,
+    config_digest: &str,
+) -> Result<
+    Option<(
+        keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute,
+        BackendTimingEvidence,
+    )>,
+    AutorouteRoutingError,
+> {
+    use keyhog_scanner::gpu::device_set::{
+        CalibratedGpuDevice, DeviceTimingEvidence, OrderedGpuDeviceRoute,
+    };
+
+    const MAX_PROCESS_RESIDENT_BYTES: u64 = 4 << 30;
+    let backend = measured_route.backend;
+    let census = keyhog_scanner::gpu::enumerate_gpu_device_census().map_err(|error| {
+        AutorouteRoutingError::candidate_backend_rejected(
+            backend,
+            format!("ordered GPU census failed: {error}"),
+        )
+    })?;
+    let exposures = census
+        .eligible
+        .iter()
+        .map(|index| {
+            census.exposures.get(*index).ok_or_else(|| {
+                AutorouteRoutingError::candidate_backend_rejected(
+                    backend,
+                    format!("ordered GPU census index {index} is out of bounds"),
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if exposures.len() < 2
+        || exposures
+            .iter()
+            .any(|exposure| exposure.api.scan_backend() != backend)
+    {
+        return Ok(None);
+    }
+    let sample_bytes = calibration_sample_bytes(sample)?;
+    let capacities = exposures
+        .iter()
+        .map(|exposure| exposure.capacity_bytes)
+        .collect::<Vec<_>>();
+    let total_capacity = capacities
+        .iter()
+        .try_fold(0u64, |total, capacity| total.checked_add(*capacity))
+        .ok_or_else(|| {
+            AutorouteRoutingError::candidate_backend_rejected(
+                backend,
+                "ordered GPU physical capacity sum overflows u64",
+            )
+        })?;
+    let process_resident_limit_bytes = total_capacity.min(MAX_PROCESS_RESIDENT_BYTES);
+    let resident_budgets = keyhog_scanner::gpu::device_set::derive_resident_budgets(
+        &capacities,
+        process_resident_limit_bytes,
+    )
+    .map_err(|error| {
+        AutorouteRoutingError::candidate_backend_rejected(
+            backend,
+            format!("ordered GPU resident budget derivation failed: {error}"),
+        )
+    })?;
+    let mut provisional_devices = Vec::new();
+    provisional_devices
+        .try_reserve_exact(exposures.len())
+        .map_err(|error| {
+            AutorouteRoutingError::candidate_backend_rejected(
+                backend,
+                format!("ordered GPU calibration device reserve failed: {error}"),
+            )
+        })?;
+    for (exposure, resident_budget_bytes) in exposures.into_iter().zip(resident_budgets) {
+        provisional_devices.push(CalibratedGpuDevice {
+            api: exposure.api,
+            api_ordinal: exposure.api_ordinal,
+            physical_identity: exposure.physical_identity.clone(),
+            topology_identity: exposure.topology_identity.clone(),
+            name: exposure.name.clone(),
+            vendor_id: exposure.vendor_id,
+            device_id: exposure.device_id,
+            software_eligible: !exposure.is_software,
+            display_eligible: !exposure.is_display_only,
+            driver_identity: exposure.driver_identity.clone(),
+            runtime_identity: exposure.runtime_identity.clone(),
+            capacity_bytes: exposure.capacity_bytes,
+            workload_weight: 1,
+            timing: DeviceTimingEvidence {
+                sample_bytes,
+                trials_ns: vec![1],
+            },
+            resident_budget_bytes,
+        });
+    }
+    let provisional_route = OrderedGpuDeviceRoute::new(
+        workload_identity.to_string(),
+        detector_digest.to_string(),
+        config_digest.to_string(),
+        process_resident_limit_bytes,
+        provisional_devices,
+    )
+    .map_err(|error| {
+        AutorouteRoutingError::candidate_backend_rejected(
+            backend,
+            format!("ordered GPU calibration route is invalid: {error}"),
+        )
+    })?;
+    let provisional = keyhog_scanner::gpu::acquire_ordered_gpu_device_set(&provisional_route)
+        .map_err(|error| {
+            AutorouteRoutingError::candidate_backend_rejected(
+                backend,
+                format!("ordered GPU calibration acquisition failed: {error}"),
+            )
+        })?;
+
+    let mut device_trials = Vec::new();
+    device_trials
+        .try_reserve_exact(provisional_route.devices.len())
+        .map_err(|error| {
+            AutorouteRoutingError::candidate_backend_rejected(
+                backend,
+                format!("ordered GPU timing reserve failed: {error}"),
+            )
+        })?;
+    for device_index in 0..provisional_route.devices.len() {
+        let mut trials = Vec::with_capacity(AUTOROUTE_CALIBRATION_TRIALS);
+        for trial in 0..AUTOROUTE_CALIBRATION_TRIALS {
+            let started = Instant::now();
+            let matches = scanner
+                .scan_coalesced_on_ordered_gpu_device(
+                    sample,
+                    backend,
+                    &provisional_route,
+                    &provisional,
+                    device_index,
+                    measured_route.execution_route(),
+                )
+                .map_err(|error| {
+                    AutorouteRoutingError::candidate_backend_rejected(
+                        backend,
+                        format!("ordered GPU device {device_index} dispatch failed: {error}"),
+                    )
+                })?;
+            let elapsed = started.elapsed().as_nanos().max(1);
+            calibration_candidate_parity_result(backend, trial, &matches, reference_key)?;
+            trials.push(u64::try_from(elapsed).map_err(|_| {
+                AutorouteRoutingError::candidate_backend_rejected(
+                    backend,
+                    "ordered GPU device timing exceeds u64 nanoseconds",
+                )
+            })?);
+        }
+        device_trials.push(trials);
+    }
+    drop(provisional);
+
+    let medians = device_trials
+        .iter()
+        .map(|trials| {
+            let mut ordered = trials.clone();
+            ordered.sort_unstable();
+            ordered[ordered.len() / 2]
+        })
+        .collect::<Vec<_>>();
+    let slowest = medians.iter().copied().max().unwrap_or(1);
+    let mut devices = provisional_route.devices;
+    for ((device, trials), median) in devices.iter_mut().zip(device_trials).zip(medians) {
+        let scaled = u128::from(slowest).checked_mul(1_000_000).ok_or_else(|| {
+            AutorouteRoutingError::candidate_backend_rejected(
+                backend,
+                "ordered GPU throughput weight overflows u128",
+            )
+        })? / u128::from(median.max(1));
+        device.workload_weight = u64::try_from(scaled.clamp(1, 1_000_000_000)).map_err(|_| {
+            AutorouteRoutingError::candidate_backend_rejected(
+                backend,
+                "ordered GPU throughput weight exceeds u64",
+            )
+        })?;
+        device.timing = DeviceTimingEvidence {
+            sample_bytes,
+            trials_ns: trials,
+        };
+    }
+    let route = OrderedGpuDeviceRoute::new(
+        workload_identity.to_string(),
+        detector_digest.to_string(),
+        config_digest.to_string(),
+        process_resident_limit_bytes,
+        devices,
+    )
+    .map_err(|error| {
+        AutorouteRoutingError::candidate_backend_rejected(
+            backend,
+            format!("measured ordered GPU route is invalid: {error}"),
+        )
+    })?;
+    let timing =
+        measure_complete_ordered_gpu_route(scanner, sample, measured_route, reference_key, &route)?;
+    Ok(Some((route, timing)))
+}
+
+#[cfg(feature = "gpu")]
+fn measure_complete_ordered_gpu_route(
+    scanner: &CompiledScanner,
+    sample: &[Chunk],
+    measured_route: MeasuredRoute,
+    reference_key: &[CanonicalMatch<'_>],
+    route: &keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute,
+) -> Result<BackendTimingEvidence, AutorouteRoutingError> {
+    let backend = measured_route.backend;
+    let cold_started = Instant::now();
+    let acquired = keyhog_scanner::gpu::acquire_ordered_gpu_device_set(route).map_err(|error| {
+        AutorouteRoutingError::candidate_backend_rejected(
+            backend,
+            format!("measured ordered GPU route acquisition failed: {error}"),
+        )
+    })?;
+    let mut route_trials = Vec::with_capacity(AUTOROUTE_CALIBRATION_TRIALS);
+    for trial in 0..AUTOROUTE_CALIBRATION_TRIALS {
+        let started = if trial == 0 {
+            cold_started
+        } else {
+            Instant::now()
+        };
+        let matches = scanner
+            .scan_coalesced_with_ordered_gpu_device_route(
+                sample,
+                backend,
+                route,
+                &acquired,
+                measured_route.execution_route(),
+            )
+            .map_err(|error| {
+                AutorouteRoutingError::candidate_backend_rejected(
+                    backend,
+                    format!("ordered GPU route dispatch failed: {error}"),
+                )
+            })?;
+        route_trials.push(started.elapsed());
+        calibration_candidate_parity_result(backend, trial, &matches, reference_key)?;
+    }
+    BackendTimingEvidence::from_durations(route_trials).ok_or_else(|| {
+        AutorouteRoutingError::candidate_backend_rejected(
+            backend,
+            "ordered GPU route produced no timing evidence",
+        )
+    })
 }
 
 pub(super) fn calibration_sample_bytes(sample: &[Chunk]) -> Result<u64, AutorouteRoutingError> {
@@ -775,8 +1108,7 @@ fn scan_calibration_backend(
     // Measured: `crates/` ran a full 346-second sweep across eight workload
     // buckets and persisted nothing, because one probe batch held a chunk over
     // the decode ceiling and the very first reference trial was refused. Every
-    // later scan of that tree then routed through scalar correctness recovery,
-    // which is the slowest outcome available.
+    // later automatic scan of that tree then failed closed without a route.
     //
     // The two directions of a difference are not equally informative, and only
     // one of them is a fact.

@@ -12,7 +12,7 @@ const GPU_SCAN_SRCS: &[&str] = &[
     "engine/gpu_lazy_helpers.rs",
     "engine/gpu_literal_scratch.rs",
     "gpu_matcher_cache.rs",
-    "engine/gpu_region_batch.rs",
+    "engine/gpu_region_batch/mod.rs",
     "engine/gpu_region_dispatch/mod.rs",
     "engine/gpu_region_dispatch_helpers.rs",
     "gpu/backend/resident_evidence.rs",

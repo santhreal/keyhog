@@ -112,12 +112,15 @@ pub(super) fn current_executable_sha256(
         .map_err(|error| error.clone().into())
 }
 #[cfg(not(test))]
-pub(super) fn current_gpu_sidecar_sha256() -> Option<String> {
-    let cache_dir = keyhog_scanner::gpu_literal_artifact_cache_dir().ok()?;
-    installed_gpu_sidecar_digest(&cache_dir)
+mod gpu_sidecar_identity {
+    pub(crate) fn current_gpu_sidecar_sha256() -> Option<String> {
+        let cache_dir = keyhog_scanner::gpu_literal_artifact_cache_dir().ok()?;
+        super::installed_gpu_sidecar_digest(&cache_dir)
+    }
 }
 
 #[cfg(test)]
-pub(super) fn current_gpu_sidecar_sha256() -> Option<String> {
-    Some("test-installed-gpu-sidecar-v1".to_string())
-}
+#[path = "../../../../../tests/unit/autoroute_artifact_identity.rs"]
+mod gpu_sidecar_identity;
+
+pub(super) use gpu_sidecar_identity::current_gpu_sidecar_sha256;

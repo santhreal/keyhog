@@ -203,10 +203,9 @@ eligibility, and retry behavior.
 For a large inventory, partition at the provider or repository boundary.
 Calibrate autoroute on the actual worker class and retain the per-partition
 resolved policy, coverage envelope, and execution receipt. Missing or stale
-autoroute evidence uses visible scalar correctness recovery. It does not
-silently claim calibrated CPU, Hyperscan, or GPU execution. Treat
-`complete_after_recovery` as a recalibration signal even when byte coverage is
-complete.
+autoroute evidence leaves the affected batch unscanned and records incomplete
+coverage. It does not silently claim calibrated CPU, Hyperscan, or GPU
+execution.
 
 ## Concurrency and worker sizing
 

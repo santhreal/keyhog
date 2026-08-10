@@ -71,12 +71,9 @@ fails instead of announcing readiness when any required step fails. With a
 valid decision table, an autorouted daemon warms only peers selected by at
 least one persisted warm-daemon route. An acquired but unused peer cannot block
 readiness, while every selected peer must initialize and warm successfully.
-With missing, stale, or invalid autoroute state, the daemon becomes ready with
-only scalar correctness recovery initialized. Each affected request reports
-`autoroute-invalid`, recovered ranges and bytes, and recalibration guidance;
-neither daemon health nor scan output calls that recovery autoroute. A forced
-`--backend gpu-cuda|gpu-metal|gpu-wgpu|simd|cpu` is a diagnostic startup choice and must
-be usable as requested. See
+Missing, stale, or invalid autoroute state prevents daemon readiness. A forced
+`--backend gpu-cuda|gpu-metal|gpu-wgpu|simd|cpu` is a diagnostic startup choice
+and must be usable as requested. See
 [Autoroute calibration](../reference/autoroute-calibration.md).
 
 GPU startup failures retain their stage and exit `12`. This covers required
@@ -90,11 +87,11 @@ After readiness, an automatically routed accelerated-backend fault does not kill
 the service or drop the request. The daemon warns and replays that request's
 stable text or file input through the fastest remaining measured-correct peer.
 GPU recovery replays only exact unprocessed ranges. The daemon records recovered
-ranges and bytes, quarantines that workload route, and keeps unrelated requests alive. Later
-requests for the quarantined workload warn and complete through scalar
-correctness recovery with recalibration guidance. Runtime route health is
-persisted separately from timing evidence, so restarting the daemon cannot
-erase quarantine; successful
+ranges and bytes, quarantines that workload route, and keeps unrelated requests
+alive. Later requests for the quarantined workload fail closed: no backend is
+selected, the affected batch remains unscanned, and the response names the
+required recalibration. Runtime route health is persisted separately from
+timing evidence, so restarting the daemon cannot erase quarantine; successful
 recalibration clears only the repaired workload identity. A forced GPU daemon
 remains an explicit contract and returns a request error instead of substituting
 another backend.
@@ -109,15 +106,11 @@ Merkle-state, verification, lockdown, and per-request scanner-policy post-steps.
 Those steps run in process.
 `active scans` counts accepted scan attempts until their blocking task
 finishes, including attempts queued behind the scanner's fragment-state lock.
-Backend health reports the number of recovered requests and the last failed and
-recovery backend with recovered byte count. `autoroute-invalid -> cpu-fallback`
-means the request completed exactly, but the daemon has no usable proof-backed
-route for that workload. Before the first affected request, status prints
-`backend policy: autoroute invalid` and the scalar-recovery repair command, so a
-ready socket cannot disguise invalid startup evidence as calibrated autoroute.
-After a restart with persisted runtime quarantine, status instead prints
+Backend health reports the number of recovered authenticated-route requests and
+the last failed and recovery backend with recovered byte count. After a restart
+with persisted runtime quarantine, status prints
 `backend policy: autoroute degraded`; healthy workload routes remain usable and
-affected routes report scalar recovery until recalibration clears them.
+affected routes fail closed without scanning until recalibration clears them.
 The daemon can frame multiple client connections concurrently, but production
 scanner execution is serialized so fragment state cannot cross requests.
 

@@ -524,7 +524,8 @@ impl ScanOrchestrator {
                     execution_route: scanner_ref.execution_route_for_backend(*backend),
                     recovery_plan: None,
                     runtime_route: None,
-                    autoroute_recovery: None,
+                    #[cfg(feature = "gpu")]
+                    ordered_gpu: None,
                 }),
                 ActiveBackendRouter::Measured(router) => {
                     let mut router = match router.lock() {
@@ -576,6 +577,8 @@ impl ScanOrchestrator {
                 scanner_ref,
                 &batch,
                 backend,
+                #[cfg(feature = "gpu")]
+                selection.ordered_gpu.as_deref(),
                 selection.phase1_plan.as_ref(),
                 selection.execution_route,
                 selection
@@ -602,9 +605,6 @@ impl ScanOrchestrator {
                     record_routing_error(&routing_error_ref, error);
                     return Vec::new();
                 }
-            }
-            if let Some(recovery) = selection.autoroute_recovery.as_ref() {
-                super::record_completed_autoroute_state_recovery(&batch, backend, recovery);
             }
             crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
             crate::SCANNED_BYTES.fetch_add(

@@ -673,7 +673,7 @@ fn engine_scan_gpu_happy() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
     assert!(scanner.warm_backend(ScanBackend::CpuFallback));
 }
-// ── crates/scanner/src/engine/boundary.rs ─────────────────────────────
+// ── crates/scanner/src/engine/boundary/mod.rs ─────────────────────────
 #[test]
 fn engine_boundary_happy() {
     use keyhog_scanner::testing::floor_char_boundary;

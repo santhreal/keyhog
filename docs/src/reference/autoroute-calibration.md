@@ -85,9 +85,9 @@ stays `false`, so a permitted decision is never presented as a proved one.
 This matters on real trees. Calibrating `benchmarks/corpora/homefield` measured
 `cpu-fallback` at 4.507 s [3.08, 11.49] against `gpu-wgpu` at 4.462 s
 [4.40, 4.92], with every interval overlapping every other. Refusing to decide
-left the workload with no persisted route at all, so every later scan of it ran
-through scalar correctness recovery: the slowest outcome reachable from a
-measurement whose entire content is that the backends are indistinguishable.
+left the workload with no persisted route, so every later automatic scan failed
+closed without scanning even though the measurement showed the backends were
+indistinguishable.
 
 Calibration records 7 normalized timing trials per route. A warm trial repeats
 short candidate executions until their combined timing reaches 10 ms. It stops
@@ -100,9 +100,9 @@ install time or guessing.
 
 Because the decision is *measured*, it must be recorded before `--backend auto`
 (the default) can claim a fastest route. A fresh install has no decisions yet,
-so an auto scan warns, scans every byte through the scalar correctness oracle,
-and reports `complete_after_recovery` plus `autoroute calibration required`.
-That recovery is deliberately not labelled autoroute.
+so an automatic scan selects no backend for each unproved batch, records
+incomplete coverage, and reports `autoroute calibration required` with a repair
+command.
 
 ## Calibrate, inspect, then scan
 
@@ -145,8 +145,8 @@ keyhog calibrate-autoroute
 
 Run the command again after a binary, detector, configuration, driver, or
 hardware change. The command calibrates the core stdin and filesystem workload
-ladder. A recovery receipt for a Git, Docker, or web workload prints the exact
-low-level `scan --autoroute-calibrate --autoroute-gpu` command for that source.
+ladder. A routing diagnostic for an unproved Git, Docker, or web workload prints
+the exact low-level `scan --autoroute-calibrate --autoroute-gpu` command.
 
 The default command calibrates the ordinary policy and every documented preset:
 
@@ -197,8 +197,8 @@ workloads need a real external fixture such as a repository, running daemon, or
 served URL. The low-level `scan --autoroute-calibrate` probe measures one
 caller-supplied workload. It does not synthesize or sweep external fixtures. If
 one of these sources reports `autoroute calibration required`, run the
-`repair_command` from the recovery receipt. Decisions are written,
-parity-checked, to the autoroute cache (`$XDG_CACHE_HOME/keyhog/autoroute.json`
+reported `repair_command`. Decisions are written, parity-checked, to the
+autoroute cache (`$XDG_CACHE_HOME/keyhog/autoroute.json`
 by default; override with `--autoroute-cache <path>` or
 `[system].autoroute_cache`).
 
@@ -216,7 +216,7 @@ excluded a GPU. Recording it there was a guaranteed miss on every host and
 build with no GPU candidate, because the exclusion is vacuous but the digest
 still differed: calibration wrote decisions under a key no scan would ever
 request, and the immediately following identical scan reported a config
-mismatch and completed through scalar correctness recovery.
+mismatch and left the batch unscanned.
 
 Startup reports every available GPU peer without creating execution devices or
 pipelines. Calibration acquires each peer when its candidate is measured and
@@ -262,8 +262,8 @@ INFO autoroute cache: 100.0% hit (2 hit / 2 lookup(s))
 
 One lookup is one batch asking the cache for its route. A hit means the batch
 ran on a persisted, measured-correct backend without benchmarking anything. A
-miss means the batch completed through scalar correctness recovery instead,
-which is not an autoroute decision.
+miss means no backend was selected, the batch remained unscanned, and the run
+records incomplete coverage.
 
 The line prints in every output mode, including `--format json -o <file>`. That
 is the shape CI and calibration harnesses use, and it used to suppress the whole
@@ -476,14 +476,14 @@ is separate from immutable timing evidence and survives restart. A successful
 calibration commit clears only the workload identities remeasured in that
 command. Missing health state means no runtime fault has been observed;
 malformed, oversized, unknown-backend, or calibration-inconsistent health state
-invalidates automatic routing and triggers visible scalar recovery with repair
-guidance. An explicit GPU override or
+invalidates automatic routing. No backend is selected for an affected batch; it
+remains unscanned and receives repair guidance. An explicit GPU override or
 `--require-gpu` remains a hard backend contract and is not substituted.
 `keyhog backend --autoroute` reports `quarantined` readiness, aggregate and
 per-config fault counts, and the failed backend/reason on each affected workload;
 `keyhog doctor` reports the same repair state.
 
-## Diagnose invalid state and read recovery receipts
+## Diagnose invalid state and authenticated recovery receipts
 
 Capture a metadata-bearing report, then inspect routing health:
 
@@ -496,12 +496,10 @@ keyhog doctor
 
 When automatic route state is unusable, the scan warning names the missing
 workload bucket and the dimensions that differ from the nearest measured class.
-The report uses `scan_status: "complete_after_recovery"` only when every
-requested byte completed. Its `metadata.backend_recoveries` rows include the
-failed backend (`autoroute-invalid` when no route could be trusted), the backend
-that completed the work, recovered range, chunk, and byte counts, a non-secret
-reason, and `repair_command`. This is a visible correctness recovery, not a
-calibrated route and not a silent fallback.
+No backend is selected, the affected batch remains unscanned, and the report
+uses `scan_status: "partial"` with a coverage gap. `metadata.backend_recoveries`
+contains only completed recovery from a faulting authenticated backend; invalid
+route state never creates a scalar recovery receipt.
 
 Use the reported state to choose the repair:
 
@@ -542,8 +540,9 @@ automation cannot mistake an unusable autoroute state for a healthy host. JSON i
 value plus `repair_command`: `null` for `direct` or `ready`, the canonical
 calibration command for quarantined, absent, stale, or invalid evidence, and an explicit
 cache-path command when persistence is disabled. Scan reports expose recovered
-chunks and bytes plus `complete_after_recovery`; inspection remains unhealthy
-until calibration produces confidence-separated evidence.
+chunks, ranges, and bytes only after a fault in an authenticated selected
+backend. Invalid route state records an unscanned coverage gap; inspection
+remains unhealthy until calibration produces confidence-separated evidence.
 
 Pass `--autoroute-cache` when the scan uses a non-default cache path through
 the matching scan flag or `[system].autoroute_cache`.

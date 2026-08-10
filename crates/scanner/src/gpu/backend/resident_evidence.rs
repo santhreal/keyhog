@@ -379,6 +379,18 @@ impl ResidentLiteralCapacity {
     }
 }
 
+pub(crate) fn gpu_resident_literal_required_device_bytes(
+    haystack_bytes: usize,
+    region_count: usize,
+    presence_words: usize,
+    depth: u8,
+) -> Result<u64, String> {
+    ResidentLiteralCapacity::for_batch(haystack_bytes, region_count, presence_words, depth)?
+        .mutable_device_bytes()?
+        .checked_mul(u64::from(depth))
+        .ok_or_else(|| "GPU resident per-device allocation overflows u64".to_string())
+}
+
 struct ZeroResidentHostBuffers<'a> {
     output: &'a mut Vec<u32>,
     matches: &'a mut Vec<vyre::scan::LiteralMatch>,

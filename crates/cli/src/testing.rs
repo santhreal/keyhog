@@ -1303,6 +1303,8 @@ impl CliTestApi for TestApi {
             &scanner,
             &chunks,
             keyhog_scanner::ScanBackend::GpuWgpu,
+            #[cfg(feature = "gpu")]
+            None,
             None,
             scanner.execution_route_for_backend(keyhog_scanner::ScanBackend::GpuWgpu),
             recover_automatic_backend_faults.then_some(crate::orchestrator::BackendRecoveryPlan {

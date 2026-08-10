@@ -10,6 +10,12 @@
 - Optional acceleration backends must preserve the same match semantics as the default scanner path.
 - Windowed absence memos bind to the exact ordered input bytes; reordered or repeated lines cannot inherit an earlier clean proof.
 
+## Ordered GPU device routes
+
+Multi-device GPU execution is an autoroute peer. Calibration enumerates one stable physical adapter set, rejects software, display-only, duplicate, or incompletely identified exposures, measures each device for the exact workload, proves complete-route finding parity, and persists the ordered identities, timings, integer weights, capacities, and resident budgets under an authenticated digest.
+
+Normal scans validate the complete live census before and after all-or-nothing acquisition. Exact chunk shards are assigned as contiguous weighted ranges. Each device owns a bounded resident slot, devices execute concurrently, and retirement restores source order. A missing device, identity change, dispatch failure, recovery receipt, panic, or incomplete result invalidates the selected route; no sibling result is returned as a partial scan.
+
 ## Boundaries
 
 This crate consumes `keyhog-core` types and does not enumerate files, git history, cloud sources, or verify live credentials.
