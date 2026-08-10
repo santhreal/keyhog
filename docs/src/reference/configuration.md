@@ -534,8 +534,8 @@ runtime. See [Guard workflow](../workflows/guard.md) for operational details.
 |---|---|---|---|
 | `hot_index_memory` | string | unlimited | Hot clean attestation index memory budget (e.g. `64MiB`). |
 | `max_pending_events_per_root` | integer | 8192 | Maximum queued filesystem events per root. |
-| `coalesce_window` | string | `100ms` | Event coalescing window before applying state transitions. |
-| `scanner_idle_timeout` | string | `5m` | Scanner idle-unload timeout. After this duration without guard activity, the residency label reports `idle-unload`. |
+| `coalesce_window` | string | 100ms | Event coalescing window before applying state transitions. |
+| `scanner_idle_timeout` | string | 5m | Scanner idle-unload timeout. After this duration without guard activity, the residency label reports `idle-unload`. |
 | `scrub_interval` | string | disabled | Periodic re-scan interval for `current` roots. Catches changes that filesystem events missed. |
 | `state_path` | string | disabled | Durable guard state path (e.g. `~/.local/state/keyhog/guard.redb`). Persists root records and attestations across daemon restarts. Rejected in lockdown mode. |
 | `subtree_max_files` | integer | 10000 | Maximum files for one subtree reconciliation. |
