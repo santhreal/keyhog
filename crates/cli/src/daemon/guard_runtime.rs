@@ -695,4 +695,24 @@ mod tests {
         rt.touch_activity();
         assert_eq!(rt.scanner_residency(), "resident");
     }
+
+    #[test]
+    fn scanner_residency_uses_configured_timeout() {
+        let rt = GuardRuntime::new();
+        // Set a very short timeout (0 seconds) so it immediately reports idle.
+        rt.set_scanner_idle_timeout(0);
+        // Touch activity to reset the clock, then check.
+        rt.touch_activity();
+        // With 0 second timeout, even immediate check should be idle-unload
+        // because elapsed (>= 0) is not < 0.
+        assert_eq!(rt.scanner_residency(), "idle-unload");
+    }
+
+    #[test]
+    fn scanner_residency_respects_large_timeout() {
+        let rt = GuardRuntime::new();
+        // Set a very large timeout so it always reports resident.
+        rt.set_scanner_idle_timeout(999_999);
+        assert_eq!(rt.scanner_residency(), "resident");
+    }
 }
