@@ -240,4 +240,7 @@ pub(crate) struct GuardSection {
     pub subtree_max_files: Option<usize>,
     /// Maximum depth for one subtree reconciliation.
     pub subtree_max_depth: Option<usize>,
+    /// Durable guard state path (e.g. "~/.local/state/keyhog/guard.redb").
+    /// When set, root records and attestations persist across daemon restarts.
+    pub state_path: Option<String>,
 }

@@ -261,6 +261,8 @@ struct ServerState {
     /// suppression/allowlist/confidence pipeline as `keyhog scan`.
     guard_filter: Arc<crate::orchestrator::DefaultScanFilter>,
     guard_watcher: Arc<parking_lot::Mutex<crate::daemon::guard_watcher::GuardWatcher>>,
+    /// Durable guard store for crash recovery. None when no store path is configured.
+    guard_store: Option<Arc<keyhog_core::guard_store::DurableGuardStore>>,
 }
 
 impl ServerState {
@@ -276,6 +278,7 @@ impl ServerState {
         guard_hot_index_budget: Option<usize>,
         guard_filter: crate::orchestrator::DefaultScanFilter,
         guard_recon_config: keyhog_sources::guard::GuardReconciliationConfig,
+        guard_store: Option<Arc<keyhog_core::guard_store::DurableGuardStore>>,
     ) -> Self {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -318,6 +321,7 @@ impl ServerState {
                     crate::daemon::guard_watcher::GuardWatcher::new_disabled()
                 }),
             )),
+            guard_store,
         }
     }
 
@@ -461,6 +465,7 @@ pub(crate) async fn run_with_backend_override(
     guard_hot_index_budget: Option<usize>,
     guard_recon_config: keyhog_sources::guard::GuardReconciliationConfig,
     guard_scanner_idle_timeout: Option<u64>,
+    guard_store_path: Option<PathBuf>,
 ) -> Result<()> {
     ignore_sigpipe_while_serving();
     // Tell the operator the daemon is working before scanner compile and warmup.
@@ -475,6 +480,35 @@ pub(crate) async fn run_with_backend_override(
         WarmBackendReadiness::capture(&scanner, &detector_rules_digest, required_backends)?;
     let listener = bind_trusted_daemon_socket(&socket_path)?;
     let shutdown = Arc::new(Notify::new());
+
+    // Open the durable guard store if a path is configured. The store
+    // persists root records and attestations across daemon restarts.
+    // On startup, mark the service as unclean; a clean marker is only
+    // written during a graceful shutdown.
+    let guard_store: Option<Arc<keyhog_core::guard_store::DurableGuardStore>> = match &guard_store_path {
+        Some(path) => {
+            if let Some(parent) = path.parent() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    tracing::warn!("daemon: failed to create guard store dir {}: {}", parent.display(), e);
+                }
+            }
+            match keyhog_core::guard_store::DurableGuardStore::open(path) {
+                Ok(store) => {
+                    if let Err(e) = store.mark_unclean_shutdown() {
+                        tracing::warn!("daemon: failed to mark guard store unclean: {}", e);
+                    }
+                    tracing::info!("daemon: guard store opened at {}", path.display());
+                    Some(Arc::new(store))
+                }
+                Err(e) => {
+                    tracing::warn!("daemon: failed to open guard store at {}: {}; continuing without durable state", path.display(), e);
+                    None
+                }
+            }
+        }
+        None => None,
+    };
+
     let state = Arc::new(ServerState::new(
         scanner,
         router,
@@ -487,6 +521,7 @@ pub(crate) async fn run_with_backend_override(
         guard_hot_index_budget,
         guard_filter,
         guard_recon_config,
+        guard_store,
     ));
 
     // Set the guard policy identity from the daemon's scanner and build
