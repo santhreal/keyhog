@@ -9,9 +9,15 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 use proptest::prelude::*;
 use std::sync::LazyLock;
 
-static SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
-    CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
-        .expect("scanner compile")
+static DETECTORS: LazyLock<Vec<keyhog_core::DetectorSpec>> =
+    LazyLock::new(|| keyhog_core::embedded_detector_specs().to_vec());
+static CPU_SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
+    CompiledScanner::compile_for_backend(DETECTORS.clone(), ScanBackend::CpuFallback)
+        .expect("compile exact CPU scanner")
+});
+static SIMD_SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
+    CompiledScanner::compile_for_backend(DETECTORS.clone(), ScanBackend::SimdCpu)
+        .expect("compile exact SIMD scanner")
 });
 
 fn scan_sorted(text: &str, backend: ScanBackend) -> Vec<String> {
@@ -24,8 +30,13 @@ fn scan_sorted(text: &str, backend: ScanBackend) -> Vec<String> {
             ..Default::default()
         },
     };
-    SCANNER.clear_fragment_cache();
-    let mut creds: Vec<String> = SCANNER
+    let scanner = match backend {
+        ScanBackend::CpuFallback => &*CPU_SCANNER,
+        ScanBackend::SimdCpu => &*SIMD_SCANNER,
+        _ => panic!("parity property accepts only CPU and SIMD backends"),
+    };
+    scanner.clear_fragment_cache();
+    let mut creds: Vec<String> = scanner
         .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
         .expect("selected backend scan succeeds")
         .iter()

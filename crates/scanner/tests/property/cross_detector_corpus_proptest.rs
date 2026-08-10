@@ -78,6 +78,8 @@ struct ContractFile {
 #[derive(Debug, Deserialize, Clone)]
 struct ContractPositive {
     text: String,
+    #[serde(default)]
+    path: Option<String>,
     credential: String,
 }
 
@@ -178,7 +180,7 @@ static CRITICAL_POSITIVE_BY_ID: LazyLock<std::collections::BTreeMap<String, Cont
         out
     });
 
-fn scan_text(text: &str) -> Vec<keyhog_core::RawMatch> {
+fn scan_text(text: &str, path: Option<&str>) -> Vec<keyhog_core::RawMatch> {
     // Fragment cache leaks across calls (see contracts_runner) - drop
     // it so each property iteration scans against a clean state.
     SCANNER.clear_fragment_cache();
@@ -187,7 +189,7 @@ fn scan_text(text: &str) -> Vec<keyhog_core::RawMatch> {
             data: text.into(),
             metadata: ChunkMetadata {
                 source_type: "property/cross_detector".into(),
-                path: Some("cross_detector.txt".into()),
+                path: Some(path.unwrap_or("cross_detector.txt").into()),
                 ..Default::default()
             },
         })
@@ -270,20 +272,15 @@ proptest! {
         ..ProptestConfig::default()
     })]
 
-    /// For every random pick of an on-disk positive fixture, the
-    /// planted credential MUST surface in some scanner finding even
-    /// when wrapped in ASCII space padding. The padding length is
-    /// also randomised so chunk-boundary / prefilter-window-edge
-    /// effects get exercised (`pad_left + secret + pad_right`
-    /// pushes the secret through arbitrary offsets across the
-    /// alphabet-filter window).
+    /// For every random pick of an on-disk positive fixture, the planted
+    /// credential MUST surface when wrapped in ASCII space padding. The scan
+    /// preserves the fixture's declared path because source-admission paths are
+    /// part of a detector's minimal valid context. The padding length is also
+    /// randomised so chunk-boundary and prefilter-window edges are exercised.
     ///
-    /// We do NOT pin the detector_id of the surfaced finding -
-    /// cross-detector dedup is allowed to relabel a hit into an
-    /// overlapping detector (see scanner_fuzz.rs documentation).
-    /// The product-level contract is "if the secret is in the
-    /// input bytes, keyhog finds it" - which is what this property
-    /// asserts.
+    /// We do not pin the detector ID of the surfaced finding. Cross-detector
+    /// deduplication may relabel an overlapping hit. The product contract is
+    /// that the credential surfaces under its declared text and path context.
     #[test]
     fn positive_fixture_credential_in_noise_still_surfaces(
         idx in 0..usize::MAX,
@@ -310,7 +307,7 @@ proptest! {
                     // boundary bugs the static contracts_runner cannot.
             " ".repeat(pad_right),
         );
-        let matches = scan_text(&body);
+        let matches = scan_text(&body, p.path.as_deref());
         prop_assert!(
             any_credential_contains(&matches, &p.credential),
             "positive fixture for detector {detector_id:?} did not surface credential {:?} \
@@ -350,7 +347,7 @@ proptest! {
             // skip so the property focuses on the firing assertion.
             return Ok(());
         };
-        let matches = scan_text(&fixture.text);
+        let matches = scan_text(&fixture.text, fixture.path.as_deref());
         prop_assert!(
             any_credential_contains(&matches, &fixture.credential),
             "critical-severity detector {:?} did NOT surface its positive credential {:?} \

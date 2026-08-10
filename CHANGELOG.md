@@ -21,6 +21,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - Autoroute JSON inspection now exposes the active GPU artifact binding and each authenticated ordered-device route body, including per-device topology, throughput weights, and resident budgets.
 
+- Detector property gates now preserve declared source-admission paths, compare Caesar prefix admission at exact token boundaries, compile backend-specific CPU and SIMD plans, and retain minimized parity cases. The WordPress token contract again carries its required `wpcom` owner anchor.
+
 - Filesystem discovery prunes default-excluded directories (for example
   `node_modules/`) during the walk and counts each pruned directory once in the
   Excluded coverage signal. Linux unbounded walks abort at the first

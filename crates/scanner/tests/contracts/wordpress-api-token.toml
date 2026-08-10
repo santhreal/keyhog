@@ -8,12 +8,12 @@ severity = "high"
 # least fires on its canonical-shape anchor + body.
 
 [[positive]]
-text = "access-token '    : \"  '     =   : =     =  '' =     '  '\" '=    \" \" =:  lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"
+text = "wpcom access-token '    : \"  '     =   : =     =  '' =     '  '\" '=    \" \" =:  lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"
 credential = "lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"
 reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
 
 [[positive]]
-text = "access-token '    : \"  '     =   : =     =  '' =     '  '\" '=    \" \" =:  lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"
+text = "wpcom access-token '    : \"  '     =   : =     =  '' =     '  '\" '=    \" \" =:  lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"
 credential = "lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"
 reason = "Quoted-value variant of the canonical positive."
 

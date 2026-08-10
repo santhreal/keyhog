@@ -1,6 +1,10 @@
 # Changelog
 
 
+## Unreleased
+
+- Detector property gates now preserve fixture paths for source-admission checks, compare Caesar prefix admission at exact token boundaries, compile backend-specific CPU and SIMD scanners, and retain minimized parity cases. The WordPress token contract includes its required `wpcom` owner anchor.
+
 ## 0.5.70 - 2026-08-10
 
 - fix(profile): fail-closed overlapping allocation session peaks.

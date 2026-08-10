@@ -1,27 +1,35 @@
 //! Behavior-preservation contract for the Caesar per-shift prefix gate
 //! (`decode::caesar::contains_known_prefix`).
 //!
-//! The gate was an `O(prefixes × |variant|)` fan of `str::contains` calls; it is
-//! now a single linear Aho-Corasick pass (`PLAIN_PREFIX_AC.is_match`). An AC
-//! `is_match` is an unanchored substring test, so it MUST agree with the naive
-//! `any(|p| variant.contains(p))` on every input, this suite pins that
-//! equivalence (Law 6: the optimization changes cost, never behavior) plus the
-//! obvious positive/negative anchors. If the two ever diverge (e.g. a prefix
-//! with an internal overlap the AC handles differently), these fail LOUDLY.
+//! The gate was an `O(prefixes × |variant|)` fan of boundary-aware
+//! `str::contains` calls; it is now one linear Aho-Corasick pass followed by
+//! the same ASCII token-boundary check. A prefix at byte zero always matches.
+//! A later prefix matches only when the preceding byte is not ASCII
+//! alphanumeric or `_`, which prevents suffixes inside longer identifiers from
+//! admitting a Caesar decode. This suite pins exact equivalence (Law 6: the
+//! optimization changes cost, never behavior) plus positive and negative
+//! boundary anchors.
 
 use keyhog_scanner::testing::decode_caesar::{contains_known_prefix, KNOWN_PREFIXES};
 use proptest::prelude::*;
 
-/// The reference the optimized gate must match: does ANY known prefix occur as a
-/// substring of `s`?
+/// Boundary-aware reference for the optimized gate.
 fn naive_contains_known_prefix(s: &str) -> bool {
-    KNOWN_PREFIXES.iter().any(|p| s.contains(p.as_str()))
+    KNOWN_PREFIXES.iter().any(|prefix| {
+        s.match_indices(prefix.as_str()).any(|(start, _)| {
+            start == 0
+                || !matches!(
+                    s.as_bytes()[start - 1],
+                    b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_'
+                )
+        })
+    })
 }
 
 #[test]
-fn a_real_prefix_embedded_anywhere_matches() {
-    // Take a few actual prefixes from the Tier-B list and prove the gate fires
-    // when they appear at the start, middle, and end of a variant.
+fn a_real_prefix_at_token_boundaries_matches() {
+    // Take a few actual prefixes and prove the gate fires at byte zero and
+    // after an ASCII delimiter.
     let sample: Vec<&String> = KNOWN_PREFIXES.iter().take(6).collect();
     assert!(!sample.is_empty(), "KNOWN_PREFIXES must be non-empty");
     for prefix in sample {
@@ -30,13 +38,13 @@ fn a_real_prefix_embedded_anywhere_matches() {
             "bare prefix must match: {prefix}"
         );
         assert!(
-            contains_known_prefix(&format!("noise_{prefix}_tail")),
-            "embedded prefix must match: {prefix}"
+            contains_known_prefix(&format!("noise-{prefix}-tail")),
+            "boundary-delimited prefix must match: {prefix}"
         );
         // And the reference agrees.
         assert_eq!(
-            contains_known_prefix(&format!("xx{prefix}yy")),
-            naive_contains_known_prefix(&format!("xx{prefix}yy"))
+            contains_known_prefix(&format!("xx-{prefix}yy")),
+            naive_contains_known_prefix(&format!("xx-{prefix}yy"))
         );
     }
 }
@@ -52,26 +60,24 @@ fn a_string_with_no_prefix_does_not_match() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(6_000))]
 
-    /// The AC gate agrees with the naive substring scan on ARBITRARY input.
+    /// The AC gate agrees with the boundary-aware reference on arbitrary input.
     #[test]
     fn ac_matches_naive_on_arbitrary_input(s in "\\PC{0,128}") {
         prop_assert_eq!(contains_known_prefix(&s), naive_contains_known_prefix(&s));
     }
 
-    /// The AC gate agrees with the naive scan on input built from the credential
-    /// alphabet (letters/digits/`_`/`-`), where real prefixes actually live
-    /// this stresses genuine overlaps, not just random Unicode that never hits a
-    /// prefix.
+    /// Credential-alphabet input stresses prefixes embedded inside longer
+    /// identifiers, where the preceding-byte boundary decides admission.
     #[test]
     fn ac_matches_naive_on_credential_alphabet(s in "[A-Za-z0-9_\\-]{0,64}") {
         prop_assert_eq!(contains_known_prefix(&s), naive_contains_known_prefix(&s));
     }
 
-    /// Embedding ANY real prefix guarantees a match under BOTH implementations.
+    /// Embedding any real prefix after a delimiter guarantees a match.
     #[test]
-    fn embedding_a_real_prefix_always_matches(
+    fn embedding_a_real_prefix_at_a_boundary_always_matches(
         idx in 0usize..1_000,
-        pre in "[a-z0-9]{0,16}",
+        pre in "[a-z0-9]{0,16}-",
         post in "[a-z0-9]{0,16}",
     ) {
         let prefix = &KNOWN_PREFIXES[idx % KNOWN_PREFIXES.len()];
