@@ -161,7 +161,6 @@ impl Iterator for BufferedStdinChunks {
         if self.done {
             return None;
         }
-        let _buffering = crate::profile::read_span();
         let start = self.next_offset;
         let end = start
             .saturating_add(STDIN_WINDOW_SIZE)
