@@ -1351,6 +1351,11 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 detector_count: state.detector_count,
                 backend_recoveries: state.backend_recoveries.load(Ordering::Relaxed),
                 last_backend_fault: last_backend_fault.clone(),
+                guard_roots_registered: state.guard.root_count() as u64,
+                guard_roots_current: state.guard.count_by_state(keyhog_core::guard_state::GuardRootState::Current) as u64,
+                guard_roots_blocked: state.guard.count_by_state(keyhog_core::guard_state::GuardRootState::Blocked) as u64,
+                guard_roots_degraded: state.guard.count_by_state(keyhog_core::guard_state::GuardRootState::Degraded) as u64,
+                guard_active_transactions: state.guard.active_transaction_count() as u64,
                 warm_backend: state.warm_backend_status(),
             },
             Err(_) => Response::Error {

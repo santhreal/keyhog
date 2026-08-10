@@ -226,6 +226,11 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
             detector_count,
             backend_recoveries,
             last_backend_fault,
+            guard_roots_registered,
+            guard_roots_current,
+            guard_roots_blocked,
+            guard_roots_degraded,
+            guard_active_transactions,
             warm_backend,
         } => {
             if warm_backend.daemon_generation != hello_warm_backend.daemon_generation {
@@ -287,6 +292,16 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                 "keyhog daemon: uptime {}s · {} scans served · {} active · {} detectors",
                 uptime_secs, scans_served, active_scans, detector_count
             );
+            if guard_roots_registered > 0 {
+                println!(
+                    "guard: {} root(s) registered · {} current · {} blocked · {} degraded · {} active transaction(s)",
+                    guard_roots_registered,
+                    guard_roots_current,
+                    guard_roots_blocked,
+                    guard_roots_degraded,
+                    guard_active_transactions,
+                );
+            }
             if mass_service {
                 println!(
                     "scan scope: bounded directory, Git, archive, binary, remote, and cloud \

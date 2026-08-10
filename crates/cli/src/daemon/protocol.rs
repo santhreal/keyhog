@@ -373,6 +373,16 @@ pub(crate) enum Response {
         detector_count: usize,
         backend_recoveries: u64,
         last_backend_fault: Option<BackendRecoveryStatus>,
+        /// Guard: total registered roots.
+        guard_roots_registered: u64,
+        /// Guard: roots in Current state.
+        guard_roots_current: u64,
+        /// Guard: roots in Blocked state.
+        guard_roots_blocked: u64,
+        /// Guard: roots in Degraded state.
+        guard_roots_degraded: u64,
+        /// Guard: active commit transactions.
+        guard_active_transactions: u64,
         warm_backend: WarmBackendStatus,
     },
     /// Anything that went wrong on the server side. Connection stays

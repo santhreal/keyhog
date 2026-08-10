@@ -169,11 +169,16 @@ fn exact_ready_status_json_is_stable() {
         detector_count: 923,
         backend_recoveries: 0,
         last_backend_fault: None,
+        guard_roots_registered: 0,
+        guard_roots_current: 0,
+        guard_roots_blocked: 0,
+        guard_roots_degraded: 0,
+        guard_active_transactions: 0,
         warm_backend: ready_status("gen-a"),
     };
     let json = serde_json::to_string(&response).expect("serialize warm health status");
     assert_eq!(
         json,
-        "{\"kind\":\"health\",\"uptime_secs\":12,\"scans_served\":3,\"active_scans\":1,\"detector_count\":923,\"backend_recoveries\":0,\"last_backend_fault\":null,\"warm_backend\":{\"ready\":true,\"daemon_generation\":\"gen-a\",\"identity\":{\"engine\":\"engine-a\",\"gpu_artifact\":\"gpu-a\",\"binary_sha256\":\"binary-a\",\"detector_rules_digest\":\"detectors-a\",\"config_digest\":\"config-a\"},\"required_backends\":[\"gpu-wgpu\"],\"initialized_backends\":[\"gpu-wgpu\"],\"reason\":null,\"repair_command\":null}}"
+        "{\"kind\":\"health\",\"uptime_secs\":12,\"scans_served\":3,\"active_scans\":1,\"detector_count\":923,\"backend_recoveries\":0,\"last_backend_fault\":null,\"guard_roots_registered\":0,\"guard_roots_current\":0,\"guard_roots_blocked\":0,\"guard_roots_degraded\":0,\"guard_active_transactions\":0,\"warm_backend\":{\"ready\":true,\"daemon_generation\":\"gen-a\",\"identity\":{\"engine\":\"engine-a\",\"gpu_artifact\":\"gpu-a\",\"binary_sha256\":\"binary-a\",\"detector_rules_digest\":\"detectors-a\",\"config_digest\":\"config-a\"},\"required_backends\":[\"gpu-wgpu\"],\"initialized_backends\":[\"gpu-wgpu\"],\"reason\":null,\"repair_command\":null}}"
     );
 }
