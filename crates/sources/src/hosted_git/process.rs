@@ -378,15 +378,47 @@ impl GitAskpassAuth {
 
         let askpass_path = if cfg!(unix) {
             let path = dir.path().join("askpass.sh");
+            // Host-boundary match only. Substring *"$ORIGIN"* leaked forge
+            // tokens to notgithub.com / github.com.evil / evil-github.com.
+            // Require ORIGIN as a URL host (after :// or @) followed by a host
+            // terminator so lookalike hosts cannot match.
             write_askpass_file(
                 &path,
-                b"#!/bin/sh\nset -eu\nDIR=${0%/*}\n[ \"$DIR\" != \"$0\" ] || DIR=.\nread_one() {\n  IFS= read -r line < \"$1\" || [ -n \"${line-}\" ] || exit 1\n  printf '%s\\n' \"$line\"\n}\nORIGIN=$(read_one \"$DIR/origin-host\")\ncase \"${1-}\" in\n*\"$ORIGIN\"*) ;;\n*) printf '%s\\n' \"keyhog: refusing git credential prompt outside expected origin\" >&2; exit 1 ;;\nesac\ncase \"${1-}\" in\n*Username*) read_one \"$DIR/username\" ;;\n*) read_one \"$DIR/token\" ;;\nesac\n",
+                b"#!/bin/sh\nset -eu\nDIR=${0%/*}\n[ \"$DIR\" != \"$0\" ] || DIR=.\nread_one() {\n  IFS= read -r line < \"$1\" || [ -n \"${line-}\" ] || exit 1\n  printf '%s\\n' \"$line\"\n}\nORIGIN=$(read_one \"$DIR/origin-host\")\ncase \"${1-}\" in\n*\"://${ORIGIN}/\"*|*\"://${ORIGIN}:\"*|*\"://${ORIGIN}'\"*|*\"://${ORIGIN}\\\"\"*|*\"://${ORIGIN}?\"*|*\"://${ORIGIN}#\"*|*\"@${ORIGIN}/\"*|*\"@${ORIGIN}:\"*|*\"@${ORIGIN}'\"*|*\"@${ORIGIN}\\\"\"*|*\"@${ORIGIN}?\"*|*\"@${ORIGIN}#\"*) ;;\n*) printf '%s\\n' \"keyhog: refusing git credential prompt outside expected origin\" >&2; exit 1 ;;\nesac\ncase \"${1-}\" in\n*Username*) read_one \"$DIR/username\" ;;\n*) read_one \"$DIR/token\" ;;\nesac\n",
             )?;
             path
         } else {
             let path = dir.path().join("askpass.bat");
+            // Literal host-boundary needles (not bare !origin!) so findstr
+            // cannot match lookalike hosts. Keep delayed expansion for the
+            // prompt to avoid %metachar% expansion.
             let content = format!(
-                "@echo off\r\nsetlocal EnableExtensions EnableDelayedExpansion\r\nset \"prompt=%~1\"\r\nset /p origin=<\"{}\"\r\necho(!prompt!| findstr /I /L /C:\"!origin!\" >nul\r\nif errorlevel 1 (\r\n  >&2 echo keyhog: refusing git credential prompt outside expected origin\r\n  exit /b 1\r\n)\r\necho(!prompt!| findstr /I /C:\"Username\" >nul\r\nif not errorlevel 1 (\r\n  type \"{}\"\r\n) else (\r\n  type \"{}\"\r\n)\r\n",
+                concat!(
+                    "@echo off\r\n",
+                    "setlocal EnableExtensions EnableDelayedExpansion\r\n",
+                    "set \"prompt=%~1\"\r\n",
+                    "set /p origin=<\"{}\"\r\n",
+                    "echo(!prompt!| findstr /I /L ",
+                    "/C:\"://!origin!/\" ",
+                    "/C:\"://!origin!:\" ",
+                    "/C:\"://!origin!'\" ",
+                    "/C:\"://!origin!\"\" ",
+                    "/C:\"@!origin!/\" ",
+                    "/C:\"@!origin!:\" ",
+                    "/C:\"@!origin!'\" ",
+                    "/C:\"@!origin!\"\" ",
+                    ">nul\r\n",
+                    "if errorlevel 1 (\r\n",
+                    "  >&2 echo keyhog: refusing git credential prompt outside expected origin\r\n",
+                    "  exit /b 1\r\n",
+                    ")\r\n",
+                    "echo(!prompt!| findstr /I /C:\"Username\" >nul\r\n",
+                    "if not errorlevel 1 (\r\n",
+                    "  type \"{}\"\r\n",
+                    ") else (\r\n",
+                    "  type \"{}\"\r\n",
+                    ")\r\n",
+                ),
                 origin_path.display(),
                 username_path.display(),
                 token_path.display()

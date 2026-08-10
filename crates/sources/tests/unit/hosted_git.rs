@@ -224,6 +224,47 @@ fn askpass_refuses_prompts_outside_expected_origin_without_printing_secret_or_pa
         String::from_utf8_lossy(&blocked.stderr).contains("outside expected origin"),
         "mismatched-origin prompt must explain refusal"
     );
+
+    for (label, prompt) in [
+        ("prefix lookalike", "Password for 'https://notgithub.com':"),
+        (
+            "suffix lookalike",
+            "Password for 'https://github.com.evil.com':",
+        ),
+        ("infix lookalike", "Password for 'https://evil-github.com':"),
+    ] {
+        let confused = std::process::Command::new(&auth.askpass_path)
+            .arg(prompt)
+            .env("PATH", "/keyhog/path/must/not/be/used")
+            .output()
+            .unwrap_or_else(|error| panic!("run {label} askpass: {error}"));
+        assert!(
+            confused.status.success() == false,
+            "{label} host must fail closed: {confused:?}"
+        );
+        assert!(
+            String::from_utf8_lossy(&confused.stdout).contains("SECRET_TOKEN") == false,
+            "{label} host must not print the token"
+        );
+        assert!(
+            String::from_utf8_lossy(&confused.stderr).contains("outside expected origin"),
+            "{label} host must explain refusal"
+        );
+    }
+
+    let username = std::process::Command::new(&auth.askpass_path)
+        .arg("Username for 'https://github.com':")
+        .env("PATH", "/keyhog/path/must/not/be/used")
+        .output()
+        .expect("run username askpass");
+    assert!(
+        username.status.success(),
+        "matching-origin username prompt should succeed: {username:?}"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&username.stdout).trim(),
+        "x-access-token"
+    );
 }
 
 #[cfg(any(feature = "gitlab", feature = "bitbucket"))]

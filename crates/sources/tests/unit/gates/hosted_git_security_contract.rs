@@ -53,9 +53,12 @@ fn hosted_git_windows_askpass_does_not_expand_raw_prompt_with_percent_vars() {
     assert!(
         hosted_git.contains("setlocal EnableExtensions EnableDelayedExpansion")
             && hosted_git.contains(r#"set \"prompt=%~1\""#)
-            && hosted_git.contains(r#"echo(!prompt!| findstr /I /L /C:\"!origin!\""#)
+            && hosted_git.contains(r#"echo(!prompt!| findstr /I /L "#)
+            && hosted_git.contains(r#"/C:\"://!origin!/\""#)
+            && hosted_git.contains(r#"/C:\"@!origin!/\""#)
+            && !hosted_git.contains(r#"/C:\"!origin!\""#)
             && hosted_git.contains(r#"echo(!prompt!| findstr /I /C:\"Username\""#),
-        "Windows hosted Git askpass must classify prompts via delayed expansion, not raw percent-expanded prompt text"
+        "Windows hosted Git askpass must classify prompts via delayed expansion and host-boundary findstr needles, not bare origin substring or raw percent-expanded prompt text"
     );
     assert!(
         !hosted_git.contains("setlocal EnableExtensions DisableDelayedExpansion")
