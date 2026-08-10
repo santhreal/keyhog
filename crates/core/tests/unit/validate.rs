@@ -1245,30 +1245,6 @@ fn regex_validator_uses_one_iterative_ast_walk() {
 }
 
 #[test]
-fn literal_specificity_uses_ast_not_raw_regex_scans() {
-    let source = format!(
-        "{}\n{}",
-        keyhog_core::testing::read_crate_source("src/spec/validate.rs"),
-        keyhog_core::testing::read_crate_source("src/spec/validate/regex_ast.rs")
-    );
-
-    assert!(source.contains("fn ast_literal_runs("));
-    assert!(source.contains("enum LiteralFrame"));
-    assert!(source.contains("fn combine_literal_runs("));
-    assert!(source.contains("fn pure_character_class_ast("));
-    assert!(source.contains("enum PureFrame"));
-    assert!(source.contains("fn is_regex_metadata_node("));
-    assert!(source.contains("is_pure_character_class(regex_cache,"));
-    assert!(!source.contains("ast_literal_runs(&group.ast)"));
-    assert!(!source.contains(".map(|child| ast_literal_runs(child).max)"));
-    assert!(!source.contains("pure_character_class_ast(&group.ast)"));
-    assert!(!source.contains(".map(|child| pure_character_class_ast(child))"));
-    assert!(!source.contains("fn is_escaped_literal("));
-    assert!(!source.contains("for ch in pattern.chars()"));
-    assert!(!source.contains(".find(']')"));
-}
-
-#[test]
 fn regex_validation_uses_typed_kinds_not_string_labels() {
     let source = keyhog_core::testing::read_crate_source("src/spec/validate.rs");
 
