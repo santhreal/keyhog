@@ -72,11 +72,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // The suppression API tests exercise its crate-private typed contexts and
     // stage results directly.
     "suppression/api.rs",
-    // `engine/mod.rs` co-locates compile-time `Send`/`Sync` assertions over the
-    // private `CompiledScanner` plus the private `MAX_INNER_LOOP_ITERS` /
-    // deadline-cadence hot-loop invariants. Compile-time trait asserts are
-    // irreducibly source-local; the consts are crate-internal engine details.
-    "engine/mod.rs",
     // `engine/phase2/mark_stats.rs` exposes a `pub(crate)` telemetry facade
     // (`record_mark_*`, `take_mark_stats`) over the profile runtime's typed
     // counters. Same justification as `telemetry.rs`: keeping the record/read

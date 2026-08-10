@@ -1713,6 +1713,7 @@ pub fn scan_coalesced_phase2_with_admission_for_test(
             None,
             None,
             None,
+            crate::hw_probe::ScanBackend::CpuFallback,
             scanner.default_execution_route(),
         )
         .expect("test phase-2 admission scan succeeds")
@@ -1733,6 +1734,7 @@ pub fn scan_windowed_with_triggered_for_test(
             None,
             None,
             None,
+            crate::hw_probe::ScanBackend::CpuFallback,
             scanner.default_execution_route(),
         )
         .expect("test triggered window scan succeeds")
@@ -1755,6 +1757,7 @@ pub fn scan_windowed_with_triggered_evidence_for_test(
             None,
             confirmed_anchor_literal_matches,
             generic_keyword_positions,
+            crate::hw_probe::ScanBackend::CpuFallback,
             scanner.default_execution_route(),
         )
         .expect("test evidence window scan succeeds")
@@ -1992,7 +1995,7 @@ pub mod confidence {
                 )
             })
             .post_match;
-        crate::confidence::policy::finalize_report_confidence(
+        crate::confidence::policy::finalize_report_confidence_canonical(
             confidence,
             crate::confidence::policy::ReportConfidencePolicy {
                 credential,
@@ -3772,6 +3775,32 @@ pub(crate) fn set_phase2_homoglyph_gate(
     scanner.tuning().set_phase2_homoglyph_gate(mode);
 }
 
+#[cfg(test)]
+impl crate::engine::CompiledScanner {
+    #[doc(hidden)]
+    pub(crate) fn debug_scan_phase2_only(
+        &self,
+        chunk: &keyhog_core::Chunk,
+    ) -> Vec<keyhog_core::RawMatch> {
+        let prepared = self.prepare_chunk(chunk);
+        let line_index = prepared.line_index();
+        let mut scan_state =
+            crate::scan_state::ScanState::with_static_intern(self.static_intern.clone());
+        self.scan_phase2_patterns(
+            &prepared.preprocessed,
+            line_index,
+            prepared.chunk,
+            &mut scan_state,
+            None,
+            None,
+            None,
+            self.default_execution_route(),
+        )
+        .expect("phase-2 diagnostic scan");
+        scan_state.into_matches()
+    }
+}
+
 pub fn set_homoglyph_ascii_skip(scanner: &crate::engine::CompiledScanner, mode: Option<bool>) {
     scanner.tuning.set_homoglyph_ascii_skip(mode);
 }
@@ -4734,6 +4763,18 @@ pub fn ml_score_batch_serial_for_test(
 #[cfg(feature = "ml")]
 pub fn ml_score_features(features: &[f32; crate::ml_scorer::NUM_FEATURES]) -> f64 {
     crate::ml_scorer::score_features(features)
+}
+
+#[cfg(feature = "ml")]
+pub fn quantized_score_features(
+    features: &[f32; crate::ml_scorer::NUM_FEATURES],
+) -> Result<(Vec<u8>, u16), String> {
+    let row = crate::confidence::quantized::QuantizedFeatureRow::from_float(features)
+        .map_err(|error| error.to_string())?;
+    let score = crate::confidence::quantized::model()
+        .map_err(|error| error.to_string())?
+        .score(&row);
+    Ok((row.canonical_bytes().to_vec(), score.0))
 }
 
 #[cfg(feature = "ml")]

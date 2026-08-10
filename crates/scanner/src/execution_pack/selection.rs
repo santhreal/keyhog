@@ -4,7 +4,7 @@ use super::{
 };
 use std::path::PathBuf;
 
-pub const ROUTE_DECISION_VERSION: u16 = 1;
+pub const ROUTE_DECISION_VERSION: u16 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RouteSelectionContext {
@@ -12,6 +12,8 @@ pub struct RouteSelectionContext {
     pub workload_digest: [u8; 32],
     pub host_digest: [u8; 32],
     pub calibration_digest: [u8; 32],
+    pub feature_schema_digest: [u8; 32],
+    pub quantized_model_digest: [u8; 32],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -24,6 +26,8 @@ pub struct PersistedRouteDecision {
     pub calibration_digest: [u8; 32],
     pub pack_identity_digest: [u8; 32],
     pub pack_content_digest: [u8; 32],
+    pub feature_schema_digest: [u8; 32],
+    pub quantized_model_digest: [u8; 32],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -152,6 +156,24 @@ fn validate_decision(
         if actual != expected {
             return Err(ExecutionPackError::Incompatible(format!(
                 "autoroute {name} identity is stale; recalibrate before scanning"
+            )));
+        }
+    }
+    for (name, actual, expected) in [
+        (
+            "feature schema",
+            decision.feature_schema_digest,
+            context.feature_schema_digest,
+        ),
+        (
+            "quantized model",
+            decision.quantized_model_digest,
+            context.quantized_model_digest,
+        ),
+    ] {
+        if actual != expected {
+            return Err(ExecutionPackError::Incompatible(format!(
+                "autoroute {name} identity is stale; reinstall and recalibrate"
             )));
         }
     }

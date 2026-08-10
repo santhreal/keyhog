@@ -11,6 +11,7 @@ type PackedSimdProgram = ();
 struct PackedVyreProgramSource<'a> {
     bytes: &'a [u8],
     pack_identity: crate::execution_pack::ExecutionPackIdentity,
+    signature_authenticated: bool,
 }
 
 struct PackedDetectorPlanPrelude<'a> {
@@ -480,6 +481,7 @@ impl CompiledScanner {
         let packed_vyre_program = identity.backend.is_gpu().then(|| PackedVyreProgramSource {
             bytes: backend_program,
             pack_identity: identity,
+            signature_authenticated: pack.signature_authenticated(),
         });
         let state =
             if let Some(prelude) = packed_detector_plan.as_ref() {
@@ -930,6 +932,10 @@ impl CompiledScanner {
             }
         };
         #[cfg(feature = "gpu")]
+        let packed_confidence_authenticated = packed_vyre_program
+            .as_ref()
+            .is_some_and(|source| source.signature_authenticated);
+        #[cfg(feature = "gpu")]
         let packed_gpu_artifact = if let Some(source) = packed_vyre_program {
             let selected = selected_backend
                 .filter(|backend| backend.is_gpu())
@@ -1092,6 +1098,12 @@ impl CompiledScanner {
         let generic_keyword_literal_count =
             generic_keyword_plan.map_or(0, |plan| plan.stem_literals().count());
         let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
+        #[cfg(feature = "gpu")]
+        let quantized_confidence_authenticated = selected_backend.map_or(true, |backend| {
+            !backend.is_gpu() || (packed_confidence_authenticated && packed_gpu_artifact.is_some())
+        });
+        #[cfg(not(feature = "gpu"))]
+        let quantized_confidence_authenticated = true;
         #[cfg(feature = "gpu")]
         let (gpu_literals, packed_gpu_matcher, gpu_max_literal_len, phase2_gpu_dfa) =
             if let Some((artifact, phase2_catalog_bytes, backend_id)) = packed_gpu_artifact {
@@ -1311,6 +1323,7 @@ impl CompiledScanner {
         }
         let scanner = Self {
             backend_state,
+            quantized_confidence_authenticated,
             detector_digest,
             vocab_stage_absence_cache: dashmap::DashMap::with_hasher(ahash::RandomState::new()),
             entropy_config_digest_cache: parking_lot::Mutex::new(None),

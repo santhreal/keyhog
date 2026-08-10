@@ -1,6 +1,6 @@
 //! Property invariants for the trigger bitmap (`engine::trigger_bitmap`), the
 //! per-pattern set the confirmed-pass hot path walks to decide which detectors
-//! to extract (`backend_triggered.rs`: `for_each_set_bit(&expanded_patterns, …)`).
+//! trigger (`engine/backend/triggered.rs`: `for_each_set_bit(&expanded_patterns, …)`).
 //!
 //! A bug in this bit walk is silent and severe: a MISSED bit drops a detector
 //! trigger (a real credential is never confirmed), a DUPLICATE double-fires the

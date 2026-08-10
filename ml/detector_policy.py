@@ -16,6 +16,8 @@ def _load() -> tuple[dict[str, dict], dict[str, dict]]:
         by_id: dict[str, dict] = {}
         fallback_owner: dict[str, dict] = {}
         for path in sorted(DETECTORS_DIR.glob("*.toml")):
+            if path.name == "corpus.toml":
+                continue
             with path.open("rb") as fh:
                 detector = tomllib.load(fh)["detector"]
             by_id[detector["id"]] = detector

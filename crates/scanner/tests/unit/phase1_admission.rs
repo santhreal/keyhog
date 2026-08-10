@@ -323,9 +323,11 @@ fn oversized_prefixless_phase2_row_keeps_cpu_admission_authoritative() {
     const TOKEN: &str = "Kp4Qx7Rm2Sn5Tb8Vw3YzH6Lc9Df1Gj4N";
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;
-    let generic = keyhog_core::detector_spec_by_id("generic-secret")
+    let mut generic = keyhog_core::detector_spec_by_id("generic-secret")
         .expect("embedded generic assignment detector")
         .clone();
+    // Isolate phase-two admission from the separate confidence-scoring route.
+    generic.ml.match_mode = keyhog_core::DetectorMlMode::Disabled;
     let scanner =
         CompiledScanner::compile_for_backend(vec![generic.clone()], ScanBackend::CpuFallback)
             .expect("compile detector-owned generic scalar plan")

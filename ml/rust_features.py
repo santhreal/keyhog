@@ -74,6 +74,24 @@ def _dump_features_command() -> tuple[list[str], Path]:
         "dump_features",
     ], repo_root
 
+def quantized_schema_digest() -> str:
+    """Return the canonical digest owned by the Rust feature registry."""
+    cmd, cwd = _dump_features_command()
+    proc = subprocess.run(
+        [*cmd, "--quantized-schema-digest"],
+        cwd=cwd,
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode("utf-8", "replace")
+        raise RuntimeError(
+            f"rust quantized schema query failed (exit {proc.returncode}):\n{stderr}"
+        )
+    digest = proc.stdout.decode("ascii").strip()
+    if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+        raise RuntimeError(f"rust quantized schema query returned invalid digest {digest!r}")
+    return digest
+
 
 def run_dump_features(lines: Sequence[str]) -> list[list[float]]:
     if not lines:

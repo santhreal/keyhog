@@ -3,6 +3,7 @@ use super::*;
 
 pub(crate) mod dispatch;
 pub(crate) mod prepared;
+mod trigger_collection;
 pub(crate) mod triggered;
 
 pub(crate) use prepared::PreparedChunk;

@@ -33,7 +33,7 @@ impl ExecutionPackSectionKind {
             Self::LiteralIndex | Self::RegexPrograms | Self::SuppressionPolicy => {
                 super::matcher_sections::ROUTE_MATCHER_SECTION_VERSION
             }
-            Self::BackendProgram => 1,
+            Self::BackendProgram => 2,
             Self::DetectorPlan => super::detector_plan::DETECTOR_PLAN_SECTION_VERSION,
         }
     }

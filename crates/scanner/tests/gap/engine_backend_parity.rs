@@ -6,7 +6,7 @@
 //!     same finding set for a fixed corpus. Both backends seed the candidate
 //!     bitmap from the SAME AC literal triggers (see
 //!     `collect_triggered_patterns_simd` / `collect_triggered_patterns_cpu` in
-//!     `engine/backend_triggered.rs`); HS only UNIONS extra candidates that the
+//!     `engine/backend/trigger_collection.rs`); HS only UNIONS extra candidates that the
 //!     full regex confirmation then re-filters, so the emitted set is identical.
 //!   * The phase-2 keyword lane, entropy fallback, and generic assignment pass
 //!     (`scan_entropy_fallback`, `scan_phase2_patterns`,

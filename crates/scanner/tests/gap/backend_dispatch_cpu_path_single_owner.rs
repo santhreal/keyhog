@@ -10,9 +10,9 @@
 //! the per-chunk scan), so a divergence there silently loses findings on one
 //! path. The two copies are now one `scan_chunks_cpu_parallel` helper.
 //!
-//! This pins the dedup: the helper exists, the parallel scan-map appears
-//! exactly once, and the boundary pass is invoked from the helper, so a future
-//! edit can't re-inline a second copy that drifts.
+//! This pins the dedup: the helper owns both mutually exclusive parallel
+//! traversals and the boundary pass, so another backend path cannot re-inline a
+//! copy that drifts.
 
 fn read_src(rel: &str) -> String {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -28,12 +28,12 @@ fn cpu_scan_and_boundary_path_has_single_owner() {
         "the CPU scan + boundary path must live in one owner, scan_chunks_cpu_parallel"
     );
 
-    // The parallel iterator is the duplicated core. Its admission-aware map may
-    // evolve, but the parallel traversal itself must remain in one owner.
+    // The direct and coalesced-lane traversals are mutually exclusive branches
+    // inside the same owner. No other backend path may add a traversal.
     let map_occurrences = src.matches(".par_iter()").count();
     assert_eq!(
-        map_occurrences, 1,
-        "the par_iter scan-map must appear exactly once (deduped into the helper), found {map_occurrences}"
+        map_occurrences, 2,
+        "the CPU owner must contain exactly its direct and coalesced-lane traversals, found {map_occurrences}"
     );
 
     // The seam reassembly pass must run from the single owner. The route-carrying

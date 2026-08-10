@@ -8,7 +8,7 @@
 //! that, by `regex_syntax` proof, every match must contain), instead of the
 //! whole chunk. That is sound iff the anchor is a required literal of every
 //! match -- declared `detector.keywords` do NOT qualify (they are prefilter
-//! metadata, not guaranteed match substrings; see `backend_triggered.rs` HS
+//! metadata, not guaranteed match substrings; see `backend/triggered.rs` HS
 //! union comment). This test reports how much of the phase-2 set carries such
 //! a regex-proven anchor.
 //!

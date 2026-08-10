@@ -3,8 +3,8 @@
 //!
 //! The 78046450 consolidation removed `engine/gpu_ac_phase1.rs`: GPU phase-1 is
 //! now POSITIONLESS (a presence bitmap via `scan_presence` or the coalesced
-//! region-presence path, see `backend_triggered.rs` / `gpu_region_dispatch.rs`),
-//! and all match POSITIONS come from CPU regex in
+//! region-presence path, see `backend/trigger_collection.rs` and
+//! `gpu_region_dispatch.rs`), and all match POSITIONS come from CPU regex in
 //! `scan_coalesced_phase2`. So a degenerate GPU position triple can no longer
 //! reach attribution; the surviving structured integrity guard is
 //! `segment_attribution::map_offsets_to_segments`, and the surviving failure
@@ -65,7 +65,7 @@ fn degenerate_match_ranges_are_rejected_not_silently_attributed() {
 #[test]
 fn gpu_dispatch_failures_preserve_operator_visible_reasons() {
     let dispatch = engine_src("src/engine/gpu_region_dispatch/mod.rs");
-    let trigger = engine_src("src/engine/backend/triggered.rs");
+    let trigger = engine_src("src/engine/backend/trigger_collection.rs");
     for needle in [
         "gpu literal matcher not built for coalesced region scan",
         "self.gpu_backend_unavailable_reason(route)",
@@ -84,7 +84,7 @@ fn gpu_dispatch_failures_preserve_operator_visible_reasons() {
     ] {
         assert!(
             trigger.contains(needle),
-            "backend_triggered per-chunk GPU failure must carry a concrete reason: {needle:?}"
+            "trigger_collection per-chunk GPU failure must carry a concrete reason: {needle:?}"
         );
     }
     let failure = engine_src("src/engine/gpu_forced_helpers.rs");

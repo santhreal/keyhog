@@ -338,6 +338,7 @@ impl CompiledScanner {
                 None,
                 None,
                 admission_plan,
+                crate::hw_probe::ScanBackend::SimdCpu,
                 route,
             );
         }
@@ -806,6 +807,7 @@ impl CompiledScanner {
         confirmed_anchor_literal_matches: Option<&[Vec<(u32, u32)>]>,
         generic_keyword_positions: Option<&[Vec<u32>]>,
         phase1_plan: Option<&super::Phase1AdmissionPlan>,
+        backend: crate::hw_probe::ScanBackend,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
         use rayon::prelude::*;
@@ -964,6 +966,7 @@ impl CompiledScanner {
                                     phase2_always_active_gpu_evidence,
                                     confirmed_anchor_matches,
                                     generic_keyword_positions,
+                                    backend,
                                     route,
                                 )?;
                                 return Ok(CoalescedChunkOutput {
@@ -1118,7 +1121,7 @@ impl CompiledScanner {
                 }
             }
             let _g = profile::span(keyhog_profile::Stage::MachineLearning);
-            self.apply_ml_batch_scores_across(&mut scan_states)?;
+            self.apply_ml_batch_scores_across(&mut scan_states, backend)?;
             for (output_index, state) in output_indices.into_iter().zip(scan_states) {
                 outputs[output_index].matches = state.into_matches();
             }

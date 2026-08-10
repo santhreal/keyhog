@@ -2,6 +2,14 @@
   "architecture": "moe-v1",
   "feature_count": 55,
   "feature_source": "Rust dump_features serve path",
+  "quantized_serving": {
+    "artifact_sha256": "deb1119ad8659d003dd42d257e1b1faa08e33815ce43c338d9a5f328062376b3",
+    "feature_schema_sha256": "2a8797e64d5f99750e4325a986774868331718b7f06be5acc93bdf55ecc8c5bf",
+    "feature_schema_version": 1,
+    "format_version": 1,
+    "fractional_bits": 7,
+    "rounding": "nearest-ties-away-from-zero"
+  },
   "metrics": {
     "real_heldout": {
       "n_neg": 2211,

@@ -1,4 +1,5 @@
 use base64::Engine as _;
+use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
 use std::io;
@@ -10,6 +11,7 @@ mod service_vocab_build;
 fn main() -> io::Result<()> {
     println!("cargo:rerun-if-changed=src/weights.bin");
     println!("cargo:rerun-if-changed=src/model_card.json");
+    println!("cargo:rerun-if-changed=src/quantized_moe.bin");
     println!("cargo:rerun-if-changed=data/english_bigram_logprob.bin");
     println!("cargo:rerun-if-changed=data/english_bigram_logprob.card.toml");
 
@@ -59,6 +61,78 @@ fn main() -> io::Result<()> {
             format!("src/model_card.json is not valid JSON: {error}"),
         )
     })?;
+
+    let quantized_bytes = fs::read("src/quantized_moe.bin").map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("src/quantized_moe.bin is required for quantized confidence scoring: {error}"),
+        )
+    })?;
+    if quantized_bytes.len() < 60
+        || &quantized_bytes[..8] != b"KHQMOE\0\x01"
+        || u16::from_le_bytes([quantized_bytes[8], quantized_bytes[9]]) != 1
+        || u16::from_le_bytes([quantized_bytes[10], quantized_bytes[11]]) != 1
+        || u16::from_le_bytes([quantized_bytes[12], quantized_bytes[13]]) != 55
+        || u16::from_le_bytes([quantized_bytes[14], quantized_bytes[15]]) != 6
+        || u16::from_le_bytes([quantized_bytes[16], quantized_bytes[17]]) != 32
+        || u16::from_le_bytes([quantized_bytes[18], quantized_bytes[19]]) != 16
+        || quantized_bytes[20] != 7
+        || quantized_bytes[21] != 1
+        || quantized_bytes[22..24] != [0, 0]
+    {
+        return Err(invalid_data(
+            "quantized_moe.bin has an unsupported header; regenerate the quantized model artifact",
+        ));
+    }
+    let payload_len = u32::from_le_bytes([
+        quantized_bytes[24],
+        quantized_bytes[25],
+        quantized_bytes[26],
+        quantized_bytes[27],
+    ]) as usize;
+    let parameter_count = 6 * 55 + 6 + 6 * (32 * 55 + 32 + 16 * 32 + 16 + 16 + 1);
+    let expected_payload_len = parameter_count * std::mem::size_of::<i16>();
+    if payload_len != expected_payload_len || quantized_bytes.len() != 60 + payload_len {
+        return Err(invalid_data(
+            "quantized_moe.bin parameter count or artifact length is invalid",
+        ));
+    }
+    let expected_payload_digest = &quantized_bytes[28..60];
+    let actual_payload_digest = Sha256::digest(&quantized_bytes[60..]);
+    if expected_payload_digest != &actual_payload_digest[..] {
+        return Err(invalid_data(
+            "quantized_moe.bin payload digest mismatch; regenerate the quantized model artifact",
+        ));
+    }
+    let max_parameter_magnitude = quantized_bytes[60..]
+        .chunks_exact(std::mem::size_of::<i16>())
+        .map(|pair| i64::from(i16::from_le_bytes([pair[0], pair[1]])).abs())
+        .max()
+        .unwrap_or(0);
+    let maximum_dense_accumulator = 55i64 * (i64::from(i16::MAX) + 1) * max_parameter_magnitude
+        + 128 * max_parameter_magnitude
+        + 64;
+    if maximum_dense_accumulator > i64::from(i32::MAX) {
+        return Err(invalid_data(format!(
+            "quantized_moe.bin parameter magnitude {max_parameter_magnitude} exceeds the VYRE i32 arithmetic bound; retrain with a bounded quantization scale"
+        )));
+    }
+    let quantized_digest = hex_lower(&Sha256::digest(&quantized_bytes));
+    let card_quantized_digest = json_str(&card, "/quantized_serving/artifact_sha256")?;
+    if card_quantized_digest != quantized_digest {
+        return Err(invalid_data(format!(
+            "model_card.json quantized artifact mismatch: card has {card_quantized_digest}, artifact is {quantized_digest}"
+        )));
+    }
+    if json_u64(&card, "/quantized_serving/format_version")? != 1
+        || json_u64(&card, "/quantized_serving/feature_schema_version")? != 1
+        || json_u64(&card, "/quantized_serving/fractional_bits")? != 7
+        || json_str(&card, "/quantized_serving/rounding")? != "nearest-ties-away-from-zero"
+    {
+        return Err(invalid_data(
+            "model_card.json quantized serving ABI is stale; regenerate the model card",
+        ));
+    }
 
     let card_version = json_str(&card, "/model_version")?;
     if card_version != version_str {
@@ -623,8 +697,18 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
     hash
 }
 
-fn invalid_data(message: String) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message)
+fn hex_lower(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        out.push(DIGITS[(byte >> 4) as usize] as char);
+        out.push(DIGITS[(byte & 0x0f) as usize] as char);
+    }
+    out
+}
+
+fn invalid_data(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message.into())
 }
 
 fn json_str<'a>(value: &'a serde_json::Value, pointer: &str) -> io::Result<&'a str> {

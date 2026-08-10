@@ -13,16 +13,16 @@
 use std::fs;
 use std::path::PathBuf;
 
-fn backend_triggered_src() -> String {
+fn trigger_collection_src() -> String {
     fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/engine/backend/triggered.rs"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/engine/backend/trigger_collection.rs"),
     )
-    .expect("backend_triggered.rs readable")
+    .expect("trigger_collection.rs readable")
 }
 
 #[test]
 fn per_chunk_gpu_failure_is_hard_and_reason_carrying() {
-    let src = backend_triggered_src();
+    let src = trigger_collection_src();
 
     // The failure must record runtime status and return a structured GPU error.
     assert!(
@@ -42,7 +42,7 @@ fn per_chunk_gpu_failure_is_hard_and_reason_carrying() {
 
 #[test]
 fn per_chunk_gpu_has_no_silent_simd_swap() {
-    let src = backend_triggered_src();
+    let src = trigger_collection_src();
 
     // Isolate the function body so we only inspect this path.
     let start = src

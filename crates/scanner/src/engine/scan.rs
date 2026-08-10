@@ -311,6 +311,7 @@ impl CompiledScanner {
             phase2_always_active_evidence,
             None,
             generic_keyword_positions,
+            backend,
             route,
         )
     }

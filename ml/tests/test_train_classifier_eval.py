@@ -32,6 +32,29 @@ def test_serialized_weights_rejects_wrong_feature_layout(tmp_path):
             train_classifier.build_model(55), str(path), 55
         )
 
+def test_quantized_serializer_reproduces_shipped_artifact_exactly():
+    weights = (
+        train_classifier.REPO_ROOT / "crates/scanner/src/weights.bin"
+    ).read_bytes()
+    expected = (
+        train_classifier.REPO_ROOT / "crates/scanner/src/quantized_moe.bin"
+    ).read_bytes()
+    assert train_classifier.serialize_quantized(weights, 55) == expected
+
+
+def test_quantized_serializer_rejects_stale_width_and_nonfinite_weights():
+    with pytest.raises(ValueError, match="55-feature schema"):
+        train_classifier.serialize_quantized(b"", 51)
+    with pytest.raises(ValueError, match="expected"):
+        train_classifier.serialize_quantized(b"", 55)
+    parameters = np.zeros(train_classifier.parameter_count(55), dtype="<f4")
+    parameters[0] = np.nan
+    with pytest.raises(ValueError, match="non-finite"):
+        train_classifier.serialize_quantized(parameters.tobytes(), 55)
+    parameters.fill(1_000_000.0)
+    with pytest.raises(ValueError, match="VYRE i32 arithmetic bound"):
+        train_classifier.serialize_quantized(parameters.tobytes(), 55)
+
 
 def test_probe_gate_rejects_reversed_positive_and_negative_contracts():
     assert train_classifier.probe_gate_error(
@@ -576,6 +599,8 @@ def test_real_corpus_model_card_requires_six_scanner_differential(tmp_path):
     with pytest.raises(SystemExit, match="six-scanner"):
         train_classifier.write_model_card(
             b"weights",
+            b"quantized",
+            "0" * 64,
             args,
             {"f1": 1.0, "precision": 1.0, "recall": 1.0},
             {

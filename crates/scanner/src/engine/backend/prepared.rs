@@ -2,12 +2,9 @@ use super::super::*;
 use keyhog_core::Chunk;
 
 pub(crate) struct PreparedChunk<'a> {
-    /// Borrowed handle on the caller's chunk. Was `Chunk` (owned)
-    /// historically - every consumer reads `prepared.chunk.foo` via
-    /// auto-deref, never moves out, and the caller already owns the
-    /// chunk for the call's duration. Borrowing drops one full
-    /// ChunkMetadata clone per chunk (5+ String allocations on
-    /// every code-tree scan).
+    /// Borrowed caller chunk. Consumers only read through this handle, avoiding
+    /// a full `ChunkMetadata` clone with at least five string allocations per
+    /// chunk.
     pub(crate) chunk: &'a Chunk,
     /// Preprocessed scan text. Borrows `chunk.data` (`Cow::Borrowed`) on the
     /// passthrough common path, no per-chunk full-body copy, and owns a
@@ -235,7 +232,7 @@ impl SimdPhase1Prefilter {
         }
     }
 
-    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn has_recovery(&self) -> bool {
         self.recovery.is_some()
     }

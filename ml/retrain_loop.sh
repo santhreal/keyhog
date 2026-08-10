@@ -48,11 +48,10 @@ REAL_OUT="${REAL_OUT:-ml/data/real_corpus.jsonl}"
 SYN_CORPUS="${SYN_CORPUS:-ml/data/corpus.jsonl}"
 FEATURES="${FEATURES:-55}"
 WEIGHTS="${WEIGHTS:-crates/scanner/src/weights.bin}"
-# The model card is written+backed-up alongside weights.bin by train_classifier's
-# write_model_card. build.rs enforces weights.bin <-> model_card consistency
-# (model_version + weights_fnv1a64), so a fail-closed revert MUST restore BOTH or
-# the post-revert rebuild fails the consistency check and leaves the tree in a
-# weights=baseline / card=candidate mismatch.
+# The float model, quantized model, and model card form one serving artifact.
+# train_classifier backs up all three before a verified write. A fail-closed
+# revert restores all three before rebuilding.
+QUANTIZED_MODEL="${QUANTIZED_MODEL:-crates/scanner/src/quantized_moe.bin}"
 MODEL_CARD="${MODEL_CARD:-crates/scanner/src/model_card.json}"
 # Corpora the bench-verify gate runs on. mirror = the precision guardian, creddata
 # = the real-distribution recall corpus where the prior regression surfaced.
@@ -141,8 +140,7 @@ _gate_vs() {  # corpus, results_dir, baseline_dir
 # VERIFY_CONTRACTS=0 only for throwaway iteration, never for a real ship.
 VERIFY_CONTRACTS="${VERIFY_CONTRACTS:-1}"
 _contracts_gate() {  # run the full contract suite against the current candidate weights.bin
-  ( cd "${REPO_ROOT}" \
-    && CARGO_TARGET_DIR="${TARGET_DIR}" cargo test -p keyhog-scanner --test contracts_runner )
+  ( cd "${REPO_ROOT}" && cargo test -p keyhog-scanner --test contracts_runner )
 }
 # Fail-closed revert: put the pre-ship model back and rebuild so the live binary
 # never embeds a rejected candidate (Law 10, never silently leave the worse
@@ -152,14 +150,18 @@ _restore_and_rebuild() {
     echo "error: no ${WEIGHTS}.bak to restore; refusing to leave rejected model state ambiguous" >&2
     return 1
   fi
-  cp -f "${WEIGHTS}.bak" "${WEIGHTS}"
-  # Restore the model card too, so build.rs's weights<->card consistency check
-  # passes on the post-revert rebuild (Law-10: never leave a mismatched pair).
-  if [[ -f "${MODEL_CARD}.bak" ]]; then
-    cp -f "${MODEL_CARD}.bak" "${MODEL_CARD}"
-    echo "→ [verify] restored ${MODEL_CARD} from .bak (weights<->card kept consistent)" >&2
+  if [[ ! -f "${QUANTIZED_MODEL}.bak" ]]; then
+    echo "error: no ${QUANTIZED_MODEL}.bak to restore; refusing a mixed model state" >&2
+    return 1
   fi
-  echo "→ [verify] restored ${WEIGHTS} from .bak; rebuilding the known-good model" >&2
+  if [[ ! -f "${MODEL_CARD}.bak" ]]; then
+    echo "error: no ${MODEL_CARD}.bak to restore; refusing a mixed model state" >&2
+    return 1
+  fi
+  cp -f "${WEIGHTS}.bak" "${WEIGHTS}"
+  cp -f "${QUANTIZED_MODEL}.bak" "${QUANTIZED_MODEL}"
+  cp -f "${MODEL_CARD}.bak" "${MODEL_CARD}"
+  echo "→ [verify] restored ${WEIGHTS}, ${QUANTIZED_MODEL}, and ${MODEL_CARD}; rebuilding the known-good model" >&2
   if ! _rebuild; then
     echo "error: rebuild after restore failed; live binary may still embed the rejected candidate" >&2
     return 1
@@ -237,13 +239,16 @@ fi
 
 # 3) Retrain blended + validate on the leakage-free real held-out. The synthetic
 #    F1 and real-recall gates live in train_classifier.py; without --write it
-#    writes a scratch model and never touches the crate. With --write it ships
-#    weights.bin (+ a .bak of the pre-ship model) iff the train-gates pass.
+#    writes scratch artifacts and never touches the crate. With --write it ships
+#    weights.bin, quantized_moe.bin, and model_card.json after the train gates pass.
 echo "→ retraining (synthetic + real, file-grouped held-out)"
 KEYHOG_VERIFIED_WRITE="${DO_VERIFY}" python3 ml/train_classifier.py \
     --corpus "${SYN_CORPUS}" \
     --real-corpus "${REAL_OUT}" \
     --features "${FEATURES}" \
+    --out "${WEIGHTS}" \
+    --quantized-out "${QUANTIZED_MODEL}" \
+    --model-card "${MODEL_CARD}" \
     "${WRITE_ARGS[@]}"
 
 # 4) [verify] Rebuild with the shipped candidate, bench VERIFY_BIN, and gate each

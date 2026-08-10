@@ -1023,6 +1023,7 @@ impl CompiledScanner {
                     .then_some(generic_keyword_positions.as_deref())
                     .flatten(),
                 None,
+                route,
                 execution_route,
             )
             .map_err(|error| super::gpu_forced::SelectedGpuDispatchError::new(error.to_string()))?;

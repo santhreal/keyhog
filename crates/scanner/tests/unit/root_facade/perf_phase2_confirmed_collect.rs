@@ -3,7 +3,7 @@
 //!
 //! Two finding-identical optimizations are pinned here:
 //!
-//!   1. CONFIRMED-PATTERN COLLECTION (engine/backend_triggered.rs):
+//!   1. CONFIRMED-PATTERN COLLECTION (engine/backend/triggered.rs):
 //!      `scan_prepared_with_triggered` turns the expanded trigger bitmap into the
 //!      `Vec<usize>` of confirmed pattern indices. It used to test EVERY one of
 //!      the ~1500 `ac_map` bit positions one by one

@@ -15,7 +15,7 @@
 //!                       ▼
 //!           phase 2: scan_coalesced_phase2       (THE shared tail)        scan_coalesced.rs
 //!             • windowing (scan_windowed / triggered windows)               windowed.rs
-//!             • per-chunk extraction (scan_prepared_with_triggered)        backend_triggered.rs
+//!             • per-chunk extraction (scan_prepared_with_triggered)        backend/triggered.rs
 //!                 confirmed → phase2 capture → generic → entropy → ML
 //!             • post-process: suppression, dedup, confidence, decode/ML    scan_postprocess.rs
 //!             • cross-chunk boundary reassembly (scan_chunk_boundaries)    boundary.rs
@@ -40,7 +40,8 @@
 //! - `scan_chunks_with_backend_internal_admission_and_route` (CPU-vs-GPU batch routing) .. backend_dispatch.rs
 //! - `scan_coalesced_gpu_region_presence` (GPU trigger production) ... gpu_region_dispatch.rs
 //! - GPU region reporting/throughput helpers ................. gpu_region_dispatch_helpers.rs
-//! - `scan_prepared_with_triggered` / `collect_triggered_patterns_*` . backend_triggered.rs
+//! - triggered extraction ................................... backend/triggered.rs
+//! - trigger collection ............................ backend/trigger_collection.rs
 //! - `scan_windowed*` (the windowing contract) .............. windowed.rs
 //! - confirmed-pattern extraction ................................... extract.rs
 //! - phase-2 prefilter + keyword/anchor/generic/entropy passes ...... phase2*.rs
@@ -545,6 +546,9 @@ pub struct CompiledScanner {
     pub(crate) ac: Option<AhoCorasick>,
     /// Exact selected route or the temporary all-peer calibration census.
     pub(crate) backend_state: ScannerBackendState,
+    /// True only when a signed GPU execution pack authenticated the exact
+    /// quantized feature schema, model artifact, and scoring ABI.
+    pub(crate) quantized_confidence_authenticated: bool,
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     #[cfg(feature = "gpu")]
     pub(crate) gpu_max_literal_len: usize,

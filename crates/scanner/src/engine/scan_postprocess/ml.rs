@@ -46,9 +46,57 @@ pub(crate) fn finalize_pending_match_for_test(
 }
 
 impl CompiledScanner {
-    fn score_pending_batch(&self, pending_matches: &[MlPendingMatch]) -> crate::Result<Vec<f64>> {
+    fn score_pending_batch(
+        &self,
+        pending_matches: &[MlPendingMatch],
+        backend: crate::hw_probe::ScanBackend,
+        deadline: Option<std::time::Instant>,
+    ) -> crate::Result<Vec<f64>> {
+        #[cfg(feature = "gpu")]
+        if backend.is_gpu() {
+            if !self.quantized_confidence_authenticated {
+                return Err(crate::ScanError::Gpu(format!(
+                    "selected {} route lacks an authenticated quantized-confidence artifact binding. Fix: rebuild and recalibrate the execution pack for this exact model and backend",
+                    backend.label()
+                )));
+            }
+            let gpu_backend = self.gpu_backend(backend).ok_or_else(|| {
+                crate::ScanError::Gpu(self.gpu_backend_unavailable_reason(backend))
+            })?;
+            let scores = crate::ml_scorer::score_input_batch_quantized_vyre(
+                pending_matches,
+                &self.config,
+                gpu_backend.as_ref(),
+                deadline,
+            )?;
+            return crate::ml_scorer::complete_batch_scores_with_config(
+                scores,
+                pending_matches,
+                &self.config,
+            );
+        }
+        if self.quantized_confidence_authenticated {
+            let scores =
+                crate::ml_scorer::score_input_batch_quantized_cpu(pending_matches, &self.config)?;
+            return crate::ml_scorer::complete_batch_scores_with_config(
+                scores,
+                pending_matches,
+                &self.config,
+            );
+        }
+        #[cfg(not(feature = "gpu"))]
+        let _ = backend;
         let scores = crate::ml_scorer::score_input_batch(pending_matches, &self.config);
         crate::ml_scorer::complete_batch_scores_with_config(scores, pending_matches, &self.config)
+    }
+
+    #[cfg(all(test, feature = "gpu"))]
+    pub(crate) fn score_pending_batch_for_test(
+        &self,
+        pending_matches: &[MlPendingMatch],
+        backend: crate::hw_probe::ScanBackend,
+    ) -> crate::Result<Vec<f64>> {
+        self.score_pending_batch(pending_matches, backend, None)
     }
 
     fn pending_report_confidence(&self, pending: &MlPendingMatch, ml_conf: f64) -> f64 {
@@ -71,7 +119,12 @@ impl CompiledScanner {
         }
     }
 
-    pub(crate) fn apply_ml_batch_scores(&self, scan_state: &mut ScanState) -> crate::Result<()> {
+    pub(crate) fn apply_ml_batch_scores(
+        &self,
+        scan_state: &mut ScanState,
+        backend: crate::hw_probe::ScanBackend,
+        deadline: Option<std::time::Instant>,
+    ) -> crate::Result<()> {
         scan_postprocess_profile::ml_batch_record(scan_state.ml_pending.len());
         if scan_state.ml_pending.is_empty() {
             return Ok(());
@@ -85,7 +138,7 @@ impl CompiledScanner {
         }
 
         let pending_matches = scan_state.take_ml_pending();
-        let scores = self.score_pending_batch(&pending_matches)?;
+        let scores = self.score_pending_batch(&pending_matches, backend, deadline)?;
         for (pending, ml_conf) in pending_matches.into_iter().zip(scores.into_iter()) {
             let report_conf = self.pending_report_confidence(&pending, ml_conf);
             self.emit_finalized_pending_match(scan_state, pending, report_conf);
@@ -93,12 +146,12 @@ impl CompiledScanner {
         Ok(())
     }
 
-    /// Score all pending candidates from one coalesced scan as a single CPU
-    /// model batch, then return each finalized finding to its originating chunk
-    /// state.
+    /// Score all pending candidates from one coalesced scan as a single model
+    /// batch, then return each finalized finding to its originating chunk state.
     pub(crate) fn apply_ml_batch_scores_across(
         &self,
         scan_states: &mut [ScanState],
+        backend: crate::hw_probe::ScanBackend,
     ) -> crate::Result<()> {
         let total_pending: usize = scan_states.iter().map(|state| state.ml_pending.len()).sum();
         if total_pending == 0 {
@@ -119,7 +172,7 @@ impl CompiledScanner {
             pending_matches.extend(pending);
         }
 
-        let scores = self.score_pending_batch(&pending_matches)?;
+        let scores = self.score_pending_batch(&pending_matches, backend, None)?;
         if scores.len() != total_pending {
             return Err(crate::ScanError::Config(format!(
                 "internal invariant violation: coalesced ML scoring returned the wrong row count: expected {total_pending}, received {}",

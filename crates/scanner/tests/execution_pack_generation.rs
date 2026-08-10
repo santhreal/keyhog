@@ -591,6 +591,18 @@ fn wgpu_pack_contains_exact_vyre_orchestration_program() {
         decoded.phase2_catalog_digest,
         *blake3::hash(&decoded.phase2_catalog_bytes).as_bytes()
     );
+    assert_eq!(
+        decoded.feature_schema_digest,
+        keyhog_scanner::confidence::quantized::feature_schema_digest()
+    );
+    assert_eq!(
+        decoded.quantized_model_digest,
+        keyhog_scanner::confidence::quantized::model_artifact_digest()
+    );
+    assert_eq!(
+        decoded.quantized_score_abi_version,
+        keyhog_scanner::confidence::quantized::QUANTIZED_SCORE_ABI_VERSION
+    );
 }
 
 /// WHY: backend relabeling would run a VYRE plan against unproved runtime semantics, so CUDA and WGPU receipts are never interchangeable.
@@ -610,6 +622,36 @@ fn wgpu_program_rejects_cuda_backend_relabeling() {
     )
     .expect_err("WGPU receipt cannot become CUDA");
     assert!(error.to_string().contains("not selected GpuCuda"));
+}
+
+/// WHY: a signed matcher receipt calibrated with another feature schema or
+/// model cannot authorize the quantized score dispatch.
+#[cfg(feature = "gpu")]
+#[test]
+fn wgpu_program_rejects_stale_quantized_confidence_artifacts() {
+    let ir = gpu_detector_ir();
+    let identity = vyre_identity(ExecutionPackBackend::GpuWgpu);
+    let program =
+        CompiledVyreBackendProgram::compile(&ir, ExecutionPackBackend::GpuWgpu, identity.clone())
+            .expect("compile WGPU VYRE program");
+    for offset in [112usize, 144, 176] {
+        let mut stale = program.bytes().to_vec();
+        stale[offset] ^= 1;
+        let error = VyreOrchestrationProgram::decode(
+            &stale,
+            ExecutionPackBackend::GpuWgpu,
+            ir.digest(),
+            &identity,
+        )
+        .expect_err("stale quantized confidence identity must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("confidence schema, model, or score ABI")
+                || error.to_string().contains("unsupported"),
+            "offset {offset}: {error}"
+        );
+    }
 }
 
 /// WHY: Metal is a native VYRE peer with its own compiled driver identity and cannot inherit WGPU portability evidence.

@@ -147,6 +147,8 @@ pub mod ml_features_extraction;
 #[cfg(feature = "ml")]
 pub mod ml_pending_hashing;
 #[cfg(feature = "ml")]
+pub mod ml_quantized_route;
+#[cfg(feature = "ml")]
 pub mod ml_scorer;
 pub mod ml_weights_parse;
 #[cfg(feature = "multiline")]
@@ -163,6 +165,9 @@ pub mod postgresql_host_credential_span;
 pub mod prefix_trie;
 pub mod prefix_trie_extended;
 pub mod profile_extraction;
+pub mod quantized_confidence;
+#[cfg(all(feature = "gpu", feature = "ml"))]
+pub mod quantized_vyre;
 pub mod resolution;
 pub mod resolution_extended;
 pub mod root_facade;

@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "gpu")]
+use crate::engine::gpu_region_batch::with_test_region_presence_byte_limit;
 use crate::GpuInitPolicy;
 #[cfg(feature = "gpu")]
 use crate::ScanBackend;
@@ -65,6 +67,52 @@ fn forced_multi_shard_catalog() -> Phase2GpuDfaCatalog {
         Phase2GpuDfaProgramKind::CudaCompatible,
     )
     .expect("forced multi-shard pattern set must lower completely")
+}
+
+#[cfg(feature = "gpu")]
+/// WHY: an admission-dispatch fault must recover only unfinished input
+/// shards; this does not cover process or device loss during fence retirement.
+#[test]
+fn automatic_phase2_gpu_recovery_preserves_completed_shards() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
+    let patterns = vec![(test_pattern(r"tok_[A-Za-z0-9]{16}", false), Vec::new())];
+    let catalog = Phase2GpuDfaCatalog::build_from_selected_candidates(
+        &patterns,
+        1,
+        0,
+        &[0],
+        Phase2GpuDfaProgramKind::CudaCompatible,
+    )
+    .expect("phase-two recovery catalog");
+    let scanner = CompiledScanner::compile_with_gpu_policy(
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detectors"),
+        GpuInitPolicy::ForceEnabled,
+    )
+    .expect("scanner with GPU peers");
+    let backend = [ScanBackend::GpuCuda, ScanBackend::GpuWgpu]
+        .into_iter()
+        .find_map(|route| scanner.gpu_backend(route).cloned())
+        .expect("known GPU test host must acquire a hardware backend");
+    let chunks = vec![
+        keyhog_core::Chunk::from(format!("{}tok_AAAAAAAAAAAAAAAA", "a".repeat(24))),
+        keyhog_core::Chunk::from(format!("{}tok_BBBBBBBBBBBBBBBB", "b".repeat(24))),
+        keyhog_core::Chunk::from(format!("{}tok_CCCCCCCCCCCCCCCC", "c".repeat(24))),
+    ];
+
+    let outcome = with_test_region_presence_byte_limit(64, || {
+        crate::engine::gpu_region_dispatch_helpers::with_test_phase2_dispatch_failure(1, || {
+            crate::engine::gpu_region_dispatch_helpers::scan_phase2_gpu_chunks_sharded(
+                &catalog, &backend, &chunks, true,
+            )
+            .expect("phase-two dispatch recovery")
+        })
+    });
+
+    assert!(outcome.fault.is_some(), "typed recovery fault is required");
+    assert_eq!(outcome.recovered_rows, vec![1..3]);
+    assert_eq!(outcome.haystack_uploads, 1);
+    assert_eq!(outcome.admission.admitted, vec![true, false, false]);
+    assert_eq!(outcome.admission.complete, vec![true, false, false]);
 }
 
 fn replay_catalog_admission(
