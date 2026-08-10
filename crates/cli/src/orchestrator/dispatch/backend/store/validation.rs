@@ -265,104 +265,145 @@ fn validate_point_route_evidence_at(
     }
     let mut timing_routes = BTreeSet::new();
     let mut previous_timing_route = None;
+    let mut gpu_shapes = std::collections::BTreeMap::<String, (String, u64, u64)>::new();
     for entry in &point.route_timings {
-        let Some(route) = entry.measured_route() else {
-            return Err(format!(
-                "cache decision has timing evidence for unsupported backend {:?}",
-                entry.backend
-            )
-            .into());
-        };
+        let route = entry
+            .measured_route()
+            .ok_or("cache decision has timing evidence for an unsupported backend")?;
         if entry.backend != route.backend.label()
             || !expected_backends.contains(entry.backend.as_str())
         {
-            return Err(format!(
-                "cache decision has unexpected or non-canonical timing evidence for {:?}",
-                entry.backend
-            )
-            .into());
+            return Err("cache decision has unexpected or non-canonical timing evidence".into());
+        }
+        if !(1..=4).contains(&route.gpu_pipeline_depth) {
+            return Err("cache decision has an invalid pipeline depth".into());
         }
         let peer_identity_present = entry
             .peer_identity
             .as_deref()
             .is_some_and(|identity| !identity.trim().is_empty());
         if route.backend.is_gpu() != peer_identity_present {
-            return Err(format!(
-                "cache decision timing evidence for {} must bind exactly one acquired GPU peer identity",
-                entry.backend
-            )
-            .into());
+            return Err("GPU timing evidence must bind exactly one acquired peer identity".into());
+        }
+        if route.backend.is_gpu() {
+            let capability = entry
+                .gpu_dispatch_capability
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .ok_or("GPU timing evidence is missing dispatch capability")?;
+            let input_capacity = entry
+                .gpu_slot_input_capacity_bytes
+                .filter(|capacity| *capacity > 0)
+                .ok_or("GPU timing evidence is missing per-slot input capacity")?;
+            let match_capacity = entry
+                .gpu_slot_match_capacity
+                .filter(|capacity| *capacity > 0)
+                .ok_or("GPU timing evidence is missing per-slot match capacity")?;
+            match capability {
+                "async-submit-retire" => {}
+                "synchronous" | "timed-resident" if route.gpu_pipeline_depth == 1 => {}
+                "synchronous" | "timed-resident" => {
+                    return Err("synchronous GPU capability cannot use a deep pipeline".into())
+                }
+                _ => return Err("cache decision has unsupported GPU dispatch capability".into()),
+            }
+            let depth = u64::from(route.gpu_pipeline_depth);
+            let shape = (
+                capability.to_string(),
+                input_capacity
+                    .checked_mul(depth)
+                    .ok_or("GPU aggregate input capacity overflows u64")?,
+                u64::from(match_capacity)
+                    .checked_mul(depth)
+                    .ok_or("GPU aggregate match capacity overflows u64")?,
+            );
+            match gpu_shapes.get(&entry.backend) {
+                None => {
+                    if route.gpu_pipeline_depth != 1 {
+                        return Err(
+                            "GPU pipeline evidence is missing its depth-one baseline".into()
+                        );
+                    }
+                    gpu_shapes.insert(entry.backend.clone(), shape);
+                }
+                Some((baseline_capability, baseline_input, baseline_matches)) => {
+                    if baseline_capability != capability
+                        || shape.1 > *baseline_input
+                        || baseline_input - shape.1 >= depth
+                        || shape.2 > *baseline_matches
+                        || baseline_matches - shape.2 >= depth
+                    {
+                        return Err(
+                            "GPU pipeline depths do not derive from one aggregate input/replay budget"
+                                .into(),
+                        );
+                    }
+                }
+            }
+        } else if route.gpu_pipeline_depth != 1
+            || entry.gpu_dispatch_capability.is_some()
+            || entry.gpu_slot_input_capacity_bytes.is_some()
+            || entry.gpu_slot_match_capacity.is_some()
+        {
+            return Err("host timing evidence contains GPU pipeline state".into());
         }
         let timing_route = (
             entry.backend.clone(),
             entry.phase2_plain_localizer,
             entry.phase2_keyword_localizer,
+            entry.gpu_pipeline_depth,
         );
-        if !timing_routes.insert(timing_route.clone()) {
-            return Err(format!(
-                "cache decision has duplicate timing evidence for {} plain_localizer={} keyword_localizer={}",
-                entry.backend,
-                entry.phase2_plain_localizer,
-                entry.phase2_keyword_localizer
-            )
-            .into());
-        }
-        if previous_timing_route
-            .as_ref()
-            .is_some_and(|previous| previous >= &timing_route)
+        if !timing_routes.insert(timing_route.clone())
+            || previous_timing_route
+                .as_ref()
+                .is_some_and(|previous| previous >= &timing_route)
         {
-            return Err(format!(
-                "cache decision route timings are not in canonical backend/plain/keyword order at {:?}",
-                timing_route
-            )
-            .into());
+            return Err("cache decision route timings are duplicate or unordered".into());
         }
-        previous_timing_route = Some(timing_route.clone());
+        previous_timing_route = Some(timing_route);
         if !entry
             .timing
             .is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
         {
-            return Err(format!(
-                "cache decision has invalid timing evidence for {} plain_localizer={} keyword_localizer={}",
-                entry.backend,
-                entry.phase2_plain_localizer,
-                entry.phase2_keyword_localizer
-            )
-            .into());
+            return Err("cache decision has invalid timing evidence".into());
         }
         if route.backend.is_gpu() && gpu_cold_warm_route_evidence(&entry.timing).is_none() {
-            return Err(format!(
-                "cache decision has invalid cold/warm timing evidence for {} plain_localizer={} keyword_localizer={}",
-                entry.backend,
-                entry.phase2_plain_localizer,
-                entry.phase2_keyword_localizer
-            )
-            .into());
+            return Err("cache decision has invalid GPU cold/warm timing evidence".into());
         }
         if route.backend == keyhog_scanner::ScanBackend::SimdCpu
             && simd_cold_warm_route_evidence(&entry.timing).is_none()
         {
-            return Err(format!(
-                "cache decision has invalid SIMD cold/warm timing evidence for plain_localizer={} keyword_localizer={}",
-                entry.phase2_plain_localizer, entry.phase2_keyword_localizer
-            )
-            .into());
+            return Err("cache decision has invalid SIMD cold/warm timing evidence".into());
         }
     }
-    let expected_routes = expected_backends
-        .iter()
-        .flat_map(|backend| {
-            [false, true].into_iter().flat_map(move |plain| {
-                [false, true].map(move |keyword| (backend.clone(), plain, keyword))
-            })
-        })
-        .collect::<BTreeSet<_>>();
+    let mut expected_routes = BTreeSet::new();
+    for backend_label in expected_backends {
+        let backend = keyhog_scanner::hw_probe::parse_backend_str(backend_label)
+            .ok_or("eligible backend census contains an unsupported backend")?;
+        let depths: &[u8] = if backend.is_gpu() {
+            let (capability, _, _) = gpu_shapes
+                .get(backend_label)
+                .ok_or("eligible GPU backend is missing pipeline evidence")?;
+            if capability == "async-submit-retire" {
+                &[1, 2, 3, 4]
+            } else {
+                &[1]
+            }
+        } else {
+            &[1]
+        };
+        for plain in [false, true] {
+            for keyword in [false, true] {
+                for depth in depths {
+                    expected_routes.insert((backend_label.clone(), plain, keyword, *depth));
+                }
+            }
+        }
+    }
     if timing_routes != expected_routes {
-        return Err(format!(
-            "cache decision timing set does not match eligible backend census (expected {:?}, found {:?})",
-            expected_routes, timing_routes
-        )
-        .into());
+        return Err(
+            "cache decision timing set does not match eligible backend/depth census".into(),
+        );
     }
     let receipt_routes = point
         .candidate_receipts
@@ -372,80 +413,43 @@ fn validate_point_route_evidence_at(
                 receipt.backend.clone(),
                 receipt.phase2_plain_localizer,
                 receipt.phase2_keyword_localizer,
+                receipt.gpu_pipeline_depth,
             )
         })
         .collect::<BTreeSet<_>>();
     if receipt_routes != expected_routes || receipt_routes.len() != point.candidate_receipts.len() {
-        return Err(format!(
-            "cache decision receipt set does not match eligible backend census (expected {:?}, found {:?})",
-            expected_routes, receipt_routes
-        )
-        .into());
+        return Err(
+            "cache decision receipt set does not match eligible backend/depth census".into(),
+        );
     }
     let mut seen_receipts = HashSet::with_capacity(point.candidate_receipts.len());
     let mut previous_receipt_route = None;
     let mut reference_digest = None;
     for receipt in &point.candidate_receipts {
-        let Some(backend) = keyhog_scanner::hw_probe::parse_backend_str(&receipt.backend) else {
-            return Err(format!(
-                "cache decision has a candidate receipt for unsupported backend {:?}",
-                receipt.backend
-            )
-            .into());
-        };
-        if receipt.backend != backend.label()
-            || !expected_backends.contains(receipt.backend.as_str())
-        {
-            return Err(format!(
-                "cache decision has an unexpected or non-canonical candidate receipt for {:?}",
-                receipt.backend
-            )
-            .into());
-        }
+        let backend = keyhog_scanner::hw_probe::parse_backend_str(&receipt.backend)
+            .ok_or("candidate receipt has an unsupported backend")?;
         let receipt_route = (
             receipt.backend.as_str(),
             receipt.phase2_plain_localizer,
             receipt.phase2_keyword_localizer,
+            receipt.gpu_pipeline_depth,
         );
-        if !seen_receipts.insert(receipt_route) {
-            return Err(format!(
-                "cache decision has duplicate candidate receipt for {}",
-                receipt.backend
-            )
-            .into());
-        }
-        if previous_receipt_route
-            .as_ref()
-            .is_some_and(|previous| previous >= &receipt_route)
+        if !seen_receipts.insert(receipt_route)
+            || previous_receipt_route
+                .as_ref()
+                .is_some_and(|previous| previous >= &receipt_route)
         {
-            return Err(format!(
-                "cache decision candidate receipts are not in canonical backend/plain/keyword order at {:?}",
-                receipt_route
-            )
-            .into());
+            return Err("candidate receipts are duplicate or unordered".into());
         }
         previous_receipt_route = Some(receipt_route);
-        if receipt.correctness_digest == 0 {
-            return Err(format!(
-                "cache decision candidate receipt for {} is missing correctness digest",
-                receipt.backend
-            )
-            .into());
-        }
-        if receipt.completed_trials != AUTOROUTE_CALIBRATION_TRIALS {
-            return Err(format!(
-                "cache decision candidate receipt for {} records {} completed trials; expected {AUTOROUTE_CALIBRATION_TRIALS}",
-                receipt.backend, receipt.completed_trials
-            )
-            .into());
+        if receipt.correctness_digest == 0
+            || receipt.completed_trials != AUTOROUTE_CALIBRATION_TRIALS
+        {
+            return Err("candidate receipt is incomplete".into());
         }
         match reference_digest {
             Some(digest) if digest != receipt.correctness_digest => {
-                return Err(format!(
-                    "cache decision candidate receipt for {} does not match the reference correctness digest",
-                    receipt.backend
-                )
-                .into());
+                return Err("candidate receipt differs from the scalar correctness digest".into())
             }
             None => reference_digest = Some(receipt.correctness_digest),
             _ => {}
@@ -454,47 +458,34 @@ fn validate_point_route_evidence_at(
             backend,
             phase2_plain_localizer: receipt.phase2_plain_localizer,
             phase2_keyword_localizer: receipt.phase2_keyword_localizer,
+            gpu_pipeline_depth: receipt.gpu_pipeline_depth,
         };
-        let Some(timing_entry) = point.route_timing_for_route(route) else {
-            return Err(format!(
-                "cache decision candidate receipt for {} has no timing evidence",
-                receipt.backend
-            )
-            .into());
-        };
-        let timing = &timing_entry.timing;
-        if receipt.peer_identity != timing_entry.peer_identity {
-            return Err(format!(
-                "cache decision candidate receipt for {} is not bound to its timing peer identity",
-                receipt.backend
-            )
-            .into());
+        let timing_entry = point
+            .route_timing_for_route(route)
+            .ok_or("candidate receipt has no matching timing evidence")?;
+        if receipt.peer_identity != timing_entry.peer_identity
+            || receipt.gpu_dispatch_capability != timing_entry.gpu_dispatch_capability
+            || receipt.gpu_slot_input_capacity_bytes != timing_entry.gpu_slot_input_capacity_bytes
+            || receipt.gpu_slot_match_capacity != timing_entry.gpu_slot_match_capacity
+        {
+            return Err("candidate receipt is not bound to its peer and pipeline evidence".into());
         }
         if receipt.evidence_digest == 0
-            || receipt.evidence_digest != receipt.expected_evidence_digest(route, timing)
+            || receipt.evidence_digest
+                != receipt.expected_evidence_digest(route, &timing_entry.timing)
         {
-            return Err(format!(
-                "cache decision candidate receipt for {} does not match its timing evidence",
-                receipt.backend
-            )
-            .into());
+            return Err("candidate receipt does not match its timing evidence".into());
         }
     }
     if point.calibrated_at_unix_ms == 0 {
         return Err("cache decision is missing a calibration timestamp".into());
     }
     if point.calibrated_at_unix_ms > current_unix_ms {
-        return Err(format!(
-            "cache decision calibration timestamp {} is {} ms in the future relative to the system clock at {}; correct the system clock and re-run calibration",
-            point.calibrated_at_unix_ms,
-            point.calibrated_at_unix_ms - current_unix_ms,
-            current_unix_ms
-        )
-        .into());
+        return Err("cache decision calibration timestamp is in the future".into());
     }
-    let Some(selected_timing) = point.timing_for_route(selected_route) else {
-        return Err("selected execution route is missing timing evidence".into());
-    };
+    let selected_timing = point
+        .timing_for_route(selected_route)
+        .ok_or("selected execution route is missing timing evidence")?;
     if !selected_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
         return Err("selected execution-route timing evidence is invalid".into());
     }

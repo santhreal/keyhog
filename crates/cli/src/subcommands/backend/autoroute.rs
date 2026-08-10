@@ -258,14 +258,28 @@ pub(super) fn run_autoroute_inspection(
                 .candidate_receipts
                 .iter()
                 .map(|receipt| {
+                    let pipeline = receipt
+                        .gpu_dispatch_capability
+                        .as_deref()
+                        .map(|capability| {
+                            let input = receipt.gpu_slot_input_capacity_bytes.unwrap_or_else(|| {
+                                panic!("validated GPU receipt has an input capacity")
+                            });
+                            let matches = receipt.gpu_slot_match_capacity.unwrap_or_else(|| {
+                                panic!("validated GPU receipt has a match capacity")
+                            });
+                            format!("/pipeline={capability}:input={input}:matches={matches}")
+                        })
+                        .unwrap_or_default();
                     format!(
-                        "{}+plain-localizer={}+keyword-localizer={}:result={}/trials={}/receipt={}",
+                        "{}+plain-localizer={}+keyword-localizer={}+gpu-pipeline-depth={}:result={}/trials={}/receipt={}{pipeline}",
                         receipt.backend,
                         receipt.phase2_plain_localizer,
                         receipt.phase2_keyword_localizer,
+                        receipt.gpu_pipeline_depth,
                         receipt.correctness_digest,
                         receipt.completed_trials,
-                        receipt.evidence_digest
+                        receipt.evidence_digest,
                     )
                 })
                 .collect::<Vec<_>>()
@@ -280,10 +294,11 @@ pub(super) fn run_autoroute_inspection(
                         // LAW10: an absent optional warm-up measurement has no display suffix; the measured cold route remains unchanged and visible.
                         .unwrap_or_default();
                     format!(
-                        "{}[plain={},keyword={}]={}ms{warm}",
+                        "{}[plain={},keyword={},gpu-depth={}]={}ms{warm}",
                         timing.backend,
                         timing.phase2_plain_localizer,
                         timing.phase2_keyword_localizer,
+                        timing.gpu_pipeline_depth,
                         timing.one_shot_ms
                     )
                 })
@@ -323,10 +338,11 @@ pub(super) fn run_autoroute_inspection(
             println!("        measurements: {measurement_receipts}");
             println!("        parity:      {parity_receipts}");
             println!(
-                "        one-shot -> {}+plain-localizer={}+keyword-localizer={}  {}[{} B / {} chunk(s);{} basis={}]{}",
+                "        one-shot -> {}+plain-localizer={}+keyword-localizer={}+gpu-pipeline-depth={}  {}[{} B / {} chunk(s);{} basis={}]{}",
                 decision.backend,
                 decision.phase2_plain_localizer,
                 decision.phase2_keyword_localizer,
+                decision.gpu_pipeline_depth,
                 p.dim,
                 decision.sample_bytes,
                 decision.sample_chunks,
@@ -335,10 +351,11 @@ pub(super) fn run_autoroute_inspection(
                 p.reset
             );
             println!(
-                "        daemon   -> {}+plain-localizer={}+keyword-localizer={}  {}[warm evidence{}; basis={}]{}",
+                "        daemon   -> {}+plain-localizer={}+keyword-localizer={}+gpu-pipeline-depth={}  {}[warm evidence{}; basis={}]{}",
                 decision.daemon_backend,
                 decision.daemon_phase2_plain_localizer,
                 decision.daemon_phase2_keyword_localizer,
+                decision.daemon_gpu_pipeline_depth,
                 p.dim,
                 daemon_margin,
                 decision.daemon_selection_basis,

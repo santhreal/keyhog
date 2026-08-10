@@ -18,6 +18,13 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Authenticated execution-pack pages are discarded before matcher hydration and the selected mapping is released after construction. Normal scans fault back only the selected sections while decoding them into owned runtime state, so the complete pack mapping no longer overlaps the resident scanner.
 - Read-only execution-pack mappings now have a Linux cross-process RSS contract: two scanners that fault the same immutable backend program must account those pages as shared clean memory rather than private copies.
 - Worker-local scanner scratch now has route-specific retention ceilings. Anchor-dense CPU/SIMD candidates retain at most one scan chunk, single-chunk VYRE buffers are zeroed and capped to one chunk, and coalesced VYRE buffers retain at most the portable dispatch grid instead of keeping an outlier allocation for the worker lifetime.
+- Autoroute now measures each resident VYRE pipeline depth supported by an
+  acquired GPU peer and persists the selected depth, submit/retire capability,
+  and divided per-slot input and match capacities. Asynchronous depths two
+  through four use independent resident IO slots, restore readbacks to logical
+  row order, and keep haystack, presence, region-control, and positioned-match
+  storage inside one aggregate device-memory ceiling. A changed capability or
+  capacity invalidates the route before dispatch.
 - Finding finalization now moves one graph through scan-level suppression, deterministic deduplication, verification eligibility, report rules, and baseline filtering. In-place compaction replaces full-vector filtering and partition copies, and canonical dedup key ordering no longer materializes an intermediate key/value vector.
 - Allocation-tracked profiles now enforce live-byte conservation across every stage plus the explicit outside-span root owner, proving that every retained heap allocation has one reported owner even when another stage or thread frees it.
 - Non-verifying scans now release the decoded `DetectorSpec` corpus after scanner construction. The compiled detector-indexed plans retain the report metadata and execution policy they need. The metadata interner now owns each unique string once without a parallel arena, and resolution plus cross-detector relation indexes reuse those same detector-ID allocations. Only `--verify` keeps specifications for verifier-plan construction.

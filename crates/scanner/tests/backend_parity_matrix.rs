@@ -369,6 +369,7 @@ fn gpu_fused_always_anchor_positions_match_cpu_when_keyword_localization_is_disa
         decode_backend: ScanBackend::CpuFallback,
         phase2_plain_localizer: false,
         phase2_keyword_localizer: false,
+        gpu_pipeline_depth: 1,
     };
     let cpu_rows = scanner
         .scan_coalesced_with_backend_admission_and_route(
