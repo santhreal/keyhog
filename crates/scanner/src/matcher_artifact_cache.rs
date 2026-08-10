@@ -24,7 +24,7 @@ use crate::execution_pack::{CanonicalDetectorExecutionIr, ExecutionPackBackend};
 use crate::hw_probe::ScanBackend;
 use crate::types::ScannerTuningConfig;
 use serde::{Deserialize, Serialize};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -349,7 +349,7 @@ fn current_executable_sha256() -> std::result::Result<String, String> {
     keyhog_core::current_executable_sha256()
 }
 
-/// MatcherArtifact v3 body layout (after the 8-byte magic/version header):
+/// MatcherArtifact v4 body layout (after the 8-byte magic/version header):
 /// `identity_json_len:u32` + identity JSON + `identity_digest:[u8;32]` +
 /// `content_digest:[u8;32]` + length-prefixed raw `literal_index` /
 /// `regex_programs` / `suppression_policy` blobs.
@@ -501,16 +501,34 @@ pub fn load_matcher_artifact_with_ir(
     Ok(loaded)
 }
 
+fn read_capped_matcher_artifact(
+    file: std::fs::File,
+    metadata_len: u64,
+    path: &Path,
+) -> std::result::Result<Vec<u8>, String> {
+    let mut bytes = Vec::with_capacity(metadata_len.min(MATCHER_ARTIFACT_FILE_BYTES) as usize);
+    file.take(MATCHER_ARTIFACT_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("cannot read matcher artifact {}: {error}", path.display()))?;
+    if bytes.len() as u64 > MATCHER_ARTIFACT_FILE_BYTES {
+        return Err(format!(
+            "matcher artifact {} exceeds {} byte cap",
+            path.display(),
+            MATCHER_ARTIFACT_FILE_BYTES
+        ));
+    }
+    Ok(bytes)
+}
+
 fn read_matcher_artifact_bytes(path: &Path) -> std::result::Result<Vec<u8>, String> {
     #[cfg(unix)]
     {
-        use std::io::Read;
         use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 
         let mut options = std::fs::OpenOptions::new();
         options.read(true);
         options.custom_flags(libc::O_NOFOLLOW);
-        let mut file = match options.open(path) {
+        let file = match options.open(path) {
             Ok(file) => file,
             Err(error) => {
                 if error.raw_os_error() == Some(libc::ELOOP) {
@@ -550,10 +568,7 @@ fn read_matcher_artifact_bytes(path: &Path) -> std::result::Result<Vec<u8>, Stri
                 MATCHER_ARTIFACT_FILE_BYTES
             ));
         }
-        let mut bytes = Vec::with_capacity(metadata.len() as usize);
-        file.read_to_end(&mut bytes)
-            .map_err(|error| format!("cannot read matcher artifact {}: {error}", path.display()))?;
-        return Ok(bytes);
+        return read_capped_matcher_artifact(file, metadata.len(), path);
     }
     #[cfg(not(unix))]
     {
@@ -577,9 +592,38 @@ fn read_matcher_artifact_bytes(path: &Path) -> std::result::Result<Vec<u8>, Stri
                 MATCHER_ARTIFACT_FILE_BYTES
             ));
         }
-        std::fs::read(path)
-            .map_err(|error| format!("cannot read matcher artifact {}: {error}", path.display()))
+        let file = std::fs::File::open(path)
+            .map_err(|error| format!("cannot open matcher artifact {}: {error}", path.display()))?;
+        read_capped_matcher_artifact(file, metadata.len(), path)
     }
+}
+
+fn checked_matcher_artifact_len(
+    identity_len: usize,
+    literal_len: usize,
+    regex_len: usize,
+    suppression_len: usize,
+) -> std::result::Result<usize, String> {
+    let artifact_len = [
+        8usize,
+        4,
+        identity_len,
+        64,
+        12,
+        literal_len,
+        regex_len,
+        suppression_len,
+    ]
+    .into_iter()
+    .try_fold(0usize, usize::checked_add)
+    .ok_or_else(|| "matcher artifact size overflow".to_owned())?;
+    if artifact_len as u64 > MATCHER_ARTIFACT_FILE_BYTES {
+        return Err(format!(
+            "matcher artifact would exceed {} byte cap",
+            MATCHER_ARTIFACT_FILE_BYTES
+        ));
+    }
+    Ok(artifact_len)
 }
 
 /// Persist `sections` under `identity`.
@@ -628,36 +672,36 @@ pub fn store_matcher_artifact(
     let identity_digest = identity.digest();
     let content_digest = sections.content_digest();
 
-    let mut bytes = Vec::with_capacity(
-        8 + 4
-            + identity_json.len()
-            + 64
-            + 12
-            + sections.literal_index.len()
-            + sections.regex_programs.len()
-            + sections.suppression_policy.len(),
-    );
-    bytes.extend_from_slice(MATCHER_ARTIFACT_MAGIC);
-    bytes.extend_from_slice(&MATCHER_ARTIFACT_VERSION.to_le_bytes());
-    bytes.extend_from_slice(&(identity_json.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(&identity_json);
-    bytes.extend_from_slice(&identity_digest);
-    bytes.extend_from_slice(&content_digest);
-    bytes.extend_from_slice(&(sections.literal_index.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(&sections.literal_index);
-    bytes.extend_from_slice(&(sections.regex_programs.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(&sections.regex_programs);
-    bytes.extend_from_slice(&(sections.suppression_policy.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(&sections.suppression_policy);
+    let identity_len = u32::try_from(identity_json.len())
+        .map_err(|_| "matcher artifact identity exceeds u32 length".to_owned())?;
+    let literal_len = u32::try_from(sections.literal_index.len())
+        .map_err(|_| "matcher artifact literal index exceeds u32 length".to_owned())?;
+    let regex_len = u32::try_from(sections.regex_programs.len())
+        .map_err(|_| "matcher artifact regex programs exceed u32 length".to_owned())?;
+    let suppression_len = u32::try_from(sections.suppression_policy.len())
+        .map_err(|_| "matcher artifact suppression policy exceeds u32 length".to_owned())?;
+    let artifact_len = checked_matcher_artifact_len(
+        identity_json.len(),
+        sections.literal_index.len(),
+        sections.regex_programs.len(),
+        sections.suppression_policy.len(),
+    )?;
 
-    if (bytes.len() as u64) > MATCHER_ARTIFACT_FILE_BYTES {
-        return Err(format!(
-            "matcher artifact would exceed {} byte cap",
-            MATCHER_ARTIFACT_FILE_BYTES
-        ));
-    }
-    atomic_write(&path, &bytes)
-        .map_err(|error| format!("cannot write matcher artifact {}: {error}", path.display()))?;
+    atomic_write(&path, artifact_len, |tmp| {
+        tmp.write_all(MATCHER_ARTIFACT_MAGIC)?;
+        tmp.write_all(&MATCHER_ARTIFACT_VERSION.to_le_bytes())?;
+        tmp.write_all(&identity_len.to_le_bytes())?;
+        tmp.write_all(&identity_json)?;
+        tmp.write_all(&identity_digest)?;
+        tmp.write_all(&content_digest)?;
+        tmp.write_all(&literal_len.to_le_bytes())?;
+        tmp.write_all(&sections.literal_index)?;
+        tmp.write_all(&regex_len.to_le_bytes())?;
+        tmp.write_all(&sections.regex_programs)?;
+        tmp.write_all(&suppression_len.to_le_bytes())?;
+        tmp.write_all(&sections.suppression_policy)
+    })
+    .map_err(|error| format!("cannot write matcher artifact {}: {error}", path.display()))?;
     evict_old_matcher_artifacts(cache_dir);
     Ok(())
 }
@@ -668,7 +712,7 @@ fn evict_old_matcher_artifacts(cache_dir: &Path) {
     let Ok(entries) = std::fs::read_dir(cache_dir) else {
         return;
     };
-    let mut artifacts = Vec::new();
+    let mut artifacts = Vec::with_capacity(MATCHER_ARTIFACT_MAX_ENTRIES + 1);
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|ext| ext.to_str()) != Some("khm") {
@@ -679,18 +723,24 @@ fn evict_old_matcher_artifacts(cache_dir: &Path) {
             .and_then(|meta| meta.modified())
             .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
         artifacts.push((modified, path));
-    }
-    if artifacts.len() <= MATCHER_ARTIFACT_MAX_ENTRIES {
-        return;
-    }
-    artifacts.sort_by_key(|(modified, _)| *modified);
-    let stale = artifacts.len() - MATCHER_ARTIFACT_MAX_ENTRIES;
-    for (_, path) in artifacts.into_iter().take(stale) {
-        let _ = std::fs::remove_file(path);
+        if artifacts.len() > MATCHER_ARTIFACT_MAX_ENTRIES {
+            let oldest = artifacts
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, (modified, _))| *modified)
+                .map(|(index, _)| index)
+                .unwrap_or(0);
+            let (_, stale_path) = artifacts.swap_remove(oldest);
+            let _ = std::fs::remove_file(stale_path);
+        }
     }
 }
 
-fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+fn atomic_write(
+    path: &Path,
+    expected_len: usize,
+    write_body: impl FnOnce(&mut tempfile::NamedTempFile) -> std::io::Result<()>,
+) -> std::io::Result<()> {
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -707,10 +757,20 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     // check, so a concurrent `--lockdown` audit still fails closed rather than
     // treating a partial graph as clean.
     let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    {
-        tmp.write_all(bytes)?;
-        tmp.as_file().sync_all()?;
+    write_body(&mut tmp)?;
+    let actual_len = usize::try_from(tmp.as_file().metadata()?.len()).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "matcher artifact length exceeds usize",
+        )
+    })?;
+    if actual_len != expected_len {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("matcher artifact writer produced {actual_len} bytes, expected {expected_len}"),
+        ));
     }
+    tmp.as_file().sync_all()?;
     tmp.persist(path).map(|_| ()).map_err(|error| error.error)
 }
 
@@ -1026,3 +1086,7 @@ fn hydrate_matcher_artifact_state(
     )
     .map_err(|error| ScanError::Config(error.to_string()))
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/matcher_artifact_cache_inline.rs"]
+mod tests;
