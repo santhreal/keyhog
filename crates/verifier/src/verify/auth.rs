@@ -194,15 +194,59 @@ fn missing_auth_companion(context: &str, missing: Vec<String>) -> RequestBuildRe
 }
 
 fn script_auth_result(output: &str) -> VerificationResult {
-    if output.contains("STATUS: LIVE") {
-        VerificationResult::Live
-    } else if output.contains("STATUS: DEAD") {
-        VerificationResult::Dead
-    } else {
-        VerificationResult::Error(
-            "AuthSpec::Script verification returned no explicit status; expected \
-             STATUS: LIVE or STATUS: DEAD"
+    // Exact status lines only. Substring `contains` was fail-open: banners,
+    // "NOT STATUS: LIVE", or mixed LIVE+DEAD blobs could mark credentials live.
+    let live = output.lines().any(|line| line.trim() == "STATUS: LIVE");
+    let dead = output.lines().any(|line| line.trim() == "STATUS: DEAD");
+    match (live, dead) {
+        (true, false) => VerificationResult::Live,
+        (false, true) => VerificationResult::Dead,
+        (true, true) => VerificationResult::Error(
+            "AuthSpec::Script verification returned ambiguous status lines; expected exactly one of STATUS: LIVE or STATUS: DEAD"
                 .to_string(),
-        )
+        ),
+        (false, false) => VerificationResult::Error(
+            "AuthSpec::Script verification returned no explicit status; expected STATUS: LIVE or STATUS: DEAD"
+                .to_string(),
+        ),
+    }
+}
+
+#[cfg(test)]
+mod script_auth_status_tests {
+    use super::script_auth_result;
+    use keyhog_core::VerificationResult;
+
+    #[test]
+    fn exact_live_and_dead_lines_still_map() {
+        assert!(matches!(
+            script_auth_result("STATUS: LIVE\n"),
+            VerificationResult::Live
+        ));
+        assert!(matches!(
+            script_auth_result("prefix\nSTATUS: DEAD\n"),
+            VerificationResult::Dead
+        ));
+    }
+
+    #[test]
+    fn substring_live_without_status_line_is_error() {
+        let result = script_auth_result("NOTE: NOT STATUS: LIVE in this banner");
+        assert!(
+            matches!(result, VerificationResult::Error(_)),
+            "substring mentions must not count as LIVE, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn mixed_live_and_dead_lines_are_ambiguous_error() {
+        let result = script_auth_result("STATUS: DEAD\nSTATUS: LIVE\n");
+        match result {
+            VerificationResult::Error(message) => assert!(
+                message.contains("ambiguous"),
+                "mixed statuses must fail closed: {message}"
+            ),
+            other => panic!("expected ambiguous Error, got {other:?}"),
+        }
     }
 }
