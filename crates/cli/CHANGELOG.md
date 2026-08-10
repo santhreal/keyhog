@@ -7,6 +7,7 @@
 - Keep verifier detector graphs, candidate queues, caches, HTTP clients, and OOB state absent unless live verification is enabled.
 - Report a completed admission-plan recovery as `complete_after_recovery` when the protocol reports scanned bytes, instead of consulting unrelated process-global byte counters.
 - Restore execution-pack signing-key, rollback, stale-stage, ambiguous-backup, and symlink cleanup regression coverage.
+- Prove separate installations create distinct execution-pack signing keys through the installer-owned key path.
 
 ## 0.5.67 - 2026-08-05
 
