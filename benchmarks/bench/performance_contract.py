@@ -134,26 +134,19 @@ def evaluate_performance_contract(
         for workload in catalog.workloads
         for route in workload.execution_routes
     }
-    expected_workload_ids = {workload.workload_id for workload in catalog.workloads}
-    base_workload_ids = {w for w, _ in baseline_rows.keys()}
-    cand_workload_ids = {w for w, _ in candidate_rows.keys()}
-    if base_workload_ids != expected_workload_ids:
-        missing = sorted(expected_workload_ids - base_workload_ids)
-        extra = sorted(base_workload_ids - expected_workload_ids)
+    baseline_keys = set(baseline_rows)
+    if baseline_keys != expected:
+        missing = sorted(expected - baseline_keys)
+        extra = sorted(baseline_keys - expected)
         raise PerformanceContractError(
             f"baseline coverage differs: missing={missing}, extra={extra}"
         )
-    if cand_workload_ids != expected_workload_ids:
-        missing = sorted(expected_workload_ids - cand_workload_ids)
-        extra = sorted(cand_workload_ids - expected_workload_ids)
+    candidate_keys = set(candidate_rows)
+    if candidate_keys != expected:
+        missing = sorted(expected - candidate_keys)
+        extra = sorted(candidate_keys - expected)
         raise PerformanceContractError(
             f"candidate coverage differs: missing={missing}, extra={extra}"
-        )
-    if set(baseline_rows.keys()) != set(candidate_rows.keys()):
-        missing = sorted(set(baseline_rows.keys()) - set(candidate_rows.keys()))
-        extra = sorted(set(candidate_rows.keys()) - set(baseline_rows.keys()))
-        raise PerformanceContractError(
-            f"candidate route keys differ from baseline: missing={missing}, extra={extra}"
         )
     backend = candidate.get("backend")
     if not isinstance(backend, str):

@@ -63,12 +63,14 @@ def test_one_slow_workload_fails_even_when_all_others_are_fast() -> None:
     assert violations == [f"{candidate['workloads'][17]['workload_id']}: speedup 1.960784x is below 2.000000x"]
 
 
-def test_missing_workload_is_invalid_evidence_not_a_pass() -> None:
-    """WHY: a candidate could otherwise omit its slowest route and satisfy every ratio computed over the remaining subset."""
+def test_missing_route_is_invalid_evidence_not_a_pass() -> None:
+    """WHY: a candidate could otherwise omit its slowest route while retaining another row for the same workload and satisfy every computed ratio."""
     baseline, candidate = _evidence()
-    missing = candidate["workloads"].pop()["workload_id"]
-    with pytest.raises(PerformanceContractError, match=rf"missing=\['{missing}'\]"):
+    missing_row = candidate["workloads"].pop()
+    missing = (missing_row["workload_id"], missing_row["execution_route"])
+    with pytest.raises(PerformanceContractError) as error:
         evaluate_performance_contract(baseline, candidate, CATALOG)
+    assert f"missing=[{missing!r}]" in str(error.value)
 
 
 def test_single_trial_evidence_is_rejected() -> None:
@@ -151,6 +153,8 @@ def test_gpu_host_rss_and_device_vram_are_independent_ceilings() -> None:
     c_row["max_peak_vram_bytes"] = 1_000_000_000
     c_row["max_peak_rss_kb"] = 100_001
     assert any("peak RSS ratio" in item for item in evaluate_performance_contract(baseline, candidate, CATALOG))
+
+def test_betterleaks_memory_requires_strictly_lower_peak_for_every_shared_workload() -> None:
     """WHY: equality or one high-memory shared route disproves the release claim even when all timing and existing baseline-memory ceilings pass."""
     baseline, candidate = _evidence(speedup=4.0)
     better = {
