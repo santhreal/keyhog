@@ -16,7 +16,6 @@ import sys
 from typing import Any
 
 from .report import inject, load_results
-from .workload_catalog import load_workload_catalog, WorkloadCatalog
 
 BENCH_ROOT = pathlib.Path(__file__).resolve().parents[1]
 REPO_ROOT = BENCH_ROOT.parent
@@ -444,100 +443,14 @@ def render_daemon(snapshot: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def render_contract_matrix(snapshot: dict[str, Any], catalog: WorkloadCatalog) -> str:
-    """Render the source-of-truth contract matrix showing pass or exact blocking metric for every catalog workload."""
-    snapshot_cat_sha256 = snapshot.get("catalog_sha256")
-    cat_file = BENCH_ROOT / "workload-catalog.toml"
-    current_cat_sha256 = _sha256_file(cat_file) if cat_file.exists() else None
-    if snapshot_cat_sha256 is not None and current_cat_sha256 is not None and snapshot_cat_sha256 != current_cat_sha256:
-        raise MatrixError("contract matrix snapshot catalog digest does not match catalog")
-
-    contract_results = snapshot.get("contract_results", {})
-    lines = [
-        "| Workload ID | Family | Speedup (min 2.0x / 10.0x GPU) | RSS Ratio (max 0.25) | CPU/SIMD RSS (max 128 MiB) | BetterLeaks Time Ratio (max 0.25) | GPU VRAM Ratio (max 0.25) | Status |",
-        "|---|---|---:|---:|---:|---:|---:|---|",
-    ]
-    for wl in catalog.workloads:
-        entry = contract_results.get(wl.workload_id, {})
-        speedup = entry.get("speedup")
-        rss_ratio = entry.get("rss_ratio")
-        cpu_simd_rss_bytes = entry.get("cpu_simd_rss_bytes")
-        bl_time_ratio = entry.get("betterleaks_time_ratio")
-        vram_ratio = entry.get("vram_ratio")
-
-        speed_target = catalog.targets.gpu_min_speedup if wl.gpu_eligible else catalog.targets.min_speedup
-
-        if speedup is not None:
-            speed_ok = speedup >= speed_target
-            speed_str = f"{speedup:.2f}x ({'PASS' if speed_ok else 'FAIL'})"
-        else:
-            speed_ok = False
-            speed_str = f"UNKNOWN (>= {speed_target:.1f}x)"
-
-        if rss_ratio is not None:
-            rss_ok = rss_ratio <= catalog.targets.max_rss_ratio
-            rss_str = f"{rss_ratio:.4f} ({'PASS' if rss_ok else 'FAIL'})"
-        else:
-            rss_ok = False
-            rss_str = "UNKNOWN (<= 0.25)"
-
-        if cpu_simd_rss_bytes is not None:
-            cpu_simd_ok = cpu_simd_rss_bytes <= catalog.targets.cpu_simd_max_rss_bytes
-            rss_bytes_str = f"{cpu_simd_rss_bytes / (1024*1024):.1f} MiB ({'PASS' if cpu_simd_ok else 'FAIL'})"
-        else:
-            cpu_simd_ok = False
-            rss_bytes_str = "UNKNOWN (<= 128 MiB)"
-
-        if wl.betterleaks_comparable:
-            if bl_time_ratio is not None:
-                bl_ok = bl_time_ratio <= catalog.targets.betterleaks_max_time_ratio
-                bl_str = f"{bl_time_ratio:.4f} ({'PASS' if bl_ok else 'FAIL'})"
-            else:
-                bl_ok = False
-                bl_str = "UNKNOWN (<= 0.25)"
-        else:
-            bl_ok = True
-            bl_str = "N/A"
-
-        if wl.gpu_eligible:
-            if vram_ratio is not None:
-                vram_ok = vram_ratio <= catalog.targets.max_vram_ratio
-                vram_str = f"{vram_ratio:.4f} ({'PASS' if vram_ok else 'FAIL'})"
-            else:
-                vram_ok = False
-                vram_str = "UNKNOWN (<= 0.25)"
-        else:
-            vram_ok = True
-            vram_str = "N/A"
-
-        failures = []
-        if not speed_ok:
-            failures.append("Speedup")
-        if not rss_ok:
-            failures.append("RSS Ratio")
-        if not cpu_simd_ok:
-            failures.append("CPU/SIMD RSS")
-        if not bl_ok:
-            failures.append("BetterLeaks Time Ratio")
-        if not vram_ok:
-            failures.append("GPU VRAM Ratio")
-
-        status = "**PASS**" if not failures else f"**FAIL ({', '.join(failures)})**"
-        lines.append(
-            f"| `{wl.workload_id}` | {wl.family} | {speed_str} | {rss_str} | {rss_bytes_str} | {bl_str} | {vram_str} | {status} |"
-        )
-    return "\n".join(lines)
 
 
-def render_sections(snapshot: dict[str, Any], catalog: WorkloadCatalog | None = None) -> dict[str, str]:
+def render_sections(snapshot: dict[str, Any]) -> dict[str, str]:
     """Render every generated README matrix marker."""
-    if catalog is None:
-        catalog = load_workload_catalog(BENCH_ROOT / "workload-catalog.toml")
     return {
         "accuracy": render_accuracy(snapshot),
         "config": render_configuration(snapshot),
         "daemon": render_daemon(snapshot),
-        "contract": render_contract_matrix(snapshot, catalog),
     }
 
 def write_reports(sections: dict[str, str], reports: pathlib.Path) -> None:
@@ -552,10 +465,6 @@ def write_reports(sections: dict[str, str], reports: pathlib.Path) -> None:
     )
     (reports / "daemon-matrix.md").write_text(
         "# KeyHog daemon matrix\n\n" + sections["daemon"] + "\n",
-        encoding="utf-8",
-    )
-    (reports / "contract-matrix.md").write_text(
-        "# KeyHog contract matrix\n\n" + sections["contract"] + "\n",
         encoding="utf-8",
     )
 
@@ -640,9 +549,6 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 args.reports / "daemon-matrix.md": (
                     "# KeyHog daemon matrix\n\n" + sections["daemon"] + "\n"
-                ),
-                args.reports / "contract-matrix.md": (
-                    "# KeyHog contract matrix\n\n" + sections["contract"] + "\n"
                 ),
             }
             for path, expected in expected_reports.items():

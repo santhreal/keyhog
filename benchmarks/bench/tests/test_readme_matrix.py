@@ -247,7 +247,7 @@ def test_readme_check_detects_hand_edited_generated_bytes(tmp_path) -> None:
         "before\n<!-- BENCH:accuracy:start -->\nold\n<!-- BENCH:accuracy:end -->\n"
         "<!-- BENCH:config:start -->\nold\n<!-- BENCH:config:end -->\n"
         "<!-- BENCH:daemon:start -->\nold\n<!-- BENCH:daemon:end -->\n"
-        "<!-- BENCH:contract:start -->\nold\n<!-- BENCH:contract:end -->\nafter\n",
+        "after\n",
         encoding="utf-8",
     )
     readme_matrix.update_readme(readme, sections, check=False)
@@ -265,23 +265,3 @@ def test_snapshot_loader_rejects_unknown_schema(tmp_path) -> None:
 
     with pytest.raises(readme_matrix.MatrixError, match="unsupported"):
         readme_matrix.load_snapshot(snapshot)
-def test_render_contract_matrix_covers_every_catalog_workload(tmp_path) -> None:
-    """WHY: KH-2009 requires generating a source-of-truth contract matrix for every catalog workload."""
-    from bench.workload_catalog import load_workload_catalog
-    from bench.readme_matrix import BENCH_ROOT
-    import re
-    import pathlib
-
-    config_results, daemon_results, daemon_corpus = _matrix_fixture(tmp_path)
-    snapshot = readme_matrix.capture_snapshot(
-        config_results,
-        daemon_results,
-        daemon_corpus,
-        "clean",
-    )
-    catalog = load_workload_catalog(pathlib.Path(BENCH_ROOT) / "workload-catalog.toml")
-    rendered = readme_matrix.render_contract_matrix(snapshot, catalog)
-    assert "| Workload ID |" in rendered
-    expected_ids = {w.workload_id for w in catalog.workloads}
-    rendered_ids = set(re.findall(r"^\| `([^`]+)`", rendered, flags=re.MULTILINE))
-    assert rendered_ids == expected_ids
