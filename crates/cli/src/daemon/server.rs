@@ -1692,7 +1692,13 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                             policy_identity: id,
                             last_seen_sequence: 0,
                         };
-                        state.guard.insert_attestation(att);
+                        state.guard.insert_attestation(att.clone());
+                        // Persist the attestation to the durable store.
+                        if let Some(store) = &state.guard_store {
+                            if let Err(e) = store.save_attestation(&att) {
+                                tracing::warn!("daemon: guard commit: failed to persist attestation for {}: {}", oid, e);
+                            }
+                        }
                     }
                 }
             }
@@ -1808,6 +1814,18 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     e
                 );
             }
+            // Persist the updated root record to the durable store.
+            if let Some(store) = &state.guard_store {
+                if let Some(record) = state.guard.root_record(std::os::unix::ffi::OsStrExt::as_bytes(commit_root.as_os_str())) {
+                    if let Err(e) = store.save_root(&record) {
+                        tracing::warn!(
+                            "daemon: guard commit finish: failed to persist root {}: {}",
+                            commit_root.display(),
+                            e
+                        );
+                    }
+                }
+            }
             Response::GuardCommitReceipt {
                 objects_requested: total_objects,
                 objects_hit,
@@ -1899,6 +1917,12 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                             ),
                         };
                     }
+                    // Persist the root to the durable store for crash recovery.
+                    if let Some(store) = &state.guard_store {
+                        if let Err(e) = store.save_root(&record) {
+                            tracing::warn!("daemon: guard add: failed to persist root {}: {}", canonical, e);
+                        }
+                    }
                     Response::GuardAdded {
                         root: canonical.clone(),
                         state: record.state.label().to_string(),
@@ -1912,6 +1936,15 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             match state.guard.remove_root(root.as_bytes()) {
                 Some(_) => {
                     state.guard_watcher.lock().remove_root(std::path::Path::new(&root));
+                    // Remove from durable store.
+                    if let Some(store) = &state.guard_store {
+                        if let Err(e) = store.remove_root(root.as_bytes()) {
+                            tracing::warn!("daemon: guard remove: failed to delete root from store: {}", e);
+                        }
+                        if let Err(e) = store.clear_root_gaps(root.as_bytes()) {
+                            tracing::warn!("daemon: guard remove: failed to clear root gaps: {}", e);
+                        }
+                    }
                     Response::GuardRemoved
                 }
                 None => Response::Error {
