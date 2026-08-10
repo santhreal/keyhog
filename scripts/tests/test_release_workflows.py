@@ -82,7 +82,7 @@ class AutomaticReleaseWorkflowTests(unittest.TestCase):
     def test_publisher_uploads_dependency_order_without_release_proofs(self) -> None:
         """Cargo uploads must follow the workspace dependency chain and stop there."""
         self.assertIn(
-            "CRATES=(keyhog-core keyhog-profile keyhog-verifier keyhog-sources keyhog-scanner keyhog)",
+            "CRATES=(keyhog-profile keyhog-core keyhog-verifier keyhog-sources keyhog-scanner keyhog)",
             PUBLISH,
         )
         self.assertEqual(PUBLISH.count("cargo publish"), 1)

@@ -55,8 +55,8 @@ repository secret.
 The trusted publisher must be authorized for all six packages, in publication
 order:
 
-1. `keyhog-core`
-2. `keyhog-profile`
+1. `keyhog-profile`
+2. `keyhog-core`
 3. `keyhog-verifier`
 4. `keyhog-sources`
 5. `keyhog-scanner`
