@@ -82,6 +82,8 @@ fn context() -> RouteSelectionContext {
         workload_digest: [0x71; 32],
         host_digest: [0x72; 32],
         calibration_digest: [0x73; 32],
+        feature_schema_digest: [0x74; 32],
+        quantized_model_digest: [0x75; 32],
     }
 }
 
@@ -100,6 +102,8 @@ fn decision(
         calibration_digest: context.calibration_digest,
         pack_identity_digest,
         pack_content_digest,
+        feature_schema_digest: context.feature_schema_digest,
+        quantized_model_digest: context.quantized_model_digest,
     }
 }
 
@@ -161,7 +165,7 @@ fn missing_selected_pack_fails_without_backend_fallback() {
     assert!(error.to_string().contains("reinstall and recalibrate"));
 }
 
-/// WHY: stale host, workload, policy, or calibration evidence must be rejected before touching any backend path.
+/// WHY: stale host, workload, policy, calibration, schema, or model evidence must be rejected before touching any backend path.
 #[test]
 fn stale_route_identity_fails_before_pack_open() {
     let missing = Path::new("/path/that/must/not/be/opened.khpack");
@@ -172,12 +176,20 @@ fn stale_route_identity_fails_before_pack_open() {
         identity(ExecutionPackBackend::Cpu),
     );
     let identity_digest = candidate.identity.digest();
-    for (label, mutate) in [("workload", 0_u8), ("host", 1_u8), ("calibration", 2_u8)] {
+    for (label, mutate) in [
+        ("workload", 0_u8),
+        ("host", 1_u8),
+        ("calibration", 2_u8),
+        ("feature schema", 3_u8),
+        ("quantized model", 4_u8),
+    ] {
         let mut route = decision(ExecutionPackBackend::Cpu, identity_digest, [0x93; 32]);
         match mutate {
             0 => route.workload_digest = [0; 32],
             1 => route.host_digest = [0; 32],
-            _ => route.calibration_digest = [0; 32],
+            2 => route.calibration_digest = [0; 32],
+            3 => route.feature_schema_digest = [0; 32],
+            _ => route.quantized_model_digest = [0; 32],
         }
         let error = select_execution_pack(
             context(),

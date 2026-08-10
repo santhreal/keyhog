@@ -47,7 +47,16 @@ pub(crate) fn finalize_pending_match_for_test(
 
 impl CompiledScanner {
     fn score_pending_batch(&self, pending_matches: &[MlPendingMatch]) -> crate::Result<Vec<f64>> {
-        let scores = crate::ml_scorer::score_input_batch(pending_matches, &self.config);
+        let scores = if self.quantized_confidence_authenticated {
+            let scored = crate::ml_scorer::score_input_batch_quantized_reference(
+                pending_matches,
+                &self.config,
+            )?;
+            let _explicit_cpu_owned_count = scored.cpu_owned_candidate_ids.len();
+            scored.scores
+        } else {
+            crate::ml_scorer::score_input_batch(pending_matches, &self.config)
+        };
         crate::ml_scorer::complete_batch_scores_with_config(scores, pending_matches, &self.config)
     }
 

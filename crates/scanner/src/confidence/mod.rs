@@ -3,6 +3,7 @@
 
 pub(crate) mod penalties;
 pub(crate) mod policy;
+pub mod quantized;
 mod prefixes;
 mod signals;
 

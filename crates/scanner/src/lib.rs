@@ -84,7 +84,7 @@ mod compiled_scanner;
 /// Detector compilation into high-performance matching structures.
 pub(crate) mod compiler;
 /// Heuristic and ML-based confidence scoring for candidate matches.
-pub(crate) mod confidence;
+pub mod confidence;
 /// Code context analysis (comments, assignments, test files).
 pub mod context;
 pub(crate) mod credential_context_keywords;

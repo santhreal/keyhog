@@ -502,6 +502,9 @@ pub struct CompiledScanner {
     pub(crate) ac: Option<AhoCorasick>,
     /// Exact selected route or the temporary all-peer calibration census.
     pub(crate) backend_state: ScannerBackendState,
+    /// True only when a signed GPU execution pack authenticated the exact
+    /// quantized feature schema, model artifact, and scoring ABI.
+    pub(crate) quantized_confidence_authenticated: bool,
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     #[cfg(feature = "gpu")]
     pub(crate) gpu_max_literal_len: usize,

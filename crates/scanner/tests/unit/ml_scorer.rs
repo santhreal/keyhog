@@ -217,6 +217,62 @@ fn very_high_entropy_feature_uses_canonical_scanner_threshold() {
 }
 
 #[test]
+fn quantized_feature_union_and_scores_are_bit_identical_across_canonical_abi() {
+    let mut seen = std::collections::BTreeSet::new();
+    for (index, name) in keyhog_scanner::confidence::quantized::FEATURE_NAMES
+        .iter()
+        .enumerate()
+    {
+        assert!(seen.insert(*name), "duplicate feature ABI name {name}");
+        let mut features =
+            [0.0; keyhog_scanner::confidence::quantized::FEATURE_NAMES.len()];
+        features[index] = 1.0;
+        let first = keyhog_scanner::testing::quantized_score_features(&features)
+            .expect("canonical quantized score");
+        let second = keyhog_scanner::testing::quantized_score_features(&features)
+            .expect("replayed quantized score");
+        assert_eq!(first, second, "feature {index} ({name})");
+        assert_eq!(
+            i16::from_le_bytes([first.0[index * 2], first.0[index * 2 + 1]]),
+            keyhog_scanner::confidence::quantized::SCALE as i16,
+            "feature {index} ({name})"
+        );
+    }
+    assert_eq!(
+        seen.len(),
+        keyhog_scanner::confidence::quantized::FEATURE_NAMES.len(),
+        "a new model input must enter the canonical feature registry"
+    );
+}
+
+#[test]
+fn quantized_feature_rows_cover_boundary_and_adversarial_candidates_exactly() {
+    for (text, context) in [
+        ("a", ""),
+        ("AKIA0123456789ABCDEF", "AWS_ACCESS_KEY_ID="),
+        (
+            "sk-proj-aB3dE6gH9jK2mN5pQ8rS1tU4vW7xY0zA3cD6eF9h",
+            "OPENAI_API_KEY=",
+        ),
+        (
+            "0123456789abcdef0123456789abcdef0123456789abcdef",
+            "# fixture API_KEY = value.test",
+        ),
+        (
+            "é中🙂-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "src/config.toml\nTOKEN = ",
+        ),
+    ] {
+        let features = compute_features_public(text, context);
+        let host = keyhog_scanner::testing::quantized_score_features(&features)
+            .expect("host quantized score");
+        let replay = keyhog_scanner::testing::quantized_score_features(&features)
+            .expect("canonical ABI replay");
+        assert_eq!(host, replay);
+    }
+}
+
+#[test]
 fn inference_is_fast() {
     let text = concat!("gh", "p_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij");
     let context = "TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";

@@ -129,3 +129,40 @@ fn dense_rejected_candidates_construct_no_durable_matches() {
     assert_eq!(emitted, 0);
     assert_eq!(raw_match_materialization_count_for_test(), 0);
 }
+
+/// WHY: the accelerator returns only an integer score; the shared CPU finalizer
+/// must retain exact below/at/above floor semantics without a floating tolerance.
+#[test]
+fn quantized_scores_keep_floor_ownership_in_the_shared_finalizer() {
+    let config = ScannerConfig::default();
+    let floor = 0.95;
+    let at = crate::confidence::quantized::QuantizedScore(62_226).as_f64();
+    let below = crate::confidence::quantized::QuantizedScore(62_225).as_f64();
+    let above = crate::confidence::quantized::QuantizedScore(62_227).as_f64();
+    let pending_at = |offset| {
+        let mut pending = pending_candidate(offset, floor);
+        pending.post_match = keyhog_core::DetectorPostMatchConfidenceSpec {
+            placeholder_multiplier: 1.0,
+            minimum_byte_diversity: 0.0,
+            low_diversity_multiplier: 1.0,
+            maximum_repeat_ratio: 1.0,
+            degenerate_run_min_length: usize::MAX,
+            degenerate_repeat_multiplier: 1.0,
+            data_envelope_multiplier: None,
+            fixture_path_multiplier: 1.0,
+            ml_context_reapply_below: 0.0,
+        };
+        pending.is_named_detector = false;
+        pending
+    };
+
+    assert!(
+        finalize_pending_match_for_test(&config, pending_at(1), below).is_none()
+    );
+    assert!(
+        finalize_pending_match_for_test(&config, pending_at(2), at).is_some()
+    );
+    assert!(
+        finalize_pending_match_for_test(&config, pending_at(3), above).is_some()
+    );
+}

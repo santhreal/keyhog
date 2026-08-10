@@ -207,6 +207,69 @@ pub(crate) fn complete_batch_scores_with_config<T: MlScoreInput>(
     }
     Ok(scores)
 }
+#[cfg(feature = "ml")]
+pub(crate) struct QuantizedBatchResult {
+    pub(crate) scores: Vec<f64>,
+    pub(crate) cpu_owned_candidate_ids: Vec<u32>,
+}
+
+/// Deterministic CPU oracle for the authenticated fused confidence route.
+///
+/// Candidate IDs are positional and the result order is unchanged. Inputs that
+/// cannot enter the integer ABI are explicitly scored by the established CPU
+/// model; a selected accelerator failure is handled by the caller and never
+/// enters this reference path as a silent substitute.
+#[cfg(feature = "ml")]
+pub(crate) fn score_input_batch_quantized_reference<T: MlScoreInput>(
+    inputs: &[T],
+    config: &crate::types::ScannerConfig,
+) -> crate::Result<QuantizedBatchResult> {
+    use crate::confidence::quantized::{
+        model, QuantizedConfidenceError, QuantizedFeatureRow, MAX_CANDIDATES_PER_BATCH,
+    };
+
+    if inputs.len() > MAX_CANDIDATES_PER_BATCH {
+        return Err(crate::ScanError::Gpu(
+            QuantizedConfidenceError::BatchTooLarge {
+                candidates: inputs.len(),
+                maximum: MAX_CANDIDATES_PER_BATCH,
+            }
+            .to_string(),
+        ));
+    }
+    let model = model().map_err(|error| crate::ScanError::Gpu(error.to_string()))?;
+    let mut scores = Vec::new();
+    scores.try_reserve_exact(inputs.len()).map_err(|_| {
+        crate::ScanError::Gpu("quantized confidence score allocation failed within its batch bound".into())
+    })?;
+    let mut cpu_owned_candidate_ids = Vec::new();
+    cpu_owned_candidate_ids
+        .try_reserve(inputs.len().min(64))
+        .map_err(|_| crate::ScanError::Gpu("quantized confidence ownership allocation failed".into()))?;
+
+    for (candidate_id, input) in inputs.iter().enumerate() {
+        let text = input.ml_text();
+        let features = input.ml_features(config);
+        let score = match QuantizedFeatureRow::from_float(&features) {
+            Ok(row) if !text.is_empty() => model.score(&row).as_f64(),
+            Ok(_) | Err(_) => {
+                cpu_owned_candidate_ids.push(u32::try_from(candidate_id).map_err(|_| {
+                    crate::ScanError::Gpu(
+                        "quantized confidence candidate ID exceeds the u32 ABI".into(),
+                    )
+                })?);
+                crate::confidence::policy::ml_score_for_candidate_text(text, || {
+                    forward_pass(&features) as f64
+                })
+            }
+        };
+        scores.push(score);
+    }
+    Ok(QuantizedBatchResult {
+        scores,
+        cpu_owned_candidate_ids,
+    })
+}
 
 /// Score precomputed model features without recomputing text/context signals.
 #[cfg(feature = "ml")]

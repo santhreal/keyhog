@@ -4616,6 +4616,18 @@ pub fn ml_score_features(features: &[f32; crate::ml_scorer::NUM_FEATURES]) -> f6
 }
 
 #[cfg(feature = "ml")]
+pub fn quantized_score_features(
+    features: &[f32; crate::ml_scorer::NUM_FEATURES],
+) -> Result<(Vec<u8>, u16), String> {
+    let row = crate::confidence::quantized::QuantizedFeatureRow::from_float(features)
+        .map_err(|error| error.to_string())?;
+    let score = crate::confidence::quantized::model()
+        .map_err(|error| error.to_string())?
+        .score(&row);
+    Ok((row.canonical_bytes().to_vec(), score.0))
+}
+
+#[cfg(feature = "ml")]
 pub fn ml_score_for_detector(
     text: &str,
     context: &str,

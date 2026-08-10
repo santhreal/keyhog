@@ -102,8 +102,11 @@ pub struct VyreOrchestrationProgram {
     pub matcher_wire_version: u32,
     pub matcher_digest: [u8; 32],
     pub matcher_bytes: Vec<u8>,
-    pub phase2_catalog_digest: [u8; 32],
+pub phase2_catalog_digest: [u8; 32],
     pub phase2_catalog_bytes: Vec<u8>,
+    pub feature_schema_digest: [u8; 32],
+    pub quantized_model_digest: [u8; 32],
+    pub quantized_score_abi_version: u16,
 }
 
 impl VyreOrchestrationProgram {
@@ -139,7 +142,7 @@ impl VyreOrchestrationProgram {
             )
         })?;
         let matcher_digest = *blake3::hash(&matcher.bytes).as_bytes();
-        #[cfg(not(feature = "gpu"))]
+#[cfg(not(feature = "gpu"))]
         return Err(ExecutionPackError::InvalidCompilerInput(
             "VYRE phase-2 catalog compilation requires the scanner GPU feature".into(),
         ));
@@ -160,6 +163,9 @@ impl VyreOrchestrationProgram {
                 .map_err(ExecutionPackError::InvalidCompilerInput)?;
         #[cfg(feature = "gpu")]
         let phase2_catalog_digest = *blake3::hash(&phase2_catalog_bytes).as_bytes();
+        let feature_schema_digest = crate::confidence::quantized::feature_schema_digest();
+        let quantized_model_digest = crate::confidence::quantized::model_artifact_digest();
+        let quantized_score_abi_version = crate::confidence::quantized::QUANTIZED_SCORE_ABI_VERSION;
         Ok(Self {
             version: VYRE_ORCHESTRATION_PROGRAM_VERSION,
             backend,
@@ -170,6 +176,10 @@ impl VyreOrchestrationProgram {
             matcher_wire_magic: matcher.wire_magic,
             matcher_wire_version: matcher.wire_version,
             matcher_digest,
+            feature_schema_digest,
+            quantized_model_digest,
+            quantized_score_abi_version:
+                crate::confidence::quantized::QUANTIZED_SCORE_ABI_VERSION,
             matcher_bytes: matcher.bytes,
             phase2_catalog_digest,
             phase2_catalog_bytes,
@@ -200,6 +210,18 @@ impl VyreOrchestrationProgram {
             self.matcher_wire_magic,
             self.matcher_wire_version,
         )?;
+        if self.version != VYRE_ORCHESTRATION_PROGRAM_VERSION
+            || self.feature_schema_digest
+                != crate::confidence::quantized::feature_schema_digest()
+            || self.quantized_model_digest
+                != crate::confidence::quantized::model_artifact_digest()
+            || self.quantized_score_abi_version
+                != crate::confidence::quantized::QUANTIZED_SCORE_ABI_VERSION
+        {
+            return Err(ExecutionPackError::Incompatible(
+                "VYRE confidence artifact identity is stale; reinstall and recalibrate".into(),
+            ));
+        }
 
         let mut out = Vec::new();
         out.extend_from_slice(MAGIC);
@@ -210,6 +232,9 @@ impl VyreOrchestrationProgram {
         out.extend_from_slice(&self.matcher_digest);
         out.extend_from_slice(&self.phase2_catalog_digest);
         out.extend_from_slice(&self.execution_identity.device_limits_digest);
+        out.extend_from_slice(&self.feature_schema_digest);
+        out.extend_from_slice(&self.quantized_model_digest);
+        out.extend_from_slice(&self.quantized_score_abi_version.to_le_bytes());
         out.extend_from_slice(&self.matcher_pattern_count.to_le_bytes());
         out.extend_from_slice(&self.matcher_wire_magic);
         out.extend_from_slice(&self.matcher_wire_version.to_le_bytes());
@@ -270,6 +295,21 @@ impl VyreOrchestrationProgram {
         let matcher_digest: [u8; 32] = cursor.take(32)?.try_into().expect("fixed digest");
         let phase2_catalog_digest: [u8; 32] = cursor.take(32)?.try_into().expect("fixed digest");
         let device_limits_digest: [u8; 32] = cursor.take(32)?.try_into().expect("fixed digest");
+        let feature_schema_digest: [u8; 32] =
+            cursor.take(32)?.try_into().expect("fixed feature schema digest");
+        let quantized_model_digest: [u8; 32] =
+            cursor.take(32)?.try_into().expect("fixed quantized model digest");
+        let quantized_score_abi_version = cursor.u16()?;
+        if feature_schema_digest != crate::confidence::quantized::feature_schema_digest()
+            || quantized_model_digest != crate::confidence::quantized::model_artifact_digest()
+            || quantized_score_abi_version
+                != crate::confidence::quantized::QUANTIZED_SCORE_ABI_VERSION
+        {
+            return Err(ExecutionPackError::Incompatible(
+                "VYRE confidence schema, model, or score ABI is stale; reinstall and recalibrate"
+                    .into(),
+            ));
+        }
         let matcher_pattern_count = cursor.u32()?;
         let matcher_wire_magic: [u8; 4] = cursor.take(4)?.try_into().expect("fixed magic");
         let matcher_wire_version = cursor.u32()?;
@@ -320,8 +360,11 @@ impl VyreOrchestrationProgram {
             matcher_wire_version,
             matcher_digest,
             matcher_bytes,
-            phase2_catalog_digest,
+phase2_catalog_digest,
             phase2_catalog_bytes,
+            feature_schema_digest,
+            quantized_model_digest,
+            quantized_score_abi_version,
         };
         if program.canonical_bytes()?.as_slice() != bytes {
             return Err(ExecutionPackError::InvalidPack(
