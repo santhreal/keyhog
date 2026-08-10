@@ -106,7 +106,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.tag.outputs.tag }}
-          fetch-depth: 1
+          fetch-depth: 0
+
+      - name: Overlay current publish script from default branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          default_branch="${{ github.event.repository.default_branch }}"
+          git fetch --depth=1 origin "$default_branch"
+          git checkout "origin/${default_branch}" -- scripts/publish.sh
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
