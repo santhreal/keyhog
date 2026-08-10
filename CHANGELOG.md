@@ -19,6 +19,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - Autoroute cache schema v57 authenticates runtime-compiled GPU programs against the exact executable and detector corpus while retaining manifest-digest binding for installed GPU sidecars. Calibration from a standalone release binary now persists GPU route evidence instead of rejecting every measured workload when no sidecar is installed.
 
+- Autoroute JSON inspection now exposes the active GPU artifact binding and each authenticated ordered-device route body, including per-device topology, throughput weights, and resident budgets.
+
 - Filesystem discovery prunes default-excluded directories (for example
   `node_modules/`) during the walk and counts each pruned directory once in the
   Excluded coverage signal. Linux unbounded walks abort at the first

@@ -79,6 +79,8 @@ pub(crate) struct AutorouteCacheInspection {
     pub(crate) binary_version: Option<String>,
     pub(crate) git_hash: Option<String>,
     pub(crate) executable_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) gpu_artifact_binding: Option<super::schema::AutorouteGpuArtifactBinding>,
     pub(crate) identity_matches_build: Option<bool>,
     pub(crate) identity_mismatch_reason: Option<String>,
     /// Compatibility projection for consumers of schema v31 inspection JSON.
@@ -211,6 +213,8 @@ pub(crate) struct AutorouteRouteTimingInspection {
     pub(crate) gpu_slot_input_capacity_bytes: Option<u64>,
     pub(crate) gpu_slot_match_capacity: Option<u32>,
     pub(crate) peer_identity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) ordered_device_route: Option<keyhog_scanner::gpu::device_set::OrderedGpuDeviceRoute>,
     /// Primary persisted evidence in measurement order.
     pub(crate) trials_ns: Vec<u128>,
     /// First materialization/dispatch cost for SIMD and GPU routes.
@@ -283,7 +287,7 @@ fn selection_basis(
     }
 }
 
-fn route_timing_inspections(
+pub(crate) fn route_timing_inspections(
     point: &super::super::evidence::AutorouteCalibrationPoint,
 ) -> Vec<AutorouteRouteTimingInspection> {
     point
@@ -342,6 +346,7 @@ fn route_timing_inspections(
                 gpu_slot_input_capacity_bytes: entry.gpu_slot_input_capacity_bytes,
                 gpu_slot_match_capacity: entry.gpu_slot_match_capacity,
                 peer_identity: entry.peer_identity.clone(),
+                ordered_device_route: entry.ordered_device_route.clone(),
                 trials_ns: entry.timing.trials_ns.clone(),
                 cold_ns,
                 one_shot_ns,
@@ -425,6 +430,7 @@ fn inspect_autoroute_cache_for_build(
     out.binary_version = Some(cache.binary_version.clone());
     out.git_hash = Some(cache.git_hash.clone());
     out.executable_sha256 = Some(cache.executable_sha256.clone());
+    out.gpu_artifact_binding = cache.gpu_artifact_binding.clone();
     out.detector_digest = Some(format!("{:016x}", cache.detector_digest));
     out.rules_digest = Some(cache.rules_digest.clone());
     let mut drift = Vec::new();

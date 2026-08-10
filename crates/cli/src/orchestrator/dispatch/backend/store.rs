@@ -39,6 +39,8 @@ pub(super) use artifact_identity::installed_gpu_sidecar_digest;
 #[cfg(test)]
 pub(super) use codec::AUTOROUTE_CACHE_FILE_BYTES;
 #[cfg(test)]
+pub(super) use inspection::route_timing_inspections;
+#[cfg(test)]
 pub(super) use schema::{AutorouteBuildFeatures, AutorouteCache};
 #[cfg(test)]
 pub(super) use validation::{

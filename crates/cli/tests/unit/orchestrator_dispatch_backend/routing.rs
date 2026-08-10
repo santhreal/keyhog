@@ -108,6 +108,23 @@ fn issue32_async_gpu_evidence_requires_complete_depth_matrix_and_preserves_aggre
     device_set.gpu_pipeline_depth = selected.gpu_pipeline_depth;
     super::store::validate_decision_route_evidence(&device_set, &expected)
         .expect("one authenticated device set across every route variant is valid");
+    let inspected_timings = super::store::route_timing_inspections(device_set.primary_point());
+    let inspected_device_route = inspected_timings
+        .iter()
+        .find_map(|timing| timing.ordered_device_route.as_ref())
+        .expect("inspection exposes authenticated ordered-device evidence");
+    assert_eq!(
+        inspected_device_route.devices, ordered.devices,
+        "inspection must preserve every calibrated device, weight, and budget"
+    );
+    let inspected_json =
+        serde_json::to_value(&inspected_timings).expect("serialize route timing inspection");
+    assert!(
+        inspected_json
+            .to_string()
+            .contains("\"ordered_device_route\""),
+        "JSON inspection must expose the authenticated route body"
+    );
 
     let mut orphaned = device_set.clone();
     let orphaned_entry = orphaned
