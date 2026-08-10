@@ -630,35 +630,28 @@ fn spawn_guard_watcher_loop(state: Arc<ServerState>) -> tokio::task::JoinHandle<
     })
 }
 
-/// Process a batch of guard events for one root. Applies the guard
-/// state machine transition based on the event classification.
+/// Process a batch of guard events for one root. Advisory filesystem
+/// events mark the root dirty (EventAccepted); only a commit
+/// transaction or explicit reconciliation can prove clean/findings.
+/// Overflow (ReconcileSubtree) marks the root degraded.
 fn process_guard_events(state: &ServerState, root: &Path, events: Vec<keyhog_sources::guard::GuardEvent>) {
-    use keyhog_core::guard_state::{GuardTransition, GuardRootState};
+    use keyhog_core::guard_state::GuardTransition;
     use keyhog_sources::guard::GuardEvent;
 
     let root_bytes = std::os::unix::ffi::OsStrExt::as_bytes(root.as_os_str());
-    let has_findings = false; // Advisory events do not prove findings;
-                              // only a commit transaction does.
-    let has_degradation = events.iter().any(|e| matches!(e, GuardEvent::ReconcileSubtree(_)));
+    let has_overflow = events.iter().any(|e| matches!(e, GuardEvent::ReconcileSubtree(_)));
 
-    let transition = if has_degradation {
+    let transition = if has_overflow {
         GuardTransition::EventsDegraded
-    } else if has_findings {
-        GuardTransition::EventsFindings
     } else {
-        GuardTransition::EventsClean
+        // Advisory events observed changes. Mark the root dirty so
+        // the operator knows a re-scan is needed. Do not claim clean
+        // or findings without actually scanning the content.
+        GuardTransition::EventAccepted
     };
 
     match state.guard.transition_root(root_bytes, &transition) {
-        Ok(new_state) => {
-            if new_state == GuardRootState::Degraded {
-                tracing::warn!(
-                    "daemon: guard root {} degraded after {} events",
-                    root.display(),
-                    events.len()
-                );
-            }
-        }
+        Ok(_) => {}
         Err(e) => {
             tracing::warn!(
                 "daemon: guard transition failed for {}: {}",
@@ -1150,7 +1143,11 @@ async fn handle_connection(
                     crate::daemon::protocol::request_kind(&other)
                 ),
             },
-            other @ (Request::ScanText { .. } | Request::ScanPath { .. }) => {
+            other @ (Request::ScanText { .. }
+                | Request::ScanPath { .. }
+                | Request::GuardCommitBegin { .. }
+                | Request::GuardCommitBlob { .. }
+                | Request::GuardCommitFinish { .. }) => {
                 match warm_route_denial.as_ref() {
                     Some(denial) => denial.clone(),
                     None => dispatch(&state, other).await,
@@ -1351,8 +1348,11 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             };
             // Classify entries: skip deletions/symlinks/submodules,
             // look up file blobs in the clean attestation cache.
-            let mut clean_hits = Vec::new();
-            let mut required_blob_oids = Vec::new();
+            // Deduplicate by OID: two staged paths with identical
+            // content share one Git blob OID and need only one scan.
+            let mut clean_hits: Vec<String> = Vec::new();
+            let mut required_blob_oids: Vec<String> = Vec::new();
+            let mut seen_oids: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut objects_skipped = 0u64;
             let mut bytes_requested = 0u64;
             let mut bytes_hit = 0u64;
@@ -1366,6 +1366,11 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     continue;
                 }
                 bytes_requested += entry.object_size;
+                if !seen_oids.insert(entry.object_oid.clone()) {
+                    // Duplicate OID: already classified above. Count
+                    // the bytes but do not add to the streaming set.
+                    continue;
+                }
                 if let Some(_att) = state.guard.lookup_attestation(
                     git_hash,
                     &entry.object_oid,
@@ -1423,6 +1428,30 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     message: format!(
                         "daemon: guard commit blob: OID {} not in required set for transaction {}",
                         blob_oid, transaction_id
+                    ),
+                };
+            }
+            // Verify the payload matches the declared OID and size.
+            // This prevents a client from streaming benign bytes
+            // labeled with a secret-bearing blob's OID.
+            let payload_bytes: Vec<u8> = payload
+                .iter()
+                .flat_map(|c| c.data.as_bytes().iter().copied())
+                .collect();
+            if payload_bytes.len() as u64 != object_size {
+                return Response::Error {
+                    message: format!(
+                        "daemon: guard commit blob: size mismatch for {}: declared {}, got {}",
+                        blob_oid, object_size, payload_bytes.len()
+                    ),
+                };
+            }
+            let computed_oid = compute_git_blob_oid(txn.hash_algorithm, &payload_bytes);
+            if computed_oid != blob_oid {
+                return Response::Error {
+                    message: format!(
+                        "daemon: guard commit blob: OID mismatch for {}: declared {}, computed {}",
+                        blob_oid, blob_oid, computed_oid
                     ),
                 };
             }
@@ -1485,8 +1514,9 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             let findings = match scan_result {
                 Ok(Ok(count)) => count,
                 Ok(Err(e)) => {
-                    // Scan failed: record as coverage gap, not clean.
-                    if let Err(msg) = state.guard.record_scanned_blob(txn_id, &oid, object_size, 0) {
+                    // Scan failed: record as coverage gap so the
+                    // transaction terminates as Degraded, not Current.
+                    if let Err(msg) = state.guard.record_coverage_gap(txn_id, &oid, object_size) {
                         return Response::Error { message: msg };
                     }
                     return Response::Error {
@@ -1516,12 +1546,13 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                     state.guard.insert_attestation(att);
                 }
             }
-            // Acknowledge the blob was scanned.
-            Response::GuardCommitPlan {
+            // Acknowledge the blob was scanned with a dedicated ack
+            // frame, not a synthetic plan with empty lists.
+            Response::GuardCommitBlobAck {
                 transaction_id: txn_id,
-                clean_hits: Vec::new(),
-                required_blob_oids: Vec::new(),
-                max_blob_bytes: 8 * 1024 * 1024,
+                blob_oid: oid,
+                bytes_scanned: bytes_scanned,
+                findings_count: findings as u64,
             }
         }
         Request::GuardCommitFinish {
@@ -1753,9 +1784,32 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 }
             };
             match state.guard.transition_root(root.as_bytes(), &transition) {
+                Ok(_) => {}
+                Err(e) => {
+                    return Response::Error {
+                        message: format!("daemon: guard reconcile failed: {}", e),
+                    };
+                }
+            }
+            // Perform the baseline scan and apply the terminal
+            // transition. This runs synchronously so the caller gets
+            // the final state in the response.
+            let scan_result = perform_baseline_reconciliation(state, &root).await;
+            let terminal = match scan_result {
+                BaselineResult::Clean => {
+                    keyhog_core::guard_state::GuardTransition::ReconciliationClean
+                }
+                BaselineResult::Findings => {
+                    keyhog_core::guard_state::GuardTransition::ReconciliationFindings
+                }
+                BaselineResult::Degraded => {
+                    keyhog_core::guard_state::GuardTransition::ReconciliationDegraded
+                }
+            };
+            match state.guard.transition_root(root.as_bytes(), &terminal) {
                 Ok(_) => Response::GuardReconcileStarted { root: root.clone() },
                 Err(e) => Response::Error {
-                    message: format!("daemon: guard reconcile failed: {}", e),
+                    message: format!("daemon: guard reconcile terminal transition failed: {}", e),
                 },
             }
         }
@@ -2470,7 +2524,7 @@ fn file_type_label(file_type: &std::fs::FileType) -> &'static str {
 
 /// Get the filesystem identity (device + inode) for a path. Returns
 /// zeros if the path cannot be stat'd, which is sufficient for
-/// registration — the root existence check happens separately.
+/// registration; the root existence check happens separately.
 fn filesystem_identity(path: &std::path::Path) -> keyhog_core::guard_state::FilesystemIdentity {
     use std::os::unix::fs::MetadataExt;
     match std::fs::symlink_metadata(path) {
@@ -2482,6 +2536,131 @@ fn filesystem_identity(path: &std::path::Path) -> keyhog_core::guard_state::File
             device: 0,
             inode: 0,
         },
+    }
+}
+
+/// Compute the Git blob OID for a payload. Git stores blobs as
+/// `blob <size>\0<content>` and hashes with SHA-1 or SHA-256.
+fn compute_git_blob_oid(
+    algorithm: keyhog_core::guard_state::GitHashAlgorithm,
+    payload: &[u8],
+) -> String {
+    use keyhog_core::guard_state::GitHashAlgorithm;
+    let header = format!("blob {}\0", payload.len());
+    match algorithm {
+        GitHashAlgorithm::Sha1 => {
+            use sha1::{Digest, Sha1};
+            let mut hasher = Sha1::new();
+            hasher.update(header.as_bytes());
+            hasher.update(payload);
+            hex::encode(hasher.finalize())
+        }
+        GitHashAlgorithm::Sha256 => {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(header.as_bytes());
+            hasher.update(payload);
+            hex::encode(hasher.finalize())
+        }
+    }
+}
+
+/// Result of a baseline reconciliation scan.
+enum BaselineResult {
+    /// No findings, no coverage gaps.
+    Clean,
+    /// Unsuppressed findings detected.
+    Findings,
+    /// Coverage gaps or scan errors.
+    Degraded,
+}
+
+/// Perform a baseline scan of a guard root. Walks the filesystem
+/// source, scans every chunk, and returns the terminal result.
+async fn perform_baseline_reconciliation(state: &ServerState, root: &str) -> BaselineResult {
+    let scanner = state.scanner.clone();
+    let router = state.router.clone();
+    let backend_override = state.backend_override;
+    let recover_automatic_backend_faults = crate::orchestrator::automatic_backend_recovery_allowed(
+        backend_override,
+        false,
+        keyhog_scanner::gpu::gpu_runtime_policy(),
+    );
+    let fragment_scan_lock = state.fragment_scan_lock.clone();
+    let root_path = std::path::PathBuf::from(root);
+    let _fragment_guard = fragment_scan_lock.lock_owned().await;
+    scanner.clear_fragment_cache();
+    let result = tokio::task::spawn_blocking(move || -> Result<(usize, usize)> {
+        let source = keyhog_sources::FilesystemSource::new(root_path.clone());
+        let mut total_findings = 0usize;
+        let mut total_gaps = 0usize;
+        for chunk_result in source.chunks() {
+            let chunk = match chunk_result {
+                Ok(c) => c,
+                Err(_) => {
+                    total_gaps += 1;
+                    continue;
+                }
+            };
+            if chunk.data.is_empty() {
+                continue;
+            }
+            let telemetry = std::sync::Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+            let scan_out = keyhog_scanner::telemetry::with_scan_telemetry(
+                &telemetry,
+                || -> Result<usize> {
+                    let batch = vec![chunk];
+                    let total_bytes: usize = batch.iter().map(|c| c.data.len()).sum();
+                    keyhog_profile::add_input_units(1);
+                    keyhog_profile::add_input_bytes(total_bytes as u64);
+                    let selection = router.choose_with_plan(
+                        scanner.as_ref(),
+                        backend_override,
+                        &batch,
+                    )?;
+                    let outcome = crate::orchestrator::scan_selected_batch(
+                        scanner.as_ref(),
+                        &batch,
+                        selection.backend,
+                        selection.phase1_plan.as_ref(),
+                        selection.execution_route,
+                        selection
+                            .recovery_plan
+                            .filter(|_| recover_automatic_backend_faults),
+                    )
+                    .with_context(|| {
+                        format!(
+                            "daemon: guard baseline scan failed for {}",
+                            root_path.display()
+                        )
+                    })?;
+                    let total: usize = outcome.per_chunk.iter().map(|v| v.len()).sum();
+                    Ok(total)
+                },
+            );
+            match scan_out {
+                Ok(count) => {
+                    total_findings += count;
+                }
+                Err(_) => {
+                    total_gaps += 1;
+                }
+            }
+        }
+        Ok((total_findings, total_gaps))
+    })
+    .await;
+    match result {
+        Ok(Ok((findings, gaps))) => {
+            if gaps > 0 {
+                BaselineResult::Degraded
+            } else if findings > 0 {
+                BaselineResult::Findings
+            } else {
+                BaselineResult::Clean
+            }
+        }
+        _ => BaselineResult::Degraded,
     }
 }
 

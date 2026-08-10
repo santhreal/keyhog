@@ -39,30 +39,21 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
         root: canonical,
         mode,
     };
-    match conn.round_trip(&request).await? {
+    let canonical_for_reconcile = match conn.round_trip(&request).await? {
         Response::GuardAdded {
-            root: _,
-            state,
+            root: ref added_root,
+            state: ref add_state,
             terminal_sequence,
         } => {
             let palette = style::for_stderr();
             eprintln!(
-                "{} guard: root {} is {} (sequence {})",
+                "{} guard: root {} registered (state {}, sequence {})",
                 style::pass("OK", &palette),
                 root.display(),
-                state,
+                add_state,
                 terminal_sequence
             );
-            // Exit 13 for stopped/indexing/degraded/stale states.
-            // The root is registered but not yet reconciled.
-            if matches!(
-                state.as_str(),
-                "stopped" | "indexing" | "degraded" | "stale-policy"
-            ) {
-                Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
-            } else {
-                Ok(ExitCode::SUCCESS)
-            }
+            added_root.clone()
         }
         Response::Error { message } => {
             anyhow::bail!("{message}");
@@ -70,6 +61,55 @@ async fn run_add(root: std::path::PathBuf, mode: String) -> anyhow::Result<ExitC
         other => {
             anyhow::bail!(
                 "guard add: protocol mismatch (got {})",
+                response_kind(&other)
+            );
+        }
+    };
+    // Trigger baseline reconciliation so the root reaches a terminal
+    // state. The help text promises this waits for the initial check.
+    let reconcile_request = Request::GuardReconcile {
+        root: canonical_for_reconcile.clone(),
+    };
+    match conn.round_trip(&reconcile_request).await? {
+        Response::GuardReconcileStarted { root: _ } => {
+            // Reconciliation completed. Query the final state.
+            let status_request = Request::GuardStatus {
+                root: canonical_for_reconcile,
+            };
+            match conn.round_trip(&status_request).await? {
+                Response::GuardStatusResult { state, .. } => {
+                    let palette = style::for_stderr();
+                    eprintln!(
+                        "{} guard: reconciliation complete, root is {}",
+                        style::pass("OK", &palette),
+                        state
+                    );
+                    if matches!(
+                        state.as_str(),
+                        "stopped" | "indexing" | "degraded" | "stale-policy"
+                    ) {
+                        Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
+                    } else {
+                        Ok(ExitCode::SUCCESS)
+                    }
+                }
+                Response::Error { message } => {
+                    anyhow::bail!("guard add: status after reconcile: {message}");
+                }
+                other => {
+                    anyhow::bail!(
+                        "guard add: status protocol mismatch (got {})",
+                        response_kind(&other)
+                    );
+                }
+            }
+        }
+        Response::Error { message } => {
+            anyhow::bail!("guard add: reconcile failed: {message}");
+        }
+        other => {
+            anyhow::bail!(
+                "guard add: reconcile protocol mismatch (got {})",
                 response_kind(&other)
             );
         }
@@ -293,17 +333,43 @@ async fn run_reconcile(root: std::path::PathBuf) -> anyhow::Result<ExitCode> {
     };
     let canonical = canonicalize_root(&root)?;
     let request = Request::GuardReconcile {
-        root: canonical,
+        root: canonical.clone(),
     };
     match conn.round_trip(&request).await? {
         Response::GuardReconcileStarted { root: _ } => {
-            let palette = style::for_stderr();
-            eprintln!(
-                "{} guard: reconciliation started for {}",
-                style::pass("OK", &palette),
-                root.display()
-            );
-            Ok(ExitCode::SUCCESS)
+            // Reconciliation completed synchronously. Query the
+            // final state to report it to the operator.
+            let status_request = Request::GuardStatus {
+                root: canonical.clone(),
+            };
+            match conn.round_trip(&status_request).await? {
+                Response::GuardStatusResult { state, .. } => {
+                    let palette = style::for_stderr();
+                    eprintln!(
+                        "{} guard: reconciliation complete for {}, state is {}",
+                        style::pass("OK", &palette),
+                        root.display(),
+                        state
+                    );
+                    if matches!(
+                        state.as_str(),
+                        "stopped" | "indexing" | "degraded" | "stale-policy"
+                    ) {
+                        Ok(ExitCode::from(exit_codes::EXIT_SOURCE_FAILED))
+                    } else {
+                        Ok(ExitCode::SUCCESS)
+                    }
+                }
+                Response::Error { message } => {
+                    anyhow::bail!("guard reconcile: status after reconcile: {message}");
+                }
+                other => {
+                    anyhow::bail!(
+                        "guard reconcile: status protocol mismatch (got {})",
+                        response_kind(&other)
+                    );
+                }
+            }
         }
         Response::Error { message } => {
             anyhow::bail!("{message}");

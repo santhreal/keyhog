@@ -105,9 +105,13 @@ impl GuardWatcher {
         }
     }
     /// Poll for events from the native watcher. Returns normalized
-    /// guard events grouped by root path. Non-blocking.
+    /// guard events grouped by root path. Non-blocking. Drains the
+    /// per-root buffer as events are handed to the caller, so the
+    /// buffer does not grow unbounded. If the buffer overflowed, a
+    /// single `ReconcileSubtree` event is emitted for that root and
+    /// the overflow flag is cleared.
     pub fn poll_events(&self) -> Vec<(PathBuf, Vec<GuardEvent>)> {
-        let mut results = Vec::new();
+        let mut results: HashMap<PathBuf, Vec<GuardEvent>> = HashMap::new();
         loop {
             match self.rx.try_recv() {
                 Ok(Ok(event)) => {
@@ -119,33 +123,52 @@ impl GuardWatcher {
                                 for ge in &guard_events {
                                     buf.push(ge.clone());
                                 }
-                                if buf.overflowed() {
-                                    results.push((
-                                        root.clone(),
-                                        vec![GuardEvent::ReconcileSubtree(root.clone())],
-                                    ));
-                                }
                             }
-                            if !guard_events.is_empty() {
-                                results.push((root, guard_events));
-                            }
+                            results
+                                .entry(root)
+                                .or_default()
+                                .extend(guard_events);
                         }
                     }
                 }
-                Ok(Err(e)) => {
+                Ok(Err(_)) => {
                     for root in self.roots.keys() {
-                        results.push((
-                            root.clone(),
-                            vec![GuardEvent::ReconcileSubtree(root.clone())],
-                        ));
+                        results
+                            .entry(root.clone())
+                            .or_default()
+                            .push(GuardEvent::ReconcileSubtree(root.clone()));
                     }
-                    let _ = e;
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => break,
             }
         }
-        results
+        // Drain each root's buffer and check for overflow. If overflowed,
+        // emit a ReconcileSubtree event and reset the overflow flag so
+        // the buffer can accept new events after reconciliation.
+        for (root, watched) in &self.roots {
+            let mut buf = watched.buffer.lock();
+            if buf.overflowed() {
+                results
+                    .entry(root.clone())
+                    .or_default()
+                    .push(GuardEvent::ReconcileSubtree(root.clone()));
+                buf.drain_and_reset();
+            } else {
+                let buffered: Vec<GuardEvent> = buf
+                    .drain()
+                    .into_iter()
+                    .map(|(_, ge)| ge)
+                    .collect();
+                if !buffered.is_empty() {
+                    results
+                        .entry(root.clone())
+                        .or_default()
+                        .extend(buffered);
+                }
+            }
+        }
+        results.into_iter().collect()
     }
 
     /// Find which registered root a path belongs to.

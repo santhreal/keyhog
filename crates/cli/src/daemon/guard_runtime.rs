@@ -288,6 +288,34 @@ impl GuardRuntime {
         Ok(())
     }
 
+    /// Record a coverage gap for a blob that could not be scanned.
+    /// The blob is counted as scanned (so conservation holds) but
+    /// increments coverage_gaps, forcing the terminal state to
+    /// Degraded rather than Current.
+    pub fn record_coverage_gap(&self, txn_id: u64, oid: &str, bytes: u64) -> Result<(), String> {
+        let mut txns = self.transactions.lock();
+        let txn = txns
+            .get_mut(&txn_id)
+            .ok_or_else(|| format!("transaction {} not found", txn_id))?;
+        if !txn.required_blob_oids.contains(&oid.to_string()) {
+            return Err(format!(
+                "transaction {}: blob {} was not in the required set",
+                txn_id, oid
+            ));
+        }
+        if txn.scanned_oids.contains(&oid.to_string()) {
+            return Err(format!(
+                "transaction {}: blob {} already scanned",
+                txn_id, oid
+            ));
+        }
+        txn.scanned_oids.push(oid.to_string());
+        txn.bytes_scanned += bytes;
+        txn.coverage_gaps += 1;
+        self.touch_activity();
+        Ok(())
+    }
+
     /// Finish a transaction and return its final state. Removes it
     /// from the in-flight map.
     pub fn finish_transaction(&self, txn_id: u64) -> Option<GuardTransaction> {
@@ -370,9 +398,9 @@ impl GuardRuntime {
     /// guard is actively using it or has been idle past the unload
     /// threshold.
     ///
-    /// - "active" — in-flight commit transactions right now
-    /// - "resident" — recent guard activity within the idle threshold
-    /// - "idle-unload" — no guard activity for longer than the threshold
+    /// - "active": in-flight commit transactions right now
+    /// - "resident": recent guard activity within the idle threshold
+    /// - "idle-unload": no guard activity for longer than the threshold
     pub fn scanner_residency(&self) -> &'static str {
         if !self.transactions.lock().is_empty() {
             return "active";

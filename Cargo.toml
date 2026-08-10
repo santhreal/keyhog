@@ -150,6 +150,7 @@ naga = "=25.0.1"
 
 # Crypto and encodings
 sha2 = "=0.10.9"
+sha1 = "=0.10.6"
 blake3 = "=1.8.5"
 hmac = "=0.12.1"
 hex = "=0.4.3"

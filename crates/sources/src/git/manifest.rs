@@ -59,6 +59,7 @@ pub struct StagedManifest {
     pub entries: Vec<StagedManifestEntry>,
     /// Total bytes across all non-deletion entries.
     pub total_bytes: u64,
+    /// Total number of non-deletion entries in the manifest.
     pub total_objects: u64,
     /// Coverage gaps: non-secret descriptions of entries where the
     /// object could not be read or sized.

@@ -93,9 +93,9 @@ keyhog guard remove /path/to/repo
 The scanner is always in memory in the daemon process. The residency label
 reports whether the guard is actively using it:
 
-- `active` — in-flight commit transactions right now.
-- `resident` — recent guard activity within the idle threshold (5 minutes).
-- `idle-unload` — no guard activity for longer than the threshold.
+- `active`: in-flight commit transactions right now.
+- `resident`: recent guard activity within the idle threshold (5 minutes).
+- `idle-unload`: no guard activity for longer than the threshold.
 
 ## Configuration
 

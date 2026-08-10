@@ -70,12 +70,12 @@ use std::collections::BTreeMap;
 ///   both ends and a mismatched peer is refused before any scan traffic, so a
 ///   v11 client never parses a v12 frame (and vice versa).
 /// * v13 - adds the guard commit transaction: `GuardCommitBegin`,
-///   `GuardCommitPlan`, `GuardCommitBlob`, `GuardCommitFinish`, and
-///   `GuardCommitReceipt` frames for exact staged-object authorization,
-///   plus `GuardAdd`, `GuardRemove`, `GuardStatus`, and `GuardReconcile`
-///   root control frames. The client validates conservation of object
-///   count and bytes and reacquires the index fingerprint before
-///   accepting the receipt.
+///   `GuardCommitPlan`, `GuardCommitBlob`, `GuardCommitBlobAck`,
+///   `GuardCommitFinish`, and `GuardCommitReceipt` frames for exact
+///   staged-object authorization, plus `GuardAdd`, `GuardRemove`,
+///   `GuardStatus`, and `GuardReconcile` root control frames. The
+///   client validates conservation of object count and bytes and
+///   reacquires the index fingerprint before accepting the receipt.
 pub(crate) const WIRE_VERSION: u32 = 13;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -393,6 +393,19 @@ pub(crate) enum Response {
         required_blob_oids: Vec<String>,
         /// Maximum bytes per blob frame.
         max_blob_bytes: u64,
+    },
+    /// Acknowledgement that a streamed blob was scanned. Distinct from
+    /// `GuardCommitPlan` so the client can distinguish a per-blob ack
+    /// from a new plan with empty required OIDs.
+    GuardCommitBlobAck {
+        /// Transaction ID from the plan.
+        transaction_id: u64,
+        /// Blob object ID that was scanned (hex).
+        blob_oid: String,
+        /// Bytes accounted for this blob.
+        bytes_scanned: u64,
+        /// Findings count for this blob.
+        findings_count: u64,
     },
     /// Terminal receipt for a guard commit transaction. The client
     /// validates conservation and reacquires the index fingerprint
@@ -886,6 +899,7 @@ pub(crate) fn response_kind(response: &Response) -> &'static str {
         Response::Shutdown => "Shutdown",
         Response::Error { .. } => "Error",
         Response::GuardCommitPlan { .. } => "GuardCommitPlan",
+        Response::GuardCommitBlobAck { .. } => "GuardCommitBlobAck",
         Response::GuardCommitReceipt { .. } => "GuardCommitReceipt",
         Response::GuardAdded { .. } => "GuardAdded",
         Response::GuardRemoved => "GuardRemoved",

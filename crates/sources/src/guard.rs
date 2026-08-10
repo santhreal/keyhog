@@ -227,6 +227,13 @@ impl EventBuffer {
         std::mem::take(&mut self.events)
     }
 
+    /// Drain all events and clear the overflow flag. Called after
+    /// a full reconciliation has consumed the buffer.
+    pub fn drain_and_reset(&mut self) -> Vec<(u64, GuardEvent)> {
+        self.overflowed = false;
+        std::mem::take(&mut self.events)
+    }
+
     /// The next sequence number that will be assigned.
     pub fn next_sequence(&self) -> u64 {
         self.next_sequence

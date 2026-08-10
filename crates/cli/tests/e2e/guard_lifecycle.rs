@@ -3,11 +3,11 @@
 //! Starts a real daemon on an isolated socket, then drives the full
 //! guard subcommand lifecycle through the CLI binary:
 //!
-//! 1. `keyhog guard add <root> --mode repo` — registers a root
-//! 2. `keyhog guard status <root>` — reports the root state
-//! 3. `keyhog guard list` — lists all registered roots
-//! 4. `keyhog guard remove <root>` — unregisters the root
-//! 5. `keyhog guard list` — confirms the root is gone
+//! 1. `keyhog guard add <root> --mode repo`: registers a root
+//! 2. `keyhog guard status <root>`: reports the root state
+//! 3. `keyhog guard list`: lists all registered roots
+//! 4. `keyhog guard remove <root>`: unregisters the root
+//! 5. `keyhog guard list`: confirms the root is gone
 //!
 //! This proves the wire protocol, daemon dispatch, guard runtime, and
 //! CLI formatting all work together end to end.
@@ -32,9 +32,12 @@ fn guard_lifecycle_add_status_list_remove() {
         .output()
         .expect("guard add");
     let add_code = add.status.code().unwrap_or(-1);
+    // guard add now triggers baseline reconciliation. An empty tempdir
+    // should reach current (exit 0). Watcher events may mark it dirty
+    // if files change during the scan, which is also exit 0.
     assert!(
         add_code == 0 || add_code == 13,
-        "guard add should succeed (0) or exit 13 (stopped, not yet reconciled): got {}: stdout={}; stderr={}",
+        "guard add should succeed (0) or exit 13 (degraded/stale): got {}: stdout={}; stderr={}",
         add_code,
         String::from_utf8_lossy(&add.stdout),
         String::from_utf8_lossy(&add.stderr)
@@ -49,15 +52,19 @@ fn guard_lifecycle_add_status_list_remove() {
     let status_code = status.status.code().unwrap_or(-1);
     assert!(
         status_code == 0 || status_code == 13,
-        "guard status should succeed (0) or exit 13 (stopped): got {}: stdout={}; stderr={}",
+        "guard status should succeed (0) or exit 13 (degraded/stale): got {}: stdout={}; stderr={}",
         status_code,
         String::from_utf8_lossy(&status.stdout),
         String::from_utf8_lossy(&status.stderr)
     );
     let status_err = String::from_utf8_lossy(&status.stderr);
+    // After reconciliation, the root should be in a terminal state
+    // (current, dirty, or blocked), not stopped or indexing.
     assert!(
-        status_err.contains("stopped"),
-        "guard status should show 'stopped' state in stderr: got: {}",
+        status_err.contains("current")
+            || status_err.contains("dirty")
+            || status_err.contains("blocked"),
+        "guard status should show a reconciled state (current/dirty/blocked) in stderr: got: {}",
         status_err
     );
 
@@ -93,7 +100,7 @@ fn guard_lifecycle_add_status_list_remove() {
         String::from_utf8_lossy(&remove.stderr)
     );
 
-    // 5. List again — root should be gone.
+    // 5. List again; root should be gone.
     let list_after = Command::new(binary())
         .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
         .args(["guard", "list"])
