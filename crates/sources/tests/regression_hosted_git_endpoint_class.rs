@@ -253,8 +253,18 @@ fn gitlab_endpoint_api_v4_suffix_is_not_double_appended() {
 
     let endpoint = server.url("/api/v4");
     let params = format!("acme\nglt_testtoken\n{endpoint}");
-    let source = keyhog_sources::create_source("gitlab-group", Some(&params))
-        .expect("gitlab-group source constructs against an /api/v4 loopback endpoint");
+    // The loopback mock binds `127.0.0.1`, which the default SSRF endpoint
+    // screen refuses before the request is composed. This test owns the API-base
+    // normalization contract, not the screen (that is
+    // `loopback_and_rfc1918_forge_hosts_classify_private` above and
+    // `regression_hosted_git_endpoint.rs`), so it opts into private endpoints
+    // explicitly instead of asserting the refusal it is not about.
+    let source = keyhog_sources::create_source_with_http_config(
+        "gitlab-group",
+        Some(&params),
+        keyhog_sources::http::HttpClientConfig::allowing_private_endpoint(),
+    )
+    .expect("gitlab-group source constructs against an /api/v4 loopback endpoint");
     let rows: Vec<_> = source.chunks().collect();
 
     assert_eq!(
@@ -311,8 +321,15 @@ fn bitbucket_endpoint_composes_repositories_path_under_2_0_api_base() {
 
     let endpoint = server.url("/2.0");
     let params = format!("acme\nci-user\napp-pass\n{endpoint}");
-    let source = keyhog_sources::create_source("bitbucket-workspace", Some(&params))
-        .expect("bitbucket-workspace source constructs against a /2.0 loopback endpoint");
+    // Same opt-in as the GitLab twin: the `/2.0` path composition is the
+    // contract here, and the loopback host would otherwise be refused by the
+    // default SSRF endpoint screen before any path is built.
+    let source = keyhog_sources::create_source_with_http_config(
+        "bitbucket-workspace",
+        Some(&params),
+        keyhog_sources::http::HttpClientConfig::allowing_private_endpoint(),
+    )
+    .expect("bitbucket-workspace source constructs against a /2.0 loopback endpoint");
     let rows: Vec<_> = source.chunks().collect();
 
     assert_eq!(
