@@ -374,9 +374,10 @@ jobs:
             sleep $((i * 2))
             if [ "$i" -eq 5 ]; then exit 1; fi
           done
-      - name: sources all_tests
-        run: cargo test -p keyhog-sources --test all_tests --profile release-fast
-      - name: sources opt-in backends (all standalone targets, serial)
+      # One all-target run owns both always-on and opt-in sources coverage.
+      # A separate `--test all_tests` step replayed that aggregator before this
+      # command ran it again with the complete feature set.
+      - name: sources full target matrix (serial)
         run: cargo test -p keyhog-sources --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast -- --test-threads=1
 
   integration-cli:

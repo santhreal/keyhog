@@ -145,8 +145,22 @@ class LiveWiringTests(unittest.TestCase):
         for crate in ("verifier", "core", "sources"):
             self.assertIn(crate, tw.ENFORCED_CRATES)
 
-    def test_sources_is_wired_via_all_targets_step(self) -> None:
+    def test_sources_is_wired_via_one_all_targets_lane(self) -> None:
         self.assertTrue(tw.runs_all_targets("keyhog-sources"))
+
+        ci = (tw.WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+        package = re.compile(r"-p\s+keyhog-sources(?:\s|$)")
+        commands = [
+            line
+            for line in tw.logical_command_lines(ci)
+            if "cargo test" in line and package.search(line)
+        ]
+        self.assertEqual(len(commands), 1, "required CI must run sources once")
+        command = commands[0]
+        self.assertFalse(
+            any(flag in command for flag in tw.TARGET_NARROWING),
+            "the single sources lane must retain all-target coverage",
+        )
 
     def test_core_is_not_wired_via_all_targets_step(self) -> None:
         # core wires by pub-mod aggregation, not an all-targets step.

@@ -4,6 +4,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [Unreleased]
 
+- Required CI runs the complete sources target matrix once, removing the earlier default `all_tests` replay before the all-feature run.
 - Core: raise dedup additional-locations subquadratic tripwire ceiling to 3.25x to absorb CI thread-CPU jitter (observed 3.03x flake).
 - Scanner: sensitive-path keyword-free confidence ownership test pins ordinary entropy_very_high cannot demote admitted hits.
 - Scanner: sensitive-path keyword-free entropy keeps ML as lift and scores against the sensitive very-high band so assignment RHS like `VALUE=<token>` in secrets.env is not soft-dropped.
