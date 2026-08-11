@@ -44,7 +44,7 @@ jobs:
           done
       # Heavy scanner property fuzz stays overnight; required CI owns --lib.
       - name: Property tests
-        run: cargo test -p keyhog-scanner --lib property::scanner_fuzz --profile release-fast
+        run: cargo test -p keyhog-scanner --lib property::scanner_fuzz --profile ci-test
 
   integration-cli:
     name: Integration (CLI overnight suites)
@@ -64,16 +64,16 @@ jobs:
             if [ "$i" -eq 5 ]; then exit 1; fi
           done
       - name: cli property
-        run: cargo test -p keyhog --test property --profile release-fast
+        run: cargo test -p keyhog --test property --profile ci-test
       - name: cli adversarial
-        run: cargo test -p keyhog --test adversarial --profile release-fast -- --test-threads=4
+        run: cargo test -p keyhog --test adversarial --profile ci-test -- --test-threads=4
       # 1,200 product-reliability cells (subcommand x hostile profile, format x
       # hostile profile, exit-code and installer contracts) that no workflow ran
       # until now, so the whole lane was free to rot. It drives the shipped
       # binary on the scalar backend, so it needs no accelerator and no feature
       # flags beyond the default build.
       - name: cli product reliability matrix
-        run: cargo test -p keyhog --test reliability_all --profile release-fast
+        run: cargo test -p keyhog --test reliability_all --profile ci-test
 
   fuzz-smoke:
     name: Fuzz target smoke

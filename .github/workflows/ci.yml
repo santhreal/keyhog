@@ -209,9 +209,9 @@ jobs:
             if [ "$i" -eq 5 ]; then exit 1; fi
           done
       - name: verifier all_tests
-        run: cargo test -p keyhog-verifier --test all_tests --profile release-fast
+        run: cargo test -p keyhog-verifier --test all_tests --profile ci-test
       - name: verifier break_it (serial)
-        run: cargo test -p keyhog-verifier --test break_it --profile release-fast -- --test-threads=1
+        run: cargo test -p keyhog-verifier --test break_it --profile ci-test -- --test-threads=1
 
 
   focused-integration:
@@ -244,17 +244,17 @@ jobs:
             if [ "$i" -eq 5 ]; then exit 1; fi
           done
       - name: core all_tests
-        run: cargo test -p keyhog-core --test all_tests --profile release-fast
+        run: cargo test -p keyhog-core --test all_tests --profile ci-test
       - name: scanner all_tests
-        run: cargo test -p keyhog-scanner --test all_tests --no-default-features --features ci-lean --profile release-fast
+        run: cargo test -p keyhog-scanner --test all_tests --no-default-features --features ci-lean --profile ci-test
       - name: scanner CI target wiring gates
-        run: cargo test -p keyhog-scanner --test unit_gates_live ci_scanner --no-default-features --features ci-lean --profile release-fast -- --nocapture
+        run: cargo test -p keyhog-scanner --test unit_gates_live ci_scanner --no-default-features --features ci-lean --profile ci-test -- --nocapture
       - name: scanner GPU literal artifact writer
-        run: cargo test -p keyhog-scanner --test gpu_literal_artifact_writer --no-default-features --features ci-lean --profile release-fast
+        run: cargo test -p keyhog-scanner --test gpu_literal_artifact_writer --no-default-features --features ci-lean --profile ci-test
       - name: scanner adversarial dead corpus
-        run: cargo test -p keyhog-scanner --test adversarial_suite --no-default-features --features ci-lean --profile release-fast
+        run: cargo test -p keyhog-scanner --test adversarial_suite --no-default-features --features ci-lean --profile ci-test
       - name: RawMatch total-order gate
-        run: cargo test -p keyhog-core --test new_core_finding_dedup --profile release-fast
+        run: cargo test -p keyhog-core --test new_core_finding_dedup --profile ci-test
 
   # All-target sources tests remain serial inside their own test processes:
   # several assert process-global skip counters and cannot be co-scheduled.
@@ -288,12 +288,12 @@ jobs:
             if [ "$i" -eq 5 ]; then exit 1; fi
           done
       - name: E2E binary tests
-        run: cargo test -p keyhog --test e2e_binary --profile release-fast
+        run: cargo test -p keyhog --test e2e_binary --profile ci-test
       - name: SARIF code-scanning compliance
-        run: cargo test -p keyhog --test sarif_github_compliance --profile release-fast
+        run: cargo test -p keyhog --test sarif_github_compliance --profile ci-test
       - name: Fail-closed security regressions
         run: >
-          cargo test -p keyhog --no-fail-fast --profile release-fast
+          cargo test -p keyhog --no-fail-fast --profile ci-test
           --test regression_install_insecure_env_removed
           --test regression_invalid_backend_env_fails_closed
           --test regression_invalid_detectors_env_fails_closed
@@ -387,7 +387,7 @@ jobs:
       # A separate `--test all_tests` step replayed that aggregator before this
       # command ran it again with the complete feature set.
       - name: sources full target matrix (serial)
-        run: cargo test -p keyhog-sources --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast -- --test-threads=1
+        run: cargo test -p keyhog-sources --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile ci-test -- --test-threads=1
 
   integration-cli:
     name: Integration (CLI)
@@ -419,11 +419,11 @@ jobs:
             if [ "$i" -eq 5 ]; then exit 1; fi
           done
       - name: cli all_tests
-        run: cargo test -p keyhog --test all_tests --no-default-features --features ci-lean --profile release-fast
+        run: cargo test -p keyhog --test all_tests --no-default-features --features ci-lean --profile ci-test
       - name: cli Vyre pin coherence
-        run: cargo test -p keyhog --test vyre_pin_coherence_lane3 --no-default-features --features ci-lean --profile release-fast
+        run: cargo test -p keyhog --test vyre_pin_coherence_lane3 --no-default-features --features ci-lean --profile ci-test
       - name: cli coherence binaries
-        run: cargo test -p keyhog --no-default-features --features ci-lean --profile release-fast --test coherence_wiring_lane7 --test lane10_verification_doc_coherence --test coherence_verify_count
+        run: cargo test -p keyhog --no-default-features --features ci-lean --profile ci-test --test coherence_wiring_lane7 --test lane10_verification_doc_coherence --test coherence_verify_count
 
   integration-detector-contracts:
     name: Integration (detector + recall contracts)
@@ -455,10 +455,10 @@ jobs:
             if [ "$i" -eq 5 ]; then exit 1; fi
           done
       - name: detector self-validation
-        run: cargo test -p keyhog-scanner --test all_detectors_self_validate --profile release-fast
+        run: cargo test -p keyhog-scanner --test all_detectors_self_validate --profile ci-test
       # One cargo invocation for every ci-lean detector/recall contract target.
       # These were twelve separate steps sharing an identical
-      # `--no-default-features --features ci-lean --profile release-fast`
+      # `--no-default-features --features ci-lean --profile ci-test`
       # invocation; each one re-entered cargo and re-linked, costing ~2.4 min of
       # the job's 33 min for ~0 extra coverage. `--no-fail-fast` also reports
       # every failing contract in one run instead of stopping at the first.
@@ -467,7 +467,7 @@ jobs:
       - name: detector + recall contracts (ci-lean)
         run: >
           cargo test -p keyhog-scanner --no-fail-fast
-          --no-default-features --features ci-lean --profile release-fast
+          --no-default-features --features ci-lean --profile ci-test
           --test homoglyph_ascii_skip_parity
           --test regression_ac_overlap_shadow
           --test fallback_order_independence

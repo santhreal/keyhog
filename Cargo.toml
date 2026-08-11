@@ -247,6 +247,19 @@ strip = "none"
 # coverage gained.
 debug-assertions = true
 
+# Test-binary profile for CI integration lanes. Same code semantics as
+# release-fast (opt-level 3, debug assertions on), without the two settings that
+# only pay off for a shipped binary: thin LTO and 16 codegen units. The sources
+# lane links 116 test binaries, so cross-crate optimization is paid 116 times and
+# recovers nothing a test can observe. `panic = "unwind"` matches what cargo
+# forces on a test harness anyway and stops the inherited `abort` from provoking
+# a second dependency build.
+[profile.ci-test]
+inherits = "release-fast"
+lto = false
+codegen-units = 256
+panic = "unwind"
+
 # ── Bench profile: same as release but with debug symbols so flamegraphs
 # attribute samples to functions. Use with `cargo bench` automatically.
 [profile.bench]
