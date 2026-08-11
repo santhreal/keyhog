@@ -26,6 +26,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Complete autoroute sweeps now retry measured-point backend and recovery-route disagreements instead of treating timing variance as a permanent calibration failure. Non-timing failures remain non-retryable and leave the staged generation unpublished.
 
 - Concurrent direct-GPU scan workers now serialize complete resident dispatch rings around the scanner-owned slot set. A second worker could previously observe the depth-one slot in flight, misclassify the healthy GPU as failed, leave one batch unscanned, and report partial coverage.
+- Builds without the `git` feature no longer compile the staged guard-commit client or reference Git-only source APIs. Their daemon rejects guard-commit frames with an actionable feature error instead of failing the portable build.
 
 - Filesystem discovery prunes default-excluded directories (for example
   `node_modules/`) during the walk and counts each pruned directory once in the

@@ -1667,6 +1667,19 @@ fn admission_refusal(
 }
 
 async fn dispatch(state: &ServerState, request: Request) -> Response {
+    #[cfg(not(feature = "git"))]
+    if matches!(
+        &request,
+        Request::GuardCommitBegin { .. }
+            | Request::GuardCommitBlob { .. }
+            | Request::GuardCommitFinish { .. }
+    ) {
+        return Response::Error {
+            message:
+                "daemon: guard commit requires git source support; rebuild with `--features git`"
+                    .to_string(),
+        };
+    }
     match request {
         Request::Hello => Response::Hello {
             wire_version: WIRE_VERSION,
@@ -2084,7 +2097,17 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             // changed between Begin and Finish, the scanned content
             // may not match what is now staged, so refuse the receipt.
             let repo_path = std::path::PathBuf::from(&txn.repo_path);
-            if !keyhog_sources::verify_staged_fingerprint(&repo_path, &txn.index_fingerprint) {
+            let fingerprint_matches = {
+                #[cfg(feature = "git")]
+                {
+                    keyhog_sources::verify_staged_fingerprint(&repo_path, &txn.index_fingerprint)
+                }
+                #[cfg(not(feature = "git"))]
+                {
+                    false
+                }
+            };
+            if !fingerprint_matches {
                 return Response::Error {
                     message: format!(
                         "daemon: guard commit finish: index fingerprint mismatch for {}; the staged content changed during the transaction",

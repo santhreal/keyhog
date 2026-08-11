@@ -1535,7 +1535,7 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
 /// Finish a guard commit transaction scan. Maps the daemon's
 /// finding count and coverage gaps to the same exit codes as
 /// the in-process and daemon scan paths.
-#[cfg(unix)]
+#[cfg(all(unix, feature = "git"))]
 fn finish_guard_commit_scan(
     result: crate::daemon::guard_commit::GuardCommitResult,
     args: &ScanArgs,
